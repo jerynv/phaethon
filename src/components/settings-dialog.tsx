@@ -68,7 +68,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <Button variant="ghost" className="w-full justify-start">
+        <Button variant="ghost" className="w-full justify-start" data-testid="open-settings">
           <SettingsIcon aria-hidden="true" />
           Settings
         </Button>

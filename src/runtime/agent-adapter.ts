@@ -74,7 +74,7 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
       abortSignal.addEventListener("abort", onAbort);
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
-      invoke("agent_send", { space: spaceId, prompt, onEvent: channel }).catch((err: unknown) => {
+      invoke("agent_send", { space: spaceId, prompt, attachments: [], onEvent: channel }).catch((err: unknown) => {
         queue.push({ kind: "error", code: "ipc", message: `steward could not reach its backend: ${String(err)}` });
         queue.push({ kind: "end", sessionId: null });
       });

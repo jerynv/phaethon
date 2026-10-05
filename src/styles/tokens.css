@@ -1,0 +1,235 @@
+/*
+ * steward design tokens: the single source of every visual value.
+ *
+ * Rules (enforced by scripts/check-design.mjs):
+ * - Components never hard-code a colour, size, space or duration; they use a
+ *   token, or a Tailwind utility that is mapped onto one in index.css.
+ * - Every colour is oklch() or oklab(). Never hex or the rgb/hsl functions.
+ * - Tokens are meant to be overridden at runtime by the user's appearance and
+ *   accessibility settings (src/theme/tokens.ts lists which, and validates).
+ *
+ * Colour is built from a few dials: a neutral hue and chroma for surfaces and
+ * ink, and an accent hue and chroma. Change a dial and the whole palette
+ * follows, in both themes.
+ */
+
+:root {
+  /* ---- Colour dials ---- */
+  --st-neutral-h: 80; /* warm paper */
+  --st-neutral-c: 0.006;
+  --st-ink-h: 255; /* ink leans slightly cool against warm paper */
+  --st-ink-c: 0.014;
+  --st-accent-h: 168; /* soft sea-green */
+  --st-accent-c: 0.075;
+  --st-danger-h: 25;
+  --st-danger-c: 0.13;
+  --st-warning-h: 75;
+  --st-success-h: 150;
+  /* Each space carries its own hue (set per space on the element). */
+  --st-space-h: var(--st-accent-h);
+  --st-space-c: 0.09;
+
+  /* ---- Type ---- */
+  --st-font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
+  --st-font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  /* The one dial for all text: 1 = default, 1.5 = half again as large. */
+  --st-text-scale: 1;
+  --st-text-2xs: calc(10px * var(--st-text-scale));
+  --st-text-xs: calc(11px * var(--st-text-scale));
+  --st-text-sm: calc(12px * var(--st-text-scale));
+  --st-text-base: calc(13px * var(--st-text-scale));
+  --st-text-md: calc(14px * var(--st-text-scale));
+  --st-text-lg: calc(16px * var(--st-text-scale));
+  --st-text-xl: calc(19px * var(--st-text-scale));
+  --st-text-2xl: calc(23px * var(--st-text-scale));
+  --st-leading-tight: 1.25;
+  --st-leading-snug: 1.4;
+  --st-leading-normal: 1.55;
+  --st-weight-normal: 400;
+  --st-weight-medium: 500;
+  --st-weight-semibold: 620;
+  --st-weight-bold: 700;
+  --st-tracking-tight: -0.01em;
+  --st-tracking-normal: 0;
+  --st-tracking-wide: 0.02em;
+  --st-measure: 68ch;
+
+  /* ---- Space ---- */
+  /* Every Tailwind spacing step is a multiple of this (p-2 = 2 steps). */
+  --st-space-unit: 4px;
+  --st-density: 1;
+  --st-space: calc(var(--st-space-unit) * var(--st-density));
+
+  /* ---- Shape ---- */
+  --st-radius-xs: 3px;
+  --st-radius-sm: 5px;
+  --st-radius: 7px;
+  --st-radius-lg: 10px;
+  --st-radius-xl: 14px;
+  --st-radius-full: 999px;
+  --st-border-width: 1px;
+
+  /* ---- Elevation (offset + soft blur, tinted by ink) ---- */
+  --st-shadow-color: oklch(0.3 0.02 var(--st-ink-h) / 10%);
+  --st-shadow-sm: 0 1px 2px var(--st-shadow-color);
+  --st-shadow: 0 2px 6px -1px var(--st-shadow-color), 0 1px 2px var(--st-shadow-color);
+  --st-shadow-lg: 0 12px 32px -8px oklch(0.3 0.02 var(--st-ink-h) / 18%), 0 2px 6px var(--st-shadow-color);
+
+  /* ---- Controls ---- */
+  /* WCAG 2.5.8: nothing clickable smaller than this. */
+  --st-target-min: 24px;
+  --st-control-height-sm: 24px;
+  --st-control-height: 28px;
+  --st-control-height-lg: 32px;
+  --st-icon-size-sm: 14px;
+  --st-icon-size: 16px;
+  --st-icon-size-lg: 20px;
+  --st-icon-stroke: 1.5;
+
+  /* ---- Layout ---- */
+  --st-titlebar-height: 40px;
+  /* Room before title bar content; the macOS window buttons need more. */
+  --st-titlebar-inset-start: calc(var(--st-space) * 3);
+  --st-sidebar-width: 232px;
+  --st-thread-width: 46rem;
+  --st-message-max-width: 85%;
+  --st-composer-radius: var(--st-radius-xl);
+  --st-dialog-width: 40rem;
+  --st-preview-max-height: 15rem;
+
+  /* ---- Focus ---- */
+  --st-focus-width: 2px;
+  --st-focus-offset: 2px;
+
+  /* ---- Motion ---- */
+  --st-duration-fast: 100ms;
+  --st-duration: 160ms;
+  --st-duration-slow: 260ms;
+  --st-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The macOS traffic lights sit inside our title bar. */
+:root[data-platform="mac"] {
+  --st-titlebar-inset-start: 80px;
+}
+
+/* ---- Light theme ---- */
+:root {
+  color-scheme: light;
+
+  /* Surfaces: paper, from the page out to raised layers. */
+  --st-bg: oklch(0.985 var(--st-neutral-c) var(--st-neutral-h));
+  --st-surface: oklch(0.968 calc(var(--st-neutral-c) * 1.3) var(--st-neutral-h));
+  --st-surface-sunken: oklch(0.952 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
+  --st-raised: oklch(0.995 calc(var(--st-neutral-c) * 0.5) var(--st-neutral-h));
+  --st-hover: oklch(0.935 calc(var(--st-neutral-c) * 1.6) var(--st-neutral-h));
+  --st-selected: oklch(0.915 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+
+  /* Ink. Secondary stays >= 4.5:1 on every surface above. */
+  --st-ink: oklch(0.25 var(--st-ink-c) var(--st-ink-h));
+  --st-ink-secondary: oklch(0.45 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
+  --st-ink-tertiary: oklch(0.56 calc(var(--st-ink-c) * 0.6) var(--st-ink-h)); /* large text and icons only */
+  --st-ink-inverse: oklch(0.985 var(--st-neutral-c) var(--st-neutral-h));
+
+  --st-line: oklch(0.905 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+  --st-line-strong: oklch(0.82 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+
+  /* Accent: fills carry white text at >= 4.5:1. */
+  --st-accent: oklch(0.5 var(--st-accent-c) var(--st-accent-h));
+  --st-accent-hover: oklch(0.45 var(--st-accent-c) var(--st-accent-h));
+  --st-accent-ink: oklch(0.42 var(--st-accent-c) var(--st-accent-h));
+  --st-accent-soft: oklch(0.94 calc(var(--st-accent-c) * 0.45) var(--st-accent-h));
+  --st-accent-soft-ink: oklch(0.36 var(--st-accent-c) var(--st-accent-h));
+
+  --st-space-tint: oklch(0.93 calc(var(--st-space-c) * 0.5) var(--st-space-h));
+  --st-space-mark: oklch(0.6 var(--st-space-c) var(--st-space-h));
+
+  --st-danger: oklch(0.52 var(--st-danger-c) var(--st-danger-h));
+  --st-danger-soft: oklch(0.95 0.03 var(--st-danger-h));
+  --st-danger-ink: oklch(0.42 var(--st-danger-c) var(--st-danger-h));
+  --st-warning-soft: oklch(0.95 0.045 var(--st-warning-h));
+  --st-warning-ink: oklch(0.42 0.09 var(--st-warning-h));
+  --st-success-soft: oklch(0.95 0.035 var(--st-success-h));
+  --st-success-ink: oklch(0.4 0.08 var(--st-success-h));
+
+  /* Focus: >= 3:1 against every surface (WCAG 2.4.13 / 1.4.11). */
+  --st-focus: oklch(0.5 0.14 var(--st-accent-h));
+  --st-selection: oklch(0.88 0.06 var(--st-accent-h));
+  --st-overlay: oklch(0.2 0.01 var(--st-ink-h) / 35%);
+  --st-scrollbar: oklch(0.8 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+}
+
+/* ---- Dark theme: dusk rather than black ---- */
+.dark {
+  color-scheme: dark;
+
+  --st-bg: oklch(0.2 calc(var(--st-ink-c) * 0.7) var(--st-ink-h));
+  --st-surface: oklch(0.225 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
+  --st-surface-sunken: oklch(0.185 calc(var(--st-ink-c) * 0.7) var(--st-ink-h));
+  --st-raised: oklch(0.255 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
+  --st-hover: oklch(0.28 calc(var(--st-ink-c) * 0.9) var(--st-ink-h));
+  --st-selected: oklch(0.31 var(--st-ink-c) var(--st-ink-h));
+
+  --st-ink: oklch(0.93 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
+  --st-ink-secondary: oklch(0.76 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
+  --st-ink-tertiary: oklch(0.64 var(--st-neutral-c) var(--st-neutral-h));
+  --st-ink-inverse: oklch(0.2 var(--st-ink-c) var(--st-ink-h));
+
+  --st-line: oklch(0.3 var(--st-ink-c) var(--st-ink-h));
+  --st-line-strong: oklch(0.4 var(--st-ink-c) var(--st-ink-h));
+
+  --st-accent: oklch(0.74 var(--st-accent-c) var(--st-accent-h));
+  --st-accent-hover: oklch(0.79 var(--st-accent-c) var(--st-accent-h));
+  --st-accent-ink: oklch(0.8 var(--st-accent-c) var(--st-accent-h));
+  --st-accent-soft: oklch(0.3 calc(var(--st-accent-c) * 0.5) var(--st-accent-h));
+  --st-accent-soft-ink: oklch(0.86 calc(var(--st-accent-c) * 0.8) var(--st-accent-h));
+
+  --st-space-tint: oklch(0.3 calc(var(--st-space-c) * 0.45) var(--st-space-h));
+  --st-space-mark: oklch(0.72 var(--st-space-c) var(--st-space-h));
+
+  --st-danger: oklch(0.72 var(--st-danger-c) var(--st-danger-h));
+  --st-danger-soft: oklch(0.28 0.05 var(--st-danger-h));
+  --st-danger-ink: oklch(0.82 0.09 var(--st-danger-h));
+  --st-warning-soft: oklch(0.29 0.04 var(--st-warning-h));
+  --st-warning-ink: oklch(0.86 0.08 var(--st-warning-h));
+  --st-success-soft: oklch(0.28 0.04 var(--st-success-h));
+  --st-success-ink: oklch(0.84 0.07 var(--st-success-h));
+
+  --st-focus: oklch(0.8 0.12 var(--st-accent-h));
+  --st-selection: oklch(0.4 0.07 var(--st-accent-h));
+  --st-overlay: oklch(0.08 0.01 var(--st-ink-h) / 55%);
+  --st-scrollbar: oklch(0.38 var(--st-ink-c) var(--st-ink-h));
+  --st-shadow-color: oklch(0.05 0.01 var(--st-ink-h) / 35%);
+}
+
+/* ---- shadcn / assistant-ui names, mapped onto steward tokens ---- */
+:root,
+.dark {
+  --background: var(--st-bg);
+  --foreground: var(--st-ink);
+  --card: var(--st-raised);
+  --card-foreground: var(--st-ink);
+  --popover: var(--st-raised);
+  --popover-foreground: var(--st-ink);
+  --primary: var(--st-accent);
+  --primary-foreground: var(--st-ink-inverse);
+  --secondary: var(--st-surface);
+  --secondary-foreground: var(--st-ink);
+  --muted: var(--st-surface);
+  --muted-foreground: var(--st-ink-secondary);
+  --accent: var(--st-hover);
+  --accent-foreground: var(--st-ink);
+  --destructive: var(--st-danger);
+  --border: var(--st-line);
+  --input: var(--st-line-strong);
+  --ring: var(--st-focus);
+  --sidebar: var(--st-surface);
+  --sidebar-foreground: var(--st-ink);
+  --sidebar-primary: var(--st-accent);
+  --sidebar-primary-foreground: var(--st-ink-inverse);
+  --sidebar-accent: var(--st-hover);
+  --sidebar-accent-foreground: var(--st-ink);
+  --sidebar-border: var(--st-line);
+  --sidebar-ring: var(--st-focus);
+  --radius: var(--st-radius);
+}

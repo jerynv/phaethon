@@ -1,145 +1,186 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "tw-shimmer";
+@import "@fontsource-variable/atkinson-hyperlegible-next";
+@import "@fontsource-variable/atkinson-hyperlegible-mono";
+@import "./styles/tokens.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
+@custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
 
+/*
+ * Tailwind's scales point at steward tokens, so utilities like `text-sm`,
+ * `p-2`, `rounded-md` and `bg-surface` change when a token is overridden.
+ */
 @theme inline {
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
-    --color-background: var(--background);
-    --color-foreground: var(--foreground);
-    --color-card: var(--card);
-    --color-card-foreground: var(--card-foreground);
-    --color-popover: var(--popover);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-primary: var(--primary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-secondary: var(--secondary);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-muted: var(--muted);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-accent: var(--accent);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-destructive: var(--destructive);
-    --color-border: var(--border);
-    --color-input: var(--input);
-    --color-ring: var(--ring);
-    --color-chart-1: var(--chart-1);
-    --color-chart-2: var(--chart-2);
-    --color-chart-3: var(--chart-3);
-    --color-chart-4: var(--chart-4);
-    --color-chart-5: var(--chart-5);
-    --color-sidebar: var(--sidebar);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-ring: var(--sidebar-ring);
-}
+  --font-sans: var(--st-font-sans);
+  --font-mono: var(--st-font-mono);
 
-:root {
-    --radius: 0.625rem;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
+  --text-2xs: var(--st-text-2xs);
+  --text-2xs--line-height: var(--st-leading-snug);
+  --text-xs: var(--st-text-xs);
+  --text-xs--line-height: var(--st-leading-snug);
+  --text-sm: var(--st-text-sm);
+  --text-sm--line-height: var(--st-leading-snug);
+  --text-base: var(--st-text-base);
+  --text-base--line-height: var(--st-leading-normal);
+  --text-md: var(--st-text-md);
+  --text-md--line-height: var(--st-leading-normal);
+  --text-lg: var(--st-text-lg);
+  --text-lg--line-height: var(--st-leading-snug);
+  --text-xl: var(--st-text-xl);
+  --text-xl--line-height: var(--st-leading-tight);
+  --text-2xl: var(--st-text-2xl);
+  --text-2xl--line-height: var(--st-leading-tight);
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+  --font-weight-normal: var(--st-weight-normal);
+  --font-weight-medium: var(--st-weight-medium);
+  --font-weight-semibold: var(--st-weight-semibold);
+  --font-weight-bold: var(--st-weight-bold);
+
+  --spacing: var(--st-space);
+
+  --radius-xs: var(--st-radius-xs);
+  --radius-sm: var(--st-radius-sm);
+  --radius-md: var(--st-radius);
+  --radius-lg: var(--st-radius-lg);
+  --radius-xl: var(--st-radius-xl);
+  --radius-2xl: var(--st-radius-xl);
+  --radius-full: var(--st-radius-full);
+
+  --shadow-xs: var(--st-shadow-sm);
+  --shadow-sm: var(--st-shadow-sm);
+  --shadow: var(--st-shadow);
+  --shadow-md: var(--st-shadow);
+  --shadow-lg: var(--st-shadow-lg);
+
+  --ease-out: var(--st-ease-out);
+
+  /* steward names */
+  --color-bg: var(--st-bg);
+  --color-surface: var(--st-surface);
+  --color-surface-sunken: var(--st-surface-sunken);
+  --color-raised: var(--st-raised);
+  --color-hover: var(--st-hover);
+  --color-selected: var(--st-selected);
+  --color-ink: var(--st-ink);
+  --color-ink-secondary: var(--st-ink-secondary);
+  --color-ink-tertiary: var(--st-ink-tertiary);
+  --color-ink-inverse: var(--st-ink-inverse);
+  --color-line: var(--st-line);
+  --color-line-strong: var(--st-line-strong);
+  --color-accent-fill: var(--st-accent);
+  --color-accent-fill-hover: var(--st-accent-hover);
+  --color-accent-ink: var(--st-accent-ink);
+  --color-accent-soft: var(--st-accent-soft);
+  --color-accent-soft-ink: var(--st-accent-soft-ink);
+  --color-space-tint: var(--st-space-tint);
+  --color-space-mark: var(--st-space-mark);
+  --color-danger: var(--st-danger);
+  --color-danger-soft: var(--st-danger-soft);
+  --color-danger-ink: var(--st-danger-ink);
+  --color-warning-soft: var(--st-warning-soft);
+  --color-warning-ink: var(--st-warning-ink);
+  --color-success-soft: var(--st-success-soft);
+  --color-success-ink: var(--st-success-ink);
+  --color-focus: var(--st-focus);
+
+  /* shadcn / assistant-ui names */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+  }
+  @keyframes collapsible-up {
+    from {
+      height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+    to {
+      height: 0;
+    }
+  }
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
-    }
+    @apply border-border;
+  }
+  html {
+    font-family: var(--st-font-sans);
+    font-size: var(--st-text-base);
+    line-height: var(--st-leading-normal);
+    letter-spacing: var(--st-tracking-normal);
+    -webkit-font-smoothing: antialiased;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
   body {
-    @apply bg-background text-foreground;
-    }
+    background: var(--st-bg);
+    color: var(--st-ink);
+    caret-color: var(--st-accent);
+  }
+  ::selection {
+    background: var(--st-selection);
+    color: var(--st-ink);
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--st-font-mono);
+  }
+  /* Thin themed scrollbars; still visible, still grabbable. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--st-scrollbar) transparent;
+  }
+  a {
+    text-underline-offset: 0.2em;
+  }
+  :where(table, [data-numeric]) {
+    font-variant-numeric: tabular-nums;
+  }
 }
+
 /* ---- steward accessibility baseline ---- */
-
-:root {
-  color-scheme: light;
-  /* Focus indicator: >= 3:1 against both the page and the sidebar (WCAG 2.4.13 / 1.4.11). */
-  --focus: oklch(0.45 0.2 262);
-}
-
-.dark {
-  color-scheme: dark;
-  --focus: oklch(0.82 0.13 262);
-}
 
 /* One strong, consistent focus ring for every focusable element. Unlayered and
    !important so component-level `outline-none` utilities cannot hide it. */
 :focus-visible {
-  outline: 3px solid var(--focus) !important;
-  outline-offset: 2px !important;
+  outline: var(--st-focus-width) solid var(--st-focus) !important;
+  outline-offset: var(--st-focus-offset) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

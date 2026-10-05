@@ -32,10 +32,10 @@ There is no hidden database. Every piece of state the user cares about is a file
 
 ## Agent backends
 
-Two backends, chosen per vault:
+Two backends, chosen per vault (`"backend"` in `<vault>/.steward/settings.json`, set from Settings):
 
-1. **The official `claude` CLI.** The user installs it and logs in themselves. steward spawns it as a child process and talks to it over its documented interface.
-2. **Bring-your-own API key.** The key is stored in the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux) and used to call the provider API directly.
+1. **steward's own loop (default).** The Rust core calls the provider API with the user's key and runs steward's own tools (`agent_loop.rs`, `anthropic.rs`, `tools.rs`). The key lives in the OS keychain under `steward` / `<vault>/provider/<name>`; the webview can set or clear it but no command returns it. Tools are `list_files`, `read_file`, `search_files` and `write_file`, all confined to the space (no absolute paths, no `..`, no symlink escape, `.steward/` hidden). `write_file` waits for the user to allow it in an approval card. Nothing global is loaded: the model sees steward's prompt, the vault's `MANUAL.md` and the space. The thread is `<space>/.steward/thread.json`, append-only so returned thinking blocks stay valid. Anthropic only so far: `claude-opus-5-5`, effort `medium`, `fallbacks: "default"`.
+2. **The official `claude` CLI.** The user installs it and logs in themselves. steward spawns it as a child process and talks to it over its documented interface.
 
 ### Auth rule for subscription tokens
 
@@ -111,4 +111,4 @@ Tauri shell (Rust core, src-tauri/)
   └── Agent supervisor: spawns `claude` CLI per space (cwd + CLAUDE_CONFIG_DIR), or calls API with BYO key
 ```
 
-Current state: the WebView and the agent supervisor exist. Spaces are still a stub list in the UI, backed by real folders on disk. Inside the desktop app each space talks to the `claude` CLI (`src/runtime/claude-adapter.ts`); in a plain browser (`pnpm dev`) there is no IPC, so the UI falls back to the echo adapter (`src/runtime/echo-adapter.ts`). Each space gets its own assistant-ui runtime instance, and leaving a space stops any reply still running there. Threads live in memory only: the CLI keeps the conversation, but the UI does not reload it yet.
+Current state: the WebView and the agent supervisor exist. Spaces are still a stub list in the UI, backed by real folders on disk. Inside the desktop app each space talks to the vault's backend (`src/runtime/agent-adapter.ts`); in a plain browser (`pnpm dev`) there is no IPC, so the UI falls back to the echo adapter (`src/runtime/echo-adapter.ts`). Each space gets its own assistant-ui runtime instance, and leaving a space stops any reply still running there. With steward's own loop the saved thread is reloaded on start and on space switch; with the CLI backend it is not.

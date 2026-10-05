@@ -27,6 +27,22 @@ pub struct VaultSettings {
     /// Off by default because a fresh config dir is logged out: turning this on
     /// means logging in to the CLI again for this vault. See ARCHITECTURE.md.
     pub isolate_claude_config: bool,
+    /// Which agent runs in this vault's spaces.
+    pub backend: Backend,
+    /// Model for steward's own loop; the provider's default when unset.
+    pub model: Option<String>,
+    /// Effort for steward's own loop; the provider's default when unset.
+    pub effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Backend {
+    /// steward's own loop and tools, with the user's API key from the keychain.
+    #[default]
+    Steward,
+    /// The official `claude` CLI the user installed and logged into.
+    ClaudeCli,
 }
 
 impl Vault {
@@ -85,6 +101,25 @@ impl Vault {
             ));
         }
         Ok(dir)
+    }
+
+    /// Change one setting in `<vault>/.steward/settings.json`, keeping every
+    /// other field (including ones this version does not know) as it was.
+    pub fn set_setting(&self, key: &str, value: serde_json::Value) -> io::Result<()> {
+        let path = self.root.join(".steward").join("settings.json");
+        let mut obj = match fs::read_to_string(&path) {
+            Ok(s) => match serde_json::from_str::<serde_json::Value>(&s) {
+                Ok(serde_json::Value::Object(o)) => o,
+                _ => return Err(io::Error::other("settings.json is not a JSON object; fix or remove it first")),
+            },
+            Err(e) if e.kind() == io::ErrorKind::NotFound => serde_json::Map::new(),
+            Err(e) => return Err(e),
+        };
+        obj.insert(key.to_string(), value);
+        fs::create_dir_all(path.parent().expect("settings file has a parent"))?;
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, serde_json::to_vec_pretty(&obj)?)?;
+        fs::rename(tmp, path)
     }
 
     pub fn settings(&self) -> VaultSettings {
@@ -182,6 +217,21 @@ mod tests {
                 .unwrap();
             assert!(vault.space_dir("sneaky").is_err());
         }
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn settings_round_trip_keeps_unknown_fields() {
+        let tmp = std::env::temp_dir().join(format!("steward-settings-test-{}", std::process::id()));
+        let vault = Vault::at(&tmp);
+        assert_eq!(vault.settings().backend, Backend::Steward);
+        fs::create_dir_all(tmp.join(".steward")).unwrap();
+        fs::write(tmp.join(".steward/settings.json"), r#"{"isolateClaudeConfig": true, "future": 1}"#).unwrap();
+        vault.set_setting("backend", serde_json::json!("claude-cli")).unwrap();
+        let s = vault.settings();
+        assert_eq!(s.backend, Backend::ClaudeCli);
+        assert!(s.isolate_claude_config);
+        assert!(fs::read_to_string(tmp.join(".steward/settings.json")).unwrap().contains("future"));
         fs::remove_dir_all(&tmp).unwrap();
     }
 }

@@ -56,6 +56,15 @@ pub enum AgentEvent {
     Tool { label: String },
     /// The turn failed; `message` is safe to show to the user.
     Error { code: ErrorCode, message: String },
+    /// steward's own loop wants to change a file and waits for the user's
+    /// answer (`agent_approve`). `detail` previews the new contents.
+    Approval {
+        id: String,
+        summary: String,
+        detail: String,
+    },
+    /// The approval `id` was answered or abandoned; the card can close.
+    ApprovalDone { id: String, allowed: bool },
     /// The turn was stopped by the user.
     Cancelled,
     /// Terminal event; `session_id` is what the space will resume next time.
@@ -73,6 +82,17 @@ pub enum ErrorCode {
     Busy,
     InvalidSpace,
     Cli,
+    /// steward's own loop has no API key for the provider yet.
+    NoApiKey,
+    /// The provider rejected the API key.
+    ApiKey,
+    /// The provider failed (rate limit, overload, billing, refused request).
+    Provider,
+    Network,
+    /// The model declined to answer.
+    Declined,
+    /// The space's conversation file could not be read or written.
+    Storage,
 }
 
 /// Options for one turn.
@@ -175,7 +195,7 @@ struct RunHandle {
 }
 
 impl Runs {
-    fn claim(&self, space: &str) -> Option<oneshot::Receiver<()>> {
+    pub(crate) fn claim(&self, space: &str) -> Option<oneshot::Receiver<()>> {
         let mut map = self.inner.lock().unwrap();
         if map.contains_key(space) {
             return None;
@@ -197,7 +217,7 @@ impl Runs {
         }
     }
 
-    fn release(&self, space: &str) {
+    pub(crate) fn release(&self, space: &str) {
         self.inner.lock().unwrap().remove(space);
     }
 

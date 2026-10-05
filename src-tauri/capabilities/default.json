@@ -2,10 +2,18 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Main window: only the app's own commands. No core window/menu/tray/path APIs, no plugins; add a permission only when a feature needs it.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "allow-dev-log",
     "allow-agent-send",
-    "allow-agent-cancel"
+    "allow-agent-cancel",
+    "allow-agent-approve",
+    "allow-thread-load",
+    "allow-settings-get",
+    "allow-settings-set-backend",
+    "allow-api-key-set",
+    "allow-api-key-clear"
   ]
 }

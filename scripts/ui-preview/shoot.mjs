@@ -3,8 +3,11 @@
 //
 //   pnpm build && node scripts/ui-preview/shoot.mjs --out /tmp/shots [--only name,name] [--dist dist]
 //
-// Needs a running Obscura (`obscura serve --port 9333 --allow-private-network`),
-// or set OBSCURA_WS. Captures each scenario in light and dark at two window
+// Default engine: a running Obscura (`obscura serve --port 9333 --allow-private-network`,
+// or set OBSCURA_WS). Obscura is light but approximate (no web fonts, some
+// calc() colours dropped). For a faithful render pass `--engine chromium`: it
+// launches one chrome-headless-shell (STEWARD_CHROME_SHELL, or the Playwright
+// cache copy) for the run and closes it after. Captures each scenario in light and dark at two window
 // sizes, and writes <out>/<scenario>-<theme>-<w>x<h>.png. Prints any page
 // errors; exits non-zero if a scenario failed.
 import { createServer } from "node:http";
@@ -51,7 +54,14 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}/`;
 
-const browser = await puppeteer.connect({ browserWSEndpoint: ws });
+const engine = arg("engine", "obscura");
+const shellPath =
+  process.env.STEWARD_CHROME_SHELL ||
+  `${process.env.HOME}/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell`;
+const browser =
+  engine === "chromium"
+    ? await puppeteer.launch({ executablePath: shellPath, headless: "shell", args: ["--disable-features=MacAppCodeSignClone", "--force-color-profile=srgb"] })
+    : await puppeteer.connect({ browserWSEndpoint: ws });
 let failed = 0;
 for (const s of chosen) {
   for (const theme of themes) {
@@ -91,6 +101,7 @@ for (const s of chosen) {
     }
   }
 }
-await browser.disconnect();
+if (engine === "chromium") await browser.close();
+else await browser.disconnect();
 server.close();
 process.exit(failed ? 1 : 0);

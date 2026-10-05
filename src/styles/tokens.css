@@ -96,6 +96,12 @@
   --st-composer-radius: var(--st-radius-xl);
   --st-dialog-width: 40rem;
   --st-preview-max-height: 15rem;
+  /* The main pane sits inset from the window chrome by this much. */
+  --st-pane-inset: calc(var(--st-space) * 2);
+  /* Fluent caption buttons (Windows/Linux): 46px wide, full title bar height. */
+  --st-window-control-width: 46px;
+  /* The dot beside a space's name. */
+  --st-space-mark-size: 8px;
 
   /* ---- Focus ---- */
   --st-focus-width: 2px;
@@ -141,9 +147,6 @@
   --st-accent-soft: oklch(0.94 calc(var(--st-accent-c) * 0.45) var(--st-accent-h));
   --st-accent-soft-ink: oklch(0.36 var(--st-accent-c) var(--st-accent-h));
 
-  --st-space-tint: oklch(0.93 calc(var(--st-space-c) * 0.5) var(--st-space-h));
-  --st-space-mark: oklch(0.6 var(--st-space-c) var(--st-space-h));
-
   --st-danger: oklch(0.52 var(--st-danger-c) var(--st-danger-h));
   --st-danger-soft: oklch(0.95 0.03 var(--st-danger-h));
   --st-danger-ink: oklch(0.42 var(--st-danger-c) var(--st-danger-h));
@@ -184,9 +187,6 @@
   --st-accent-soft: oklch(0.3 calc(var(--st-accent-c) * 0.5) var(--st-accent-h));
   --st-accent-soft-ink: oklch(0.86 calc(var(--st-accent-c) * 0.8) var(--st-accent-h));
 
-  --st-space-tint: oklch(0.3 calc(var(--st-space-c) * 0.45) var(--st-space-h));
-  --st-space-mark: oklch(0.72 var(--st-space-c) var(--st-space-h));
-
   --st-danger: oklch(0.72 var(--st-danger-c) var(--st-danger-h));
   --st-danger-soft: oklch(0.28 0.05 var(--st-danger-h));
   --st-danger-ink: oklch(0.82 0.09 var(--st-danger-h));
@@ -200,6 +200,22 @@
   --st-overlay: oklch(0.08 0.01 var(--st-ink-h) / 55%);
   --st-scrollbar: oklch(0.38 var(--st-ink-c) var(--st-ink-h));
   --st-shadow-color: oklch(0.05 0.01 var(--st-ink-h) / 35%);
+}
+
+/*
+ * Space colours. A variable built from others is computed where it is
+ * declared, so these are redeclared on every element that carries its own
+ * space hue (data-space-hue), not just on :root.
+ */
+:root,
+[data-space-hue] {
+  --st-space-tint: oklch(0.935 calc(var(--st-space-c) * 0.35) var(--st-space-h));
+  --st-space-mark: oklch(0.6 var(--st-space-c) var(--st-space-h));
+}
+.dark,
+.dark [data-space-hue] {
+  --st-space-tint: oklch(0.3 calc(var(--st-space-c) * 0.45) var(--st-space-h));
+  --st-space-mark: oklch(0.72 var(--st-space-c) var(--st-space-h));
 }
 
 /* ---- shadcn / assistant-ui names, mapped onto steward tokens ---- */

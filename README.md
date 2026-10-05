@@ -2,7 +2,7 @@
 
 An open-source, accessible, desktop-first life OS: a workspace where an AI agent helps you run the parts of your life you choose to give it.
 
-**Status: pre-alpha.** The shell renders and the chat surface works against a local echo stub. No model is wired up yet, nothing reads or writes a vault yet, and nothing here is ready for real data.
+**Status: pre-alpha.** In the desktop app, each space chats through the official `claude` CLI you installed and logged into yourself, with read-only tools confined to that space's folder under `~/Steward/default/spaces/`. In a plain browser the chat falls back to a local echo stub. Nothing here is ready for real data.
 
 ## What it is
 
@@ -25,7 +25,7 @@ Design details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Running it
 
-Prerequisites: Node 20+, pnpm, a Rust toolchain via [rustup](https://rustup.rs), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS (Xcode Command Line Tools on macOS).
+Prerequisites: Node 20+, pnpm, a Rust toolchain via [rustup](https://rustup.rs), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS (Xcode Command Line Tools on macOS). For the agent: Claude Code (the `claude` CLI), run once as `claude` in a terminal to log in.
 
 ```sh
 pnpm install
@@ -33,6 +33,9 @@ pnpm tauri dev          # desktop app with hot reload
 pnpm dev                # frontend only, in a browser at http://localhost:1420
 pnpm build              # typecheck + production frontend build
 pnpm tauri build        # release bundle (.app / .dmg / .msi / .AppImage)
+
+cd src-tauri && cargo test                                       # unit tests, no network
+cd src-tauri && cargo test --test claude_cli -- --ignored --test-threads=1   # real CLI, uses your login (4 short prompts)
 ```
 
 ## License

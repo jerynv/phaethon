@@ -4,6 +4,8 @@
   "description": "Main window: only the app's own commands. No core window/menu/tray/path APIs, no plugins; add a permission only when a feature needs it.",
   "windows": ["main"],
   "permissions": [
-    "allow-dev-log"
+    "allow-dev-log",
+    "allow-agent-send",
+    "allow-agent-cancel"
   ]
 }

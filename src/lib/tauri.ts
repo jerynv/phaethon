@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 /** True when running inside the Tauri webview (IPC available), false in a plain browser. */
 export function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -11,7 +13,6 @@ export function inTauri(): boolean {
 export async function devLog(message: string): Promise<void> {
   if (!inTauri()) return;
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("dev_log", { message });
   } catch {
     // Logging must never break the app.

@@ -2,7 +2,7 @@ import type { ChatModelAdapter } from "@assistant-ui/react";
 
 /**
  * Placeholder model adapter: replies with the text of the latest user message.
- * No network, no model. Swapped for the CLI / API-key backends later.
+ * No network, no model. Used when the UI runs in a plain browser (no Tauri IPC).
  */
 export const echoAdapter: ChatModelAdapter = {
   async run({ messages }) {

@@ -1,14 +1,22 @@
 import { AssistantRuntimeProvider, useLocalRuntime } from "@assistant-ui/react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SpaceSidebar } from "@/components/space-sidebar";
 import { Thread } from "@/components/thread";
 import { STUB_SPACES, type Space } from "@/lib/spaces";
+import { inTauri } from "@/lib/tauri";
+import { cancelSpaceRun, createClaudeAdapter } from "@/runtime/claude-adapter";
 import { echoAdapter } from "@/runtime/echo-adapter";
 
 /** One runtime per space: remounted on switch so threads never leak across spaces. */
 function SpaceChat({ space }: { space: Space }) {
-  const runtime = useLocalRuntime(echoAdapter);
+  // Inside the desktop app: the `claude` CLI via the Rust core. In a plain browser
+  // (`pnpm dev`) there is no IPC, so fall back to the local echo stub.
+  const adapter = useMemo(() => (inTauri() ? createClaudeAdapter(space.id) : echoAdapter), [space.id]);
+  const runtime = useLocalRuntime(adapter);
+  // Leaving a space drops its in-memory thread, so stop any reply still running there
+  // rather than letting it finish where nobody can see it.
+  useEffect(() => () => cancelSpaceRun(space.id), [space.id]);
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <Thread spaceName={space.name} />

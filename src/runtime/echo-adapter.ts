@@ -12,9 +12,11 @@ export const echoAdapter: ChatModelAdapter = {
         .map((part) => (part.type === "text" ? part.text : ""))
         .join("")
         .trim() ?? "";
+    const files = lastUser?.role === "user" ? lastUser.attachments.length : 0;
+    const note = files ? ` (with ${files} file${files === 1 ? "" : "s"})` : "";
 
     return {
-      content: [{ type: "text", text: text ? `echo: ${text}` : "echo: (empty message)" }],
+      content: [{ type: "text", text: `echo: ${text || "(empty message)"}${note}` }],
     };
   },
 };

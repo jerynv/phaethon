@@ -1,4 +1,4 @@
-import type { ChatModelAdapter, ChatModelRunResult } from "@assistant-ui/react";
+import type { ChatModelAdapter, ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import { inTauri } from "@/lib/tauri";
@@ -19,9 +19,28 @@ export type AgentMessageCustom = {
   toolStatus?: string;
   /** A write waiting for the user's answer (steward's own agent only). */
   approval?: PendingApproval;
+  /** The backend's error code when the reply failed (`ErrorCode` in agent.rs, or "ipc"). */
+  errorCode?: string;
 };
 
 export type PendingApproval = { id: string; summary: string; detail: string };
+
+/** One attachment as `agent_send` takes it (`Upload` in src-tauri/src/attachments.rs). */
+export type AttachmentUpload = { name: string; mediaType: string; data: string };
+
+/** The files on a user message, ready to send: base64 bytes with no `data:` prefix. */
+export function uploadsOf(message: ThreadMessage | undefined): AttachmentUpload[] {
+  if (!message || message.role !== "user") return [];
+  const uploads: AttachmentUpload[] = [];
+  for (const a of message.attachments ?? []) {
+    for (const part of a.content) {
+      if (part.type === "file" && part.data && !part.sourceType) {
+        uploads.push({ name: part.filename ?? a.name, mediaType: part.mimeType, data: part.data });
+      }
+    }
+  }
+  return uploads;
+}
 
 /** Answer a pending write in `spaceId`. Resolves false if it is no longer waiting. */
 export async function answerApproval(spaceId: string, id: string, allow: boolean): Promise<boolean> {
@@ -53,8 +72,10 @@ function eventQueue() {
 
 /**
  * Streams replies from the agent the Rust core runs for `spaceId` (steward's own
- * loop, or the `claude` CLI). Only the newest user message is sent: the backend
- * keeps the conversation itself, so earlier turns are already on its side.
+ * loop, or the `claude` CLI). Only the newest user message is sent, with its
+ * attachments: the backend keeps the conversation itself, so earlier turns are
+ * already on its side. The Rust core checks the files again and saves them into
+ * the space; a refusal comes back as an `attachment` error.
  */
 export function createAgentAdapter(spaceId: string): ChatModelAdapter {
   return {
@@ -65,6 +86,7 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
           .map((part) => (part.type === "text" ? part.text : ""))
           .join("")
           .trim() ?? "";
+      const attachments = uploadsOf(lastUser);
 
       const queue = eventQueue();
       const channel = new Channel<AgentEvent>();
@@ -74,7 +96,7 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
       abortSignal.addEventListener("abort", onAbort);
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
-      invoke("agent_send", { space: spaceId, prompt, attachments: [], onEvent: channel }).catch((err: unknown) => {
+      invoke("agent_send", { space: spaceId, prompt, attachments, onEvent: channel }).catch((err: unknown) => {
         queue.push({ kind: "error", code: "ipc", message: `steward could not reach its backend: ${String(err)}` });
         queue.push({ kind: "end", sessionId: null });
       });
@@ -82,9 +104,10 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
       let text = "";
       let toolStatus: string | undefined;
       let approval: PendingApproval | undefined;
+      let errorCode: string | undefined;
       const update = (): ChatModelRunResult => ({
         content: text ? [{ type: "text", text }] : [],
-        metadata: { custom: { toolStatus, approval } satisfies AgentMessageCustom },
+        metadata: { custom: { toolStatus, approval, errorCode } satisfies AgentMessageCustom },
       });
 
       try {
@@ -110,6 +133,7 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
             case "error":
               toolStatus = undefined;
               approval = undefined;
+              errorCode = e.code;
               yield {
                 ...update(),
                 status: { type: "incomplete", reason: "error", error: e.message },

@@ -1,0 +1,321 @@
+import {
+  ActionBarPrimitive,
+  AuiIf,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useAuiState,
+  type TextMessagePartComponent,
+} from "@assistant-ui/react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+
+// Built from the assistant-ui registry thread (MIT), cut down to what steward's
+// backend can honour and restyled with steward tokens. Hidden on purpose: edit,
+// regenerate, branch picker, feedback, dictation, suggestions and export. The
+// backend thread is append-only, so edit and regenerate would not be true.
+
+import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/icons";
+import type { AgentMessageCustom } from "@/runtime/agent-adapter";
+
+import { ApprovalCard, SpaceIdContext, focusComposer } from "./approval-card";
+import { MessageAttachments } from "./attachments";
+import { Composer, useAddFiles } from "./composer";
+import { MessageError } from "./message-error";
+
+const PlainText: TextMessagePartComponent = ({ text }) => <>{text}</>;
+const Nothing = () => null;
+
+function UserMessage() {
+  const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
+  return (
+    <MessagePrimitive.Root data-role="user" className="flex flex-col items-end gap-2">
+      <span className="sr-only">You said: </span>
+      <MessageAttachments />
+      {hasText && (
+        <div className="max-w-(--st-message-max-width) rounded-xl rounded-ee-sm bg-surface px-4 py-2.5 text-md whitespace-pre-wrap text-ink wrap-break-word">
+          <MessagePrimitive.Parts components={{ Text: PlainText, File: Nothing, Image: Nothing }} />
+        </div>
+      )}
+    </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * What the agent is doing right now, as a quiet line under the reply:
+ * "Reading file notes.md" while a tool runs, "Thinking" before the first word.
+ * Spoken through ReplyAnnouncer (tool activity only), not from here.
+ */
+function ActivityLine() {
+  // Selectors must return stable values (a fresh object each time would re-render forever).
+  const toolStatus = useAuiState((s) => {
+    if (s.message.status?.type !== "running") return undefined;
+    const custom = s.message.metadata.custom as AgentMessageCustom | undefined;
+    if (custom?.approval) return undefined; // the approval card says it
+    return custom?.toolStatus;
+  });
+  const thinking = useAuiState(
+    (s) =>
+      s.message.status?.type === "running" &&
+      !(s.message.metadata.custom as AgentMessageCustom | undefined)?.approval &&
+      !s.message.content.some((p) => p.type === "text" && p.text !== ""),
+  );
+  const line = toolStatus ? { text: toolStatus, tool: true } : thinking ? { text: "Thinking", tool: false } : null;
+  if (!line) return null;
+  return (
+    <p className="flex items-center gap-2 text-sm text-ink-secondary" data-activity>
+      <span aria-hidden="true" className="relative flex size-2 shrink-0">
+        <span className="absolute inset-0 animate-ping rounded-full bg-accent-fill opacity-40" />
+        <span className="relative size-2 rounded-full bg-accent-fill" />
+      </span>
+      {line.tool && <span className="sr-only">Status: </span>}
+      <span className="truncate">
+        {line.text}
+        {line.tool ? "" : "…"}
+      </span>
+    </p>
+  );
+}
+
+function CopyReply() {
+  const isLast = useAuiState((s) => s.message.isLast);
+  const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
+  const copied = useAuiState((s) => s.message.isCopied);
+  if (!hasText) return null;
+  return (
+    <ActionBarPrimitive.Root
+      hideWhenRunning
+      // Older replies keep their Copy button in the tab order; it only fades until hovered or focused.
+      className={
+        isLast
+          ? "flex gap-1"
+          : "flex gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100"
+      }
+    >
+      <ActionBarPrimitive.Copy asChild>
+        <Button type="button" variant="ghost" size="xs" className="-ms-2 text-ink-secondary hover:text-ink" aria-label="Copy reply">
+          <Icon name={copied ? "check" : "copy"} className="size-(--st-icon-size-sm)" />
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </ActionBarPrimitive.Copy>
+    </ActionBarPrimitive.Root>
+  );
+}
+
+function AssistantMessage() {
+  return (
+    <MessagePrimitive.Root data-role="assistant" className="group/msg flex flex-col items-start gap-3">
+      <span className="sr-only">steward said: </span>
+      <div className="w-full min-w-0 empty:hidden">
+        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      </div>
+      <ActivityLine />
+      <ApprovalCard />
+      <MessageError />
+      <AuiIf condition={(s) => s.message.status?.type === "incomplete" && s.message.status.reason === "cancelled"}>
+        <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
+          <Icon name="stop" className="size-(--st-icon-size-sm)" />
+          Reply stopped.
+        </p>
+      </AuiIf>
+      <CopyReply />
+    </MessagePrimitive.Root>
+  );
+}
+
+const TOOL_ANNOUNCE_DELAY_MS = 300;
+
+function messageText(m: { content: readonly { type: string; text?: string }[] }) {
+  return m.content
+    .map((p) => (p.type === "text" ? (p.text ?? "") : ""))
+    .join("")
+    .trim();
+}
+
+/**
+ * The thread's single polite live region. Streaming text is NOT spoken token by
+ * token (the log has aria-live="off"); instead this announces tool activity and
+ * the whole reply once it completes. Errors are announced by their role="alert".
+ */
+function ReplyAnnouncer() {
+  const last = useAuiState((s) => s.thread.messages[s.thread.messages.length - 1]);
+  const [text, setText] = useState("");
+  const done = useRef<string | null>(null);
+  const lastTool = useRef<string | undefined>(undefined);
+  // Only a reply seen streaming here is announced; a saved one loaded with the
+  // thread (after a restart or space switch) is not news.
+  const streamed = useRef<string | null>(null);
+  // Tool activity is spoken after a short pause: the backend sends "Waiting for
+  // you to allow: ..." just before the approval itself, and that must not be
+  // spoken on top of the card (which takes focus and speaks for itself).
+  const pendingTool = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const holdTool = () => {
+    clearTimeout(pendingTool.current);
+    pendingTool.current = undefined;
+  };
+  useEffect(() => holdTool, []);
+
+  useEffect(() => {
+    if (!last || last.role !== "assistant" || done.current === last.id) return;
+    const status = last.status;
+    if (status?.type !== "running" && streamed.current !== last.id) return;
+    if (status?.type === "running") {
+      streamed.current = last.id;
+      const custom = last.metadata.custom as AgentMessageCustom | undefined;
+      const approval = custom?.approval;
+      // An approval card takes focus and is read as an alertdialog; announcing
+      // it here as well would say it twice.
+      if (approval) holdTool();
+      else if (custom?.toolStatus && custom.toolStatus !== lastTool.current) {
+        const say = custom.toolStatus;
+        holdTool();
+        pendingTool.current = setTimeout(() => setText(say), TOOL_ANNOUNCE_DELAY_MS);
+      }
+      lastTool.current = custom?.toolStatus;
+      return;
+    }
+    holdTool();
+    if (status?.type === "complete") {
+      done.current = last.id;
+      const reply = messageText(last);
+      setText(reply ? `steward replied: ${reply}` : "steward finished without a reply.");
+    } else if (status?.type === "incomplete" && status.reason === "cancelled") {
+      done.current = last.id;
+      setText("Reply stopped.");
+    } else if (status?.type === "incomplete") {
+      done.current = last.id; // the alert inside the message speaks for itself
+    }
+    lastTool.current = undefined;
+  }, [last]);
+
+  return (
+    <div role="status" aria-live="polite" aria-atomic="true" className="sr-only" data-testid="reply-status">
+      {text}
+    </div>
+  );
+}
+
+/** Shown in a space with no conversation yet: where you are and what steward can see. */
+function EmptyState({ spaceName }: { spaceName: string }) {
+  return (
+    <div className="m-auto flex max-w-(--st-measure) flex-col items-center gap-2 px-4 py-12 text-center">
+      <span
+        aria-hidden="true"
+        className="mb-2 flex size-10 items-center justify-center rounded-full bg-space-tint text-ink-secondary"
+      >
+        <Icon name="space" className="size-(--st-icon-size-lg)" />
+      </span>
+      <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
+      <p className="max-w-md text-md text-ink-secondary">
+        steward can read and search the files in {spaceName}, and nothing outside it. It asks before it changes
+        anything.
+      </p>
+    </div>
+  );
+}
+
+const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+
+export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const stopFocused = useRef(false);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+  const { addFiles, problems, clearProblems } = useAddFiles();
+  const [dragging, setDragging] = useState(false);
+
+  // When a reply ends while the Stop button has focus, Stop unmounts: put focus
+  // back in the composer instead of dropping it to the document body.
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const ended = wasRunning.current && !isRunning;
+    wasRunning.current = isRunning;
+    if (!ended) return;
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (stopFocused.current || lost) focusComposer();
+    stopFocused.current = false;
+  }, [isRunning]);
+
+  return (
+    <SpaceIdContext.Provider value={spaceId}>
+      <ThreadPrimitive.Root
+        className="relative flex min-h-0 flex-1 flex-col"
+        // Files can be dropped anywhere on the conversation; the + menu is the
+        // single-pointer alternative (WCAG 2.5.7).
+        onDragEnter={(e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }}
+        onDragLeave={(e) => {
+          const next = e.relatedTarget as Node | null;
+          if (!next || !e.currentTarget.contains(next)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          setDragging(false);
+          void addFiles(Array.from(e.dataTransfer.files));
+        }}
+      >
+        <ThreadPrimitive.Viewport
+          role="log"
+          aria-label={`Conversation in ${spaceName}`}
+          // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
+          aria-live="off"
+          tabIndex={0}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        >
+          <div className="mx-auto flex w-full max-w-(--st-thread-width) flex-1 flex-col px-6 pt-8 pb-6">
+            <AuiIf condition={(s) => s.thread.isEmpty}>
+              <EmptyState spaceName={spaceName} />
+            </AuiIf>
+            <div className="flex flex-col gap-8 empty:hidden">
+              <ThreadPrimitive.Messages>
+                {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
+              </ThreadPrimitive.Messages>
+            </div>
+          </div>
+          <div className="pointer-events-none sticky bottom-3 flex h-0 items-end justify-center">
+            <ThreadPrimitive.ScrollToBottom asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                className="pointer-events-auto rounded-full bg-raised shadow disabled:invisible"
+                aria-label="Scroll to the latest message"
+                title="Scroll to the latest message"
+              >
+                <Icon name="arrow-down" />
+              </Button>
+            </ThreadPrimitive.ScrollToBottom>
+          </div>
+        </ThreadPrimitive.Viewport>
+        <ReplyAnnouncer />
+        <Composer
+          spaceName={spaceName}
+          inputRef={inputRef}
+          stopFocused={stopFocused}
+          addFiles={addFiles}
+          problems={problems}
+          clearProblems={clearProblems}
+          dragging={dragging}
+        />
+        {dragging && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus bg-bg/90 text-ink"
+          >
+            <Icon name="attach" className="size-(--st-icon-size-lg) text-accent-ink" />
+            <p className="text-lg font-semibold">Drop files to attach them</p>
+            <p className="text-base text-ink-secondary">Images, PDFs and text files, saved in {spaceName}</p>
+          </div>
+        )}
+      </ThreadPrimitive.Root>
+    </SpaceIdContext.Provider>
+  );
+}

@@ -96,6 +96,8 @@
   --st-composer-radius: var(--st-radius-xl);
   --st-dialog-width: 40rem;
   --st-preview-max-height: 15rem;
+  --st-composer-max-height: 12rem;
+  --st-chip-name-width: 12rem;
   /* The main pane sits inset from the window chrome by this much. */
   --st-pane-inset: calc(var(--st-space) * 2);
   /* Fluent caption buttons (Windows/Linux): 46px wide, full title bar height. */
@@ -159,6 +161,7 @@
   --st-focus: oklch(0.5 0.14 var(--st-accent-h));
   --st-selection: oklch(0.88 0.06 var(--st-accent-h));
   --st-overlay: oklch(0.2 0.01 var(--st-ink-h) / 35%);
+  --st-scrim: oklch(0.985 var(--st-neutral-c) var(--st-neutral-h) / 92%);
   --st-scrollbar: oklch(0.8 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
 }
 
@@ -198,6 +201,7 @@
   --st-focus: oklch(0.8 0.12 var(--st-accent-h));
   --st-selection: oklch(0.4 0.07 var(--st-accent-h));
   --st-overlay: oklch(0.08 0.01 var(--st-ink-h) / 55%);
+  --st-scrim: oklch(0.2 0.01 var(--st-ink-h) / 92%);
   --st-scrollbar: oklch(0.38 var(--st-ink-c) var(--st-ink-h));
   --st-shadow-color: oklch(0.05 0.01 var(--st-ink-h) / 35%);
 }

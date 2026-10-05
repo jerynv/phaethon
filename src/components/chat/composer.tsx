@@ -181,7 +181,7 @@ export function Composer({
             void addFiles(files);
           }}
           rows={1}
-          className="max-h-(--st-preview-max-height) min-h-(--st-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
+          className="max-h-(--st-composer-max-height) min-h-(--st-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
         />
         <span id={hintId} className="sr-only">
           Press Enter to send, Shift+Enter for a new line, Escape to stop a reply.

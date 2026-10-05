@@ -308,7 +308,7 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
         {dragging && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus bg-bg/90 text-ink"
+            className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus bg-(--st-scrim) text-ink"
           >
             <Icon name="attach" className="size-(--st-icon-size-lg) text-accent-ink" />
             <p className="text-lg font-semibold">Drop files to attach them</p>

@@ -42,7 +42,15 @@
         case "api_key_clear": M.settings.hasAnthropicKey = false; return;
         case "appearance_set": M.settings.appearance = args.appearance; return;
         case "thread_load": return M.threads[args.space] ?? [];
-        case "agent_cancel": return false;
+        case "agent_cancel": {
+          // A held-open reply ends as the real backend does: Cancelled, then End.
+          const live = window.__liveTurn;
+          if (!live) return false;
+          window.__liveTurn = null;
+          live.send({ kind: "cancelled" });
+          live.send({ kind: "end", sessionId: null });
+          return true;
+        }
         case "agent_approve": {
           const ok = pending && pending.id === args.id;
           if (ok) pending.resolve(args.allow);
@@ -52,6 +60,7 @@
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
           let index = 0;
           const send = (message) => callbacks[id]?.({ index: index++, message });
+          window.__liveTurn = { send };
           (async () => {
             if (M.sendError) {
               send({ kind: "error", code: M.sendError.code, message: M.sendError.message });
@@ -72,7 +81,10 @@
               const { delay, ...message } = ev;
               send(message);
             }
-            if (!M.holdOpen) send({ kind: "end", sessionId: null });
+            if (!M.holdOpen && window.__liveTurn) {
+              window.__liveTurn = null;
+              send({ kind: "end", sessionId: null });
+            }
           })();
           return;
         }

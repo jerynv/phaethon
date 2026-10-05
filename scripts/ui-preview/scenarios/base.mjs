@@ -21,7 +21,6 @@ export default [
     name: "conversation",
     mock: { threads: { school: conversation } },
     async run(page, h) {
-      await h.waitText("Wednesday | Review", { soft: true });
       await h.waitText("Here is a plan");
     },
   },

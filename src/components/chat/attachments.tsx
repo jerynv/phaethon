@@ -58,7 +58,7 @@ function AttachmentChip({ removable }: { removable: boolean }) {
       >
         <Thumb icon={iconFor(type, mediaType)} />
         <span className="flex min-w-0 flex-col">
-          <span className="max-w-48 truncate text-sm font-medium text-ink" title={name}>
+          <span className="max-w-(--st-chip-name-width) truncate text-sm font-medium text-ink" title={name}>
             {name}
           </span>
           <span className={cn("text-xs", failed ? "text-danger-ink" : "text-ink-secondary")}>

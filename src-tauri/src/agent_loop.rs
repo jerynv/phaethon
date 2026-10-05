@@ -16,7 +16,7 @@ use tokio::sync::oneshot;
 
 use crate::agent::{AgentEvent, ErrorCode, Runs};
 use crate::provider::{Delta, ErrorKind, ModelRequest, Provider};
-use crate::{thread, tools};
+use crate::{attachments, thread, tools};
 
 /// Model calls allowed in one turn before steward stops the agent.
 const MAX_STEPS: usize = 30;
@@ -71,6 +71,8 @@ pub struct LoopRequest<'a> {
     pub space_dir: &'a Path,
     pub vault_root: &'a Path,
     pub prompt: &'a str,
+    /// Reference blocks for files saved with this message (see attachments.rs).
+    pub attachments: Vec<Value>,
 }
 
 /// The system prompt: steward's own instructions plus the vault's MANUAL.md.
@@ -124,7 +126,7 @@ async fn drive<P: Provider>(
             return fail(emit, ErrorCode::Storage, format!("This space's conversation file could not be read, so nothing was sent: {e}"));
         }
     };
-    msgs.push(thread::user_text(req.prompt));
+    msgs.push(thread::user_message(req.prompt, &req.attachments));
     if let Err(e) = thread::save(req.space_dir, &msgs) {
         return fail(emit, ErrorCode::Storage, format!("The conversation could not be saved, so nothing was sent: {e}"));
     }
@@ -133,6 +135,7 @@ async fn drive<P: Provider>(
     let mut emitted_text = false;
 
     for _ in 0..MAX_STEPS {
+        let wire = attachments::expand(req.space_dir, &msgs);
         let result = {
             let mut on_delta = |d: Delta<'_>| match d {
                 Delta::TextStart if emitted_text => emit(AgentEvent::Text { delta: "\n\n".into() }),
@@ -143,7 +146,7 @@ async fn drive<P: Provider>(
                 }
             };
             let call = provider.turn(
-                ModelRequest { system: &system, messages: &msgs, tools: &tool_defs },
+                ModelRequest { system: &system, messages: &wire, tools: &tool_defs },
                 &mut on_delta,
             );
             tokio::select! {
@@ -338,7 +341,7 @@ mod tests {
             &runs,
             approvals,
             provider,
-            LoopRequest { space_id: "school", space_dir: &space, vault_root: dir, prompt },
+            LoopRequest { space_id: "school", space_dir: &space, vault_root: dir, prompt, attachments: vec![] },
             |e| {
                 on_event(&e);
                 events.push(e)

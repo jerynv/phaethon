@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_loop;
 pub mod anthropic;
+pub mod attachments;
 pub mod provider;
 pub mod secrets;
 pub mod thread;
@@ -42,6 +43,7 @@ async fn agent_send(
     state: State<'_, AppState>,
     space: String,
     prompt: String,
+    attachments: Vec<attachments::Upload>,
     on_event: Channel<AgentEvent>,
 ) -> Result<(), ()> {
     let emit = |ev: AgentEvent| {
@@ -56,6 +58,14 @@ async fn agent_send(
         Ok(dir) => dir,
         Err(message) => {
             fail(ErrorCode::InvalidSpace, message);
+            return Ok(());
+        }
+    };
+    // Saved before the agent runs, so they are in the space whatever the backend.
+    let refs = match attachments::save(&space_dir, &attachments) {
+        Ok(r) => r,
+        Err(message) => {
+            fail(ErrorCode::Attachment, message);
             return Ok(());
         }
     };
@@ -79,6 +89,7 @@ async fn agent_send(
                 space_dir: &space_dir,
                 vault_root: state.vault.root(),
                 prompt: &prompt,
+                attachments: refs,
             };
             agent_loop::run_turn(&state.runs, &state.approvals, &provider, req, emit).await;
         }
@@ -92,6 +103,7 @@ async fn agent_send(
                         .map(|r| r.join(state.vault.name()))
                 })
                 .flatten();
+            let prompt = format!("{prompt}{}", attachments::cli_note(&refs));
             let req = TurnRequest {
                 space_dir: &space_dir,
                 prompt: &prompt,

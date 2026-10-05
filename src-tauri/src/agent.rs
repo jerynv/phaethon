@@ -93,6 +93,8 @@ pub enum ErrorCode {
     Declined,
     /// The space's conversation file could not be read or written.
     Storage,
+    /// An attached file was refused (type, size) or could not be saved.
+    Attachment,
 }
 
 /// Options for one turn.

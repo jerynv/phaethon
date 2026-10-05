@@ -50,7 +50,17 @@ pub fn save(space: &Path, msgs: &[Value]) -> io::Result<()> {
 }
 
 pub fn user_text(text: &str) -> Value {
-    json!({"role": "user", "content": [{"type": "text", "text": text}]})
+    user_message(text, &[])
+}
+
+/// A user message: attachments first (the model reads them before the
+/// question), then the text.
+pub fn user_message(text: &str, attachments: &[Value]) -> Value {
+    let mut content: Vec<Value> = attachments.to_vec();
+    if !text.trim().is_empty() || content.is_empty() {
+        content.push(json!({"type": "text", "text": text}));
+    }
+    json!({"role": "user", "content": content})
 }
 
 /// One message as the UI shows it after a reload.
@@ -58,6 +68,16 @@ pub fn user_text(text: &str) -> Value {
 pub struct UiMessage {
     pub role: &'static str,
     pub text: String,
+    /// Files the user attached, as saved in the space.
+    pub attachments: Vec<UiAttachment>,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UiAttachment {
+    pub name: String,
+    pub path: String,
+    pub media_type: String,
 }
 
 /// The thread as the UI shows it: user text, and each assistant reply as one
@@ -74,10 +94,22 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
             .filter_map(|b| b["text"].as_str())
             .filter(|t| !t.trim().is_empty())
             .collect();
+        let files: Vec<UiAttachment> = m["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|b| b["type"] == "steward_attachment")
+            .map(|b| UiAttachment {
+                name: b["name"].as_str().unwrap_or("").into(),
+                path: b["path"].as_str().unwrap_or("").into(),
+                media_type: b["media_type"].as_str().unwrap_or("").into(),
+            })
+            .collect();
         match m["role"].as_str() {
-            Some("user") if !texts.is_empty() => out.push(UiMessage {
+            Some("user") if !texts.is_empty() || !files.is_empty() => out.push(UiMessage {
                 role: "user",
                 text: texts.join("\n\n"),
+                attachments: files,
             }),
             Some("assistant") if !texts.is_empty() => {
                 let joined = texts.join("\n\n");
@@ -89,6 +121,7 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
                     _ => out.push(UiMessage {
                         role: "assistant",
                         text: joined,
+                        attachments: vec![],
                     }),
                 }
             }
@@ -123,8 +156,8 @@ mod tests {
         assert_eq!(
             to_ui(&msgs),
             vec![
-                UiMessage { role: "user", text: "what's in notes?".into() },
-                UiMessage { role: "assistant", text: "Let me look.\n\nThere is a.md.".into() },
+                UiMessage { role: "user", text: "what's in notes?".into(), attachments: vec![] },
+                UiMessage { role: "assistant", text: "Let me look.\n\nThere is a.md.".into(), attachments: vec![] },
             ]
         );
         fs::write(file(&dir), "{\"not\": \"a list\"}").unwrap();

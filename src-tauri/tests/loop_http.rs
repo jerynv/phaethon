@@ -108,7 +108,7 @@ async fn write_with_approval_over_http() {
         &Runs::default(),
         &approvals,
         &provider,
-        LoopRequest { space_id: "school", space_dir: &space, vault_root: &vault, prompt: "plan my week" },
+        LoopRequest { space_id: "school", space_dir: &space, vault_root: &vault, prompt: "plan my week", attachments: vec![] },
         |e| {
             if let AgentEvent::Approval { id, .. } = &e {
                 // The file must not exist until the user answers.

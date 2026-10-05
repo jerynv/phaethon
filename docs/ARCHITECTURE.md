@@ -49,7 +49,8 @@ The Rust core (`src-tauri/src/agent.rs`) runs one child process per turn:
 claude -p --output-format stream-json --verbose --include-partial-messages \
   --tools Read,Grep,Glob --allowedTools Read,Grep,Glob \
   --permission-mode dontAsk --permission-prompts none \
-  --restricted --strict-mcp-config --no-chrome [--resume <session-id>]
+  --restricted --strict-mcp-config --no-chrome \
+  --safe-mode --disable-slash-commands [--resume <session-id>]
 ```
 
 - **Working directory** is the space folder, `~/Steward/<vault>/spaces/<space>/`. The default vault `default` with spaces `school` and `work` is created on first run.
@@ -57,12 +58,11 @@ claude -p --output-format stream-json --verbose --include-partial-messages \
 - **One conversation per space.** The session id from the CLI's output is saved to `<space>/.steward/session` and passed back with `--resume`. The file is user-editable and may sync, so anything that is not a plain UUID is ignored rather than passed to the CLI. A session the CLI no longer knows is cleared, and the next message starts fresh.
 - **Read-only tools, no prompts.** `--tools` removes every tool except `Read`, `Grep` and `Glob`; `--allowedTools` lets those run; `dontAsk` plus `--permission-prompts none` deny anything else instead of waiting for an answer nobody can give (there is no permission UI yet). Write and command tools come with an in-app confirmation flow, not before. No `bypassPermissions`, ever.
 - **`--restricted`** confines file tools to the working directory and ignores the user's own settings files, including their hooks; `--strict-mcp-config` with no config loads no MCP servers. The user's CLI setup should not leak into steward's agent.
+- **`--safe-mode`** turns off CLAUDE.md auto-discovery, plugins, hooks and custom agents while keeping the user's login; **`--disable-slash-commands`** removes every skill, built-in ones included. (`--bare` would refuse OAuth.) Checked with CLI 2.1.296: without `--safe-mode` the user's global `CLAUDE.md` reached the agent; `global_claude_md_does_not_leak` in `tests/claude_cli.rs` guards it.
 - **Binary lookup:** `PATH`, then `~/.local/bin` (the installer's default, and not on `PATH` for an app launched from Finder). If missing, the UI says "Install Claude Code, then run `claude` once in a terminal to log in."
 - **No zombies, no orphans.** The child leads its own process group. Cancel sends SIGTERM to the group, then SIGKILL after 1.5 s, and always reaps the child. Closing the window or quitting kills every running group; so does SIGTERM, SIGINT or SIGHUP to steward.
 - Variables a parent Claude Code session sets (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, ...) are removed from the child's environment so the CLI does not think it is nested. Everything else, including a user-set `CLAUDE_CONFIG_DIR`, is inherited.
 - The webview gets events over a Tauri channel (`text`, `tool`, `error`, `cancelled`, `end`) through two commands, `agent_send` and `agent_cancel`, both gated by the capability ACL.
-
-Open questions: the CLI still auto-discovers `CLAUDE.md` files (including the user's global one), and user skills may still be invocable by slash command in a prompt. Decide whether steward should pass `--safe-mode` or `--setting-sources` once the vault's `MANUAL.md` is wired in.
 
 ### CLAUDE_CONFIG_DIR finding
 

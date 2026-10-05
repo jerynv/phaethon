@@ -147,6 +147,11 @@ pub fn cli_args(resume: Option<&str>) -> Vec<String> {
         // No MCP servers from the user's own configuration.
         "--strict-mcp-config",
         "--no-chrome",
+        // No CLAUDE.md auto-discovery (the user's global one leaked into every
+        // space without this), plugins, hooks or custom agents. Login still works.
+        "--safe-mode",
+        // No skills or slash commands, built-in ones included.
+        "--disable-slash-commands",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -674,6 +679,12 @@ mod tests {
                 .any(|a| a.contains("dangerously") || a == "bypassPermissions")
         );
         assert!(args.windows(2).any(|w| w[0] == "--resume"));
+        // The user's own CLI setup must not load inside a space.
+        for flag in ["--restricted", "--strict-mcp-config", "--safe-mode", "--disable-slash-commands"] {
+            assert!(args.iter().any(|a| a == flag), "missing {flag}");
+        }
+        // --bare would refuse OAuth and break the user's own CLI login.
+        assert!(!args.iter().any(|a| a == "--bare"));
         assert!(
             args.windows(2)
                 .any(|w| w[0] == "--permission-mode" && w[1] == "dontAsk")

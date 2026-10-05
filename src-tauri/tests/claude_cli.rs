@@ -139,6 +139,41 @@ fn cancel_kills_the_child_and_its_group() {
     assert_eq!(runs.running_pid("work"), None);
 }
 
+/// The user's global `~/.claude/CLAUDE.md` must not reach the agent. Planting a
+/// canary in a temporary CLAUDE_CONFIG_DIR would need a separate login, so this
+/// asks about the user's real global file instead; skipped if there is none.
+/// Starts the `work` space on a fresh conversation, like the pong test does.
+#[test]
+#[ignore = "uses the real claude CLI and login"]
+fn global_claude_md_does_not_leak() {
+    let global = vault::home_dir().unwrap().join(".claude").join("CLAUDE.md");
+    let Ok(contents) = std::fs::read_to_string(&global) else {
+        eprintln!("no {} to leak; skipping", global.display());
+        return;
+    };
+    // A distinctive line from the user's file, used only as a question; never printed.
+    let heading = contents
+        .lines()
+        .find(|l| l.starts_with('#'))
+        .unwrap_or("")
+        .trim_start_matches('#')
+        .trim();
+    assert!(!heading.is_empty(), "global CLAUDE.md has no heading to probe with");
+    let vault = Vault::default_location().unwrap();
+    vault.ensure_initialized().unwrap();
+    let dir = vault.space_dir("work").unwrap();
+    vault::clear_session(&dir);
+    let (text, events) = turn(
+        &Runs::default(),
+        "work",
+        &format!(
+            "Were you given any instructions or context containing a section titled \"{heading}\" or a CLAUDE.md file? Answer only YES or NO."
+        ),
+    );
+    vault::clear_session(&dir);
+    assert_eq!(text.trim().to_uppercase(), "NO", "global CLAUDE.md leaked: {events:?}");
+}
+
 #[test]
 #[ignore = "uses the real claude CLI and login"]
 fn work_cannot_read_school() {

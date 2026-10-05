@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: only the app's own commands. No core window/menu/tray/path APIs, no plugins; add a permission only when a feature needs it.",
+  "description": "Main window: the app's own commands, plus only the window calls the custom title bar needs (drag, double-click to maximize, and the minimize / maximize / close buttons drawn on Windows and Linux). No menu/tray/path APIs, no plugins; add a permission only when a feature needs it.",
   "windows": [
     "main"
   ],
@@ -14,6 +14,12 @@
     "allow-settings-get",
     "allow-settings-set-backend",
     "allow-api-key-set",
-    "allow-api-key-clear"
+    "allow-api-key-clear",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close"
   ]
 }

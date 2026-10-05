@@ -1,0 +1,35 @@
+/*
+ * Shell-local tokens. Candidates for promotion into src/styles/tokens.css;
+ * until then they live here so the shell never hard-codes a value.
+ */
+:root {
+  /* Fluent caption buttons: 46 px wide, the full title bar height. */
+  --st-window-control-width: 46px;
+  /* The space mark: a small dot beside a space's name. */
+  --st-space-mark-size: 8px;
+  /* The main pane sits inset from the window chrome by this much. */
+  --st-pane-inset: calc(var(--st-space) * 2);
+}
+
+/*
+ * A custom property that refers to another is resolved where it is declared,
+ * so setting --st-space-h on an element does not recolour --st-space-tint and
+ * --st-space-mark: they were already computed on :root. Re-derive them on any
+ * element that carries its own space hue. Same formulas as tokens.css; this
+ * belongs there as `:root, [data-space-hue]`.
+ */
+[data-space-hue] {
+  --st-space-tint: oklch(0.93 calc(var(--st-space-c) * 0.5) var(--st-space-h));
+  --st-space-mark: oklch(0.6 var(--st-space-c) var(--st-space-h));
+}
+.dark [data-space-hue] {
+  --st-space-tint: oklch(0.3 calc(var(--st-space-c) * 0.45) var(--st-space-h));
+  --st-space-mark: oklch(0.72 var(--st-space-c) var(--st-space-h));
+}
+
+/* The window chrome is not a document: no text selection, native cursor. */
+[data-shell-chrome] {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}

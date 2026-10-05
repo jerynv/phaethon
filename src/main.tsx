@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./components/shell/shell.css";
+import { initPlatform } from "./lib/platform";
 import { devLog } from "./lib/tauri";
 import { initAppearance } from "./theme";
 
@@ -10,6 +12,7 @@ document.addEventListener("securitypolicyviolation", (e) => {
   void devLog(`CSP violation: ${e.violatedDirective} blocked ${e.blockedURI || "inline"} (${e.sourceFile}:${e.lineNumber})`);
 });
 
+initPlatform();
 initAppearance();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

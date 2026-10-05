@@ -1,5 +1,17 @@
+// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto steward tokens.
 import * as React from "react"
 import { cn } from "cn"
+
+/** Shared look for single- and multi-line text fields. */
+const fieldClasses = [
+  "w-full min-w-0 rounded-md border border-line-strong bg-raised text-base text-ink shadow-xs",
+  "transition-[border-color,background-color] duration-(--st-duration-fast) ease-out",
+  "placeholder:text-ink-secondary",
+  "hover:border-ink-tertiary focus-visible:border-focus",
+  "disabled:cursor-not-allowed disabled:border-line disabled:bg-surface disabled:text-ink-secondary disabled:shadow-none",
+  "aria-invalid:border-danger",
+  "read-only:bg-surface",
+]
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
@@ -7,9 +19,9 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       type={type}
       data-slot="input"
       className={cn(
-        "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30",
-        "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
+        fieldClasses,
+        "h-(--st-control-height) px-2.5",
+        "file:me-2 file:inline-flex file:h-full file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-ink",
         className
       )}
       {...props}
@@ -17,4 +29,4 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   )
 }
 
-export { Input }
+export { Input, fieldClasses }

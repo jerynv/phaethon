@@ -7,7 +7,10 @@ export type Backend = "steward" | "claude-cli";
 export type Settings = { backend: Backend; hasAnthropicKey: boolean; model: string };
 
 /** Mirrors `UiMessage` in src-tauri/src/thread.rs. */
-export type SavedMessage = { role: "user" | "assistant"; text: string };
+export type SavedMessage = { role: "user" | "assistant"; text: string; attachments: SavedAttachment[] };
+
+/** Mirrors `UiAttachment` in src-tauri/src/thread.rs. `path` is relative to the space. */
+export type SavedAttachment = { name: string; path: string; mediaType: string };
 
 export const getSettings = () => invoke<Settings>("settings_get");
 export const setBackend = (backend: Backend) => invoke<void>("settings_set_backend", { backend });

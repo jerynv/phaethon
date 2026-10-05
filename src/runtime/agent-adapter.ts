@@ -7,6 +7,8 @@ import { inTauri } from "@/lib/tauri";
 type AgentEvent =
   | { kind: "text"; delta: string }
   | { kind: "tool"; label: string }
+  | { kind: "approval"; id: string; summary: string; detail: string }
+  | { kind: "approvalDone"; id: string; allowed: boolean }
   | { kind: "error"; code: string; message: string }
   | { kind: "cancelled" }
   | { kind: "end"; sessionId: string | null };
@@ -15,7 +17,16 @@ type AgentEvent =
 export type AgentMessageCustom = {
   /** Latest tool activity, e.g. "Reading file notes.md". */
   toolStatus?: string;
+  /** A write waiting for the user's answer (steward's own agent only). */
+  approval?: PendingApproval;
 };
+
+export type PendingApproval = { id: string; summary: string; detail: string };
+
+/** Answer a pending write in `spaceId`. Resolves false if it is no longer waiting. */
+export async function answerApproval(spaceId: string, id: string, allow: boolean): Promise<boolean> {
+  return invoke<boolean>("agent_approve", { space: spaceId, id, allow });
+}
 
 /** Stop the reply running in `spaceId`, if any. Safe to call when nothing runs or outside Tauri. */
 export function cancelSpaceRun(spaceId: string): void {
@@ -41,11 +52,11 @@ function eventQueue() {
 }
 
 /**
- * Streams replies from the `claude` CLI that the Rust core runs for `spaceId`.
- * Only the newest user message is sent: the CLI keeps the conversation itself
- * (resumed per space), so earlier turns are already on its side.
+ * Streams replies from the agent the Rust core runs for `spaceId` (steward's own
+ * loop, or the `claude` CLI). Only the newest user message is sent: the backend
+ * keeps the conversation itself, so earlier turns are already on its side.
  */
-export function createClaudeAdapter(spaceId: string): ChatModelAdapter {
+export function createAgentAdapter(spaceId: string): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -70,9 +81,10 @@ export function createClaudeAdapter(spaceId: string): ChatModelAdapter {
 
       let text = "";
       let toolStatus: string | undefined;
+      let approval: PendingApproval | undefined;
       const update = (): ChatModelRunResult => ({
         content: text ? [{ type: "text", text }] : [],
-        metadata: { custom: { toolStatus } satisfies AgentMessageCustom },
+        metadata: { custom: { toolStatus, approval } satisfies AgentMessageCustom },
       });
 
       try {
@@ -87,8 +99,17 @@ export function createClaudeAdapter(spaceId: string): ChatModelAdapter {
               toolStatus = e.label;
               yield update();
               break;
+            case "approval":
+              approval = { id: e.id, summary: e.summary, detail: e.detail };
+              yield update();
+              break;
+            case "approvalDone":
+              if (approval?.id === e.id) approval = undefined;
+              yield update();
+              break;
             case "error":
               toolStatus = undefined;
+              approval = undefined;
               yield {
                 ...update(),
                 status: { type: "incomplete", reason: "error", error: e.message },
@@ -96,6 +117,7 @@ export function createClaudeAdapter(spaceId: string): ChatModelAdapter {
               break;
             case "cancelled":
               toolStatus = undefined;
+              approval = undefined;
               yield { ...update(), status: { type: "incomplete", reason: "cancelled" } };
               break;
             case "end":

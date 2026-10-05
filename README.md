@@ -2,7 +2,7 @@
 
 An open-source, accessible, desktop-first life OS: a workspace where an AI agent helps you run the parts of your life you choose to give it.
 
-**Status: pre-alpha.** In the desktop app, each space chats through the official `claude` CLI you installed and logged into yourself, with read-only tools confined to that space's folder under `~/Steward/default/spaces/`. In a plain browser the chat falls back to a local echo stub. Nothing here is ready for real data.
+**Status: pre-alpha.** In the desktop app, each space chats through steward's own agent with your Anthropic API key (kept in the system keychain), or through the official `claude` CLI you logged into yourself. Either way the agent sees only that space's folder under `~/Steward/default/spaces/`, and steward's agent asks before changing any file. In a plain browser the chat falls back to a local echo stub. Nothing here is ready for real data.
 
 ## What it is
 

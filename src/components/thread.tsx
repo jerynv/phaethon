@@ -8,10 +8,13 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 import { CircleStop, SendHorizontal } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { AgentMessageCustom } from "@/runtime/claude-adapter";
+import { answerApproval, type AgentMessageCustom } from "@/runtime/agent-adapter";
+
+/** The space this thread belongs to, for answering approvals. */
+const SpaceIdContext = createContext("");
 
 function UserMessage() {
   return (
@@ -41,6 +44,93 @@ function ToolStatus() {
   );
 }
 
+/**
+ * A write the agent wants to make, waiting for the user. It takes focus when it
+ * appears (it is the direct result of the user's own request, like a dialog),
+ * and focus goes back to the composer once it is answered.
+ */
+function ApprovalCard() {
+  const spaceId = useContext(SpaceIdContext);
+  const approval = useAuiState((s) =>
+    s.message.status?.type === "running"
+      ? (s.message.metadata.custom as AgentMessageCustom | undefined)?.approval
+      : undefined,
+  );
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descId = useId();
+  const previewId = useId();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+
+  useEffect(() => {
+    if (!approval) return;
+    setBusy(false);
+    setProblem("");
+    ref.current?.focus();
+  }, [approval?.id]);
+
+  if (!approval) return null;
+
+  async function answer(allow: boolean) {
+    if (!approval) return;
+    setBusy(true);
+    try {
+      const ok = await answerApproval(spaceId, approval.id, allow);
+      if (!ok) setProblem("This request is no longer waiting for an answer.");
+    } catch (e) {
+      setProblem(String(e));
+      setBusy(false);
+      return;
+    }
+    document.querySelector<HTMLTextAreaElement>("[data-composer-input]")?.focus();
+  }
+
+  return (
+    <div
+      ref={ref}
+      tabIndex={-1}
+      role="alertdialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      className="mt-3 flex flex-col gap-2 rounded-md border-2 border-foreground bg-background p-3"
+    >
+      <h3 id={titleId} className="font-semibold">
+        steward wants to change a file
+      </h3>
+      <p id={descId}>{approval.summary} Nothing changes unless you allow it.</p>
+      {approval.detail && (
+        <>
+          <p id={previewId} className="text-sm text-muted-foreground">
+            New contents:
+          </p>
+          <pre
+            tabIndex={0}
+            aria-labelledby={previewId}
+            className="max-h-60 overflow-auto rounded border border-border bg-muted p-2 text-sm whitespace-pre-wrap"
+          >
+            {approval.detail}
+          </pre>
+        </>
+      )}
+      <div className="flex gap-2">
+        <Button disabled={busy} onClick={() => void answer(true)}>
+          Allow
+        </Button>
+        <Button disabled={busy} variant="outline" onClick={() => void answer(false)}>
+          Don&rsquo;t allow
+        </Button>
+      </div>
+      {problem && (
+        <p role="alert" className="text-sm">
+          {problem}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root
@@ -52,6 +142,7 @@ function AssistantMessage() {
         <MessagePrimitive.Parts />
       </div>
       <ToolStatus />
+      <ApprovalCard />
       <MessagePrimitive.Error>
         <ErrorPrimitive.Root className="mt-2 rounded-md border-2 border-destructive bg-background px-3 py-2 text-sm text-foreground">
           <strong>Error: </strong>
@@ -89,14 +180,24 @@ function ReplyAnnouncer() {
   const [text, setText] = useState("");
   const done = useRef<string | null>(null);
   const lastTool = useRef<string | undefined>(undefined);
+  // Only a reply seen streaming here is announced; a saved one loaded with the
+  // thread (after a restart or space switch) is not news.
+  const streamed = useRef<string | null>(null);
 
   useEffect(() => {
     if (!last || last.role !== "assistant" || done.current === last.id) return;
     const status = last.status;
+    if (status?.type !== "running" && streamed.current !== last.id) return;
     if (status?.type === "running") {
-      const tool = (last.metadata.custom as AgentMessageCustom | undefined)?.toolStatus;
-      if (tool && tool !== lastTool.current) setText(tool);
-      lastTool.current = tool;
+      streamed.current = last.id;
+      const custom = last.metadata.custom as AgentMessageCustom | undefined;
+      const approval = custom?.approval;
+      // An approval card takes focus and is read as an alertdialog; announcing
+      // it here as well would say it twice.
+      if (!approval && custom?.toolStatus && custom.toolStatus !== lastTool.current) {
+        setText(custom.toolStatus);
+      }
+      lastTool.current = custom?.toolStatus;
       return;
     }
     if (status?.type === "complete") {
@@ -119,7 +220,7 @@ function ReplyAnnouncer() {
   );
 }
 
-export function Thread({ spaceName }: { spaceName: string }) {
+export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
   const inputId = useId();
   const hintId = useId();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -139,6 +240,7 @@ export function Thread({ spaceName }: { spaceName: string }) {
   }, [isRunning]);
 
   return (
+    <SpaceIdContext.Provider value={spaceId}>
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport
         role="log"
@@ -169,6 +271,7 @@ export function Thread({ spaceName }: { spaceName: string }) {
         <ComposerPrimitive.Input
           ref={inputRef}
           id={inputId}
+          data-composer-input
           aria-describedby={hintId}
           placeholder={`Message ${spaceName}…`}
           submitMode="enter"
@@ -200,5 +303,6 @@ export function Thread({ spaceName }: { spaceName: string }) {
         )}
       </ComposerPrimitive.Root>
     </ThreadPrimitive.Root>
+    </SpaceIdContext.Provider>
   );
 }

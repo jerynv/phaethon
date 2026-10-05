@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from "react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -8,13 +8,15 @@ type Props = {
   spaces: readonly Space[];
   activeId: string;
   onSelect: (id: string) => void;
+  /** Shown below the list (e.g. the Settings button). */
+  footer?: ReactNode;
 };
 
 /**
  * Space switcher. Every item is a native button (Tab reaches each one);
  * ArrowUp/ArrowDown/Home/End also move focus within the list.
  */
-export function SpaceSidebar({ spaces, activeId, onSelect }: Props) {
+export function SpaceSidebar({ spaces, activeId, onSelect, footer }: Props) {
   const listRef = useRef<HTMLUListElement>(null);
 
   function onKeyDown(e: KeyboardEvent<HTMLUListElement>) {
@@ -72,6 +74,7 @@ export function SpaceSidebar({ spaces, activeId, onSelect }: Props) {
           })}
         </ul>
       </ScrollArea>
+      {footer && <div className="border-t border-sidebar-border p-2">{footer}</div>}
     </nav>
   );
 }

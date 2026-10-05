@@ -11,6 +11,7 @@ Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is 
 - One high-contrast focus outline (3px, at least 3:1 against both backgrounds) on every focusable element, and it cannot be removed by component styles. Uses the system `Highlight` colour in forced-colours mode.
 - Follows the system light/dark setting live, and `prefers-reduced-motion` disables animation and smooth scrolling.
 - Sidebar works with Tab and with ArrowUp/ArrowDown/Home/End.
+- A file change the agent wants is an inline `alertdialog` ("steward wants to change a file") with a plain summary, a focusable preview, and Allow / Don't allow. It takes focus when it appears and returns focus to the composer once answered; it is not also announced by the status region. A reply loaded from a saved thread is not announced.
 
 ## Requirements by disability category
 

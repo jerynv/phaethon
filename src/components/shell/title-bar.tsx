@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,6 +8,7 @@ import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+import { GrantsChip } from "./grants-chip";
 import { SpaceMark } from "./space-mark";
 import { WindowControls } from "./window-controls";
 
@@ -49,6 +50,12 @@ export function TitleBar({ space, sidebarOpen, onToggleSidebar, sidebarId, actio
   const ownControls = platform() !== "mac" && inTauri();
   const toggleLabel = sidebarOpen ? "Hide sidebar" : "Show sidebar";
   const shortcut = `${modKeyLabel()}\\`;
+  const [status, setStatus] = useState("");
+  const announce = useCallback((m: string) => {
+    // Clear first so the same message twice is announced twice.
+    setStatus("");
+    requestAnimationFrame(() => setStatus(m));
+  }, []);
 
   return (
     <header
@@ -93,7 +100,12 @@ export function TitleBar({ space, sidebarOpen, onToggleSidebar, sidebarId, actio
         >
           {space.name}
         </h1>
+        <GrantsChip space={space} announce={announce} />
       </div>
+      {/* Outside the chip, which goes away when its last grant is revoked. */}
+      <p role="status" className="sr-only">
+        {status}
+      </p>
 
       {actions && <div className="flex h-full shrink-0 items-center gap-1 pe-2">{actions}</div>}
 

@@ -9,9 +9,13 @@ export function spaceHueStyle(hue: number): CSSProperties {
 
 /**
  * The quiet mark that identifies a space: a small dot in the space's hue.
- * Decorative: the space's name always sits next to it.
+ * Decorative: the space's name always sits next to it. A space whose hue is
+ * unknown (not in this vault's list) gets a neutral dot.
  */
-export function SpaceMark({ hue, className }: { hue: number; className?: string }) {
+export function SpaceMark({ hue, className }: { hue: number | undefined; className?: string }) {
+  if (hue === undefined) {
+    return <span aria-hidden="true" className={cn("inline-block size-(--st-space-mark-size) shrink-0 rounded-full bg-ink-tertiary", className)} />;
+  }
   return (
     <span
       aria-hidden="true"

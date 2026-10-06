@@ -36,6 +36,10 @@
     unregisterCallback(id) { delete callbacks[id]; },
     async invoke(cmd, args) {
       calls.push([cmd, JSON.parse(JSON.stringify(args ?? {}))]);
+      // Audit hooks: { slow: { cmd: ms } } delays an answer (to show pending
+      // states); { fail: { cmd: "message" } } rejects it (to show errors).
+      if (M.slow?.[cmd]) await sleep(M.slow[cmd]);
+      if (M.fail?.[cmd]) throw M.fail[cmd];
       if (cmd.startsWith("plugin:window|")) return null;
       switch (cmd) {
         case "dev_log": return;

@@ -13,12 +13,19 @@ import {
   type AgentMessageCustom,
 } from "@/runtime/agent-adapter";
 
-import { SpaceIdContext, focusComposer } from "./approval-card";
+import { CardProblem, SpaceIdContext, focusComposer, type CardProblemState } from "./approval-card";
 
-/** A space by id, for its name and hue. An unknown id shows as itself, with no hue. */
-export function spaceInfo(id: string): { name: string; hue?: number } {
+const ANSWER_NOT_SENT_SHARE =
+  "Your answer couldn’t be sent, so nothing was shared. Stop the reply, then send your message again.";
+
+/**
+ * A space by id, for its name and hue. An id this vault doesn't have shows
+ * title-cased ("home" as "Home"), with no hue, and `known: false`.
+ */
+export function spaceInfo(id: string): { name: string; hue?: number; known: boolean } {
   const s = STUB_SPACES.find((x) => x.id === id);
-  return s ? { name: s.name, hue: s.hue } : { name: id };
+  if (s) return { name: s.name, hue: s.hue, known: true };
+  return { name: id.charAt(0).toUpperCase() + id.slice(1), known: false };
 }
 
 /** "calendar/oct.md" is a file, "calendar" a folder, "" the whole space. */
@@ -84,36 +91,40 @@ export function AccessRequestCard() {
   const onceHintId = useId();
   const alwaysHintId = useId();
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState<CardProblemState | null>(null);
   const [note, setNote] = useState("");
 
   useEffect(() => {
     if (!request) return;
     setBusy(false);
-    setProblem("");
+    setProblem(null);
     setNote("");
     ref.current?.focus();
   }, [request?.id]);
 
   if (!request) return null;
-  const { name, hue } = spaceInfo(request.space);
+  const { name, hue, known } = spaceInfo(request.space);
   const kind = pathKind(request.path);
-  const what = kind === "space" ? "everything in another space" : `a ${kind} in another space`;
+  const where = known ? "another space" : "a space that isn’t in this vault";
+  const what = kind === "space" ? `everything in ${name}, ${where}` : `a ${kind} in ${where}`;
+  const icon = kind === "file" ? "file-text" : kind === "folder" ? "folder" : "space";
 
   async function answer(choice: AccessAnswer) {
     if (!request) return;
     setBusy(true);
     setNote("");
+    let failed: CardProblemState | null = null;
     try {
       const ok = await answerAccess(spaceId, request.id, choice);
-      if (!ok) {
-        setProblem("This request is no longer waiting for an answer.");
-        setBusy(false);
-        return;
-      }
+      if (!ok) failed = { text: "This request has ended. Nothing was shared." };
     } catch (e) {
-      setProblem(String(e));
-      setBusy(false);
+      failed = { text: ANSWER_NOT_SENT_SHARE, detail: String(e) };
+    }
+    if (failed) {
+      // The answer can't be given any more: the buttons stay disabled, and
+      // focus moves to the card (a disabled button would drop it).
+      setProblem(failed);
+      ref.current?.focus();
       return;
     }
     focusComposer();
@@ -144,11 +155,11 @@ export function AccessRequestCard() {
           data-space-hue={hue !== undefined ? "" : undefined}
           style={hue !== undefined ? spaceHueStyle(hue) : undefined}
           className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-md text-ink",
+            "flex size-(--ph-control-height-lg) shrink-0 items-center justify-center rounded-md text-ink",
             hue !== undefined ? "bg-space-tint" : "bg-surface",
           )}
         >
-          <Icon name={kind === "file" ? "file-text" : "folder"} />
+          <Icon name={icon} />
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <h3 id={titleId} className="text-md font-semibold text-ink">
@@ -165,9 +176,15 @@ export function AccessRequestCard() {
           id={whereId}
           className="flex min-w-0 items-start gap-2 rounded-md border border-line bg-surface-sunken px-3 py-2 text-base"
         >
-          <Icon name={kind === "file" ? "file-text" : "folder"} className="mt-0.5 shrink-0 text-ink-secondary" />
+          <Icon name={icon} className="mt-0.5 shrink-0 text-ink-secondary" />
           <span className="sr-only">{kind === "file" ? "File:" : kind === "folder" ? "Folder:" : "Space:"} </span>
-          <SpacePath space={request.space} path={request.path} />
+          {kind === "space" ? (
+            <span className="min-w-0 wrap-anywhere">
+              Everything in <SpacePath space={request.space} path="" />
+            </span>
+          ) : (
+            <SpacePath space={request.space} path={request.path} />
+          )}
         </p>
 
         {request.reason.trim() && (
@@ -192,20 +209,14 @@ export function AccessRequestCard() {
 
       <div className="flex flex-col gap-2 px-4 pt-4 pb-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Button disabled={busy} size="sm" aria-describedby={onceHintId} onClick={() => void answer("once")}>
-            <Icon name="check" className="size-(--ph-icon-size-sm)" />
+          <Button disabled={busy} aria-describedby={onceHintId} onClick={() => void answer("once")}>
+            <Icon name="check" />
             Allow once
           </Button>
-          <Button
-            disabled={busy}
-            variant="outline"
-            size="sm"
-            aria-describedby={alwaysHintId}
-            onClick={() => void answer("always")}
-          >
+          <Button disabled={busy} variant="outline" aria-describedby={alwaysHintId} onClick={() => void answer("always")}>
             Always allow
           </Button>
-          <Button disabled={busy} variant="ghost" size="sm" onClick={() => void answer("deny")}>
+          <Button disabled={busy} variant="outline" onClick={() => void answer("deny")}>
             Deny
           </Button>
         </div>
@@ -213,12 +224,7 @@ export function AccessRequestCard() {
           <span id={onceHintId}>Allow once lasts for this reply only.</span>{" "}
           <span id={alwaysHintId}>Always allow is saved; you can revoke it in Settings &gt; Spaces.</span>
         </p>
-        {problem && (
-          <p role="alert" className="flex items-center gap-1.5 text-sm text-danger-ink">
-            <Icon name="warning" className="size-(--ph-icon-size-sm) shrink-0" />
-            {problem}
-          </p>
-        )}
+        {problem && <CardProblem problem={problem} />}
         <p role="status" className={cn("flex items-center gap-1.5 text-sm text-ink", !note && "sr-only")}>
           {note && <Icon name="info" className="size-(--ph-icon-size-sm) shrink-0 text-ink-secondary" />}
           {note}

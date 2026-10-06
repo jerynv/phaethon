@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useId, useRef, useState } from "r
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
+import { cn } from "@/lib/utils";
 import { answerApproval, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
 /** The space this thread belongs to, for answering approvals. */
@@ -34,12 +35,12 @@ export function ApprovalCard() {
   const descId = useId();
   const previewId = useId();
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState<CardProblemState | null>(null);
 
   useEffect(() => {
     if (!approval) return;
     setBusy(false);
-    setProblem("");
+    setProblem(null);
     ref.current?.focus();
   }, [approval?.id]);
 
@@ -48,12 +49,18 @@ export function ApprovalCard() {
   async function answer(allow: boolean) {
     if (!approval) return;
     setBusy(true);
+    let failed: CardProblemState | null = null;
     try {
       const ok = await answerApproval(spaceId, approval.id, allow);
-      if (!ok) setProblem("This request is no longer waiting for an answer.");
+      if (!ok) failed = { text: "This request has ended. Nothing was changed." };
     } catch (e) {
-      setProblem(String(e));
-      setBusy(false);
+      failed = { text: ANSWER_NOT_SENT, detail: String(e) };
+    }
+    if (failed) {
+      // The answer can't be given any more: the buttons stay disabled, and
+      // focus moves to the card (a disabled button would drop it).
+      setProblem(failed);
+      ref.current?.focus();
       return;
     }
     focusComposer();
@@ -72,7 +79,7 @@ export function ApprovalCard() {
       <div className="flex items-start gap-3 p-4 pb-3">
         <span
           aria-hidden="true"
-          className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent-soft-ink"
+          className="flex size-(--ph-control-height-lg) shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent-soft-ink"
         >
           <Icon name="edit" />
         </span>
@@ -100,20 +107,41 @@ export function ApprovalCard() {
         </div>
       )}
       <div className="flex flex-wrap items-center justify-end gap-2 px-4 pt-3 pb-4">
-        {problem && (
-          <p role="alert" className="me-auto flex items-center gap-1.5 text-sm text-danger-ink">
-            <Icon name="warning" className="size-(--ph-icon-size-sm)" />
-            {problem}
-          </p>
-        )}
-        <Button disabled={busy} variant="outline" size="sm" onClick={() => void answer(false)}>
+        {problem && <CardProblem problem={problem} className="me-auto" />}
+        <Button disabled={busy} variant="outline" onClick={() => void answer(false)}>
           Don&rsquo;t allow
         </Button>
-        <Button disabled={busy} size="sm" onClick={() => void answer(true)}>
-          <Icon name="check" className="size-(--ph-icon-size-sm)" />
+        <Button disabled={busy} onClick={() => void answer(true)}>
+          <Icon name="check" />
           Allow
         </Button>
       </div>
+    </div>
+  );
+}
+
+export type CardProblemState = { text: string; detail?: string };
+
+/** When an answer could not be delivered (the IPC call failed). */
+export const ANSWER_NOT_SENT =
+  "Your answer couldn’t be sent, so nothing was changed. Stop the reply, then send your message again.";
+
+/** Why a card's answer didn't take, in plain words; the raw error folded under Details. */
+export function CardProblem({ problem, className }: { problem: CardProblemState; className?: string }) {
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-0.5 text-sm", className)}>
+      <p role="alert" className="flex items-start gap-1.5 text-danger-ink">
+        <Icon name="warning" className="mt-px size-(--ph-icon-size-sm) shrink-0" />
+        {problem.text}
+      </p>
+      {problem.detail && (
+        <details className="ms-[calc(var(--ph-icon-size-sm)+var(--ph-space)*1.5)] text-ink-secondary">
+          <summary className="inline-flex min-h-(--ph-control-height-sm) cursor-default items-center rounded-sm select-none hover:text-ink">
+            Details
+          </summary>
+          <p className="font-mono wrap-anywhere text-ink">{problem.detail}</p>
+        </details>
+      )}
     </div>
   );
 }

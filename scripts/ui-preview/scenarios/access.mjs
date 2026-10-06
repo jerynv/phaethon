@@ -120,9 +120,9 @@ export default [
     async run(page, h) {
       await answered(page, h, "Allow once", "once", "Allowed once: Work / calendar");
       await page.waitForFunction(() => document.querySelector('[data-activity-space="work"]'), { timeout: 5000 });
-      check(true, 'the activity line "Reading work/calendar/oct.md" carries Work\'s hue mark');
-      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Reading work/calendar/oct.md", { timeout: 5000 });
-      check(true, "the status region announces the cross-space read");
+      check(true, 'the activity line "Reading Work / calendar/oct.md" carries Work\'s hue mark');
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Reading Work / calendar/oct.md", { timeout: 5000 });
+      check(true, "the status region announces the cross-space read, naming Work");
       await h.waitText("moved problem set 4");
       await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("Phaethon replied"), { timeout: 5000 });
       const done = await status(page);

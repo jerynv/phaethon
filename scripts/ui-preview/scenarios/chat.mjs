@@ -148,7 +148,7 @@ export default [
     mock: { threads: {} },
     async run(page, h) {
       await pick(page, files.docx);
-      await h.waitText("essay.docx can't be attached");
+      await h.waitText("essay.docx can’t be attached");
       const n = await page.evaluate(() => document.querySelectorAll('[aria-label="Attached files"] li').length);
       check(n === 0, "a .docx is refused, with a visible reason, and not attached");
       await h.idle();
@@ -198,7 +198,7 @@ export default [
       await h.send("Summarise this");
       await h.waitText("too large together");
       const alert = await page.evaluate(() => document.querySelector('[data-role="assistant"] [role="alert"]')?.textContent ?? "");
-      check(alert.includes("A file couldn't be attached"), "an attachment error renders in the message as role=alert with a recovery line", alert);
+      check(alert.includes("A file couldn’t be attached"), "an attachment error renders in the message as role=alert with a recovery line", alert);
       await h.idle();
     },
   },

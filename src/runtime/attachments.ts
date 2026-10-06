@@ -61,7 +61,7 @@ export function mediaTypeOf(file: { name: string; type: string }): string {
 /** Why `file` cannot be attached, in a sentence, or null if it can. */
 export function attachmentProblem(file: { name: string; type: string; size: number }): string | null {
   const kind = attachmentKind(file);
-  if (!kind) return `${file.name} can't be attached. Attach images (PNG, JPEG, GIF, WebP), PDFs or text files.`;
+  if (!kind) return `${file.name} can’t be attached. Attach images (PNG, JPEG, GIF, WebP), PDFs or text files.`;
   if (file.size > LIMITS[kind].bytes) return `${file.name} is too large (the limit is ${LIMITS[kind].label}).`;
   if (file.size === 0) return `${file.name} is empty.`;
   return null;

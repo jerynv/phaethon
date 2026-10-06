@@ -10,6 +10,11 @@ import { ACCEPT, ACCEPTED_SUMMARY, MAX_FILES, attachmentProblem } from "@/runtim
 import { ComposerAttachments } from "./attachments";
 import { focusComposer } from "./approval-card";
 
+/** "a.txt", "a.txt and b.txt", "a.txt, b.txt and c.txt". */
+function listNames(names: string[]) {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /**
  * Adds files to the message being written, after checking each one, and keeps
  * the reasons any were refused ("report.docx can't be attached...") so the
@@ -23,6 +28,7 @@ export function useAddFiles() {
     async (files: readonly File[]) => {
       if (files.length === 0) return;
       const found: string[] = [];
+      const overLimit: string[] = [];
       let count = aui.composer().getState().attachments.length;
       for (const file of files) {
         const problem = attachmentProblem(file);
@@ -31,8 +37,8 @@ export function useAddFiles() {
           continue;
         }
         if (count >= MAX_FILES) {
-          found.push(`You can attach up to ${MAX_FILES} files to one message.`);
-          break;
+          overLimit.push(file.name);
+          continue;
         }
         try {
           await aui.composer().addAttachment(file);
@@ -41,6 +47,8 @@ export function useAddFiles() {
           found.push(e instanceof Error ? e.message : String(e));
         }
       }
+      // Name every file left out, so nothing is dropped silently.
+      if (overLimit.length) found.push(`${listNames(overLimit)} ${overLimit.length === 1 ? "wasn’t" : "weren’t"} attached: one message can carry up to ${MAX_FILES} files.`);
       setProblems(found);
       focusComposer();
     },
@@ -56,7 +64,7 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
   return (
     <div
       role="alert"
-      className="mb-2 flex items-start gap-2.5 rounded-lg bg-warning-soft py-2 ps-3 pe-1 text-base text-warning-ink"
+      className="mb-2 flex items-start gap-2.5 rounded-lg border border-transparent bg-warning-soft py-2 ps-3 pe-1 text-base text-warning-ink"
     >
       <Icon name="warning" className="mt-0.5" />
       <ul className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -79,15 +87,19 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
   );
 }
 
-/** The + button: a small menu of things to add to the message. */
+/**
+ * The + button: a small menu of things to add to the message. Non-modal: a
+ * one-item menu has no reason to hide the rest of the window from assistive
+ * technology (a modal menu marks it aria-hidden while it stays focusable).
+ */
 function AddMenu({ onAttach }: { onAttach: () => void }) {
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           className="rounded-full text-ink-secondary hover:text-ink data-[state=open]:bg-hover data-[state=open]:text-ink"
           aria-label="Add to message"
           title="Add to message"
@@ -100,7 +112,7 @@ function AddMenu({ onAttach }: { onAttach: () => void }) {
           side="top"
           align="start"
           sideOffset={6}
-          className="z-50 min-w-64 rounded-lg border border-line bg-raised p-1 text-ink shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
+          className="z-50 min-w-[min(20rem,calc(100vw-var(--ph-space)*8))] rounded-lg border border-line bg-raised p-1 text-ink shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
         >
           <DropdownMenu.Item
             onSelect={onAttach}
@@ -176,7 +188,8 @@ export function Composer({
             void addFiles(files);
           }}
           rows={1}
-          className="max-h-(--ph-composer-max-height) min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
+          // At most 7 whole lines plus padding: a full composer scrolls by lines, never showing half a line at the top.
+          className="max-h-[calc(7lh+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
         />
         <span id={hintId} className="sr-only">
           Press Enter to send, Shift+Enter for a new line, Escape to stop a reply.
@@ -203,7 +216,7 @@ export function Composer({
             <ComposerPrimitive.Cancel asChild>
               <Button
                 type="button"
-                size="icon-sm"
+                size="icon"
                 className="rounded-full"
                 aria-label="Stop reply"
                 title="Stop reply"
@@ -215,7 +228,7 @@ export function Composer({
             </ComposerPrimitive.Cancel>
           ) : (
             <ComposerPrimitive.Send asChild>
-              <Button type="submit" size="icon-sm" className="rounded-full" aria-label="Send message" title="Send message">
+              <Button type="submit" size="icon" className="rounded-full" aria-label="Send message" title="Send message">
                 <Icon name="send" />
               </Button>
             </ComposerPrimitive.Send>

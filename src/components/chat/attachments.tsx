@@ -20,7 +20,7 @@ function Thumb({ icon }: { icon: IconName }) {
   return (
     <span
       aria-hidden="true"
-      className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line bg-surface-sunken text-ink-secondary"
+      className="flex size-[calc(var(--ph-icon-size)*2.25)] shrink-0 items-center justify-center overflow-hidden rounded-md border border-line bg-surface-sunken text-ink-secondary"
     >
       {src && !broken ? (
         <img src={src} alt="" className="size-full object-cover" onError={() => setBroken(true)} />
@@ -88,7 +88,12 @@ function AttachmentChip({ removable }: { removable: boolean }) {
 /** Files waiting to go with the message being written. */
 export function ComposerAttachments() {
   return (
-    <ul aria-label="Attached files" className="flex flex-wrap gap-2 px-1 pt-1 empty:hidden">
+    // Capped so many files never squeeze the conversation away; the list scrolls
+    // (with room around each chip for its focus ring).
+    <ul
+      aria-label="Attached files"
+      className="flex max-h-[min(9rem,30dvh)] flex-wrap gap-2 overflow-y-auto p-1.5 empty:hidden"
+    >
       <ComposerPrimitive.Attachments>{() => <AttachmentChip removable />}</ComposerPrimitive.Attachments>
     </ul>
   );

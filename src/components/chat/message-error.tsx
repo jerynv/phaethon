@@ -1,43 +1,187 @@
-import { ErrorPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
+import { ActionBarPrimitive, ErrorPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
+import { useEffect, useRef, type ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
+import { openSettings } from "@/lib/open-settings";
 import type { AgentMessageCustom } from "@/runtime/agent-adapter";
 
-/** A plain headline and the way out, per `ErrorCode` (src-tauri/src/agent.rs). */
-const RECOVERY: Record<string, { title: string; action?: string }> = {
-  noApiKey: { title: "Phaethon needs an API key", action: "Open Settings, at the bottom of the sidebar, to add your key." },
-  apiKey: { title: "The API key was refused", action: "Open Settings to check or replace your key." },
-  missingCli: { title: "Claude Code isn't installed" },
-  notLoggedIn: { title: "Claude Code isn't logged in" },
-  busy: { title: "Phaethon is still working on a reply", action: "Wait for it to finish, or stop it, then send again." },
-  invalidSpace: { title: "This space can't be found", action: "Check that its folder still exists in your vault." },
-  cli: { title: "Claude Code stopped with an error", action: "Send your message again." },
-  provider: { title: "The model provider had a problem", action: "Wait a moment, then send your message again." },
-  network: { title: "Phaethon couldn't reach the internet", action: "Check your connection, then send your message again." },
-  declined: { title: "The model declined to answer", action: "Try asking in a different way." },
-  storage: { title: "The conversation couldn't be saved", action: "Check that the space folder can be written to." },
-  attachment: { title: "A file couldn't be attached", action: "Attach images, PDFs or text files within the size limits, then send again." },
-  ipc: { title: "Phaethon couldn't reach its backend", action: "Quit and reopen Phaethon." },
-};
+import { InlineCode, useAnnounce } from "./announce";
+import { focusComposer } from "./approval-card";
+
+type Action = "settings" | "retry";
 
 /**
- * A failed reply: a quiet banner inside the message. role="alert", so it is
- * announced at once (the status region stays silent for errors).
+ * What went wrong and the way out, per `ErrorCode` (src-tauri/src/agent.rs),
+ * plus "ipc" (the call to the backend itself failed). The title names the
+ * problem; the body says what to do; actions do it where Phaethon can.
+ */
+const RECOVERY: Record<string, { title: string; body: ReactNode; actions?: Action[] }> = {
+  noApiKey: {
+    title: "Phaethon needs an API key to reply",
+    body: "Add your Anthropic API key in Settings, then send your message again.",
+    actions: ["settings", "retry"],
+  },
+  apiKey: {
+    title: "Your API key was refused",
+    body: "The provider didn’t accept the key saved in Settings. Check it or paste a new one, then send again.",
+    actions: ["settings", "retry"],
+  },
+  missingCli: {
+    title: "Claude Code isn’t installed",
+    body: (
+      <>
+        Install Claude Code, then run <InlineCode text="`claude`" /> once in a terminal to log in and send again. Or
+        switch to Phaethon’s own agent in Settings.
+      </>
+    ),
+    actions: ["settings", "retry"],
+  },
+  notLoggedIn: {
+    title: "Claude Code isn’t logged in",
+    body: (
+      <>
+        Run <InlineCode text="`claude`" /> once in a terminal and log in, then send again. Or switch to Phaethon’s own
+        agent in Settings.
+      </>
+    ),
+    actions: ["retry", "settings"],
+  },
+  busy: {
+    title: "This space is still answering",
+    body: "Wait for the reply above to finish, or stop it, then send again.",
+    actions: ["retry"],
+  },
+  invalidSpace: {
+    title: "This space’s folder can’t be found",
+    body: "Check that the folder still exists in your vault, or choose another space.",
+  },
+  cli: {
+    title: "Claude Code stopped with an error",
+    body: "Send your message again. If it keeps failing, the details say what Claude Code reported.",
+    actions: ["retry"],
+  },
+  provider: {
+    title: "The model provider had a problem",
+    body: "This is usually brief. Wait a moment, then send again.",
+    actions: ["retry"],
+  },
+  network: {
+    title: "Phaethon couldn’t reach the internet",
+    body: "Check your connection, then send again.",
+    actions: ["retry"],
+  },
+  declined: {
+    title: "The model declined to answer",
+    body: "Try asking in a different way.",
+  },
+  storage: {
+    title: "The conversation couldn’t be saved",
+    body: "Nothing was sent. Check that the space’s folder can be written to, then send again.",
+    actions: ["retry"],
+  },
+  attachment: {
+    title: "A file couldn’t be attached",
+    body: "Attach images, PDFs or text files within the size limits, then send again.",
+  },
+  ipc: {
+    title: "Phaethon couldn’t reach its own backend",
+    body: "Quit and reopen Phaethon. If it keeps happening, copy the details and report it.",
+  },
+};
+const FALLBACK = { title: "Phaethon couldn’t finish this reply", body: "Send your message again.", actions: ["retry"] as Action[] };
+
+/** The backend's own words, folded away: useful to report, not the headline. */
+function ErrorDetails({ text }: { text: string }) {
+  const announce = useAnnounce();
+  const { isCopied, copyToClipboard } = useCopyToClipboard({ copiedDuration: 2000 });
+  const said = useRef(false);
+  useEffect(() => {
+    if (isCopied && !said.current) announce("Details copied.");
+    said.current = isCopied;
+  }, [isCopied, announce]);
+  return (
+    <details className="group/details text-sm text-ink-secondary">
+      <summary className="inline-flex min-h-(--ph-control-height-sm) cursor-default items-center gap-1 rounded-sm select-none hover:text-ink [&::-webkit-details-marker]:hidden">
+        <Icon name="chevron-right" className="size-(--ph-icon-size-sm) group-open/details:rotate-90" />
+        Details
+      </summary>
+      <div className="mt-1 flex flex-col items-start gap-1.5">
+        <p className="font-mono wrap-anywhere text-ink" data-error-detail>
+          <InlineCode text={text} />
+        </p>
+        <Button type="button" variant="ghost" size="xs" className="-ms-2" onClick={() => copyToClipboard(text)}>
+          <Icon name={isCopied ? "check" : "copy"} />
+          {isCopied ? "Copied" : "Copy"}
+          <span className="sr-only"> details</span>
+        </Button>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * A failed reply: a quiet banner inside the message. The title and what to do
+ * are role="alert", so they are announced at once (the status region stays
+ * silent for errors); the actions and folded details follow.
  */
 export function MessageError() {
   const code = useAuiState((s) => (s.message.metadata.custom as AgentMessageCustom | undefined)?.errorCode);
-  const recovery = (code && RECOVERY[code]) || { title: "Phaethon couldn't finish this reply", action: "Send your message again." };
+  const detail = useAuiState((s) =>
+    s.message.status?.type === "incomplete" && s.message.status.reason === "error" && s.message.status.error != null
+      ? String(s.message.status.error)
+      : "",
+  );
+  const recovery = (code && RECOVERY[code]) || FALLBACK;
+  const actions = recovery.actions ?? [];
   return (
     <MessagePrimitive.Error>
       <ErrorPrimitive.Root
-        role="alert"
-        className="flex w-full max-w-(--ph-measure) items-start gap-3 rounded-lg bg-danger-soft px-4 py-3 text-base text-ink"
+        data-error-code={code ?? "unknown"}
+        // A transparent border: forced-colours mode draws it, so the banner keeps a boundary.
+        className="flex w-full max-w-(--ph-measure) items-start gap-3 rounded-lg border border-transparent bg-danger-soft px-4 py-3 text-base text-ink"
       >
         <Icon name="error" className="mt-0.5 text-danger-ink" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="font-semibold text-danger-ink">{recovery.title}</p>
-          <ErrorPrimitive.Message className="wrap-break-word" />
-          {recovery.action && <p className="text-ink-secondary">{recovery.action}</p>}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div role="alert" className="flex flex-col gap-0.5">
+            <p className="font-semibold text-danger-ink">{recovery.title}</p>
+            <p className="text-ink">{recovery.body}</p>
+          </div>
+          {actions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {actions.map((a, i) =>
+                a === "settings" ? (
+                  <Button
+                    key={a}
+                    type="button"
+                    size="default"
+                    variant={i === 0 ? "default" : "outline"}
+                    data-error-action="settings"
+                    onClick={() => openSettings("agent")}
+                  >
+                    <Icon name="settings" />
+                    Open Settings
+                  </Button>
+                ) : (
+                  <ActionBarPrimitive.Reload key={a} asChild>
+                    <Button
+                      type="button"
+                      size="default"
+                      variant={i === 0 ? "default" : "outline"}
+                      data-error-action="retry"
+                      // The banner goes away as the new reply starts; keep focus where the user writes.
+                      onClick={() => focusComposer()}
+                    >
+                      <Icon name="retry" />
+                      Send again
+                    </Button>
+                  </ActionBarPrimitive.Reload>
+                ),
+              )}
+            </div>
+          )}
+          {detail && <ErrorDetails text={detail} />}
         </div>
       </ErrorPrimitive.Root>
     </MessagePrimitive.Error>

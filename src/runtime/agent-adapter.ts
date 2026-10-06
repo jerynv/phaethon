@@ -125,7 +125,8 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
       invoke("agent_send", { space: spaceId, prompt, attachments, onEvent: channel }).catch((err: unknown) => {
-        queue.push({ kind: "error", code: "ipc", message: `Phaethon could not reach its backend: ${String(err)}` });
+        // The banner says what happened in plain words; this raw text goes under "Details".
+        queue.push({ kind: "error", code: "ipc", message: String(err) });
         queue.push({ kind: "end", sessionId: null });
       });
 
@@ -151,6 +152,9 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
           const e = await queue.next();
           switch (e.kind) {
             case "text": {
+              // Words after a tool line mean the tool is done: drop the stale
+              // "Reading file ..." (a later tool event sets a new one).
+              toolStatus = undefined;
               const last = parts[parts.length - 1];
               parts =
                 last?.type === "text"

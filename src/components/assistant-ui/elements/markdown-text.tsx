@@ -12,9 +12,10 @@ import {
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
-import { type FC, memo, useMemo, useRef } from "react";
+import { type CSSProperties, type FC, memo, useEffect, useMemo, useRef } from "react";
 import type { TextMessagePartProps } from "@assistant-ui/react";
 
+import { useAnnounce } from "@/components/chat/announce";
 import { Button } from "@/components/ui/button";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
@@ -63,6 +64,12 @@ export const MarkdownText = memo(MarkdownTextImpl);
 /** The bar above a code block: its language and a Copy button that says when it worked. */
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard({ copiedDuration: 2000 });
+  const announce = useAnnounce();
+  const was = useRef(false);
+  useEffect(() => {
+    if (isCopied && !was.current) announce("Code copied.");
+    was.current = isCopied;
+  }, [isCopied, announce]);
   return (
     <div className="mt-4 flex items-center justify-between gap-2 rounded-t-lg border border-b-0 border-line bg-surface py-1 ps-3 pe-1">
       <span className="font-mono text-xs text-ink-secondary">{language || "text"}</span>
@@ -81,6 +88,21 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   );
 };
 
+/**
+ * A wide table's scroll cue, with no script: a soft shadow shows at an edge
+ * while there is more table past it. Covers in the page colour scroll with the
+ * content ("local") and hide the shadows ("scroll") at the ends.
+ */
+const EDGE = "color-mix(in oklch, var(--ph-ink) 16%, transparent)";
+const SCROLL_SHADOWS: CSSProperties = {
+  background: [
+    "linear-gradient(to right, var(--ph-bg) 30%, transparent) left center / 2.5rem 100% no-repeat local",
+    "linear-gradient(to left, var(--ph-bg) 30%, transparent) right center / 2.5rem 100% no-repeat local",
+    `linear-gradient(to right, ${EDGE}, transparent) left center / 0.875rem 100% no-repeat scroll`,
+    `linear-gradient(to left, ${EDGE}, transparent) right center / 0.875rem 100% no-repeat scroll`,
+  ].join(", "),
+};
+
 const defaultComponents = memoizeMarkdownComponents({
   h1: ({ className, ...props }) => (
     <h1 className={cn("mt-6 mb-2 text-xl font-semibold tracking-tight first:mt-0 last:mb-0", className)} {...props} />
@@ -91,15 +113,19 @@ const defaultComponents = memoizeMarkdownComponents({
   h3: ({ className, ...props }) => (
     <h3 className={cn("mt-5 mb-1.5 text-md font-semibold first:mt-0 last:mb-0", className)} {...props} />
   ),
+  // Each level steps down in size or colour, so h3 and h4 never look the same.
   h4: ({ className, ...props }) => (
-    <h4 className={cn("mt-4 mb-1 text-md font-semibold first:mt-0 last:mb-0", className)} {...props} />
+    <h4 className={cn("mt-4 mb-1 text-base font-semibold first:mt-0 last:mb-0", className)} {...props} />
   ),
   h5: ({ className, ...props }) => (
-    <h5 className={cn("mt-4 mb-1 text-base font-semibold first:mt-0 last:mb-0", className)} {...props} />
+    <h5
+      className={cn("mt-4 mb-1 text-base font-semibold text-ink-secondary first:mt-0 last:mb-0", className)}
+      {...props}
+    />
   ),
   h6: ({ className, ...props }) => (
     <h6
-      className={cn("mt-4 mb-1 text-base font-semibold text-ink-secondary first:mt-0 last:mb-0", className)}
+      className={cn("mt-4 mb-1 text-sm font-semibold text-ink-secondary first:mt-0 last:mb-0", className)}
       {...props}
     />
   ),
@@ -124,7 +150,13 @@ const defaultComponents = memoizeMarkdownComponents({
   li: ({ className, ...props }) => <li className={cn("ps-1", className)} {...props} />,
   hr: ({ className, ...props }) => <hr className={cn("my-5 border-line", className)} {...props} />,
   table: ({ className, ...props }) => (
-    <div className="my-4 w-fit max-w-full overflow-x-auto rounded-lg border border-line" tabIndex={0} role="group" aria-label="Table">
+    <div
+      className="my-4 w-fit max-w-full overflow-x-auto rounded-lg border border-line"
+      style={SCROLL_SHADOWS}
+      tabIndex={0}
+      role="group"
+      aria-label="Table"
+    >
       <table className={cn("border-collapse text-base", className)} {...props} />
     </div>
   ),

@@ -46,6 +46,19 @@ const ERRORS = {
   ipc: "Phaethon could not reach its backend: command agent_send not allowed",
   somethingNew: "An error code this UI does not know yet.",
 };
+// The way out each code offers (message-error.tsx RECOVERY).
+const ACTIONS = {
+  noApiKey: ["settings", "retry"],
+  apiKey: ["settings", "retry"],
+  missingCli: ["settings", "retry"],
+  notLoggedIn: ["retry", "settings"],
+  busy: ["retry"],
+  cli: ["retry"],
+  provider: ["retry"],
+  network: ["retry"],
+  storage: ["retry"],
+  somethingNew: ["retry"],
+};
 const errorScenarios = Object.entries(ERRORS).map(([code, message]) => ({
   name: `audit-chat-error-${code}`,
   sizes: code === "noApiKey" ? BOTH : WIDE,
@@ -54,6 +67,29 @@ const errorScenarios = Object.entries(ERRORS).map(([code, message]) => ({
   async run(page, h) {
     await h.send("What is due this week?");
     await page.waitForSelector('[data-role="assistant"] [role="alert"]', { timeout: 5000 });
+    const banner = await page.evaluate(() => {
+      const box = document.querySelector('[data-role="assistant"] [data-error-code]');
+      return {
+        alert: box.querySelector('[role="alert"]').innerText,
+        actions: [...box.querySelectorAll("[data-error-action]")].map((b) => b.dataset.errorAction),
+        detail: box.querySelector("[data-error-detail]")?.textContent ?? null,
+        detailOpen: box.querySelector("details")?.open ?? null,
+      };
+    });
+    check(!banner.alert.includes(message), "the raw backend text is not the headline", banner.alert);
+    check(!banner.alert.includes("`"), "no literal backticks in the banner", banner.alert);
+    check(banner.detail === message.replace(/`/g, "") && banner.detailOpen === false, "the raw text is kept under a closed Details", banner.detail);
+    const want = ACTIONS[code] ?? [];
+    check(banner.actions.join() === want.join(), `actions are [${want.join(", ")}]`, banner.actions.join());
+    if (want.includes("settings")) {
+      await page.evaluate(() => {
+        window.__opened = [];
+        window.addEventListener("phaethon:open-settings", (e) => window.__opened.push(e.detail));
+      });
+      await page.click('[data-error-action="settings"]');
+      const opened = await page.evaluate(() => window.__opened);
+      check(opened.length === 1 && opened[0].section === "agent", 'Open Settings asks for the "agent" section', JSON.stringify(opened));
+    }
     await park(page);
     await h.idle();
   },
@@ -104,7 +140,12 @@ export default [
     sizes: BOTH,
     mock: { settings: SETTINGS, threads: {}, fail: { thread_load: "conversation.jsonl line 14: expected value at line 1 column 1" } },
     async run(page, h) {
-      await h.waitText("couldn't be loaded");
+      await h.waitText("couldn’t be loaded");
+      const before = await page.evaluate(() => window.__calls.filter((c) => c[0] === "thread_load").length);
+      await page.click("[data-load-retry]");
+      await page.waitForFunction((n) => window.__calls.filter((c) => c[0] === "thread_load").length > n, { timeout: 5000 }, before);
+      await h.waitText("couldn’t be loaded");
+      check(true, "Try again loads the conversation again (thread_load called again)");
       await park(page);
     },
   },
@@ -130,7 +171,39 @@ export default [
       await mid.hover();
       await h.idle();
       await h.shot("older-reply-hover");
-      await page.hover('button[aria-label="Scroll to the latest message"]');
+      // Jump to latest: its own row between the conversation and the composer, never over a message.
+      const jump = await page.evaluate((sel) => {
+        const b = document.querySelector("[data-jump-row] button")?.getBoundingClientRect();
+        const log = document.querySelector(sel).getBoundingClientRect();
+        return b && { top: b.top, bottom: b.bottom, height: b.height, logBottom: log.bottom };
+      }, LOG);
+      check(!!jump, "Jump to latest shows while scrolled up");
+      check(jump.top >= jump.logBottom - 0.5, "it sits below the conversation, covering none of it", JSON.stringify(jump));
+      const lg = await page.evaluate(() => {
+        const probe = document.body.appendChild(document.createElement("div"));
+        probe.style.height = "var(--ph-control-height-lg)";
+        const px = probe.getBoundingClientRect().height;
+        probe.remove();
+        return px;
+      });
+      check(jump.height >= lg - 0.5, "it is at least the large control height", `${jump.height} vs ${lg}`);
+      await page.hover("[data-jump-row] button");
+      await h.idle();
+      await h.shot("jump-hover");
+      await page.click("[data-jump-row] button");
+      await page.waitForFunction(() => !document.querySelector("[data-jump-row]"), { timeout: 5000 });
+      const atEnd = await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        return log.scrollHeight - log.scrollTop - log.clientHeight < 2 && document.activeElement === log;
+      }, LOG);
+      check(atEnd, "clicking it scrolls to the end, hides it, and leaves focus on the conversation");
+      // An older reply's hidden Copy button reserves no space: the gap after a reply equals the gap after a question.
+      const gaps = await page.evaluate(() => {
+        const msgs = [...document.querySelectorAll("[data-role]")].slice(0, 4).map((m) => m.getBoundingClientRect());
+        return [msgs[1].top - msgs[0].bottom, msgs[2].top - msgs[1].bottom];
+      });
+      check(Math.abs(gaps[0] - gaps[1]) < 1.5, "message gaps are even (question→reply equals reply→question)", gaps.join(" / "));
+      await park(page);
       await h.idle();
     },
   },
@@ -143,6 +216,8 @@ export default [
     async run(page, h) {
       await h.send("What did I say about recursion?");
       await h.waitText("Thinking");
+      const md = await page.evaluate(() => [...document.querySelectorAll('[data-role="assistant"]')].pop().querySelectorAll(".aui-md").length);
+      check(md === 0, "no empty reply (and so no stray cursor) above Thinking…", String(md));
       await park(page);
       await h.idle();
     },
@@ -162,6 +237,9 @@ export default [
     async run(page, h) {
       await h.send("What did I say about recursion?");
       await h.waitText("base case");
+      await h.idle();
+      const activity = await page.evaluate(() => document.querySelector("[data-activity]")?.textContent ?? null);
+      check(activity === null, "the tool line goes once the reply's words arrive", activity);
       await park(page);
       await h.idle();
       await h.shot("stop-visible");
@@ -190,6 +268,19 @@ export default [
     async run(page, h) {
       await h.send("Plan around my shifts.");
       await page.waitForSelector("[data-activity-space]", { timeout: 5000 });
+      const line = await page.evaluate(() => {
+        const p = document.querySelector("[data-activity]");
+        const copy = p.cloneNode(true);
+        copy.querySelectorAll(".sr-only").forEach((n) => n.remove());
+        return { text: copy.textContent, dots: p.querySelectorAll(':scope > span[aria-hidden="true"], [data-activity-space] > span').length };
+      });
+      check(line.text.startsWith("Reading Work / calendar/"), "the line names the space by its display name", line.text);
+      check(line.dots === 1, "one mark only: the space's own dot", String(line.dots));
+      const cursor = await page.evaluate(() => {
+        const last = [...document.querySelectorAll('[data-role="assistant"] .aui-md > *')].pop();
+        return last ? getComputedStyle(last, "::after").content : "none";
+      });
+      check(["none", "normal", ""].includes(cursor), "no streaming cursor while the activity line shows", cursor);
       await park(page);
       await h.idle();
     },
@@ -218,6 +309,31 @@ export default [
   },
 
   ...errorScenarios,
+  {
+    name: "audit-chat-error-retry",
+    sizes: WIDE,
+    themes: ["light"],
+    mock: { settings: SETTINGS, threads: {}, sendError: { code: "network", message: ERRORS.network }, turn: [{ kind: "text", delta: "Problem set 4 is due Wednesday." }] },
+    async run(page, h) {
+      await h.send("What is due this week?");
+      await page.waitForSelector('[data-error-action="retry"]', { timeout: 5000 });
+      // The connection comes back; Send again re-sends the same message.
+      await page.evaluate(() => (window.__MOCK__.sendError = null));
+      await page.click('[data-error-action="retry"]');
+      await h.waitText("Problem set 4 is due Wednesday.");
+      const sends = await page.evaluate(() => window.__calls.filter((c) => c[0] === "agent_send").map((c) => c[1].prompt));
+      check(sends.length === 2 && sends[1] === "What is due this week?", "Send again calls agent_send again with the same prompt", JSON.stringify(sends));
+      const left = await page.evaluate(() => ({
+        errors: document.querySelectorAll("[data-error-code]").length,
+        users: document.querySelectorAll('[data-role="user"]').length,
+      }));
+      check(left.errors === 0 && left.users === 1, "the failed reply is replaced, and the question is not duplicated", JSON.stringify(left));
+      const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
+      check(focused, "focus is in the composer after Send again");
+      await park(page);
+      await h.idle();
+    },
+  },
 
   // ---- Approval card ----
   {
@@ -267,6 +383,17 @@ export default [
       await page.waitForSelector('[role="alertdialog"]', { timeout: 5000 });
       await clickText(page, '[role="alertdialog"]', "Allow");
       await h.idle();
+      const card = await page.evaluate(() => {
+        const c = document.querySelector('[role="alertdialog"]');
+        return {
+          alert: c.querySelector('[role="alert"]')?.textContent ?? "",
+          enabled: [...c.querySelectorAll(":scope > div:last-child > button")].filter((b) => !b.disabled).length,
+          focused: document.activeElement === c,
+        };
+      });
+      check(card.alert.startsWith("Your answer couldn’t be sent") && !card.alert.includes("the reply was cancelled"), "a failed answer is explained in plain words", card.alert);
+      check(card.enabled === 0, "both answers are disabled once the answer can’t be given", String(card.enabled));
+      check(card.focused, "focus moves to the card, not lost with the disabled button");
       await park(page);
     },
   },
@@ -318,6 +445,18 @@ export default [
     async run(page, h) {
       await h.send("Look at everything.");
       await page.waitForSelector("[data-access-request]", { timeout: 5000 });
+      const card = await page.evaluate(() => {
+        const c = document.querySelector("[data-access-request]");
+        const copy = (el) => {
+          const x = el.cloneNode(true);
+          x.querySelectorAll(".sr-only").forEach((n) => n.remove());
+          return x.textContent.replace(/\s+/g, " ").trim();
+        };
+        return { title: c.querySelector("h3").textContent, desc: c.querySelector("h3 + p").textContent, where: copy(c.querySelectorAll("p")[1]) };
+      });
+      check(card.title === "Phaethon wants to read from Home", "an unknown space id is title-cased", card.title);
+      check(card.desc.includes("a space that isn’t in this vault"), "and said to be outside this vault", card.desc);
+      check(card.where === "Everything in Home", "the whole space reads as Everything in Home", card.where);
       await park(page);
       await h.idle();
     },
@@ -369,6 +508,13 @@ export default [
       await h.idle();
       const item = await page.evaluate(() => document.activeElement?.getAttribute("role"));
       check(item === "menuitem", "opening + from the keyboard focuses its item", item);
+      const hidden = await page.evaluate(() =>
+        [...document.querySelectorAll('[aria-hidden="true"]')].filter((el) =>
+          el.matches(":is(button, textarea, input, [tabindex]):not([tabindex='-1'])") ||
+          el.querySelector(":is(button, textarea, input, [tabindex]):not([tabindex='-1'])"),
+        ).map((el) => el.outerHTML.slice(0, 160)),
+      );
+      check(hidden.length === 0, "with the menu open, nothing focusable is aria-hidden (non-modal menu)", hidden.join(" | "));
     },
   },
   {
@@ -402,12 +548,14 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await pick(page, [FILES.docx]);
-      await h.waitText("can't be attached");
+      await h.waitText("can’t be attached");
       await park(page);
       await h.idle();
       await h.shot("docx");
       await pick(page, ELEVEN);
       await h.waitText("up to 10 files");
+      const said = await page.evaluate(() => document.querySelector('[role="alert"]')?.textContent ?? "");
+      check(/x\d\.txt (wasn’t|weren’t) attached/.test(said), "the limit names the file(s) left out", said);
       await park(page);
       await h.idle();
     },
@@ -432,18 +580,27 @@ export default [
     mock: { settings: SETTINGS, threads: { school: CONVERSATION } },
     async run(page, h) {
       await h.waitText("Here is a plan");
-      await h.hover('button[aria-label="Copy reply"]');
+      // The latest reply's Copy (always shown); older replies' only appear on hover.
+      const COPY = '[data-role="assistant"]:last-child [data-copy-reply]';
+      await page.waitForSelector(COPY, { timeout: 5000 });
+      const name = () => page.evaluate((sel) => document.querySelector(sel).textContent, COPY);
+      const status = () => page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
+      check((await name()) === "Copy reply" && !(await page.$eval(COPY, (b) => b.hasAttribute("aria-label"))), "the Copy button's name is its visible label plus context");
+      await h.hover(COPY);
       await h.idle();
       await h.shot("reply-hover");
-      await page.click('button[aria-label="Copy reply"]');
-      await new Promise((r) => setTimeout(r, 200));
+      await page.click(COPY);
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Reply copied.", { timeout: 3000 });
+      check((await name()) === "Copied reply", "after copying, the name still starts with the visible Copied", await name());
+      check((await status()) === "Reply copied.", "Reply copied. is announced once, politely");
       await h.shot("reply-copied");
       const codeCopy = await page.evaluateHandle(() => [...document.querySelectorAll(".aui-md button")].find((b) => b.textContent.includes("Copy")));
       await codeCopy.hover();
       await h.idle();
       await h.shot("code-hover");
       await codeCopy.click();
-      await new Promise((r) => setTimeout(r, 200));
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Code copied.", { timeout: 3000 });
+      check(true, "Code copied. is announced");
       await park(page);
     },
   },

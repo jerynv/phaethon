@@ -134,6 +134,8 @@
   --ph-surface-sunken: oklch(0.952 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
   --ph-raised: oklch(0.995 calc(var(--ph-neutral-c) * 0.5) var(--ph-neutral-h));
   --ph-hover: oklch(0.935 calc(var(--ph-neutral-c) * 1.6) var(--ph-neutral-h));
+  /* The user's own messages. */
+  --ph-bubble: oklch(0.955 calc(var(--ph-neutral-c) * 1.6) var(--ph-neutral-h));
   --ph-selected: oklch(0.915 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
 
   /* Ink. Secondary stays >= 4.5:1 on every surface above. */
@@ -177,6 +179,7 @@
   --ph-surface-sunken: oklch(0.185 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
   --ph-raised: oklch(0.255 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
   --ph-hover: oklch(0.28 calc(var(--ph-ink-c) * 0.9) var(--ph-ink-h));
+  --ph-bubble: oklch(0.285 var(--ph-ink-c) var(--ph-ink-h));
   --ph-selected: oklch(0.31 var(--ph-ink-c) var(--ph-ink-h));
 
   --ph-ink: oklch(0.93 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));

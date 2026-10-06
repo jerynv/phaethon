@@ -66,6 +66,7 @@
   --color-surface-sunken: var(--ph-surface-sunken);
   --color-raised: var(--ph-raised);
   --color-hover: var(--ph-hover);
+  --color-bubble: var(--ph-bubble);
   --color-selected: var(--ph-selected);
   --color-ink: var(--ph-ink);
   --color-ink-secondary: var(--ph-ink-secondary);

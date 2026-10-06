@@ -76,9 +76,14 @@ const errorScenarios = Object.entries(ERRORS).map(([code, message]) => ({
         detailOpen: box.querySelector("details")?.open ?? null,
       };
     });
-    check(!banner.alert.includes(message), "the raw backend text is not the headline", banner.alert);
+    // Attachment errors are written for people by the backend (they name the file
+    // and the limit), so that sentence is the body; every other code keeps it in Details.
+    const ownWords = code === "attachment";
+    const [headline] = banner.alert.split("\n");
+    check(!headline.includes(message), "the raw backend text is not the headline", headline);
+    if (ownWords) check(banner.alert.includes(message) && banner.detail === null, "attachment errors show the backend's plain sentence as the body, with no duplicate Details", banner.alert);
     check(!banner.alert.includes("`"), "no literal backticks in the banner", banner.alert);
-    check(banner.detail === message.replace(/`/g, "") && banner.detailOpen === false, "the raw text is kept under a closed Details", banner.detail);
+    if (!ownWords) check(banner.detail === message.replace(/`/g, "") && banner.detailOpen === false, "the raw text is kept under a closed Details", banner.detail);
     const want = ACTIONS[code] ?? [];
     check(banner.actions.join() === want.join(), `actions are [${want.join(", ")}]`, banner.actions.join());
     if (want.includes("settings")) {

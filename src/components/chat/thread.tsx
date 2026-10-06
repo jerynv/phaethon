@@ -70,7 +70,7 @@ function UserMessage() {
       <MessageAttachments />
       {hasText && (
         // A transparent border: forced-colours mode draws it, so the bubble keeps its boundary.
-        <div className="max-w-(--ph-message-max-width) rounded-xl rounded-ee-sm border border-transparent bg-surface px-4 py-2.5 text-md whitespace-pre-wrap text-ink wrap-break-word">
+        <div className="max-w-(--ph-message-max-width) rounded-xl rounded-ee-sm border border-transparent bg-bubble px-4 py-2.5 text-md whitespace-pre-wrap text-ink wrap-break-word">
           <MessagePrimitive.Parts components={{ Text: PlainText, File: Nothing, Image: Nothing }} />
         </div>
       )}

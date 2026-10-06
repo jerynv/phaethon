@@ -11,7 +11,7 @@ const settings = {
 };
 
 const open = async (page, h, tab) => {
-  await h.click('[data-testid="open-settings"]');
+  await h.click('#spaces-sidebar:not([hidden]) [data-testid="open-settings"], header [data-testid="titlebar-settings"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   if (tab) {
     await h.idle(); // let the open animation and initial focus settle

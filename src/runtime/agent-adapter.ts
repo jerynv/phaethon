@@ -6,6 +6,7 @@ import type {
 } from "@assistant-ui/react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+import { notifyGrantsChanged } from "@/lib/grants";
 import { inTauri } from "@/lib/tauri";
 
 /** Mirrors `AgentEvent` in src-tauri/src/agent.rs. */
@@ -182,6 +183,8 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
               if (toolStatus?.startsWith("Waiting for you")) toolStatus = undefined;
               const receipt: AccessReceipt = { id: e.id, space: asked.space, path: asked.path, answer: e.answer };
               parts = [...parts, { type: "data", id: e.id, name: ACCESS_RECEIPT_PART, data: receipt }];
+              // A kept grant shows up in the title bar and Settings at once.
+              if (e.answer === "always") notifyGrantsChanged();
               yield update();
               break;
             }

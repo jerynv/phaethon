@@ -136,6 +136,9 @@ export default [
     async run(page, h) {
       await answered(page, h, "Always allow", "always", "Always allowed: Work / calendar");
       await h.waitText("moved problem set 4");
+      // The kept grant appears in the title bar without a reload.
+      await page.waitForFunction(() => document.querySelector("header")?.innerText.includes("Also reads"), { timeout: 4000 });
+      console.log("     check: title bar shows the new grant right after Always allow");
       await h.idle();
     },
   },

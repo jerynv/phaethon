@@ -34,6 +34,9 @@
   --ph-font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   /* The one dial for all text: 1 = default, 1.5 = half again as large. */
   --ph-text-scale: 1;
+  /* Controls, icons and layout follow the text dial, so a larger text size
+     never spills out of its button (WCAG 1.4.4). */
+  --ph-ui-scale: var(--ph-text-scale);
   --ph-text-2xs: calc(10px * var(--ph-text-scale));
   --ph-text-xs: calc(11px * var(--ph-text-scale));
   --ph-text-sm: calc(12px * var(--ph-text-scale));
@@ -78,20 +81,20 @@
   /* ---- Controls ---- */
   /* WCAG 2.5.8: nothing clickable smaller than this. */
   --ph-target-min: 24px;
-  --ph-control-height-sm: 24px;
-  --ph-control-height: 28px;
-  --ph-control-height-lg: 32px;
-  --ph-icon-size-sm: 14px;
-  --ph-icon-size: 16px;
-  --ph-icon-size-lg: 20px;
+  --ph-control-height-sm: max(var(--ph-target-min), calc(24px * var(--ph-ui-scale)));
+  --ph-control-height: max(var(--ph-target-min), calc(28px * var(--ph-ui-scale)));
+  --ph-control-height-lg: max(var(--ph-target-min), calc(32px * var(--ph-ui-scale)));
+  --ph-icon-size-sm: calc(14px * var(--ph-ui-scale));
+  --ph-icon-size: calc(16px * var(--ph-ui-scale));
+  --ph-icon-size-lg: calc(20px * var(--ph-ui-scale));
   --ph-icon-stroke: 1.5;
 
   /* ---- Layout ---- */
-  --ph-titlebar-height: 40px;
+  --ph-titlebar-height: calc(40px * max(1, var(--ph-ui-scale)));
   /* Room before title bar content; the macOS window buttons need more. */
   --ph-titlebar-inset-start: calc(var(--ph-space) * 3);
-  --ph-sidebar-width: 232px;
-  --ph-thread-width: 46rem;
+  --ph-sidebar-width: calc(232px * var(--ph-ui-scale));
+  --ph-thread-width: 58rem; /* rem follows text size, so the column grows with it */
   --ph-message-max-width: 85%;
   --ph-composer-radius: var(--ph-radius-xl);
   --ph-dialog-width: 40rem;
@@ -101,12 +104,12 @@
   /* The main pane sits inset from the window chrome by this much. */
   --ph-pane-inset: calc(var(--ph-space) * 2);
   /* Fluent caption buttons (Windows/Linux): 46px wide, full title bar height. */
-  --ph-window-control-width: 46px;
+  --ph-window-control-width: calc(46px * max(1, var(--ph-ui-scale)));
   /* The dot beside a space's name. */
-  --ph-space-mark-size: 8px;
+  --ph-space-mark-size: calc(8px * var(--ph-ui-scale));
 
   /* ---- Focus ---- */
-  --ph-focus-width: 2px;
+  --ph-focus-width: 3px; /* docs/ACCESSIBILITY.md: 3px, at least 3:1 */
   --ph-focus-offset: 2px;
 
   /* ---- Motion ---- */

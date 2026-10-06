@@ -3,7 +3,9 @@
 @import "shadcn/tailwind.css";
 @import "tw-shimmer";
 @import "@fontsource-variable/atkinson-hyperlegible-next";
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css";
 @import "@fontsource-variable/atkinson-hyperlegible-mono";
+@import "@fontsource-variable/atkinson-hyperlegible-mono/wght-italic.css";
 @import "./styles/tokens.css";
 
 @custom-variant dark (&:is(.dark *));
@@ -206,5 +208,16 @@
 @media (forced-colors: active) {
   :focus-visible {
     outline-color: Highlight !important;
+  }
+  /* Selection drawn with a background disappears in forced colours; mark the
+     current item with a real boundary instead. */
+  [aria-current="page"],
+  [aria-current="true"],
+  [aria-selected="true"],
+  [role="tab"][data-state="active"],
+  [aria-pressed="true"],
+  [aria-checked="true"]:not(input) {
+    outline: 2px solid SelectedItem;
+    outline-offset: -2px;
   }
 }

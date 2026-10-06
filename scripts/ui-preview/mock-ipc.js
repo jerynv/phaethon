@@ -6,6 +6,8 @@
     {
       settings: { backend: "steward", hasAnthropicKey: true, model: "claude-opus-5-5" },
       threads: {},
+      // Grants by receiving space: [{ id, from, path, created, scope }]
+      grants: {},
       // Events streamed for each agent_send; { waitApproval: true } pauses until answered.
       turn: [{ kind: "text", delta: "Done." }],
       sendError: null,
@@ -26,6 +28,7 @@
   let next = 1;
   const calls = (window.__calls = []);
   let pending = null;
+  let pendingAccess = null;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
@@ -42,6 +45,20 @@
         case "api_key_clear": M.settings.hasAnthropicKey = false; return;
         case "appearance_set": M.settings.appearance = args.appearance; return;
         case "thread_load": return M.threads[args.space] ?? [];
+        case "grants_list": return { grants: M.grants[args.space] ?? [], problems: M.grantProblems ?? [] };
+        case "grant_revoke": {
+          for (const k of Object.keys(M.grants)) {
+            const before = M.grants[k].length;
+            M.grants[k] = M.grants[k].filter((g) => g.id !== args.id);
+            if (M.grants[k].length !== before) return true;
+          }
+          return false;
+        }
+        case "agent_access_answer": {
+          const ok = pendingAccess && pendingAccess.id === args.id;
+          if (ok) pendingAccess.resolve(args.answer);
+          return !!ok;
+        }
         case "agent_cancel": {
           // A held-open reply ends as the real backend does: Cancelled, then End.
           const live = window.__liveTurn;
@@ -57,6 +74,7 @@
           return !!ok;
         }
         case "agent_send": {
+          M.currentSpace = args.space;
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
           let index = 0;
           const send = (message) => callbacks[id]?.({ index: index++, message });
@@ -69,6 +87,18 @@
             }
             for (const ev of M.turn) {
               await sleep(ev.delay ?? 40);
+              if (ev.waitAccess) {
+                const answer = await new Promise((resolve) => {
+                  pendingAccess = { id: ev.id, resolve };
+                  send({ kind: "accessRequest", id: ev.id, space: ev.space, path: ev.path, reason: ev.reason });
+                });
+                pendingAccess = null;
+                send({ kind: "accessRequestDone", id: ev.id, answer });
+                if (answer === "always") {
+                  (M.grants[M.currentSpace ?? "school"] ??= []).push({ id: "g-" + ev.id, from: ev.space, path: ev.path, created: "2026-10-10T09:00:00Z", scope: "always" });
+                }
+                continue;
+              }
               if (ev.waitApproval) {
                 const allowed = await new Promise((resolve) => {
                   pending = { id: ev.id, resolve };

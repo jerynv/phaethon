@@ -67,7 +67,9 @@ for (const s of chosen) {
   for (const theme of themes) {
     for (const [w, h] of sizes) {
       current = { mock: { ...s.mock, theme, platform: s.mock.platform ?? "mac" } };
-      const page = await browser.newPage();
+      // A fresh context per shot: no localStorage carried between scenarios.
+      const ctx = await browser.createBrowserContext().catch(() => null);
+      const page = await (ctx ?? browser).newPage();
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
@@ -98,6 +100,7 @@ for (const s of chosen) {
         console.log(`FAIL ${name}: ${e.message}${errors.length ? `  (page errors: ${errors.join(" | ").slice(0, 300)})` : ""}`);
       }
       await page.close();
+      await ctx?.close().catch(() => {});
     }
   }
 }

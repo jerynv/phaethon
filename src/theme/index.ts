@@ -1,11 +1,31 @@
+import "./overrides.css";
+
+import { startAppearance } from "./appearance";
+
+export {
+  effective,
+  endPreview,
+  flushAppearance,
+  getAppearance,
+  getSaveState,
+  getSystemPrefs,
+  previewAppearance,
+  resetTokens,
+  setAppearance,
+  setToken,
+  subscribe,
+  type SaveState,
+  type SystemPrefs,
+} from "./appearance";
+export * from "./tokens";
+export { useAppearance, useSaveState, useSystemPrefs } from "./use-appearance";
+
 /**
- * Applies the user's appearance before the first render: theme and token
- * overrides. For now it follows the system light/dark setting live; the
- * `.dark` class (shadcn convention) leaves room for an explicit choice.
+ * Applies the user's appearance before the first render: theme, contrast,
+ * motion and token overrides, from the cached copy at once and from the
+ * vault's settings once loaded. Follows system settings live where the
+ * user chose "system".
  */
 export function initAppearance(): void {
-  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  const apply = () => document.documentElement.classList.toggle("dark", darkQuery.matches);
-  apply();
-  darkQuery.addEventListener("change", apply);
+  startAppearance();
 }

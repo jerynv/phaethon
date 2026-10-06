@@ -33,6 +33,113 @@ pub struct VaultSettings {
     pub model: Option<String>,
     /// Effort for steward's own loop; the provider's default when unset.
     pub effort: Option<String>,
+    /// The user's appearance and accessibility choices (theme, token overrides).
+    /// Kept as raw JSON: the webview owns its meaning, the core only checks its
+    /// shape with [`validate_appearance`] on the way in and out.
+    pub appearance: Option<serde_json::Value>,
+}
+
+/// Largest appearance object accepted, serialized. Real ones are a few hundred bytes.
+const APPEARANCE_MAX_BYTES: usize = 8 * 1024;
+/// Most token overrides one appearance may carry.
+const APPEARANCE_MAX_TOKENS: usize = 64;
+/// Longest token value accepted, e.g. `oklch(0.62 0.08 168 / 90%)`.
+const TOKEN_VALUE_MAX_LEN: usize = 64;
+
+/// Check an appearance object from the webview (or a hand-edited settings
+/// file) before it is stored or handed back. Shape:
+///
+/// ```json
+/// { "version": 1, "theme": "system|light|dark",
+///   "reduceMotion": "system|on|off", "increaseContrast": "system|on|off",
+///   "tokens": { "--st-accent-h": 290, "--st-tracking-normal": "0.02em" } }
+/// ```
+///
+/// Every field is optional; anything else is refused. Token names must be
+/// `--st-` plus lowercase letters, digits and dashes. Values are finite
+/// numbers or short strings made only of characters a CSS number, length or
+/// `oklch()`/`oklab()` colour needs, so nothing stored here can break out of a
+/// CSS declaration. The webview applies its own, stricter per-token rules
+/// (src/theme/tokens.ts).
+pub fn validate_appearance(value: &serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    let obj = value.as_object().ok_or("Appearance must be an object.")?;
+    let size = serde_json::to_vec(value).map(|v| v.len()).unwrap_or(usize::MAX);
+    if size > APPEARANCE_MAX_BYTES {
+        return Err(format!("Appearance is too large ({size} bytes)."));
+    }
+    for (key, v) in obj {
+        match key.as_str() {
+            "version" => {
+                if !matches!(v.as_u64(), Some(1..=1000)) {
+                    return Err("Appearance version must be a small positive number.".into());
+                }
+            }
+            "theme" => one_of(key, v, &["system", "light", "dark"])?,
+            "reduceMotion" | "increaseContrast" => one_of(key, v, &["system", "on", "off"])?,
+            "tokens" => {
+                let tokens = v.as_object().ok_or("Appearance tokens must be an object.")?;
+                if tokens.len() > APPEARANCE_MAX_TOKENS {
+                    return Err(format!("Too many token overrides ({}).", tokens.len()));
+                }
+                for (name, value) in tokens {
+                    if !is_token_name(name) {
+                        return Err(format!("\"{}\" is not a steward token name.", truncate(name)));
+                    }
+                    let ok = match value {
+                        Value::Number(n) => n.as_f64().is_some_and(f64::is_finite),
+                        Value::String(s) => is_token_value(s),
+                        _ => false,
+                    };
+                    if !ok {
+                        return Err(format!("{name} has a value steward cannot use."));
+                    }
+                }
+            }
+            other => return Err(format!("Unknown appearance setting \"{}\".", truncate(other))),
+        }
+    }
+    Ok(())
+}
+
+fn one_of(key: &str, v: &serde_json::Value, allowed: &[&str]) -> Result<(), String> {
+    match v.as_str() {
+        Some(s) if allowed.contains(&s) => Ok(()),
+        _ => Err(format!("{key} must be one of: {}.", allowed.join(", "))),
+    }
+}
+
+/// `^--st-[a-z0-9-]+$`, at most 64 characters, not starting or ending in a dash.
+fn is_token_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("--st-") else {
+        return false;
+    };
+    !rest.is_empty()
+        && name.len() <= 64
+        && !rest.starts_with('-')
+        && !rest.ends_with('-')
+        && rest
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Numbers, lengths and oklch()/oklab() colours only: no quotes, semicolons,
+/// braces, commas, `url(` or `var(`, so a stored value can never smuggle in other CSS.
+fn is_token_value(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    let parens = s.matches('(').count();
+    !s.is_empty()
+        && s.len() <= TOKEN_VALUE_MAX_LEN
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || " .%/-+()".contains(c))
+        && parens == s.matches(')').count()
+        && (parens == 0
+            || (parens == 1
+                && (lower.starts_with("oklch(") || lower.starts_with("oklab("))
+                && s.ends_with(')')))
+}
+
+fn truncate(s: &str) -> String {
+    s.chars().take(40).collect()
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -232,6 +339,94 @@ mod tests {
         assert_eq!(s.backend, Backend::ClaudeCli);
         assert!(s.isolate_claude_config);
         assert!(fs::read_to_string(tmp.join(".steward/settings.json")).unwrap().contains("future"));
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn appearance_accepts_well_formed() {
+        use serde_json::json;
+        assert!(validate_appearance(&json!({})).is_ok());
+        assert!(validate_appearance(&json!({
+            "version": 1,
+            "theme": "dark",
+            "reduceMotion": "on",
+            "increaseContrast": "system",
+            "tokens": {
+                "--st-accent-h": 290,
+                "--st-text-scale": 1.25,
+                "--st-tracking-normal": "0.02em",
+                "--st-focus-width": "3px",
+                "--st-some-colour": "oklch(0.62 0.08 168 / 90%)",
+                "--st-other-colour": "oklab(0.7 -0.05 0.02)"
+            }
+        }))
+        .is_ok());
+    }
+
+    #[test]
+    fn appearance_rejects_bad_shape() {
+        use serde_json::json;
+        let bad = [
+            json!(null),
+            json!([]),
+            json!("dark"),
+            json!({ "theme": "neon" }),
+            json!({ "theme": 1 }),
+            json!({ "reduceMotion": "maybe" }),
+            json!({ "version": 0 }),
+            json!({ "version": "1" }),
+            json!({ "fontUrl": "https://example.com" }),
+            json!({ "tokens": [] }),
+            json!({ "tokens": { "color": "red" } }),
+            json!({ "tokens": { "--st-": 1 } }),
+            json!({ "tokens": { "--st-Accent-h": 1 } }),
+            json!({ "tokens": { "--st-accent-h;": 1 } }),
+            json!({ "tokens": { "--st-accent-": 1 } }),
+            json!({ "tokens": { "--x-accent-h": 1 } }),
+            json!({ "tokens": { "--st-accent-h": null } }),
+            json!({ "tokens": { "--st-accent-h": true } }),
+            json!({ "tokens": { "--st-accent-h": { "a": 1 } } }),
+            json!({ "tokens": { "--st-accent": "#ff0000" } }),
+            json!({ "tokens": { "--st-accent": "rgb(1,2,3)" } }),
+            json!({ "tokens": { "--st-accent": "hsl(1 2% 3%)" } }),
+            json!({ "tokens": { "--st-accent": "red; background: url(x)" } }),
+            json!({ "tokens": { "--st-accent": "url(x)" } }),
+            json!({ "tokens": { "--st-accent": "var(--st-danger)" } }),
+            json!({ "tokens": { "--st-accent": "oklch(1 0 0) url(x)" } }),
+            json!({ "tokens": { "--st-accent": "oklch(1 0 0" } }),
+            json!({ "tokens": { "--st-accent": "" } }),
+            json!({ "tokens": { "--st-accent": "1".repeat(65) } }),
+        ];
+        for v in bad {
+            assert!(validate_appearance(&v).is_err(), "{v} should be rejected");
+        }
+    }
+
+    #[test]
+    fn appearance_is_bounded() {
+        let mut tokens = serde_json::Map::new();
+        for i in 0..65 {
+            tokens.insert(format!("--st-t{i}"), serde_json::json!(1));
+        }
+        assert!(validate_appearance(&serde_json::json!({ "tokens": tokens })).is_err());
+        let mut big = serde_json::Map::new();
+        // 64 tokens (the most allowed), each with a 64-character name and value: over 8 KiB.
+        for i in 0..64 {
+            big.insert(format!("--st-{i:0>59}"), serde_json::json!("1".repeat(64)));
+        }
+        assert!(validate_appearance(&serde_json::json!({ "tokens": big })).is_err(), "over 8 KiB");
+    }
+
+    #[test]
+    fn appearance_round_trips_through_settings() {
+        let tmp = std::env::temp_dir().join(format!("steward-appearance-test-{}", std::process::id()));
+        let vault = Vault::at(&tmp);
+        vault.set_setting("backend", serde_json::json!("claude-cli")).unwrap();
+        let a = serde_json::json!({ "theme": "dark", "tokens": { "--st-accent-h": 290 } });
+        vault.set_setting("appearance", a.clone()).unwrap();
+        let s = vault.settings();
+        assert_eq!(s.appearance, Some(a));
+        assert_eq!(s.backend, Backend::ClaudeCli, "other settings survive");
         fs::remove_dir_all(&tmp).unwrap();
     }
 }

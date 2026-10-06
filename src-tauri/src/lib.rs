@@ -142,6 +142,13 @@ struct SettingsView {
     /// Whether a key is stored. The key itself never leaves the Rust core.
     has_anthropic_key: bool,
     model: String,
+    /// The saved appearance, or `{}` when none is saved or the file holds one
+    /// that does not pass [`vault::validate_appearance`].
+    appearance: serde_json::Value,
+    /// Where this vault's folder is, shown in Settings so the user can find it.
+    vault_path: String,
+    /// steward's version.
+    version: &'static str,
 }
 
 #[tauri::command]
@@ -151,7 +158,25 @@ fn settings_get(state: State<'_, AppState>) -> Result<SettingsView, String> {
         backend: s.backend,
         has_anthropic_key: secrets::get(&state.vault.name(), "anthropic")?.is_some(),
         model: s.model.unwrap_or_else(|| anthropic::DEFAULT_MODEL.into()),
+        appearance: s
+            .appearance
+            .filter(|a| vault::validate_appearance(a).is_ok())
+            .unwrap_or_else(|| serde_json::json!({})),
+        vault_path: state.vault.root().display().to_string(),
+        version: env!("CARGO_PKG_VERSION"),
     })
+}
+
+/// Save the user's appearance and accessibility choices to the vault, after
+/// checking their shape. Replaces the whole appearance object; every other
+/// setting in the file is kept.
+#[tauri::command]
+fn appearance_set(state: State<'_, AppState>, appearance: serde_json::Value) -> Result<(), String> {
+    vault::validate_appearance(&appearance)?;
+    state
+        .vault
+        .set_setting("appearance", appearance)
+        .map_err(|e| format!("Could not save your appearance settings: {e}"))
 }
 
 #[tauri::command]
@@ -233,7 +258,8 @@ pub fn run() {
             settings_get,
             settings_set_backend,
             api_key_set,
-            api_key_clear
+            api_key_clear,
+            appearance_set
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -17,7 +17,9 @@ type Action = "settings" | "retry";
  * plus "ipc" (the call to the backend itself failed). The title names the
  * problem; the body says what to do; actions do it where Phaethon can.
  */
-const RECOVERY: Record<string, { title: string; body: ReactNode; actions?: Action[] }> = {
+type Recovery = { title: string; body: ReactNode; actions?: Action[]; ownWords?: boolean };
+
+const RECOVERY: Record<string, Recovery> = {
   noApiKey: {
     title: "Phaethon needs an API key to reply",
     body: "Add your Anthropic API key in Settings, then send your message again.",
@@ -84,13 +86,15 @@ const RECOVERY: Record<string, { title: string; body: ReactNode; actions?: Actio
   attachment: {
     title: "A file couldn’t be attached",
     body: "Attach images, PDFs or text files within the size limits, then send again.",
+    // The backend names the file and the limit in plain words; that is the useful part.
+    ownWords: true,
   },
   ipc: {
     title: "Phaethon couldn’t reach its own backend",
     body: "Quit and reopen Phaethon. If it keeps happening, copy the details and report it.",
   },
 };
-const FALLBACK = { title: "Phaethon couldn’t finish this reply", body: "Send your message again.", actions: ["retry"] as Action[] };
+const FALLBACK: Recovery = { title: "Phaethon couldn’t finish this reply", body: "Send your message again.", actions: ["retry"] };
 
 /** The backend's own words, folded away: useful to report, not the headline. */
 function ErrorDetails({ text }: { text: string }) {
@@ -146,7 +150,7 @@ export function MessageError() {
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div role="alert" className="flex flex-col gap-0.5">
             <p className="font-semibold text-danger-ink">{recovery.title}</p>
-            <p className="text-ink">{recovery.body}</p>
+            <p className="text-ink">{recovery.ownWords && detail ? detail : recovery.body}</p>
           </div>
           {actions.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -181,7 +185,7 @@ export function MessageError() {
               )}
             </div>
           )}
-          {detail && <ErrorDetails text={detail} />}
+          {detail && !recovery.ownWords && <ErrorDetails text={detail} />}
         </div>
       </ErrorPrimitive.Root>
     </MessagePrimitive.Error>

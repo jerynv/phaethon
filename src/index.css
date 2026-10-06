@@ -185,6 +185,14 @@
   outline-offset: var(--ph-focus-offset) !important;
 }
 
+/* While the activity line or a card speaks for a reply, hide the markdown
+   streaming cursor: one progress indicator at a time. Unlayered, because
+   assistant-ui's cursor rule is unlayered and would beat a utility class. */
+[data-cursor="off"] .aui-md[data-status="running"]:empty::after,
+[data-cursor="off"] .aui-md[data-status="running"] *::after {
+  content: none;
+}
+
 /* The composer shows focus on its whole frame, not a second ring inside it. */
 [data-composer]:has([data-composer-input]:focus-visible) {
   outline: var(--ph-focus-width) solid var(--ph-focus);

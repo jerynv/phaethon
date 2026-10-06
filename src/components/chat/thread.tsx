@@ -171,7 +171,7 @@ function AssistantMessage() {
     <MessagePrimitive.Root data-role="assistant" className="group/msg relative flex flex-col items-start gap-3">
       <span className="sr-only">Phaethon said: </span>
       {hasContent && (
-        <div data-cursor={quiet ? "off" : undefined} className="w-full min-w-0 data-[cursor=off]:[&_*]:after:content-none">
+        <div data-cursor={quiet ? "off" : undefined} className="w-full min-w-0">
           <MessagePrimitive.Parts components={ASSISTANT_PARTS} />
         </div>
       )}

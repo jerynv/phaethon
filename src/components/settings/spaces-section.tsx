@@ -17,7 +17,7 @@ import { useStatus } from "./status";
  * per-app lists of macOS Privacy & Security and the "third-party access" pages
  * of GitHub and Google: who has access to what, since when, and one button to
  * take it back. Nothing here grants access; that only happens in a
- * conversation, when steward asks.
+ * conversation, when Phaethon asks.
  */
 export function SpacesSection({ headingId }: { headingId: string }) {
   const [vaultPath, setVaultPath] = useState<string | undefined>();
@@ -36,7 +36,7 @@ export function SpacesSection({ headingId }: { headingId: string }) {
       <SectionHeader
         id={headingId}
         title="Spaces"
-        description="A space only sees its own files. When steward needs something from another space, it asks you in the conversation. Grants you choose to keep are listed here; they are read-only."
+        description="A space only sees its own files. When Phaethon needs something from another space, it asks you in the conversation. Grants you choose to keep are listed here; they are read-only."
       />
       <SettingGroup title="In this vault">
         <ul className="flex flex-col divide-y divide-line" aria-label="Spaces in this vault">
@@ -56,14 +56,14 @@ export function SpacesSection({ headingId }: { headingId: string }) {
               ))}
             </ul>
             <p>
-              Fix or remove them in <code className="font-mono wrap-anywhere">{vaultPath ? `${vaultPath}/.steward/grants.json` : ".steward/grants.json in your vault"}</code>
+              Fix or remove them in <code className="font-mono wrap-anywhere">{vaultPath ? `${vaultPath}/.phaethon/grants.json` : ".phaethon/grants.json in your vault"}</code>
             </p>
           </div>
         </div>
       )}
       <p className="flex items-start gap-2 text-sm text-ink-secondary">
         <Icon name="info" className="mt-0.5 shrink-0 text-ink-tertiary" />
-        <span className="max-w-(--st-measure)">Adding, renaming and colouring spaces are coming here next.</span>
+        <span className="max-w-(--ph-measure)">Adding, renaming and colouring spaces are coming here next.</span>
       </p>
     </>
   );
@@ -115,17 +115,17 @@ function SpaceRow({ space }: { space: Space }) {
         </span>
       </div>
 
-      <div ref={listRef} className="ms-(--st-space-mark-size) ps-3">
+      <div ref={listRef} className="ms-(--ph-space-mark-size) ps-3">
         {state.status === "loading" && <p className="text-sm text-ink-secondary">Checking what {space.name} can read…</p>}
         {state.status === "error" && (
           <p className="flex items-start gap-1.5 text-sm text-danger-ink">
-            <Icon name="error" className="mt-0.5 size-(--st-icon-size-sm) shrink-0" />
+            <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
             Could not check what {space.name} can read: {state.error}
           </p>
         )}
         {state.status === "ready" && grants.length === 0 && (
           <p id={emptyId} tabIndex={-1} className="flex items-center gap-1.5 text-sm text-ink-secondary outline-none">
-            <Icon name="lock" className="size-(--st-icon-size-sm) shrink-0" />
+            <Icon name="lock" className="size-(--ph-icon-size-sm) shrink-0" />
             Can't read anything outside {space.name}.
           </p>
         )}
@@ -162,7 +162,7 @@ function SpaceRow({ space }: { space: Space }) {
                       disabled={busy !== null}
                       aria-label={`Revoke ${space.name}'s access to ${grantLabel(g)}`}
                       onClick={() => void revoke(g, i)}
-                      className="min-h-(--st-target-min)"
+                      className="min-h-(--ph-target-min)"
                     >
                       {busy === g.id ? "Revoking…" : "Revoke"}
                     </Button>

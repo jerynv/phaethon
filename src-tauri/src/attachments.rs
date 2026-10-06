@@ -3,7 +3,7 @@
 //! Each upload is checked and saved as an ordinary file in the space,
 //! `attachments/<YYYY-MM-DD>/<name>`, so it lives in the user's vault like
 //! anything else. The thread keeps only a reference block
-//! (`{"type": "steward_attachment", "path", "media_type", "name"}`); just before
+//! (`{"type": "phaethon_attachment", "path", "media_type", "name"}`); just before
 //! each request it is expanded into the API's image or document block. The
 //! expansion is deterministic, so the prompt cache keeps working.
 
@@ -57,9 +57,15 @@ fn kind(media_type: &str, name: &str) -> Option<Kind> {
     }
 }
 
+/// A reference block, under its current name or the one it had before the
+/// app was renamed (threads saved then still load).
+pub fn is_attachment_ref(b: &Value) -> bool {
+    matches!(b["type"].as_str(), Some("phaethon_attachment" | "steward_attachment"))
+}
+
 /// A saved attachment, as stored in the thread.
 pub fn reference(path: &str, media_type: &str, name: &str) -> Value {
-    json!({"type": "steward_attachment", "path": path, "media_type": media_type, "name": name})
+    json!({"type": "phaethon_attachment", "path": path, "media_type": media_type, "name": name})
 }
 
 /// Check and save every upload, or none: on any error nothing is written.
@@ -125,12 +131,12 @@ pub fn expand(space: &Path, msgs: &[Value]) -> Vec<Value> {
     msgs.iter()
         .map(|m| {
             let Some(blocks) = m["content"].as_array() else { return m.clone() };
-            if !blocks.iter().any(|b| b["type"] == "steward_attachment") {
+            if !blocks.iter().any(is_attachment_ref) {
                 return m.clone();
             }
             let content: Vec<Value> = blocks
                 .iter()
-                .map(|b| if b["type"] == "steward_attachment" { expand_one(space, b) } else { b.clone() })
+                .map(|b| if is_attachment_ref(b) { expand_one(space, b) } else { b.clone() })
                 .collect();
             json!({"role": m["role"], "content": content})
         })
@@ -231,7 +237,7 @@ mod tests {
 
     #[test]
     fn saves_checks_and_expands() {
-        let space = std::env::temp_dir().join(format!("steward-attach-{}", std::process::id()));
+        let space = std::env::temp_dir().join(format!("phaethon-attach-{}", std::process::id()));
         let _ = fs::remove_dir_all(&space);
         fs::create_dir_all(&space).unwrap();
 

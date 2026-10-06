@@ -1,6 +1,6 @@
 //! Agent supervisor for the `claude` CLI backend.
 //!
-//! steward never touches the CLI's credentials: it only locates the binary the
+//! Phaethon never touches the CLI's credentials: it only locates the binary the
 //! user installed and logged into, and spawns it. One child process per turn,
 //! with its working directory set to the space folder and `--resume` pointing
 //! at that space's saved session.
@@ -31,7 +31,7 @@ pub const MISSING_CLI_MESSAGE: &str = "Claude Code was not found. Install Claude
 const NOT_LOGGED_IN_MESSAGE: &str =
     "Claude Code is not logged in. Run `claude` once in a terminal to log in, then try again.";
 
-/// Variables a parent Claude Code session sets for its own children. If steward
+/// Variables a parent Claude Code session sets for its own children. If Phaethon
 /// was launched from inside one, they would make our child think it is nested.
 const INHERITED_SESSION_VARS: &[&str] = &[
     "CLAUDECODE",
@@ -57,7 +57,7 @@ pub enum AgentEvent {
     Tool { label: String },
     /// The turn failed; `message` is safe to show to the user.
     Error { code: ErrorCode, message: String },
-    /// steward's own loop wants to change a file and waits for the user's
+    /// Phaethon's own loop wants to change a file and waits for the user's
     /// answer (`agent_approve`). `detail` previews the new contents.
     Approval {
         id: String,
@@ -66,7 +66,7 @@ pub enum AgentEvent {
     },
     /// The approval `id` was answered or abandoned; the card can close.
     ApprovalDone { id: String, allowed: bool },
-    /// steward's own loop asks to let this space read `path` in the other
+    /// Phaethon's own loop asks to let this space read `path` in the other
     /// space `space` (read-only), and waits for `agent_access_answer`.
     AccessRequest {
         id: String,
@@ -94,7 +94,7 @@ pub enum ErrorCode {
     Busy,
     InvalidSpace,
     Cli,
-    /// steward's own loop has no API key for the provider yet.
+    /// Phaethon's own loop has no API key for the provider yet.
     NoApiKey,
     /// The provider rejected the API key.
     ApiKey,
@@ -126,7 +126,7 @@ pub struct TurnRequest<'a> {
 /// default, and not on `PATH` when a macOS app is launched from Finder).
 pub fn find_claude() -> Option<PathBuf> {
     #[cfg(debug_assertions)]
-    if let Some(p) = std::env::var_os("STEWARD_CLAUDE_BIN") {
+    if let Some(p) = std::env::var_os("PHAETHON_CLAUDE_BIN") {
         // Debug builds only: lets tests point at a scripted fake CLI.
         return Some(PathBuf::from(p));
     }

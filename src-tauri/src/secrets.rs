@@ -4,7 +4,7 @@
 
 use keyring::Entry;
 
-const SERVICE: &str = "steward";
+const SERVICE: &str = "phaethon";
 
 pub const PROVIDERS: &[&str] = &["anthropic"];
 
@@ -16,11 +16,29 @@ fn entry(vault: &str, provider: &str) -> Result<Entry, String> {
         .map_err(|e| format!("keychain unavailable: {e}"))
 }
 
+/// Keychain service used before the app was renamed to Phaethon.
+const LEGACY_SERVICE: &str = "steward";
+
 pub fn get(vault: &str, provider: &str) -> Result<Option<String>, String> {
     match entry(vault, provider)?.get_password() {
         Ok(k) => Ok(Some(k)),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(keyring::Error::NoEntry) => migrate_legacy(vault, provider),
         Err(e) => Err(format!("could not read the keychain: {e}")),
+    }
+}
+
+/// A key saved under the old name moves to the new one the first time it is read.
+fn migrate_legacy(vault: &str, provider: &str) -> Result<Option<String>, String> {
+    let Ok(old) = Entry::new(LEGACY_SERVICE, &format!("{vault}/provider/{provider}")) else {
+        return Ok(None);
+    };
+    match old.get_password() {
+        Ok(k) => {
+            set(vault, provider, &k)?;
+            let _ = old.delete_credential();
+            Ok(Some(k))
+        }
+        Err(_) => Ok(None),
     }
 }
 

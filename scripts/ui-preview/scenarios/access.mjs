@@ -88,7 +88,7 @@ export default [
       const modal = await page.evaluate(() => document.querySelector("[data-access-request]").getAttribute("aria-modal"));
       check(modal === "false", "the access card is aria-modal=false");
       const title = await page.evaluate(() => document.querySelector("[data-access-request] h3").textContent);
-      check(title === "steward wants to read from Work", "the heading names the other space in plain words", title);
+      check(title === "Phaethon wants to read from Work", "the heading names the other space in plain words", title);
       const said = await status(page);
       check(!said.includes("Waiting for you"), "the status region does not also announce the request", said);
       const activity = await page.evaluate(() => !!document.querySelector("[data-activity]"));
@@ -124,7 +124,7 @@ export default [
       await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Reading work/calendar/oct.md", { timeout: 5000 });
       check(true, "the status region announces the cross-space read");
       await h.waitText("moved problem set 4");
-      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("steward replied"), { timeout: 5000 });
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("Phaethon replied"), { timeout: 5000 });
       const done = await status(page);
       check(done.includes("moved problem set 4"), "the status region announces the reply after the answer", done);
       await h.idle();

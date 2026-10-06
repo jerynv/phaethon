@@ -58,7 +58,7 @@ function AttachmentChip({ removable }: { removable: boolean }) {
       >
         <Thumb icon={iconFor(type, mediaType)} />
         <span className="flex min-w-0 flex-col">
-          <span className="max-w-(--st-chip-name-width) truncate text-sm font-medium text-ink" title={name}>
+          <span className="max-w-(--ph-chip-name-width) truncate text-sm font-medium text-ink" title={name}>
             {name}
           </span>
           <span className={cn("text-xs", failed ? "text-danger-ink" : "text-ink-secondary")}>
@@ -76,7 +76,7 @@ function AttachmentChip({ removable }: { removable: boolean }) {
               aria-label={`Remove ${name}`}
               title={`Remove ${name}`}
             >
-              <Icon name="close" className="size-(--st-icon-size-sm)" />
+              <Icon name="close" className="size-(--ph-icon-size-sm)" />
             </Button>
           </AttachmentPrimitive.Remove>
         )}
@@ -97,7 +97,7 @@ export function ComposerAttachments() {
 /** Files sent with a user message (after a reload only names and types are known). */
 export function MessageAttachments() {
   return (
-    <ul aria-label="Files sent" className="flex max-w-(--st-message-max-width) flex-wrap justify-end gap-2 empty:hidden">
+    <ul aria-label="Files sent" className="flex max-w-(--ph-message-max-width) flex-wrap justify-end gap-2 empty:hidden">
       <MessagePrimitive.Attachments>{() => <AttachmentChip removable={false} />}</MessagePrimitive.Attachments>
     </ul>
   );

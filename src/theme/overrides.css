@@ -8,69 +8,69 @@
 /* ---- Settings window layout ---- */
 :root {
   /* rem follows the text size setting, so the window grows with the text. */
-  --st-settings-width: min(62rem, calc(100vw - 2rem));
-  --st-settings-height: min(44rem, calc(100dvh - 2rem));
-  --st-settings-nav-width: 13.5rem;
-  --st-settings-content-width: 46rem;
-  --st-settings-control-width: 18rem;
-  --st-settings-label-min: 13rem;
-  --st-swatch-size: 26px;
-  --st-theme-preview-height: 4.5rem;
-  --st-slider-track: 6px;
-  --st-slider-thumb: 18px;
-  --st-switch-width: 40px;
-  --st-switch-height: 24px;
-  --st-switch-thumb: 18px;
-  --st-switch-travel: 16px;
+  --ph-settings-width: min(62rem, calc(100vw - 2rem));
+  --ph-settings-height: min(44rem, calc(100dvh - 2rem));
+  --ph-settings-nav-width: 13.5rem;
+  --ph-settings-content-width: 46rem;
+  --ph-settings-control-width: 18rem;
+  --ph-settings-label-min: 13rem;
+  --ph-swatch-size: 26px;
+  --ph-theme-preview-height: 4.5rem;
+  --ph-slider-track: 6px;
+  --ph-slider-thumb: 18px;
+  --ph-switch-width: 40px;
+  --ph-switch-height: 24px;
+  --ph-switch-thumb: 18px;
+  --ph-switch-travel: 16px;
 }
 
 /* ---- Increase contrast ---- */
 /* Darker ink, visible borders, a heavier focus ring. Hues and dials still apply. */
 :root[data-contrast="more"] {
-  --st-ink: oklch(0.17 var(--st-ink-c) var(--st-ink-h));
-  --st-ink-secondary: oklch(0.32 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
-  --st-ink-tertiary: oklch(0.4 calc(var(--st-ink-c) * 0.6) var(--st-ink-h));
-  --st-line: oklch(0.72 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
-  --st-line-strong: oklch(0.52 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
-  --st-accent: oklch(0.43 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-hover: oklch(0.38 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-ink: oklch(0.35 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-soft-ink: oklch(0.3 var(--st-accent-c) var(--st-accent-h));
-  --st-danger-ink: oklch(0.36 var(--st-danger-c) var(--st-danger-h));
-  --st-warning-ink: oklch(0.35 0.09 var(--st-warning-h));
-  --st-success-ink: oklch(0.34 0.08 var(--st-success-h));
-  --st-space-mark: oklch(0.5 var(--st-space-c) var(--st-space-h));
-  --st-focus: oklch(0.4 0.16 var(--st-accent-h));
-  --st-scrollbar: oklch(0.6 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
-  --st-shadow-color: oklch(0.25 0.02 var(--st-ink-h) / 18%);
-  --st-overlay: oklch(0.15 0.01 var(--st-ink-h) / 55%);
+  --ph-ink: oklch(0.17 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink-secondary: oklch(0.32 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
+  --ph-ink-tertiary: oklch(0.4 calc(var(--ph-ink-c) * 0.6) var(--ph-ink-h));
+  --ph-line: oklch(0.72 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-line-strong: oklch(0.52 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-accent: oklch(0.43 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-hover: oklch(0.38 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-ink: oklch(0.35 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-soft-ink: oklch(0.3 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-danger-ink: oklch(0.36 var(--ph-danger-c) var(--ph-danger-h));
+  --ph-warning-ink: oklch(0.35 0.09 var(--ph-warning-h));
+  --ph-success-ink: oklch(0.34 0.08 var(--ph-success-h));
+  --ph-space-mark: oklch(0.5 var(--ph-space-c) var(--ph-space-h));
+  --ph-focus: oklch(0.4 0.16 var(--ph-accent-h));
+  --ph-scrollbar: oklch(0.6 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-shadow-color: oklch(0.25 0.02 var(--ph-ink-h) / 18%);
+  --ph-overlay: oklch(0.15 0.01 var(--ph-ink-h) / 55%);
 }
 
 :root.dark[data-contrast="more"] {
-  --st-bg: oklch(0.16 calc(var(--st-ink-c) * 0.7) var(--st-ink-h));
-  --st-surface-sunken: oklch(0.14 calc(var(--st-ink-c) * 0.7) var(--st-ink-h));
-  --st-ink: oklch(0.98 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
-  --st-ink-secondary: oklch(0.88 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
-  --st-ink-tertiary: oklch(0.8 var(--st-neutral-c) var(--st-neutral-h));
-  --st-line: oklch(0.5 var(--st-ink-c) var(--st-ink-h));
-  --st-line-strong: oklch(0.66 var(--st-ink-c) var(--st-ink-h));
-  --st-accent: oklch(0.82 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-hover: oklch(0.86 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-ink: oklch(0.88 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-soft-ink: oklch(0.92 calc(var(--st-accent-c) * 0.8) var(--st-accent-h));
-  --st-danger-ink: oklch(0.88 0.09 var(--st-danger-h));
-  --st-warning-ink: oklch(0.9 0.08 var(--st-warning-h));
-  --st-success-ink: oklch(0.9 0.07 var(--st-success-h));
-  --st-space-mark: oklch(0.8 var(--st-space-c) var(--st-space-h));
-  --st-focus: oklch(0.88 0.12 var(--st-accent-h));
-  --st-scrollbar: oklch(0.6 var(--st-ink-c) var(--st-ink-h));
-  --st-shadow-color: oklch(0.02 0.01 var(--st-ink-h) / 50%);
-  --st-overlay: oklch(0.05 0.01 var(--st-ink-h) / 70%);
+  --ph-bg: oklch(0.16 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
+  --ph-surface-sunken: oklch(0.14 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
+  --ph-ink: oklch(0.98 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
+  --ph-ink-secondary: oklch(0.88 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
+  --ph-ink-tertiary: oklch(0.8 var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-line: oklch(0.5 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-line-strong: oklch(0.66 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-accent: oklch(0.82 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-hover: oklch(0.86 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-ink: oklch(0.88 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-soft-ink: oklch(0.92 calc(var(--ph-accent-c) * 0.8) var(--ph-accent-h));
+  --ph-danger-ink: oklch(0.88 0.09 var(--ph-danger-h));
+  --ph-warning-ink: oklch(0.9 0.08 var(--ph-warning-h));
+  --ph-success-ink: oklch(0.9 0.07 var(--ph-success-h));
+  --ph-space-mark: oklch(0.8 var(--ph-space-c) var(--ph-space-h));
+  --ph-focus: oklch(0.88 0.12 var(--ph-accent-h));
+  --ph-scrollbar: oklch(0.6 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-shadow-color: oklch(0.02 0.01 var(--ph-ink-h) / 50%);
+  --ph-overlay: oklch(0.05 0.01 var(--ph-ink-h) / 70%);
 }
 
 /* ---- Reduce motion ---- */
 /* Same as the prefers-reduced-motion rule in index.css, for when the user
-   turns it on in steward. Durations are also zeroed by appearance.ts. */
+   turns it on in Phaethon. Durations are also zeroed by appearance.ts. */
 :root[data-motion="reduce"] *,
 :root[data-motion="reduce"] *::before,
 :root[data-motion="reduce"] *::after {

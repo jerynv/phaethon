@@ -1,4 +1,4 @@
-// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto steward tokens.
+// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto Phaethon tokens.
 import * as React from "react"
 import { cn } from "cn"
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
@@ -36,7 +36,7 @@ function ScrollBar({
       data-slot="scroll-area-scrollbar"
       orientation={orientation}
       className={cn(
-        "flex touch-none p-0.5 transition-opacity duration-(--st-duration) select-none",
+        "flex touch-none p-0.5 transition-opacity duration-(--ph-duration) select-none",
         orientation === "vertical" &&
           "h-full w-2.5",
         orientation === "horizontal" &&
@@ -47,7 +47,7 @@ function ScrollBar({
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="relative flex-1 rounded-full bg-(--st-scrollbar) transition-colors duration-(--st-duration-fast) hover:bg-line-strong active:bg-ink-tertiary"
+        className="relative flex-1 rounded-full bg-(--ph-scrollbar) transition-colors duration-(--ph-duration-fast) hover:bg-line-strong active:bg-ink-tertiary"
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )

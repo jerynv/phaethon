@@ -35,7 +35,7 @@ impl Anthropic {
         #[allow(unused_mut)]
         let mut base_url = "https://api.anthropic.com".to_string();
         #[cfg(debug_assertions)]
-        if let Ok(u) = std::env::var("STEWARD_ANTHROPIC_BASE_URL") {
+        if let Ok(u) = std::env::var("PHAETHON_ANTHROPIC_BASE_URL") {
             // Debug builds only: lets tests point at a local fake server.
             base_url = u;
         }

@@ -11,81 +11,81 @@
 @custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
 
 /*
- * Tailwind's scales point at steward tokens, so utilities like `text-sm`,
+ * Tailwind's scales point at Phaethon tokens, so utilities like `text-sm`,
  * `p-2`, `rounded-md` and `bg-surface` change when a token is overridden.
  */
 @theme inline {
-  --font-sans: var(--st-font-sans);
-  --font-mono: var(--st-font-mono);
+  --font-sans: var(--ph-font-sans);
+  --font-mono: var(--ph-font-mono);
 
-  --text-2xs: var(--st-text-2xs);
-  --text-2xs--line-height: var(--st-leading-snug);
-  --text-xs: var(--st-text-xs);
-  --text-xs--line-height: var(--st-leading-snug);
-  --text-sm: var(--st-text-sm);
-  --text-sm--line-height: var(--st-leading-snug);
-  --text-base: var(--st-text-base);
-  --text-base--line-height: var(--st-leading-normal);
-  --text-md: var(--st-text-md);
-  --text-md--line-height: var(--st-leading-normal);
-  --text-lg: var(--st-text-lg);
-  --text-lg--line-height: var(--st-leading-snug);
-  --text-xl: var(--st-text-xl);
-  --text-xl--line-height: var(--st-leading-tight);
-  --text-2xl: var(--st-text-2xl);
-  --text-2xl--line-height: var(--st-leading-tight);
+  --text-2xs: var(--ph-text-2xs);
+  --text-2xs--line-height: var(--ph-leading-snug);
+  --text-xs: var(--ph-text-xs);
+  --text-xs--line-height: var(--ph-leading-snug);
+  --text-sm: var(--ph-text-sm);
+  --text-sm--line-height: var(--ph-leading-snug);
+  --text-base: var(--ph-text-base);
+  --text-base--line-height: var(--ph-leading-normal);
+  --text-md: var(--ph-text-md);
+  --text-md--line-height: var(--ph-leading-normal);
+  --text-lg: var(--ph-text-lg);
+  --text-lg--line-height: var(--ph-leading-snug);
+  --text-xl: var(--ph-text-xl);
+  --text-xl--line-height: var(--ph-leading-tight);
+  --text-2xl: var(--ph-text-2xl);
+  --text-2xl--line-height: var(--ph-leading-tight);
 
-  --font-weight-normal: var(--st-weight-normal);
-  --font-weight-medium: var(--st-weight-medium);
-  --font-weight-semibold: var(--st-weight-semibold);
-  --font-weight-bold: var(--st-weight-bold);
+  --font-weight-normal: var(--ph-weight-normal);
+  --font-weight-medium: var(--ph-weight-medium);
+  --font-weight-semibold: var(--ph-weight-semibold);
+  --font-weight-bold: var(--ph-weight-bold);
 
-  --spacing: var(--st-space);
+  --spacing: var(--ph-space);
 
-  --radius-xs: var(--st-radius-xs);
-  --radius-sm: var(--st-radius-sm);
-  --radius-md: var(--st-radius);
-  --radius-lg: var(--st-radius-lg);
-  --radius-xl: var(--st-radius-xl);
-  --radius-2xl: var(--st-radius-xl);
-  --radius-full: var(--st-radius-full);
+  --radius-xs: var(--ph-radius-xs);
+  --radius-sm: var(--ph-radius-sm);
+  --radius-md: var(--ph-radius);
+  --radius-lg: var(--ph-radius-lg);
+  --radius-xl: var(--ph-radius-xl);
+  --radius-2xl: var(--ph-radius-xl);
+  --radius-full: var(--ph-radius-full);
 
-  --shadow-xs: var(--st-shadow-sm);
-  --shadow-sm: var(--st-shadow-sm);
-  --shadow: var(--st-shadow);
-  --shadow-md: var(--st-shadow);
-  --shadow-lg: var(--st-shadow-lg);
+  --shadow-xs: var(--ph-shadow-sm);
+  --shadow-sm: var(--ph-shadow-sm);
+  --shadow: var(--ph-shadow);
+  --shadow-md: var(--ph-shadow);
+  --shadow-lg: var(--ph-shadow-lg);
 
-  --ease-out: var(--st-ease-out);
+  --ease-out: var(--ph-ease-out);
 
-  /* steward names */
-  --color-bg: var(--st-bg);
-  --color-surface: var(--st-surface);
-  --color-surface-sunken: var(--st-surface-sunken);
-  --color-raised: var(--st-raised);
-  --color-hover: var(--st-hover);
-  --color-selected: var(--st-selected);
-  --color-ink: var(--st-ink);
-  --color-ink-secondary: var(--st-ink-secondary);
-  --color-ink-tertiary: var(--st-ink-tertiary);
-  --color-ink-inverse: var(--st-ink-inverse);
-  --color-line: var(--st-line);
-  --color-line-strong: var(--st-line-strong);
-  --color-accent-fill: var(--st-accent);
-  --color-accent-fill-hover: var(--st-accent-hover);
-  --color-accent-ink: var(--st-accent-ink);
-  --color-accent-soft: var(--st-accent-soft);
-  --color-accent-soft-ink: var(--st-accent-soft-ink);
-  --color-space-tint: var(--st-space-tint);
-  --color-space-mark: var(--st-space-mark);
-  --color-danger: var(--st-danger);
-  --color-danger-soft: var(--st-danger-soft);
-  --color-danger-ink: var(--st-danger-ink);
-  --color-warning-soft: var(--st-warning-soft);
-  --color-warning-ink: var(--st-warning-ink);
-  --color-success-soft: var(--st-success-soft);
-  --color-success-ink: var(--st-success-ink);
-  --color-focus: var(--st-focus);
+  /* Phaethon names */
+  --color-bg: var(--ph-bg);
+  --color-surface: var(--ph-surface);
+  --color-surface-sunken: var(--ph-surface-sunken);
+  --color-raised: var(--ph-raised);
+  --color-hover: var(--ph-hover);
+  --color-selected: var(--ph-selected);
+  --color-ink: var(--ph-ink);
+  --color-ink-secondary: var(--ph-ink-secondary);
+  --color-ink-tertiary: var(--ph-ink-tertiary);
+  --color-ink-inverse: var(--ph-ink-inverse);
+  --color-line: var(--ph-line);
+  --color-line-strong: var(--ph-line-strong);
+  --color-accent-fill: var(--ph-accent);
+  --color-accent-fill-hover: var(--ph-accent-hover);
+  --color-accent-ink: var(--ph-accent-ink);
+  --color-accent-soft: var(--ph-accent-soft);
+  --color-accent-soft-ink: var(--ph-accent-soft-ink);
+  --color-space-tint: var(--ph-space-tint);
+  --color-space-mark: var(--ph-space-mark);
+  --color-danger: var(--ph-danger);
+  --color-danger-soft: var(--ph-danger-soft);
+  --color-danger-ink: var(--ph-danger-ink);
+  --color-warning-soft: var(--ph-warning-soft);
+  --color-warning-ink: var(--ph-warning-ink);
+  --color-success-soft: var(--ph-success-soft);
+  --color-success-ink: var(--ph-success-ink);
+  --color-focus: var(--ph-focus);
 
   /* shadcn / assistant-ui names */
   --color-background: var(--background);
@@ -138,33 +138,33 @@
     @apply border-border;
   }
   html {
-    font-family: var(--st-font-sans);
-    font-size: var(--st-text-base);
-    line-height: var(--st-leading-normal);
-    letter-spacing: var(--st-tracking-normal);
+    font-family: var(--ph-font-sans);
+    font-size: var(--ph-text-base);
+    line-height: var(--ph-leading-normal);
+    letter-spacing: var(--ph-tracking-normal);
     -webkit-font-smoothing: antialiased;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
   }
   body {
-    background: var(--st-bg);
-    color: var(--st-ink);
-    caret-color: var(--st-accent);
+    background: var(--ph-bg);
+    color: var(--ph-ink);
+    caret-color: var(--ph-accent);
   }
   ::selection {
-    background: var(--st-selection);
-    color: var(--st-ink);
+    background: var(--ph-selection);
+    color: var(--ph-ink);
   }
   code,
   kbd,
   pre,
   samp {
-    font-family: var(--st-font-mono);
+    font-family: var(--ph-font-mono);
   }
   /* Thin themed scrollbars; still visible, still grabbable. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--st-scrollbar) transparent;
+    scrollbar-color: var(--ph-scrollbar) transparent;
   }
   a {
     text-underline-offset: 0.2em;
@@ -174,19 +174,19 @@
   }
 }
 
-/* ---- steward accessibility baseline ---- */
+/* ---- Phaethon accessibility baseline ---- */
 
 /* One strong, consistent focus ring for every focusable element. Unlayered and
    !important so component-level `outline-none` utilities cannot hide it. */
 :focus-visible {
-  outline: var(--st-focus-width) solid var(--st-focus) !important;
-  outline-offset: var(--st-focus-offset) !important;
+  outline: var(--ph-focus-width) solid var(--ph-focus) !important;
+  outline-offset: var(--ph-focus-offset) !important;
 }
 
 /* The composer shows focus on its whole frame, not a second ring inside it. */
 [data-composer]:has([data-composer-input]:focus-visible) {
-  outline: var(--st-focus-width) solid var(--st-focus);
-  outline-offset: var(--st-focus-offset);
+  outline: var(--ph-focus-width) solid var(--ph-focus);
+  outline-offset: var(--ph-focus-offset);
 }
 [data-composer-input]:focus-visible {
   outline: none !important;

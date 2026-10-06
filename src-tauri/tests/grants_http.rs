@@ -6,11 +6,11 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
-use steward_lib::agent::{AgentEvent, Runs};
-use steward_lib::agent_loop::{self, Approvals, LoopRequest};
-use steward_lib::anthropic::Anthropic;
-use steward_lib::grants::{self, AccessAnswer};
-use steward_lib::vault::Vault;
+use phaethon_lib::agent::{AgentEvent, Runs};
+use phaethon_lib::agent_loop::{self, Approvals, LoopRequest};
+use phaethon_lib::anthropic::Anthropic;
+use phaethon_lib::grants::{self, AccessAnswer};
+use phaethon_lib::vault::Vault;
 use tokio::net::TcpListener;
 
 mod common;
@@ -18,7 +18,7 @@ use common::{reply, serve};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_then_read_another_space_over_http() {
-    let vault = std::env::temp_dir().join(format!("steward-grants-http-{}", std::process::id()));
+    let vault = std::env::temp_dir().join(format!("phaethon-grants-http-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&vault);
     let school = vault.join("spaces/school");
     std::fs::create_dir_all(&school).unwrap();
@@ -27,7 +27,7 @@ async fn ask_then_read_another_space_over_http() {
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     // SAFETY: set before any request; this test binary has a single test.
-    unsafe { std::env::set_var("STEWARD_ANTHROPIC_BASE_URL", format!("http://{}", listener.local_addr().unwrap())) };
+    unsafe { std::env::set_var("PHAETHON_ANTHROPIC_BASE_URL", format!("http://{}", listener.local_addr().unwrap())) };
     let bodies = Arc::new(Mutex::new(vec![]));
     let server = tokio::spawn(serve(
         listener,

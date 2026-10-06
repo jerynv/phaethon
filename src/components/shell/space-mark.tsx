@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /** Style that gives an element (and everything inside it) a space's hue. */
 export function spaceHueStyle(hue: number): CSSProperties {
-  return { "--st-space-h": String(hue) } as CSSProperties;
+  return { "--ph-space-h": String(hue) } as CSSProperties;
 }
 
 /**
@@ -14,14 +14,14 @@ export function spaceHueStyle(hue: number): CSSProperties {
  */
 export function SpaceMark({ hue, className }: { hue: number | undefined; className?: string }) {
   if (hue === undefined) {
-    return <span aria-hidden="true" className={cn("inline-block size-(--st-space-mark-size) shrink-0 rounded-full bg-ink-tertiary", className)} />;
+    return <span aria-hidden="true" className={cn("inline-block size-(--ph-space-mark-size) shrink-0 rounded-full bg-ink-tertiary", className)} />;
   }
   return (
     <span
       aria-hidden="true"
       data-space-hue=""
       style={spaceHueStyle(hue)}
-      className={cn("inline-block size-(--st-space-mark-size) shrink-0 rounded-full bg-space-mark", className)}
+      className={cn("inline-block size-(--ph-space-mark-size) shrink-0 rounded-full bg-space-mark", className)}
     />
   );
 }

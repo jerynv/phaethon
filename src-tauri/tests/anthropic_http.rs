@@ -1,10 +1,10 @@
 //! The Anthropic provider over real HTTP, against a local fake server: checks
-//! the request steward sends and that a reply streamed in awkward chunks
+//! the request Phaethon sends and that a reply streamed in awkward chunks
 //! (one splits a multi-byte character) comes back intact. No network.
 
 use serde_json::{Value, json};
-use steward_lib::anthropic::Anthropic;
-use steward_lib::provider::{Delta, ErrorKind, ModelRequest, Provider};
+use phaethon_lib::anthropic::Anthropic;
+use phaethon_lib::provider::{Delta, ErrorKind, ModelRequest, Provider};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -53,7 +53,7 @@ async fn streams_over_http() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     // SAFETY: set once, before any thread reads it; this test binary has one test using it.
-    unsafe { std::env::set_var("STEWARD_ANTHROPIC_BASE_URL", format!("http://{addr}")) };
+    unsafe { std::env::set_var("PHAETHON_ANTHROPIC_BASE_URL", format!("http://{addr}")) };
 
     let body = sse(&[
         json!({"type": "message_start", "message": {"model": "claude-opus-5-5"}}),

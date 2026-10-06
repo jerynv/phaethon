@@ -8,12 +8,12 @@ export type Platform = "mac" | "windows" | "linux";
 declare global {
   interface Window {
     /** Set by the UI preview harness to render another platform's chrome. */
-    __STEWARD_PLATFORM__?: Platform;
+    __PHAETHON_PLATFORM__?: Platform;
   }
 }
 
 function detect(): Platform {
-  const forced = typeof window !== "undefined" ? window.__STEWARD_PLATFORM__ : undefined;
+  const forced = typeof window !== "undefined" ? window.__PHAETHON_PLATFORM__ : undefined;
   if (forced === "mac" || forced === "windows" || forced === "linux") return forced;
   if (typeof navigator === "undefined") return "mac";
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };

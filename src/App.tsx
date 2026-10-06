@@ -23,7 +23,7 @@ export default function App() {
   // The active space's hue tints the whole window, dialogs included (they
   // render in a portal outside the app root), so it is set on <html>.
   useLayoutEffect(() => {
-    document.documentElement.style.setProperty("--st-space-h", String(active.hue));
+    document.documentElement.style.setProperty("--ph-space-h", String(active.hue));
   }, [active.hue]);
 
   // Cmd+\ (Ctrl+\ elsewhere) shows and hides the sidebar.
@@ -49,7 +49,7 @@ export default function App() {
         <a
           href="#main"
           className={cn(
-            "sr-only focus:not-sr-only focus:fixed focus:top-[calc(var(--st-titlebar-height)+var(--st-space)*3)] focus:left-1/2 focus:z-50 focus:-translate-x-1/2",
+            "sr-only focus:not-sr-only focus:fixed focus:top-[calc(var(--ph-titlebar-height)+var(--ph-space)*3)] focus:left-1/2 focus:z-50 focus:-translate-x-1/2",
             "focus:rounded-md focus:bg-raised focus:px-3 focus:py-1 focus:text-base focus:font-medium focus:text-ink focus:shadow",
           )}
         >
@@ -75,9 +75,9 @@ export default function App() {
             tabIndex={-1}
             aria-labelledby="space-title"
             className={cn(
-              "me-(--st-pane-inset) mb-(--st-pane-inset) flex min-w-0 flex-1 flex-col overflow-hidden",
+              "me-(--ph-pane-inset) mb-(--ph-pane-inset) flex min-w-0 flex-1 flex-col overflow-hidden",
               "rounded-lg border border-line bg-bg shadow-sm",
-              !sidebar.open && "ms-(--st-pane-inset)",
+              !sidebar.open && "ms-(--ph-pane-inset)",
             )}
           >
             <SpacePane space={active} reloadKey={reloadKey} />

@@ -10,9 +10,9 @@ import { SectionHeader, SettingGroup, SettingRow } from "./controls";
 
 const BACKENDS: { value: Backend; label: string; hint: string }[] = [
   {
-    value: "steward",
-    label: "steward, with your Anthropic API key",
-    hint: "steward runs the agent itself. It sees only the space you are in, and asks before changing any file.",
+    value: "phaethon",
+    label: "Phaethon, with your Anthropic API key",
+    hint: "Phaethon runs the agent itself. It sees only the space you are in, and asks before changing any file.",
   },
   {
     value: "claude-cli",
@@ -88,11 +88,11 @@ export function AgentSection({
                     value={b.value}
                     aria-describedby={`${backendLabel}-${b.value}`}
                     className={cn(
-                      "group flex w-full min-w-0 items-start gap-3 rounded-lg border border-line-strong bg-raised px-4 py-3 text-left shadow-sm transition-colors duration-(--st-duration-fast) hover:bg-hover",
+                      "group flex w-full min-w-0 items-start gap-3 rounded-lg border border-line-strong bg-raised px-4 py-3 text-left shadow-sm transition-colors duration-(--ph-duration-fast) hover:bg-hover",
                       "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft",
                     )}
                   >
-                    <span className="mt-0.5 grid size-(--st-icon-size) shrink-0 place-items-center rounded-full border-2 border-ink-tertiary group-data-[state=checked]:border-accent-fill">
+                    <span className="mt-0.5 grid size-(--ph-icon-size) shrink-0 place-items-center rounded-full border-2 border-ink-tertiary group-data-[state=checked]:border-accent-fill">
                       <RadioGroup.Indicator className="size-2 rounded-full bg-accent-fill" />
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -107,13 +107,13 @@ export function AgentSection({
             </div>
           </SettingGroup>
 
-          <SettingGroup title="Anthropic API key" description="Only used when steward runs the agent itself.">
+          <SettingGroup title="Anthropic API key" description="Only used when Phaethon runs the agent itself.">
             <form onSubmit={saveKey} className="flex flex-col gap-3 px-4 py-3.5" aria-label="Anthropic API key">
               <p id={keyHintId} className="flex items-start gap-2 text-sm text-ink-secondary">
                 <Icon name={settings.hasAnthropicKey ? "lock" : "key"} className="mt-0.5 text-ink-tertiary" />
                 <span>
                   {settings.hasAnthropicKey
-                    ? "A key is saved in this computer's keychain. steward never shows it again; enter a new one to replace it."
+                    ? "A key is saved in this computer's keychain. Phaethon never shows it again; enter a new one to replace it."
                     : "No key saved yet. Create one at console.anthropic.com. It goes into this computer's keychain, never into your vault files, so it never syncs."}
                 </span>
               </p>
@@ -135,13 +135,13 @@ export function AgentSection({
                     }}
                     aria-describedby={keyError ? `${keyHintId} ${keyErrorId}` : keyHintId}
                     aria-invalid={keyError ? true : undefined}
-                    className="min-h-(--st-control-height-lg) min-w-(--st-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink placeholder:text-ink-tertiary aria-invalid:border-danger"
+                    className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink placeholder:text-ink-tertiary aria-invalid:border-danger"
                   />
                   <Button type="submit">Save key</Button>
                 </div>
                 {keyError && (
                   <p id={keyErrorId} className="flex items-center gap-1.5 text-sm text-danger-ink">
-                    <Icon name="error" className="size-(--st-icon-size-sm)" />
+                    <Icon name="error" className="size-(--ph-icon-size-sm)" />
                     {keyError}
                   </p>
                 )}
@@ -162,7 +162,7 @@ export function AgentSection({
           </SettingGroup>
 
           <SettingGroup title="Model">
-            <SettingRow label="Model" description="Set per vault in .steward/settings.json. A picker is coming.">
+            <SettingRow label="Model" description="Set per vault in .phaethon/settings.json. A picker is coming.">
               <span className="font-mono text-sm text-ink">{settings.model}</span>
             </SettingRow>
           </SettingGroup>

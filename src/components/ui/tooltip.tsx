@@ -1,4 +1,4 @@
-// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto steward tokens.
+// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto Phaethon tokens.
 import * as React from "react"
 import { cn } from "cn"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
@@ -48,8 +48,8 @@ function TooltipContent({
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-50 w-fit max-w-(--st-measure) origin-(--radix-tooltip-content-transform-origin) rounded-sm bg-ink px-2 py-1 text-xs leading-snug font-medium text-balance text-ink-inverse shadow",
-          "animate-in duration-(--st-duration-fast) fade-in-0 zoom-in-[0.97]",
+          "z-50 w-fit max-w-(--ph-measure) origin-(--radix-tooltip-content-transform-origin) rounded-sm bg-ink px-2 py-1 text-xs leading-snug font-medium text-balance text-ink-inverse shadow",
+          "animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           className
         )}

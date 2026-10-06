@@ -4,7 +4,7 @@
 //! read one folder or file (`path`) of another space (`from`). Writing into
 //! another space is never grantable.
 //!
-//! "always" grants are plain JSON in `<vault>/.steward/grants.json`, so they
+//! "always" grants are plain JSON in `<vault>/.phaethon/grants.json`, so they
 //! are visible to the user, editable and synced with the vault. "once" grants
 //! live only in memory for the turn that asked for them and are never written.
 //!
@@ -90,7 +90,7 @@ pub struct Loaded {
 }
 
 fn file(vault: &Vault) -> PathBuf {
-    vault.root().join(".steward").join("grants.json")
+    vault.root().join(".phaethon").join("grants.json")
 }
 
 /// Read and validate grants.json. A missing file means no grants.
@@ -160,7 +160,7 @@ fn validate(vault: &Vault, entry: &Value) -> Result<Grant, String> {
 
 /// A grant path in canonical form ("calendar/oct", no `./`, no trailing `/`).
 /// Refuses empty paths (a grant names a folder or file, never a whole space),
-/// absolute paths, `..`, and steward's own state folder.
+/// absolute paths, `..`, and Phaethon's own state folder.
 pub fn normalize(path: &str) -> Result<String, String> {
     let clean = tools::clean_rel(path)?;
     if clean.as_os_str().is_empty() {
@@ -361,7 +361,7 @@ mod tests {
 
     /// A vault with spaces school and work; work has calendar/oct.md.
     pub(crate) fn vault(name: &str) -> (PathBuf, Vault) {
-        let dir = std::env::temp_dir().join(format!("steward-grants-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("phaethon-grants-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         for s in ["school", "work"] {
             fs::create_dir_all(dir.join("spaces").join(s)).unwrap();
@@ -374,8 +374,8 @@ mod tests {
     }
 
     fn write_file(dir: &Path, v: Value) {
-        fs::create_dir_all(dir.join(".steward")).unwrap();
-        fs::write(dir.join(".steward/grants.json"), v.to_string()).unwrap();
+        fs::create_dir_all(dir.join(".phaethon")).unwrap();
+        fs::write(dir.join(".phaethon/grants.json"), v.to_string()).unwrap();
     }
 
     fn entry(id: &str, path: &str) -> Value {
@@ -389,7 +389,7 @@ mod tests {
             entry("a", "calendar"),
             entry("b", "../x"),
             entry("c", "/etc"),
-            entry("d", ".steward"),
+            entry("d", ".phaethon"),
             entry("e", ""),
             entry("f", "calendar/../../school"),
             json!({"id": "g", "to": "school", "from": "work", "path": "calendar", "scope": "once"}),
@@ -411,11 +411,11 @@ mod tests {
         write_file(&dir, json!(["not", "an", "object"]));
         let l = load(&v);
         assert!(l.grants.is_empty() && l.problems.len() == 1);
-        fs::write(dir.join(".steward/grants.json"), "{ not json").unwrap();
+        fs::write(dir.join(".phaethon/grants.json"), "{ not json").unwrap();
         assert_eq!(load(&v).problems.len(), 1);
         // A broken file is never overwritten.
         assert!(add_always(&v, "school", "work", "calendar").is_err());
-        assert_eq!(fs::read_to_string(dir.join(".steward/grants.json")).unwrap(), "{ not json");
+        assert_eq!(fs::read_to_string(dir.join(".phaethon/grants.json")).unwrap(), "{ not json");
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -444,12 +444,12 @@ mod tests {
         assert_eq!(shown.grants.len(), 1);
         assert_eq!(shown.problems.len(), 1, "the hand-written entry is reported");
         assert!(view(&v, "work").grants.is_empty(), "grants are one-way");
-        let raw = fs::read_to_string(dir.join(".steward/grants.json")).unwrap();
+        let raw = fs::read_to_string(dir.join(".phaethon/grants.json")).unwrap();
         assert!(raw.contains("hand-written") && raw.contains("future"));
         assert!(revoke(&v, &g.id).unwrap());
         assert!(!revoke(&v, &g.id).unwrap());
         assert!(for_space(&v, "school").is_empty());
-        assert!(fs::read_to_string(dir.join(".steward/grants.json")).unwrap().contains("hand-written"));
+        assert!(fs::read_to_string(dir.join(".phaethon/grants.json")).unwrap().contains("hand-written"));
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -465,7 +465,7 @@ mod tests {
             ("work", ""),
             ("work", "../school"),
             ("work", "/etc"),
-            ("work", ".steward"),
+            ("work", ".phaethon"),
             ("work", "missing"),
         ] {
             assert!(check_request(&v, "school", space, path).is_err(), "{space} {path}");

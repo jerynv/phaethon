@@ -5,12 +5,12 @@ import { SettingGroup, SwitchRow, TokenRow } from "./controls";
 import { SectionReset } from "./section-reset";
 
 export const ACCESSIBILITY_TOKENS = [
-  "--st-text-scale",
-  "--st-focus-width",
-  "--st-icon-stroke",
-  "--st-leading-normal",
-  "--st-tracking-normal",
-  "--st-duration-scale",
+  "--ph-text-scale",
+  "--ph-focus-width",
+  "--ph-icon-stroke",
+  "--ph-leading-normal",
+  "--ph-tracking-normal",
+  "--ph-duration-scale",
 ] as const;
 
 export function AccessibilitySection({ headingId }: { headingId: string }) {
@@ -23,14 +23,14 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
       <SectionReset
         headingId={headingId}
         title="Accessibility"
-        description="Make steward easier to see, read and use. Your system's accessibility settings are followed unless you turn something on here."
+        description="Make Phaethon easier to see, read and use. Your system's accessibility settings are followed unless you turn something on here."
         what="accessibility"
         tokens={ACCESSIBILITY_TOKENS}
         resetAccess
       />
 
       <SettingGroup title="Seeing">
-        <TokenRow name="--st-text-scale" quickPicks />
+        <TokenRow name="--ph-text-scale" quickPicks />
         <SwitchRow
           label="Increase contrast"
           description="Darker text, visible borders and a stronger focus ring, in light and dark themes."
@@ -38,19 +38,19 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
           onChange={(on) => setAppearance((p) => ({ ...p, increaseContrast: on ? "on" : "system" }))}
           status={
             a.increaseContrast === "on"
-              ? "On in steward, whatever your system uses."
+              ? "On in Phaethon, whatever your system uses."
               : `Following your system, which has it ${sys.moreContrast ? "on" : "off"}.`
           }
         />
-        <TokenRow name="--st-focus-width">
+        <TokenRow name="--ph-focus-width">
           <FocusSample />
         </TokenRow>
-        <TokenRow name="--st-icon-stroke" />
+        <TokenRow name="--ph-icon-stroke" />
       </SettingGroup>
 
-      <SettingGroup title="Reading" description="Spacing changes show in the sample below and across steward as you move them.">
-        <TokenRow name="--st-leading-normal" />
-        <TokenRow name="--st-tracking-normal" />
+      <SettingGroup title="Reading" description="Spacing changes show in the sample below and across Phaethon as you move them.">
+        <TokenRow name="--ph-leading-normal" />
+        <TokenRow name="--ph-tracking-normal" />
         <ReadingSample />
       </SettingGroup>
 
@@ -62,7 +62,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
           onChange={(on) => setAppearance((p) => ({ ...p, reduceMotion: on ? "on" : "system" }))}
           status={
             a.reduceMotion === "on"
-              ? "On in steward, whatever your system uses."
+              ? "On in Phaethon, whatever your system uses."
               : `Following your system, which has it ${sys.reduceMotion ? "on" : "off"}.`
           }
         />
@@ -71,7 +71,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
             Animation length is not shown while motion is reduced: every change is already instant.
           </p>
         ) : (
-          <TokenRow name="--st-duration-scale" />
+          <TokenRow name="--ph-duration-scale" />
         )}
       </SettingGroup>
 
@@ -81,10 +81,10 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
           <h4 id="a11y-next" className="text-base font-medium text-ink">
             More is coming
           </h4>
-          <p className="max-w-(--st-measure)">
+          <p className="max-w-(--ph-measure)">
             Next: how much screen readers announce while the agent works, a choice of reading fonts, colour filters, larger click
             targets, and keyboard shortcuts you can change. Disabled testers are shaping this list, and the settings above already
-            apply everywhere in steward.
+            apply everywhere in Phaethon.
           </p>
         </div>
       </aside>
@@ -98,7 +98,7 @@ function FocusSample() {
     <div className="flex items-center gap-3 text-sm text-ink-secondary" aria-hidden="true">
       <span
         className="rounded-md bg-raised px-2.5 py-1 whitespace-nowrap text-ink"
-        style={{ outline: "var(--st-focus-width) solid var(--st-focus)", outlineOffset: "var(--st-focus-offset)" }}
+        style={{ outline: "var(--ph-focus-width) solid var(--ph-focus)", outlineOffset: "var(--ph-focus-offset)" }}
       >
         Focused button
       </span>
@@ -111,8 +111,8 @@ function ReadingSample() {
   return (
     <div className="px-4 py-3.5">
       <p
-        className="max-w-(--st-measure) rounded-md bg-surface-sunken px-4 py-3 text-md text-ink"
-        style={{ lineHeight: "var(--st-leading-normal)", letterSpacing: "var(--st-tracking-normal)" }}
+        className="max-w-(--ph-measure) rounded-md bg-surface-sunken px-4 py-3 text-md text-ink"
+        style={{ lineHeight: "var(--ph-leading-normal)", letterSpacing: "var(--ph-tracking-normal)" }}
       >
         Two things are due this week: problem set 4 on Wednesday, and Test 1 on Thursday, which covers chapters 1 to 4. You wanted
         to redo the recursion exercises first, so Monday evening is set aside for that.

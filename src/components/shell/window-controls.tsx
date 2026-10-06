@@ -42,13 +42,13 @@ export function WindowControls() {
   return (
     <div role="group" aria-label="Window" className="flex h-full self-stretch">
       <ControlButton label="Minimize" onClick={() => void win.minimize()}>
-        <Icon name="window-minimize" className="size-(--st-icon-size-sm)" />
+        <Icon name="window-minimize" className="size-(--ph-icon-size-sm)" />
       </ControlButton>
       <ControlButton label={maximized ? "Restore" : "Maximize"} onClick={() => void win.toggleMaximize()}>
-        <Icon name={maximized ? "window-restore" : "window-maximize"} className="size-(--st-icon-size-sm)" />
+        <Icon name={maximized ? "window-restore" : "window-maximize"} className="size-(--ph-icon-size-sm)" />
       </ControlButton>
       <ControlButton label="Close" danger onClick={() => void win.close()}>
-        <Icon name="window-close" className="size-(--st-icon-size-sm)" />
+        <Icon name="window-close" className="size-(--ph-icon-size-sm)" />
       </ControlButton>
     </div>
   );
@@ -73,8 +73,8 @@ function ControlButton({
       onClick={onClick}
       data-window-control=""
       className={cn(
-        "flex h-full w-(--st-window-control-width) items-center justify-center text-ink-secondary",
-        "transition-colors duration-(--st-duration-fast)",
+        "flex h-full w-(--ph-window-control-width) items-center justify-center text-ink-secondary",
+        "transition-colors duration-(--ph-duration-fast)",
         "group-data-[inactive]/titlebar:text-ink-tertiary",
         // The bar meets the window edge, so draw the focus ring inside the button.
         "focus-visible:-outline-offset-2!",

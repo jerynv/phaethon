@@ -114,19 +114,19 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         <Button
           variant="ghost"
           data-testid="open-settings"
-          className="h-auto min-h-(--st-control-height-lg) w-full justify-start gap-2.5 px-2.5 text-base font-normal text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink"
+          className="h-auto min-h-(--ph-control-height-lg) w-full justify-start gap-2.5 px-2.5 text-base font-normal text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink"
         >
           <Icon name="settings" />
           Settings
         </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-(--st-overlay) duration-(--st-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-(--ph-overlay) duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content
           aria-describedby={descId}
           className={cn(
-            "fixed top-1/2 left-1/2 z-50 flex h-(--st-settings-height) w-(--st-settings-width) -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-line bg-bg text-ink shadow-lg outline-none",
-            "duration-(--st-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",
+            "fixed top-1/2 left-1/2 z-50 flex h-(--ph-settings-height) w-(--ph-settings-width) -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-line bg-bg text-ink shadow-lg outline-none",
+            "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",
           )}
         >
           <StatusContext.Provider value={statusApi}>
@@ -136,7 +136,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
               orientation="vertical"
               className="flex min-w-0 flex-1 max-sm:flex-col"
             >
-              <div className="flex w-(--st-settings-nav-width) shrink-0 flex-col border-r border-line bg-surface max-sm:w-full max-sm:border-r-0 max-sm:border-b">
+              <div className="flex w-(--ph-settings-nav-width) shrink-0 flex-col border-r border-line bg-surface max-sm:w-full max-sm:border-r-0 max-sm:border-b">
                 <Dialog.Title className="px-5 pt-5 pb-3 text-lg font-semibold text-ink max-sm:pb-2">Settings</Dialog.Title>
                 <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2.5 max-sm:flex-row max-sm:overflow-x-auto max-sm:pb-2">
                   {SECTIONS.map((s) => (
@@ -147,7 +147,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       // Radix activates on mousedown; click also covers pointer tools that send only clicks.
                       onClick={() => choose(s.id)}
                       className={cn(
-                        "flex min-h-(--st-control-height-lg) shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-base text-ink-secondary transition-colors duration-(--st-duration-fast)",
+                        "flex min-h-(--ph-control-height-lg) shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-base text-ink-secondary transition-colors duration-(--ph-duration-fast)",
                         "hover:bg-hover hover:text-ink",
                         "data-[state=active]:bg-selected data-[state=active]:font-medium data-[state=active]:text-ink data-[state=active]:[&_svg]:text-accent-ink",
                       )}
@@ -174,7 +174,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       size="icon-xs"
                       aria-label="Dismiss error"
                       onClick={() => setError("")}
-                      className="-my-0.5 min-h-(--st-target-min) min-w-(--st-target-min) text-danger-ink"
+                      className="-my-0.5 min-h-(--ph-target-min) min-w-(--ph-target-min) text-danger-ink"
                     >
                       <Icon name="close" />
                     </Button>
@@ -187,7 +187,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                     aria-labelledby={ids[s.id]}
                     className="min-h-0 flex-1 overflow-y-auto outline-none data-[state=inactive]:hidden"
                   >
-                    <div className="mx-auto flex max-w-(--st-settings-content-width) flex-col gap-7 px-8 pt-6 pb-10">{pages[s.id]}</div>
+                    <div className="mx-auto flex max-w-(--ph-settings-content-width) flex-col gap-7 px-8 pt-6 pb-10">{pages[s.id]}</div>
                   </Tabs.Content>
                 ))}
               </div>
@@ -198,7 +198,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
             </p>
 
             <Dialog.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Close settings" className="absolute top-3 right-3 min-h-(--st-target-min) min-w-(--st-target-min) text-ink-secondary hover:text-ink">
+              <Button variant="ghost" size="icon-sm" aria-label="Close settings" className="absolute top-3 right-3 min-h-(--ph-target-min) min-w-(--ph-target-min) text-ink-secondary hover:text-ink">
                 <Icon name="close" />
               </Button>
             </Dialog.Close>
@@ -217,7 +217,7 @@ function SaveIndicator() {
   if (!text) return null;
   return (
     <p className={cn("flex items-center gap-1.5", save.status === "error" && "text-danger-ink")}>
-      <Icon name={save.status === "error" ? "warning" : "check"} className="size-(--st-icon-size-sm)" />
+      <Icon name={save.status === "error" ? "warning" : "check"} className="size-(--ph-icon-size-sm)" />
       {text}
     </p>
   );

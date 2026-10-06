@@ -4,7 +4,7 @@
 (() => {
   const M = (window.__MOCK__ = Object.assign(
     {
-      settings: { backend: "steward", hasAnthropicKey: true, model: "claude-opus-5-5" },
+      settings: { backend: "phaethon", hasAnthropicKey: true, model: "claude-opus-5-5" },
       threads: {},
       // Grants by receiving space: [{ id, from, path, created, scope }]
       grants: {},
@@ -16,7 +16,7 @@
     },
     window.__MOCK__ || {},
   ));
-  window.__STEWARD_PLATFORM__ = M.platform;
+  window.__PHAETHON_PLATFORM__ = M.platform;
   const dark = M.theme === "dark";
   const realMatch = window.matchMedia?.bind(window);
   window.matchMedia = (q) =>

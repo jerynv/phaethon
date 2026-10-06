@@ -1,7 +1,7 @@
-//! steward's own file tools, confined to one space folder.
+//! Phaethon's own file tools, confined to one space folder.
 //!
 //! Every path the model names is relative to the space root. It is checked
-//! lexically (no absolute paths, no `..`, nothing under `.steward/`) and then
+//! lexically (no absolute paths, no `..`, nothing under `.phaethon/`) and then
 //! against the real filesystem, so a symlink cannot lead outside the space.
 //!
 //! The read tools can also address another space as `@<space>/<path>`, but
@@ -26,8 +26,8 @@ const MAX_SEARCH_FILE: u64 = 2 * 1024 * 1024;
 /// Characters of a request_access reason kept for the user.
 const MAX_REASON: usize = 500;
 
-/// Folder inside each space that holds steward's own state.
-pub const STATE_DIR: &str = ".steward";
+/// Folder inside each space that holds Phaethon's own state.
+pub const STATE_DIR: &str = ".phaethon";
 
 /// What the loop needs to know about a tool before running it.
 pub enum Access {
@@ -332,7 +332,7 @@ pub fn run(space: &Path, call: &Call) -> Result<String, String> {
     }
 }
 
-/// The lexical check every path gets: relative, no `..`, not under `.steward/`.
+/// The lexical check every path gets: relative, no `..`, not under `.phaethon/`.
 /// Returns the path without `.` parts (empty for the root).
 pub fn clean_rel(rel: &str) -> Result<PathBuf, String> {
     let mut clean = PathBuf::new();
@@ -348,7 +348,7 @@ pub fn clean_rel(rel: &str) -> Result<PathBuf, String> {
         .next()
         .is_some_and(|c| c.as_os_str() == STATE_DIR)
     {
-        return Err(format!("\"{rel}\" is steward's own state and cannot be used by tools"));
+        return Err(format!("\"{rel}\" is Phaethon's own state and cannot be used by tools"));
     }
     Ok(clean)
 }
@@ -499,13 +499,13 @@ mod tests {
     use crate::grants::Scope;
 
     fn space(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("steward-tools-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("phaethon-tools-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("space/notes")).unwrap();
-        fs::create_dir_all(dir.join("space/.steward")).unwrap();
+        fs::create_dir_all(dir.join("space/.phaethon")).unwrap();
         fs::create_dir_all(dir.join("sibling")).unwrap();
         fs::write(dir.join("space/notes/a.md"), "Hello world\nsecond line\n").unwrap();
-        fs::write(dir.join("space/.steward/session"), "secret").unwrap();
+        fs::write(dir.join("space/.phaethon/session"), "secret").unwrap();
         fs::write(dir.join("sibling/secret.txt"), "marmalade").unwrap();
         dir
     }
@@ -516,7 +516,7 @@ mod tests {
         let s = dir.join("space");
         assert!(resolve(&s, "notes/a.md", true).is_ok());
         assert!(resolve(&s, "notes/new/b.md", false).is_ok());
-        for bad in ["../sibling/secret.txt", "/etc/passwd", "notes/../../sibling", ".steward/session", "./.steward"] {
+        for bad in ["../sibling/secret.txt", "/etc/passwd", "notes/../../sibling", ".phaethon/session", "./.phaethon"] {
             assert!(resolve(&s, bad, false).is_err(), "{bad} should be refused");
         }
         #[cfg(unix)]
@@ -542,7 +542,7 @@ mod tests {
             run(&s, &Call::Search { query: "WORLD".into(), path: String::new() }).unwrap(),
             "notes/a.md:1: Hello world"
         );
-        assert!(!run(&s, &Call::Search { query: "secret".into(), path: String::new() }).unwrap().contains(".steward"));
+        assert!(!run(&s, &Call::Search { query: "secret".into(), path: String::new() }).unwrap().contains(".phaethon"));
         run(&s, &Call::Write { path: "drafts/b.md".into(), contents: "new".into() }).unwrap();
         assert_eq!(fs::read_to_string(s.join("drafts/b.md")).unwrap(), "new");
         fs::remove_dir_all(&dir).unwrap();
@@ -597,15 +597,15 @@ mod tests {
 
     /// Vault with spaces school and work, and a grant school <- work/calendar.
     fn cross(name: &str) -> (PathBuf, Ctx) {
-        let dir = std::env::temp_dir().join(format!("steward-tools-cross-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("phaethon-tools-cross-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        for d in ["spaces/school", "spaces/work/calendar", "spaces/work/calendar-old", "spaces/work/private", "spaces/work/.steward"] {
+        for d in ["spaces/school", "spaces/work/calendar", "spaces/work/calendar-old", "spaces/work/private", "spaces/work/.phaethon"] {
             fs::create_dir_all(dir.join(d)).unwrap();
         }
         fs::write(dir.join("spaces/work/calendar/oct.md"), "Oct 14: shift 9-5\n").unwrap();
         fs::write(dir.join("spaces/work/calendar-old/sep.md"), "Sep shift\n").unwrap();
         fs::write(dir.join("spaces/work/private/salary.md"), "shift pay\n").unwrap();
-        fs::write(dir.join("spaces/work/.steward/session"), "secret").unwrap();
+        fs::write(dir.join("spaces/work/.phaethon/session"), "secret").unwrap();
         let ctx = Ctx {
             space: dir.join("spaces/school"),
             space_id: "school".into(),
@@ -629,7 +629,7 @@ mod tests {
             "@work/calendar-old/sep.md",
             "@work/private/salary.md",
             "@work/calendar/../private/salary.md",
-            "@work/.steward/session",
+            "@work/.phaethon/session",
             "@work//etc/passwd",
             "@work",
             "@nope/calendar/oct.md",

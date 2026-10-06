@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import type { IconName } from "./names";
 
 /*
- * steward's icons, drawn by hand on a 24 x 24 grid.
+ * Phaethon's icons, drawn by hand on a 24 x 24 grid.
  *
  * Each entry is the inner SVG only: <Icon> supplies the viewBox, stroke
- * (currentColor, width from --st-icon-stroke), round caps and round joins.
+ * (currentColor, width from --ph-icon-stroke), round caps and round joins.
  *
  * Grid rules, so new glyphs match:
  * - Live area 3..21 (about 2px padding). Circles are r 8.5 (17 across),
@@ -15,8 +15,8 @@ import type { IconName } from "./names";
  *   apex (a short quadratic curve instead of a sharp point).
  * - Solids only where a shape needs one (dots, the stop square, the lantern
  *   flame, the contrast half): fill="currentColor" stroke="none".
- * - The steward-only motifs: a space is a two-drawer cabinet (a compartment),
- *   the agent is a small lantern (a steward lighting the way).
+ * - The phaethon-only motifs: a space is a two-drawer cabinet (a compartment),
+ *   the agent is a small lantern (a Phaethon lighting the way).
  */
 
 const solid = { fill: "currentColor", stroke: "none" } as const;

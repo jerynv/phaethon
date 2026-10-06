@@ -97,15 +97,15 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
           aria-label={spoken}
           data-grants-chip=""
           className={cn(
-            "ms-1 flex h-(--st-control-height-sm) min-w-0 items-center gap-1.5 rounded-full border border-line-strong bg-raised ps-2 pe-2.5 text-sm text-ink-secondary shadow-sm",
-            "transition-colors duration-(--st-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
+            "ms-1 flex h-(--ph-control-height-sm) min-w-0 items-center gap-1.5 rounded-full border border-line-strong bg-raised ps-2 pe-2.5 text-sm text-ink-secondary shadow-sm",
+            "transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
             "data-[state=open]:bg-selected data-[state=open]:text-ink group-data-[inactive]/titlebar:text-ink-tertiary",
           )}
         >
-          <Icon name="link" className="size-(--st-icon-size-sm)" />
+          <Icon name="link" className="size-(--ph-icon-size-sm)" />
           <span className="shrink-0">Also reads</span>
           <SpaceMark hue={spaceInfo(first.from).hue} />
-          <span className="max-w-(--st-chip-name-width) truncate font-medium text-ink group-data-[inactive]/titlebar:text-ink-secondary">
+          <span className="max-w-(--ph-chip-name-width) truncate font-medium text-ink group-data-[inactive]/titlebar:text-ink-secondary">
             {grantLabel(first)}
           </span>
           {more > 0 && <span className="shrink-0 tabular-nums">+{more} more</span>}
@@ -133,7 +133,7 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
           }}
           className={cn(
             "z-50 flex w-80 max-w-(--radix-popover-content-available-width) flex-col rounded-lg border border-line bg-raised text-ink shadow-lg outline-none",
-            "origin-(--radix-popover-content-transform-origin) animate-in duration-(--st-duration-fast) fade-in-0 zoom-in-[0.97]",
+            "origin-(--radix-popover-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           )}
         >
@@ -141,14 +141,14 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
             <h2 id={headingId} tabIndex={-1} className="self-start rounded-xs text-md font-semibold text-ink">
               {space.name} can also read
             </h2>
-            <p className="text-sm text-ink-secondary">Read-only. For anything else in another space, steward asks you first.</p>
+            <p className="text-sm text-ink-secondary">Read-only. For anything else in another space, Phaethon asks you first.</p>
           </div>
           <ul className="flex flex-col divide-y divide-line border-t border-line" aria-label={`What ${space.name} can read`}>
             {grants.map((g, i) => {
               const date = grantDate(g.created);
               return (
                 <li key={g.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="grid min-w-0 flex-1 grid-cols-[var(--st-space-mark-size)_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
+                  <div className="grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
                     <SpaceMark hue={spaceInfo(g.from).hue} />
                     <span className="flex min-w-0 items-baseline gap-1.5 text-base">
                       <span className="shrink-0 font-medium text-ink">{spaceInfo(g.from).name}</span>
@@ -170,7 +170,7 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
                     disabled={busy !== null}
                     aria-label={`Revoke access to ${grantLabel(g)}`}
                     onClick={() => void revoke(g, i)}
-                    className="min-h-(--st-target-min)"
+                    className="min-h-(--ph-target-min)"
                   >
                     {busy === g.id ? "Revoking…" : "Revoke"}
                   </Button>
@@ -180,13 +180,13 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
           </ul>
           {error && (
             <p role="alert" className="mx-3 mb-1 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-ink">
-              <Icon name="error" className="mt-0.5 size-(--st-icon-size-sm)" />
+              <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm)" />
               <span className="min-w-0 flex-1">{error}</span>
             </p>
           )}
           {state.status === "ready" && state.problems.length > 0 && (
             <p className="mx-3 mb-1 flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-ink">
-              <Icon name="warning" className="mt-0.5 size-(--st-icon-size-sm)" />
+              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm)" />
               <span className="min-w-0 flex-1">Some saved grants were ignored. Settings explains which.</span>
             </p>
           )}
@@ -194,7 +194,7 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
             <Button
               type="button"
               variant="link"
-              className="min-h-(--st-target-min) text-sm"
+              className="min-h-(--ph-target-min) text-sm"
               onClick={() => {
                 toSettings.current = true;
                 setOpen(false);

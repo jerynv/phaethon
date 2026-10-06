@@ -84,7 +84,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   }
   if ("error" in loaded) {
     return (
-      <div className="mx-auto w-full max-w-(--st-thread-width) px-6 pt-8">
+      <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-8">
         <div role="alert" className="flex items-start gap-3 rounded-lg bg-danger-soft px-4 py-3 text-base text-ink">
           <Icon name="error" className="mt-0.5 text-danger-ink" />
           <div className="flex min-w-0 flex-col gap-0.5">

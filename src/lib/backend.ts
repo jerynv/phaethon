@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /** Mirrors `Backend` in src-tauri/src/vault.rs. */
-export type Backend = "steward" | "claude-cli";
+export type Backend = "phaethon" | "claude-cli";
 
 /**
  * Mirrors `SettingsView` in src-tauri/src/lib.rs. The key itself never comes back.

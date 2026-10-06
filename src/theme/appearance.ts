@@ -24,7 +24,7 @@ import {
   type TokenValue,
 } from "./tokens";
 
-const CACHE_KEY = "steward.appearance.v1";
+const CACHE_KEY = "phaethon.appearance.v1";
 const SAVE_DELAY_MS = 450;
 
 export type SystemPrefs = { dark: boolean; moreContrast: boolean; reduceMotion: boolean };
@@ -71,7 +71,7 @@ function apply(a: Appearance) {
 
   const props = cssProperties(a);
   if (e.reduceMotion) {
-    for (const k of ["--st-duration-fast", "--st-duration", "--st-duration-slow"]) props[k] = "0ms";
+    for (const k of ["--ph-duration-fast", "--ph-duration", "--ph-duration-slow"]) props[k] = "0ms";
   }
   for (const name of applied) if (!(name in props)) root.style.removeProperty(name);
   for (const [name, value] of Object.entries(props)) root.style.setProperty(name, value);

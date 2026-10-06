@@ -1,5 +1,5 @@
 /*
- * steward design tokens: the single source of every visual value.
+ * Phaethon design tokens: the single source of every visual value.
  *
  * Rules (enforced by scripts/check-design.mjs):
  * - Components never hard-code a colour, size, space or duration; they use a
@@ -15,110 +15,110 @@
 
 :root {
   /* ---- Colour dials ---- */
-  --st-neutral-h: 80; /* warm paper */
-  --st-neutral-c: 0.006;
-  --st-ink-h: 255; /* ink leans slightly cool against warm paper */
-  --st-ink-c: 0.014;
-  --st-accent-h: 168; /* soft sea-green */
-  --st-accent-c: 0.075;
-  --st-danger-h: 25;
-  --st-danger-c: 0.13;
-  --st-warning-h: 75;
-  --st-success-h: 150;
+  --ph-neutral-h: 80; /* warm paper */
+  --ph-neutral-c: 0.006;
+  --ph-ink-h: 255; /* ink leans slightly cool against warm paper */
+  --ph-ink-c: 0.014;
+  --ph-accent-h: 168; /* soft sea-green */
+  --ph-accent-c: 0.075;
+  --ph-danger-h: 25;
+  --ph-danger-c: 0.13;
+  --ph-warning-h: 75;
+  --ph-success-h: 150;
   /* Each space carries its own hue (set per space on the element). */
-  --st-space-h: var(--st-accent-h);
-  --st-space-c: 0.09;
+  --ph-space-h: var(--ph-accent-h);
+  --ph-space-c: 0.09;
 
   /* ---- Type ---- */
-  --st-font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
-  --st-font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --ph-font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
+  --ph-font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   /* The one dial for all text: 1 = default, 1.5 = half again as large. */
-  --st-text-scale: 1;
-  --st-text-2xs: calc(10px * var(--st-text-scale));
-  --st-text-xs: calc(11px * var(--st-text-scale));
-  --st-text-sm: calc(12px * var(--st-text-scale));
-  --st-text-base: calc(13px * var(--st-text-scale));
-  --st-text-md: calc(14px * var(--st-text-scale));
-  --st-text-lg: calc(16px * var(--st-text-scale));
-  --st-text-xl: calc(19px * var(--st-text-scale));
-  --st-text-2xl: calc(23px * var(--st-text-scale));
-  --st-leading-tight: 1.25;
-  --st-leading-snug: 1.4;
-  --st-leading-normal: 1.55;
-  --st-weight-normal: 400;
-  --st-weight-medium: 500;
-  --st-weight-semibold: 620;
-  --st-weight-bold: 700;
-  --st-tracking-tight: -0.01em;
-  --st-tracking-normal: 0;
-  --st-tracking-wide: 0.02em;
-  --st-measure: 68ch;
+  --ph-text-scale: 1;
+  --ph-text-2xs: calc(10px * var(--ph-text-scale));
+  --ph-text-xs: calc(11px * var(--ph-text-scale));
+  --ph-text-sm: calc(12px * var(--ph-text-scale));
+  --ph-text-base: calc(13px * var(--ph-text-scale));
+  --ph-text-md: calc(14px * var(--ph-text-scale));
+  --ph-text-lg: calc(16px * var(--ph-text-scale));
+  --ph-text-xl: calc(19px * var(--ph-text-scale));
+  --ph-text-2xl: calc(23px * var(--ph-text-scale));
+  --ph-leading-tight: 1.25;
+  --ph-leading-snug: 1.4;
+  --ph-leading-normal: 1.55;
+  --ph-weight-normal: 400;
+  --ph-weight-medium: 500;
+  --ph-weight-semibold: 620;
+  --ph-weight-bold: 700;
+  --ph-tracking-tight: -0.01em;
+  --ph-tracking-normal: 0;
+  --ph-tracking-wide: 0.02em;
+  --ph-measure: 68ch;
 
   /* ---- Space ---- */
   /* Every Tailwind spacing step is a multiple of this (p-2 = 2 steps). */
-  --st-space-unit: 4px;
-  --st-density: 1;
-  --st-space: calc(var(--st-space-unit) * var(--st-density));
+  --ph-space-unit: 4px;
+  --ph-density: 1;
+  --ph-space: calc(var(--ph-space-unit) * var(--ph-density));
 
   /* ---- Shape ---- */
-  --st-radius-xs: 3px;
-  --st-radius-sm: 5px;
-  --st-radius: 7px;
-  --st-radius-lg: 10px;
-  --st-radius-xl: 14px;
-  --st-radius-full: 999px;
-  --st-border-width: 1px;
+  --ph-radius-xs: 3px;
+  --ph-radius-sm: 5px;
+  --ph-radius: 7px;
+  --ph-radius-lg: 10px;
+  --ph-radius-xl: 14px;
+  --ph-radius-full: 999px;
+  --ph-border-width: 1px;
 
   /* ---- Elevation (offset + soft blur, tinted by ink) ---- */
-  --st-shadow-color: oklch(0.3 0.02 var(--st-ink-h) / 10%);
-  --st-shadow-sm: 0 1px 2px var(--st-shadow-color);
-  --st-shadow: 0 2px 6px -1px var(--st-shadow-color), 0 1px 2px var(--st-shadow-color);
-  --st-shadow-lg: 0 12px 32px -8px oklch(0.3 0.02 var(--st-ink-h) / 18%), 0 2px 6px var(--st-shadow-color);
+  --ph-shadow-color: oklch(0.3 0.02 var(--ph-ink-h) / 10%);
+  --ph-shadow-sm: 0 1px 2px var(--ph-shadow-color);
+  --ph-shadow: 0 2px 6px -1px var(--ph-shadow-color), 0 1px 2px var(--ph-shadow-color);
+  --ph-shadow-lg: 0 12px 32px -8px oklch(0.3 0.02 var(--ph-ink-h) / 18%), 0 2px 6px var(--ph-shadow-color);
 
   /* ---- Controls ---- */
   /* WCAG 2.5.8: nothing clickable smaller than this. */
-  --st-target-min: 24px;
-  --st-control-height-sm: 24px;
-  --st-control-height: 28px;
-  --st-control-height-lg: 32px;
-  --st-icon-size-sm: 14px;
-  --st-icon-size: 16px;
-  --st-icon-size-lg: 20px;
-  --st-icon-stroke: 1.5;
+  --ph-target-min: 24px;
+  --ph-control-height-sm: 24px;
+  --ph-control-height: 28px;
+  --ph-control-height-lg: 32px;
+  --ph-icon-size-sm: 14px;
+  --ph-icon-size: 16px;
+  --ph-icon-size-lg: 20px;
+  --ph-icon-stroke: 1.5;
 
   /* ---- Layout ---- */
-  --st-titlebar-height: 40px;
+  --ph-titlebar-height: 40px;
   /* Room before title bar content; the macOS window buttons need more. */
-  --st-titlebar-inset-start: calc(var(--st-space) * 3);
-  --st-sidebar-width: 232px;
-  --st-thread-width: 46rem;
-  --st-message-max-width: 85%;
-  --st-composer-radius: var(--st-radius-xl);
-  --st-dialog-width: 40rem;
-  --st-preview-max-height: 15rem;
-  --st-composer-max-height: 12rem;
-  --st-chip-name-width: 12rem;
+  --ph-titlebar-inset-start: calc(var(--ph-space) * 3);
+  --ph-sidebar-width: 232px;
+  --ph-thread-width: 46rem;
+  --ph-message-max-width: 85%;
+  --ph-composer-radius: var(--ph-radius-xl);
+  --ph-dialog-width: 40rem;
+  --ph-preview-max-height: 15rem;
+  --ph-composer-max-height: 12rem;
+  --ph-chip-name-width: 12rem;
   /* The main pane sits inset from the window chrome by this much. */
-  --st-pane-inset: calc(var(--st-space) * 2);
+  --ph-pane-inset: calc(var(--ph-space) * 2);
   /* Fluent caption buttons (Windows/Linux): 46px wide, full title bar height. */
-  --st-window-control-width: 46px;
+  --ph-window-control-width: 46px;
   /* The dot beside a space's name. */
-  --st-space-mark-size: 8px;
+  --ph-space-mark-size: 8px;
 
   /* ---- Focus ---- */
-  --st-focus-width: 2px;
-  --st-focus-offset: 2px;
+  --ph-focus-width: 2px;
+  --ph-focus-offset: 2px;
 
   /* ---- Motion ---- */
-  --st-duration-fast: 100ms;
-  --st-duration: 160ms;
-  --st-duration-slow: 260ms;
-  --st-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ph-duration-fast: 100ms;
+  --ph-duration: 160ms;
+  --ph-duration-slow: 260ms;
+  --ph-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* The macOS traffic lights sit inside our title bar. */
 :root[data-platform="mac"] {
-  --st-titlebar-inset-start: 80px;
+  --ph-titlebar-inset-start: 80px;
 }
 
 /* ---- Light theme ---- */
@@ -126,84 +126,84 @@
   color-scheme: light;
 
   /* Surfaces: paper, from the page out to raised layers. */
-  --st-bg: oklch(0.985 var(--st-neutral-c) var(--st-neutral-h));
-  --st-surface: oklch(0.968 calc(var(--st-neutral-c) * 1.3) var(--st-neutral-h));
-  --st-surface-sunken: oklch(0.952 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
-  --st-raised: oklch(0.995 calc(var(--st-neutral-c) * 0.5) var(--st-neutral-h));
-  --st-hover: oklch(0.935 calc(var(--st-neutral-c) * 1.6) var(--st-neutral-h));
-  --st-selected: oklch(0.915 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+  --ph-bg: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-surface: oklch(0.968 calc(var(--ph-neutral-c) * 1.3) var(--ph-neutral-h));
+  --ph-surface-sunken: oklch(0.952 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
+  --ph-raised: oklch(0.995 calc(var(--ph-neutral-c) * 0.5) var(--ph-neutral-h));
+  --ph-hover: oklch(0.935 calc(var(--ph-neutral-c) * 1.6) var(--ph-neutral-h));
+  --ph-selected: oklch(0.915 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
 
   /* Ink. Secondary stays >= 4.5:1 on every surface above. */
-  --st-ink: oklch(0.25 var(--st-ink-c) var(--st-ink-h));
-  --st-ink-secondary: oklch(0.45 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
-  --st-ink-tertiary: oklch(0.56 calc(var(--st-ink-c) * 0.6) var(--st-ink-h)); /* large text and icons only */
-  --st-ink-inverse: oklch(0.985 var(--st-neutral-c) var(--st-neutral-h));
+  --ph-ink: oklch(0.25 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink-secondary: oklch(0.45 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
+  --ph-ink-tertiary: oklch(0.56 calc(var(--ph-ink-c) * 0.6) var(--ph-ink-h)); /* large text and icons only */
+  --ph-ink-inverse: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h));
 
-  --st-line: oklch(0.905 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
-  --st-line-strong: oklch(0.82 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+  --ph-line: oklch(0.905 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-line-strong: oklch(0.82 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
 
   /* Accent: fills carry white text at >= 4.5:1. */
-  --st-accent: oklch(0.5 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-hover: oklch(0.45 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-ink: oklch(0.42 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-soft: oklch(0.94 calc(var(--st-accent-c) * 0.45) var(--st-accent-h));
-  --st-accent-soft-ink: oklch(0.36 var(--st-accent-c) var(--st-accent-h));
+  --ph-accent: oklch(0.5 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-hover: oklch(0.45 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-ink: oklch(0.42 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-soft: oklch(0.94 calc(var(--ph-accent-c) * 0.45) var(--ph-accent-h));
+  --ph-accent-soft-ink: oklch(0.36 var(--ph-accent-c) var(--ph-accent-h));
 
-  --st-danger: oklch(0.52 var(--st-danger-c) var(--st-danger-h));
-  --st-danger-soft: oklch(0.95 0.03 var(--st-danger-h));
-  --st-danger-ink: oklch(0.42 var(--st-danger-c) var(--st-danger-h));
-  --st-warning-soft: oklch(0.95 0.045 var(--st-warning-h));
-  --st-warning-ink: oklch(0.42 0.09 var(--st-warning-h));
-  --st-success-soft: oklch(0.95 0.035 var(--st-success-h));
-  --st-success-ink: oklch(0.4 0.08 var(--st-success-h));
+  --ph-danger: oklch(0.52 var(--ph-danger-c) var(--ph-danger-h));
+  --ph-danger-soft: oklch(0.95 0.03 var(--ph-danger-h));
+  --ph-danger-ink: oklch(0.42 var(--ph-danger-c) var(--ph-danger-h));
+  --ph-warning-soft: oklch(0.95 0.045 var(--ph-warning-h));
+  --ph-warning-ink: oklch(0.42 0.09 var(--ph-warning-h));
+  --ph-success-soft: oklch(0.95 0.035 var(--ph-success-h));
+  --ph-success-ink: oklch(0.4 0.08 var(--ph-success-h));
 
   /* Focus: >= 3:1 against every surface (WCAG 2.4.13 / 1.4.11). */
-  --st-focus: oklch(0.5 0.14 var(--st-accent-h));
-  --st-selection: oklch(0.88 0.06 var(--st-accent-h));
-  --st-overlay: oklch(0.2 0.01 var(--st-ink-h) / 35%);
-  --st-scrim: oklch(0.985 var(--st-neutral-c) var(--st-neutral-h) / 92%);
-  --st-scrollbar: oklch(0.8 calc(var(--st-neutral-c) * 2) var(--st-neutral-h));
+  --ph-focus: oklch(0.5 0.14 var(--ph-accent-h));
+  --ph-selection: oklch(0.88 0.06 var(--ph-accent-h));
+  --ph-overlay: oklch(0.2 0.01 var(--ph-ink-h) / 35%);
+  --ph-scrim: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h) / 92%);
+  --ph-scrollbar: oklch(0.8 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
 }
 
 /* ---- Dark theme: dusk rather than black ---- */
 .dark {
   color-scheme: dark;
 
-  --st-bg: oklch(0.2 calc(var(--st-ink-c) * 0.7) var(--st-ink-h));
-  --st-surface: oklch(0.225 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
-  --st-surface-sunken: oklch(0.185 calc(var(--st-ink-c) * 0.7) var(--st-ink-h));
-  --st-raised: oklch(0.255 calc(var(--st-ink-c) * 0.8) var(--st-ink-h));
-  --st-hover: oklch(0.28 calc(var(--st-ink-c) * 0.9) var(--st-ink-h));
-  --st-selected: oklch(0.31 var(--st-ink-c) var(--st-ink-h));
+  --ph-bg: oklch(0.2 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
+  --ph-surface: oklch(0.225 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
+  --ph-surface-sunken: oklch(0.185 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
+  --ph-raised: oklch(0.255 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
+  --ph-hover: oklch(0.28 calc(var(--ph-ink-c) * 0.9) var(--ph-ink-h));
+  --ph-selected: oklch(0.31 var(--ph-ink-c) var(--ph-ink-h));
 
-  --st-ink: oklch(0.93 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
-  --st-ink-secondary: oklch(0.76 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h));
-  --st-ink-tertiary: oklch(0.64 var(--st-neutral-c) var(--st-neutral-h));
-  --st-ink-inverse: oklch(0.2 var(--st-ink-c) var(--st-ink-h));
+  --ph-ink: oklch(0.93 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
+  --ph-ink-secondary: oklch(0.76 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
+  --ph-ink-tertiary: oklch(0.64 var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-ink-inverse: oklch(0.2 var(--ph-ink-c) var(--ph-ink-h));
 
-  --st-line: oklch(0.3 var(--st-ink-c) var(--st-ink-h));
-  --st-line-strong: oklch(0.4 var(--st-ink-c) var(--st-ink-h));
+  --ph-line: oklch(0.3 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-line-strong: oklch(0.4 var(--ph-ink-c) var(--ph-ink-h));
 
-  --st-accent: oklch(0.74 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-hover: oklch(0.79 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-ink: oklch(0.8 var(--st-accent-c) var(--st-accent-h));
-  --st-accent-soft: oklch(0.3 calc(var(--st-accent-c) * 0.5) var(--st-accent-h));
-  --st-accent-soft-ink: oklch(0.86 calc(var(--st-accent-c) * 0.8) var(--st-accent-h));
+  --ph-accent: oklch(0.74 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-hover: oklch(0.79 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-ink: oklch(0.8 var(--ph-accent-c) var(--ph-accent-h));
+  --ph-accent-soft: oklch(0.3 calc(var(--ph-accent-c) * 0.5) var(--ph-accent-h));
+  --ph-accent-soft-ink: oklch(0.86 calc(var(--ph-accent-c) * 0.8) var(--ph-accent-h));
 
-  --st-danger: oklch(0.72 var(--st-danger-c) var(--st-danger-h));
-  --st-danger-soft: oklch(0.28 0.05 var(--st-danger-h));
-  --st-danger-ink: oklch(0.82 0.09 var(--st-danger-h));
-  --st-warning-soft: oklch(0.29 0.04 var(--st-warning-h));
-  --st-warning-ink: oklch(0.86 0.08 var(--st-warning-h));
-  --st-success-soft: oklch(0.28 0.04 var(--st-success-h));
-  --st-success-ink: oklch(0.84 0.07 var(--st-success-h));
+  --ph-danger: oklch(0.72 var(--ph-danger-c) var(--ph-danger-h));
+  --ph-danger-soft: oklch(0.28 0.05 var(--ph-danger-h));
+  --ph-danger-ink: oklch(0.82 0.09 var(--ph-danger-h));
+  --ph-warning-soft: oklch(0.29 0.04 var(--ph-warning-h));
+  --ph-warning-ink: oklch(0.86 0.08 var(--ph-warning-h));
+  --ph-success-soft: oklch(0.28 0.04 var(--ph-success-h));
+  --ph-success-ink: oklch(0.84 0.07 var(--ph-success-h));
 
-  --st-focus: oklch(0.8 0.12 var(--st-accent-h));
-  --st-selection: oklch(0.4 0.07 var(--st-accent-h));
-  --st-overlay: oklch(0.08 0.01 var(--st-ink-h) / 55%);
-  --st-scrim: oklch(0.2 0.01 var(--st-ink-h) / 92%);
-  --st-scrollbar: oklch(0.38 var(--st-ink-c) var(--st-ink-h));
-  --st-shadow-color: oklch(0.05 0.01 var(--st-ink-h) / 35%);
+  --ph-focus: oklch(0.8 0.12 var(--ph-accent-h));
+  --ph-selection: oklch(0.4 0.07 var(--ph-accent-h));
+  --ph-overlay: oklch(0.08 0.01 var(--ph-ink-h) / 55%);
+  --ph-scrim: oklch(0.2 0.01 var(--ph-ink-h) / 92%);
+  --ph-scrollbar: oklch(0.38 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-shadow-color: oklch(0.05 0.01 var(--ph-ink-h) / 35%);
 }
 
 /*
@@ -213,43 +213,43 @@
  */
 :root,
 [data-space-hue] {
-  --st-space-tint: oklch(0.935 calc(var(--st-space-c) * 0.35) var(--st-space-h));
-  --st-space-mark: oklch(0.6 var(--st-space-c) var(--st-space-h));
+  --ph-space-tint: oklch(0.935 calc(var(--ph-space-c) * 0.35) var(--ph-space-h));
+  --ph-space-mark: oklch(0.6 var(--ph-space-c) var(--ph-space-h));
 }
 .dark,
 .dark [data-space-hue] {
-  --st-space-tint: oklch(0.3 calc(var(--st-space-c) * 0.45) var(--st-space-h));
-  --st-space-mark: oklch(0.72 var(--st-space-c) var(--st-space-h));
+  --ph-space-tint: oklch(0.3 calc(var(--ph-space-c) * 0.45) var(--ph-space-h));
+  --ph-space-mark: oklch(0.72 var(--ph-space-c) var(--ph-space-h));
 }
 
-/* ---- shadcn / assistant-ui names, mapped onto steward tokens ---- */
+/* ---- shadcn / assistant-ui names, mapped onto Phaethon tokens ---- */
 :root,
 .dark {
-  --background: var(--st-bg);
-  --foreground: var(--st-ink);
-  --card: var(--st-raised);
-  --card-foreground: var(--st-ink);
-  --popover: var(--st-raised);
-  --popover-foreground: var(--st-ink);
-  --primary: var(--st-accent);
-  --primary-foreground: var(--st-ink-inverse);
-  --secondary: var(--st-surface);
-  --secondary-foreground: var(--st-ink);
-  --muted: var(--st-surface);
-  --muted-foreground: var(--st-ink-secondary);
-  --accent: var(--st-hover);
-  --accent-foreground: var(--st-ink);
-  --destructive: var(--st-danger);
-  --border: var(--st-line);
-  --input: var(--st-line-strong);
-  --ring: var(--st-focus);
-  --sidebar: var(--st-surface);
-  --sidebar-foreground: var(--st-ink);
-  --sidebar-primary: var(--st-accent);
-  --sidebar-primary-foreground: var(--st-ink-inverse);
-  --sidebar-accent: var(--st-hover);
-  --sidebar-accent-foreground: var(--st-ink);
-  --sidebar-border: var(--st-line);
-  --sidebar-ring: var(--st-focus);
-  --radius: var(--st-radius);
+  --background: var(--ph-bg);
+  --foreground: var(--ph-ink);
+  --card: var(--ph-raised);
+  --card-foreground: var(--ph-ink);
+  --popover: var(--ph-raised);
+  --popover-foreground: var(--ph-ink);
+  --primary: var(--ph-accent);
+  --primary-foreground: var(--ph-ink-inverse);
+  --secondary: var(--ph-surface);
+  --secondary-foreground: var(--ph-ink);
+  --muted: var(--ph-surface);
+  --muted-foreground: var(--ph-ink-secondary);
+  --accent: var(--ph-hover);
+  --accent-foreground: var(--ph-ink);
+  --destructive: var(--ph-danger);
+  --border: var(--ph-line);
+  --input: var(--ph-line-strong);
+  --ring: var(--ph-focus);
+  --sidebar: var(--ph-surface);
+  --sidebar-foreground: var(--ph-ink);
+  --sidebar-primary: var(--ph-accent);
+  --sidebar-primary-foreground: var(--ph-ink-inverse);
+  --sidebar-accent: var(--ph-hover);
+  --sidebar-accent-foreground: var(--ph-ink);
+  --sidebar-border: var(--ph-line);
+  --sidebar-ring: var(--ph-focus);
+  --radius: var(--ph-radius);
 }

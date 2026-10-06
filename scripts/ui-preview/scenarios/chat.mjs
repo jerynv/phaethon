@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 
 // ---- fixture files, written once per run ----
-const dir = mkdtempSync(join(tmpdir(), "steward-chat-"));
+const dir = mkdtempSync(join(tmpdir(), "phaethon-chat-"));
 function png(w, h) {
   const crc32 = (buf) => {
     let crc = 0xffffffff;
@@ -228,9 +228,9 @@ export default [
       check(left === 0, "the composer's attachments are cleared after sending");
       const value = await page.evaluate(() => document.querySelector("[data-composer-input]").value);
       check(value === "", "the composer's text is cleared after sending", JSON.stringify(value));
-      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("steward replied"), { timeout: 5000 });
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("Phaethon replied"), { timeout: 5000 });
       const status = await page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
-      check(status === "steward replied: Start with recursion.", "status region announces the whole reply once complete", status);
+      check(status === "Phaethon replied: Start with recursion.", "status region announces the whole reply once complete", status);
       await h.idle();
     },
   },
@@ -282,7 +282,7 @@ export default [
       const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
       check(back, "focus is back in the composer after answering");
       await h.waitText("Done: plans/week6.md");
-      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("steward replied"), { timeout: 5000 });
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("Phaethon replied"), { timeout: 5000 });
       const done = await page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
       check(done.includes("Done: plans/week6.md"), "status region announces the reply after the approval", done);
       await h.idle();

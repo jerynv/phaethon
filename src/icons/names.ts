@@ -1,5 +1,5 @@
 /**
- * Every icon steward draws. Adding a name here makes it required in glyphs.tsx
+ * Every icon Phaethon draws. Adding a name here makes it required in glyphs.tsx
  * (the type checker enforces it), so the set can never be half-drawn.
  */
 export const ICON_NAMES = [

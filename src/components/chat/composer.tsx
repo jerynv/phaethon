@@ -73,7 +73,7 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
         title="Dismiss"
         onClick={onDismiss}
       >
-        <Icon name="close" className="size-(--st-icon-size-sm)" />
+        <Icon name="close" className="size-(--ph-icon-size-sm)" />
       </Button>
     </div>
   );
@@ -92,7 +92,7 @@ function AddMenu({ onAttach }: { onAttach: () => void }) {
           aria-label="Add to message"
           title="Add to message"
         >
-          <Icon name="plus" className="size-(--st-icon-size-lg)" />
+          <Icon name="plus" className="size-(--ph-icon-size-lg)" />
         </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -146,27 +146,27 @@ export function Composer({
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
   return (
-    <div className="mx-auto w-full max-w-(--st-thread-width) px-6 pt-2 pb-4">
+    <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-2 pb-4">
       <AttachProblems problems={problems} onDismiss={clearProblems} />
       <ComposerPrimitive.Root
         aria-label="Message composer"
         data-composer=""
         onSubmit={clearProblems}
         className={cn(
-          "flex flex-col gap-1 rounded-(--st-composer-radius) border bg-raised p-2 shadow transition-colors",
+          "flex flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow transition-colors",
           dragging ? "border-focus bg-accent-soft" : "border-line-strong",
         )}
       >
         <ComposerAttachments />
         <label htmlFor={inputId} className="sr-only">
-          Message steward in {spaceName}
+          Message Phaethon in {spaceName}
         </label>
         <ComposerPrimitive.Input
           ref={inputRef}
           id={inputId}
           data-composer-input
           aria-describedby={hintId}
-          placeholder={`Message steward in ${spaceName}`}
+          placeholder={`Message Phaethon in ${spaceName}`}
           submitMode="enter"
           addAttachmentOnPaste={false}
           onPaste={(e) => {
@@ -176,7 +176,7 @@ export function Composer({
             void addFiles(files);
           }}
           rows={1}
-          className="max-h-(--st-composer-max-height) min-h-(--st-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
+          className="max-h-(--ph-composer-max-height) min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
         />
         <span id={hintId} className="sr-only">
           Press Enter to send, Shift+Enter for a new line, Escape to stop a reply.

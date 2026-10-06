@@ -1,4 +1,4 @@
-// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto steward tokens.
+// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto Phaethon tokens.
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
@@ -13,7 +13,7 @@ const buttonVariants = cva(
   [
     "inline-flex shrink-0 cursor-default items-center justify-center gap-1.5 rounded-md border border-transparent",
     "text-base leading-none font-medium whitespace-nowrap select-none",
-    "transition-[color,background-color,border-color,box-shadow] duration-(--st-duration-fast) ease-out",
+    "transition-[color,background-color,border-color,box-shadow] duration-(--ph-duration-fast) ease-out",
     "disabled:pointer-events-none disabled:opacity-45",
     "aria-invalid:border-danger",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0",
@@ -52,14 +52,14 @@ const buttonVariants = cva(
         ],
       },
       size: {
-        default: "h-(--st-control-height) px-3 has-[>svg]:px-2.5",
-        xs: "h-(--st-control-height-sm) gap-1 px-2 text-sm has-[>svg]:px-1.5 [&_svg]:size-(--st-icon-size-sm)",
-        sm: "h-(--st-control-height-sm) gap-1 px-2.5 has-[>svg]:px-2",
-        lg: "h-(--st-control-height-lg) gap-2 px-4 text-md has-[>svg]:px-3",
-        icon: "size-(--st-control-height)",
-        "icon-xs": "size-(--st-control-height-sm) [&_svg]:size-(--st-icon-size-sm)",
-        "icon-sm": "size-(--st-control-height-sm)",
-        "icon-lg": "size-(--st-control-height-lg) [&_svg]:size-(--st-icon-size-lg)",
+        default: "h-(--ph-control-height) px-3 has-[>svg]:px-2.5",
+        xs: "h-(--ph-control-height-sm) gap-1 px-2 text-sm has-[>svg]:px-1.5 [&_svg]:size-(--ph-icon-size-sm)",
+        sm: "h-(--ph-control-height-sm) gap-1 px-2.5 has-[>svg]:px-2",
+        lg: "h-(--ph-control-height-lg) gap-2 px-4 text-md has-[>svg]:px-3",
+        icon: "size-(--ph-control-height)",
+        "icon-xs": "size-(--ph-control-height-sm) [&_svg]:size-(--ph-icon-size-sm)",
+        "icon-sm": "size-(--ph-control-height-sm)",
+        "icon-lg": "size-(--ph-control-height-lg) [&_svg]:size-(--ph-icon-size-lg)",
       },
     },
     defaultVariants: {

@@ -1,5 +1,5 @@
 //! A space's conversation, stored as a plain JSON file in the space:
-//! `<space>/.steward/thread.json`, a list of messages in the Messages API shape
+//! `<space>/.phaethon/thread.json`, a list of messages in the Messages API shape
 //! (`{"role": ..., "content": [blocks]}`).
 //!
 //! The history is append-only: blocks the model returned (thinking blocks
@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::{Value, json};
 
+use crate::attachments::is_attachment_ref;
 use crate::tools::STATE_DIR;
 
 fn file(space: &Path) -> PathBuf {
@@ -98,7 +99,7 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|b| b["type"] == "steward_attachment")
+            .filter(|b| is_attachment_ref(b))
             .map(|b| UiAttachment {
                 name: b["name"].as_str().unwrap_or("").into(),
                 path: b["path"].as_str().unwrap_or("").into(),
@@ -137,7 +138,7 @@ mod tests {
 
     #[test]
     fn round_trip_and_ui_view() {
-        let dir = std::env::temp_dir().join(format!("steward-thread-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("phaethon-thread-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         assert!(load(&dir).unwrap().is_empty());

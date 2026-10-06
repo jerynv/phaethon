@@ -25,9 +25,9 @@ type AgentEvent =
 export type AgentMessageCustom = {
   /** Latest tool activity, e.g. "Reading file notes.md". */
   toolStatus?: string;
-  /** A write waiting for the user's answer (steward's own agent only). */
+  /** A write waiting for the user's answer (Phaethon's own agent only). */
   approval?: PendingApproval;
-  /** A read of another space waiting for the user's answer (steward's own agent only). */
+  /** A read of another space waiting for the user's answer (Phaethon's own agent only). */
   accessRequest?: PendingAccessRequest;
   /** The backend's error code when the reply failed (`ErrorCode` in agent.rs, or "ipc"). */
   errorCode?: string;
@@ -99,7 +99,7 @@ function eventQueue() {
 }
 
 /**
- * Streams replies from the agent the Rust core runs for `spaceId` (steward's own
+ * Streams replies from the agent the Rust core runs for `spaceId` (Phaethon's own
  * loop, or the `claude` CLI). Only the newest user message is sent, with its
  * attachments: the backend keeps the conversation itself, so earlier turns are
  * already on its side. The Rust core checks the files again and saves them into
@@ -125,7 +125,7 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
       invoke("agent_send", { space: spaceId, prompt, attachments, onEvent: channel }).catch((err: unknown) => {
-        queue.push({ kind: "error", code: "ipc", message: `steward could not reach its backend: ${String(err)}` });
+        queue.push({ kind: "error", code: "ipc", message: `Phaethon could not reach its backend: ${String(err)}` });
         queue.push({ kind: "end", sessionId: null });
       });
 

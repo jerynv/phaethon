@@ -1,4 +1,4 @@
-//! steward's whole agent turn over real HTTP against a local fake Anthropic
+//! Phaethon's whole agent turn over real HTTP against a local fake Anthropic
 //! server: model asks to write a file, the user allows it, the file is written
 //! inside the space, the model answers, and the thread file holds it all.
 //! No network, no keychain.
@@ -6,10 +6,10 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
-use steward_lib::agent::{AgentEvent, Runs};
-use steward_lib::agent_loop::{self, Approvals, LoopRequest};
-use steward_lib::anthropic::Anthropic;
-use steward_lib::thread;
+use phaethon_lib::agent::{AgentEvent, Runs};
+use phaethon_lib::agent_loop::{self, Approvals, LoopRequest};
+use phaethon_lib::anthropic::Anthropic;
+use phaethon_lib::thread;
 use tokio::net::TcpListener;
 
 mod common;
@@ -17,7 +17,7 @@ use common::{reply, serve};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn write_with_approval_over_http() {
-    let vault = std::env::temp_dir().join(format!("steward-loop-http-{}", std::process::id()));
+    let vault = std::env::temp_dir().join(format!("phaethon-loop-http-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&vault);
     let space = vault.join("spaces/school");
     std::fs::create_dir_all(&space).unwrap();
@@ -25,7 +25,7 @@ async fn write_with_approval_over_http() {
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     // SAFETY: set before any request; this test binary has a single test.
-    unsafe { std::env::set_var("STEWARD_ANTHROPIC_BASE_URL", format!("http://{}", listener.local_addr().unwrap())) };
+    unsafe { std::env::set_var("PHAETHON_ANTHROPIC_BASE_URL", format!("http://{}", listener.local_addr().unwrap())) };
     let bodies = Arc::new(Mutex::new(vec![]));
     let server = tokio::spawn(serve(
         listener,

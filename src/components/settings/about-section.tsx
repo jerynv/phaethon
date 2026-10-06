@@ -15,7 +15,7 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
     <>
       <SectionHeader
         id={headingId}
-        title="About steward"
+        title="About Phaethon"
         description="An accessible workspace for your own AI agent, where everything it knows is plain files you own."
       />
       <SettingGroup title="This copy">
@@ -27,7 +27,7 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
         </SettingRow>
       </SettingGroup>
       <SettingGroup title="Your vault" description="Your spaces, notes, conversations and these settings are files in this folder.">
-        <SettingRow stacked label="Vault folder" description="Settings are saved in .steward/settings.json inside it. API keys are not: they stay in this computer's keychain.">
+        <SettingRow stacked label="Vault folder" description="Settings are saved in .phaethon/settings.json inside it. API keys are not: they stay in this computer's keychain.">
           <div className="flex flex-wrap items-center gap-2">
             <code className="min-w-0 flex-1 rounded-md bg-surface-sunken px-2.5 py-1.5 font-mono text-sm break-all text-ink">
               {vault ?? "Not available in this preview"}
@@ -54,7 +54,7 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
           </div>
         </SettingRow>
       </SettingGroup>
-      <p className="max-w-(--st-measure) text-sm text-ink-secondary">
+      <p className="max-w-(--ph-measure) text-sm text-ink-secondary">
         Text is set in Atkinson Hyperlegible, designed by the Braille Institute so similar letters are easy to tell apart.
       </p>
     </>

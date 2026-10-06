@@ -136,7 +136,7 @@ export function AccessRequestCard() {
       aria-describedby={`${descId} ${whereId} ${reasonId} ${scopeId}`}
       data-access-request=""
       onKeyDown={onKeyDown}
-      className="flex w-full max-w-(--st-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
+      className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
     >
       <div className="flex items-start gap-3 p-4 pb-3">
         <span
@@ -152,7 +152,7 @@ export function AccessRequestCard() {
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <h3 id={titleId} className="text-md font-semibold text-ink">
-            steward wants to read from {name}
+            Phaethon wants to read from {name}
           </h3>
           <p id={descId} className="text-base text-ink-secondary">
             It asked to read {what}. Nothing there is shared unless you allow it.
@@ -173,19 +173,19 @@ export function AccessRequestCard() {
         {request.reason.trim() && (
           <figure className="flex flex-col gap-1 border-s-2 border-line-strong ps-3">
             <blockquote id={reasonId} className="text-base text-ink">
-              <span className="sr-only">steward&rsquo;s reason: </span>
+              <span className="sr-only">Phaethon&rsquo;s reason: </span>
               &ldquo;{request.reason.trim()}&rdquo;
             </blockquote>
             <figcaption aria-hidden="true" className="text-sm text-ink-secondary">
-              steward&rsquo;s reason, in its words
+              Phaethon&rsquo;s reason, in its words
             </figcaption>
           </figure>
         )}
 
         <p id={scopeId} className="flex items-start gap-1.5 text-sm text-ink-secondary">
-          <Icon name="lock" className="mt-px size-(--st-icon-size-sm) shrink-0" />
+          <Icon name="lock" className="mt-px size-(--ph-icon-size-sm) shrink-0" />
           <span>
-            Read only. steward can&rsquo;t change anything in {name}.
+            Read only. Phaethon can&rsquo;t change anything in {name}.
           </span>
         </p>
       </div>
@@ -193,7 +193,7 @@ export function AccessRequestCard() {
       <div className="flex flex-col gap-2 px-4 pt-4 pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button disabled={busy} size="sm" aria-describedby={onceHintId} onClick={() => void answer("once")}>
-            <Icon name="check" className="size-(--st-icon-size-sm)" />
+            <Icon name="check" className="size-(--ph-icon-size-sm)" />
             Allow once
           </Button>
           <Button
@@ -215,12 +215,12 @@ export function AccessRequestCard() {
         </p>
         {problem && (
           <p role="alert" className="flex items-center gap-1.5 text-sm text-danger-ink">
-            <Icon name="warning" className="size-(--st-icon-size-sm) shrink-0" />
+            <Icon name="warning" className="size-(--ph-icon-size-sm) shrink-0" />
             {problem}
           </p>
         )}
         <p role="status" className={cn("flex items-center gap-1.5 text-sm text-ink", !note && "sr-only")}>
-          {note && <Icon name="info" className="size-(--st-icon-size-sm) shrink-0 text-ink-secondary" />}
+          {note && <Icon name="info" className="size-(--ph-icon-size-sm) shrink-0 text-ink-secondary" />}
           {note}
         </p>
       </div>
@@ -256,7 +256,7 @@ export const AccessReceiptLine: DataMessagePartComponent<AccessReceipt> = (props
       <Icon
         name={r.icon}
         className={cn(
-          "size-(--st-icon-size-sm) shrink-0",
+          "size-(--ph-icon-size-sm) shrink-0",
           data.answer === "deny" ? "text-ink-secondary" : "text-success-ink",
         )}
       />

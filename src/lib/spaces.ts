@@ -7,7 +7,7 @@ export type Space = {
   name: string;
   description: string;
   /**
-   * The space's own hue (oklch hue angle, 0 to 360). It becomes `--st-space-h`
+   * The space's own hue (oklch hue angle, 0 to 360). It becomes `--ph-space-h`
    * wherever the space is shown, so each compartment is recognisable at a
    * glance. Lightness and chroma come from the theme tokens, so any hue stays
    * soft and keeps its contrast.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-const KEY = "steward.sidebar.collapsed";
+const KEY = "phaethon.sidebar.collapsed";
 
 function read(): boolean {
   try {

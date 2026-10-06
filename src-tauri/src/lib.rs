@@ -72,7 +72,7 @@ async fn agent_send(
     };
     let settings = state.vault.settings();
     match settings.backend {
-        Backend::Steward => {
+        Backend::Phaethon => {
             let key = match secrets::get(&state.vault.name(), "anthropic") {
                 Ok(Some(k)) => k,
                 Ok(None) => {
@@ -133,7 +133,7 @@ fn agent_access_answer(state: State<'_, AppState>, space: String, id: String, an
 }
 
 /// What `space` may read in other spaces (saved "always" grants), plus any
-/// problems found in `<vault>/.steward/grants.json`. Read from the file on
+/// problems found in `<vault>/.phaethon/grants.json`. Read from the file on
 /// every call, so edits and revocations apply without a restart.
 #[tauri::command]
 fn grants_list(state: State<'_, AppState>, space: String) -> Result<grants::GrantsView, String> {
@@ -151,7 +151,7 @@ fn grant_revoke(state: State<'_, AppState>, id: String) -> Result<bool, String> 
 /// switch. Empty for the CLI backend, which keeps its own history.
 #[tauri::command]
 fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::UiMessage>, String> {
-    if state.vault.settings().backend != Backend::Steward {
+    if state.vault.settings().backend != Backend::Phaethon {
         return Ok(vec![]);
     }
     let dir = state.vault.space_dir(&space)?;
@@ -172,7 +172,7 @@ struct SettingsView {
     appearance: serde_json::Value,
     /// Where this vault's folder is, shown in Settings so the user can find it.
     vault_path: String,
-    /// steward's version.
+    /// Phaethon's version.
     version: &'static str,
 }
 

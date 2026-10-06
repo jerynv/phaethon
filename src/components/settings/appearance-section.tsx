@@ -21,27 +21,27 @@ import { SectionReset } from "./section-reset";
 
 /** Tokens this page owns; its Reset puts all of them (and the theme) back. */
 export const APPEARANCE_TOKENS = [
-  "--st-accent-h",
-  "--st-accent-c",
-  "--st-neutral-h",
-  "--st-neutral-c",
-  "--st-text-scale",
-  "--st-weight-normal",
-  "--st-density",
-  "--st-radius-scale",
-  "--st-sidebar-width",
+  "--ph-accent-h",
+  "--ph-accent-c",
+  "--ph-neutral-h",
+  "--ph-neutral-c",
+  "--ph-text-scale",
+  "--ph-weight-normal",
+  "--ph-density",
+  "--ph-radius-scale",
+  "--ph-sidebar-width",
 ] as const;
 
 export function AppearanceSection({ headingId }: { headingId: string }) {
   const a = useAppearance();
   // Swatches show the accent at the chosen strength, but never so faint that hues blur together.
-  const accentC = Math.max(0.06, numericValue(TOKEN_BY_NAME.get("--st-accent-c")!, a.tokens["--st-accent-c"]));
+  const accentC = Math.max(0.06, numericValue(TOKEN_BY_NAME.get("--ph-accent-c")!, a.tokens["--ph-accent-c"]));
   return (
     <>
       <SectionReset
         headingId={headingId}
         title="Appearance"
-        description="How steward looks. Changes apply as you make them and are saved in this vault, so they follow it to other computers."
+        description="How Phaethon looks. Changes apply as you make them and are saved in this vault, so they follow it to other computers."
         what="appearance"
         tokens={APPEARANCE_TOKENS}
         resetTheme
@@ -51,28 +51,28 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
       </SettingGroup>
       <SettingGroup title="Colour" description="Colours stay soft and keep text readable whatever you pick.">
         <HueRow
-          name="--st-accent-h"
+          name="--ph-accent-h"
           presets={ACCENT_PRESETS}
           swatch={(h) => `oklch(0.6 ${accentC} ${h})`}
           check={() => "oklch(0.99 0 0)"}
         />
-        <TokenRow name="--st-accent-c" />
+        <TokenRow name="--ph-accent-c" />
         <HueRow
-          name="--st-neutral-h"
+          name="--ph-neutral-h"
           presets={NEUTRAL_PRESETS}
           swatch={(h) => `oklch(0.9 0.035 ${h})`}
           check={(h) => `oklch(0.3 0.05 ${h})`}
         />
-        <TokenRow name="--st-neutral-c" />
+        <TokenRow name="--ph-neutral-c" />
       </SettingGroup>
       <SettingGroup title="Text">
-        <TokenRow name="--st-text-scale" quickPicks />
-        <TokenRow name="--st-weight-normal" />
+        <TokenRow name="--ph-text-scale" quickPicks />
+        <TokenRow name="--ph-weight-normal" />
       </SettingGroup>
       <SettingGroup title="Layout">
-        <TokenRow name="--st-density" />
-        <TokenRow name="--st-radius-scale" />
-        <TokenRow name="--st-sidebar-width" />
+        <TokenRow name="--ph-density" />
+        <TokenRow name="--ph-radius-scale" />
+        <TokenRow name="--ph-sidebar-width" />
       </SettingGroup>
     </>
   );
@@ -89,18 +89,18 @@ const THEMES: { value: ThemePref; label: string; icon: IconName }[] = [
 /** Miniature window colours per theme, from the same dials as tokens.css. */
 const MINI = {
   light: {
-    bg: "oklch(0.985 var(--st-neutral-c) var(--st-neutral-h))",
-    side: "oklch(0.955 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h))",
-    ink: "oklch(0.45 calc(var(--st-ink-c) * 0.8) var(--st-ink-h))",
-    faint: "oklch(0.85 calc(var(--st-neutral-c) * 2) var(--st-neutral-h))",
-    accent: "oklch(0.5 var(--st-accent-c) var(--st-accent-h))",
+    bg: "oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h))",
+    side: "oklch(0.955 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h))",
+    ink: "oklch(0.45 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h))",
+    faint: "oklch(0.85 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h))",
+    accent: "oklch(0.5 var(--ph-accent-c) var(--ph-accent-h))",
   },
   dark: {
-    bg: "oklch(0.2 calc(var(--st-ink-c) * 0.7) var(--st-ink-h))",
-    side: "oklch(0.24 calc(var(--st-ink-c) * 0.8) var(--st-ink-h))",
-    ink: "oklch(0.76 calc(var(--st-neutral-c) * 1.5) var(--st-neutral-h))",
-    faint: "oklch(0.36 var(--st-ink-c) var(--st-ink-h))",
-    accent: "oklch(0.74 var(--st-accent-c) var(--st-accent-h))",
+    bg: "oklch(0.2 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h))",
+    side: "oklch(0.24 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h))",
+    ink: "oklch(0.76 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h))",
+    faint: "oklch(0.36 var(--ph-ink-c) var(--ph-ink-h))",
+    accent: "oklch(0.74 var(--ph-accent-c) var(--ph-accent-h))",
   },
 } as const;
 
@@ -142,11 +142,11 @@ function ThemeRow() {
             key={t.value}
             value={t.value}
             className={cn(
-              "group flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-raised p-1.5 pb-2 text-left transition-colors duration-(--st-duration-fast) hover:border-ink-tertiary",
-              "data-[state=checked]:border-accent-fill data-[state=checked]:shadow-[0_0_0_var(--st-border-width)_var(--st-accent)]",
+              "group flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-raised p-1.5 pb-2 text-left transition-colors duration-(--ph-duration-fast) hover:border-ink-tertiary",
+              "data-[state=checked]:border-accent-fill data-[state=checked]:shadow-[0_0_0_var(--ph-border-width)_var(--ph-accent)]",
             )}
           >
-            <span className="flex h-(--st-theme-preview-height) overflow-hidden rounded-md border border-line" aria-hidden="true">
+            <span className="flex h-(--ph-theme-preview-height) overflow-hidden rounded-md border border-line" aria-hidden="true">
               {t.value === "system" ? (
                 <>
                   <MiniWindow theme="light" />
@@ -157,10 +157,10 @@ function ThemeRow() {
               )}
             </span>
             <span className="flex items-center gap-1.5 px-1 text-sm text-ink-secondary group-data-[state=checked]:font-semibold group-data-[state=checked]:text-ink">
-              <Icon name={t.icon} className="size-(--st-icon-size-sm)" />
+              <Icon name={t.icon} className="size-(--ph-icon-size-sm)" />
               <span className="min-w-0 flex-1 truncate">{t.label}</span>
               <RadioGroup.Indicator className="text-accent-ink">
-                <Icon name="check" className="size-(--st-icon-size-sm)" />
+                <Icon name="check" className="size-(--ph-icon-size-sm)" />
               </RadioGroup.Indicator>
             </span>
           </RadioGroup.Item>
@@ -168,7 +168,7 @@ function ThemeRow() {
       </RadioGroup.Root>
       <p id={statusId} className="text-sm text-ink-secondary">
         {a.theme === "system"
-          ? `Your system is using ${sys.dark ? "dark" : "light"} mode right now, so steward is too.`
+          ? `Your system is using ${sys.dark ? "dark" : "light"} mode right now, so Phaethon is too.`
           : `Always ${a.theme}, whatever your system uses.`}
       </p>
     </div>
@@ -202,7 +202,7 @@ function HueRow({
         <span id={sliderLabelId} className="text-sm text-ink-secondary">
           Custom hue
         </span>
-        <div className="min-w-(--st-settings-label-min) flex-1">
+        <div className="min-w-(--ph-settings-label-min) flex-1">
           <TokenSlider
             labelId={`${sliderLabelId} ${labelId}`}
             value={value}
@@ -215,7 +215,7 @@ function HueRow({
           />
         </div>
         <span className="flex items-center gap-2" aria-hidden="true">
-          <span className="size-(--st-icon-size) rounded-full border border-line-strong" style={{ background: swatch(value) }} />
+          <span className="size-(--ph-icon-size) rounded-full border border-line-strong" style={{ background: swatch(value) }} />
           <span className="w-[4ch] text-right text-sm text-ink tabular-nums">{Math.round(value)}°</span>
         </span>
         <DefaultOrReset

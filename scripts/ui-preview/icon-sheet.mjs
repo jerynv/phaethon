@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Write a standalone HTML contact sheet of every steward icon: each glyph at
+// Write a standalone HTML contact sheet of every Phaethon icon: each glyph at
 // 16, 20 and 32px, in the light and dark themes, with its name. Loads the real
 // <Icon> through Vite (so TSX and the @/ alias work), renders it to static
 // markup, and needs no browser to build.
@@ -30,7 +30,7 @@ try {
   const grid = ICON_NAMES.map(cell).join("");
 
   const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>steward icons</title>
+<html lang="en"><head><meta charset="utf-8"><title>Phaethon icons</title>
 <style>
   body { margin: 0; font: 11px/1.3 ui-sans-serif, system-ui, sans-serif; }
   section { padding: 16px; }

@@ -43,7 +43,7 @@ export function SectionHeader({
         <h3 id={id} className="text-xl font-semibold text-ink">
           {title}
         </h3>
-        <p className="max-w-(--st-measure) text-base text-ink-secondary">{description}</p>
+        <p className="max-w-(--ph-measure) text-base text-ink-secondary">{description}</p>
       </div>
       {action}
     </header>
@@ -102,17 +102,17 @@ export function SettingRow({
   const LabelTag = htmlFor ? "label" : "span";
   return (
     <div data-setting-row="" className={cn("flex gap-x-6 gap-y-3 px-4 py-3.5", stacked ? "flex-col" : "flex-wrap items-start")}>
-      <div className="flex min-w-(--st-settings-label-min) flex-1 flex-col gap-0.5">
+      <div className="flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5">
         <LabelTag id={labelId} htmlFor={htmlFor} className="text-base font-medium text-ink">
           {label}
         </LabelTag>
         {description && (
-          <p id={descriptionId} className="max-w-(--st-measure) text-sm text-ink-secondary">
+          <p id={descriptionId} className="max-w-(--ph-measure) text-sm text-ink-secondary">
             {description}
           </p>
         )}
       </div>
-      <div className={cn("flex flex-col gap-2", stacked ? "w-full" : "w-(--st-settings-control-width) max-w-full")}>{children}</div>
+      <div className={cn("flex flex-col gap-2", stacked ? "w-full" : "w-(--ph-settings-control-width) max-w-full")}>{children}</div>
     </div>
   );
 }
@@ -136,9 +136,9 @@ export function DefaultOrReset({ changed, onReset, what, defaultText }: { change
         requestAnimationFrame(() => row?.querySelector<HTMLElement>('[role="slider"]')?.focus());
       }}
       aria-label={`Reset ${what} to ${defaultText}`}
-      className="-my-1 -mr-1.5 min-h-(--st-target-min) text-accent-ink"
+      className="-my-1 -mr-1.5 min-h-(--ph-target-min) text-accent-ink"
     >
-      <Icon name="retry" className="size-(--st-icon-size-sm)" />
+      <Icon name="retry" className="size-(--ph-icon-size-sm)" />
       Reset
     </Button>
   ) : (
@@ -191,11 +191,11 @@ export function TokenSlider({
       max={max}
       step={step}
       onValueChange={([v]) => onChange(v)}
-      className="relative flex h-(--st-target-min) w-full touch-none items-center select-none"
+      className="relative flex h-(--ph-target-min) w-full touch-none items-center select-none"
     >
       <Slider.Track
         className={cn(
-          "relative h-(--st-slider-track) grow overflow-hidden rounded-full",
+          "relative h-(--ph-slider-track) grow overflow-hidden rounded-full",
           trackStyle ? "" : "bg-line-strong",
         )}
         style={trackStyle}
@@ -208,8 +208,8 @@ export function TokenSlider({
         aria-describedby={descriptionId}
         aria-valuetext={valueText}
         className={cn(
-          "relative block size-(--st-slider-thumb) cursor-grab rounded-full border-2 bg-raised shadow transition-transform duration-(--st-duration-fast) active:cursor-grabbing",
-          "before:absolute before:-inset-(--st-focus-offset) before:content-['']",
+          "relative block size-(--ph-slider-thumb) cursor-grab rounded-full border-2 bg-raised shadow transition-transform duration-(--ph-duration-fast) active:cursor-grabbing",
+          "before:absolute before:-inset-(--ph-focus-offset) before:content-['']",
           trackStyle ? "border-ink" : "border-accent-fill",
         )}
       />
@@ -274,7 +274,7 @@ function QuickPicks({
             onClick={() => onPick(p.value)}
             aria-label={`${p.label}, ${format(p.value)}`}
             className={cn(
-              "min-h-(--st-target-min) border-line-strong px-1 text-xs tabular-nums transition-colors duration-(--st-duration-fast) not-first:border-l",
+              "min-h-(--ph-target-min) border-line-strong px-1 text-xs tabular-nums transition-colors duration-(--ph-duration-fast) not-first:border-l",
               on
                 ? "bg-accent-soft font-semibold text-accent-soft-ink"
                 : "text-ink-secondary hover:bg-hover hover:text-ink",
@@ -327,14 +327,14 @@ export function HueSwatches({
         <RadioGroup.Item
           key={p.label}
           value={String(p.value)}
-          className="group flex min-w-(--st-target-min) flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs text-ink-secondary hover:bg-hover hover:text-ink data-[state=checked]:font-semibold data-[state=checked]:text-ink"
+          className="group flex min-w-(--ph-target-min) flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs text-ink-secondary hover:bg-hover hover:text-ink data-[state=checked]:font-semibold data-[state=checked]:text-ink"
         >
           <span
-            className="grid size-(--st-swatch-size) place-items-center rounded-full shadow-sm ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
+            className="grid size-(--ph-swatch-size) place-items-center rounded-full shadow-sm ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
             style={{ background: swatchColour(p.value), color: checkColour(p.value) }}
           >
             <RadioGroup.Indicator>
-              <Icon name="check" className="size-(--st-icon-size-sm)" />
+              <Icon name="check" className="size-(--ph-icon-size-sm)" />
             </RadioGroup.Indicator>
           </span>
           {p.label}
@@ -372,11 +372,11 @@ export function SwitchRow({
         <label htmlFor={id} className="cursor-pointer text-base font-medium text-ink">
           {label}
         </label>
-        <p id={descId} className="max-w-(--st-measure) text-sm text-ink-secondary">
+        <p id={descId} className="max-w-(--ph-measure) text-sm text-ink-secondary">
           {description}
         </p>
         <p id={statusId} className="flex items-center gap-1.5 text-sm text-ink-secondary">
-          <Icon name="info" className="size-(--st-icon-size-sm) text-ink-tertiary" />
+          <Icon name="info" className="size-(--ph-icon-size-sm) text-ink-tertiary" />
           {status}
         </p>
       </div>
@@ -386,11 +386,11 @@ export function SwitchRow({
         onCheckedChange={onChange}
         aria-describedby={`${descId} ${statusId}`}
         className={cn(
-          "mt-0.5 inline-flex h-(--st-switch-height) w-(--st-switch-width) shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 transition-colors duration-(--st-duration-fast)",
+          "mt-0.5 inline-flex h-(--ph-switch-height) w-(--ph-switch-width) shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 transition-colors duration-(--ph-duration-fast)",
           "bg-ink-tertiary data-[state=checked]:bg-accent-fill",
         )}
       >
-        <Switch.Thumb className="block size-(--st-switch-thumb) rounded-full bg-raised shadow-sm transition-transform duration-(--st-duration-fast) data-[state=checked]:translate-x-(--st-switch-travel)" />
+        <Switch.Thumb className="block size-(--ph-switch-thumb) rounded-full bg-raised shadow-sm transition-transform duration-(--ph-duration-fast) data-[state=checked]:translate-x-(--ph-switch-travel)" />
       </Switch.Root>
     </div>
   );

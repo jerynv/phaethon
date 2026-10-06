@@ -16,7 +16,7 @@ const grants = () => ({
   ],
 });
 
-const settings = { backend: "steward", hasAnthropicKey: true, model: "claude-opus-5-5", appearance: {}, vaultPath: "/Users/you/Steward/default", version: "0.1.0" };
+const settings = { backend: "phaethon", hasAnthropicKey: true, model: "claude-opus-5-5", appearance: {}, vaultPath: "/Users/you/Phaethon/default", version: "0.1.0" };
 
 const CHIP = "[data-grants-chip]";
 const POPOVER = '[data-radix-popper-content-wrapper] [role="dialog"]';

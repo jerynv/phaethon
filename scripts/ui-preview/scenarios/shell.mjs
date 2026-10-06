@@ -25,8 +25,8 @@ import { fileURLToPath } from "node:url";
 
 // Obscura matches neither :focus-visible nor :focus when painting, so the
 // focused element is tagged and drawn with the same tokens as index.css.
-const RING = `[data-shot-focus] { outline: var(--st-focus-width) solid var(--st-focus) !important; outline-offset: var(--st-focus-offset) !important; }
-a[data-shot-focus][href="#main"] { position: fixed; top: calc(var(--st-titlebar-height) + var(--st-space) * 3); left: 50%; transform: translateX(-50%); z-index: 50; width: auto; height: auto; margin: 0; clip: auto; clip-path: none; overflow: visible; white-space: nowrap; border-radius: var(--st-radius); background: var(--st-raised); color: var(--st-ink); padding: var(--st-space) calc(var(--st-space) * 3); font-weight: var(--st-weight-medium); box-shadow: var(--st-shadow); }`;
+const RING = `[data-shot-focus] { outline: var(--ph-focus-width) solid var(--ph-focus) !important; outline-offset: var(--ph-focus-offset) !important; }
+a[data-shot-focus][href="#main"] { position: fixed; top: calc(var(--ph-titlebar-height) + var(--ph-space) * 3); left: 50%; transform: translateX(-50%); z-index: 50; width: auto; height: auto; margin: 0; clip: auto; clip-path: none; overflow: visible; white-space: nowrap; border-radius: var(--ph-radius); background: var(--ph-raised); color: var(--ph-ink); padding: var(--ph-space) calc(var(--ph-space) * 3); font-weight: var(--ph-weight-medium); box-shadow: var(--ph-shadow); }`;
 const tagFocus = (page) => page.evaluate(() => document.activeElement?.setAttribute("data-shot-focus", ""));
 
 /** Append a stylesheet (page.addStyleTag can hang in Obscura). */
@@ -37,17 +37,17 @@ const addStyle = (page, css) =>
     document.head.append(s);
   }, css);
 
-/** Every --st-* token name, read from the stylesheets on disk. */
+/** Every --ph-* token name, read from the stylesheets on disk. */
 const here = dirname(fileURLToPath(import.meta.url));
 const TOKEN_NAMES = [
   ...new Set(
     ["../../../src/styles/tokens.css", "../../../src/components/shell/shell.css"].flatMap((f) =>
-      readFileSync(join(here, f), "utf8").match(/--st-[a-z0-9-]+(?=\s*:)/g) ?? [],
+      readFileSync(join(here, f), "utf8").match(/--ph-[a-z0-9-]+(?=\s*:)/g) ?? [],
     ),
   ),
 ];
 
-/** Evaluate unitless calc()s inside every --st-* colour token and pin them inline. */
+/** Evaluate unitless calc()s inside every --ph-* colour token and pin them inline. */
 export async function resolveTokens(page) {
   await page.evaluate((names) => {
     const fix = (v) => {

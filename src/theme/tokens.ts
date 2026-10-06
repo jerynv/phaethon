@@ -16,7 +16,7 @@
 export type TokenGroup = "Text" | "Colour" | "Layout" | "Motion" | "Accessibility";
 
 type Base = {
-  name: `--st-${string}`;
+  name: `--ph-${string}`;
   label: string;
   /** One plain sentence: what changes when you move it. */
   description: string;
@@ -96,7 +96,7 @@ export function hueName(h: number): string {
 export const TOKENS: readonly TokenSpec[] = [
   // ---- Text ----
   {
-    name: "--st-text-scale",
+    name: "--ph-text-scale",
     label: "Text size",
     description: "Makes every piece of text larger or smaller. Layouts grow with it.",
     group: "Text",
@@ -115,7 +115,7 @@ export const TOKENS: readonly TokenSpec[] = [
     ],
   },
   {
-    name: "--st-weight-normal",
+    name: "--ph-weight-normal",
     label: "Text weight",
     description: "How heavy ordinary text is. Heavier text can be easier to read on some screens.",
     group: "Text",
@@ -129,7 +129,7 @@ export const TOKENS: readonly TokenSpec[] = [
 
   // ---- Colour ----
   {
-    name: "--st-accent-h",
+    name: "--ph-accent-h",
     label: "Accent colour",
     description: "The colour of buttons, links, selection and the focus ring.",
     group: "Colour",
@@ -142,7 +142,7 @@ export const TOKENS: readonly TokenSpec[] = [
     presets: ACCENT_PRESETS,
   },
   {
-    name: "--st-accent-c",
+    name: "--ph-accent-c",
     label: "Accent strength",
     description: "How vivid the accent is. Kept soft so it never shouts; text on it stays readable.",
     group: "Colour",
@@ -154,7 +154,7 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => `${Math.round(((v - 0.02) / 0.1) * 100)}%`,
   },
   {
-    name: "--st-neutral-h",
+    name: "--ph-neutral-h",
     label: "Surface tint",
     description: "The faint colour in backgrounds and borders: warm paper, cool slate, or anything between.",
     group: "Colour",
@@ -170,7 +170,7 @@ export const TOKENS: readonly TokenSpec[] = [
     presets: NEUTRAL_PRESETS,
   },
   {
-    name: "--st-neutral-c",
+    name: "--ph-neutral-c",
     label: "Surface tint strength",
     description: "From plain grey to clearly tinted. Always subtle.",
     group: "Colour",
@@ -184,7 +184,7 @@ export const TOKENS: readonly TokenSpec[] = [
 
   // ---- Layout ----
   {
-    name: "--st-density",
+    name: "--ph-density",
     label: "Spacing",
     description: "Room around and between things. Lower fits more on screen; higher is calmer.",
     group: "Layout",
@@ -196,7 +196,7 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => (v === 1 ? "Standard (100%)" : v < 1 ? `Compact (${pct(v)})` : `Roomy (${pct(v)})`),
   },
   {
-    name: "--st-radius-scale",
+    name: "--ph-radius-scale",
     label: "Corner roundness",
     description: "From square corners to soft, rounded ones.",
     group: "Layout",
@@ -208,11 +208,11 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => (v === 0 ? "Square" : times(v)),
     derive: (v) =>
       Object.fromEntries(
-        Object.entries(RADII).map(([k, px]) => [`--st-radius${k ? `-${k}` : ""}`, `${round(px * v, 2)}px`]),
+        Object.entries(RADII).map(([k, px]) => [`--ph-radius${k ? `-${k}` : ""}`, `${round(px * v, 2)}px`]),
       ),
   },
   {
-    name: "--st-sidebar-width",
+    name: "--ph-sidebar-width",
     label: "Sidebar width",
     description: "How wide the list of spaces is.",
     group: "Layout",
@@ -227,7 +227,7 @@ export const TOKENS: readonly TokenSpec[] = [
 
   // ---- Motion ----
   {
-    name: "--st-duration-scale",
+    name: "--ph-duration-scale",
     label: "Animation length",
     description: "How long transitions take. Off makes every change instant.",
     group: "Motion",
@@ -239,13 +239,13 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => (v === 0 ? "Off" : v === 1 ? "Normal (1×)" : times(v)),
     derive: (v) =>
       Object.fromEntries(
-        Object.entries(DURATIONS).map(([k, ms]) => [`--st-duration${k ? `-${k}` : ""}`, `${Math.round(ms * v)}ms`]),
+        Object.entries(DURATIONS).map(([k, ms]) => [`--ph-duration${k ? `-${k}` : ""}`, `${Math.round(ms * v)}ms`]),
       ),
   },
 
   // ---- Accessibility ----
   {
-    name: "--st-focus-width",
+    name: "--ph-focus-width",
     label: "Focus ring thickness",
     description: "The outline that shows which control the keyboard is on.",
     group: "Accessibility",
@@ -258,7 +258,7 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => `${v} pixels`,
   },
   {
-    name: "--st-leading-normal",
+    name: "--ph-leading-normal",
     label: "Line spacing",
     description: "Space between lines in paragraphs and replies.",
     group: "Accessibility",
@@ -270,7 +270,7 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => times(v),
   },
   {
-    name: "--st-tracking-normal",
+    name: "--ph-tracking-normal",
     label: "Letter spacing",
     description: "Space between letters. A little extra helps some people with dyslexia.",
     group: "Accessibility",
@@ -283,7 +283,7 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => (v === 0 ? "None" : `+${Math.round(v * 100)}%`),
   },
   {
-    name: "--st-icon-stroke",
+    name: "--ph-icon-stroke",
     label: "Icon line weight",
     description: "How thick the lines in icons are.",
     group: "Accessibility",
@@ -353,7 +353,7 @@ export function validateValue(spec: TokenSpec, raw: unknown): Result<TokenValue>
 /** Validate a token by name. Unknown names are refused. */
 export function validateToken(name: string, raw: unknown): Result<TokenValue> {
   const spec = TOKEN_BY_NAME.get(name);
-  if (!spec) return { ok: false, error: `"${name}" is not a setting steward knows.` };
+  if (!spec) return { ok: false, error: `"${name}" is not a setting Phaethon knows.` };
   return validateValue(spec, raw);
 }
 

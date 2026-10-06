@@ -8,8 +8,8 @@ import {
 } from "@assistant-ui/react";
 import { useContext, useEffect, useRef, useState, type DragEvent } from "react";
 
-// Built from the assistant-ui registry thread (MIT), cut down to what steward's
-// backend can honour and restyled with steward tokens. Hidden on purpose: edit,
+// Built from the assistant-ui registry thread (MIT), cut down to what Phaethon's
+// backend can honour and restyled with Phaethon tokens. Hidden on purpose: edit,
 // regenerate, branch picker, feedback, dictation, suggestions and export. The
 // backend thread is append-only, so edit and regenerate would not be true.
 
@@ -53,7 +53,7 @@ function UserMessage() {
       <span className="sr-only">You said: </span>
       <MessageAttachments />
       {hasText && (
-        <div className="max-w-(--st-message-max-width) rounded-xl rounded-ee-sm bg-surface px-4 py-2.5 text-md whitespace-pre-wrap text-ink wrap-break-word">
+        <div className="max-w-(--ph-message-max-width) rounded-xl rounded-ee-sm bg-surface px-4 py-2.5 text-md whitespace-pre-wrap text-ink wrap-break-word">
           <MessagePrimitive.Parts components={{ Text: PlainText, File: Nothing, Image: Nothing }} />
         </div>
       )}
@@ -121,7 +121,7 @@ function CopyReply() {
     >
       <ActionBarPrimitive.Copy asChild>
         <Button type="button" variant="ghost" size="xs" className="-ms-2 text-ink-secondary hover:text-ink" aria-label="Copy reply">
-          <Icon name={copied ? "check" : "copy"} className="size-(--st-icon-size-sm)" />
+          <Icon name={copied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
           {copied ? "Copied" : "Copy"}
         </Button>
       </ActionBarPrimitive.Copy>
@@ -132,7 +132,7 @@ function CopyReply() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root data-role="assistant" className="group/msg flex flex-col items-start gap-3">
-      <span className="sr-only">steward said: </span>
+      <span className="sr-only">Phaethon said: </span>
       <div className="w-full min-w-0 empty:hidden">
         <MessagePrimitive.Parts components={ASSISTANT_PARTS} />
       </div>
@@ -142,7 +142,7 @@ function AssistantMessage() {
       <MessageError />
       <AuiIf condition={(s) => s.message.status?.type === "incomplete" && s.message.status.reason === "cancelled"}>
         <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
-          <Icon name="stop" className="size-(--st-icon-size-sm)" />
+          <Icon name="stop" className="size-(--ph-icon-size-sm)" />
           Reply stopped.
         </p>
       </AuiIf>
@@ -219,7 +219,7 @@ function ReplyAnnouncer() {
     if (status?.type === "complete") {
       done.current = last.id;
       const reply = messageText(last);
-      setText(reply ? `steward replied: ${reply}` : "steward finished without a reply.");
+      setText(reply ? `Phaethon replied: ${reply}` : "Phaethon finished without a reply.");
     } else if (status?.type === "incomplete" && status.reason === "cancelled") {
       done.current = last.id;
       setText("Reply stopped.");
@@ -236,19 +236,19 @@ function ReplyAnnouncer() {
   );
 }
 
-/** Shown in a space with no conversation yet: where you are and what steward can see. */
+/** Shown in a space with no conversation yet: where you are and what Phaethon can see. */
 function EmptyState({ spaceName }: { spaceName: string }) {
   return (
-    <div className="m-auto flex max-w-(--st-measure) flex-col items-center gap-2 px-4 py-12 text-center">
+    <div className="m-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-12 text-center">
       <span
         aria-hidden="true"
         className="mb-2 flex size-10 items-center justify-center rounded-full bg-space-tint text-ink-secondary"
       >
-        <Icon name="space" className="size-(--st-icon-size-lg)" />
+        <Icon name="space" className="size-(--ph-icon-size-lg)" />
       </span>
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
       <p className="max-w-md text-md text-ink-secondary">
-        steward can read and search the files in {spaceName}, and nothing outside it. It asks before it changes
+        Phaethon can read and search the files in {spaceName}, and nothing outside it. It asks before it changes
         anything.
       </p>
     </div>
@@ -311,7 +311,7 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
           tabIndex={0}
           className="flex min-h-0 flex-1 flex-col overflow-y-auto"
         >
-          <div className="mx-auto flex w-full max-w-(--st-thread-width) flex-1 flex-col px-6 pt-8 pb-6">
+          <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pt-8 pb-6">
             <AuiIf condition={(s) => s.thread.isEmpty}>
               <EmptyState spaceName={spaceName} />
             </AuiIf>
@@ -349,9 +349,9 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
         {dragging && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus bg-(--st-scrim) text-ink"
+            className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus bg-(--ph-scrim) text-ink"
           >
-            <Icon name="attach" className="size-(--st-icon-size-lg) text-accent-ink" />
+            <Icon name="attach" className="size-(--ph-icon-size-lg) text-accent-ink" />
             <p className="text-lg font-semibold">Drop files to attach them</p>
             <p className="text-base text-ink-secondary">Images, PDFs and text files, saved in {spaceName}</p>
           </div>

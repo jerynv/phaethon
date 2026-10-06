@@ -39,7 +39,7 @@ function useWindowFocused() {
 }
 
 /**
- * The window's title bar, drawn by steward. On macOS the system window buttons
+ * The window's title bar, drawn by Phaethon. On macOS the system window buttons
  * sit inside it (tauri.macos.conf.json); on Windows and Linux it carries our
  * own controls at the trailing edge. The whole bar drags the window and a
  * double-click maximizes it; buttons inside it stay clickable (Tauri skips
@@ -62,13 +62,13 @@ export function TitleBar({ space, sidebarOpen, onToggleSidebar, sidebarId, actio
       data-tauri-drag-region="deep"
       data-shell-chrome=""
       data-inactive={focused ? undefined : ""}
-      className="group/titlebar flex h-(--st-titlebar-height) shrink-0 items-center bg-surface"
+      className="group/titlebar flex h-(--ph-titlebar-height) shrink-0 items-center bg-surface"
     >
       {/* Leading cluster: as wide as the sidebar when it is open, so the title lines up with the pane below. */}
       <div
         className={cn(
-          "flex h-full shrink-0 items-center ps-(--st-titlebar-inset-start) pe-2",
-          sidebarOpen && "w-(--st-sidebar-width)",
+          "flex h-full shrink-0 items-center ps-(--ph-titlebar-inset-start) pe-2",
+          sidebarOpen && "w-(--ph-sidebar-width)",
         )}
       >
         <Tooltip>
@@ -92,7 +92,7 @@ export function TitleBar({ space, sidebarOpen, onToggleSidebar, sidebarId, actio
         </Tooltip>
       </div>
 
-      <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarOpen ? "ps-(--st-pane-inset)" : "ps-1")}>
+      <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarOpen ? "ps-(--ph-pane-inset)" : "ps-1")}>
         <SpaceMark hue={space.hue} />
         <h1
           id="space-title"

@@ -2,10 +2,10 @@
 // Design rules no reviewer should have to catch by eye. Fails the build when
 // source code (src/ by default, or the paths given) breaks one:
 //   1. colours are oklch()/oklab() only: no hex, rgb(), hsl()
-//   2. no lucide-react: steward draws its own icons (src/icons)
+//   2. no lucide-react: Phaethon draws its own icons (src/icons)
 //   3. no raw Tailwind palette colours (text-red-500 ...): use token colours
 //   4. no hard-coded px/rem sizes in class names (w-[12px] ...): use a token,
-//      e.g. w-(--st-sidebar-width)
+//      e.g. w-(--ph-sidebar-width)
 // A line can opt out with `design-check-ignore: <reason>`.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, extname } from "node:path";

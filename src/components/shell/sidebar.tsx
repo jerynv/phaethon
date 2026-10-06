@@ -46,7 +46,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, footer }: Props)
       aria-labelledby="spaces-heading"
       hidden={!open}
       data-shell-chrome=""
-      className="flex w-(--st-sidebar-width) shrink-0 flex-col bg-surface text-ink"
+      className="flex w-(--ph-sidebar-width) shrink-0 flex-col bg-surface text-ink"
     >
       <h2 id="spaces-heading" className="px-4 pt-2 pb-1.5 text-xs font-medium text-ink-secondary">
         Spaces
@@ -66,8 +66,8 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, footer }: Props)
                   style={spaceHueStyle(space.hue)}
                   className={cn(
                     // Two rows: the dot centres on the name row, the description sits under the name.
-                    "grid w-full min-w-0 grid-cols-[var(--st-space-mark-size)_minmax(0,1fr)] items-center gap-x-2.5 rounded-md px-2 py-1.5 text-start",
-                    "transition-colors duration-(--st-duration-fast)",
+                    "grid w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-center gap-x-2.5 rounded-md px-2 py-1.5 text-start",
+                    "transition-colors duration-(--ph-duration-fast)",
                     active ? "bg-space-tint" : "hover:bg-hover active:bg-selected",
                   )}
                 >

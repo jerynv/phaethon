@@ -1,4 +1,4 @@
-//! steward's own agent loop: a model provider plus steward's space-scoped
+//! Phaethon's own agent loop: a model provider plus Phaethon's space-scoped
 //! tools. Nothing from the user's global agent setup is loaded; the model sees
 //! only the system prompt built here, the vault's MANUAL.md and this space.
 //!
@@ -20,12 +20,12 @@ use crate::provider::{Delta, ErrorKind, ModelRequest, Provider};
 use crate::vault::Vault;
 use crate::{attachments, thread, tools};
 
-/// Model calls allowed in one turn before steward stops the agent.
+/// Model calls allowed in one turn before Phaethon stops the agent.
 const MAX_STEPS: usize = 30;
 /// Characters of a pending write shown in the approval card.
 const PREVIEW_CHARS: usize = 4000;
 
-const BASE_PROMPT: &str = "You are steward, a personal assistant working inside one space of the user's vault. \
+const BASE_PROMPT: &str = "You are Phaethon, a personal assistant working inside one space of the user's vault. \
 The space is a folder of the user's own files. You see it through your tools; every path is relative to the space root. \
 Look at files before answering questions about them rather than guessing. \
 Writing a file always asks the user first. If they decline, accept that and do not retry the same write; ask what they would like instead. \
@@ -97,7 +97,7 @@ pub struct LoopRequest<'a> {
     pub attachments: Vec<Value>,
 }
 
-/// The system prompt: steward's own instructions, the other spaces and this
+/// The system prompt: Phaethon's own instructions, the other spaces and this
 /// space's grants, plus the vault's MANUAL.md. Stable across turns (spaces and
 /// grants are sorted) so the prompt cache keeps working until they change.
 pub fn system_prompt(vault_root: &Path, space_id: &str) -> String {
@@ -352,7 +352,7 @@ async fn drive<P: Provider>(
             return emit(AgentEvent::Cancelled);
         }
     }
-    fail(emit, ErrorCode::Provider, format!("steward stopped the agent after {MAX_STEPS} steps. Send another message to let it continue."));
+    fail(emit, ErrorCode::Provider, format!("Phaethon stopped the agent after {MAX_STEPS} steps. Send another message to let it continue."));
 }
 
 async fn run_tool(ctx: tools::Ctx, call: tools::Call) -> Result<String, String> {
@@ -436,7 +436,7 @@ mod tests {
     }
 
     fn setup(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("steward-loop-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("phaethon-loop-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("spaces/school")).unwrap();
         std::fs::write(dir.join("spaces/school/a.md"), "exam on friday").unwrap();
@@ -592,7 +592,7 @@ mod tests {
     }
 
     fn grants_file(dir: &Path) -> PathBuf {
-        dir.join(".steward/grants.json")
+        dir.join(".phaethon/grants.json")
     }
 
     #[test]
@@ -704,7 +704,7 @@ mod tests {
             json!({"type": "tool_use", "id": format!("b-{space}-{}", path.len()), "name": "request_access", "input": {"space": space, "path": path, "reason": "r"}})
         };
         let p = Scripted::new(vec![
-            turn(json!([bad("school", "a.md"), bad("nope", "x"), bad("work", "../school"), bad("work", "/etc"), bad("work", ".steward"), bad("work", "missing"), bad("work", "")]), "tool_use"),
+            turn(json!([bad("school", "a.md"), bad("nope", "x"), bad("work", "../school"), bad("work", "/etc"), bad("work", ".phaethon"), bad("work", "missing"), bad("work", "")]), "tool_use"),
             done(),
         ]);
         let events = run(&dir, &p, &Approvals::default(), "go", |_| {});

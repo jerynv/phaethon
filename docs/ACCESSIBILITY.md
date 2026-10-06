@@ -5,13 +5,13 @@ Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is 
 ## Baseline already in the shell
 
 - Landmarks: skip link, `nav` for spaces, `main` for the conversation, a labelled composer `form`, and a `log` region for messages.
-- Streaming is silent: the `log` has `aria-live="off"`, so replies are not read token by token. One polite `status` region announces what the agent is doing ("Reading file notes.md") and then the whole reply once it completes ("steward replied: …"), or "Reply stopped." Errors render inside the message as `role="alert"` and are announced immediately.
+- Streaming is silent: the `log` has `aria-live="off"`, so replies are not read token by token. One polite `status` region announces what the agent is doing ("Reading file notes.md") and then the whole reply once it completes ("Phaethon replied: …"), or "Reply stopped." Errors render inside the message as `role="alert"` and are announced immediately.
 - While a reply runs, Send becomes "Stop reply"; Escape in the composer also stops it. If the reply ends while Stop has focus, focus returns to the composer.
 - Every control has an accessible name; the composer has a real `<label>` and a described keyboard hint.
 - One high-contrast focus outline (3px, at least 3:1 against both backgrounds) on every focusable element, and it cannot be removed by component styles. Uses the system `Highlight` colour in forced-colours mode.
 - Follows the system light/dark setting live, and `prefers-reduced-motion` disables animation and smooth scrolling.
 - Sidebar works with Tab and with ArrowUp/ArrowDown/Home/End.
-- A file change the agent wants is an inline `alertdialog` ("steward wants to change a file") with a plain summary, a focusable preview, and Allow / Don't allow. It takes focus when it appears and returns focus to the composer once answered; it is not also announced by the status region. A reply loaded from a saved thread is not announced.
+- A file change the agent wants is an inline `alertdialog` ("Phaethon wants to change a file") with a plain summary, a focusable preview, and Allow / Don't allow. It takes focus when it appears and returns focus to the composer once answered; it is not also announced by the status region. A reply loaded from a saved thread is not announced.
 
 ## Requirements by disability category
 
@@ -19,7 +19,7 @@ Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is 
 
 - Fully operable with VoiceOver, NVDA, JAWS and Orca. Every interactive element has a name, role and state.
 - New assistant output is announced once, at a sensible granularity: streaming must not read every token. Announce on completion or by sentence, and let users choose.
-- Message authorship is spoken ("You said", "steward said"), not only shown by colour or alignment.
+- Message authorship is spoken ("You said", "Phaethon said"), not only shown by colour or alignment.
 - Text contrast at least 4.5:1 (3:1 for large text and UI components) in both themes; respect OS text-size and zoom up to 200% without horizontal scrolling at the default window size, reflow at 320 CSS px wide.
 - Forced-colours / high-contrast mode keeps every boundary and focus state visible.
 - Images and generated charts carry text alternatives; code blocks are readable as text.

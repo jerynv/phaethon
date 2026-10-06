@@ -15,8 +15,8 @@ type IconProps = Omit<SVGProps<SVGSVGElement>, "children"> & {
 };
 
 /**
- * steward's icon. Drawn on a 24 x 24 grid with round joins; its size and stroke
- * width come from tokens (--st-icon-size, --st-icon-stroke) and its colour from
+ * Phaethon's icon. Drawn on a 24 x 24 grid with round joins; its size and stroke
+ * width come from tokens (--ph-icon-size, --ph-icon-stroke) and its colour from
  * the text around it. Decorative unless `label` is given.
  */
 export function Icon({ name, label, className, style, ...rest }: IconProps) {
@@ -28,8 +28,8 @@ export function Icon({ name, label, className, style, ...rest }: IconProps) {
       strokeLinecap="round"
       strokeLinejoin="round"
       data-icon={name}
-      className={cn("size-(--st-icon-size) shrink-0", className)}
-      style={{ strokeWidth: "var(--st-icon-stroke)", ...style }}
+      className={cn("size-(--ph-icon-size) shrink-0", className)}
+      style={{ strokeWidth: "var(--ph-icon-stroke)", ...style }}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true, focusable: false })}
       {...rest}
     >

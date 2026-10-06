@@ -1,4 +1,4 @@
-//! The model provider interface steward's own agent loop runs on.
+//! The model provider interface Phaethon's own agent loop runs on.
 //!
 //! Messages use the Messages API shape (`{"role", "content": [blocks]}`) as the
 //! common format. A provider for another API converts to and from it.
@@ -39,7 +39,7 @@ pub enum ErrorKind {
     RateLimit,
     /// The service is overloaded or failing; retrying later may work.
     Unavailable,
-    /// The request itself was refused (a bug in steward, or an unknown model).
+    /// The request itself was refused (a bug in Phaethon, or an unknown model).
     BadRequest,
     /// Could not reach the service at all.
     Network,

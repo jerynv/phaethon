@@ -1,7 +1,7 @@
 //! Vault and space folders on disk.
 //!
 //! Layout (see docs/ARCHITECTURE.md): `<vault>/spaces/<space>/`, with per-space
-//! app state in `<space>/.steward/`. Every path the UI names is validated here;
+//! app state in `<space>/.phaethon/`. Every path the UI names is validated here;
 //! the UI only ever passes a space *id*, never a path.
 
 use std::fs;
@@ -18,7 +18,7 @@ pub struct Vault {
     root: PathBuf,
 }
 
-/// Per-vault preferences, read from `<vault>/.steward/settings.json`.
+/// Per-vault preferences, read from `<vault>/.phaethon/settings.json`.
 /// Preferences only: secrets never go in the vault (it may be synced).
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -29,9 +29,9 @@ pub struct VaultSettings {
     pub isolate_claude_config: bool,
     /// Which agent runs in this vault's spaces.
     pub backend: Backend,
-    /// Model for steward's own loop; the provider's default when unset.
+    /// Model for Phaethon's own loop; the provider's default when unset.
     pub model: Option<String>,
-    /// Effort for steward's own loop; the provider's default when unset.
+    /// Effort for Phaethon's own loop; the provider's default when unset.
     pub effort: Option<String>,
     /// The user's appearance and accessibility choices (theme, token overrides).
     /// Kept as raw JSON: the webview owns its meaning, the core only checks its
@@ -52,11 +52,11 @@ const TOKEN_VALUE_MAX_LEN: usize = 64;
 /// ```json
 /// { "version": 1, "theme": "system|light|dark",
 ///   "reduceMotion": "system|on|off", "increaseContrast": "system|on|off",
-///   "tokens": { "--st-accent-h": 290, "--st-tracking-normal": "0.02em" } }
+///   "tokens": { "--ph-accent-h": 290, "--ph-tracking-normal": "0.02em" } }
 /// ```
 ///
 /// Every field is optional; anything else is refused. Token names must be
-/// `--st-` plus lowercase letters, digits and dashes. Values are finite
+/// `--ph-` plus lowercase letters, digits and dashes. Values are finite
 /// numbers or short strings made only of characters a CSS number, length or
 /// `oklch()`/`oklab()` colour needs, so nothing stored here can break out of a
 /// CSS declaration. The webview applies its own, stricter per-token rules
@@ -84,7 +84,7 @@ pub fn validate_appearance(value: &serde_json::Value) -> Result<(), String> {
                 }
                 for (name, value) in tokens {
                     if !is_token_name(name) {
-                        return Err(format!("\"{}\" is not a steward token name.", truncate(name)));
+                        return Err(format!("\"{}\" is not a Phaethon token name.", truncate(name)));
                     }
                     let ok = match value {
                         Value::Number(n) => n.as_f64().is_some_and(f64::is_finite),
@@ -92,7 +92,7 @@ pub fn validate_appearance(value: &serde_json::Value) -> Result<(), String> {
                         _ => false,
                     };
                     if !ok {
-                        return Err(format!("{name} has a value steward cannot use."));
+                        return Err(format!("{name} has a value Phaethon cannot use."));
                     }
                 }
             }
@@ -109,9 +109,9 @@ fn one_of(key: &str, v: &serde_json::Value, allowed: &[&str]) -> Result<(), Stri
     }
 }
 
-/// `^--st-[a-z0-9-]+$`, at most 64 characters, not starting or ending in a dash.
+/// `^--ph-[a-z0-9-]+$`, at most 64 characters, not starting or ending in a dash.
 fn is_token_name(name: &str) -> bool {
-    let Some(rest) = name.strip_prefix("--st-") else {
+    let Some(rest) = name.strip_prefix("--ph-") else {
         return false;
     };
     !rest.is_empty()
@@ -145,9 +145,10 @@ fn truncate(s: &str) -> String {
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Backend {
-    /// steward's own loop and tools, with the user's API key from the keychain.
+    /// Phaethon's own loop and tools, with the user's API key from the keychain.
     #[default]
-    Steward,
+    #[serde(alias = "steward")] // the name before the rename; still accepted in settings.json
+    Phaethon,
     /// The official `claude` CLI the user installed and logged into.
     ClaudeCli,
 }
@@ -157,10 +158,11 @@ impl Vault {
         Self { root: root.into() }
     }
 
-    /// `~/Steward/default`.
+    /// `~/Phaethon/default`.
     pub fn default_location() -> io::Result<Self> {
         let home = home_dir().ok_or_else(|| io::Error::other("home directory not found"))?;
-        Ok(Self::at(home.join("Steward").join(DEFAULT_VAULT)))
+        migrate_legacy_root(&home);
+        Ok(Self::at(home.join("Phaethon").join(DEFAULT_VAULT)))
     }
 
     pub fn root(&self) -> &Path {
@@ -210,10 +212,10 @@ impl Vault {
         Ok(dir)
     }
 
-    /// Change one setting in `<vault>/.steward/settings.json`, keeping every
+    /// Change one setting in `<vault>/.phaethon/settings.json`, keeping every
     /// other field (including ones this version does not know) as it was.
     pub fn set_setting(&self, key: &str, value: serde_json::Value) -> io::Result<()> {
-        let path = self.root.join(".steward").join("settings.json");
+        let path = self.root.join(".phaethon").join("settings.json");
         let mut obj = match fs::read_to_string(&path) {
             Ok(s) => match serde_json::from_str::<serde_json::Value>(&s) {
                 Ok(serde_json::Value::Object(o)) => o,
@@ -230,10 +232,37 @@ impl Vault {
     }
 
     pub fn settings(&self) -> VaultSettings {
-        fs::read_to_string(self.root.join(".steward").join("settings.json"))
+        fs::read_to_string(self.root.join(".phaethon").join("settings.json"))
             .ok()
+            .map(|s| s.replace("\"--st-", "\"--ph-")) // token names before the rename
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
+    }
+}
+
+/// The app was called steward before it was Phaethon: its vault lived in
+/// `~/Steward`, with app state in `.steward/` folders. Move them once, never
+/// overwriting anything that already exists under the new names.
+fn migrate_legacy_root(home: &Path) {
+    let (old, new) = (home.join("Steward"), home.join("Phaethon"));
+    if old.is_dir() && !new.exists() && fs::rename(&old, &new).is_err() {
+        return;
+    }
+    let Ok(vaults) = fs::read_dir(&new) else { return };
+    for vault in vaults.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.is_dir()) {
+        rename_state_dir(&vault);
+        if let Ok(spaces) = fs::read_dir(vault.join("spaces")) {
+            for space in spaces.filter_map(Result::ok).map(|e| e.path()).filter(|p| p.is_dir()) {
+                rename_state_dir(&space);
+            }
+        }
+    }
+}
+
+fn rename_state_dir(dir: &Path) {
+    let (old, new) = (dir.join(".steward"), dir.join(".phaethon"));
+    if old.is_dir() && !new.exists() {
+        let _ = fs::rename(old, new);
     }
 }
 
@@ -260,7 +289,7 @@ pub fn clear_session(space_dir: &Path) {
 }
 
 fn session_file(space_dir: &Path) -> PathBuf {
-    space_dir.join(".steward").join("session")
+    space_dir.join(".phaethon").join("session")
 }
 
 fn is_valid_space_id(id: &str) -> bool {
@@ -297,7 +326,7 @@ mod tests {
         assert!(is_valid_space_id("school"));
         assert!(is_valid_space_id("side-project_2"));
         for bad in [
-            "", "..", "../work", "a/b", "School", "-x", ".steward", "a b",
+            "", "..", "../work", "a/b", "School", "-x", ".phaethon", "a b",
         ] {
             assert!(!is_valid_space_id(bad), "{bad:?} should be rejected");
         }
@@ -312,7 +341,7 @@ mod tests {
 
     #[test]
     fn space_dir_rejects_escape() {
-        let tmp = std::env::temp_dir().join(format!("steward-vault-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("phaethon-vault-test-{}", std::process::id()));
         let vault = Vault::at(&tmp);
         vault.ensure_initialized().unwrap();
         assert!(vault.space_dir("school").is_ok());
@@ -328,17 +357,38 @@ mod tests {
     }
 
     #[test]
+    fn legacy_steward_vault_moves_once() {
+        let home = std::env::temp_dir().join(format!("phaethon-migrate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(home.join("Steward/default/.steward")).unwrap();
+        fs::create_dir_all(home.join("Steward/default/spaces/school/.steward")).unwrap();
+        fs::write(home.join("Steward/default/spaces/school/.steward/thread.json"), "[]").unwrap();
+        fs::write(home.join("Steward/default/.steward/settings.json"), r#"{"backend":"steward","appearance":{"tokens":{"--st-accent-h":200}}}"#).unwrap();
+        migrate_legacy_root(&home);
+        assert!(!home.join("Steward").exists());
+        assert!(home.join("Phaethon/default/spaces/school/.phaethon/thread.json").is_file());
+        let s = Vault::at(home.join("Phaethon/default")).settings();
+        assert_eq!(s.backend, Backend::Phaethon);
+        assert_eq!(s.appearance.unwrap()["tokens"]["--ph-accent-h"], 200);
+        // A second run, or an old folder next to a new one, changes nothing.
+        fs::create_dir_all(home.join("Steward/default")).unwrap();
+        migrate_legacy_root(&home);
+        assert!(home.join("Steward/default").is_dir());
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
     fn settings_round_trip_keeps_unknown_fields() {
-        let tmp = std::env::temp_dir().join(format!("steward-settings-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("phaethon-settings-test-{}", std::process::id()));
         let vault = Vault::at(&tmp);
-        assert_eq!(vault.settings().backend, Backend::Steward);
-        fs::create_dir_all(tmp.join(".steward")).unwrap();
-        fs::write(tmp.join(".steward/settings.json"), r#"{"isolateClaudeConfig": true, "future": 1}"#).unwrap();
+        assert_eq!(vault.settings().backend, Backend::Phaethon);
+        fs::create_dir_all(tmp.join(".phaethon")).unwrap();
+        fs::write(tmp.join(".phaethon/settings.json"), r#"{"isolateClaudeConfig": true, "future": 1}"#).unwrap();
         vault.set_setting("backend", serde_json::json!("claude-cli")).unwrap();
         let s = vault.settings();
         assert_eq!(s.backend, Backend::ClaudeCli);
         assert!(s.isolate_claude_config);
-        assert!(fs::read_to_string(tmp.join(".steward/settings.json")).unwrap().contains("future"));
+        assert!(fs::read_to_string(tmp.join(".phaethon/settings.json")).unwrap().contains("future"));
         fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -352,12 +402,12 @@ mod tests {
             "reduceMotion": "on",
             "increaseContrast": "system",
             "tokens": {
-                "--st-accent-h": 290,
-                "--st-text-scale": 1.25,
-                "--st-tracking-normal": "0.02em",
-                "--st-focus-width": "3px",
-                "--st-some-colour": "oklch(0.62 0.08 168 / 90%)",
-                "--st-other-colour": "oklab(0.7 -0.05 0.02)"
+                "--ph-accent-h": 290,
+                "--ph-text-scale": 1.25,
+                "--ph-tracking-normal": "0.02em",
+                "--ph-focus-width": "3px",
+                "--ph-some-colour": "oklch(0.62 0.08 168 / 90%)",
+                "--ph-other-colour": "oklab(0.7 -0.05 0.02)"
             }
         }))
         .is_ok());
@@ -378,24 +428,24 @@ mod tests {
             json!({ "fontUrl": "https://example.com" }),
             json!({ "tokens": [] }),
             json!({ "tokens": { "color": "red" } }),
-            json!({ "tokens": { "--st-": 1 } }),
-            json!({ "tokens": { "--st-Accent-h": 1 } }),
-            json!({ "tokens": { "--st-accent-h;": 1 } }),
-            json!({ "tokens": { "--st-accent-": 1 } }),
+            json!({ "tokens": { "--ph-": 1 } }),
+            json!({ "tokens": { "--ph-Accent-h": 1 } }),
+            json!({ "tokens": { "--ph-accent-h;": 1 } }),
+            json!({ "tokens": { "--ph-accent-": 1 } }),
             json!({ "tokens": { "--x-accent-h": 1 } }),
-            json!({ "tokens": { "--st-accent-h": null } }),
-            json!({ "tokens": { "--st-accent-h": true } }),
-            json!({ "tokens": { "--st-accent-h": { "a": 1 } } }),
-            json!({ "tokens": { "--st-accent": "#ff0000" } }),
-            json!({ "tokens": { "--st-accent": "rgb(1,2,3)" } }),
-            json!({ "tokens": { "--st-accent": "hsl(1 2% 3%)" } }),
-            json!({ "tokens": { "--st-accent": "red; background: url(x)" } }),
-            json!({ "tokens": { "--st-accent": "url(x)" } }),
-            json!({ "tokens": { "--st-accent": "var(--st-danger)" } }),
-            json!({ "tokens": { "--st-accent": "oklch(1 0 0) url(x)" } }),
-            json!({ "tokens": { "--st-accent": "oklch(1 0 0" } }),
-            json!({ "tokens": { "--st-accent": "" } }),
-            json!({ "tokens": { "--st-accent": "1".repeat(65) } }),
+            json!({ "tokens": { "--ph-accent-h": null } }),
+            json!({ "tokens": { "--ph-accent-h": true } }),
+            json!({ "tokens": { "--ph-accent-h": { "a": 1 } } }),
+            json!({ "tokens": { "--ph-accent": "#ff0000" } }),
+            json!({ "tokens": { "--ph-accent": "rgb(1,2,3)" } }),
+            json!({ "tokens": { "--ph-accent": "hsl(1 2% 3%)" } }),
+            json!({ "tokens": { "--ph-accent": "red; background: url(x)" } }),
+            json!({ "tokens": { "--ph-accent": "url(x)" } }),
+            json!({ "tokens": { "--ph-accent": "var(--ph-danger)" } }),
+            json!({ "tokens": { "--ph-accent": "oklch(1 0 0) url(x)" } }),
+            json!({ "tokens": { "--ph-accent": "oklch(1 0 0" } }),
+            json!({ "tokens": { "--ph-accent": "" } }),
+            json!({ "tokens": { "--ph-accent": "1".repeat(65) } }),
         ];
         for v in bad {
             assert!(validate_appearance(&v).is_err(), "{v} should be rejected");
@@ -406,23 +456,23 @@ mod tests {
     fn appearance_is_bounded() {
         let mut tokens = serde_json::Map::new();
         for i in 0..65 {
-            tokens.insert(format!("--st-t{i}"), serde_json::json!(1));
+            tokens.insert(format!("--ph-t{i}"), serde_json::json!(1));
         }
         assert!(validate_appearance(&serde_json::json!({ "tokens": tokens })).is_err());
         let mut big = serde_json::Map::new();
         // 64 tokens (the most allowed), each with a 64-character name and value: over 8 KiB.
         for i in 0..64 {
-            big.insert(format!("--st-{i:0>59}"), serde_json::json!("1".repeat(64)));
+            big.insert(format!("--ph-{i:0>59}"), serde_json::json!("1".repeat(64)));
         }
         assert!(validate_appearance(&serde_json::json!({ "tokens": big })).is_err(), "over 8 KiB");
     }
 
     #[test]
     fn appearance_round_trips_through_settings() {
-        let tmp = std::env::temp_dir().join(format!("steward-appearance-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("phaethon-appearance-test-{}", std::process::id()));
         let vault = Vault::at(&tmp);
         vault.set_setting("backend", serde_json::json!("claude-cli")).unwrap();
-        let a = serde_json::json!({ "theme": "dark", "tokens": { "--st-accent-h": 290 } });
+        let a = serde_json::json!({ "theme": "dark", "tokens": { "--ph-accent-h": 290 } });
         vault.set_setting("appearance", a.clone()).unwrap();
         let s = vault.settings();
         assert_eq!(s.appearance, Some(a));

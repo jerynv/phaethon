@@ -67,7 +67,7 @@ export function ApprovalCard() {
       aria-modal="false"
       aria-labelledby={titleId}
       aria-describedby={descId}
-      className="flex w-full max-w-(--st-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
+      className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
     >
       <div className="flex items-start gap-3 p-4 pb-3">
         <span
@@ -78,7 +78,7 @@ export function ApprovalCard() {
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <h3 id={titleId} className="text-md font-semibold text-ink">
-            steward wants to change a file
+            Phaethon wants to change a file
           </h3>
           <p id={descId} className="text-base text-ink-secondary">
             {approval.summary} Nothing changes unless you allow it.
@@ -93,7 +93,7 @@ export function ApprovalCard() {
           <pre
             tabIndex={0}
             aria-labelledby={previewId}
-            className="max-h-(--st-preview-max-height) overflow-auto rounded-md border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal whitespace-pre-wrap text-ink"
+            className="max-h-(--ph-preview-max-height) overflow-auto rounded-md border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal whitespace-pre-wrap text-ink"
           >
             {approval.detail}
           </pre>
@@ -102,7 +102,7 @@ export function ApprovalCard() {
       <div className="flex flex-wrap items-center justify-end gap-2 px-4 pt-3 pb-4">
         {problem && (
           <p role="alert" className="me-auto flex items-center gap-1.5 text-sm text-danger-ink">
-            <Icon name="warning" className="size-(--st-icon-size-sm)" />
+            <Icon name="warning" className="size-(--ph-icon-size-sm)" />
             {problem}
           </p>
         )}
@@ -110,7 +110,7 @@ export function ApprovalCard() {
           Don&rsquo;t allow
         </Button>
         <Button disabled={busy} size="sm" onClick={() => void answer(true)}>
-          <Icon name="check" className="size-(--st-icon-size-sm)" />
+          <Icon name="check" className="size-(--ph-icon-size-sm)" />
           Allow
         </Button>
       </div>

@@ -3,7 +3,7 @@
   "app": {
     "windows": [
       {
-        "title": "steward",
+        "title": "Phaethon",
         "width": 1100,
         "height": 720,
         "minWidth": 640,

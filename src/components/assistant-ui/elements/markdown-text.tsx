@@ -1,6 +1,6 @@
 "use client";
 
-// Adapted from the assistant-ui registry (MIT): restyled with steward tokens.
+// Adapted from the assistant-ui registry (MIT): restyled with Phaethon tokens.
 
 import "@assistant-ui/react-markdown/styles/dot.css";
 
@@ -50,7 +50,7 @@ const MarkdownTextImpl: FC<MarkdownTextProps> = ({ components, componentsByLangu
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
-      className="aui-md max-w-(--st-measure) text-md text-ink"
+      className="aui-md max-w-(--ph-measure) text-md text-ink"
       components={markdownComponents}
       componentsByLanguage={stableComponentsByLanguage}
       defer
@@ -73,7 +73,7 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
         className="text-ink-secondary hover:text-ink"
         onClick={() => code && !isCopied && copyToClipboard(code)}
       >
-        <Icon name={isCopied ? "check" : "copy"} className="size-(--st-icon-size-sm)" />
+        <Icon name={isCopied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
         <span>{isCopied ? "Copied" : "Copy"}</span>
         <span className="sr-only"> code</span>
       </Button>

@@ -4,8 +4,8 @@
 
 use std::time::{Duration, Instant};
 
-use steward_lib::agent::{self, AgentEvent, Runs, TurnRequest};
-use steward_lib::vault::{self, Vault};
+use phaethon_lib::agent::{self, AgentEvent, Runs, TurnRequest};
+use phaethon_lib::vault::{self, Vault};
 
 fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
     let vault = Vault::default_location().unwrap();

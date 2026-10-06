@@ -245,6 +245,11 @@ impl Vault {
 /// overwriting anything that already exists under the new names.
 fn migrate_legacy_root(home: &Path) {
     let (old, new) = (home.join("Steward"), home.join("Phaethon"));
+    // A new vault that holds no files at all is only the skeleton a first
+    // launch creates; it may give way to the old one.
+    if old.is_dir() && new.is_dir() && !has_files(&new) {
+        let _ = fs::remove_dir_all(&new);
+    }
     if old.is_dir() && !new.exists() && fs::rename(&old, &new).is_err() {
         return;
     }
@@ -257,6 +262,19 @@ fn migrate_legacy_root(home: &Path) {
             }
         }
     }
+}
+
+fn has_files(dir: &Path) -> bool {
+    fs::read_dir(dir).map_or(true, |entries| {
+        entries.filter_map(Result::ok).any(|e| {
+            let p = e.path();
+            // symlink_metadata: a link counts as content and is never followed.
+            match p.symlink_metadata() {
+                Ok(m) if m.is_dir() => has_files(&p),
+                _ => true,
+            }
+        })
+    })
 }
 
 fn rename_state_dir(dir: &Path) {
@@ -370,10 +388,20 @@ mod tests {
         let s = Vault::at(home.join("Phaethon/default")).settings();
         assert_eq!(s.backend, Backend::Phaethon);
         assert_eq!(s.appearance.unwrap()["tokens"]["--ph-accent-h"], 200);
-        // A second run, or an old folder next to a new one, changes nothing.
+        // A second run, or an old folder next to a new one with files, changes nothing.
         fs::create_dir_all(home.join("Steward/default")).unwrap();
         migrate_legacy_root(&home);
         assert!(home.join("Steward/default").is_dir());
+        assert!(home.join("Phaethon/default/spaces/school/.phaethon/thread.json").is_file());
+        fs::remove_dir_all(&home).unwrap();
+
+        // An empty skeleton (a launch before the migration existed) gives way.
+        fs::create_dir_all(home.join("Phaethon/default/spaces/work")).unwrap();
+        fs::create_dir_all(home.join("Steward/default/spaces/work/.steward")).unwrap();
+        fs::write(home.join("Steward/default/spaces/work/.steward/session"), "x").unwrap();
+        migrate_legacy_root(&home);
+        assert!(!home.join("Steward").exists());
+        assert!(home.join("Phaethon/default/spaces/work/.phaethon/session").is_file());
         fs::remove_dir_all(&home).unwrap();
     }
 

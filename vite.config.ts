@@ -48,7 +48,8 @@ export default defineConfig(() => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // src-tauri is rebuilt by Tauri; .claude holds other git worktrees.
+      ignored: ["**/src-tauri/**", "**/.claude/**"],
     },
   },
 }));

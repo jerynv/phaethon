@@ -183,6 +183,15 @@
   outline-offset: var(--st-focus-offset) !important;
 }
 
+/* The composer shows focus on its whole frame, not a second ring inside it. */
+[data-composer]:has([data-composer-input]:focus-visible) {
+  outline: var(--st-focus-width) solid var(--st-focus);
+  outline-offset: var(--st-focus-offset);
+}
+[data-composer-input]:focus-visible {
+  outline: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

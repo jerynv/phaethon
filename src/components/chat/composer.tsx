@@ -118,12 +118,6 @@ function AddMenu({ onAttach }: { onAttach: () => void }) {
   );
 }
 
-function Kbd({ children }: { children: string }) {
-  return (
-    <kbd className="rounded-xs border border-line bg-surface px-1 font-mono text-xs text-ink-secondary">{children}</kbd>
-  );
-}
-
 /**
  * The message box. Keyboard: Enter sends, Shift+Enter adds a line, Escape stops
  * a running reply. Files come from the + menu, paste, or drag and drop (onto
@@ -156,6 +150,7 @@ export function Composer({
       <AttachProblems problems={problems} onDismiss={clearProblems} />
       <ComposerPrimitive.Root
         aria-label="Message composer"
+        data-composer=""
         onSubmit={clearProblems}
         className={cn(
           "flex flex-col gap-1 rounded-(--st-composer-radius) border bg-raised p-2 shadow transition-colors",
@@ -201,16 +196,8 @@ export function Composer({
               void addFiles(files);
             }}
           />
-          <p aria-hidden="true" className="flex flex-1 items-center gap-1 truncate text-xs text-ink-secondary">
-            {isRunning ? (
-              <>
-                <Kbd>Esc</Kbd> to stop
-              </>
-            ) : (
-              <>
-                <Kbd>Enter</Kbd> to send, <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> for a new line
-              </>
-            )}
+          <p aria-hidden="true" className="flex-1 truncate text-xs text-ink-secondary">
+            {isRunning ? "Esc to stop" : "Enter to send, Shift+Enter for a new line"}
           </p>
           {isRunning ? (
             <ComposerPrimitive.Cancel asChild>

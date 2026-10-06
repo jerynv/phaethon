@@ -263,7 +263,7 @@ function QuickPicks({
   format: (v: number) => string;
 }) {
   return (
-    <div role="group" aria-label={`${label} presets`} className="flex flex-wrap gap-1">
+    <div role="group" aria-label={`${label} presets`} className="grid grid-flow-col auto-cols-fr overflow-hidden rounded-md border border-line-strong">
       {presets.map((p) => {
         const on = Math.abs(p.value - value) < 1e-6;
         return (
@@ -274,10 +274,10 @@ function QuickPicks({
             onClick={() => onPick(p.value)}
             aria-label={`${p.label}, ${format(p.value)}`}
             className={cn(
-              "min-h-(--st-target-min) rounded-md border px-2 text-xs transition-colors duration-(--st-duration-fast)",
+              "min-h-(--st-target-min) border-line-strong px-1 text-xs tabular-nums transition-colors duration-(--st-duration-fast) not-first:border-l",
               on
-                ? "border-accent-fill bg-accent-soft font-semibold text-accent-soft-ink"
-                : "border-line-strong text-ink-secondary hover:bg-hover hover:text-ink",
+                ? "bg-accent-soft font-semibold text-accent-soft-ink"
+                : "text-ink-secondary hover:bg-hover hover:text-ink",
             )}
           >
             {format(p.value)}

@@ -3,11 +3,19 @@
 //! Every path the model names is relative to the space root. It is checked
 //! lexically (no absolute paths, no `..`, nothing under `.steward/`) and then
 //! against the real filesystem, so a symlink cannot lead outside the space.
+//!
+//! The read tools can also address another space as `@<space>/<path>`, but
+//! only where a read-only grant covers that path (see grants.rs); the same
+//! checks then run against the other space's root and the granted folder.
+//! `write_file` never accepts an `@` path.
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::{Value, json};
+
+use crate::grants::{self, Grant};
+use crate::vault::Vault;
 
 /// Largest file `read_file` returns, in bytes.
 const MAX_READ: u64 = 256 * 1024;
@@ -15,6 +23,8 @@ const MAX_LIST: usize = 500;
 const MAX_HITS: usize = 200;
 /// Files `search_files` skips because they are too big to be notes.
 const MAX_SEARCH_FILE: u64 = 2 * 1024 * 1024;
+/// Characters of a request_access reason kept for the user.
+const MAX_REASON: usize = 500;
 
 /// Folder inside each space that holds steward's own state.
 pub const STATE_DIR: &str = ".steward";
@@ -25,11 +35,14 @@ pub enum Access {
     Read,
     /// Shown to the user first; runs only if they allow it.
     Write,
+    /// Asks the user for read access to part of another space.
+    Ask,
 }
 
 pub fn access(name: &str) -> Access {
     match name {
         "write_file" => Access::Write,
+        "request_access" => Access::Ask,
         _ => Access::Read,
     }
 }
@@ -37,21 +50,21 @@ pub fn access(name: &str) -> Access {
 /// Tool definitions sent to the model. Kept in a fixed order so the prompt
 /// prefix (and its cache) stays stable across requests.
 pub fn definitions() -> Value {
-    let path = json!({"type": "string", "description": "Path relative to the space root, e.g. \"notes/today.md\"."});
+    let path = json!({"type": "string", "description": "Path relative to the space root, e.g. \"notes/today.md\", or \"@<space>/<path>\" for a granted part of another space, e.g. \"@work/calendar/oct.md\"."});
     json!([
         {
             "name": "list_files",
-            "description": "List the files and folders in a folder of this space. Folders end with \"/\".",
+            "description": "List the files and folders in a folder of this space. Folders end with \"/\". A path like \"@work/calendar\" lists a folder of another space, if this space has been granted read access to it.",
             "eager_input_streaming": true,
             "input_schema": {
                 "type": "object",
-                "properties": {"path": {"type": "string", "description": "Folder relative to the space root. Omit or use \"\" for the root."}},
+                "properties": {"path": {"type": "string", "description": "Folder relative to the space root. Omit or use \"\" for the root. \"@<space>/<folder>\" for a granted folder of another space."}},
                 "additionalProperties": false
             }
         },
         {
             "name": "read_file",
-            "description": "Read a text file in this space.",
+            "description": "Read a text file in this space, or with \"@<space>/<path>\" a file in a granted part of another space.",
             "eager_input_streaming": true,
             "input_schema": {
                 "type": "object",
@@ -62,13 +75,13 @@ pub fn definitions() -> Value {
         },
         {
             "name": "search_files",
-            "description": "Find lines containing some text (case-insensitive) in the text files of this space. Returns path:line: text.",
+            "description": "Find lines containing some text (case-insensitive) in the text files of this space. Returns path:line: text. With path \"@<space>/<folder>\" it searches a granted folder of another space instead.",
             "eager_input_streaming": true,
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Text to look for."},
-                    "path": {"type": "string", "description": "Folder to search, relative to the space root. Omit for the whole space."}
+                    "path": {"type": "string", "description": "Folder to search, relative to the space root. Omit for the whole space. \"@<space>/<folder>\" for a granted folder of another space."}
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -76,15 +89,30 @@ pub fn definitions() -> Value {
         },
         {
             "name": "write_file",
-            "description": "Create or replace a text file in this space with the given contents. The user is asked to approve every write first, and may decline.",
+            "description": "Create or replace a text file in this space with the given contents. The user is asked to approve every write first, and may decline. Only this space can be written: \"@<space>/...\" paths are always refused.",
             "eager_input_streaming": true,
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "path": path,
+                    "path": {"type": "string", "description": "Path relative to the space root, e.g. \"notes/today.md\"."},
                     "contents": {"type": "string", "description": "The complete new contents of the file."}
                 },
                 "required": ["path", "contents"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "request_access",
+            "description": "Ask the user to let this space read a folder or file of another space. Nothing in another space can be read without this. The user sees your reason and answers: allow once (this reply only), allow always, or deny. Access is read-only. Ask for the narrowest folder or file that does the job, and only when the user's request needs it. Once granted, read it with paths starting \"@<space>/<path>\".",
+            "eager_input_streaming": true,
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "space": {"type": "string", "description": "Name of the other space, e.g. \"work\"."},
+                    "path": {"type": "string", "description": "Folder or file inside that space, relative to its root, e.g. \"calendar\"."},
+                    "reason": {"type": "string", "description": "One short sentence for the user on why you need it."}
+                },
+                "required": ["space", "path", "reason"],
                 "additionalProperties": false
             }
         }
@@ -99,6 +127,7 @@ pub enum Call {
     Read { path: String },
     Search { query: String, path: String },
     Write { path: String, contents: String },
+    RequestAccess { space: String, path: String, reason: String },
 }
 
 pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
@@ -110,6 +139,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
         "read_file" => &["path"],
         "search_files" => &["query", "path"],
         "write_file" => &["path", "contents"],
+        "request_access" => &["space", "path", "reason"],
         _ => return Err(format!("there is no tool named {name}")),
     };
     if let Some(k) = obj.keys().find(|k| !allowed.contains(&k.as_str())) {
@@ -135,44 +165,178 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
             query: req("query")?,
             path: opt("path")?,
         },
-        _ => Call::Write {
+        "request_access" => Call::RequestAccess {
+            space: req("space")?,
             path: req("path")?,
-            contents: req("contents")?,
+            reason: req("reason")?.chars().take(MAX_REASON).collect(),
         },
+        _ => {
+            let path = req("path")?;
+            if let Target::Other { space, .. } = target(&path) {
+                return Err(format!(
+                    "write_file can only write in this space; \"{path}\" is in the {space} space, and other spaces can never be written"
+                ));
+            }
+            Call::Write {
+                path,
+                contents: req("contents")?,
+            }
+        }
     })
 }
 
-/// Short present-tense description for the UI, e.g. "Reading file notes.md".
-pub fn label(call: &Call) -> String {
-    let shown = |p: &str| if p.is_empty() { "the space".to_string() } else { p.to_string() };
-    match call {
-        Call::List { path } => format!("Listing {}", shown(path)),
-        Call::Read { path } => format!("Reading file {path}"),
-        Call::Search { query, .. } => format!("Searching files for \u{201c}{query}\u{201d}"),
-        Call::Write { path, .. } => format!("Writing file {path}"),
+/// Where a path points: this space, or `@<space>/<rest>` in another one.
+/// (A file in this space whose name starts with `@` is reached as `./@name`.)
+#[derive(Debug, PartialEq)]
+pub enum Target<'a> {
+    Local(&'a str),
+    Other { space: &'a str, rel: &'a str },
+}
+
+pub fn target(path: &str) -> Target<'_> {
+    match path.strip_prefix('@') {
+        Some(rest) => match rest.split_once('/') {
+            Some((space, rel)) => Target::Other { space, rel },
+            None => Target::Other { space: rest, rel: "" },
+        },
+        None => Target::Local(path),
     }
 }
 
-/// Run a tool. `Err` is a message for the model (sent back with `is_error`).
+/// Whether a read tool call addresses another space.
+pub fn is_cross(call: &Call) -> bool {
+    match call {
+        Call::List { path } | Call::Read { path } | Call::Search { path, .. } => {
+            matches!(target(path), Target::Other { .. })
+        }
+        _ => false,
+    }
+}
+
+/// Short present-tense description for the UI, e.g. "Reading file notes.md".
+/// Reads in another space name it ("Reading work/calendar/oct.md"), so
+/// cross-space access is always visible in the conversation.
+pub fn label(call: &Call) -> String {
+    let shown = |p: &str| if p.is_empty() { "the space".to_string() } else { p.to_string() };
+    let other = |p: &str| match target(p) {
+        Target::Other { space, rel } if rel.trim_end_matches('/').is_empty() => Some(space.to_string()),
+        Target::Other { space, rel } => Some(format!("{space}/{}", rel.trim_end_matches('/'))),
+        Target::Local(_) => None,
+    };
+    match call {
+        Call::List { path } => match other(path) {
+            Some(o) => format!("Listing {o}"),
+            None => format!("Listing {}", shown(path)),
+        },
+        Call::Read { path } => match other(path) {
+            Some(o) => format!("Reading {o}"),
+            None => format!("Reading file {path}"),
+        },
+        Call::Search { query, path } => match other(path) {
+            Some(o) => format!("Searching {o} for \u{201c}{query}\u{201d}"),
+            None => format!("Searching files for \u{201c}{query}\u{201d}"),
+        },
+        Call::Write { path, .. } => format!("Writing file {path}"),
+        Call::RequestAccess { space, path, .. } => format!(
+            "Asking for read access to {}/{}",
+            space.trim_start_matches('@'),
+            path.trim_end_matches('/')
+        ),
+    }
+}
+
+/// What a tool call may reach: its own space, plus whatever `grants` let it
+/// read elsewhere in the vault. Only grants *to* `space_id` are ever used.
+#[derive(Clone)]
+pub struct Ctx {
+    pub space: PathBuf,
+    pub space_id: String,
+    pub vault: Vault,
+    pub grants: Vec<Grant>,
+}
+
+/// Run a tool with `@space/path` support. `Err` is a message for the model.
+pub fn run_in(ctx: &Ctx, call: &Call) -> Result<String, String> {
+    // `@<this space>/x` is just `x`.
+    let split = |path: &str| -> (Option<String>, String) {
+        match target(path) {
+            Target::Other { space, rel } if space != ctx.space_id => (Some(space.to_string()), rel.to_string()),
+            Target::Other { rel, .. } => (None, rel.to_string()),
+            Target::Local(p) => (None, p.to_string()),
+        }
+    };
+    match call {
+        Call::List { path } => match split(path) {
+            (Some(space), rel) => list_at(&resolve_other(ctx, &space, &rel)?.0, path),
+            (None, rel) => list(&ctx.space, &rel),
+        },
+        Call::Read { path } => match split(path) {
+            (Some(space), rel) => read_at(&resolve_other(ctx, &space, &rel)?.0, path),
+            (None, rel) => read(&ctx.space, &rel),
+        },
+        Call::Search { query, path } => match split(path) {
+            (Some(space), rel) => {
+                let (start, root) = resolve_other(ctx, &space, &rel)?;
+                search_at(&root, start, query, &format!("@{space}/"))
+            }
+            (None, rel) => search(&ctx.space, query, &rel),
+        },
+        Call::Write { path, contents } => match target(path) {
+            Target::Other { .. } => Err("write_file can only write in this space; other spaces can never be written".into()),
+            Target::Local(p) => write(&ctx.space, p, contents),
+        },
+        Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
+    }
+}
+
+/// Resolve `rel` in another space through a grant. Returns the real path and
+/// the other space's real root. Refused unless a grant covers the path; then
+/// the usual escape checks run against that space, and the result must also
+/// stay inside the granted folder, so a symlink inside it cannot reach the
+/// rest of that space.
+pub fn resolve_other(ctx: &Ctx, space: &str, rel: &str) -> Result<(PathBuf, PathBuf), String> {
+    let shown = format!("@{space}/{rel}");
+    let dir = ctx
+        .vault
+        .space_dir(space)
+        .map_err(|_| format!("there is no space called \"{space}\""))?;
+    let clean = clean_rel(rel)
+        .map_err(|_| format!("\"{shown}\" must be a path inside the {space} space, like \"@{space}/notes/today.md\""))?;
+    let grant = ctx
+        .grants
+        .iter()
+        .find(|g| g.to == ctx.space_id && g.from == space && grants::covers(&g.path, &clean))
+        .ok_or_else(|| format!("\"{shown}\" is in the {space} space; ask for access with request_access first"))?;
+    let granted = resolve(&dir, &grant.path, true)
+        .map_err(|_| format!("the granted path \"@{space}/{}\" no longer exists", grant.path))?;
+    let real = resolve(&dir, &clean.to_string_lossy(), true)
+        .map_err(|e| e.replace("this space", &format!("the {space} space")))?;
+    if !real.starts_with(&granted) {
+        return Err(format!("\"{shown}\" leads outside the part of the {space} space you have access to"));
+    }
+    let root = dir
+        .canonicalize()
+        .map_err(|e| format!("space folder unavailable: {e}"))?;
+    Ok((real, root))
+}
+
+/// Run a tool in this space only (no `@space/` paths). `Err` is a message for
+/// the model (sent back with `is_error`).
 pub fn run(space: &Path, call: &Call) -> Result<String, String> {
     match call {
         Call::List { path } => list(space, path),
         Call::Read { path } => read(space, path),
         Call::Search { query, path } => search(space, query, path),
         Call::Write { path, contents } => write(space, path, contents),
+        Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
     }
 }
 
-/// Resolve `rel` inside `space`. `must_exist` false allows a path whose final
-/// parts do not exist yet (for writes); the deepest existing ancestor is still
-/// checked, so a symlinked folder cannot redirect a new file outside the space.
-pub fn resolve(space: &Path, rel: &str, must_exist: bool) -> Result<PathBuf, String> {
-    let root = space
-        .canonicalize()
-        .map_err(|e| format!("space folder unavailable: {e}"))?;
-    let rel_path = Path::new(rel);
+/// The lexical check every path gets: relative, no `..`, not under `.steward/`.
+/// Returns the path without `.` parts (empty for the root).
+pub fn clean_rel(rel: &str) -> Result<PathBuf, String> {
     let mut clean = PathBuf::new();
-    for c in rel_path.components() {
+    for c in Path::new(rel).components() {
         match c {
             Component::Normal(part) => clean.push(part),
             Component::CurDir => {}
@@ -186,6 +350,17 @@ pub fn resolve(space: &Path, rel: &str, must_exist: bool) -> Result<PathBuf, Str
     {
         return Err(format!("\"{rel}\" is steward's own state and cannot be used by tools"));
     }
+    Ok(clean)
+}
+
+/// Resolve `rel` inside `space`. `must_exist` false allows a path whose final
+/// parts do not exist yet (for writes); the deepest existing ancestor is still
+/// checked, so a symlinked folder cannot redirect a new file outside the space.
+pub fn resolve(space: &Path, rel: &str, must_exist: bool) -> Result<PathBuf, String> {
+    let root = space
+        .canonicalize()
+        .map_err(|e| format!("space folder unavailable: {e}"))?;
+    let clean = clean_rel(rel)?;
     let full = root.join(&clean);
     let mut existing = full.as_path();
     while !existing.exists() {
@@ -209,11 +384,14 @@ pub fn resolve(space: &Path, rel: &str, must_exist: bool) -> Result<PathBuf, Str
 }
 
 fn list(space: &Path, rel: &str) -> Result<String, String> {
-    let dir = resolve(space, rel, true)?;
+    list_at(&resolve(space, rel, true)?, rel)
+}
+
+fn list_at(dir: &Path, rel: &str) -> Result<String, String> {
     if !dir.is_dir() {
         return Err(format!("\"{rel}\" is a file, not a folder"));
     }
-    let mut names: Vec<String> = fs::read_dir(&dir)
+    let mut names: Vec<String> = fs::read_dir(dir)
         .map_err(|e| format!("cannot list \"{rel}\": {e}"))?
         .filter_map(Result::ok)
         .filter(|e| e.file_name() != STATE_DIR)
@@ -236,7 +414,10 @@ fn list(space: &Path, rel: &str) -> Result<String, String> {
 }
 
 fn read(space: &Path, rel: &str) -> Result<String, String> {
-    let file = resolve(space, rel, true)?;
+    read_at(&resolve(space, rel, true)?, rel)
+}
+
+fn read_at(file: &Path, rel: &str) -> Result<String, String> {
     if file.is_dir() {
         return Err(format!("\"{rel}\" is a folder; use list_files"));
     }
@@ -244,7 +425,7 @@ fn read(space: &Path, rel: &str) -> Result<String, String> {
     if size > MAX_READ {
         return Err(format!("\"{rel}\" is {size} bytes, more than the {MAX_READ}-byte limit"));
     }
-    let bytes = fs::read(&file).map_err(|e| format!("cannot read \"{rel}\": {e}"))?;
+    let bytes = fs::read(file).map_err(|e| format!("cannot read \"{rel}\": {e}"))?;
     String::from_utf8(bytes).map_err(|_| format!("\"{rel}\" is not a text file"))
 }
 
@@ -252,8 +433,14 @@ fn search(space: &Path, query: &str, rel: &str) -> Result<String, String> {
     if query.is_empty() {
         return Err("query must not be empty".into());
     }
-    let root = resolve(space, "", true)?;
-    let start = resolve(space, rel, true)?;
+    search_at(&resolve(space, "", true)?, resolve(space, rel, true)?, query, "")
+}
+
+/// Search from `start`, showing each hit's path relative to `root` after `prefix`.
+fn search_at(root: &Path, start: PathBuf, query: &str, prefix: &str) -> Result<String, String> {
+    if query.is_empty() {
+        return Err("query must not be empty".into());
+    }
     let needle = query.to_lowercase();
     let mut hits = vec![];
     let mut stack = vec![start];
@@ -274,7 +461,7 @@ fn search(space: &Path, query: &str, rel: &str) -> Result<String, String> {
             }
         } else if meta.is_file() && meta.len() <= MAX_SEARCH_FILE {
             let Ok(text) = fs::read_to_string(&p) else { continue };
-            let shown = p.strip_prefix(&root).unwrap_or(&p).display().to_string();
+            let shown = format!("{prefix}{}", p.strip_prefix(root).unwrap_or(&p).display());
             for (i, line) in text.lines().enumerate() {
                 if line.to_lowercase().contains(&needle) {
                     hits.push(format!("{shown}:{}: {}", i + 1, line.trim()));
@@ -309,6 +496,7 @@ fn write(space: &Path, rel: &str, contents: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::grants::Scope;
 
     fn space(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("steward-tools-{name}-{}", std::process::id()));
@@ -372,5 +560,134 @@ mod tests {
         assert!(parse_call("write_file", &json!({"path": "a", "contents": "x", "mode": "777"})).is_err());
         assert!(parse_call("bash", &json!({})).is_err());
         assert_eq!(parse_call("list_files", &json!({})).unwrap(), Call::List { path: String::new() });
+        assert!(parse_call("request_access", &json!({"space": "work", "path": "calendar"})).is_err());
+        let long = "x".repeat(2000);
+        let Call::RequestAccess { reason, .. } =
+            parse_call("request_access", &json!({"space": "work", "path": "calendar", "reason": long})).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(reason.len(), MAX_REASON);
+    }
+
+    #[test]
+    fn writes_into_another_space_are_always_refused() {
+        let err = parse_call("write_file", &json!({"path": "@work/calendar/oct.md", "contents": "x"})).unwrap_err();
+        assert!(err.contains("other spaces can never be written"), "{err}");
+        // Even with a grant, and even if a Call is built directly.
+        let (dir, ctx) = cross("write");
+        let call = Call::Write { path: "@work/calendar/new.md".into(), contents: "x".into() };
+        assert!(run_in(&ctx, &call).is_err());
+        assert!(!dir.join("spaces/work/calendar/new.md").exists());
+        // A local file named with "@" is still writable as "./@name".
+        assert!(parse_call("write_file", &json!({"path": "./@home.md", "contents": "x"})).is_ok());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn grant(path: &str) -> Grant {
+        Grant {
+            id: "g".into(),
+            to: "school".into(),
+            from: "work".into(),
+            path: path.into(),
+            created: String::new(),
+            scope: Scope::Once,
+        }
+    }
+
+    /// Vault with spaces school and work, and a grant school <- work/calendar.
+    fn cross(name: &str) -> (PathBuf, Ctx) {
+        let dir = std::env::temp_dir().join(format!("steward-tools-cross-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for d in ["spaces/school", "spaces/work/calendar", "spaces/work/calendar-old", "spaces/work/private", "spaces/work/.steward"] {
+            fs::create_dir_all(dir.join(d)).unwrap();
+        }
+        fs::write(dir.join("spaces/work/calendar/oct.md"), "Oct 14: shift 9-5\n").unwrap();
+        fs::write(dir.join("spaces/work/calendar-old/sep.md"), "Sep shift\n").unwrap();
+        fs::write(dir.join("spaces/work/private/salary.md"), "shift pay\n").unwrap();
+        fs::write(dir.join("spaces/work/.steward/session"), "secret").unwrap();
+        let ctx = Ctx {
+            space: dir.join("spaces/school"),
+            space_id: "school".into(),
+            vault: Vault::at(&dir),
+            grants: vec![grant("calendar")],
+        };
+        (dir, ctx)
+    }
+
+    #[test]
+    fn cross_space_reads_need_a_covering_grant() {
+        let (dir, mut ctx) = cross("read");
+        let read = |p: &str| Call::Read { path: p.into() };
+        assert_eq!(run_in(&ctx, &read("@work/calendar/oct.md")).unwrap(), "Oct 14: shift 9-5\n");
+        assert_eq!(run_in(&ctx, &Call::List { path: "@work/calendar".into() }).unwrap(), "oct.md");
+        assert_eq!(
+            run_in(&ctx, &Call::Search { query: "SHIFT".into(), path: "@work/calendar".into() }).unwrap(),
+            "@work/calendar/oct.md:1: Oct 14: shift 9-5"
+        );
+        let refused = [
+            "@work/calendar-old/sep.md",
+            "@work/private/salary.md",
+            "@work/calendar/../private/salary.md",
+            "@work/.steward/session",
+            "@work//etc/passwd",
+            "@work",
+            "@nope/calendar/oct.md",
+            "@../work/calendar/oct.md",
+        ];
+        for p in refused {
+            assert!(run_in(&ctx, &read(p)).is_err(), "{p} should be refused");
+        }
+        let err = run_in(&ctx, &read("@work/private/salary.md")).unwrap_err();
+        assert_eq!(err, "\"@work/private/salary.md\" is in the work space; ask for access with request_access first");
+        // Searching the whole other space, or listing its root, is not covered by a folder grant.
+        assert!(run_in(&ctx, &Call::Search { query: "shift".into(), path: "@work".into() }).is_err());
+        assert!(run_in(&ctx, &Call::List { path: "@work/".into() }).is_err());
+        // A grant to another space does not help this one.
+        ctx.grants = vec![Grant { to: "home".into(), ..grant("calendar") }];
+        assert!(run_in(&ctx, &read("@work/calendar/oct.md")).is_err());
+        // No grants: plain refusal; and the local tools never reach other spaces.
+        ctx.grants = vec![];
+        assert!(run_in(&ctx, &read("@work/calendar/oct.md")).is_err());
+        assert!(run_in(&ctx, &read("../work/calendar/oct.md")).is_err());
+        // "@school/..." from school is just this space.
+        fs::write(dir.join("spaces/school/a.md"), "mine").unwrap();
+        assert_eq!(run_in(&ctx, &read("@school/a.md")).unwrap(), "mine");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_cannot_leave_the_granted_folder() {
+        let (dir, ctx) = cross("link");
+        let cal = dir.join("spaces/work/calendar");
+        // Inside the granted folder, pointing elsewhere in work, and outside the vault.
+        std::os::unix::fs::symlink(dir.join("spaces/work/private"), cal.join("priv")).unwrap();
+        std::os::unix::fs::symlink(std::env::temp_dir(), cal.join("tmp")).unwrap();
+        std::os::unix::fs::symlink(dir.join("spaces/work/private/salary.md"), cal.join("pay.md")).unwrap();
+        for p in ["@work/calendar/priv/salary.md", "@work/calendar/tmp", "@work/calendar/pay.md"] {
+            let r = run_in(&ctx, &Call::Read { path: p.into() });
+            assert!(r.is_err(), "{p} should be refused: {r:?}");
+        }
+        assert!(run_in(&ctx, &Call::List { path: "@work/calendar/priv".into() }).is_err());
+        // The search walk does not follow links.
+        let out = run_in(&ctx, &Call::Search { query: "pay".into(), path: "@work/calendar".into() }).unwrap();
+        assert!(out.starts_with("No lines contain"), "{out}");
+        // A granted path that is itself a link out of the space is refused too.
+        std::os::unix::fs::symlink(std::env::temp_dir(), dir.join("spaces/work/out")).unwrap();
+        let ctx = Ctx { grants: vec![grant("out")], ..ctx };
+        assert!(run_in(&ctx, &Call::List { path: "@work/out".into() }).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn labels_name_the_other_space() {
+        let l = |c: Call| label(&c);
+        assert_eq!(l(Call::Read { path: "@work/calendar/oct.md".into() }), "Reading work/calendar/oct.md");
+        assert_eq!(l(Call::List { path: "@work/calendar/".into() }), "Listing work/calendar");
+        assert_eq!(l(Call::Search { query: "x".into(), path: "@work/calendar".into() }), "Searching work/calendar for \u{201c}x\u{201d}");
+        assert_eq!(l(Call::Read { path: "a.md".into() }), "Reading file a.md");
+        assert!(is_cross(&Call::Read { path: "@work/a".into() }));
+        assert!(!is_cross(&Call::Read { path: "./@work/a".into() }));
     }
 }

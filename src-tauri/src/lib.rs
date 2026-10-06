@@ -2,6 +2,7 @@ pub mod agent;
 pub mod agent_loop;
 pub mod anthropic;
 pub mod attachments;
+pub mod grants;
 pub mod provider;
 pub mod secrets;
 pub mod thread;
@@ -108,6 +109,7 @@ async fn agent_send(
                 space_dir: &space_dir,
                 prompt: &prompt,
                 config_dir,
+                add_dirs: grants::cli_dirs(&state.vault, &space),
             };
             agent::run_turn(&state.runs, &space, req, emit).await;
         }
@@ -120,6 +122,29 @@ async fn agent_send(
 #[tauri::command]
 fn agent_approve(state: State<'_, AppState>, space: String, id: String, allow: bool) -> bool {
     state.approvals.answer(&space, &id, allow)
+}
+
+/// The user's answer ("once", "always" or "deny") to a pending request from
+/// the agent in `space` to read part of another space. False if that request
+/// is no longer waiting.
+#[tauri::command]
+fn agent_access_answer(state: State<'_, AppState>, space: String, id: String, answer: grants::AccessAnswer) -> bool {
+    state.approvals.answer_access(&space, &id, answer)
+}
+
+/// What `space` may read in other spaces (saved "always" grants), plus any
+/// problems found in `<vault>/.steward/grants.json`. Read from the file on
+/// every call, so edits and revocations apply without a restart.
+#[tauri::command]
+fn grants_list(state: State<'_, AppState>, space: String) -> Result<grants::GrantsView, String> {
+    state.vault.space_dir(&space)?;
+    Ok(grants::view(&state.vault, &space))
+}
+
+/// Remove a saved grant. False if no grant has that id.
+#[tauri::command]
+fn grant_revoke(state: State<'_, AppState>, id: String) -> Result<bool, String> {
+    grants::revoke(&state.vault, &id)
 }
 
 /// The saved conversation in `space`, for showing after a restart or a space
@@ -254,6 +279,9 @@ pub fn run() {
             agent_send,
             agent_cancel,
             agent_approve,
+            agent_access_answer,
+            grants_list,
+            grant_revoke,
             thread_load,
             settings_get,
             settings_set_backend,

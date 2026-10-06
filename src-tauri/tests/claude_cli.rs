@@ -19,6 +19,7 @@ fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
             space_dir: &dir,
             prompt,
             config_dir: None,
+            add_dirs: vec![],
         },
         |e| {
             eprintln!("event: {e:?}");
@@ -104,6 +105,7 @@ fn cancel_kills_the_child_and_its_group() {
             space_dir: &dir,
             prompt: "Count from 1 to 300, one number per line, nothing else.",
             config_dir: None,
+            add_dirs: vec![],
         },
         |e| events.push(e),
     ));

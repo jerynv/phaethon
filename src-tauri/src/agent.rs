@@ -17,6 +17,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
+use crate::grants::AccessAnswer;
 use crate::vault;
 
 /// Tools the agent may use. Read-only for now: the agent can look at files in
@@ -65,6 +66,17 @@ pub enum AgentEvent {
     },
     /// The approval `id` was answered or abandoned; the card can close.
     ApprovalDone { id: String, allowed: bool },
+    /// steward's own loop asks to let this space read `path` in the other
+    /// space `space` (read-only), and waits for `agent_access_answer`.
+    AccessRequest {
+        id: String,
+        space: String,
+        path: String,
+        reason: String,
+    },
+    /// The access request `id` was answered (or abandoned, which counts as
+    /// `deny`); the card can close.
+    AccessRequestDone { id: String, answer: AccessAnswer },
     /// The turn was stopped by the user.
     Cancelled,
     /// Terminal event; `session_id` is what the space will resume next time.
@@ -103,6 +115,11 @@ pub struct TurnRequest<'a> {
     pub prompt: &'a str,
     /// Set only when the vault opts into an isolated CLI config (see `VaultSettings`).
     pub config_dir: Option<PathBuf>,
+    /// Folders of other spaces this space has an "always" grant for, as
+    /// (label like "work/calendar", real path); see `grants::cli_dirs`. Passed
+    /// as `--add-dir`, so the CLI's read-only tools may read them. Asking for
+    /// access mid-conversation is not available on this backend.
+    pub add_dirs: Vec<(String, PathBuf)>,
 }
 
 /// Find the `claude` binary: `PATH` first, then `~/.local/bin` (the installer's
@@ -145,7 +162,7 @@ fn is_executable(p: &Path) -> bool {
 
 /// The CLI arguments for one turn. The prompt goes over stdin, never argv, so
 /// it cannot be read as a flag and does not show up in `ps`.
-pub fn cli_args(resume: Option<&str>) -> Vec<String> {
+pub fn cli_args(resume: Option<&str>, add_dirs: &[PathBuf]) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--output-format",
@@ -178,6 +195,14 @@ pub fn cli_args(resume: Option<&str>) -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect();
+    // Granted folders of other spaces. The tools stay read-only, and
+    // `--restricted` confines them to the working directory plus these.
+    // `--add-dir` is variadic, so each one is followed by another flag or the
+    // end of argv, never a stray positional.
+    for dir in add_dirs {
+        args.push("--add-dir".into());
+        args.push(dir.to_string_lossy().into_owned());
+    }
     if let Some(id) = resume {
         args.push("--resume".into());
         args.push(id.into());
@@ -289,7 +314,8 @@ async fn drive(
     let resume = vault::read_session(req.space_dir);
 
     let mut cmd = Command::new(&bin);
-    cmd.args(cli_args(resume.as_deref()))
+    let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
+    cmd.args(cli_args(resume.as_deref(), &dirs))
         .current_dir(req.space_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -341,6 +367,7 @@ async fn drive(
     });
 
     let mut parser = StreamParser::new(req.space_dir);
+    parser.granted = req.add_dirs.clone();
     let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
     let mut cancelled = false;
     loop {
@@ -483,6 +510,8 @@ enum Outcome {
 /// new CLI event types do not break the app.
 struct StreamParser {
     space_dir: PathBuf,
+    /// Granted folders of other spaces, so reads there are labelled with the space.
+    granted: Vec<(String, PathBuf)>,
     session_id: Option<String>,
     emitted_text: bool,
     result: Option<Outcome>,
@@ -492,6 +521,7 @@ impl StreamParser {
     fn new(space_dir: &Path) -> Self {
         Self {
             space_dir: space_dir.to_path_buf(),
+            granted: vec![],
             session_id: None,
             emitted_text: false,
             result: None,
@@ -513,7 +543,7 @@ impl StreamParser {
                 .flatten()
                 .filter(|b| b["type"] == "tool_use")
                 .map(|b| AgentEvent::Tool {
-                    label: tool_label(b, &self.space_dir),
+                    label: tool_label(b, &self.space_dir, &self.granted),
                 })
                 .collect(),
             Some("result") => {
@@ -583,8 +613,10 @@ impl StreamParser {
     }
 }
 
-/// "Reading file notes.md" etc. Paths are shown relative to the space.
-fn tool_label(block: &Value, space_dir: &Path) -> String {
+/// "Reading file notes.md" etc. Paths are shown relative to the space; a read
+/// in a granted folder of another space names that space ("Reading
+/// work/calendar/oct.md").
+fn tool_label(block: &Value, space_dir: &Path, granted: &[(String, PathBuf)]) -> String {
     let input = &block["input"];
     let s = |k: &str| input.get(k).and_then(Value::as_str).unwrap_or("");
     let rel = |p: &str| {
@@ -593,8 +625,18 @@ fn tool_label(block: &Value, space_dir: &Path) -> String {
             .map(|r| r.display().to_string())
             .unwrap_or_else(|_| p.to_string())
     };
+    let other = |p: &str| {
+        granted.iter().find_map(|(label, dir)| {
+            Path::new(p).strip_prefix(dir).ok().map(|r| {
+                if r.as_os_str().is_empty() { label.clone() } else { format!("{label}/{}", r.display()) }
+            })
+        })
+    };
     match block["name"].as_str().unwrap_or("") {
-        "Read" => format!("Reading file {}", rel(s("file_path"))),
+        "Read" => match other(s("file_path")) {
+            Some(o) => format!("Reading {o}"),
+            None => format!("Reading file {}", rel(s("file_path"))),
+        },
         "Grep" => format!("Searching files for \u{201c}{}\u{201d}", s("pattern")),
         "Glob" => format!("Finding files matching {}", s("pattern")),
         "" => "Using a tool".into(),
@@ -665,6 +707,33 @@ mod tests {
     }
 
     #[test]
+    fn granted_folders_become_add_dirs_and_labels() {
+        let dirs = [PathBuf::from("/vault/spaces/work/calendar"), PathBuf::from("/vault/spaces/home/bills")];
+        let args = cli_args(Some("11111111-2222-3333-4444-555555555555"), &dirs);
+        let pairs: Vec<&str> = args
+            .windows(2)
+            .filter(|w| w[0] == "--add-dir")
+            .map(|w| w[1].as_str())
+            .collect();
+        assert_eq!(pairs, ["/vault/spaces/work/calendar", "/vault/spaces/home/bills"]);
+        // Still read-only and restricted with grants.
+        assert!(args.windows(2).any(|w| w[0] == "--tools" && w[1] == ALLOWED_TOOLS));
+        assert!(args.iter().any(|a| a == "--restricted"));
+        // Each --add-dir value is followed by a flag, so the variadic option
+        // never swallows anything else.
+        for (i, a) in args.iter().enumerate() {
+            if a == "--add-dir" {
+                assert!(args.get(i + 2).is_none_or(|n| n.starts_with("--")));
+            }
+        }
+
+        let mut p = StreamParser::new(Path::new("/vault/spaces/school"));
+        p.granted = vec![("work/calendar".into(), dirs[0].clone())];
+        let evs = p.feed(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/vault/spaces/work/calendar/oct.md"}}]}}"#);
+        assert_eq!(evs, vec![AgentEvent::Tool { label: "Reading work/calendar/oct.md".into() }]);
+    }
+
+    #[test]
     fn result_without_partials_falls_back_to_final_text() {
         let (evs, _) =
             feed_all(&[r#"{"type":"result","subtype":"success","is_error":false,"result":"hi"}"#]);
@@ -694,7 +763,8 @@ mod tests {
 
     #[test]
     fn args_never_bypass_permissions() {
-        let args = cli_args(Some("11111111-2222-3333-4444-555555555555"));
+        let args = cli_args(Some("11111111-2222-3333-4444-555555555555"), &[]);
+        assert!(!args.iter().any(|a| a == "--add-dir"), "nothing crosses by default");
         assert!(
             !args
                 .iter()

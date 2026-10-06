@@ -15,6 +15,7 @@ fn missing_binary_reports_install_hint() {
             space_dir: &dir,
             prompt: "hi",
             config_dir: None,
+            add_dirs: vec![],
         },
         |e| events.push(e),
     ));

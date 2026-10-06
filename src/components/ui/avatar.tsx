@@ -15,7 +15,7 @@ function Avatar({
       data-slot="avatar"
       data-size={size}
       className={cn(
-        "group/avatar relative flex size-8 shrink-0 overflow-hidden rounded-full select-none data-[size=lg]:size-10 data-[size=sm]:size-6",
+        "group/avatar relative flex size-(--ph-control-height-lg) shrink-0 overflow-hidden rounded-full select-none data-[size=lg]:size-[calc(var(--ph-control-height-lg)*1.25)] data-[size=sm]:size-(--ph-control-height-sm)",
         className
       )}
       {...props}
@@ -89,7 +89,7 @@ function AvatarGroupCount({
     <div
       data-slot="avatar-group-count"
       className={cn(
-        "relative flex size-8 shrink-0 items-center justify-center rounded-full bg-selected text-sm font-medium text-ink-secondary ring-2 ring-bg group-has-data-[size=lg]/avatar-group:size-10 group-has-data-[size=sm]/avatar-group:size-6 [&>svg]:size-4 group-has-data-[size=lg]/avatar-group:[&>svg]:size-5 group-has-data-[size=sm]/avatar-group:[&>svg]:size-3",
+        "relative flex size-(--ph-control-height-lg) shrink-0 items-center justify-center rounded-full bg-selected text-sm font-medium text-ink-secondary ring-2 ring-bg group-has-data-[size=lg]/avatar-group:size-[calc(var(--ph-control-height-lg)*1.25)] group-has-data-[size=sm]/avatar-group:size-(--ph-control-height-sm) [&>svg]:size-(--ph-icon-size) group-has-data-[size=lg]/avatar-group:[&>svg]:size-(--ph-icon-size-lg) group-has-data-[size=sm]/avatar-group:[&>svg]:size-(--ph-icon-size-sm)",
         className
       )}
       {...props}

@@ -3,30 +3,54 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { grantDate, grantLabel, grantNoun, revokeGrant, spaceInfo, useGrants, type GrantView } from "@/lib/grants";
+import { grantDate, grantLabel, grantNoun, revokeGrant, shortPath, spaceInfo, useGrants, type GrantView } from "@/lib/grants";
+import { openSettings } from "@/lib/open-settings";
 import type { Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
 import { SpaceMark } from "./space-mark";
 
-/**
- * Opens Settings at the Spaces section. Settings owns its own open state, so
- * this presses its trigger and then the Spaces tab, as a person would.
- */
-function openSettingsAtSpaces() {
-  const trigger = document.querySelector<HTMLElement>('[data-testid="open-settings"]');
-  if (!trigger) return false;
-  trigger.click();
-  requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="settings-tab-spaces"]')?.click());
-  return true;
+/** Below this width the chip shows only its count. */
+const NARROW_QUERY = "(max-width: 767px)";
+
+/** True while the window is narrower than NARROW_QUERY. */
+function useNarrowWindow() {
+  const [narrow, setNarrow] = useState(() => {
+    try {
+      return window.matchMedia(NARROW_QUERY).matches;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    let mq: MediaQueryList;
+    try {
+      mq = window.matchMedia(NARROW_QUERY);
+    } catch {
+      return;
+    }
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return narrow;
+}
+
+/** The chip's short form of a grant: the path shortened in the middle, so the part that tells it apart shows. */
+function chipLabel(g: GrantView): string {
+  return g.path ? `${spaceInfo(g.from).name} / ${shortPath(g.path)}` : grantLabel(g);
 }
 
 /**
  * The title bar's "can also read" chip: shown only when the active space has
  * saved read-only grants into other spaces, so access is visible up front
- * (like a browser's site-permission chip). It is a button whose accessible
- * name starts with its visible text (WCAG 2.5.3) and then says the whole
- * thing. It opens a popover listing each grant with Revoke.
+ * (like a browser's site-permission chip). It is a button named by its
+ * visible text (WCAG 2.5.3: "Also reads Work / calendar +1 more") and
+ * described by the whole sentence. In a narrow window it collapses to "Also
+ * reads 2", so the space's name keeps its room. It opens a popover listing
+ * each grant with Revoke; only the list scrolls when it is taller than the
+ * window.
  *
  * Keyboard: Enter/Space opens; focus moves to the popover itself (not to a
  * Revoke button, so a second Enter cannot revoke by accident); Tab moves
@@ -40,10 +64,12 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const headingId = useId();
+  const descId = useId();
   const contentRef = useRef<HTMLDivElement>(null);
   const focusAfter = useRef<number | null>(null);
   const toSettings = useRef(false);
   const grants = state.status === "ready" ? state.grants : [];
+  const narrow = useNarrowWindow();
 
   // Close and clear when the space changes.
   useEffect(() => {
@@ -65,9 +91,8 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
 
   const first = grants[0];
   const more = grants.length - 1;
-  const visible = `Also reads ${grantLabel(first)}${more ? ` +${more} more` : ""}`;
   const noun = grantNoun(grants, grants.length !== 1);
-  const spoken = `${visible}. ${space.name} can also read ${grants.length} ${noun} in ${new Set(grants.map((g) => g.from)).size === 1 ? "another space" : "other spaces"}.`;
+  const sentence = `${space.name} can also read ${grants.length} ${noun} in ${new Set(grants.map((g) => g.from)).size === 1 ? "another space" : "other spaces"}.`;
 
   async function revoke(g: GrantView, index: number) {
     setBusy(g.id);
@@ -83,7 +108,9 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
       }
       announce(removed ? `${space.name} can no longer read ${grantLabel(g)}.` : `${grantLabel(g)} was already removed.`);
     } catch (e) {
-      setError(`Could not revoke access to ${grantLabel(g)}: ${String(e)}`);
+      // The only way a revoke fails is grants.json refusing the write; the raw OS error helps nobody here.
+      console.error("grant_revoke failed:", e);
+      setError(`Couldn’t revoke ${grantLabel(g)}. grants.json can’t be written: check the vault folder’s permissions, then try again.`);
     } finally {
       setBusy(null);
     }
@@ -94,23 +121,38 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
       <Popover.Trigger asChild>
         <button
           type="button"
-          aria-label={spoken}
+          aria-describedby={descId}
           data-grants-chip=""
           className={cn(
-            "ms-1 flex h-(--ph-control-height-sm) min-w-0 items-center gap-1.5 rounded-full border border-line-strong bg-raised ps-2 pe-2.5 text-sm text-ink-secondary shadow-sm",
+            "ms-1 flex min-h-(--ph-control-height-sm) min-w-0 items-center gap-1.5 rounded-full border border-line-strong bg-raised ps-2 pe-2.5 text-sm text-ink-secondary shadow-sm",
             "transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
             "data-[state=open]:bg-selected data-[state=open]:text-ink group-data-[inactive]/titlebar:text-ink-tertiary",
           )}
         >
-          <Icon name="link" className="size-(--ph-icon-size-sm)" />
-          <span className="shrink-0">Also reads</span>
-          <SpaceMark hue={spaceInfo(first.from).hue} />
-          <span className="max-w-(--ph-chip-name-width) truncate font-medium text-ink group-data-[inactive]/titlebar:text-ink-secondary">
-            {grantLabel(first)}
-          </span>
-          {more > 0 && <span className="shrink-0 tabular-nums">+{more} more</span>}
+          <Icon name="link" className="size-(--ph-icon-size-sm) shrink-0" />
+          {/* Each part carries its own separating space (inside the span, not as a loose text node
+              between flex items), so the name reads as the visible text does. */}
+          <span className="shrink-0">{"Also reads "}</span>
+          {narrow ? (
+            // A narrow window: the count alone, so the space's name keeps its room.
+            <span className="shrink-0 font-medium text-ink tabular-nums group-data-[inactive]/titlebar:text-ink-secondary">
+              {grants.length}
+            </span>
+          ) : (
+            <>
+              <SpaceMark hue={spaceInfo(first.from).hue} />
+              <span className="max-w-(--ph-chip-name-width) min-w-0 truncate font-medium text-ink group-data-[inactive]/titlebar:text-ink-secondary">
+                {chipLabel(first)}
+              </span>
+              {more > 0 && <span className="shrink-0 tabular-nums">{` +${more} more`}</span>}
+            </>
+          )}
         </button>
       </Popover.Trigger>
+      {/* Outside the button, so it describes the chip without also becoming part of its name. */}
+      <span id={descId} className="sr-only">
+        {sentence}
+      </span>
       <Popover.Portal>
         <Popover.Content
           ref={contentRef}
@@ -125,38 +167,54 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
             document.getElementById(headingId)?.focus();
           }}
           onCloseAutoFocus={(e) => {
-            // Going to Settings: the settings window takes focus, and returns it to its own trigger.
+            // Going to Settings: the settings window takes focus.
             if (!toSettings.current) return;
             toSettings.current = false;
             e.preventDefault();
-            openSettingsAtSpaces();
+            openSettings("spaces");
           }}
           className={cn(
-            "z-50 flex w-80 max-w-(--radix-popover-content-available-width) flex-col rounded-lg border border-line bg-raised text-ink shadow-lg outline-none",
+            // As wide as 320px at the default text size, growing with it; never wider or taller than the room.
+            // The list scrolls first; if even the heading and footer do not fit (very large text), the whole panel scrolls.
+            "z-50 flex max-h-(--radix-popover-content-available-height) w-[calc(320px*var(--ph-ui-scale))] max-w-(--radix-popover-content-available-width) flex-col overflow-y-auto rounded-lg border border-line bg-raised text-ink shadow-lg outline-none",
             "origin-(--radix-popover-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           )}
         >
-          <div className="flex flex-col gap-0.5 px-4 pt-3.5 pb-2.5">
+          <div className="flex shrink-0 flex-col gap-0.5 px-4 pt-3.5 pb-2.5">
             <h2 id={headingId} tabIndex={-1} className="self-start rounded-xs text-md font-semibold text-ink">
               {space.name} can also read
             </h2>
             <p className="text-sm text-ink-secondary">Read-only. For anything else in another space, Phaethon asks you first.</p>
           </div>
-          <ul className="flex flex-col divide-y divide-line border-t border-line" aria-label={`What ${space.name} can read`}>
+          {/* The list scrolls; the heading and "Manage in Settings" stay in view. */}
+          <ul
+            className={cn(
+              // One grant never shrinks; more keep at least about two rows in view before the panel itself scrolls.
+              grants.length > 1 ? "min-h-[calc(var(--ph-control-height-lg)*2.5)]" : "shrink-0",
+              "flex flex-col divide-y divide-line overflow-y-auto overscroll-contain border-t border-line",
+            )}
+            aria-label={`What ${space.name} can read`}
+          >
             {grants.map((g, i) => {
               const date = grantDate(g.created);
+              const from = spaceInfo(g.from);
               return (
-                <li key={g.id} className="flex items-center gap-3 px-4 py-2.5">
+                <li key={g.id} className="flex shrink-0 items-center gap-3 px-4 py-2.5">
                   <div className="grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
-                    <SpaceMark hue={spaceInfo(g.from).hue} />
-                    <span className="flex min-w-0 items-baseline gap-1.5 text-base">
-                      <span className="shrink-0 font-medium text-ink">{spaceInfo(g.from).name}</span>
-                      <span aria-hidden="true" className="text-ink-secondary">/</span>
-                      <span className="min-w-0 truncate font-mono text-sm text-ink" title={g.path}>
-                        {g.path}
+                    <SpaceMark hue={from.hue} />
+                    {g.path ? (
+                      // The path wraps rather than truncates: its end is often what tells two grants apart.
+                      <span className="min-w-0 text-base">
+                        <span className="font-medium text-ink">{from.name}</span>{" "}
+                        <span aria-hidden="true" className="text-ink-secondary">
+                          /
+                        </span>{" "}
+                        <span className="font-mono text-sm wrap-anywhere text-ink">{g.path}</span>
                       </span>
-                    </span>
+                    ) : (
+                      <span className="min-w-0 text-base font-medium text-ink">{grantLabel(g)}</span>
+                    )}
                     <span className="col-start-2 text-xs text-ink-secondary">
                       {g.scope === "once" ? "This time only" : "Always"}
                       {date && ` · since ${date}`}
@@ -179,18 +237,18 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
             })}
           </ul>
           {error && (
-            <p role="alert" className="mx-3 mb-1 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-ink">
-              <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm)" />
+            <p role="alert" className="mx-4 my-2 flex shrink-0 items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-ink">
+              <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
               <span className="min-w-0 flex-1">{error}</span>
             </p>
           )}
           {state.status === "ready" && state.problems.length > 0 && (
-            <p className="mx-3 mb-1 flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-ink">
-              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm)" />
+            <p className="mx-4 my-2 flex shrink-0 items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-ink">
+              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
               <span className="min-w-0 flex-1">Some saved grants were ignored. Settings explains which.</span>
             </p>
           )}
-          <div className="flex items-center border-t border-line px-4 py-2">
+          <div className="flex shrink-0 items-center border-t border-line px-4 py-2">
             <Button
               type="button"
               variant="link"

@@ -78,8 +78,9 @@ function ControlButton({
         "group-data-[inactive]/titlebar:text-ink-tertiary",
         // The bar meets the window edge, so draw the focus ring inside the button.
         "focus-visible:-outline-offset-2!",
+        // Close: the platform's strong red with a light glyph in both themes; pressed goes darker (shell.css).
         danger
-          ? "hover:bg-danger hover:text-ink-inverse active:bg-danger/85 active:text-ink-inverse"
+          ? "hover:bg-(--window-close) hover:text-(--window-close-ink) active:bg-(--window-close-pressed) active:text-(--window-close-ink)"
           : "hover:bg-hover hover:text-ink active:bg-selected",
       )}
     >

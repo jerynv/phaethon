@@ -21,12 +21,19 @@ const settings = { backend: "phaethon", hasAnthropicKey: true, model: "claude-op
 const CHIP = "[data-grants-chip]";
 const POPOVER = '[data-radix-popper-content-wrapper] [role="dialog"]';
 
-const chipName = (page) => page.evaluate((s) => document.querySelector(s)?.getAttribute("aria-label") ?? null, CHIP);
+import { chipA11y } from "./audit-shell.mjs";
+
+/** "<name> | <description>", as a screen reader gets the chip. */
+const chipName = async (page) => {
+  const a = await chipA11y(page);
+  return a ? `${a.name} | ${a.desc}` : null;
+};
 const revokeCalls = (page) => page.evaluate(() => window.__calls.filter(([c]) => c === "grant_revoke").map(([, a]) => a.id));
 const titleStatus = (page) => page.evaluate(() => document.querySelector('header [role="status"]')?.textContent ?? "");
 
 const openSettings = async (page, h) => {
-  await h.click('[data-testid="open-settings"]');
+  // The sidebar's entry, or the title bar's when a small window starts with the sidebar hidden.
+  await h.click('#spaces-sidebar:not([hidden]) [data-testid="open-settings"], header [data-testid="titlebar-settings"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   await h.idle();
   await h.click('[data-testid="settings-tab-spaces"]');
@@ -41,7 +48,9 @@ export default [
       await page.waitForSelector(CHIP, { timeout: 5000 });
       const name = await chipName(page);
       console.log(`     chip name: ${name}`);
-      if (!name?.startsWith("Also reads Work / calendar +1 more. School can also read 2 places in another space"))
+      // A narrow window (under 768px) collapses the chip to the count.
+      const shown = page.viewport().width < 768 ? "Also reads 2" : "Also reads Work / calendar +1 more";
+      if (name !== `${shown} | School can also read 2 places in another space.`)
         throw new Error(`unexpected chip name: ${name}`);
       // The chip is a button inside the drag region and must not carry the drag attribute itself.
       const drag = await page.evaluate((s) => document.querySelector(s)?.hasAttribute("data-tauri-drag-region"), CHIP);
@@ -91,7 +100,8 @@ export default [
       let calls = await revokeCalls(page);
       if (calls.join() !== "g-cal") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
       const name = await chipName(page);
-      if (!name?.startsWith("Also reads Work / projects/now.md.")) throw new Error(`chip did not update: ${name}`);
+      const shown = page.viewport().width < 768 ? "Also reads 1" : "Also reads Work / projects/now.md";
+      if (name !== `${shown} | School can also read 1 file in another space.`) throw new Error(`chip did not update: ${name}`);
       const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
       if (focused !== "Revoke access to Work / projects/now.md") throw new Error(`focus after revoke: ${focused}`);
       const said = await titleStatus(page);
@@ -105,6 +115,22 @@ export default [
       const onMain = await page.evaluate(() => document.activeElement?.id);
       console.log(`     after last revoke: calls ${JSON.stringify(calls)}, chip gone ${gone}, focus #${onMain}, status "${await titleStatus(page)}"`);
       if (calls.join() !== "g-cal,g-now" || !gone || onMain !== "main") throw new Error("last revoke did not clear the chip and move focus to the conversation");
+    },
+  },
+  {
+    // "Manage in Settings" opens Settings at Spaces, sidebar shown or hidden.
+    name: "grants-manage-in-settings",
+    mock: { threads: { school: thread }, settings, grants: grants() },
+    async run(page, h) {
+      await h.click('button[aria-controls="spaces-sidebar"]');
+      await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+      await h.click(CHIP);
+      await page.waitForSelector(POPOVER, { timeout: 5000 });
+      await h.idle();
+      await page.evaluate((sel) => [...document.querySelectorAll(`${sel} button`)].find((b) => b.textContent.includes("Manage in Settings"))?.click(), POPOVER);
+      await page.waitForSelector('[data-testid="settings-tab-spaces"][data-state="active"]', { timeout: 5000 });
+      console.log("     Manage in Settings opened Settings at Spaces with the sidebar hidden");
+      await h.idle();
     },
   },
   {
@@ -132,13 +158,14 @@ export default [
     async run(page, h) {
       await openSettings(page, h);
       await h.click('[role="tabpanel"]:not([hidden]) [data-revoke]');
-      await h.waitText("Can't read anything outside School.");
+      // Either apostrophe: Settings' copy is moving to the curly one.
+      await page.waitForFunction(() => /Can[’']t read anything outside School\./.test(document.body.innerText), { timeout: 5000 });
       await h.idle();
       const calls = await revokeCalls(page);
       const focus = await page.evaluate(() => document.activeElement?.textContent ?? "");
       const chip = await page.evaluate((s) => !!document.querySelector(s), CHIP);
       console.log(`     settings revoke: calls ${JSON.stringify(calls)}, focus "${focus}", title bar chip still shown ${chip}`);
-      if (calls.join() !== "g-cal" || !focus.includes("Can't read anything outside School") || chip) throw new Error("revoke from Settings did not update the list, focus and title bar");
+      if (calls.join() !== "g-cal" || !/Can[’']t read anything outside School/.test(focus) || chip) throw new Error("revoke from Settings did not update the list, focus and title bar");
     },
   },
   {

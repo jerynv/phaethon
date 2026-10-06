@@ -113,6 +113,8 @@ export default [
     async run(page, h) {
       await h.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+      // The sidebar's Settings entry went with it; the title bar carries one instead.
+      await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
       await page.mouse.move(600, 400); // leave the toggle, so no tooltip
       await settle(page, h);
     },

@@ -55,15 +55,33 @@ export function onGrantsChanged(cb: () => void): () => void {
 
 // ---- Presentation helpers ----
 
-/** A space's display name and hue; an unknown id keeps its own name and no hue. */
-export function spaceInfo(id: string): { name: string; hue: number | undefined } {
+/**
+ * A space's display name and hue. An id that is not a space in this vault
+ * reads "Home (not in this vault)", title-cased, and has no hue (its mark is a
+ * dashed neutral ring).
+ */
+export function spaceInfo(id: string): { name: string; hue: number | undefined; known: boolean } {
   const s = STUB_SPACES.find((x) => x.id === id);
-  return s ? { name: s.name, hue: s.hue } : { name: id, hue: undefined };
+  if (s) return { name: s.name, hue: s.hue, known: true };
+  const titled = id ? id.charAt(0).toUpperCase() + id.slice(1) : "Unknown space";
+  return { name: `${titled} (not in this vault)`, hue: undefined, known: false };
 }
 
-/** "Work / calendar", as spoken and shown. */
+/** "Work / calendar", or "All of Work" for a grant on a whole space; as spoken and shown. */
 export function grantLabel(g: GrantView): string {
-  return `${spaceInfo(g.from).name} / ${g.path}`;
+  const space = spaceInfo(g.from).name;
+  return g.path ? `${space} / ${g.path}` : `All of ${space}`;
+}
+
+/**
+ * A long path shortened in the middle, keeping its first folder and its last
+ * part (the file or folder that tells it apart): "archive/…/amendment-3.pdf".
+ */
+export function shortPath(path: string, max = 32): string {
+  if (path.length <= max) return path;
+  const parts = path.split("/");
+  if (parts.length <= 2) return path;
+  return `${parts[0]}/…/${parts[parts.length - 1]}`;
 }
 
 /** "folder", "file" or "place" for a set of grants (a last segment with a dot is a file). */

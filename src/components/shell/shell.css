@@ -6,3 +6,15 @@
   -webkit-user-select: none;
   cursor: default;
 }
+
+/*
+ * The Windows / Linux Close button's hover: the platform's strong red with a
+ * light glyph, the same in both themes (the danger tokens soften in dark).
+ * A theme can set the --ph-window-close* tokens; these are the fallbacks.
+ * Pressed is darker, not lighter. The glyph is about 5:1 on both reds.
+ */
+[data-window-control] {
+  --window-close: var(--ph-window-close, oklch(0.55 0.2 27));
+  --window-close-pressed: var(--ph-window-close-pressed, oklch(0.49 0.19 27));
+  --window-close-ink: var(--ph-window-close-ink, oklch(0.99 0.004 80));
+}

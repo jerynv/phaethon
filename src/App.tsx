@@ -3,9 +3,10 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import { SpacePane } from "@/components/chat/space-pane";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
-import { TitleBar } from "@/components/shell/title-bar";
+import { TitleBar, useWindowFocused } from "@/components/shell/title-bar";
 import { useSidebar } from "@/components/shell/use-sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { openSettings } from "@/lib/open-settings";
 import { platform } from "@/lib/platform";
 import { STUB_SPACES } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
@@ -19,6 +20,8 @@ export default function App() {
   const [reloadKey, setReloadKey] = useState(0);
   const active = STUB_SPACES.find((s) => s.id === activeId) ?? STUB_SPACES[0];
   const sidebar = useSidebar();
+  const focused = useWindowFocused();
+  const hasSettings = inTauri();
 
   // The active space's hue tints the whole window, dialogs included (they
   // render in a portal outside the app root), so it is set on <html>.
@@ -26,12 +29,19 @@ export default function App() {
     document.documentElement.style.setProperty("--ph-space-h", String(active.hue));
   }, [active.hue]);
 
-  // Cmd+\ (Ctrl+\ elsewhere) shows and hides the sidebar.
+  // Cmd+\ (Ctrl+\ elsewhere) shows and hides the sidebar; Cmd+, (Ctrl+,) opens
+  // Settings, so Settings stays reachable with the sidebar hidden.
   const { open: sidebarOpen, toggle: toggleSidebar } = sidebar;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = platform() === "mac" ? e.metaKey : e.ctrlKey;
-      if (!mod || e.altKey || e.shiftKey || e.key !== "\\") return;
+      if (!mod || e.altKey || e.shiftKey) return;
+      if (e.key === "," && hasSettings) {
+        e.preventDefault();
+        openSettings();
+        return;
+      }
+      if (e.key !== "\\") return;
       e.preventDefault();
       // Hiding the sidebar while focus is in it would drop focus on the floor.
       if (sidebarOpen && document.getElementById(SIDEBAR_ID)?.contains(document.activeElement)) {
@@ -41,11 +51,15 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sidebarOpen, toggleSidebar]);
+  }, [sidebarOpen, toggleSidebar, hasSettings]);
 
   return (
     <TooltipProvider>
-      <div className="flex h-dvh flex-col overflow-hidden bg-surface text-ink">
+      {/* data-inactive: the window lost focus, so the chrome and the sidebar selection dim, as native windows do. */}
+      <div
+        data-inactive={focused ? undefined : ""}
+        className="group/app flex h-dvh flex-col overflow-hidden bg-surface text-ink"
+      >
         <a
           href="#main"
           className={cn(
@@ -57,9 +71,11 @@ export default function App() {
         </a>
         <TitleBar
           space={active}
+          inactive={!focused}
           sidebarOpen={sidebar.open}
           onToggleSidebar={sidebar.toggle}
           sidebarId={SIDEBAR_ID}
+          showSettings={hasSettings && !sidebar.open}
         />
         <div className="flex min-h-0 flex-1">
           <Sidebar
@@ -68,15 +84,19 @@ export default function App() {
             spaces={STUB_SPACES}
             activeId={activeId}
             onSelect={setActiveId}
-            footer={inTauri() ? <SettingsDialog onChanged={() => setReloadKey((k) => k + 1)} /> : null}
+            footer={hasSettings ? <SettingsDialog onChanged={() => setReloadKey((k) => k + 1)} /> : null}
           />
           <main
             id="main"
             tabIndex={-1}
             aria-labelledby="space-title"
             className={cn(
-              "me-(--ph-pane-inset) mb-(--ph-pane-inset) flex min-w-0 flex-1 flex-col overflow-hidden",
+              "relative me-(--ph-pane-inset) mb-(--ph-pane-inset) flex min-w-0 flex-1 flex-col overflow-hidden",
               "rounded-lg border border-line bg-bg shadow-sm",
+              // A short fade under the pane's top edge, so scrolled text eases out instead of being
+              // sliced. Not over a focused conversation log, whose ring must show whole.
+              "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-4 before:bg-linear-to-b before:from-bg before:to-transparent",
+              "forced-colors:before:hidden has-[[role=log]:focus-visible]:before:hidden",
               !sidebar.open && "ms-(--ph-pane-inset)",
             )}
           >

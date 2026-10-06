@@ -7,21 +7,77 @@
 
 /* ---- Settings window layout ---- */
 :root {
-  /* rem follows the text size setting, so the window grows with the text. */
-  --ph-settings-width: min(62rem, calc(100vw - 2rem));
-  --ph-settings-height: min(44rem, calc(100dvh - 2rem));
-  --ph-settings-nav-width: 13.5rem;
-  --ph-settings-content-width: 46rem;
-  --ph-settings-control-width: 18rem;
-  --ph-settings-label-min: 13rem;
-  --ph-swatch-size: 26px;
-  --ph-theme-preview-height: 4.5rem;
-  --ph-slider-track: 6px;
-  --ph-slider-thumb: 18px;
-  --ph-switch-width: 40px;
-  --ph-switch-height: 24px;
-  --ph-switch-thumb: 18px;
-  --ph-switch-travel: 16px;
+  /* Every length follows --ph-ui-scale (the text size dial), so at a larger
+     text size the window, its columns and its controls grow with the text and
+     nothing spills (WCAG 1.4.4). The window itself is capped by the viewport. */
+  --ph-settings-width: min(calc(806px * var(--ph-ui-scale)), calc(100vw - var(--ph-space) * 8));
+  --ph-settings-height: min(calc(572px * var(--ph-ui-scale)), calc(100dvh - var(--ph-space) * 8));
+  --ph-settings-nav-width: calc(176px * var(--ph-ui-scale));
+  --ph-settings-content-width: calc(598px * var(--ph-ui-scale));
+  --ph-settings-control-width: calc(234px * var(--ph-ui-scale));
+  /* Below this a label and its control stack; capped so a narrow window at
+     a large text size still fits one column. */
+  --ph-settings-label-min: min(calc(169px * var(--ph-ui-scale)), 100%);
+  /* The Close button sits in the window's top-right corner, outside the page
+     flow; pages start below it and banners stop short of it. */
+  --ph-settings-close-inset: calc(var(--ph-space) * 3);
+  --ph-settings-close-room: calc(var(--ph-settings-close-inset) + var(--ph-control-height-sm) + var(--ph-space) * 2);
+  --ph-swatch-size: calc(26px * var(--ph-ui-scale));
+  --ph-theme-preview-height: calc(58px * var(--ph-ui-scale));
+  --ph-slider-track: calc(6px * var(--ph-ui-scale));
+  --ph-slider-thumb: calc(18px * var(--ph-ui-scale));
+  --ph-switch-width: calc(40px * var(--ph-ui-scale));
+  --ph-switch-height: calc(24px * var(--ph-ui-scale));
+  --ph-switch-thumb: calc(18px * var(--ph-ui-scale));
+  --ph-switch-travel: calc(16px * var(--ph-ui-scale));
+}
+
+/* ---- Forced colours (Windows High Contrast and similar) ---- */
+/* Where the colour IS the content (swatches, theme previews, the hue track),
+   keep the author colours. Everything else gets a real system-colour boundary,
+   because backgrounds are dropped. Selected radios are also outlined by the
+   [aria-checked="true"] rule in index.css. */
+@media (forced-colors: active) {
+  [data-swatch],
+  [data-theme-preview],
+  [data-hue-track] {
+    forced-color-adjust: none;
+  }
+  [data-slider-track] {
+    border: 1px solid CanvasText;
+  }
+  [data-slider-range] {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  [data-slider-thumb] {
+    forced-color-adjust: none;
+    background: Canvas;
+    border-color: CanvasText;
+  }
+  [data-switch] {
+    border-color: CanvasText;
+  }
+  [data-switch-thumb] {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  [data-switch][data-state="checked"] {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  [data-switch][data-state="checked"] [data-switch-thumb] {
+    background: HighlightText;
+  }
+  /* The check mark on a chosen swatch or theme card stays; give the chosen
+     card a heavier border so the choice reads without colour. */
+  [data-theme-card][data-state="checked"] {
+    border: 3px solid Highlight;
+  }
+  [data-swatch-item][data-state="checked"] [data-swatch] {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
+  }
 }
 
 /* ---- Increase contrast ---- */

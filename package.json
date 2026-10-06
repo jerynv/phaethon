@@ -8,7 +8,8 @@
     "build": "node scripts/check-design.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check:design": "node scripts/check-design.mjs"
+    "check:design": "node scripts/check-design.mjs",
+    "test": "pnpm build && node scripts/ui-preview/shoot.mjs --engine chromium --sizes 1100x720 --themes light --out ui-shots"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.26",

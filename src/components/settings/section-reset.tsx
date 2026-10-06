@@ -88,20 +88,17 @@ export function SectionReset({
             <Icon name="retry" />
             Undo reset
           </Button>
-        ) : (
-          <Button
-            ref={buttonRef}
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={reset}
-            disabled={!changed}
-            aria-label={`Reset ${what} to defaults`}
-            title={changed ? undefined : `Everything on this page is at its default.`}
-          >
+        ) : changed ? (
+          <Button ref={buttonRef} type="button" variant="outline" size="sm" onClick={reset} aria-label={`Reset ${what} to defaults`}>
             <Icon name="retry" />
             Reset {what}
           </Button>
+        ) : (
+          // Not a disabled button: its reason would sit in a tooltip nobody can reach.
+          <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
+            <Icon name="check" className="size-(--ph-icon-size-sm) shrink-0" />
+            Everything here is at its default.
+          </p>
         )
       }
     />

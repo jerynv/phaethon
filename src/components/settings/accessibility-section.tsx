@@ -23,7 +23,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
       <SectionReset
         headingId={headingId}
         title="Accessibility"
-        description="Make Phaethon easier to see, read and use. Your system's accessibility settings are followed unless you turn something on here."
+        description="Make Phaethon easier to see, read and use. Your system’s accessibility settings are followed unless you turn something on here."
         what="accessibility"
         tokens={ACCESSIBILITY_TOKENS}
         resetAccess

@@ -1,6 +1,7 @@
 import { RadioGroup } from "radix-ui";
 import { useId, type CSSProperties } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -16,16 +17,20 @@ import {
   type ThemePref,
 } from "@/theme";
 
-import { DefaultOrReset, HUE_TRACK, HueSwatches, SettingGroup, SettingRow, TokenRow, TokenSlider } from "./controls";
+import { DefaultOrReset, HUE_TRACK, HueSwatches, SettingGroup, SettingRow, TokenRow, TokenSlider, radioArrowKeys } from "./controls";
 import { SectionReset } from "./section-reset";
+import { useSettingsNav } from "./status";
 
-/** Tokens this page owns; its Reset puts all of them (and the theme) back. */
+/**
+ * Tokens this page owns; its Reset puts all of them (and the theme) back.
+ * Text size is not here: it lives on the Accessibility page alone, so only
+ * that page's Reset changes it.
+ */
 export const APPEARANCE_TOKENS = [
   "--ph-accent-h",
   "--ph-accent-c",
   "--ph-neutral-h",
   "--ph-neutral-c",
-  "--ph-text-scale",
   "--ph-weight-normal",
   "--ph-density",
   "--ph-radius-scale",
@@ -66,7 +71,7 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-neutral-c" />
       </SettingGroup>
       <SettingGroup title="Text">
-        <TokenRow name="--ph-text-scale" quickPicks />
+        <TextSizeLink />
         <TokenRow name="--ph-weight-normal" />
       </SettingGroup>
       <SettingGroup title="Layout">
@@ -75,6 +80,29 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-sidebar-width" />
       </SettingGroup>
     </>
+  );
+}
+
+/** Text size is set in Accessibility; this row says so and goes there. */
+function TextSizeLink() {
+  const { go } = useSettingsNav();
+  const a = useAppearance();
+  const spec = TOKEN_BY_NAME.get("--ph-text-scale") as NumberToken;
+  const value = numericValue(spec, a.tokens["--ph-text-scale"]);
+  return (
+    <SettingRow label="Text size" description={`${spec.format(value)}. Set in Accessibility, with the other reading settings.`}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        // Wraps rather than spilling when the text is large and the column narrow.
+        className="h-auto min-h-(--ph-control-height-sm) max-w-full self-start py-1 text-left whitespace-normal"
+        onClick={() => go("accessibility", '[data-token="--ph-text-scale"] [role="slider"]')}
+      >
+        Change in Accessibility
+        <Icon name="chevron-right" />
+      </Button>
+    </SettingRow>
   );
 }
 
@@ -133,6 +161,7 @@ function ThemeRow() {
         aria-describedby={statusId}
         value={a.theme}
         onValueChange={(v) => setAppearance((p) => ({ ...p, theme: v as ThemePref }))}
+        onKeyDownCapture={radioArrowKeys((v) => setAppearance((p) => ({ ...p, theme: v as ThemePref })))}
         orientation="horizontal"
         loop
         className="grid grid-cols-3 gap-3"
@@ -141,12 +170,13 @@ function ThemeRow() {
           <RadioGroup.Item
             key={t.value}
             value={t.value}
+            data-theme-card=""
             className={cn(
               "group flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-raised p-1.5 pb-2 text-left transition-colors duration-(--ph-duration-fast) hover:border-ink-tertiary",
               "data-[state=checked]:border-accent-fill data-[state=checked]:shadow-[0_0_0_var(--ph-border-width)_var(--ph-accent)]",
             )}
           >
-            <span className="flex h-(--ph-theme-preview-height) overflow-hidden rounded-md border border-line" aria-hidden="true">
+            <span data-theme-preview="" className="flex h-(--ph-theme-preview-height) overflow-hidden rounded-md border border-line" aria-hidden="true">
               {t.value === "system" ? (
                 <>
                   <MiniWindow theme="light" />
@@ -156,10 +186,10 @@ function ThemeRow() {
                 <MiniWindow theme={t.value} />
               )}
             </span>
-            <span className="flex items-center gap-1.5 px-1 text-sm text-ink-secondary group-data-[state=checked]:font-semibold group-data-[state=checked]:text-ink">
-              <Icon name={t.icon} className="size-(--ph-icon-size-sm)" />
-              <span className="min-w-0 flex-1 truncate">{t.label}</span>
-              <RadioGroup.Indicator className="text-accent-ink">
+            <span className="flex items-start gap-1.5 px-1 text-sm text-ink-secondary group-data-[state=checked]:font-semibold group-data-[state=checked]:text-ink">
+              <Icon name={t.icon} className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+              <span className="min-w-0 flex-1 wrap-break-word">{t.label}</span>
+              <RadioGroup.Indicator className="mt-0.5 shrink-0 text-accent-ink">
                 <Icon name="check" className="size-(--ph-icon-size-sm)" />
               </RadioGroup.Indicator>
             </span>
@@ -215,7 +245,7 @@ function HueRow({
           />
         </div>
         <span className="flex items-center gap-2" aria-hidden="true">
-          <span className="size-(--ph-icon-size) rounded-full border border-line-strong" style={{ background: swatch(value) }} />
+          <span data-swatch="" className="size-(--ph-icon-size) rounded-full border border-line-strong" style={{ background: swatch(value) }} />
           <span className="w-[4ch] text-right text-sm text-ink tabular-nums">{Math.round(value)}°</span>
         </span>
         <DefaultOrReset

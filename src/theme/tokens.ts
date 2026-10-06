@@ -254,7 +254,7 @@ export const TOKENS: readonly TokenSpec[] = [
     min: 2,
     max: 4,
     step: 1,
-    default: 2,
+    default: 3,
     format: (v) => `${v} pixels`,
   },
   {

@@ -1,16 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import type { Settings } from "@/lib/backend";
 
-import { SectionHeader, SettingGroup, SettingRow } from "./controls";
+import { PathText, SectionHeader, SettingGroup, SettingRow } from "./controls";
 import { useStatus } from "./status";
+
+/** How long "Copied" shows before the button reads "Copy path" again. */
+const COPIED_MS = 2000;
 
 export function AboutSection({ headingId, settings }: { headingId: string; settings: Settings | null }) {
   const [isCopied, setCopied] = useState(false);
   const { say, fail } = useStatus();
   const vault = settings?.vaultPath;
+
+  useEffect(() => {
+    if (!isCopied) return;
+    const t = setTimeout(() => setCopied(false), COPIED_MS);
+    return () => clearTimeout(t);
+  }, [isCopied]);
+
   return (
     <>
       <SectionHeader
@@ -27,10 +37,10 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
         </SettingRow>
       </SettingGroup>
       <SettingGroup title="Your vault" description="Your spaces, notes, conversations and these settings are files in this folder.">
-        <SettingRow stacked label="Vault folder" description="Settings are saved in .phaethon/settings.json inside it. API keys are not: they stay in this computer's keychain.">
+        <SettingRow stacked label="Vault folder" description="Settings are saved in .phaethon/settings.json inside it. API keys are not: they stay in this computer’s keychain.">
           <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 rounded-md bg-surface-sunken px-2.5 py-1.5 font-mono text-sm break-all text-ink">
-              {vault ?? "Not available in this preview"}
+            <code className="min-w-0 flex-1 rounded-md bg-surface-sunken px-2.5 py-1.5 font-mono text-sm wrap-anywhere text-ink">
+              {vault ? <PathText path={vault} /> : "Not available in this preview"}
             </code>
             {vault && (
               <Button
@@ -40,7 +50,9 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
                 onClick={() =>
                   navigator.clipboard.writeText(vault).then(
                     () => {
-                      setCopied(true);
+                      // Restart the timer when copied twice in a row.
+                      setCopied(false);
+                      requestAnimationFrame(() => setCopied(true));
                       say("Vault folder path copied.");
                     },
                     () => fail("Could not copy the path. Select it and copy it instead."),

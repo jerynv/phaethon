@@ -5,10 +5,11 @@
  *
  * Slider, RadioGroup and Switch are Radix primitives (MIT, WorkOS); their
  * keyboard models are Radix's: arrows, Page Up/Down, Home/End on sliders;
- * arrows within a radio group; Space on a switch.
+ * arrows within a radio group (made to choose as they move, see
+ * radioArrowKeys); Space on a switch.
  */
 import { RadioGroup, Slider, Switch } from "radix-ui";
-import { useId, type ReactNode } from "react";
+import { Fragment, useId, type KeyboardEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
@@ -40,7 +41,8 @@ export function SectionHeader({
   return (
     <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <h3 id={id} className="text-xl font-semibold text-ink">
+        {/* Focusable from script only: moving to a section from another page lands here. */}
+        <h3 id={id} tabIndex={-1} className="self-start rounded-xs text-xl font-semibold text-ink">
           {title}
         </h3>
         <p className="max-w-(--ph-measure) text-base text-ink-secondary">{description}</p>
@@ -89,6 +91,7 @@ export function SettingRow({
   descriptionId,
   children,
   stacked,
+  token,
 }: {
   label: ReactNode;
   labelId?: string;
@@ -98,10 +101,12 @@ export function SettingRow({
   children: ReactNode;
   /** Put the control below the label at full width (swatches, theme cards). */
   stacked?: boolean;
+  /** The token this row sets, so another page can find and focus it. */
+  token?: string;
 }) {
   const LabelTag = htmlFor ? "label" : "span";
   return (
-    <div data-setting-row="" className={cn("flex gap-x-6 gap-y-3 px-4 py-3.5", stacked ? "flex-col" : "flex-wrap items-start")}>
+    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-3 px-4 py-3.5", stacked ? "flex-col" : "flex-wrap items-start")}>
       <div className="flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5">
         <LabelTag id={labelId} htmlFor={htmlFor} className="text-base font-medium text-ink">
           {label}
@@ -194,15 +199,18 @@ export function TokenSlider({
       className="relative flex h-(--ph-target-min) w-full touch-none items-center select-none"
     >
       <Slider.Track
+        data-slider-track=""
+        data-hue-track={trackStyle ? "" : undefined}
         className={cn(
           "relative h-(--ph-slider-track) grow overflow-hidden rounded-full",
           trackStyle ? "" : "bg-line-strong",
         )}
         style={trackStyle}
       >
-        {!trackStyle && <Slider.Range className="absolute h-full rounded-full bg-accent-fill" />}
+        {!trackStyle && <Slider.Range data-slider-range="" className="absolute h-full rounded-full bg-accent-fill" />}
       </Slider.Track>
       <Slider.Thumb
+        data-slider-thumb=""
         aria-label={labelId ? undefined : label}
         aria-labelledby={labelId}
         aria-describedby={descriptionId}
@@ -223,7 +231,7 @@ export function TokenRow({ name, quickPicks, children }: { name: string; quickPi
   const labelId = useId();
   const descId = useId();
   return (
-    <SettingRow label={spec.label} labelId={labelId} description={spec.description} descriptionId={descId}>
+    <SettingRow token={name} label={spec.label} labelId={labelId} description={spec.description} descriptionId={descId}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-ink tabular-nums" aria-hidden="true">
           {spec.format(value)}
@@ -288,6 +296,39 @@ function QuickPicks({
   );
 }
 
+// ---- Radio groups ----
+
+const ARROW_STEP: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+
+/**
+ * The ARIA radio pattern for a Radix RadioGroup: an arrow key moves focus to
+ * the next or previous radio AND checks it, in the same key press, wrapping at
+ * the ends (Left/Right flip in right-to-left text). Tab still enters and
+ * leaves the group in one stop (Radix keeps a roving tabindex on the checked
+ * radio). Pass the result as `onKeyDownCapture` on RadioGroup.Root.
+ *
+ * Why not Radix alone: it moves focus on a timer and checks the radio only if
+ * the arrow key is still held when that timer fires, so a quick tap (or a
+ * switch device, or a scripted key press) can move focus without choosing.
+ * This handler stops the key before Radix sees it, so `onPick` runs once.
+ */
+export function radioArrowKeys(onPick: (value: string) => void) {
+  return (e: KeyboardEvent<HTMLElement>) => {
+    let step = ARROW_STEP[e.key];
+    if (!step || e.altKey || e.ctrlKey || e.metaKey) return;
+    const group = e.currentTarget;
+    const items = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]:not([disabled])')];
+    const from = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (from < 0) return;
+    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && getComputedStyle(group).direction === "rtl") step = -step;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = items[(from + step + items.length) % items.length];
+    next.focus();
+    if (next.getAttribute("aria-checked") !== "true") onPick(next.value);
+  };
+}
+
 // ---- Hue picking ----
 
 const HUE_STOPS = Array.from({ length: 13 }, (_, i) => `oklch(0.66 0.11 ${i * 30})`).join(", ");
@@ -319,6 +360,7 @@ export function HueSwatches({
       aria-label={label}
       value={match ? String(match.value) : ""}
       onValueChange={(v) => onPick(Number(v))}
+      onKeyDownCapture={radioArrowKeys((v) => onPick(Number(v)))}
       orientation="horizontal"
       loop
       className="flex flex-wrap gap-x-1 gap-y-2"
@@ -327,9 +369,11 @@ export function HueSwatches({
         <RadioGroup.Item
           key={p.label}
           value={String(p.value)}
+          data-swatch-item=""
           className="group flex min-w-(--ph-target-min) flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs text-ink-secondary hover:bg-hover hover:text-ink data-[state=checked]:font-semibold data-[state=checked]:text-ink"
         >
           <span
+            data-swatch=""
             className="grid size-(--ph-swatch-size) place-items-center rounded-full shadow-sm ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
             style={{ background: swatchColour(p.value), color: checkColour(p.value) }}
           >
@@ -381,6 +425,7 @@ export function SwitchRow({
         </p>
       </div>
       <Switch.Root
+        data-switch=""
         id={id}
         checked={checked}
         onCheckedChange={onChange}
@@ -390,8 +435,29 @@ export function SwitchRow({
           "bg-ink-tertiary data-[state=checked]:bg-accent-fill",
         )}
       >
-        <Switch.Thumb className="block size-(--ph-switch-thumb) rounded-full bg-raised shadow-sm transition-transform duration-(--ph-duration-fast) data-[state=checked]:translate-x-(--ph-switch-travel)" />
+        <Switch.Thumb data-switch-thumb="" className="block size-(--ph-switch-thumb) rounded-full bg-raised shadow-sm transition-transform duration-(--ph-duration-fast) data-[state=checked]:translate-x-(--ph-switch-travel)" />
       </Switch.Root>
     </div>
+  );
+}
+
+// ---- Text ----
+
+/** A file path that prefers to wrap after a slash rather than mid-name (pair with `wrap-anywhere`). */
+export function PathText({ path }: { path: string }) {
+  const parts = path.split("/");
+  return (
+    <>
+      {parts.map((p, i) => (
+        <Fragment key={i}>
+          {p}
+          {i < parts.length - 1 && (
+            <>
+              /<wbr />
+            </>
+          )}
+        </Fragment>
+      ))}
+    </>
   );
 }

@@ -6,7 +6,7 @@ import {
   useAuiState,
   type TextMessagePartComponent,
 } from "@assistant-ui/react";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useContext, useEffect, useRef, useState, type DragEvent } from "react";
 
 // Built from the assistant-ui registry thread (MIT), cut down to what steward's
 // backend can honour and restyled with steward tokens. Hidden on purpose: edit,
@@ -16,8 +16,11 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import type { AgentMessageCustom } from "@/runtime/agent-adapter";
+import { SpaceMark } from "@/components/shell/space-mark";
+import { STUB_SPACES } from "@/lib/spaces";
+import { ACCESS_RECEIPT_PART, type AccessReceipt, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
+import { AccessReceiptLine, AccessRequestCard, receiptText } from "./access-request-card";
 import { ApprovalCard, SpaceIdContext, focusComposer } from "./approval-card";
 import { MessageAttachments } from "./attachments";
 import { Composer, useAddFiles } from "./composer";
@@ -25,6 +28,23 @@ import { MessageError } from "./message-error";
 
 const PlainText: TextMessagePartComponent = ({ text }) => <>{text}</>;
 const Nothing = () => null;
+const ASSISTANT_PARTS = {
+  Text: MarkdownText,
+  data: { by_name: { [ACCESS_RECEIPT_PART]: AccessReceiptLine } },
+};
+
+/** The card that speaks for itself while a run waits on the user, if any. */
+const waitingCard = (custom: AgentMessageCustom | undefined) => custom?.approval ?? custom?.accessRequest;
+
+/**
+ * "Reading work/calendar/oct.md": activity in another space names it first.
+ * Returns that space when it is one the user has and not this one.
+ */
+function otherSpaceIn(label: string, current: string) {
+  const m = /^(?:Reading|Listing|Searching) ([^/\s]+)(?:\/|\s|$)/.exec(label);
+  if (!m || m[1] === current) return undefined;
+  return STUB_SPACES.find((s) => s.id === m[1]);
+}
 
 function UserMessage() {
   const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
@@ -51,24 +71,31 @@ function ActivityLine() {
   const toolStatus = useAuiState((s) => {
     if (s.message.status?.type !== "running") return undefined;
     const custom = s.message.metadata.custom as AgentMessageCustom | undefined;
-    if (custom?.approval) return undefined; // the approval card says it
+    if (waitingCard(custom)) return undefined; // the approval or access card says it
     return custom?.toolStatus;
   });
+  const spaceId = useContext(SpaceIdContext);
   const thinking = useAuiState(
     (s) =>
       s.message.status?.type === "running" &&
-      !(s.message.metadata.custom as AgentMessageCustom | undefined)?.approval &&
+      !waitingCard(s.message.metadata.custom as AgentMessageCustom | undefined) &&
       !s.message.content.some((p) => p.type === "text" && p.text !== ""),
   );
   const line = toolStatus ? { text: toolStatus, tool: true } : thinking ? { text: "Thinking", tool: false } : null;
   if (!line) return null;
+  const other = line.tool ? otherSpaceIn(line.text, spaceId) : undefined;
   return (
-    <p className="flex items-center gap-2 text-sm text-ink-secondary" data-activity>
+    <p className="flex min-w-0 max-w-full items-center gap-2 text-sm text-ink-secondary" data-activity>
       <span aria-hidden="true" className="relative flex size-2 shrink-0">
         <span className="absolute inset-0 animate-ping rounded-full bg-accent-fill opacity-40" />
         <span className="relative size-2 rounded-full bg-accent-fill" />
       </span>
       {line.tool && <span className="sr-only">Status: </span>}
+      {other && (
+        <span data-activity-space={other.id} className="contents" title={`In ${other.name}`}>
+          <SpaceMark hue={other.hue} />
+        </span>
+      )}
       <span className="truncate">
         {line.text}
         {line.tool ? "" : "…"}
@@ -107,10 +134,11 @@ function AssistantMessage() {
     <MessagePrimitive.Root data-role="assistant" className="group/msg flex flex-col items-start gap-3">
       <span className="sr-only">steward said: </span>
       <div className="w-full min-w-0 empty:hidden">
-        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Parts components={ASSISTANT_PARTS} />
       </div>
       <ActivityLine />
       <ApprovalCard />
+      <AccessRequestCard />
       <MessageError />
       <AuiIf condition={(s) => s.message.status?.type === "incomplete" && s.message.status.reason === "cancelled"}>
         <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
@@ -149,6 +177,8 @@ function ReplyAnnouncer() {
   // you to allow: ..." just before the approval itself, and that must not be
   // spoken on top of the card (which takes focus and speaks for itself).
   const pendingTool = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Access answers already spoken, so each receipt is said once.
+  const saidReceipts = useRef(new Set<string>());
   const holdTool = () => {
     clearTimeout(pendingTool.current);
     pendingTool.current = undefined;
@@ -162,10 +192,21 @@ function ReplyAnnouncer() {
     if (status?.type === "running") {
       streamed.current = last.id;
       const custom = last.metadata.custom as AgentMessageCustom | undefined;
-      const approval = custom?.approval;
-      // An approval card takes focus and is read as an alertdialog; announcing
-      // it here as well would say it twice.
-      if (approval) holdTool();
+      // A newly answered access request: confirm the choice once ("Allowed
+      // once: Work / calendar"), since focus has just moved to the composer.
+      const receipts = last.content.filter(
+        (p): p is typeof p & { type: "data"; data: AccessReceipt } =>
+          p.type === "data" && p.name === ACCESS_RECEIPT_PART,
+      );
+      const fresh = receipts.filter((p) => !saidReceipts.current.has(p.data.id));
+      fresh.forEach((p) => saidReceipts.current.add(p.data.id));
+      if (fresh.length) {
+        holdTool();
+        setText(`${receiptText(fresh[fresh.length - 1].data)}.`);
+      }
+      // An approval or access card takes focus and is read as an alertdialog;
+      // announcing it here as well would say it twice.
+      if (waitingCard(custom)) holdTool();
       else if (custom?.toolStatus && custom.toolStatus !== lastTool.current) {
         const say = custom.toolStatus;
         holdTool();

@@ -1,4 +1,9 @@
-import type { ChatModelAdapter, ChatModelRunResult, ThreadMessage } from "@assistant-ui/react";
+import type {
+  ChatModelAdapter,
+  ChatModelRunResult,
+  ThreadAssistantMessagePart,
+  ThreadMessage,
+} from "@assistant-ui/react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import { inTauri } from "@/lib/tauri";
@@ -9,6 +14,8 @@ type AgentEvent =
   | { kind: "tool"; label: string }
   | { kind: "approval"; id: string; summary: string; detail: string }
   | { kind: "approvalDone"; id: string; allowed: boolean }
+  | { kind: "accessRequest"; id: string; space: string; path: string; reason: string }
+  | { kind: "accessRequestDone"; id: string; answer: AccessAnswer }
   | { kind: "error"; code: string; message: string }
   | { kind: "cancelled" }
   | { kind: "end"; sessionId: string | null };
@@ -19,11 +26,26 @@ export type AgentMessageCustom = {
   toolStatus?: string;
   /** A write waiting for the user's answer (steward's own agent only). */
   approval?: PendingApproval;
+  /** A read of another space waiting for the user's answer (steward's own agent only). */
+  accessRequest?: PendingAccessRequest;
   /** The backend's error code when the reply failed (`ErrorCode` in agent.rs, or "ipc"). */
   errorCode?: string;
 };
 
 export type PendingApproval = { id: string; summary: string; detail: string };
+
+/** How the user answers an access request (`AccessAnswer` in agent.rs). A cancelled request counts as "deny". */
+export type AccessAnswer = "once" | "always" | "deny";
+
+/** The agent asks to read `path` (relative, "" for the whole space) in the other space `space`. */
+export type PendingAccessRequest = { id: string; space: string; path: string; reason: string };
+
+/**
+ * What was answered, kept in the reply as a data part where it happened, so the
+ * conversation records what was granted ("Allowed once: Work / calendar").
+ */
+export type AccessReceipt = { id: string; space: string; path: string; answer: AccessAnswer };
+export const ACCESS_RECEIPT_PART = "access-receipt";
 
 /** One attachment as `agent_send` takes it (`Upload` in src-tauri/src/attachments.rs). */
 export type AttachmentUpload = { name: string; mediaType: string; data: string };
@@ -45,6 +67,11 @@ export function uploadsOf(message: ThreadMessage | undefined): AttachmentUpload[
 /** Answer a pending write in `spaceId`. Resolves false if it is no longer waiting. */
 export async function answerApproval(spaceId: string, id: string, allow: boolean): Promise<boolean> {
   return invoke<boolean>("agent_approve", { space: spaceId, id, allow });
+}
+
+/** Answer a pending access request in `spaceId`. Resolves false if it is no longer waiting. */
+export async function answerAccess(spaceId: string, id: string, answer: AccessAnswer): Promise<boolean> {
+  return invoke<boolean>("agent_access_answer", { space: spaceId, id, answer });
 }
 
 /** Stop the reply running in `spaceId`, if any. Safe to call when nothing runs or outside Tauri. */
@@ -101,23 +128,36 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
         queue.push({ kind: "end", sessionId: null });
       });
 
-      let text = "";
+      // Text, split wherever an access request was answered so its receipt sits
+      // at that point in the reply.
+      let parts: ThreadAssistantMessagePart[] = [];
       let toolStatus: string | undefined;
       let approval: PendingApproval | undefined;
+      let accessRequest: PendingAccessRequest | undefined;
       let errorCode: string | undefined;
       const update = (): ChatModelRunResult => ({
-        content: text ? [{ type: "text", text }] : [],
-        metadata: { custom: { toolStatus, approval, errorCode } satisfies AgentMessageCustom },
+        content: parts,
+        metadata: { custom: { toolStatus, approval, accessRequest, errorCode } satisfies AgentMessageCustom },
       });
+      const settle = () => {
+        toolStatus = undefined;
+        approval = undefined;
+        accessRequest = undefined;
+      };
 
       try {
         for (;;) {
           const e = await queue.next();
           switch (e.kind) {
-            case "text":
-              text += e.delta;
+            case "text": {
+              const last = parts[parts.length - 1];
+              parts =
+                last?.type === "text"
+                  ? [...parts.slice(0, -1), { type: "text", text: last.text + e.delta }]
+                  : [...parts, { type: "text", text: e.delta }];
               yield update();
               break;
+            }
             case "tool":
               toolStatus = e.label;
               yield update();
@@ -130,9 +170,23 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
               if (approval?.id === e.id) approval = undefined;
               yield update();
               break;
+            case "accessRequest":
+              accessRequest = { id: e.id, space: e.space, path: e.path, reason: e.reason };
+              yield update();
+              break;
+            case "accessRequestDone": {
+              const asked = accessRequest?.id === e.id ? accessRequest : undefined;
+              if (!asked) break;
+              accessRequest = undefined;
+              // "Waiting for you to answer: ..." is over; the receipt says what happened.
+              if (toolStatus?.startsWith("Waiting for you")) toolStatus = undefined;
+              const receipt: AccessReceipt = { id: e.id, space: asked.space, path: asked.path, answer: e.answer };
+              parts = [...parts, { type: "data", id: e.id, name: ACCESS_RECEIPT_PART, data: receipt }];
+              yield update();
+              break;
+            }
             case "error":
-              toolStatus = undefined;
-              approval = undefined;
+              settle();
               errorCode = e.code;
               yield {
                 ...update(),
@@ -140,8 +194,7 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
               };
               break;
             case "cancelled":
-              toolStatus = undefined;
-              approval = undefined;
+              settle();
               yield { ...update(), status: { type: "incomplete", reason: "cancelled" } };
               break;
             case "end":

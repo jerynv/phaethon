@@ -201,6 +201,14 @@ export async function clickText(page, scope, text) {
   await h.click();
 }
 
+/** Show the sidebar if a narrow window started it hidden (A-010), as a person would. */
+export async function showSidebar(page) {
+  if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+    await page.click('button[aria-controls="spaces-sidebar"]');
+    await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
+  }
+}
+
 export async function openSettings(page, h, tab) {
   await h.click('#spaces-sidebar:not([hidden]) [data-testid="open-settings"], header [data-testid="titlebar-settings"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });

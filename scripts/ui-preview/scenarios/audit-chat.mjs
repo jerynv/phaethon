@@ -17,6 +17,7 @@ import {
   dragFileOver,
   park,
   pick,
+  showSidebar,
 } from "../audit-fixtures.mjs";
 
 const WIDE = [[1100, 720]];
@@ -87,6 +88,10 @@ const errorScenarios = Object.entries(ERRORS).map(([code, message]) => ({
     const want = ACTIONS[code] ?? [];
     check(banner.actions.join() === want.join(), `actions are [${want.join(", ")}]`, banner.actions.join());
     if (want.includes("settings")) {
+      // The banner itself, before Open Settings covers it with the dialog.
+      await park(page);
+      await h.idle();
+      await h.shot("banner");
       await page.evaluate(() => {
         window.__opened = [];
         window.addEventListener("phaethon:open-settings", (e) => window.__opened.push(e.detail));
@@ -126,6 +131,7 @@ export default [
       await h.idle();
       await park(page);
       await h.shot("school");
+      await showSidebar(page);
       await h.click("#spaces-sidebar li:nth-child(2) button");
       await h.idle();
       await park(page);
@@ -665,6 +671,7 @@ export default [
     sizes: WIDE,
     mock: { settings: SETTINGS, threads: { work: WORK_THREAD } },
     async run(page, h) {
+      await showSidebar(page);
       await h.click("#spaces-sidebar li:nth-child(2) button");
       await h.idle();
       await page.focus(COMPOSER);

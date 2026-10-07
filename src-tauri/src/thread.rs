@@ -9,17 +9,123 @@
 //! A space can have many conversations. `thread.json` is always the current
 //! one; the others are kept whole in `<space>/.phaethon/threads/<id>.json`
 //! (see [`start_new`] and [`open`]).
+//!
+//! The thread also holds the conversation's record: what the user allowed or
+//! refused, what was read in other spaces, and replies the user stopped. Each
+//! is a `{"type": "phaethon_record", "kind": ...}` block appended to the
+//! assistant message whose turn produced it, so receipts survive a reload.
+//! Record blocks are Phaethon's own and are removed from every request
+//! ([`for_provider`]); the model never sees them.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::agent::Runs;
 use crate::attachments::is_attachment_ref;
+use crate::grants::{self, AccessAnswer};
 use crate::tools::STATE_DIR;
+
+// ---- The conversation record ----------------------------------------------
+
+pub const RECORD_TYPE: &str = "phaethon_record";
+
+/// Whether a write made a new file or replaced one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WriteAction {
+    Create,
+    Replace,
+}
+
+/// The read tool behind a [`Record::Read`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadTool {
+    Read,
+    List,
+    Search,
+}
+
+/// One entry in the conversation record, as saved and as sent to the UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Record {
+    /// The user's answer to a write.
+    Approval { path: String, action: WriteAction, allowed: bool },
+    /// The user's answer to a request to read part of another space.
+    Access { space: String, path: String, answer: AccessAnswer },
+    /// The agent read, listed or searched in another space.
+    Read {
+        space: String,
+        path: String,
+        tool: ReadTool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        query: Option<String>,
+    },
+    /// The user stopped the reply.
+    Stopped,
+}
+
+impl Record {
+    /// The block saved in the thread.
+    pub fn to_block(&self) -> Value {
+        let mut v = serde_json::to_value(self).expect("records serialize");
+        v["type"] = RECORD_TYPE.into();
+        v
+    }
+
+    /// A saved block back as a record. `None` for anything else, including a
+    /// record block someone edited into a shape this version doesn't know.
+    pub fn from_block(b: &Value) -> Option<Record> {
+        if !is_record(b) {
+            return None;
+        }
+        let mut v = b.clone();
+        v.as_object_mut()?.remove("type");
+        serde_json::from_value(v).ok()
+    }
+}
+
+pub fn is_record(b: &Value) -> bool {
+    b["type"] == RECORD_TYPE
+}
+
+/// Every record in the thread, in order.
+pub fn records(msgs: &[Value]) -> impl Iterator<Item = Record> + '_ {
+    msgs.iter()
+        .filter_map(|m| m["content"].as_array())
+        .flatten()
+        .filter_map(Record::from_block)
+}
+
+/// Whether the user refused access to `path` in `space` (or a folder holding
+/// it) earlier in this conversation. Read from the saved record, so it holds
+/// across restarts until a new conversation starts.
+pub fn denied(msgs: &[Value], space: &str, path: &str) -> bool {
+    records(msgs).any(|r| {
+        matches!(r, Record::Access { space: s, path: p, answer: AccessAnswer::Deny }
+            if s == space && grants::covers(&p, Path::new(path)))
+    })
+}
+
+/// The thread as the provider gets it: record blocks removed, and a message
+/// left with nothing in it (a reply stopped before any text) dropped.
+pub fn for_provider(msgs: &[Value]) -> Vec<Value> {
+    msgs.iter()
+        .filter_map(|m| {
+            let blocks = m["content"].as_array()?;
+            if !blocks.iter().any(is_record) {
+                return Some(m.clone());
+            }
+            let kept: Vec<Value> = blocks.iter().filter(|b| !is_record(b)).cloned().collect();
+            (!kept.is_empty()).then(|| json!({"role": m["role"], "content": kept}))
+        })
+        .collect()
+}
 
 fn file(space: &Path) -> PathBuf {
     space.join(STATE_DIR).join("thread.json")
@@ -76,6 +182,11 @@ pub struct UiMessage {
     pub text: String,
     /// Files the user attached, as saved in the space.
     pub attachments: Vec<UiAttachment>,
+    /// Where this message's first entry is in thread.json (for edit and
+    /// regenerate: see [`cut_at`]).
+    pub index: usize,
+    /// The record for this reply, in order (empty for user messages).
+    pub records: Vec<Record>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -87,11 +198,17 @@ pub struct UiAttachment {
 }
 
 /// The thread as the UI shows it: user text, and each assistant reply as one
-/// message even when it spans several model turns around tool calls. Tool
-/// results and thinking are not shown.
+/// message even when it spans several model turns around tool calls, with its
+/// record. Tool results and thinking are not shown.
 pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
     let mut out: Vec<UiMessage> = vec![];
-    for m in msgs {
+    // Where the reply being built began: its first assistant entry, even one
+    // with nothing to show (a tool call alone).
+    let mut reply_start: Option<usize> = None;
+    for (index, m) in msgs.iter().enumerate() {
+        if m["role"] == "assistant" && reply_start.is_none() {
+            reply_start = Some(index);
+        }
         let texts: Vec<&str> = m["content"]
             .as_array()
             .into_iter()
@@ -111,23 +228,39 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
                 media_type: b["media_type"].as_str().unwrap_or("").into(),
             })
             .collect();
+        let records: Vec<Record> = m["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Record::from_block)
+            .collect();
         match m["role"].as_str() {
-            Some("user") if !texts.is_empty() || !files.is_empty() => out.push(UiMessage {
-                role: "user",
-                text: texts.join("\n\n"),
-                attachments: files,
-            }),
-            Some("assistant") if !texts.is_empty() => {
+            Some("user") if !texts.is_empty() || !files.is_empty() => {
+                reply_start = None;
+                out.push(UiMessage {
+                    role: "user",
+                    text: texts.join("\n\n"),
+                    attachments: files,
+                    index,
+                    records: vec![],
+                })
+            }
+            Some("assistant") if !texts.is_empty() || !records.is_empty() => {
                 let joined = texts.join("\n\n");
                 match out.last_mut() {
                     Some(last) if last.role == "assistant" => {
-                        last.text.push_str("\n\n");
+                        if !last.text.is_empty() && !joined.is_empty() {
+                            last.text.push_str("\n\n");
+                        }
                         last.text.push_str(&joined);
+                        last.records.extend(records);
                     }
                     _ => out.push(UiMessage {
                         role: "assistant",
                         text: joined,
                         attachments: vec![],
+                        index: reply_start.unwrap_or(index),
+                        records,
                     }),
                 }
             }
@@ -296,14 +429,54 @@ fn archive_current(space: &Path) -> io::Result<Option<String>> {
             _ => Ok(None),
         };
     }
-    fs::create_dir_all(archive_dir(space))?;
-    let base = now_ms();
-    let id = (0..1000)
-        .map(|n| if n == 0 { base.to_string() } else { format!("{base}-{n}") })
-        .find(|id| fs::symlink_metadata(archived(space, id)).is_err())
-        .ok_or_else(|| io::Error::other("no free name in the conversation archive"))?;
+    let id = free_id(space)?;
     fs::rename(&cur, archived(space, &id))?;
     Ok(Some(id))
+}
+
+/// A new archive id with no file under it yet (the archive folder is created).
+fn free_id(space: &Path) -> io::Result<String> {
+    fs::create_dir_all(archive_dir(space))?;
+    let base = now_ms();
+    (0..1000)
+        .map(|n| if n == 0 { base.to_string() } else { format!("{base}-{n}") })
+        .find(|id| fs::symlink_metadata(archived(space, id)).is_err())
+        .ok_or_else(|| io::Error::other("no free name in the conversation archive"))
+}
+
+/// Whether `index` is where a message the user wrote starts: a user message
+/// with content, not one carrying tool results.
+pub fn is_user_boundary(msgs: &[Value], index: usize) -> bool {
+    msgs.get(index).is_some_and(|m| {
+        m["role"] == "user"
+            && m["content"].as_array().is_some_and(|c| {
+                !c.is_empty() && !c.iter().any(|b| b["type"] == "tool_result")
+            })
+    })
+}
+
+/// Said when an edit points at a message that isn't (or is no longer) there.
+pub const STALE_EDIT: &str =
+    "That message can’t be changed: the conversation has changed since it was shown. Reload the conversation and try again.";
+
+/// Edit or regenerate: drop the user message at `index` and everything after
+/// it, so a new message can take its place. The conversation as it was is
+/// first saved whole into the archive (a copy, under a new id), so nothing
+/// is lost. The caller saves the shortened thread.
+pub fn cut_at(space: &Path, msgs: &mut Vec<Value>, index: usize) -> Result<(), String> {
+    if !is_user_boundary(msgs, index) {
+        return Err(STALE_EDIT.into());
+    }
+    let keep = || -> io::Result<()> {
+        let id = free_id(space)?;
+        let path = archived(space, &id);
+        let tmp = path.with_extension("json.tmp");
+        fs::write(&tmp, serde_json::to_vec_pretty(&*msgs)?)?;
+        fs::rename(&tmp, &path)
+    };
+    keep().map_err(|e| format!("The earlier version of this conversation couldn’t be kept, so nothing was changed: {e}"))?;
+    msgs.truncate(index);
+    Ok(())
 }
 
 /// Start a new, empty conversation, keeping the current one in the archive.
@@ -542,12 +715,115 @@ mod tests {
         assert_eq!(
             to_ui(&msgs),
             vec![
-                UiMessage { role: "user", text: "what's in notes?".into(), attachments: vec![] },
-                UiMessage { role: "assistant", text: "Let me look.\n\nThere is a.md.".into(), attachments: vec![] },
+                UiMessage { role: "user", text: "what's in notes?".into(), attachments: vec![], index: 0, records: vec![] },
+                UiMessage { role: "assistant", text: "Let me look.\n\nThere is a.md.".into(), attachments: vec![], index: 1, records: vec![] },
             ]
         );
         fs::write(file(&dir), "{\"not\": \"a list\"}").unwrap();
         assert!(load(&dir).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn approval(allowed: bool) -> Record {
+        Record::Approval { path: "plan.md".into(), action: WriteAction::Create, allowed }
+    }
+
+    #[test]
+    fn records_have_the_contract_shape() {
+        let cases = [
+            (approval(true), json!({"kind": "approval", "path": "plan.md", "action": "create", "allowed": true})),
+            (
+                Record::Access { space: "work".into(), path: "calendar".into(), answer: AccessAnswer::Always },
+                json!({"kind": "access", "space": "work", "path": "calendar", "answer": "always"}),
+            ),
+            (
+                Record::Read { space: "work".into(), path: "calendar/oct.md".into(), tool: ReadTool::Read, query: None },
+                json!({"kind": "read", "space": "work", "path": "calendar/oct.md", "tool": "read"}),
+            ),
+            (Record::Stopped, json!({"kind": "stopped"})),
+        ];
+        for (rec, ui) in cases {
+            assert_eq!(serde_json::to_value(&rec).unwrap(), ui);
+            let block = rec.to_block();
+            assert_eq!(block["type"], RECORD_TYPE);
+            assert_eq!(Record::from_block(&block), Some(rec));
+        }
+        // Hand-edited or unknown record blocks are skipped, never an error.
+        assert_eq!(Record::from_block(&json!({"type": RECORD_TYPE, "kind": "teleport"})), None);
+        assert_eq!(Record::from_block(&json!({"type": "text", "text": "hi"})), None);
+    }
+
+    #[test]
+    fn records_show_on_their_reply_and_never_reach_the_provider() {
+        let msgs = vec![
+            user_text("plan my week"),
+            json!({"role": "assistant", "content": [
+                {"type": "thinking", "thinking": "", "signature": "sig"},
+                {"type": "tool_use", "id": "t1", "name": "write_file", "input": {"path": "plan.md", "contents": "x"}},
+                approval(false).to_block(),
+            ]}),
+            json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "declined", "is_error": true}]}),
+            json!({"role": "assistant", "content": [{"type": "text", "text": "Okay, I won't."}]}),
+            user_text("stop it"),
+            json!({"role": "assistant", "content": [Record::Stopped.to_block()]}),
+            user_text("hello"),
+        ];
+        let ui = to_ui(&msgs);
+        assert_eq!(ui.len(), 5);
+        assert_eq!((ui[1].index, ui[1].text.as_str(), ui[1].records.clone()), (1, "Okay, I won't.", vec![approval(false)]));
+        assert_eq!((ui[3].index, ui[3].text.as_str(), ui[3].records.clone()), (5, "", vec![Record::Stopped]));
+        assert_eq!((ui[4].role, ui[4].index), ("user", 6));
+        let json = serde_json::to_value(&ui[1]).unwrap();
+        assert_eq!(json["records"][0]["kind"], "approval");
+        assert_eq!(json["index"], 1);
+
+        let wire = for_provider(&msgs);
+        assert!(!serde_json::to_string(&wire).unwrap().contains(RECORD_TYPE));
+        // The reply with the tool call keeps every other block exactly; the stopped-only reply is gone.
+        assert_eq!(wire.len(), 6);
+        assert_eq!(wire[1]["content"].as_array().unwrap().len(), 2);
+        assert_eq!(wire[1]["content"][0], msgs[1]["content"][0]);
+        assert_eq!(wire[4], msgs[4]);
+        assert_eq!(wire[5], msgs[6]);
+        // A thread without records is passed through unchanged.
+        assert_eq!(for_provider(&msgs[3..5]), msgs[3..5].to_vec());
+        assert_eq!(records(&msgs).count(), 2);
+    }
+
+    #[test]
+    fn denial_covers_the_path_and_everything_inside_it() {
+        let deny = |space: &str, path: &str| {
+            json!({"role": "assistant", "content": [Record::Access { space: space.into(), path: path.into(), answer: AccessAnswer::Deny }.to_block()]})
+        };
+        let msgs = vec![user_text("hi"), deny("work", "calendar"), json!({"role": "assistant", "content": [Record::Access { space: "work".into(), path: "notes".into(), answer: AccessAnswer::Once }.to_block()]})];
+        assert!(denied(&msgs, "work", "calendar"));
+        assert!(denied(&msgs, "work", "calendar/oct.md"));
+        assert!(!denied(&msgs, "work", "calendar-old"));
+        assert!(!denied(&msgs, "home", "calendar"));
+        assert!(!denied(&msgs, "work", "notes"), "only a deny counts");
+        assert!(!denied(&[deny("work", "calendar/oct.md")], "work", "calendar"), "a broader path is asked about");
+    }
+
+    #[test]
+    fn cut_at_keeps_a_copy_and_only_cuts_at_user_messages() {
+        let dir = temp_space("cut");
+        let mut msgs = chat("first", "one");
+        msgs.push(json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t", "content": "x"}]}));
+        msgs.extend(chat("second", "two"));
+        save(&dir, &msgs).unwrap();
+        let original = msgs.clone();
+        for bad in [1, 2, 3 + 2, 99] {
+            assert_eq!(cut_at(&dir, &mut msgs, bad), Err(STALE_EDIT.to_string()), "{bad}");
+        }
+        assert_eq!(msgs, original);
+        assert!(archive_files(&dir).is_empty());
+        cut_at(&dir, &mut msgs, 3).unwrap();
+        assert_eq!(msgs, original[..3].to_vec());
+        let files = archive_files(&dir);
+        assert_eq!(files.len(), 1);
+        assert_eq!(read_messages(&archive_dir(&dir).join(&files[0])).unwrap(), original);
+        // The current file is not touched by the cut itself; the caller saves.
+        assert_eq!(load(&dir).unwrap(), original);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

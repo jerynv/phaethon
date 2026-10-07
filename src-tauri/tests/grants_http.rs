@@ -53,7 +53,7 @@ async fn ask_then_read_another_space_over_http() {
         &Runs::default(),
         &approvals,
         &provider,
-        LoopRequest { space_id: "school", space_dir: &school, vault_root: &vault, prompt: "plan my study week", attachments: vec![] },
+        LoopRequest { space_id: "school", space_dir: &school, vault_root: &vault, prompt: "plan my study week", attachments: vec![], replace_from: None },
         |e| {
             if let AgentEvent::AccessRequest { id, space, path, .. } = &e {
                 assert_eq!((space.as_str(), path.as_str()), ("work", "calendar"));

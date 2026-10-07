@@ -73,11 +73,25 @@ pub struct GrantView {
     pub scope: Scope,
 }
 
-/// Grants a space has, plus anything wrong with grants.json.
+/// What the UI shows for a grant that lets another space (`to`) read this one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomingGrantView {
+    pub id: String,
+    pub to: String,
+    pub path: String,
+    pub created: String,
+    pub scope: Scope,
+}
+
+/// Grants a space has, grants other spaces have into it, plus anything wrong
+/// with grants.json.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrantsView {
     pub grants: Vec<GrantView>,
+    /// Other spaces that may read part of this one, sorted by space then path.
+    pub incoming: Vec<IncomingGrantView>,
     /// Plain-language notes on entries that were ignored. Empty when the file is fine.
     pub problems: Vec<String>,
 }
@@ -191,12 +205,22 @@ pub fn for_space(vault: &Vault, space: &str) -> Vec<Grant> {
 
 /// For the UI: what `space` may read, and any problems with the file.
 pub fn view(vault: &Vault, space: &str) -> GrantsView {
-    let problems = load(vault).problems;
-    let grants = for_space(vault, space)
-        .into_iter()
-        .map(|g| GrantView { id: g.id, from: g.from, path: g.path, created: g.created, scope: g.scope })
-        .collect();
-    GrantsView { grants, problems }
+    let loaded = load(vault);
+    let mut mine: Vec<&Grant> = loaded.grants.iter().filter(|g| g.to == space).collect();
+    mine.sort_by(|a, b| (&a.from, &a.path).cmp(&(&b.from, &b.path)));
+    let mut into: Vec<&Grant> = loaded.grants.iter().filter(|g| g.from == space).collect();
+    into.sort_by(|a, b| (&a.to, &a.path).cmp(&(&b.to, &b.path)));
+    GrantsView {
+        grants: mine
+            .into_iter()
+            .map(|g| GrantView { id: g.id.clone(), from: g.from.clone(), path: g.path.clone(), created: g.created.clone(), scope: g.scope })
+            .collect(),
+        incoming: into
+            .into_iter()
+            .map(|g| IncomingGrantView { id: g.id.clone(), to: g.to.clone(), path: g.path.clone(), created: g.created.clone(), scope: g.scope })
+            .collect(),
+        problems: loaded.problems,
+    }
 }
 
 /// The other spaces of this vault, sorted. Folders that are not valid spaces
@@ -444,6 +468,15 @@ mod tests {
         assert_eq!(shown.grants.len(), 1);
         assert_eq!(shown.problems.len(), 1, "the hand-written entry is reported");
         assert!(view(&v, "work").grants.is_empty(), "grants are one-way");
+        // ...but the space being read sees who can read it.
+        assert!(shown.incoming.is_empty());
+        assert_eq!(
+            view(&v, "work").incoming,
+            vec![IncomingGrantView { id: g.id.clone(), to: "school".into(), path: "calendar".into(), created: g.created.clone(), scope: Scope::Always }]
+        );
+        let json = serde_json::to_value(view(&v, "work")).unwrap();
+        assert_eq!(json["incoming"][0]["to"], "school");
+        assert!(json["grants"].as_array().unwrap().is_empty());
         let raw = fs::read_to_string(dir.join(".phaethon/grants.json")).unwrap();
         assert!(raw.contains("hand-written") && raw.contains("future"));
         assert!(revoke(&v, &g.id).unwrap());

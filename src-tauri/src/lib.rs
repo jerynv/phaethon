@@ -3,6 +3,7 @@ pub mod agent_loop;
 pub mod anthropic;
 pub mod attachments;
 pub mod grants;
+pub mod open;
 pub mod provider;
 pub mod secrets;
 pub mod spaces;
@@ -40,6 +41,11 @@ struct AppState {
 
 /// Send one message to the agent in `space` and stream the reply over `on_event`.
 /// All outcomes, including errors, arrive as events ending with `End`.
+///
+/// `replace_from` (edit / regenerate, Phaethon's own agent only) is the
+/// `index` of a user message from `thread_load`: that message and everything
+/// after it are replaced by this one, after the whole conversation as it was
+/// is copied into the space's archive.
 #[tauri::command]
 async fn agent_send(
     state: State<'_, AppState>,
@@ -47,13 +53,14 @@ async fn agent_send(
     prompt: String,
     attachments: Vec<attachments::Upload>,
     on_event: Channel<AgentEvent>,
+    replace_from: Option<usize>,
 ) -> Result<(), ()> {
     let emit = |ev: AgentEvent| {
         // The webview may have reloaded or closed; the turn still finishes cleanly.
         let _ = on_event.send(ev);
     };
     let fail = |code, message: String| {
-        emit(AgentEvent::Error { code, message });
+        emit(AgentEvent::error(code, message));
         emit(AgentEvent::End { session_id: None });
     };
     let space_dir = match state.vault.space_dir(&space) {
@@ -63,6 +70,11 @@ async fn agent_send(
             return Ok(());
         }
     };
+    let settings = state.vault.settings();
+    if replace_from.is_some() && settings.backend != Backend::Phaethon {
+        fail(ErrorCode::Cli, "Editing or regenerating a message works only with Phaethon’s own agent.".into());
+        return Ok(());
+    }
     // Saved before the agent runs, so they are in the space whatever the backend.
     let refs = match attachments::save(&space_dir, &attachments) {
         Ok(r) => r,
@@ -71,7 +83,6 @@ async fn agent_send(
             return Ok(());
         }
     };
-    let settings = state.vault.settings();
     match settings.backend {
         Backend::Phaethon => {
             let key = match secrets::get(&state.vault.name(), "anthropic") {
@@ -92,6 +103,7 @@ async fn agent_send(
                 vault_root: state.vault.root(),
                 prompt: &prompt,
                 attachments: refs,
+                replace_from,
             };
             agent_loop::run_turn(&state.runs, &state.approvals, &provider, req, emit).await;
         }
@@ -291,6 +303,43 @@ fn api_key_clear(state: State<'_, AppState>, provider: String) -> Result<(), Str
     secrets::clear(&state.vault.name(), &provider)
 }
 
+/// Check an Anthropic key without saving it: its format, then one cheap
+/// request with it. The key is never logged or returned.
+#[tauri::command]
+async fn api_key_check(key: String) -> anthropic::KeyCheck {
+    anthropic::check_key(&key).await
+}
+
+/// The models the saved key can use, from Anthropic; a fixed list when there
+/// is no key or the list can't be fetched.
+#[tauri::command]
+async fn models_list(state: State<'_, AppState>) -> Result<Vec<anthropic::ModelInfo>, String> {
+    let key = secrets::get(&state.vault.name(), "anthropic").ok().flatten();
+    Ok(anthropic::models_or_fallback(key.as_deref()).await)
+}
+
+/// Choose the model for Phaethon's own agent; `None` goes back to the default.
+#[tauri::command]
+fn settings_set_model(state: State<'_, AppState>, model: Option<String>) -> Result<(), String> {
+    let value = match model.as_deref().map(str::trim) {
+        None => serde_json::Value::Null,
+        Some(m) if anthropic::is_valid_model_id(m) => m.into(),
+        Some(_) => return Err("That isn’t a model Phaethon knows how to use.".into()),
+    };
+    state
+        .vault
+        .set_setting("model", value)
+        .map_err(|e| format!("Could not save the setting: {e}"))
+}
+
+/// Open a file in `space` with its default app, or show it in Finder when
+/// `reveal`. Only files inside the space itself; see open.rs.
+#[tauri::command]
+fn file_open(state: State<'_, AppState>, space: String, path: String, reveal: Option<bool>) -> Result<(), String> {
+    let dir = state.vault.space_dir(&space)?;
+    open::open(&dir, &path, reveal.unwrap_or(false))
+}
+
 /// Stop the turn running in `space`, if any. The stream then ends with `Cancelled`.
 #[tauri::command]
 fn agent_cancel(state: State<'_, AppState>, space: String) -> bool {
@@ -358,6 +407,10 @@ pub fn run() {
             settings_set_backend,
             api_key_set,
             api_key_clear,
+            api_key_check,
+            models_list,
+            settings_set_model,
+            file_open,
             appearance_set,
             spaces_list,
             space_create,

@@ -18,6 +18,7 @@ use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use crate::grants::AccessAnswer;
+use crate::thread::{Record, WriteAction};
 use crate::vault;
 
 /// Tools the agent may use. Read-only for now: the agent can look at files in
@@ -56,14 +57,30 @@ pub enum AgentEvent {
     /// A human-readable description of a tool the agent is using.
     Tool { label: String },
     /// The turn failed; `message` is safe to show to the user.
-    Error { code: ErrorCode, message: String },
+    Error {
+        code: ErrorCode,
+        message: String,
+        /// For rate limits and outages: how long the provider asked us to wait.
+        #[serde(rename = "retryAfterSecs", skip_serializing_if = "Option::is_none")]
+        retry_after_secs: Option<u64>,
+    },
     /// Phaethon's own loop wants to change a file and waits for the user's
-    /// answer (`agent_approve`). `detail` previews the new contents.
+    /// answer (`agent_approve`). `detail` is the full new contents and
+    /// `before` the full old contents when replacing; each is cut at
+    /// [`crate::agent_loop::PREVIEW_CAP`] bytes, and then `truncated` is set.
     Approval {
         id: String,
         summary: String,
         detail: String,
+        action: WriteAction,
+        /// The file, relative to `space`.
+        path: String,
+        space: String,
+        before: Option<String>,
+        truncated: bool,
     },
+    /// Something was saved into the conversation record (see thread.rs).
+    Record { record: Record },
     /// The approval `id` was answered or abandoned; the card can close.
     ApprovalDone { id: String, allowed: bool },
     /// Phaethon's own loop asks to let this space read `path` in the other
@@ -86,6 +103,13 @@ pub enum AgentEvent {
     },
 }
 
+impl AgentEvent {
+    /// An error with no wait time.
+    pub fn error(code: ErrorCode, message: impl Into<String>) -> Self {
+        AgentEvent::Error { code, message: message.into(), retry_after_secs: None }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum ErrorCode {
@@ -98,8 +122,16 @@ pub enum ErrorCode {
     NoApiKey,
     /// The provider rejected the API key.
     ApiKey,
-    /// The provider failed (rate limit, overload, billing, refused request).
+    /// The provider failed in a way none of the codes below describes.
     Provider,
+    /// The provider account is out of credit or has a billing problem.
+    Billing,
+    /// Too many requests; `retryAfterSecs` says how long to wait when known.
+    RateLimit,
+    /// The provider is overloaded or down; retrying later may work.
+    Unavailable,
+    /// The provider refused the request itself (unknown model, too large).
+    BadRequest,
     Network,
     /// The model declined to answer.
     Declined,
@@ -284,10 +316,10 @@ pub async fn run_turn(
     mut emit: impl FnMut(AgentEvent),
 ) {
     let Some(cancel_rx) = runs.claim(space_id) else {
-        emit(AgentEvent::Error {
-            code: ErrorCode::Busy,
-            message: "This space is still answering the previous message. Stop it or wait for it to finish.".into(),
-        });
+        emit(AgentEvent::error(
+            ErrorCode::Busy,
+            "This space is still answering the previous message. Stop it or wait for it to finish.",
+        ));
         emit(AgentEvent::End { session_id: None });
         return;
     };
@@ -304,7 +336,7 @@ async fn drive(
     emit: &mut impl FnMut(AgentEvent),
 ) -> Option<String> {
     let fail = |emit: &mut dyn FnMut(AgentEvent), code, message: String| {
-        emit(AgentEvent::Error { code, message });
+        emit(AgentEvent::error(code, message));
     };
 
     let Some(bin) = find_claude() else {

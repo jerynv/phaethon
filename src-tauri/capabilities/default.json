@@ -30,6 +30,10 @@
     "allow-grant-revoke",
     "allow-spaces-list",
     "allow-space-create",
-    "allow-space-update"
+    "allow-space-update",
+    "allow-api-key-check",
+    "allow-models-list",
+    "allow-settings-set-model",
+    "allow-file-open"
   ]
 }

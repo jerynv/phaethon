@@ -9,7 +9,7 @@ use serde_json::json;
 use phaethon_lib::agent::{AgentEvent, Runs};
 use phaethon_lib::agent_loop::{self, Approvals, LoopRequest};
 use phaethon_lib::anthropic::Anthropic;
-use phaethon_lib::thread;
+use phaethon_lib::thread::{self, Record, WriteAction};
 use tokio::net::TcpListener;
 
 mod common;
@@ -50,7 +50,7 @@ async fn write_with_approval_over_http() {
         &Runs::default(),
         &approvals,
         &provider,
-        LoopRequest { space_id: "school", space_dir: &space, vault_root: &vault, prompt: "plan my week", attachments: vec![] },
+        LoopRequest { space_id: "school", space_dir: &space, vault_root: &vault, prompt: "plan my week", attachments: vec![], replace_from: None },
         |e| {
             if let AgentEvent::Approval { id, .. } = &e {
                 // The file must not exist until the user answers.
@@ -73,8 +73,18 @@ async fn write_with_approval_over_http() {
         })
         .collect();
     assert_eq!(text, "I'll write the plan.\n\nSaved plans/week.md.");
-    assert!(events.iter().any(|e| matches!(e, AgentEvent::Approval { summary, detail, .. }
-        if summary == "Create a new file plans/week.md (1 line)." && detail == "Mon: study C241\n")));
+    assert!(events.iter().any(|e| matches!(e, AgentEvent::Approval { summary, detail, action: WriteAction::Create, path, space, before: None, truncated: false, .. }
+        if summary == "Create a new file plans/week.md (1 line)." && detail == "Mon: study C241\n" && path == "plans/week.md" && space == "school")));
+    let receipt = Record::Approval { path: "plans/week.md".into(), action: WriteAction::Create, allowed: true };
+    assert!(events.contains(&AgentEvent::Record { record: receipt.clone() }));
+    // As the webview gets it.
+    let approval = events.iter().find(|e| matches!(e, AgentEvent::Approval { .. })).unwrap();
+    let v = serde_json::to_value(approval).unwrap();
+    assert_eq!((v["kind"].as_str(), v["action"].as_str(), v["before"].is_null(), v["truncated"].as_bool()), (Some("approval"), Some("create"), true, Some(false)));
+    assert_eq!(
+        serde_json::to_value(AgentEvent::Record { record: receipt.clone() }).unwrap(),
+        json!({"kind": "record", "record": {"kind": "approval", "path": "plans/week.md", "action": "create", "allowed": true}})
+    );
     assert_eq!(events.last(), Some(&AgentEvent::End { session_id: None }));
 
     // What went over the wire: the manual in the system prompt, tools defined,
@@ -86,10 +96,15 @@ async fn write_with_approval_over_http() {
     assert_eq!(second[1]["content"][1]["input"]["path"], "plans/week.md");
     assert_eq!(second[2]["content"][0]["tool_use_id"], "toolu_1");
     assert!(second[2]["content"][0].get("is_error").is_none());
+    // The receipt is saved in the thread but never goes over the wire.
+    assert_eq!(second[1]["content"].as_array().unwrap().len(), 2);
+    assert!(!bodies.iter().any(|b| b.to_string().contains("phaethon_record")));
 
     let saved = thread::load(&space).unwrap();
     assert_eq!(saved.len(), 4);
+    assert!(saved[1].to_string().contains("phaethon_record"));
     let ui = thread::to_ui(&saved);
     assert_eq!(ui[1].text, "I'll write the plan.\n\nSaved plans/week.md.");
+    assert_eq!((ui[1].index, ui[1].records.clone()), (1, vec![receipt]));
     std::fs::remove_dir_all(&vault).unwrap();
 }

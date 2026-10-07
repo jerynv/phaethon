@@ -22,10 +22,7 @@ fn missing_binary_reports_install_hint() {
     assert_eq!(
         events,
         vec![
-            AgentEvent::Error {
-                code: ErrorCode::MissingCli,
-                message: agent::MISSING_CLI_MESSAGE.into()
-            },
+            AgentEvent::error(ErrorCode::MissingCli, agent::MISSING_CLI_MESSAGE),
             AgentEvent::End { session_id: None },
         ]
     );

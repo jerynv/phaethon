@@ -7,6 +7,7 @@ fn main() {
             "thread_load", "thread_new", "threads_list", "thread_open",
             "settings_get", "settings_set_backend", "api_key_set", "api_key_clear", "appearance_set",
             "spaces_list", "space_create", "space_update",
+            "api_key_check", "models_list", "settings_set_model", "file_open",
         ]),
     ))
     .expect("failed to run tauri-build");

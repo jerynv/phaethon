@@ -21,6 +21,8 @@ const MAX_TOKENS: u32 = 64_000;
 /// Longest silence allowed between two chunks of a streaming reply.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(180);
 const RETRIES: u32 = 3;
+/// Longest `retry-after` (seconds) Phaethon waits out itself before retrying.
+const MAX_RETRY_WAIT: u64 = 30;
 
 pub struct Anthropic {
     http: reqwest::Client,
@@ -30,24 +32,31 @@ pub struct Anthropic {
     base_url: String,
 }
 
+/// Where requests go: Anthropic, or in debug builds a local fake server named
+/// by `PHAETHON_ANTHROPIC_BASE_URL` (tests only).
+pub fn base_url() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(u) = std::env::var("PHAETHON_ANTHROPIC_BASE_URL") {
+        return u;
+    }
+    "https://api.anthropic.com".to_string()
+}
+
+fn client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(20))
+        .build()
+        .expect("http client builds")
+}
+
 impl Anthropic {
     pub fn new(key: String, model: Option<String>, effort: Option<String>) -> Self {
-        #[allow(unused_mut)]
-        let mut base_url = "https://api.anthropic.com".to_string();
-        #[cfg(debug_assertions)]
-        if let Ok(u) = std::env::var("PHAETHON_ANTHROPIC_BASE_URL") {
-            // Debug builds only: lets tests point at a local fake server.
-            base_url = u;
-        }
         Self {
-            http: reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(20))
-                .build()
-                .expect("http client builds"),
+            http: client(),
             key,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.into()),
             effort: effort.unwrap_or_else(|| DEFAULT_EFFORT.into()),
-            base_url,
+            base_url: base_url(),
         }
     }
 
@@ -93,25 +102,23 @@ impl Provider for Anthropic {
                     tokio::time::sleep(backoff(attempt, None)).await;
                     continue;
                 }
-                Err(e) => {
-                    return Err(ProviderError {
-                        kind: ErrorKind::Network,
-                        message: format!("Could not reach Anthropic: {e}"),
-                    });
+                Err(_) => {
+                    return Err(ProviderError::new(
+                        ErrorKind::Network,
+                        "Phaethon couldn’t reach Anthropic. Check your internet connection, then try again.",
+                    ));
                 }
             };
             let status = resp.status().as_u16();
             if resp.status().is_success() {
                 break resp;
             }
-            let retry_after = resp
-                .headers()
-                .get("retry-after")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok());
+            let retry_after = retry_after(resp.headers());
             let text = resp.text().await.unwrap_or_default();
-            let err = http_error(status, &text);
-            let retryable = matches!(err.kind, ErrorKind::RateLimit | ErrorKind::Unavailable);
+            let err = http_error(status, &text, retry_after);
+            // A long requested wait is the user's to see (with its countdown), not ours to sit through.
+            let retryable = matches!(err.kind, ErrorKind::RateLimit | ErrorKind::Unavailable)
+                && retry_after.is_none_or(|s| s <= MAX_RETRY_WAIT);
             if retryable && attempt < RETRIES {
                 tokio::time::sleep(backoff(attempt, retry_after)).await;
                 continue;
@@ -126,17 +133,17 @@ impl Provider for Anthropic {
         loop {
             let chunk = match tokio::time::timeout(IDLE_TIMEOUT, stream.next()).await {
                 Err(_) => {
-                    return Err(ProviderError {
-                        kind: ErrorKind::Network,
-                        message: "Anthropic stopped responding in the middle of a reply.".into(),
-                    });
+                    return Err(ProviderError::new(
+                        ErrorKind::Network,
+                        "Anthropic stopped responding in the middle of the reply. Try again.",
+                    ));
                 }
                 Ok(None) => break,
-                Ok(Some(Err(e))) => {
-                    return Err(ProviderError {
-                        kind: ErrorKind::Network,
-                        message: format!("The connection to Anthropic dropped: {e}"),
-                    });
+                Ok(Some(Err(_))) => {
+                    return Err(ProviderError::new(
+                        ErrorKind::Network,
+                        "The connection to Anthropic dropped in the middle of the reply. Check your internet connection, then try again.",
+                    ));
                 }
                 Ok(Some(Ok(bytes))) => bytes,
             };
@@ -151,25 +158,207 @@ impl Provider for Anthropic {
 
 fn backoff(attempt: u32, retry_after: Option<u64>) -> Duration {
     match retry_after {
-        Some(s) => Duration::from_secs(s.min(30)),
+        Some(s) => Duration::from_secs(s.min(MAX_RETRY_WAIT)),
         None => Duration::from_millis(1000 * 2u64.pow(attempt - 1)),
     }
 }
 
-fn http_error(status: u16, body: &str) -> ProviderError {
-    let detail = serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
-        .unwrap_or_default();
+/// `retry-after` in whole seconds, when the server sent one we can read
+/// (HTTP dates are rare from Anthropic and are ignored).
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .filter(|s| s.is_finite() && *s >= 0.0)
+        .map(|s| s.ceil() as u64)
+}
+
+const BILLING_MESSAGE: &str = "Your Anthropic account is out of credit or has a billing problem. Add credit at console.anthropic.com, then try again.";
+
+/// Whether an error body says the account has no credit. Anthropic reports
+/// that as a 400 as well as with `billing_error`.
+fn is_billing(body: &Value) -> bool {
+    body["error"]["type"] == "billing_error"
+        || body["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.to_lowercase().contains("credit balance"))
+}
+
+fn rate_limit_message(retry_after: Option<u64>) -> String {
+    let lead = "Anthropic is limiting how fast this key can send messages.";
+    match retry_after {
+        Some(0 | 1) => format!("{lead} Try again in a moment."),
+        Some(s) if s < 120 => format!("{lead} Try again in {s} seconds."),
+        Some(s) => format!("{lead} Try again in {} minutes.", s.div_ceil(60)),
+        None => format!("{lead} Wait a minute, then try again."),
+    }
+}
+
+/// Map a failed HTTP response to a plain-language error. The key is never
+/// part of the message.
+fn http_error(status: u16, body: &str, retry_after: Option<u64>) -> ProviderError {
+    let parsed = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
+    let detail = parsed["error"]["message"].as_str().unwrap_or("");
     let (kind, message) = match status {
-        401 => (ErrorKind::Auth, "Anthropic rejected the API key. Check it in Settings.".to_string()),
-        403 => (ErrorKind::Auth, format!("This API key is not allowed to do that. {detail}")),
-        402 => (ErrorKind::Billing, format!("Anthropic reported a billing problem on this account. {detail}")),
-        429 => (ErrorKind::RateLimit, "Anthropic’s rate limit was reached. Wait a minute, then try again.".to_string()),
-        400 | 404 | 413 => (ErrorKind::BadRequest, format!("Anthropic refused the request: {detail}")),
-        _ => (ErrorKind::Unavailable, format!("Anthropic is unavailable right now (status {status}). Try again shortly.")),
+        _ if status == 402 || is_billing(&parsed) => (ErrorKind::Billing, BILLING_MESSAGE.to_string()),
+        401 => (ErrorKind::Auth, "Anthropic didn’t accept your API key. Check it in Settings.".to_string()),
+        403 => (
+            ErrorKind::Auth,
+            "Your API key isn’t allowed to do this. Check its permissions at console.anthropic.com.".to_string(),
+        ),
+        429 => (ErrorKind::RateLimit, rate_limit_message(retry_after)),
+        400 | 404 | 413 | 422 => (ErrorKind::BadRequest, format!("Anthropic couldn’t accept this request. {detail}")),
+        _ => (
+            ErrorKind::Unavailable,
+            "Anthropic is overloaded or having problems right now. Try again in a few minutes.".to_string(),
+        ),
     };
-    ProviderError { kind, message: message.trim().to_string() }
+    let retry_after = retry_after.filter(|_| matches!(kind, ErrorKind::RateLimit | ErrorKind::Unavailable));
+    ProviderError { kind, message: message.trim().to_string(), retry_after }
+}
+
+// ---- Key check and model list -------------------------------------------
+
+/// What a key check found. `problem` is absent when the key works.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct KeyCheck {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<KeyProblem>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyProblem {
+    Format,
+    Rejected,
+    Network,
+    Billing,
+}
+
+impl KeyCheck {
+    fn works() -> Self {
+        Self { ok: true, problem: None, message: "This key works.".into() }
+    }
+
+    fn problem(problem: KeyProblem, message: &str) -> Self {
+        Self { ok: false, problem: Some(problem), message: message.into() }
+    }
+}
+
+/// Whether `key` looks like an Anthropic API key: `sk-ant-` then letters,
+/// digits, `-` and `_`. Checked before anything is sent anywhere.
+pub fn key_format_ok(key: &str) -> bool {
+    key.starts_with("sk-ant-")
+        && (20..=400).contains(&key.len())
+        && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// Check a key without saving it: its format, then one cheap real request
+/// (listing one model). The key is never logged or put in the result.
+pub async fn check_key(key: &str) -> KeyCheck {
+    check_key_at(&base_url(), key).await
+}
+
+pub async fn check_key_at(base: &str, key: &str) -> KeyCheck {
+    let key = key.trim();
+    if !key_format_ok(key) {
+        return KeyCheck::problem(
+            KeyProblem::Format,
+            "That doesn’t look like an Anthropic API key. Keys start with sk-ant- and are about 100 characters long; copy the whole key from console.anthropic.com.",
+        );
+    }
+    let sent = client()
+        .get(format!("{base}/v1/models?limit=1"))
+        .header("x-api-key", key)
+        .header("anthropic-version", API_VERSION)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await;
+    let Ok(resp) = sent else {
+        return KeyCheck::problem(
+            KeyProblem::Network,
+            "Phaethon couldn’t reach Anthropic to check the key. Check your internet connection, then try again.",
+        );
+    };
+    let status = resp.status().as_u16();
+    let body: Value = resp.json().await.unwrap_or(Value::Null);
+    match status {
+        200..=299 => KeyCheck::works(),
+        _ if status == 402 || is_billing(&body) => KeyCheck::problem(KeyProblem::Billing, BILLING_MESSAGE),
+        401 | 403 => KeyCheck::problem(
+            KeyProblem::Rejected,
+            "Anthropic didn’t accept this key. It may have been deleted, or part of it is missing. Copy it again from console.anthropic.com.",
+        ),
+        // Rate limits apply only to keys Anthropic recognised.
+        429 => KeyCheck::works(),
+        _ => KeyCheck::problem(KeyProblem::Network, "Anthropic couldn’t check the key right now. Try again in a few minutes."),
+    }
+}
+
+/// One model the user can pick.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: String,
+}
+
+/// Shown when the provider's list can't be fetched (no key, offline).
+pub fn fallback_models() -> Vec<ModelInfo> {
+    [
+        ("claude-opus-5-5", "Claude Opus 5.5"),
+        ("claude-sonnet-5-5", "Claude Sonnet 5.5"),
+        ("claude-haiku-5-5", "Claude Haiku 5.5"),
+    ]
+    .into_iter()
+    .map(|(id, name)| ModelInfo { id: id.into(), name: name.into() })
+    .collect()
+}
+
+/// A model id as Anthropic writes them: `claude-` then lowercase letters,
+/// digits, `-` and `.`. Checked before it is saved in the (synced, editable)
+/// settings file or sent anywhere.
+pub fn is_valid_model_id(id: &str) -> bool {
+    id.len() > "claude-".len()
+        && id.len() <= 80
+        && id.starts_with("claude-")
+        && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
+}
+
+/// The models this key can use, from the provider. `None` on any failure.
+pub async fn list_models_at(base: &str, key: &str) -> Option<Vec<ModelInfo>> {
+    let resp = client()
+        .get(format!("{base}/v1/models?limit=100"))
+        .header("x-api-key", key)
+        .header("anthropic-version", API_VERSION)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body: Value = resp.json().await.ok()?;
+    let models: Vec<ModelInfo> = body["data"]
+        .as_array()?
+        .iter()
+        .filter_map(|m| {
+            let id = m["id"].as_str().filter(|id| is_valid_model_id(id))?;
+            let name = m["display_name"].as_str().map(str::trim).filter(|n| !n.is_empty()).unwrap_or(id);
+            Some(ModelInfo { id: id.into(), name: name.chars().take(80).collect() })
+        })
+        .collect();
+    (!models.is_empty()).then_some(models)
+}
+
+/// The provider's list when `key` works, else the fixed fallback list.
+pub async fn models_or_fallback(key: Option<&str>) -> Vec<ModelInfo> {
+    match key {
+        Some(k) => list_models_at(&base_url(), k).await.unwrap_or_else(fallback_models),
+        None => fallback_models(),
+    }
 }
 
 /// Take one complete SSE event (ended by a blank line) off the front of `buf`.
@@ -290,16 +479,17 @@ impl Accumulator {
             }
             "message_stop" => self.stopped = true,
             "error" => {
-                let kind = match v["error"]["type"].as_str() {
-                    Some("overloaded_error" | "api_error") => ErrorKind::Unavailable,
-                    Some("rate_limit_error") => ErrorKind::RateLimit,
-                    _ => ErrorKind::BadRequest,
-                };
                 let msg = v["error"]["message"].as_str().unwrap_or("unknown error");
-                return Err(ProviderError {
-                    kind,
-                    message: format!("Anthropic stopped the reply: {msg}"),
-                });
+                let err = match v["error"]["type"].as_str() {
+                    Some("overloaded_error" | "api_error") => ProviderError::new(
+                        ErrorKind::Unavailable,
+                        "Anthropic is overloaded or having problems, and stopped the reply. Try again in a few minutes.",
+                    ),
+                    Some("rate_limit_error") => ProviderError::new(ErrorKind::RateLimit, rate_limit_message(None)),
+                    _ if is_billing(&v) => ProviderError::new(ErrorKind::Billing, BILLING_MESSAGE),
+                    _ => ProviderError::new(ErrorKind::BadRequest, format!("Anthropic stopped the reply: {msg}")),
+                };
+                return Err(err);
             }
             _ => {}
         }
@@ -308,10 +498,7 @@ impl Accumulator {
 
     fn finish(self) -> Result<ModelTurn, ProviderError> {
         if !self.stopped || self.stop_reason.is_none() {
-            return Err(ProviderError {
-                kind: ErrorKind::Network,
-                message: "The reply from Anthropic ended early. Try again.".into(),
-            });
+            return Err(ProviderError::new(ErrorKind::Network, "The reply from Anthropic ended early. Try again."));
         }
         Ok(ModelTurn {
             content: echo_safe(self.blocks.into_iter().filter(|b| !b.is_null()).collect()),
@@ -443,11 +630,60 @@ mod tests {
 
     #[test]
     fn http_errors_map_to_plain_messages() {
-        let e = http_error(401, r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#);
+        let e = http_error(401, r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#, None);
         assert_eq!(e.kind, ErrorKind::Auth);
         assert!(!e.message.contains("x-api-key"));
-        assert_eq!(http_error(529, "").kind, ErrorKind::Unavailable);
-        assert_eq!(http_error(429, "").kind, ErrorKind::RateLimit);
-        assert!(http_error(404, r#"{"error":{"message":"model: nope"}}"#).message.contains("model: nope"));
+        assert_eq!(http_error(529, "", None).kind, ErrorKind::Unavailable);
+        assert_eq!(http_error(500, "", Some(9)).retry_after, Some(9));
+        assert!(http_error(404, r#"{"error":{"message":"model: nope"}}"#, None).message.contains("model: nope"));
+        assert_eq!(http_error(404, "", Some(5)).retry_after, None, "a wait means nothing for a refused request");
+    }
+
+    #[test]
+    fn billing_rate_limit_and_retry_after() {
+        // Out of credit: 402, billing_error, or a 400 that says so.
+        for (status, body) in [
+            (402, ""),
+            (400, r#"{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}"#),
+            (403, r#"{"type":"error","error":{"type":"billing_error","message":"x"}}"#),
+        ] {
+            let e = http_error(status, body, None);
+            assert_eq!(e.kind, ErrorKind::Billing, "{status} {body}");
+            assert!(e.message.contains("credit"));
+        }
+        let e = http_error(429, "", Some(42));
+        assert_eq!((e.kind, e.retry_after), (ErrorKind::RateLimit, Some(42)));
+        assert!(e.message.contains("42 seconds"), "{}", e.message);
+        assert!(http_error(429, "", Some(600)).message.contains("10 minutes"));
+        assert!(http_error(429, "", None).message.contains("Wait a minute"));
+        assert_eq!(http_error(400, r#"{"error":{"message":"bad"}}"#, None).kind, ErrorKind::BadRequest);
+
+        let mut h = reqwest::header::HeaderMap::new();
+        assert_eq!(retry_after(&h), None);
+        h.insert("retry-after", "17".parse().unwrap());
+        assert_eq!(retry_after(&h), Some(17));
+        h.insert("retry-after", "1.2".parse().unwrap());
+        assert_eq!(retry_after(&h), Some(2));
+        h.insert("retry-after", "Wed, 21 Oct 2026 07:28:00 GMT".parse().unwrap());
+        assert_eq!(retry_after(&h), None);
+
+        // Billing inside the stream, too.
+        let raw = sse(&[json!({"type": "error", "error": {"type": "billing_error", "message": "no credit"}})]);
+        assert!(matches!(run_sse(&raw).0, Err(ProviderError { kind: ErrorKind::Billing, .. })));
+    }
+
+    #[test]
+    fn key_format_and_model_ids() {
+        assert!(key_format_ok(&format!("sk-ant-api03-{}", "a".repeat(80))));
+        for bad in ["", "sk-ant-", "sk-proj-abcdefghijklmnopqrstuvwxyz", "sk-ant-abc def ghi jkl mno pqr", "sk-ant-abc\nxyzxyzxyzxyzxyz"] {
+            assert!(!key_format_ok(bad), "{bad:?}");
+        }
+        assert!(is_valid_model_id("claude-opus-5-5") && is_valid_model_id("claude-3.7-sonnet"));
+        let long = format!("claude-{}", "a".repeat(80));
+        for bad in ["", "claude-", "gpt-5", "claude-Opus", "claude-x/../y", "claude-a b", long.as_str()] {
+            assert!(!is_valid_model_id(bad), "{bad:?}");
+        }
+        assert_eq!(fallback_models().len(), 3);
+        assert!(fallback_models().iter().all(|m| is_valid_model_id(&m.id)));
     }
 }

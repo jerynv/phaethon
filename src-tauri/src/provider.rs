@@ -49,6 +49,15 @@ pub enum ErrorKind {
 pub struct ProviderError {
     pub kind: ErrorKind,
     pub message: String,
+    /// Seconds the provider asked us to wait before trying again (rate limits
+    /// and overloads), when it said.
+    pub retry_after: Option<u64>,
+}
+
+impl ProviderError {
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self { kind, message: message.into(), retry_after: None }
+    }
 }
 
 pub trait Provider: Send + Sync {

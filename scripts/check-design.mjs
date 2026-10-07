@@ -20,8 +20,8 @@ const rules = [
   { name: "lucide-react import", re: /from\s+["']lucide-react["']/ },
   { name: "raw Tailwind palette colour", re: new RegExp(`(?<![\\w-])(?:[a-z]+:)*(?:bg|text|border|ring|fill|stroke|from|to|via|outline|decoration|divide|placeholder|caret|accent|shadow)-(?:${palette})-\\d{2,3}(?:/\\d+)?\\b|(?<![\\w-])(?:bg|text|border|fill|stroke)-(?:white|black)\\b`) },
   { name: "hard-coded size in a class", re: /(?<![\w-])[a-z-]+-\[-?\d+(?:\.\d+)?(?:px|rem|em)\]/ },
-  // UI copy uses the typographic apostrophe (don’t, Phaethon’s); .tsx only, comments skipped.
-  { name: "straight apostrophe in UI copy", re: /\b[A-Za-z]+'(?:t|s|re|ll|ve|d|m)\b/, only: /\.tsx$/, skipComments: true },
+  // UI copy uses the typographic apostrophe (don’t, Phaethon’s); .ts/.tsx, comments skipped.
+  { name: "straight apostrophe in UI copy", re: /\b[A-Za-z]+'(?:t|s|re|ll|ve|d|m)\b/, only: /\.tsx?$/, skipComments: true },
 ];
 
 const files = [];

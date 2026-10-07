@@ -26,9 +26,27 @@ export default defineConfig(() => ({
     },
   },
   build: {
-    // Desktop bundle is loaded from disk, not over the network; split later if startup suffers.
-    chunkSizeWarningLimit: 1024,
+    // The largest chunk is assistant-ui itself (~660 kB, needed for first
+    // paint, loaded from disk). The limit sits just above it so growth anywhere
+    // else still warns.
+    chunkSizeWarningLimit: 700,
+    rolldownOptions: {
+      output: {
+        // Vendor code in its own chunks: smaller files, and they stay cached
+        // across app updates that only touch Phaethon's own code.
+        codeSplitting: {
+          groups: [
+            { name: "react", test: /node_modules[\\/](?:\.pnpm[\\/])?(?:react|react-dom|scheduler)[@\\/]/ },
+            { name: "assistant-ui", test: /node_modules[\\/].*@assistant-ui/ },
+            { name: "radix", test: /node_modules[\\/].*(?:@radix-ui|radix-ui)/ },
+            { name: "markdown", test: /node_modules[\\/].*(?:remark|rehype|micromark|mdast|hast|unified|unist|vfile|markdown|decode-named|character-entities|property-information|space-separated|comma-separated|ccount|devlop|bail|trough|zwitch|longest-streak|is-plain-obj|html-url-attributes|estree)/ },
+            { name: "vendor", test: /node_modules[\\/]/ },
+          ],
+        },
+      },
+    },
   },
+
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   // 1. prevent Vite from obscuring rust errors

@@ -166,7 +166,7 @@ async fn drive<P: Provider>(
     let mut msgs = match thread::load(req.space_dir) {
         Ok(m) => m,
         Err(e) => {
-            return fail(emit, ErrorCode::Storage, format!("This space's conversation file could not be read, so nothing was sent: {e}"));
+            return fail(emit, ErrorCode::Storage, format!("This space’s conversation file couldn’t be read, so nothing was sent: {e}"));
         }
     };
     msgs.push(thread::user_message(req.prompt, &req.attachments));

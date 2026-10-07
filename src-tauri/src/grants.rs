@@ -99,7 +99,7 @@ pub fn load(vault: &Vault) -> Loaded {
         Ok(s) => s,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Loaded::default(),
         Err(e) => {
-            return Loaded { grants: vec![], problems: vec![format!("grants.json could not be read, so no grants apply: {e}")] };
+            return Loaded { grants: vec![], problems: vec![format!("grants.json couldn’t be read, so no folders are shared between spaces: {e}")] };
         }
     };
     let entries = match serde_json::from_str::<Value>(&raw) {
@@ -107,11 +107,11 @@ pub fn load(vault: &Vault) -> Loaded {
             Some(Value::Array(a)) => a.clone(),
             None => vec![],
             Some(_) => {
-                return Loaded { grants: vec![], problems: vec!["grants.json: \"grants\" is not a list, so no grants apply.".into()] };
+                return Loaded { grants: vec![], problems: vec!["grants.json isn’t laid out as Phaethon expects, so no folders are shared between spaces.".into()] };
             }
         },
         _ => {
-            return Loaded { grants: vec![], problems: vec!["grants.json is not valid JSON, so no grants apply. Fix or remove it.".into()] };
+            return Loaded { grants: vec![], problems: vec!["grants.json has a typing mistake, so no folders are shared between spaces. Fix it in a text editor or delete it.".into()] };
         }
     };
     let mut out = Loaded::default();
@@ -119,10 +119,10 @@ pub fn load(vault: &Vault) -> Loaded {
     for (i, entry) in entries.iter().enumerate() {
         match validate(vault, entry) {
             Ok(g) if !seen_ids.insert(g.id.clone()) => {
-                out.problems.push(format!("Grant {} was ignored: its id \"{}\" is used twice.", i + 1, g.id));
+                out.problems.push(format!("Entry {} is skipped: its id “{}” appears twice.", i + 1, g.id));
             }
             Ok(g) => out.grants.push(g),
-            Err(why) => out.problems.push(format!("Grant {} was ignored: {why}.", i + 1)),
+            Err(why) => out.problems.push(format!("Entry {} is skipped: {why}.", i + 1)),
         }
     }
     out
@@ -134,21 +134,21 @@ fn validate(vault: &Vault, entry: &Value) -> Result<Grant, String> {
         obj.get(k)
             .and_then(Value::as_str)
             .map(str::to_string)
-            .ok_or_else(|| format!("\"{k}\" is missing or not text"))
+            .ok_or_else(|| format!("“{k}” is missing or isn’t text"))
     };
     let id = s("id")?;
     if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-        return Err("its id is not valid".into());
+        return Err("its id isn’t valid".into());
     }
     let to = s("to")?;
     let from = s("from")?;
     match obj.get("scope").and_then(Value::as_str) {
         Some("always") => {}
-        Some("once") => return Err("\"once\" grants are never saved; only \"always\" grants belong in this file".into()),
-        _ => return Err("\"scope\" must be \"always\"".into()),
+        Some("once") => return Err("it’s marked “once”, and only grants you chose to keep belong in this file".into()),
+        _ => return Err("its “scope” should be “always”".into()),
     }
     if to == from {
-        return Err(format!("it grants the {to} space access to itself"));
+        return Err(format!("it lets {to} read itself"));
     }
     for space in [&to, &from] {
         vault.space_dir(space)?;
@@ -164,7 +164,7 @@ fn validate(vault: &Vault, entry: &Value) -> Result<Grant, String> {
 pub fn normalize(path: &str) -> Result<String, String> {
     let clean = tools::clean_rel(path)?;
     if clean.as_os_str().is_empty() {
-        return Err("a grant must name a folder or file, not a whole space".into());
+        return Err("it names a whole space, and a grant has to name a folder or file".into());
     }
     let parts: Vec<String> = clean
         .components()
@@ -278,15 +278,15 @@ fn read_doc(vault: &Vault) -> Result<Value, String> {
     let mut doc = match fs::read_to_string(file(vault)) {
         Ok(s) => match serde_json::from_str::<Value>(&s) {
             Ok(v @ Value::Object(_)) => v,
-            _ => return Err("grants.json is not valid JSON; fix or remove it first".into()),
+            _ => return Err("grants.json has a typing mistake, so Phaethon won’t change it. Fix it in a text editor or delete it, then try again.".into()),
         },
         Err(e) if e.kind() == io::ErrorKind::NotFound => json!({}),
-        Err(e) => return Err(format!("grants.json could not be read: {e}")),
+        Err(e) => return Err(format!("grants.json couldn’t be read: {e}")),
     };
     match doc.get("grants") {
         None => doc["grants"] = json!([]),
         Some(Value::Array(_)) => {}
-        Some(_) => return Err("grants.json: \"grants\" is not a list; fix or remove it first".into()),
+        Some(_) => return Err("grants.json isn’t laid out as Phaethon expects, so Phaethon won’t change it. Fix it or delete it, then try again.".into()),
     }
     Ok(doc)
 }
@@ -406,7 +406,7 @@ mod tests {
         assert_eq!(ids, ["a", "k"], "{:?}", l.problems);
         assert_eq!(l.grants[1].path, "calendar-old", "normalized");
         assert_eq!(l.problems.len(), 12, "{:#?}", l.problems);
-        assert!(l.problems.iter().any(|p| p.contains("used twice")));
+        assert!(l.problems.iter().any(|p| p.contains("appears twice")));
 
         write_file(&dir, json!(["not", "an", "object"]));
         let l = load(&v);

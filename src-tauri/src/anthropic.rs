@@ -165,7 +165,7 @@ fn http_error(status: u16, body: &str) -> ProviderError {
         401 => (ErrorKind::Auth, "Anthropic rejected the API key. Check it in Settings.".to_string()),
         403 => (ErrorKind::Auth, format!("This API key is not allowed to do that. {detail}")),
         402 => (ErrorKind::Billing, format!("Anthropic reported a billing problem on this account. {detail}")),
-        429 => (ErrorKind::RateLimit, "Anthropic's rate limit was reached. Wait a minute, then try again.".to_string()),
+        429 => (ErrorKind::RateLimit, "Anthropic’s rate limit was reached. Wait a minute, then try again.".to_string()),
         400 | 404 | 413 => (ErrorKind::BadRequest, format!("Anthropic refused the request: {detail}")),
         _ => (ErrorKind::Unavailable, format!("Anthropic is unavailable right now (status {status}). Try again shortly.")),
     };

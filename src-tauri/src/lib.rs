@@ -157,7 +157,7 @@ fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::
     let dir = state.vault.space_dir(&space)?;
     thread::load(&dir)
         .map(|m| thread::to_ui(&m))
-        .map_err(|e| format!("This space's conversation could not be read: {e}"))
+        .map_err(|e| format!("This space’s conversation couldn’t be read: {e}"))
 }
 
 #[derive(serde::Serialize)]

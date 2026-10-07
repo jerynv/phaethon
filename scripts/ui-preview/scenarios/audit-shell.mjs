@@ -4,7 +4,7 @@
 // grants chip with its popover (hover, focus, open, revoke, many, long paths),
 // and Settings with the sidebar hidden (title bar button, Cmd+,). Behaviour
 // checks (check(...)) fail the run.
-import { CONVERSATION, GRANTS, SETTINGS, WORK_THREAD, activeDesc, blurWindow, check, park } from "../audit-fixtures.mjs";
+import { CONVERSATION, GRANTS, SETTINGS, WORK_THREAD, activeDesc, blurWindow, check, park, showSidebar } from "../audit-fixtures.mjs";
 
 const CHIP = "[data-grants-chip]";
 const POPOVER = '[data-radix-popper-content-wrapper] [role="dialog"]';
@@ -61,7 +61,8 @@ const platform = (p) => ({
     const t = await titleWhole(page);
     check(t.whole, `the space title "${t.text}" shows whole`, `width ${t.w}`);
     const a = await chipA11y(page);
-    const want = width < 768 ? "Also reads 2" : "Also reads Work / calendar +1 more";
+    // N-010: the compact chip says what the number counts.
+    const want = width < 768 ? "Also reads 2 places" : "Also reads Work / calendar +1 more";
     // A-014: the name is the visible text (no aria-label that could drift from it).
     check(a && !a.label && a.name === want, `chip name is its visible text "${want}"`, JSON.stringify(a));
     check(a.desc === "School can also read 2 places in another space.", "chip description says the whole thing", a.desc);
@@ -117,6 +118,8 @@ export default [
     mock: { settings: SETTINGS, threads: { school: CONVERSATION } },
     async run(page, h) {
       await h.idle();
+      // A narrow window starts with the sidebar hidden; show it first, as this is about hiding it.
+      await showSidebar(page);
       const before = await page.evaluate(() => !!document.querySelector('header [data-testid="titlebar-settings"]'));
       check(!before, "no title bar Settings button while the sidebar (with its own) shows");
       await page.click('button[aria-controls="spaces-sidebar"]');
@@ -155,6 +158,10 @@ export default [
     mock: { settings: SETTINGS, threads: { school: CONVERSATION, work: WORK_THREAD } },
     async run(page, h) {
       await h.idle();
+      await showSidebar(page);
+      await park(page);
+      await h.idle();
+      const narrow = await page.evaluate(() => innerWidth <= 720);
       await h.hover("#spaces-sidebar li:nth-child(2) button");
       await h.idle();
       await h.shot("work-hovered");
@@ -163,6 +170,14 @@ export default [
       await page.mouse.up();
       await h.idle();
       await park(page);
+      // N-005: a narrow window hides its sidebar again once a space is chosen; reopen it for the rest.
+      if (narrow) {
+        const after = await page.evaluate(() => ({ hidden: document.getElementById("spaces-sidebar").hidden, focus: document.activeElement?.id }));
+        check(after.hidden && after.focus === "main", "in a narrow window, choosing a space hides the sidebar and focuses the conversation", JSON.stringify(after));
+        await showSidebar(page);
+        await park(page);
+        await h.idle();
+      }
       await h.shot("work-active");
       // Keyboard: from the top of the page, Tab to the first space.
       await page.evaluate(() => document.activeElement?.blur());
@@ -190,6 +205,7 @@ export default [
     sizes: WIDE,
     mock: { settings: SETTINGS, threads: { school: CONVERSATION } },
     async run(page, h) {
+      await showSidebar(page);
       await h.hover('button[aria-controls="spaces-sidebar"]');
       await new Promise((r) => setTimeout(r, 900));
       await page.waitForSelector('[data-slot="tooltip-content"]', { timeout: 3000 });
@@ -321,6 +337,42 @@ export default [
         return { text: s.textContent, ellipsis: getComputedStyle(s).textOverflow, right: s.getBoundingClientRect().right, popRight: pop.right };
       }, POPOVER);
       check(p.text.endsWith("amendment-3-final-final.pdf") && p.ellipsis !== "ellipsis" && p.right <= p.popRight, "the popover wraps the whole path inside itself", JSON.stringify(p));
+      // N-009: the wrapped row keeps its dot on the first line, and the space's name shares that line with the path.
+      const r = await page.evaluate((sel) => {
+        const li = document.querySelector(`${sel} li`);
+        const dot = li.querySelector("[data-grant-dot] [data-space-hue]").getBoundingClientRect();
+        const label = li.querySelector("[data-grant-label]");
+        // First line boxes: the name's text and the path's first fragment.
+        const range = document.createRange();
+        range.selectNodeContents(label.firstElementChild);
+        const name = range.getClientRects()[0];
+        const path = label.querySelector(".font-mono").getClientRects();
+        const lineHeight = parseFloat(getComputedStyle(label).lineHeight);
+        // Can this engine wrap a long word at <wbr>? (Obscura cannot: it lays the word out on one line.)
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;width:4ch;font:16px/20px monospace";
+        probe.innerHTML = "xxxx/<wbr>yyyy/<wbr>zzzz";
+        document.body.append(probe);
+        const wraps = probe.getBoundingClientRect().height > 30;
+        probe.remove();
+        return {
+          wraps,
+          dotMid: dot.top + dot.height / 2,
+          nameMid: name.top + name.height / 2,
+          pathFirstMid: path[0].top + path[0].height / 2,
+          pathLines: path.length,
+          lineHeight,
+        };
+      }, POPOVER);
+      console.log(`     grant row: ${JSON.stringify(r)}`);
+      if (!r.wraps) {
+        console.log("     (this engine does not wrap text at <wbr>: line checks skipped; run under Chromium)");
+        return;
+      }
+      const half = r.lineHeight / 2;
+      check(r.pathLines > 1, "the long path wraps over several lines", JSON.stringify(r));
+      check(Math.abs(r.dotMid - r.nameMid) < half, "the dot sits on the first line, beside the space's name", JSON.stringify(r));
+      check(Math.abs(r.pathFirstMid - r.nameMid) < half, "the path starts on the name's line (no \"Work /\" alone)", JSON.stringify(r));
     },
   },
   {
@@ -344,6 +396,58 @@ export default [
       }, POPOVER);
       check(e.text === "Couldn’t revoke Work / calendar. grants.json can’t be written: check the vault folder’s permissions, then try again.", "revoke failure says what to do", e.text);
       check(Math.abs(e.left - e.rowText) < 1, "the error box lines up with the rows", JSON.stringify(e));
+    },
+  },
+  {
+    // N-006: under forced colours every space dot keeps its own colour (forced-color-adjust: none)
+    // with a CanvasText edge: title bar, chip, sidebar and the open popover. Run with --forced-colors
+    // to check the painted result; without it, the rule must still be in the stylesheet.
+    name: "audit-shell-forced-dots",
+    sizes: WIDE,
+    mock: { settings: SETTINGS, threads: { school: CONVERSATION }, grants: { school: GRANTS.two } },
+    async run(page, h) {
+      await h.idle();
+      await showSidebar(page);
+      await h.click(CHIP);
+      await page.waitForSelector(POPOVER, { timeout: 5000 });
+      await park(page);
+      await h.idle();
+      const d = await page.evaluate(async () => {
+        const forced = matchMedia("(forced-colors: active)").matches;
+        const dots = [...document.querySelectorAll("span[data-space-hue][aria-hidden]")].filter((e) => e.getClientRects().length);
+        const where = (e) => (e.closest("header") ? "title bar" : e.closest("nav") ? "sidebar" : e.closest("[data-radix-popper-content-wrapper]") ? "popover" : "other");
+        // The built stylesheet's text (Obscura's CSSOM leaves out @media rules, so they are read as text).
+        const css = (await Promise.all([...document.querySelectorAll('link[rel="stylesheet"]')].map((l) => fetch(l.href).then((r) => r.text())))).join("\n");
+        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        // A forced-colours class is defined inside @media (forced-colors: active) with the declaration it needs.
+        const defined = (cls, decl) =>
+          new RegExp(`@media \\(forced-colors:\\s*active\\)\\s*\\{(?:[^{}]*\\{[^{}]*\\})*?\\s*\\.${esc(cls.replace(/[:[\]]/g, "\\$&"))}\\s*\\{[^}]*${esc(decl)}`).test(css);
+        const needs = [
+          ["forced-colors:forced-color-adjust-none", "forced-color-adjust:none"],
+          ["forced-colors:border-[CanvasText]", "border-color:canvastext"],
+          ["forced-colors:border", "border-width:1px"],
+        ];
+        const missingCss = needs.filter(([c, decl]) => !defined(c, decl)).map(([c]) => c);
+        const unruled = dots.filter((e) => needs.some(([c]) => !e.classList.contains(c)));
+        return {
+          forced,
+          places: [...new Set(dots.map(where))].sort(),
+          painted: dots.map((e) => {
+            const cs = getComputedStyle(e);
+            return { where: where(e), adjust: cs.forcedColorAdjust, border: cs.borderTopWidth };
+          }),
+          unruled: unruled.map(where),
+          missingCss,
+          cssLength: css.length,
+        };
+      });
+      check(["popover", "sidebar", "title bar"].every((p) => d.places.includes(p)), "space dots show in the title bar, sidebar and popover", d.places.join(", "));
+      check(!d.missingCss.length, "the stylesheet defines the dots' forced-colours rules (own colour, CanvasText edge)", `${d.missingCss.join(", ")}; ${d.cssLength} characters of CSS read`);
+      check(!d.unruled.length, "every space dot carries those forced-colours rules", d.unruled.join(", "));
+      if (d.forced) {
+        const bad = d.painted.filter((p) => p.adjust !== "none" || parseFloat(p.border) < 1);
+        check(!bad.length, "every space dot keeps its colour and has a CanvasText edge under forced colours", JSON.stringify(bad));
+      } else console.log("     (forced colours not active in this run: painted check skipped; use --forced-colors)");
     },
   },
 ];

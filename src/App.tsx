@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 import { SpacePane } from "@/components/chat/space-pane";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
@@ -53,6 +53,25 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sidebarOpen, toggleSidebar, hasSettings]);
 
+  // In a narrow window the sidebar is opened only for a moment, to switch
+  // spaces: choosing one hides it again so the conversation gets its room
+  // back, and focus moves to the conversation (the chosen button is about to
+  // be hidden). Escape hides it too and returns focus to the toggle.
+  const { narrow: sidebarNarrow, setOpen: setSidebarOpen } = sidebar;
+  const chooseSpace = useCallback(
+    (id: string) => {
+      setActiveId(id);
+      if (!sidebarNarrow || !sidebarOpen) return;
+      document.getElementById("main")?.focus();
+      setSidebarOpen(false);
+    },
+    [sidebarNarrow, sidebarOpen, setSidebarOpen],
+  );
+  const dismissSidebar = useCallback(() => {
+    document.querySelector<HTMLElement>(`button[aria-controls="${SIDEBAR_ID}"]`)?.focus();
+    setSidebarOpen(false);
+  }, [setSidebarOpen]);
+
   return (
     <TooltipProvider>
       {/* data-inactive: the window lost focus, so the chrome and the sidebar selection dim, as native windows do. */}
@@ -83,7 +102,8 @@ export default function App() {
             open={sidebar.open}
             spaces={STUB_SPACES}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={chooseSpace}
+            onDismiss={sidebarNarrow ? dismissSidebar : undefined}
             footer={hasSettings ? <SettingsDialog onChanged={() => setReloadKey((k) => k + 1)} /> : null}
           />
           <main

@@ -11,6 +11,11 @@ export function spaceHueStyle(hue: number): CSSProperties {
  * The quiet mark that identifies a space: a small dot in the space's hue.
  * Decorative: the space's name always sits next to it. A space whose hue is
  * unknown (not in this vault's list) gets a dashed neutral ring.
+ *
+ * Forced colours (Windows High Contrast) would flatten the dot to the page
+ * background and it would vanish, so it keeps its own colour there
+ * (forced-color-adjust: none) and gains a CanvasText edge that shows on any
+ * system palette.
  */
 export function SpaceMark({ hue, className }: { hue: number | undefined; className?: string }) {
   if (hue === undefined) {
@@ -21,7 +26,11 @@ export function SpaceMark({ hue, className }: { hue: number | undefined; classNa
       aria-hidden="true"
       data-space-hue=""
       style={spaceHueStyle(hue)}
-      className={cn("inline-block size-(--ph-space-mark-size) shrink-0 rounded-full bg-space-mark", className)}
+      className={cn(
+        "inline-block size-(--ph-space-mark-size) shrink-0 rounded-full bg-space-mark",
+        "forced-colors:border forced-colors:border-[CanvasText] forced-colors:forced-color-adjust-none",
+        className,
+      )}
     />
   );
 }

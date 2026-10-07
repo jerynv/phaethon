@@ -1,5 +1,5 @@
 import { Popover } from "radix-ui";
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { SpaceMark } from "./space-mark";
 
-/** Below this width the chip shows only its count. */
+/** Below this width the chip shows only its count and noun. */
 const NARROW_QUERY = "(max-width: 767px)";
 
 /** True while the window is narrower than NARROW_QUERY. */
@@ -42,13 +42,29 @@ function chipLabel(g: GrantView): string {
   return g.path ? `${spaceInfo(g.from).name} / ${shortPath(g.path)}` : grantLabel(g);
 }
 
+/** A path with a line-break opportunity after each slash, so a long one wraps between folders, not mid-name. */
+function breakAfterSlashes(path: string): ReactNode {
+  const parts = path.split("/");
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {part}
+      {i < parts.length - 1 && (
+        <>
+          /<wbr />
+        </>
+      )}
+    </Fragment>
+  ));
+}
+
 /**
  * The title bar's "can also read" chip: shown only when the active space has
  * saved read-only grants into other spaces, so access is visible up front
  * (like a browser's site-permission chip). It is a button named by its
  * visible text (WCAG 2.5.3: "Also reads Work / calendar +1 more") and
  * described by the whole sentence. In a narrow window it collapses to "Also
- * reads 2", so the space's name keeps its room. It opens a popover listing
+ * reads 2 places" (the count and what it counts), so the space's name keeps
+ * its room. It opens a popover listing
  * each grant with Revoke; only the list scrolls when it is taller than the
  * window.
  *
@@ -134,9 +150,9 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
               between flex items), so the name reads as the visible text does. */}
           <span className="shrink-0">{"Also reads "}</span>
           {narrow ? (
-            // A narrow window: the count alone, so the space's name keeps its room.
+            // A narrow window: the count and what it counts ("2 places"), so the space's name keeps its room.
             <span className="shrink-0 font-medium text-ink tabular-nums group-data-[inactive]/titlebar:text-ink-secondary">
-              {grants.length}
+              {`${grants.length} ${noun}`}
             </span>
           ) : (
             <>
@@ -201,19 +217,29 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
               const from = spaceInfo(g.from);
               return (
                 <li key={g.id} className="flex shrink-0 items-center gap-3 px-4 py-2.5">
-                  <div className="grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
-                    <SpaceMark hue={from.hue} />
+                  {/* items-start: when the path wraps, the dot stays on the first line, beside the space's name. */}
+                  <div className="grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-start gap-x-2 gap-y-0.5 text-base">
+                    {/* One line tall, so the dot centres on the first line at any text size. */}
+                    <span data-grant-dot="" className="flex h-[1lh] items-center">
+                      <SpaceMark hue={from.hue} />
+                    </span>
                     {g.path ? (
                       // The path wraps rather than truncates: its end is often what tells two grants apart.
-                      <span className="min-w-0 text-base">
-                        <span className="font-medium text-ink">{from.name}</span>{" "}
+                      // No-break spaces join the name, the slash and the path, so the name never sits alone
+                      // on a line; the path then breaks after a slash where it can.
+                      <span data-grant-label="" className="min-w-0">
+                        <span className="font-medium text-ink">{from.name}</span>
+                        {" "}
                         <span aria-hidden="true" className="text-ink-secondary">
                           /
-                        </span>{" "}
-                        <span className="font-mono text-sm wrap-anywhere text-ink">{g.path}</span>
+                        </span>
+                        {" "}
+                        <span className="font-mono text-sm wrap-anywhere text-ink">{breakAfterSlashes(g.path)}</span>
                       </span>
                     ) : (
-                      <span className="min-w-0 text-base font-medium text-ink">{grantLabel(g)}</span>
+                      <span data-grant-label="" className="min-w-0 font-medium text-ink">
+                        {grantLabel(g)}
+                      </span>
                     )}
                     <span className="col-start-2 text-xs text-ink-secondary">
                       {g.scope === "once" ? "This time only" : "Always"}

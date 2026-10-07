@@ -23,6 +23,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { showSidebar } from "../audit-fixtures.mjs";
+
 // Obscura matches neither :focus-visible nor :focus when painting, so the
 // focused element is tagged and drawn with the same tokens as index.css.
 const RING = `[data-shot-focus] { outline: var(--ph-focus-width) solid var(--ph-focus) !important; outline-offset: var(--ph-focus-offset) !important; }
@@ -102,6 +104,7 @@ export default [
     mock: { platform: "windows", threads: { work: thread } },
     async run(page, h) {
       await page.waitForSelector("[data-window-control]", { timeout: 5000 });
+      await showSidebar(page);
       await h.click("#spaces-sidebar li:nth-child(2) button");
       await page.hover('[data-window-control][aria-label="Close"]');
       await settle(page, h);
@@ -111,7 +114,8 @@ export default [
     name: "shell-collapsed",
     mock: { threads: { school: thread } },
     async run(page, h) {
-      await h.click('button[aria-controls="spaces-sidebar"]');
+      // A narrow window starts with the sidebar hidden already; a wide one hides it with the toggle.
+      if (!(await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden))) await h.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
       // The sidebar's Settings entry went with it; the title bar carries one instead.
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
@@ -124,6 +128,7 @@ export default [
     mock: { threads: { work: thread } },
     async run(page, h) {
       await addStyle(page, RING);
+      await showSidebar(page);
       await page.evaluate(() => document.querySelector("#spaces-sidebar li:first-child button")?.focus());
       await page.keyboard.press("ArrowDown");
       const label = await page.evaluate(() => document.activeElement?.textContent ?? "");
@@ -140,11 +145,56 @@ export default [
       console.log(`     tab order: ${order.join(" > ")}`);
       if (!(order[0] ?? "").includes("Skip to conversation")) throw new Error(`first Tab stop is "${order[0]}", not the skip link`);
       const zones = order.map((o) => o.split(":")[0]);
-      const firsts = ["root", "header", "nav", "main"].map((z) => zones.indexOf(z));
-      if (firsts.some((i, k) => i < 0 || (k > 0 && i < firsts[k - 1]))) throw new Error(`Tab order is not skip link > header > nav > main`);
+      // A narrow window starts with the sidebar hidden, so its nav is out of the order.
+      const navShown = await page.evaluate(() => !document.getElementById("spaces-sidebar")?.hidden);
+      const want = navShown ? ["root", "header", "nav", "main"] : ["root", "header", "main"];
+      const firsts = want.map((z) => zones.indexOf(z));
+      if (firsts.some((i, k) => i < 0 || (k > 0 && i < firsts[k - 1]))) throw new Error(`Tab order is not ${want.join(" > ")}`);
+      if (!navShown && zones.includes("nav")) throw new Error("the hidden sidebar is still in the Tab order");
       await addStyle(page, RING);
       await page.evaluate(() => document.querySelector('a[href="#main"]')?.focus());
       await tagFocus(page);
+      await settle(page, h);
+    },
+  },
+  {
+    // N-005: in a narrow window the sidebar is opened only to switch spaces. Choosing one hides it
+    // again and puts focus on the conversation; Escape inside it hides it and returns to the toggle.
+    // In a wide window choosing a space leaves the sidebar where it is.
+    name: "shell-choose-space",
+    sizes: [[640, 480], [1100, 720]],
+    mock: { threads: { school: thread, work: thread } },
+    async run(page, h) {
+      await h.idle();
+      const narrow = await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden);
+      await showSidebar(page);
+      await h.click("#spaces-sidebar li:nth-child(2) button");
+      await h.idle();
+      const after = await page.evaluate(() => ({
+        hidden: document.getElementById("spaces-sidebar")?.hidden,
+        title: document.getElementById("space-title")?.textContent,
+        focus: document.activeElement?.id || document.activeElement?.tagName,
+      }));
+      console.log(`     narrow ${narrow}; after choosing Work: ${JSON.stringify(after)}`);
+      if (after.title !== "Work") throw new Error(`choosing Work showed "${after.title}"`);
+      if (narrow) {
+        if (!after.hidden) throw new Error("the narrow window's sidebar stayed open after choosing a space");
+        if (after.focus !== "main") throw new Error(`focus after choosing went to ${after.focus}, not the conversation`);
+        // Escape from inside the reopened sidebar hides it and returns focus to the toggle.
+        await showSidebar(page);
+        await page.focus("#spaces-sidebar li:first-child button");
+        await page.keyboard.press("Escape");
+        await h.idle();
+        const esc = await page.evaluate(() => ({
+          hidden: document.getElementById("spaces-sidebar")?.hidden,
+          onToggle: document.activeElement?.getAttribute("aria-controls") === "spaces-sidebar",
+        }));
+        console.log(`     Escape in the sidebar: ${JSON.stringify(esc)}`);
+        if (!esc.hidden || !esc.onToggle) throw new Error("Escape did not hide the narrow sidebar and return focus to its toggle");
+      } else if (after.hidden) {
+        throw new Error("the wide window's sidebar closed after choosing a space");
+      }
+      await page.mouse.move(600, 400);
       await settle(page, h);
     },
   },

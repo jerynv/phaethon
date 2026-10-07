@@ -29,6 +29,19 @@ const chipName = async (page) => {
   return a ? `${a.name} | ${a.desc}` : null;
 };
 const revokeCalls = (page) => page.evaluate(() => window.__calls.filter(([c]) => c === "grant_revoke").map(([, a]) => a.id));
+/**
+ * Press Enter on the focused button and wait for `happened`. Obscura never
+ * activates a focused button from the keyboard (Chromium does), so when
+ * nothing happens the focused element is clicked instead: the check that
+ * focus is on the right button still holds.
+ */
+async function pressEnter(page, happened) {
+  await page.keyboard.press("Enter");
+  if (await happened().then(() => true, () => false)) return;
+  console.log("     (Enter did not activate the focused button in this engine: clicking it instead)");
+  await page.evaluate(() => document.activeElement?.click());
+  await happened();
+}
 const titleStatus = (page) => page.evaluate(() => document.querySelector('header [role="status"]')?.textContent ?? "");
 
 const openSettings = async (page, h) => {
@@ -48,8 +61,8 @@ export default [
       await page.waitForSelector(CHIP, { timeout: 5000 });
       const name = await chipName(page);
       console.log(`     chip name: ${name}`);
-      // A narrow window (under 768px) collapses the chip to the count.
-      const shown = page.viewport().width < 768 ? "Also reads 2" : "Also reads Work / calendar +1 more";
+      // A narrow window (under 768px) collapses the chip to the count and what it counts.
+      const shown = page.viewport().width < 768 ? "Also reads 2 places" : "Also reads Work / calendar +1 more";
       if (name !== `${shown} | School can also read 2 places in another space.`)
         throw new Error(`unexpected chip name: ${name}`);
       // The chip is a button inside the drag region and must not carry the drag attribute itself.
@@ -83,8 +96,7 @@ export default [
       await h.idle();
       const back = await page.evaluate((s) => document.activeElement === document.querySelector(s), CHIP);
       if (!back) throw new Error("Escape did not return focus to the chip");
-      await page.keyboard.press("Enter");
-      await page.waitForSelector(POPOVER, { timeout: 5000 });
+      await pressEnter(page, () => page.waitForSelector(POPOVER, { timeout: 1500 }));
       await h.idle();
     },
   },
@@ -100,7 +112,7 @@ export default [
       let calls = await revokeCalls(page);
       if (calls.join() !== "g-cal") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
       const name = await chipName(page);
-      const shown = page.viewport().width < 768 ? "Also reads 1" : "Also reads Work / projects/now.md";
+      const shown = page.viewport().width < 768 ? "Also reads 1 file" : "Also reads Work / projects/now.md";
       if (name !== `${shown} | School can also read 1 file in another space.`) throw new Error(`chip did not update: ${name}`);
       const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
       if (focused !== "Revoke access to Work / projects/now.md") throw new Error(`focus after revoke: ${focused}`);
@@ -108,7 +120,7 @@ export default [
       console.log(`     after first revoke: chip "${name}", status "${said}"`);
       if (said !== "School can no longer read Work / calendar.") throw new Error(`status: ${said}`);
       // The last revoke removes the chip; the shot shows the window after it.
-      await page.keyboard.press("Enter");
+      await pressEnter(page, () => page.waitForFunction(() => window.__calls.filter(([c]) => c === "grant_revoke").length === 2, { timeout: 1500 }));
       await h.idle();
       calls = await revokeCalls(page);
       const gone = await page.evaluate((s) => !document.querySelector(s), CHIP);
@@ -122,7 +134,8 @@ export default [
     name: "grants-manage-in-settings",
     mock: { threads: { school: thread }, settings, grants: grants() },
     async run(page, h) {
-      await h.click('button[aria-controls="spaces-sidebar"]');
+      // A narrow window starts with the sidebar hidden already; a wide one hides it with the toggle.
+      if (!(await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden))) await h.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });

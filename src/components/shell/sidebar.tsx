@@ -15,6 +15,8 @@ type Props = {
   open: boolean;
   /** Pinned below the list (the Settings entry). */
   footer?: ReactNode;
+  /** Given while the sidebar is a temporary one (narrow window): Escape inside it calls this. */
+  onDismiss?: () => void;
 };
 
 /**
@@ -22,7 +24,7 @@ type Props = {
  * ArrowUp/ArrowDown/Home/End also move focus within the list. The current
  * space is marked with aria-current and shown in its own hue.
  */
-export function Sidebar({ id, spaces, activeId, onSelect, open, footer }: Props) {
+export function Sidebar({ id, spaces, activeId, onSelect, open, footer, onDismiss }: Props) {
   const listRef = useRef<HTMLUListElement>(null);
 
   function onKeyDown(e: KeyboardEvent<HTMLUListElement>) {
@@ -40,9 +42,18 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, footer }: Props)
     }
   }
 
+  function onNavKeyDown(e: KeyboardEvent<HTMLElement>) {
+    // Only keys pressed in the sidebar itself: React also bubbles events from
+    // portals (the Settings dialog), whose Escape belongs to the dialog.
+    if (e.key !== "Escape" || !onDismiss || !e.currentTarget.contains(e.target as Node)) return;
+    e.preventDefault();
+    onDismiss();
+  }
+
   return (
     <nav
       id={id}
+      onKeyDown={onNavKeyDown}
       aria-labelledby="spaces-heading"
       hidden={!open}
       data-shell-chrome=""

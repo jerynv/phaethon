@@ -93,22 +93,40 @@ export default [
       check(!said.includes("Waiting for you"), "the status region does not also announce the request", said);
       const activity = await page.evaluate(() => !!document.querySelector("[data-activity]"));
       check(!activity, "the waiting line is not shown under the card");
-      const order = await page.evaluate(() => {
+      // N-008: as on the approval card, the primary answer is last in Tab order and rightmost on screen.
+      const actions = await page.evaluate(() => {
         const card = document.querySelector("[data-access-request]");
         card.focus();
-        return [...card.querySelectorAll("button")].map((b) => b.textContent.trim());
+        return [...card.querySelectorAll("button")].map((b) => {
+          const r = b.getBoundingClientRect();
+          return { text: b.textContent.trim(), right: r.right, top: r.top + r.height / 2 };
+        });
       });
-      check(order.join("|") === "Allow once|Always allow|Deny", "Tab order is Allow once, Always allow, Deny", order.join("|"));
-      await page.keyboard.press("Tab");
-      const first = await page.evaluate(() => document.activeElement?.textContent.trim());
-      check(first === "Allow once", "the first Tab stop is Allow once", first);
+      const order = actions.map((a) => a.text);
+      check(order.join("|") === "Deny|Always allow|Allow once", "Tab order is Deny, Always allow, Allow once", order.join("|"));
+      // On the last row (the answers may wrap in a narrow window), and at its right end. (`top` is each button's vertical centre.)
+      const primary = actions[actions.length - 1];
+      const lastRow = actions.filter((a) => Math.abs(a.top - primary.top) < 8);
+      const onLastRow = actions.every((a) => a.top <= primary.top + 8);
+      const rightmost = lastRow.every((a) => a.right <= primary.right + 0.5);
+      check(onLastRow && rightmost, "Allow once (the primary) is the last, rightmost answer", JSON.stringify(actions));
+      const tabs = [];
+      for (let i = 0; i < 3; i++) {
+        await page.keyboard.press("Tab");
+        tabs.push(await page.evaluate(() => (document.activeElement?.hasAttribute("data-access-request") ? "card" : document.activeElement?.textContent.trim())));
+        if (tabs[0] === "card") break;
+      }
+      // Obscura does not move focus on Tab from a tabindex=-1 element; Chromium does.
+      if (tabs[0] === "card") console.log("     (this engine does not Tab out of a focused card; DOM order check above stands)");
+      else check(tabs.join("|") === "Deny|Always allow|Allow once", "Tab from the card visits Deny, Always allow, Allow once", tabs.join("|"));
+      await page.evaluate(() => document.querySelector("[data-access-request]").focus());
       await page.keyboard.press("Escape");
       await h.idle();
       const still = await page.evaluate(() => !!document.querySelector("[data-access-request]"));
       const none = await calls(page, "agent_access_answer");
       check(still && none.length === 0, "Escape does not answer; the card stays");
       const note = await page.evaluate(() => document.querySelector('[data-access-request] [role="status"]').textContent);
-      check(note.startsWith("Choose Allow once"), "Escape says how to choose instead", note);
+      check(note.startsWith("Choose Deny, Always allow or Allow once"), "Escape says how to choose instead, in the order shown", note);
       // Leave the card unfocused for the picture, with the hint visible.
       await page.evaluate(() => document.activeElement?.blur());
       await h.idle();

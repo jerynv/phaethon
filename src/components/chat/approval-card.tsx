@@ -2,6 +2,7 @@ import { useAuiState } from "@assistant-ui/react";
 import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import { answerApproval, type AgentMessageCustom } from "@/runtime/agent-adapter";
@@ -135,12 +136,9 @@ export function CardProblem({ problem, className }: { problem: CardProblemState;
         {problem.text}
       </p>
       {problem.detail && (
-        <details className="ms-[calc(var(--ph-icon-size-sm)+var(--ph-space)*1.5)] text-ink-secondary">
-          <summary className="inline-flex min-h-(--ph-control-height-sm) cursor-default items-center rounded-sm select-none hover:text-ink">
-            Details
-          </summary>
+        <Details className="ms-[calc(var(--ph-icon-size-sm)+var(--ph-space)*1.5)]">
           <p className="font-mono wrap-anywhere text-ink">{problem.detail}</p>
-        </details>
+        </Details>
       )}
     </div>
   );

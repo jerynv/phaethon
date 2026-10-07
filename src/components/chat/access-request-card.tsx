@@ -61,7 +61,7 @@ function SpacePath({ space, path, className }: { space: string; path: string; cl
   );
 }
 
-const ESCAPE_NOTE = "Choose Allow once, Always allow or Deny. Nothing is shared until you choose.";
+const ESCAPE_NOTE = "Choose Deny, Always allow or Allow once. Nothing is shared until you choose.";
 
 /**
  * The agent asks to read part of another space, read-only. A sibling of the
@@ -70,8 +70,9 @@ const ESCAPE_NOTE = "Choose Allow once, Always allow or Deny. Nothing is shared 
  * permission over another compartment, not a change to a file), so it leads
  * with that space's hue and ends in three explicit choices.
  *
- * Keyboard: Tab moves through Allow once, Always allow and Deny, in the order
- * they are shown. Escape does not answer: leaving a permission prompt is never
+ * Keyboard: Tab moves through Deny, Always allow and Allow once, in the order
+ * they are shown (the primary answer last and on the right, as on the approval
+ * card). Escape does not answer: leaving a permission prompt is never
  * a silent "no", so it only says how to choose. Once answered, focus goes back
  * to the composer and the card becomes a receipt in the reply.
  */
@@ -208,16 +209,17 @@ export function AccessRequestCard() {
       </div>
 
       <div className="flex flex-col gap-2 px-4 pt-4 pb-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button disabled={busy} aria-describedby={onceHintId} onClick={() => void answer("once")}>
-            <Icon name="check" />
-            Allow once
+        {/* The same order as the approval card: the primary answer last and on the right, so Tab order matches. */}
+        <div className="flex flex-wrap items-center justify-end gap-2" data-access-actions="">
+          <Button disabled={busy} variant="outline" onClick={() => void answer("deny")}>
+            Deny
           </Button>
           <Button disabled={busy} variant="outline" aria-describedby={alwaysHintId} onClick={() => void answer("always")}>
             Always allow
           </Button>
-          <Button disabled={busy} variant="outline" onClick={() => void answer("deny")}>
-            Deny
+          <Button disabled={busy} aria-describedby={onceHintId} onClick={() => void answer("once")}>
+            <Icon name="check" />
+            Allow once
           </Button>
         </div>
         <p className="text-sm text-ink-secondary">

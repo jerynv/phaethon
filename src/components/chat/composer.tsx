@@ -189,7 +189,8 @@ export function Composer({
           }}
           rows={1}
           // At most 7 whole lines plus padding: a full composer scrolls by lines, never showing half a line at the top.
-          className="max-h-[calc(7lh+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary"
+          // Forced colours: the placeholder is GrayText, the system colour for hint text (not a mapped author colour).
+          className="max-h-[calc(7lh+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
         />
         <span id={hintId} className="sr-only">
           Press Enter to send, Shift+Enter for a new line, Escape to stop a reply.

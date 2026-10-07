@@ -14,7 +14,7 @@ import {
   WORK_THREAD,
   check,
   clickText,
-  dragFileOver,
+  dragFileOver as dragWithDataTransfer,
   park,
   pick,
   showSidebar,
@@ -24,6 +24,42 @@ const WIDE = [[1100, 720]];
 const BOTH = [[1100, 720], [640, 480]];
 const LOG = '[role="log"]';
 const COMPOSER = "[data-composer-input]";
+
+/**
+ * A file dragged over the conversation. Obscura has no DataTransfer, so there
+ * the events carry a stand-in with the one thing the thread reads (types
+ * includes "Files"); React passes the native event's dataTransfer through.
+ */
+const dragFileOver = async (page) => {
+  if (await page.evaluate(() => typeof DataTransfer === "function")) return dragWithDataTransfer(page);
+  await page.evaluate(() => {
+    const target = document.querySelector('[role="log"]');
+    for (const type of ["dragenter", "dragover"]) {
+      const e = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(e, "dataTransfer", { value: { types: ["Files"], files: [], dropEffect: "none" } });
+      target.dispatchEvent(e);
+    }
+  });
+};
+
+/** N-002: the folded text under `scope` uses the shared Details (ui/details.tsx): closed, a full-height summary with the chevron. */
+const checkSharedDetails = async (page, scope, where) => {
+  const d = await page.evaluate((scope) => {
+    const details = document.querySelector(`${scope} details`);
+    const summary = details?.querySelector(":scope > summary");
+    if (!summary) return null;
+    const probe = document.body.appendChild(document.createElement("div"));
+    probe.style.height = "var(--ph-target-min)";
+    const min = probe.getBoundingClientRect().height;
+    probe.remove();
+    return { open: details.open, chevron: !!summary.querySelector("svg"), text: summary.textContent.trim(), height: summary.getBoundingClientRect().height, min };
+  }, scope);
+  check(
+    !!d && !d.open && d.chevron && d.text === "Details" && d.height >= d.min - 0.5,
+    `${where}: the raw text is under the shared Details (closed, chevron, full target)`,
+    JSON.stringify(d),
+  );
+};
 
 const attach = async (page, paths) => {
   await pick(page, paths);
@@ -70,8 +106,11 @@ const errorScenarios = Object.entries(ERRORS).map(([code, message]) => ({
     await page.waitForSelector('[data-role="assistant"] [role="alert"]', { timeout: 5000 });
     const banner = await page.evaluate(() => {
       const box = document.querySelector('[data-role="assistant"] [data-error-code]');
+      const alert = box.querySelector('[role="alert"]');
       return {
-        alert: box.querySelector('[role="alert"]').innerText,
+        // The title is the alert's first paragraph (innerText line breaks differ between engines).
+        headline: alert.querySelector("p").textContent,
+        alert: alert.textContent,
         actions: [...box.querySelectorAll("[data-error-action]")].map((b) => b.dataset.errorAction),
         detail: box.querySelector("[data-error-detail]")?.textContent ?? null,
         detailOpen: box.querySelector("details")?.open ?? null,
@@ -80,11 +119,14 @@ const errorScenarios = Object.entries(ERRORS).map(([code, message]) => ({
     // Attachment errors are written for people by the backend (they name the file
     // and the limit), so that sentence is the body; every other code keeps it in Details.
     const ownWords = code === "attachment";
-    const [headline] = banner.alert.split("\n");
+    const { headline } = banner;
     check(!headline.includes(message), "the raw backend text is not the headline", headline);
     if (ownWords) check(banner.alert.includes(message) && banner.detail === null, "attachment errors show the backend's plain sentence as the body, with no duplicate Details", banner.alert);
     check(!banner.alert.includes("`"), "no literal backticks in the banner", banner.alert);
-    if (!ownWords) check(banner.detail === message.replace(/`/g, "") && banner.detailOpen === false, "the raw text is kept under a closed Details", banner.detail);
+    if (!ownWords) {
+      check(banner.detail === message.replace(/`/g, "") && banner.detailOpen === false, "the raw text is kept under a closed Details", banner.detail);
+      await checkSharedDetails(page, '[data-role="assistant"] [data-error-code]', "error banner");
+    }
     const want = ACTIONS[code] ?? [];
     check(banner.actions.join() === want.join(), `actions are [${want.join(", ")}]`, banner.actions.join());
     if (want.includes("settings")) {
@@ -157,6 +199,7 @@ export default [
       await page.waitForFunction((n) => window.__calls.filter((c) => c[0] === "thread_load").length > n, { timeout: 5000 }, before);
       await h.waitText("couldn’t be loaded");
       check(true, "Try again loads the conversation again (thread_load called again)");
+      await checkSharedDetails(page, "#main", "load error");
       await park(page);
     },
   },
@@ -168,12 +211,20 @@ export default [
     mock: { settings: SETTINGS, threads: { school: LONG } },
     async run(page, h) {
       await h.waitText("Question 16");
+      const logBox = () => page.evaluate((sel) => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, height: r.height };
+      }, LOG);
+      const before = await logBox();
       await page.evaluate((sel) => {
         const log = document.querySelector(sel);
         log.scrollTop = log.scrollHeight / 2;
         log.dispatchEvent(new Event("scroll"));
       }, LOG);
       await h.idle();
+      // N-001: showing Jump to latest never resizes the conversation.
+      const during = await logBox();
+      check(Math.abs(during.height - before.height) < 0.5 && Math.abs(during.bottom - before.bottom) < 0.5, "showing Jump to latest leaves the conversation's size unchanged", `${before.height} -> ${during.height}`);
       await park(page);
       await h.shot("middle");
       // An older reply's Copy only shows on hover.
@@ -182,14 +233,39 @@ export default [
       await mid.hover();
       await h.idle();
       await h.shot("older-reply-hover");
-      // Jump to latest: its own row between the conversation and the composer, never over a message.
+      // Jump to latest floats over the log's foot, inside the band the log keeps as
+      // bottom scroll padding, so a focused message or button scrolls clear of it.
       const jump = await page.evaluate((sel) => {
         const b = document.querySelector("[data-jump-row] button")?.getBoundingClientRect();
-        const log = document.querySelector(sel).getBoundingClientRect();
-        return b && { top: b.top, bottom: b.bottom, height: b.height, logBottom: log.bottom };
+        const el = document.querySelector(sel);
+        const log = el.getBoundingClientRect();
+        // The band the log keeps clear at its foot while the button shows (set from the row's measured height).
+        const pad = parseFloat(getComputedStyle(el).scrollPaddingBottom) || parseFloat(el.style.scrollPaddingBottom) || 0;
+        return b && { top: b.top, bottom: b.bottom, height: b.height, logTop: log.top, logBottom: log.bottom, pad };
       }, LOG);
       check(!!jump, "Jump to latest shows while scrolled up");
-      check(jump.top >= jump.logBottom - 0.5, "it sits below the conversation, covering none of it", JSON.stringify(jump));
+      check(jump.bottom <= jump.logBottom + 0.5 && jump.top >= jump.logTop, "it floats inside the conversation's box (no row of its own)", JSON.stringify(jump));
+      check(jump.top >= jump.logBottom - jump.pad - 0.5, "it sits within the log's bottom scroll padding, so focus scrolls clear of it", JSON.stringify(jump));
+      // Tab to a reply's Copy that starts under the button: it scrolls clear rather than staying hidden.
+      const clear = await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        const lb = log.getBoundingClientRect();
+        const row = document.querySelector("[data-jump-row] button").getBoundingClientRect();
+        const target = [...log.querySelectorAll("[data-copy-reply]")].find((b) => b.getBoundingClientRect().top > lb.bottom);
+        if (!target) return { skipped: true };
+        target.focus();
+        const r = target.getBoundingClientRect();
+        const btn = document.querySelector("[data-jump-row] button")?.getBoundingClientRect() ?? row;
+        return { skipped: false, overlap: r.bottom > btn.top + 0.5 && r.top < btn.bottom && r.right > btn.left && r.left < btn.right };
+      }, LOG);
+      if (clear.skipped) console.log("     (no Copy below the fold to focus; scroll-padding check above covers it)");
+      else check(!clear.overlap, "a button focused below the fold scrolls clear of Jump to latest", JSON.stringify(clear));
+      await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        log.scrollTop = log.scrollHeight / 2;
+        log.dispatchEvent(new Event("scroll"));
+      }, LOG);
+      await h.idle();
       const lg = await page.evaluate(() => {
         const probe = document.body.appendChild(document.createElement("div"));
         probe.style.height = "var(--ph-control-height-lg)";
@@ -379,9 +455,44 @@ export default [
       await page.waitForSelector('[role="alertdialog"]', { timeout: 5000 });
       await park(page);
       await h.idle();
-      await h.shot("top");
-      await page.evaluate(() => document.querySelector('[role="alertdialog"]').scrollIntoView({ block: "end" }));
+      // N-001: the card is what needs attention; Jump to latest stays away while it waits,
+      // even scrolled up, and the conversation keeps its size.
+      const sizeBefore = await page.evaluate((sel) => document.querySelector(sel).getBoundingClientRect().height, LOG);
+      await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        log.scrollTop = 0;
+        log.dispatchEvent(new Event("scroll"));
+      }, LOG);
       await h.idle();
+      const pending = await page.evaluate((sel) => ({
+        jump: !!document.querySelector("[data-jump-row]"),
+        scrolledUp: (() => {
+          const log = document.querySelector(sel);
+          return log.scrollHeight - log.scrollTop - log.clientHeight > 2;
+        })(),
+        height: document.querySelector(sel).getBoundingClientRect().height,
+      }), LOG);
+      check(pending.scrolledUp && !pending.jump, "no Jump to latest while an approval waits, even scrolled up", JSON.stringify(pending));
+      check(Math.abs(pending.height - sizeBefore) < 0.5, "the conversation keeps its size", `${sizeBefore} -> ${pending.height}`);
+      await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        log.scrollTop += document.querySelector('[role="alertdialog"]').getBoundingClientRect().top - log.getBoundingClientRect().top;
+      }, LOG);
+      await h.idle();
+      await h.shot("top");
+      // The card is the last thing in the log: its end is the log's end.
+      await page.evaluate((sel) => (document.querySelector(sel).scrollTop = document.querySelector(sel).scrollHeight), LOG);
+      await h.idle();
+      const answers = await page.evaluate((sel) => {
+        const log = document.querySelector(sel).getBoundingClientRect();
+        const covered = (b) => {
+          const r = b.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return r.top < log.top || r.bottom > log.bottom + 0.5 || !(hit === b || b.contains(hit));
+        };
+        return [...document.querySelectorAll('[role="alertdialog"] button')].map((b) => ({ text: b.textContent.trim(), covered: covered(b) }));
+      }, LOG);
+      check(answers.length === 2 && answers.every((a) => !a.covered), "Don’t allow and Allow are fully visible and uncovered at the card's end", JSON.stringify(answers));
     },
   },
   {
@@ -405,6 +516,7 @@ export default [
       check(card.alert.startsWith("Your answer couldn’t be sent") && !card.alert.includes("the reply was cancelled"), "a failed answer is explained in plain words", card.alert);
       check(card.enabled === 0, "both answers are disabled once the answer can’t be given", String(card.enabled));
       check(card.focused, "focus moves to the card, not lost with the disabled button");
+      await checkSharedDetails(page, '[role="alertdialog"]', "failed answer");
       await park(page);
     },
   },
@@ -445,6 +557,17 @@ export default [
       await h.send("Compare with the contract.");
       await page.waitForSelector("[data-access-request]", { timeout: 5000 });
       await park(page);
+      await h.idle();
+      // N-001: no Jump to latest while the access card waits, even scrolled up.
+      await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        log.scrollTop = 0;
+        log.dispatchEvent(new Event("scroll"));
+      }, LOG);
+      await h.idle();
+      const jump = await page.evaluate(() => !!document.querySelector("[data-jump-row]"));
+      check(!jump, "no Jump to latest while an access request waits");
+      await page.evaluate((sel) => (document.querySelector(sel).scrollTop = document.querySelector(sel).scrollHeight), LOG);
       await h.idle();
     },
   },
@@ -494,6 +617,32 @@ export default [
     mock: { settings: SETTINGS, threads: { school: CONVERSATION } },
     async run(page, h) {
       await h.idle();
+      // N-006: in forced colours the placeholder is GrayText (hint text), not a mapped author colour.
+      // (Under shoot.mjs --forced-colors it is already on: check, and leave it on.)
+      const already = await page.evaluate(() => matchMedia("(forced-colors: active)").matches);
+      const cdp = already ? null : await page.createCDPSession();
+      const forcedOn =
+        already ||
+        (await cdp
+          .send("Emulation.setEmulatedMedia", { features: [{ name: "forced-colors", value: "active" }] })
+          .then(() => page.evaluate(() => matchMedia("(forced-colors: active)").matches))
+          .catch(() => false));
+      if (forcedOn) {
+        const ph = await page.evaluate((sel) => {
+          const probe = document.body.appendChild(document.createElement("span"));
+          probe.style.color = "GrayText";
+          const gray = getComputedStyle(probe).color;
+          probe.remove();
+          return { placeholder: getComputedStyle(document.querySelector(sel), "::placeholder").color, gray };
+        }, COMPOSER);
+        check(ph.placeholder === ph.gray, "forced colours: the composer placeholder is GrayText", JSON.stringify(ph));
+        if (cdp) {
+          await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+          await h.idle();
+        }
+      } else {
+        console.log("     (this engine cannot emulate forced colours; placeholder GrayText check skipped)");
+      }
       await park(page);
       await page.focus(COMPOSER);
       await page.keyboard.press("Shift"); // keyboard modality
@@ -551,6 +700,17 @@ export default [
       await page.focus(COMPOSER);
       await page.keyboard.type("Sort these into folders.");
       await h.idle();
+      // N-012: the empty state is safely centred: with the log at its top, none of it sits above the log.
+      const empty = await page.evaluate((sel) => {
+        const log = document.querySelector(sel);
+        log.scrollTop = 0;
+        const box = document.querySelector("[data-empty-state]").getBoundingClientRect();
+        return { top: box.top, logTop: log.getBoundingClientRect().top, justify: getComputedStyle(document.querySelector("[data-empty-state]").parentElement).justifyContent };
+      }, LOG);
+      check(empty.top >= empty.logTop - 0.5, "the empty state's icon is not clipped above the conversation", JSON.stringify(empty));
+      check(empty.justify.includes("safe"), "it is centred with justify-content: safe center", empty.justify);
+      const jumpOnEmpty = await page.evaluate(() => !!document.querySelector("[data-jump-row]"));
+      check(!jumpOnEmpty, "no Jump to latest over the empty state, even when it scrolls");
     },
   },
   {
@@ -581,6 +741,24 @@ export default [
       await page.waitForFunction(() => document.body.innerText.includes("Drop files to attach them"), { timeout: 5000 });
       await park(page);
       await h.idle();
+      // A-038: the overlay is opaque, covers the whole pane (inside its border) and sits above
+      // the pane's top fade, so no slice of the conversation shows around the dashed box.
+      const cover = await page.evaluate(() => {
+        const o = document.querySelector("[data-drop-overlay]");
+        const main = document.querySelector("#main");
+        const pane = main.getBoundingClientRect();
+        const r = o.getBoundingClientRect();
+        return {
+          covers: r.top <= pane.top + 1.5 && r.left <= pane.left + 1.5 && r.right >= pane.right - 1.5 && r.bottom >= pane.bottom - 1.5,
+          bg: getComputedStyle(o).backgroundColor,
+          z: parseInt(getComputedStyle(o).zIndex, 10) || 0,
+          fadeZ: parseInt(getComputedStyle(main, "::before").zIndex, 10) || 0,
+        };
+      });
+      const opaque = !/transparent|\/\s*0?\.\d|,\s*0?\.\d+\)$/.test(cover.bg);
+      check(cover.covers, "the drop overlay covers the whole conversation pane", JSON.stringify(cover));
+      check(opaque, "its background is opaque", cover.bg);
+      check(cover.z > cover.fadeZ, "it sits above the pane's top fade", JSON.stringify(cover));
     },
   },
 

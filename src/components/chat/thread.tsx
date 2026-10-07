@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -280,7 +281,9 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
 /** Shown in a space with no conversation yet: where you are and what Phaethon can see. */
 function EmptyState({ spaceName }: { spaceName: string }) {
   return (
-    <div className="m-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-12 text-center">
+    // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
+    // starts at the top and scrolls, never clipped above the log.
+    <div data-empty-state="" className="mx-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-4 text-center">
       <span
         aria-hidden="true"
         className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] items-center justify-center rounded-full bg-space-tint text-ink-secondary"
@@ -308,23 +311,55 @@ function ViewportBridge({ onStore }: { onStore: (s: ViewportStore) => void }) {
 const noSubscribe = () => () => {};
 
 /**
- * "Jump to latest": shown only while the conversation is scrolled up. It sits
- * in its own row above the composer, outside the conversation, so it never
- * covers a message or a card's buttons (WCAG 2.4.11).
+ * "Jump to latest": shown only while the conversation is scrolled up, and never
+ * while an approval or access card waits (the card needs the attention, and in
+ * a small window the button would sit on its answers). It floats over the foot
+ * of the log rather than taking a row, so showing it never resizes the
+ * conversation. While it shows, the log's bottom scroll padding is the
+ * button's row (measured, so it holds at any text size), so a focused message
+ * or button scrolls clear of it (WCAG 2.4.11); at the very bottom it is gone.
  */
 function JumpToLatest({ store, logRef }: { store: ViewportStore | null; logRef: RefObject<HTMLDivElement | null> }) {
   const atBottom = useSyncExternalStore(
     store ? store.subscribe : noSubscribe,
     () => (store ? store.getState().isAtBottom : true),
   );
-  if (!store || atBottom) return null;
+  const waiting = useAuiState((s) => {
+    const last = s.thread.messages[s.thread.messages.length - 1];
+    return last?.status?.type === "running" && !!waitingCard(last.metadata.custom as AgentMessageCustom | undefined);
+  });
+  // An empty thread has no "latest" (a short window may still scroll the empty state).
+  const empty = useAuiState((s) => s.thread.isEmpty);
+  if (!store || atBottom || waiting || empty) return null;
+  return <JumpRow store={store} logRef={logRef} />;
+}
+
+function JumpRow({ store, logRef }: { store: NonNullable<ViewportStore>; logRef: RefObject<HTMLDivElement | null> }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const log = logRef.current;
+    if (!row || !log) return;
+    const keepClear = () => (log.style.scrollPaddingBottom = `${row.getBoundingClientRect().height}px`);
+    keepClear();
+    const watch = new ResizeObserver(keepClear);
+    watch.observe(row);
+    return () => {
+      watch.disconnect();
+      log.style.scrollPaddingBottom = "";
+    };
+  }, [logRef]);
   return (
-    <div className="mx-auto flex w-full max-w-(--ph-thread-width) justify-center px-6 pt-2" data-jump-row="">
+    <div
+      ref={rowRef}
+      className="absolute bottom-0 left-1/2 z-10 w-max max-w-full -translate-x-1/2 py-2"
+      data-jump-row=""
+    >
       <Button
         type="button"
         variant="outline"
         size="lg"
-        className="rounded-full bg-raised shadow"
+        className="rounded-full bg-raised whitespace-nowrap shadow"
         onClick={() => {
           store.getState().scrollToBottom();
           // This button goes away at the bottom; keep focus in the conversation.
@@ -397,29 +432,32 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
             void addFiles(Array.from(e.dataTransfer.files));
           }}
         >
-          <ThreadPrimitive.Viewport
-            ref={logRef}
-            role="log"
-            aria-label={`Conversation in ${spaceName}`}
-            // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
-            aria-live="off"
-            tabIndex={0}
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-          >
-            <ViewportBridge onStore={keepViewport} />
-            <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pt-8 pb-6">
-              <AuiIf condition={(s) => s.thread.isEmpty}>
-                <EmptyState spaceName={spaceName} />
-              </AuiIf>
-              {/* The gap holds an older reply's Copy button (shown on hover or focus) and grows with the text size. */}
-              <div className="flex flex-col gap-[calc(var(--ph-control-height-sm)+var(--ph-space)*3)] empty:hidden">
-                <ThreadPrimitive.Messages>
-                  {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
-                </ThreadPrimitive.Messages>
+          {/* The log, and Jump to latest floating over its foot. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <ThreadPrimitive.Viewport
+              ref={logRef}
+              role="log"
+              aria-label={`Conversation in ${spaceName}`}
+              // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
+              aria-live="off"
+              tabIndex={0}
+              className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+            >
+              <ViewportBridge onStore={keepViewport} />
+              <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pt-8 pb-6 has-[[data-empty-state]]:justify-center-safe">
+                <AuiIf condition={(s) => s.thread.isEmpty}>
+                  <EmptyState spaceName={spaceName} />
+                </AuiIf>
+                {/* The gap holds an older reply's Copy button (shown on hover or focus) and grows with the text size. */}
+                <div className="flex flex-col gap-[calc(var(--ph-control-height-sm)+var(--ph-space)*3)] empty:hidden">
+                  <ThreadPrimitive.Messages>
+                    {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
+                  </ThreadPrimitive.Messages>
+                </div>
               </div>
-            </div>
-          </ThreadPrimitive.Viewport>
-          <JumpToLatest store={viewport} logRef={logRef} />
+            </ThreadPrimitive.Viewport>
+            <JumpToLatest store={viewport} logRef={logRef} />
+          </div>
           <ReplyAnnouncer text={spoken} setText={setSpoken} />
           <Composer
             spaceName={spaceName}
@@ -433,12 +471,16 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
           {dragging && (
             <div
               aria-hidden="true"
-              // Nearly opaque, and blurred, so the conversation underneath does not read through.
-              className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus bg-[color-mix(in_oklch,var(--ph-bg)_97%,transparent)] text-ink backdrop-blur-sm"
+              data-drop-overlay=""
+              // Opaque and edge to edge, so no slice of the conversation shows around the
+              // drop zone; the dashed box sits inside it.
+              className="pointer-events-none absolute inset-0 z-20 flex bg-bg p-3"
             >
-              <Icon name="attach" className="size-(--ph-icon-size-lg) text-accent-ink" />
-              <p className="text-lg font-semibold">Drop files to attach them</p>
-              <p className="text-base text-ink-secondary">Images, PDFs and text files, saved in {spaceName}</p>
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus text-ink">
+                <Icon name="attach" className="size-(--ph-icon-size-lg) text-accent-ink" />
+                <p className="text-lg font-semibold">Drop files to attach them</p>
+                <p className="text-base text-ink-secondary">Images, PDFs and text files, saved in {spaceName}</p>
+              </div>
             </div>
           )}
         </ThreadPrimitive.Root>

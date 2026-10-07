@@ -272,6 +272,30 @@ export default [
       check(focused === "alertdialog", "the approval card takes focus when it appears", focused);
       const modal = await page.evaluate(() => document.querySelector('[role="alertdialog"]').getAttribute("aria-modal"));
       check(modal === "false", "the approval card is aria-modal=false");
+      // N-008: the primary answer is last in Tab order and rightmost, as on the access card.
+      const answers = await page.evaluate(() =>
+        [...document.querySelectorAll('[role="alertdialog"] button')].map((b) => {
+          const r = b.getBoundingClientRect();
+          return { text: b.textContent.trim(), right: r.right, mid: r.top + r.height / 2 };
+        }),
+      );
+      check(answers.map((a) => a.text).join("|") === "Don’t allow|Allow", "the approval card's answers are Don’t allow, then Allow", answers.map((a) => a.text).join("|"));
+      const sameRow = Math.abs(answers[1].mid - answers[0].mid) < 8;
+      check(sameRow ? answers[1].right > answers[0].right : answers[1].mid > answers[0].mid, "Allow (the primary) is last and on the right", JSON.stringify(answers));
+      const stops = [];
+      while (stops.length < 3) {
+        await page.keyboard.press("Tab");
+        const el = await page.evaluate(() => {
+          const a = document.activeElement;
+          return a?.tagName === "PRE" ? "preview" : a?.getAttribute("role") === "alertdialog" ? "card" : a?.textContent.trim();
+        });
+        stops.push(el);
+        if (el === "Allow" || el === "card") break;
+      }
+      // Obscura does not move focus on Tab from a tabindex=-1 element; Chromium does.
+      if (stops[0] === "card") console.log("     (this engine does not Tab out of a focused card; DOM order check above stands)");
+      else check(stops.join("|") === "preview|Don’t allow|Allow", "Tab from the card visits the preview, Don’t allow, Allow", stops.join("|"));
+      await page.evaluate(() => document.querySelector('[role="alertdialog"]').focus());
       const status = await page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
       check(!status.includes("Waiting for you"), "the status region does not also announce the approval", status);
       const allow = await page.evaluateHandle(() => [...document.querySelectorAll('[role="alertdialog"] button')].find((b) => b.textContent.trim() === "Allow"));

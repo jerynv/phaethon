@@ -2,6 +2,7 @@ import { ActionBarPrimitive, ErrorPrimitive, MessagePrimitive, useAuiState } fro
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
@@ -106,22 +107,16 @@ function ErrorDetails({ text }: { text: string }) {
     said.current = isCopied;
   }, [isCopied, announce]);
   return (
-    <details className="group/details text-sm text-ink-secondary">
-      <summary className="inline-flex min-h-(--ph-control-height-sm) cursor-default items-center gap-1 rounded-sm select-none hover:text-ink [&::-webkit-details-marker]:hidden">
-        <Icon name="chevron-right" className="size-(--ph-icon-size-sm) group-open/details:rotate-90" />
-        Details
-      </summary>
-      <div className="mt-1 flex flex-col items-start gap-1.5">
-        <p className="font-mono wrap-anywhere text-ink" data-error-detail>
-          <InlineCode text={text} />
-        </p>
-        <Button type="button" variant="ghost" size="xs" className="-ms-2" onClick={() => copyToClipboard(text)}>
-          <Icon name={isCopied ? "check" : "copy"} />
-          {isCopied ? "Copied" : "Copy"}
-          <span className="sr-only"> details</span>
-        </Button>
-      </div>
-    </details>
+    <Details>
+      <p className="font-mono wrap-anywhere text-ink" data-error-detail>
+        <InlineCode text={text} />
+      </p>
+      <Button type="button" variant="ghost" size="xs" className="-ms-2" onClick={() => copyToClipboard(text)}>
+        <Icon name={isCopied ? "check" : "copy"} />
+        {isCopied ? "Copied" : "Copy"}
+        <span className="sr-only"> details</span>
+      </Button>
+    </Details>
   );
 }
 

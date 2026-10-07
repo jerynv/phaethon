@@ -2,6 +2,7 @@ import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } fro
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { loadThread, type SavedMessage } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
@@ -101,12 +102,11 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
                 Try again
               </Button>
             </div>
-            <details className="text-sm text-ink-secondary">
-              <summary className="inline-flex min-h-(--ph-control-height-sm) cursor-default items-center rounded-sm select-none hover:text-ink">
-                Details
-              </summary>
-              <p className="font-mono wrap-anywhere text-ink">{loaded.error}</p>
-            </details>
+            <Details>
+              <p className="font-mono wrap-anywhere text-ink" data-load-error-detail="">
+                {loaded.error}
+              </p>
+            </Details>
           </div>
         </div>
       </div>

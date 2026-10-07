@@ -62,7 +62,7 @@ claude -p --output-format stream-json --verbose --include-partial-messages \
 - **Binary lookup:** `PATH`, then `~/.local/bin` (the installer's default, and not on `PATH` for an app launched from Finder). If missing, the UI says "Install Claude Code, then run `claude` once in a terminal to log in."
 - **No zombies, no orphans.** The child leads its own process group. Cancel sends SIGTERM to the group, then SIGKILL after 1.5 s, and always reaps the child. Closing the window or quitting kills every running group; so does SIGTERM, SIGINT or SIGHUP to Phaethon.
 - Variables a parent Claude Code session sets (`CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, ...) are removed from the child's environment so the CLI does not think it is nested. Everything else, including a user-set `CLAUDE_CONFIG_DIR`, is inherited.
-- The webview gets events over a Tauri channel (`text`, `tool`, `error`, `cancelled`, `end`) through two commands, `agent_send` and `agent_cancel`, both gated by the capability ACL.
+- The webview gets events over a Tauri channel (`text`, `tool`, `approval`, `approvalDone`, `accessRequest`, `accessRequestDone`, `record`, `error`, `cancelled`, `end`) through `agent_send` and `agent_cancel`, gated by the capability ACL. `record` events are also saved in the thread as `phaethon_record` blocks (approval and access answers, reads in another space, stopped replies) and stripped from every request to the provider.
 
 ### CLAUDE_CONFIG_DIR finding
 

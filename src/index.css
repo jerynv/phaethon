@@ -186,6 +186,13 @@
   outline-offset: var(--ph-focus-offset) !important;
 }
 
+/* A heading that only receives focus from script (tabindex=-1, e.g. a popover
+   title focused on open so a second Enter can't act by accident) is not a
+   control: it takes focus without drawing a control's ring. */
+:is(h1, h2, h3, h4, h5, h6, [role="heading"])[tabindex="-1"]:focus-visible {
+  outline: none !important;
+}
+
 /* While the activity line or a card speaks for a reply, hide the markdown
    streaming cursor: one progress indicator at a time. Unlayered, because
    assistant-ui's cursor rule is unlayered and would beat a utility class. */

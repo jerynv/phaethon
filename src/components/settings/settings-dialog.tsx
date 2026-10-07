@@ -128,7 +128,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   );
 
   const act = useCallback(
-    async (work: () => Promise<void>, done: string, onError?: (message: string) => void) => {
+    async (work: () => Promise<void>, done: string, onError?: (message: string) => void, reloadThread = false) => {
       setError("");
       setStatus("");
       try {
@@ -140,7 +140,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         return false;
       }
       statusApi.say(done);
-      onChanged();
+      // Only a backend switch changes which conversation a space shows. Saving a
+      // key must not reload the thread: a message that just failed for want of a
+      // key, and its Send again, have to survive so the user can resend it.
+      if (reloadThread) onChanged();
       // The change is made; a failed reload is a load problem, not a failed change.
       await load();
       return true;

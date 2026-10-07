@@ -50,7 +50,7 @@ export function AgentSection({
    * Run a change, then reload settings and announce `done`. Errors go to
    * `onError` when given (shown at the field), otherwise to the window banner.
    */
-  act: (work: () => Promise<void>, done: string, onError?: (message: string) => void) => Promise<boolean>;
+  act: (work: () => Promise<void>, done: string, onError?: (message: string) => void, reloadThread?: boolean) => Promise<boolean>;
 }) {
   const { say } = useStatus();
   const [keyDraft, setKeyDraft] = useState("");
@@ -76,7 +76,7 @@ export function AgentSection({
     const b = BACKENDS.find((x) => x.value === v);
     if (!b || backendAsked.current === b.value) return;
     backendAsked.current = b.value;
-    void act(() => setBackend(b.value), `Now using ${b.label}.`).finally(() => {
+    void act(() => setBackend(b.value), `Now using ${b.label}.`, undefined, true).finally(() => {
       backendAsked.current = null;
     });
   }

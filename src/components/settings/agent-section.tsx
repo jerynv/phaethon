@@ -342,10 +342,11 @@ function LoadProblem({ raw, children }: { raw: string; children: ReactNode }) {
           <p>It couldn’t open this computer’s keychain, where your API key is kept. Unlock the keychain or allow Phaethon to use it, then choose Try again.</p>
         )}
         {cause === "other" && <p>Choose Try again. If this keeps happening, Details below says what went wrong.</p>}
+        {/* The way out first, the technical text after: same order as chat errors. */}
+        <div className="mt-1">{children}</div>
         <Details className="text-danger-ink">
           <p className="font-mono wrap-anywhere">{raw}</p>
         </Details>
-        <div className="mt-1">{children}</div>
       </div>
     </div>
   );

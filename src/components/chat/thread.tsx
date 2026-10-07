@@ -477,7 +477,9 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
               className="pointer-events-none absolute inset-0 z-20 flex bg-bg p-3"
             >
               <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus text-ink">
-                <Icon name="attach" className="size-(--ph-icon-size-lg) text-accent-ink" />
+                <span className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] items-center justify-center rounded-full bg-accent-soft text-accent-soft-ink">
+                  <Icon name="attach" className="size-(--ph-icon-size-lg)" />
+                </span>
                 <p className="text-lg font-semibold">Drop files to attach them</p>
                 <p className="text-base text-ink-secondary">Images, PDFs and text files, saved in {spaceName}</p>
               </div>

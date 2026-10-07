@@ -58,8 +58,11 @@ export function ConversationsBar({
   space,
   running,
   onSwitched,
+  shown = () => true,
 }: {
   space: Space;
+  /** Whether this space's pane is the one on screen (other visited spaces stay mounted, hidden). */
+  shown?: () => boolean;
   /** A reply is running in this space. */
   running: boolean;
   /** The conversation changed on disk: remount it, focus the composer, say `message`. */
@@ -136,13 +139,15 @@ export function ConversationsBar({
       const mod = mac ? e.metaKey : e.ctrlKey;
       if (!mod || e.altKey || e.shiftKey || e.key.toLowerCase() !== "n" || e.defaultPrevented) return;
       if (document.activeElement?.closest('[role="dialog"]')) return;
+      // Only the space on screen: hidden panes of other spaces hear the key too.
+      if (!shown()) return;
       e.preventDefault();
       setOpen(false);
       void startNew();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mac, startNew]);
+  }, [mac, startNew, shown]);
 
   // Fetched each time the menu opens, so it is never stale.
   useEffect(() => {

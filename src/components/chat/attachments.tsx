@@ -1,5 +1,5 @@
-import { AttachmentPrimitive, ComposerPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { useState } from "react";
+import { AttachmentPrimitive, ComposerPrimitive, MessagePrimitive, useAui, useAuiState } from "@assistant-ui/react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAttachmentSrc } from "@/hooks/use-attachment-src";
@@ -7,10 +7,24 @@ import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
 import { formatBytes, typeLabel } from "@/runtime/attachments";
 
+import { useAnnounce } from "./announce";
+
 function iconFor(type: string, mediaType: string | undefined): IconName {
   if (type === "image" || mediaType?.startsWith("image/")) return "image";
   if (mediaType?.startsWith("text/") || mediaType === "application/json") return "file-text";
   return "file";
+}
+
+/**
+ * A long file name shortened in the middle, so the end (where the version,
+ * the date and the extension are) stays: "syllabus-c241-fa…ll-2026-v3.pdf".
+ */
+export function middleEllipsis(name: string, max = 32): string {
+  const chars = [...name];
+  if (chars.length <= max) return name;
+  const tail = Math.ceil((max - 1) * 0.6);
+  const head = max - 1 - tail;
+  return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - tail).join("")}`;
 }
 
 /** A square preview: the image itself while we have its bytes, otherwise its type's icon. */
@@ -31,11 +45,16 @@ function Thumb({ icon }: { icon: IconName }) {
   );
 }
 
+type Removed = { file: File; name: string };
+
 /**
- * One attached file: a thumbnail or type icon, its name, its type and size. In
- * the composer it also has a Remove button. Read as "notes.md, Markdown, 2 KB".
+ * One attached file: a thumbnail or type icon, its name (shortened in the
+ * middle; the full name is its accessible name and tooltip), its type and
+ * size. In the composer it also has a Remove button. Read as
+ * "notes.md, Markdown, 2 KB".
  */
-function AttachmentChip({ removable }: { removable: boolean }) {
+function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number) => void }) {
+  const aui = useAui();
   const name = useAuiState((s) => s.attachment.name);
   const type = useAuiState((s) => s.attachment.type);
   const mediaType = useAuiState((s) => s.attachment.contentType);
@@ -46,6 +65,16 @@ function AttachmentChip({ removable }: { removable: boolean }) {
       : undefined,
   );
   const meta = [typeLabel(name, mediaType), size !== undefined ? formatBytes(size) : null].filter(Boolean).join(" · ");
+  const short = middleEllipsis(name);
+  const removable = !!onRemoved;
+
+  async function remove(e: React.MouseEvent<HTMLButtonElement>) {
+    const li = e.currentTarget.closest("li");
+    const index = li ? [...(li.parentElement?.children ?? [])].indexOf(li) : 0;
+    const file = aui.attachment().getState().file;
+    await aui.attachment().remove();
+    if (file) onRemoved?.({ file, name }, index);
+  }
 
   return (
     <li className="min-w-0">
@@ -58,8 +87,9 @@ function AttachmentChip({ removable }: { removable: boolean }) {
       >
         <Thumb icon={iconFor(type, mediaType)} />
         <span className="flex min-w-0 flex-col">
-          <span className="max-w-(--ph-chip-name-width) truncate text-sm font-medium text-ink" title={name}>
-            {name}
+          <span className="text-sm font-medium whitespace-nowrap text-ink" title={name}>
+            <span aria-hidden="true">{short}</span>
+            <span className="sr-only">{name}</span>
           </span>
           <span className={cn("text-xs", failed ? "text-danger-ink" : "text-ink-secondary")}>
             <span className="sr-only">, </span>
@@ -67,35 +97,111 @@ function AttachmentChip({ removable }: { removable: boolean }) {
           </span>
         </span>
         {removable && (
-          <AttachmentPrimitive.Remove asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="ms-0.5 rounded-full text-ink-secondary hover:text-ink"
-              aria-label={`Remove ${name}`}
-              title={`Remove ${name}`}
-            >
-              <Icon name="close" className="size-(--ph-icon-size-sm)" />
-            </Button>
-          </AttachmentPrimitive.Remove>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="ms-0.5 rounded-full text-ink-secondary hover:text-ink"
+            aria-label={`Remove ${name}`}
+            title={`Remove ${name}`}
+            data-remove-attachment=""
+            onClick={(e) => void remove(e)}
+          >
+            <Icon name="close" className="size-(--ph-icon-size-sm)" />
+          </Button>
         )}
       </AttachmentPrimitive.Root>
     </li>
   );
 }
 
-/** Files waiting to go with the message being written. */
+/**
+ * Files waiting to go with the message being written: a count, then the
+ * files. Capped in height so many files never squeeze the conversation away
+ * (the list scrolls, with room around each chip for its focus ring).
+ *
+ * Removing a file keeps focus in the tray (on the next file's Remove, or on
+ * Undo when none is left), says "Removed notes.md", and offers Undo.
+ */
 export function ComposerAttachments() {
+  const aui = useAui();
+  const announce = useAnnounce();
+  const count = useAuiState((s) => s.composer.attachments.length);
+  const running = useAuiState((s) => s.thread.isRunning);
+  const list = useRef<HTMLUListElement>(null);
+  const undoRef = useRef<HTMLButtonElement>(null);
+  const [removed, setRemoved] = useState<Removed | null>(null);
+  const focusAfter = useRef<number | null>(null);
+
+  // Sent: the undo is about a message that's gone.
+  useEffect(() => {
+    if (running) setRemoved(null);
+  }, [running]);
+
+  // After a removal, once the list has re-rendered: the next file's Remove, else Undo.
+  useEffect(() => {
+    const at = focusAfter.current;
+    if (at === null) return;
+    focusAfter.current = null;
+    const buttons = list.current?.querySelectorAll<HTMLButtonElement>("[data-remove-attachment]") ?? [];
+    const next = buttons[Math.min(at, buttons.length - 1)];
+    (next ?? undoRef.current)?.focus();
+  });
+
+  const onRemoved = (r: Removed, index: number) => {
+    setRemoved(r);
+    focusAfter.current = index;
+    announce(`Removed ${r.name}. Undo is next to the files.`);
+  };
+
+  async function undo() {
+    if (!removed) return;
+    const r = removed;
+    setRemoved(null);
+    try {
+      await aui.composer().addAttachment(r.file);
+      announce(`${r.name} is attached again.`);
+    } catch {
+      announce(`${r.name} couldn’t be attached again.`);
+    }
+    focusAfter.current = Number.MAX_SAFE_INTEGER;
+  }
+
+  if (count === 0 && !removed) return null;
   return (
-    // Capped so many files never squeeze the conversation away; the list scrolls
-    // (with room around each chip for its focus ring).
-    <ul
-      aria-label="Attached files"
-      className="flex max-h-[min(9rem,30dvh)] flex-wrap gap-2 overflow-y-auto p-1.5 empty:hidden"
-    >
-      <ComposerPrimitive.Attachments>{() => <AttachmentChip removable />}</ComposerPrimitive.Attachments>
-    </ul>
+    <div className="flex flex-col gap-1 px-1.5 pt-1" data-attachment-tray="">
+      <div className="flex min-h-(--ph-control-height-sm) flex-wrap items-center gap-x-2 text-xs text-ink-secondary">
+        <span data-attachment-count="">
+          {count === 0 ? "No files attached" : `${count} file${count === 1 ? "" : "s"} attached`}
+        </span>
+        {removed && (
+          <span className="flex min-w-0 items-center gap-1" data-attachment-undo="">
+            <span aria-hidden="true">·</span>
+            <span className="min-w-0 truncate" title={removed.name}>
+              Removed {middleEllipsis(removed.name, 24)}
+            </span>
+            <Button
+              ref={undoRef}
+              type="button"
+              variant="outline"
+              size="xs"
+              aria-label={`Undo: attach ${removed.name} again`}
+              onClick={() => void undo()}
+            >
+              <Icon name="retry" />
+              Undo
+            </Button>
+          </span>
+        )}
+      </div>
+      <ul
+        ref={list}
+        aria-label="Attached files"
+        className="flex max-h-[min(9rem,20dvh)] flex-wrap gap-2 overflow-y-auto p-1.5 empty:hidden"
+      >
+        <ComposerPrimitive.Attachments>{() => <AttachmentChip onRemoved={onRemoved} />}</ComposerPrimitive.Attachments>
+      </ul>
+    </div>
   );
 }
 
@@ -103,7 +209,7 @@ export function ComposerAttachments() {
 export function MessageAttachments() {
   return (
     <ul aria-label="Files sent" className="flex max-w-(--ph-message-max-width) flex-wrap justify-end gap-2 empty:hidden">
-      <MessagePrimitive.Attachments>{() => <AttachmentChip removable={false} />}</MessagePrimitive.Attachments>
+      <MessagePrimitive.Attachments>{() => <AttachmentChip />}</MessagePrimitive.Attachments>
     </ul>
   );
 }

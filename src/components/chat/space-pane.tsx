@@ -1,58 +1,101 @@
 import { AssistantRuntimeProvider, useAuiState, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
+import { SetupCard } from "@/components/onboarding/setup-card";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
-import { loadThread, type SavedMessage } from "@/lib/backend";
+import { setSpaceActivity } from "@/lib/activity";
+import { getSettings } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
-import { cancelSpaceRun, createAgentAdapter } from "@/runtime/agent-adapter";
+import { createAgentAdapter, type AgentMessageCustom } from "@/runtime/agent-adapter";
 import { attachmentAdapter } from "@/runtime/attachments";
 import { echoAdapter } from "@/runtime/echo-adapter";
+import { RECORD_PART, loadUiThread, type RecordPartData, type UiMessage } from "@/runtime/records";
+import { ThreadIndex } from "@/runtime/thread-index";
 
-import { focusComposer } from "./approval-card";
 import { ConversationsBar } from "./conversations-bar";
+import { focusPaneComposer, paneShown, PaneContext, type Pane } from "./pane";
 import { Thread } from "./thread";
 
-/** Tells SpacePane whether a reply is running, so the conversations bar can refuse a switch. */
-function RunningProbe({ onRunning }: { onRunning: (running: boolean) => void }) {
+/**
+ * Tells SpacePane whether a reply is running (the conversations bar refuses a
+ * switch then), and tells the shell what this space is doing while you are
+ * elsewhere: answering, or waiting for you on a card.
+ */
+function ActivityProbe({ spaceId, onRunning }: { spaceId: string; onRunning: (running: boolean) => void }) {
   const running = useAuiState((s) => s.thread.isRunning);
+  const needsYou = useAuiState((s) => {
+    const last = s.thread.messages[s.thread.messages.length - 1];
+    if (last?.status?.type !== "running") return false;
+    const custom = last.metadata.custom as AgentMessageCustom | undefined;
+    return !!(custom?.approval || custom?.accessRequest);
+  });
   useEffect(() => onRunning(running), [running, onRunning]);
-  useEffect(() => () => onRunning(false), [onRunning]);
+  useEffect(() => setSpaceActivity(spaceId, { running, needsYou }), [spaceId, running, needsYou]);
+  useEffect(
+    () => () => {
+      onRunning(false);
+      setSpaceActivity(spaceId, { running: false, needsYou: false });
+    },
+    [spaceId, onRunning],
+  );
   return null;
 }
 
 /**
- * One runtime per space and per conversation: remounted on a space or
- * conversation switch, so threads never leak into each other.
+ * One runtime per space and per conversation: remounted on a conversation
+ * switch, so threads never leak into each other. A reply keeps running while
+ * another space is shown (the shell keeps this pane mounted, hidden): leaving
+ * a space never stops its reply, and coming back shows where it got to.
  */
 function SpaceChat({
   space,
   initial,
   onRunning,
   onMounted,
+  rootRef,
+  setup,
 }: {
   space: Space;
-  initial: readonly ThreadMessageLike[];
+  initial: { messages: readonly ThreadMessageLike[]; index: ThreadIndex };
   onRunning: (running: boolean) => void;
   onMounted: () => void;
+  rootRef: RefObject<HTMLElement | null>;
+  setup: ReactNode;
 }) {
   // Inside the desktop app: the agent via the Rust core. In a plain browser
   // (`pnpm dev`) there is no IPC, so fall back to the local echo stub.
-  const adapter = useMemo(() => (inTauri() ? createAgentAdapter(space.id) : echoAdapter), [space.id]);
+  const tauri = inTauri();
+  const gone = useRef(false);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+    };
+  }, []);
+  const adapter = useMemo(
+    () => (tauri ? createAgentAdapter(space.id, initial.index, () => gone.current) : echoAdapter),
+    [space.id, initial.index, tauri],
+  );
   const runtime = useLocalRuntime(adapter, {
-    initialMessages: initial,
+    initialMessages: initial.messages,
     adapters: { attachments: attachmentAdapter },
   });
-  // Leaving a space stops any reply still running there rather than letting it
-  // finish where nobody can see it. (The saved thread keeps what was done.)
-  useEffect(() => () => cancelSpaceRun(space.id), [space.id]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const typedAt = useRef(0);
+  const pane = useMemo<Pane>(
+    () => ({ spaceId: space.id, inputRef, rootRef, typedAt, threadIndex: tauri ? initial.index : null }),
+    [space.id, rootRef, tauri, initial.index],
+  );
   useEffect(onMounted, [onMounted]);
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <RunningProbe onRunning={onRunning} />
-      <Thread spaceId={space.id} spaceName={space.name} />
+      <PaneContext.Provider value={pane}>
+        <ActivityProbe spaceId={space.id} onRunning={onRunning} />
+        <Thread spaceId={space.id} spaceName={space.name} inputRef={inputRef} setup={setup} />
+      </PaneContext.Provider>
     </AssistantRuntimeProvider>
   );
 }
@@ -60,15 +103,28 @@ function SpaceChat({
 /**
  * A saved message as the thread shows it. Saved attachments are only
  * references to files in the space (no bytes), so they show as name and type,
- * and are never sent again.
+ * and are never sent again. A reply's records (answers, reads in other
+ * spaces, a stop) follow its text as receipts. Each message keeps its saved
+ * position, which Edit and Regenerate hand back to the backend.
  */
-function toThreadMessage(m: SavedMessage, index: number): ThreadMessageLike {
-  if (m.role !== "user" || !m.attachments?.length) return { role: m.role, content: m.text };
+function toThreadMessage(m: UiMessage, i: number): ThreadMessageLike {
+  const id = `saved-${i}`;
+  const metadata = { custom: { index: m.index } satisfies AgentMessageCustom };
+  if (m.role === "assistant") {
+    const records = (m.records ?? []).map((record, j) => ({
+      type: "data" as const,
+      name: RECORD_PART,
+      data: { id: `${id}-rec-${j}`, record } satisfies RecordPartData,
+    }));
+    return { id, role: "assistant", metadata, content: [...(m.text ? [{ type: "text" as const, text: m.text }] : []), ...records] };
+  }
   return {
+    id,
     role: "user",
+    metadata,
     content: m.text,
-    attachments: m.attachments.map((a, i) => ({
-      id: `saved-${index}-${i}`,
+    attachments: (m.attachments ?? []).map((a, k) => ({
+      id: `${id}-att-${k}`,
       type: a.mediaType.startsWith("image/") ? "image" : "document",
       name: a.name,
       contentType: a.mediaType,
@@ -78,7 +134,9 @@ function toThreadMessage(m: SavedMessage, index: number): ThreadMessageLike {
   };
 }
 
-type Loaded = { key: string; messages: readonly ThreadMessageLike[] } | { key: string; error: string };
+type Loaded =
+  | { key: string; messages: readonly ThreadMessageLike[]; index: ThreadIndex }
+  | { key: string; error: string };
 
 /**
  * The conversations bar, then the space's current conversation once it has
@@ -94,14 +152,18 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   const key = `${space.id}:${reloadKey}:${attempt}:${conversation}`;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [running, setRunning] = useState(false);
+  // First run: Phaethon's own agent with no key saved shows the setup card in the empty conversation.
+  const [needsKey, setNeedsKey] = useState(false);
   // What the last switch did, said once ("New conversation started.").
   const [said, setSaid] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const shown = useCallback(() => paneShown({ rootRef } as Pane), []);
   // After a switch, the composer takes focus once the new conversation is mounted.
   const focusNext = useRef(false);
   const onMounted = useCallback(() => {
     if (!focusNext.current) return;
     focusNext.current = false;
-    focusComposer();
+    focusPaneComposer({ rootRef, inputRef: { current: rootRef.current?.querySelector("textarea") ?? null } } as Pane);
   }, []);
   const onSwitched = useCallback((message: string) => {
     focusNext.current = true;
@@ -114,10 +176,14 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     let live = true;
     const done = (l: Loaded) => live && setLoaded(l);
     if (!inTauri()) {
-      done({ key, messages: [] });
+      done({ key, messages: [], index: new ThreadIndex() });
     } else {
-      loadThread(space.id).then(
-        (msgs) => done({ key, messages: msgs.map(toThreadMessage) }),
+      loadUiThread(space.id).then(
+        (msgs) => {
+          const messages = msgs.map(toThreadMessage);
+          const index = new ThreadIndex(msgs.map((m, i) => ({ id: `saved-${i}`, role: m.role, index: m.index })));
+          done({ key, messages, index });
+        },
         (e: unknown) => done({ key, error: String(e) }),
       );
     }
@@ -125,6 +191,18 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
       live = false;
     };
   }, [key, space.id]);
+
+  useEffect(() => {
+    if (!inTauri()) return;
+    let live = true;
+    getSettings().then(
+      (s) => live && setNeedsKey(s.backend === "phaethon" && !s.hasAnthropicKey),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [reloadKey]);
 
   let body;
   if (!loaded || loaded.key !== key) {
@@ -164,17 +242,25 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     );
   } else {
     body = (
-      <SpaceChat key={key} space={space} initial={loaded.messages} onRunning={setRunning} onMounted={onMounted} />
+      <SpaceChat
+        key={key}
+        space={space}
+        initial={loaded}
+        onRunning={setRunning}
+        onMounted={onMounted}
+        rootRef={rootRef}
+        setup={needsKey ? <SetupCard space={space} /> : null}
+      />
     );
   }
 
   return (
-    <>
-      <ConversationsBar space={space} running={running} onSwitched={onSwitched} />
+    <div ref={rootRef} data-space-pane={space.id} className="flex min-h-0 flex-1 flex-col">
+      <ConversationsBar space={space} running={running} onSwitched={onSwitched} shown={shown} />
       <p role="status" className="sr-only" data-testid="conversation-status">
         {said}
       </p>
       {body}
-    </>
+    </div>
   );
 }

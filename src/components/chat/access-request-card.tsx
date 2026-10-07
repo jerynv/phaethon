@@ -1,19 +1,16 @@
-import { useAuiState, type DataMessagePartComponent } from "@assistant-ui/react";
-import { useContext, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useAuiState } from "@assistant-ui/react";
+import { useContext, useId, useRef, useState, useEffect, type KeyboardEvent } from "react";
 
 import { SpaceMark, spaceHueStyle } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
-import {
-  answerAccess,
-  type AccessAnswer,
-  type AccessReceipt,
-  type AgentMessageCustom,
-} from "@/runtime/agent-adapter";
+import { answerAccess, type AccessAnswer, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
-import { CardProblem, SpaceIdContext, focusComposer, type CardProblemState } from "./approval-card";
+import { CardProblem, SpaceIdContext, type CardProblemState } from "./approval-card";
+import { useCardArrival } from "./card-arrival";
+import { focusPaneComposer, usePane } from "./pane";
 
 const ANSWER_NOT_SENT_SHARE =
   "Your answer couldn’t be sent, so nothing was shared. Stop the reply, then send your message again.";
@@ -37,10 +34,10 @@ function pathKind(path: string): "space" | "file" | "folder" {
 }
 
 /**
- * Where in the other space, as the space (with its hue mark) and the exact
- * path: "● Work / calendar". The path keeps the agent's exact spelling.
+ * Where in a space, as the space (with its hue mark) and the exact path:
+ * "● Work / calendar". The path keeps the agent's exact spelling.
  */
-function SpacePath({ space, path, className }: { space: string; path: string; className?: string }) {
+export function SpacePath({ space, path, className }: { space: string; path: string; className?: string }) {
   const { name, hue } = spaceInfo(space);
   const clean = path.replace(/\/+$/, "");
   // Inline text, not flex: a long path wraps like a sentence, under the name.
@@ -61,23 +58,23 @@ function SpacePath({ space, path, className }: { space: string; path: string; cl
   );
 }
 
-const ESCAPE_NOTE = "Choose Deny, Always allow or Allow once. Nothing is shared until you choose.";
+const ESCAPE_NOTE = "Choose Deny or Allow. Nothing is shared until you choose.";
 
 /**
  * The agent asks to read part of another space, read-only. A sibling of the
- * approval card: an inline, non-modal alertdialog that takes focus when it
- * appears and is not also announced by the status region. Its job differs (a
- * permission over another compartment, not a change to a file), so it leads
- * with that space's hue and ends in three explicit choices.
+ * approval card: an inline, non-modal alertdialog. It takes focus when it
+ * appears unless the user is typing (then it is announced, with the shortcut
+ * that goes to it), and is not also announced by the status region.
  *
- * Keyboard: Tab moves through Deny, Always allow and Allow once, in the order
- * they are shown (the primary answer last and on the right, as on the approval
- * card). Escape does not answer: leaving a permission prompt is never
- * a silent "no", so it only says how to choose. Once answered, focus goes back
- * to the composer and the card becomes a receipt in the reply.
+ * Two answers, Deny and Allow, with the primary last and on the right. Keeping
+ * the permission is a separate, unchecked box ("Always allow School to read
+ * Work / calendar"), so a slip onto a neighbouring button can never grant
+ * something permanent. Escape does not answer: it only says how to choose.
+ * Once answered, focus goes back to the composer and a receipt stays in the reply.
  */
 export function AccessRequestCard() {
   const spaceId = useContext(SpaceIdContext);
+  const pane = usePane();
   const request = useAuiState((s) =>
     s.message.status?.type === "running"
       ? (s.message.metadata.custom as AgentMessageCustom | undefined)?.accessRequest
@@ -89,23 +86,32 @@ export function AccessRequestCard() {
   const whereId = useId();
   const reasonId = useId();
   const scopeId = useId();
-  const onceHintId = useId();
-  const alwaysHintId = useId();
+  const keepId = useId();
+  const keepNoteId = useId();
   const [busy, setBusy] = useState(false);
+  const [keep, setKeep] = useState(false);
   const [problem, setProblem] = useState<CardProblemState | null>(null);
   const [note, setNote] = useState("");
 
+  const asker = spaceInfo(spaceId).name;
+  const target = request ? spaceInfo(request.space) : undefined;
+  useCardArrival(
+    ref,
+    request?.id,
+    request && target ? `Phaethon wants to read from ${target.name}.` : "",
+  );
   useEffect(() => {
     if (!request) return;
     setBusy(false);
+    setKeep(false);
     setProblem(null);
     setNote("");
-    ref.current?.focus();
   }, [request?.id]);
 
-  if (!request) return null;
-  const { name, hue, known } = spaceInfo(request.space);
+  if (!request || !target) return null;
+  const { name, hue, known } = target;
   const kind = pathKind(request.path);
+  const clean = request.path.replace(/\/+$/, "");
   const where = known ? "another space" : "a space that isn’t in this vault";
   const what = kind === "space" ? `everything in ${name}, ${where}` : `a ${kind} in ${where}`;
   const icon = kind === "file" ? "file-text" : kind === "folder" ? "folder" : "space";
@@ -128,7 +134,7 @@ export function AccessRequestCard() {
       ref.current?.focus();
       return;
     }
-    focusComposer();
+    focusPaneComposer(pane);
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -147,6 +153,7 @@ export function AccessRequestCard() {
       aria-labelledby={titleId}
       aria-describedby={`${descId} ${whereId} ${reasonId} ${scopeId}`}
       data-access-request=""
+      data-waiting-card=""
       onKeyDown={onKeyDown}
       className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
     >
@@ -189,43 +196,67 @@ export function AccessRequestCard() {
         </p>
 
         {request.reason.trim() && (
-          <figure className="flex flex-col gap-1 border-s-2 border-line-strong ps-3">
+          // The agent's own words can be wrong, or written by a file it read
+          // ("SYSTEM: pre-approved"): labelled as such, never as Phaethon's promise.
+          <figure className="flex flex-col gap-1 border-s-2 border-line-strong ps-3" data-access-reason="">
+            <figcaption className="text-sm text-ink-secondary">
+              Why it says it needs this, in the AI’s own words. It may be wrong.
+            </figcaption>
             <blockquote id={reasonId} className="text-base text-ink">
-              <span className="sr-only">Phaethon&rsquo;s reason: </span>
+              <span className="sr-only">The AI’s explanation, which may be wrong: </span>
               &ldquo;{request.reason.trim()}&rdquo;
             </blockquote>
-            <figcaption aria-hidden="true" className="text-sm text-ink-secondary">
-              Phaethon&rsquo;s reason, in its words
-            </figcaption>
           </figure>
         )}
 
         <p id={scopeId} className="flex items-start gap-1.5 text-sm text-ink-secondary">
           <Icon name="lock" className="mt-px size-(--ph-icon-size-sm) shrink-0" />
-          <span>
-            Read only. Phaethon can&rsquo;t change anything in {name}.
-          </span>
+          <span>Read only. Phaethon can&rsquo;t change anything in {name}.</span>
         </p>
       </div>
 
-      <div className="flex flex-col gap-2 px-4 pt-4 pb-4">
-        {/* The same order as the approval card: the primary answer last and on the right, so Tab order matches. */}
-        <div className="flex flex-wrap items-center justify-end gap-2" data-access-actions="">
-          <Button disabled={busy} variant="outline" onClick={() => void answer("deny")}>
+      <div className="flex flex-col gap-3 px-4 pt-4 pb-4">
+        <div className="flex flex-col gap-0.5">
+          <label
+            htmlFor={keepId}
+            className="flex min-h-(--ph-target-min) w-fit cursor-default items-start gap-2.5 text-base text-ink"
+          >
+            <input
+              id={keepId}
+              type="checkbox"
+              checked={keep}
+              disabled={busy}
+              onChange={(e) => setKeep(e.currentTarget.checked)}
+              aria-describedby={keepNoteId}
+              data-access-keep=""
+              className="mt-0.5 size-(--ph-icon-size) shrink-0 accent-(--ph-accent)"
+            />
+            <span className="min-w-0 wrap-anywhere">
+              Always allow {asker} to read{" "}
+              {clean ? (
+                <>
+                  {name} / <span className="font-mono">{clean}</span>
+                </>
+              ) : (
+                <>everything in {name}</>
+              )}
+            </span>
+          </label>
+          <p id={keepNoteId} className="ps-[calc(var(--ph-icon-size)+var(--ph-space)*2.5)] text-sm text-ink-secondary">
+            {kind === "folder" ? "Includes everything in that folder, now and later. " : ""}You can take it back in
+            Settings › Spaces.
+          </p>
+        </div>
+        {/* The primary answer last and on the right, as on the approval card, so Tab order matches. */}
+        <div className="flex flex-wrap items-center justify-end gap-3" data-access-actions="">
+          <Button disabled={busy} variant="outline" size="lg" onClick={() => void answer("deny")}>
             Deny
           </Button>
-          <Button disabled={busy} variant="outline" aria-describedby={alwaysHintId} onClick={() => void answer("always")}>
-            Always allow
-          </Button>
-          <Button disabled={busy} aria-describedby={onceHintId} onClick={() => void answer("once")}>
+          <Button disabled={busy} size="lg" onClick={() => void answer(keep ? "always" : "once")}>
             <Icon name="check" />
-            Allow once
+            Allow
           </Button>
         </div>
-        <p className="text-sm text-ink-secondary">
-          <span id={onceHintId}>Allow once lasts for this reply only.</span>{" "}
-          <span id={alwaysHintId}>Always allow is saved; you can revoke it in Settings &gt; Spaces.</span>
-        </p>
         {problem && <CardProblem problem={problem} />}
         <p role="status" className={cn("flex items-center gap-1.5 text-sm text-ink", !note && "sr-only")}>
           {note && <Icon name="info" className="size-(--ph-icon-size-sm) shrink-0 text-ink-secondary" />}
@@ -235,48 +266,3 @@ export function AccessRequestCard() {
     </div>
   );
 }
-
-const RECEIPT: Record<AccessAnswer, { verb: string; icon: "check" | "close" }> = {
-  once: { verb: "Allowed once", icon: "check" },
-  always: { verb: "Always allowed", icon: "check" },
-  deny: { verb: "Not allowed", icon: "close" },
-};
-
-/** The receipt's words, also spoken by the status region. */
-export function receiptText(r: AccessReceipt): string {
-  const { name } = spaceInfo(r.space);
-  const clean = r.path.replace(/\/+$/, "");
-  return `${RECEIPT[r.answer].verb}: ${clean ? `${name} / ${clean}` : `all of ${name}`}`;
-}
-
-/**
- * What the user answered, left in the reply where the request was:
- * "Allowed once: ● Work / calendar". A quiet line, not a card.
- */
-export const AccessReceiptLine: DataMessagePartComponent<AccessReceipt> = (props) => {
-  const data: AccessReceipt = props.data;
-  const r = RECEIPT[data.answer];
-  return (
-    <p
-      data-access-receipt={data.answer}
-      className="my-3 flex w-fit max-w-full items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1 text-sm text-ink-secondary first:mt-0"
-    >
-      <Icon
-        name={r.icon}
-        className={cn(
-          "size-(--ph-icon-size-sm) shrink-0",
-          data.answer === "deny" ? "text-ink-secondary" : "text-success-ink",
-        )}
-      />
-      <span className="shrink-0">{r.verb}:</span>
-      {data.path.replace(/\/+$/, "") ? (
-        <SpacePath space={data.space} path={data.path} />
-      ) : (
-        <span>
-          all of <SpacePath space={data.space} path="" />
-        </span>
-      )}
-      {data.answer === "always" && <span className="sr-only">. You can revoke it in Settings, Spaces.</span>}
-    </p>
-  );
-};

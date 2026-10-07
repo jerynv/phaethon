@@ -55,6 +55,8 @@ const choose = async (page, label) => {
 
 const answered = async (page, h, label, answer, receipt) => {
   await ask(page, h);
+  // C4: keeping the permission is a separate, unchecked box next to Deny | Allow.
+  if (answer === "always") await page.click("[data-access-keep]");
   await choose(page, label);
   const answers = await calls(page, "agent_access_answer");
   check(
@@ -103,22 +105,30 @@ export default [
         });
       });
       const order = actions.map((a) => a.text);
-      check(order.join("|") === "Deny|Always allow|Allow once", "Tab order is Deny, Always allow, Allow once", order.join("|"));
+      check(order.join("|") === "Deny|Allow", "two answers, Deny then Allow (C4)", order.join("|"));
       // On the last row (the answers may wrap in a narrow window), and at its right end. (`top` is each button's vertical centre.)
       const primary = actions[actions.length - 1];
       const lastRow = actions.filter((a) => Math.abs(a.top - primary.top) < 8);
       const onLastRow = actions.every((a) => a.top <= primary.top + 8);
       const rightmost = lastRow.every((a) => a.right <= primary.right + 0.5);
-      check(onLastRow && rightmost, "Allow once (the primary) is the last, rightmost answer", JSON.stringify(actions));
+      check(onLastRow && rightmost, "Allow (the primary) is the last, rightmost answer", JSON.stringify(actions));
       const tabs = [];
       for (let i = 0; i < 3; i++) {
         await page.keyboard.press("Tab");
-        tabs.push(await page.evaluate(() => (document.activeElement?.hasAttribute("data-access-request") ? "card" : document.activeElement?.textContent.trim())));
+        tabs.push(
+          await page.evaluate(() =>
+            document.activeElement?.hasAttribute("data-access-request")
+              ? "card"
+              : document.activeElement?.hasAttribute("data-access-keep")
+                ? "keep"
+                : document.activeElement?.textContent.trim(),
+          ),
+        );
         if (tabs[0] === "card") break;
       }
       // Obscura does not move focus on Tab from a tabindex=-1 element; Chromium does.
       if (tabs[0] === "card") console.log("     (this engine does not Tab out of a focused card; DOM order check above stands)");
-      else check(tabs.join("|") === "Deny|Always allow|Allow once", "Tab from the card visits Deny, Always allow, Allow once", tabs.join("|"));
+      else check(tabs.join("|") === "keep|Deny|Allow", "Tab from the card visits the Always allow box, Deny, Allow", tabs.join("|"));
       await page.evaluate(() => document.querySelector("[data-access-request]").focus());
       await page.keyboard.press("Escape");
       await h.idle();
@@ -126,7 +136,7 @@ export default [
       const none = await calls(page, "agent_access_answer");
       check(still && none.length === 0, "Escape does not answer; the card stays");
       const note = await page.evaluate(() => document.querySelector('[data-access-request] [role="status"]').textContent);
-      check(note.startsWith("Choose Deny, Always allow or Allow once"), "Escape says how to choose instead, in the order shown", note);
+      check(note.startsWith("Choose Deny or Allow"), "Escape says how to choose instead, in the order shown", note);
       // Leave the card unfocused for the picture, with the hint visible.
       await page.evaluate(() => document.activeElement?.blur());
       await h.idle();
@@ -136,7 +146,7 @@ export default [
     name: "access-once",
     mock: { threads: { school: prior }, turn: turn() },
     async run(page, h) {
-      await answered(page, h, "Allow once", "once", "Allowed once: Work / calendar");
+      await answered(page, h, "Allow", "once", "Allowed once: Work / calendar");
       await page.waitForFunction(() => document.querySelector('[data-activity-space="work"]'), { timeout: 5000 });
       check(true, 'the activity line "Reading Work / calendar/oct.md" carries Work\'s hue mark');
       await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Reading Work / calendar/oct.md", { timeout: 5000 });
@@ -152,7 +162,7 @@ export default [
     name: "access-always",
     mock: { threads: { school: prior }, turn: turn() },
     async run(page, h) {
-      await answered(page, h, "Always allow", "always", "Always allowed: Work / calendar");
+      await answered(page, h, "Allow", "always", "Always allowed: Work / calendar");
       await h.waitText("moved problem set 4");
       // The kept grant appears in the title bar without a reload.
       await page.waitForFunction(() => document.querySelector("header")?.innerText.includes("Also reads"), { timeout: 4000 });

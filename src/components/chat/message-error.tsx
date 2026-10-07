@@ -1,24 +1,37 @@
-import { ActionBarPrimitive, ErrorPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { ActionBarPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
+import { useContext, useEffect, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
-import type { AgentMessageCustom } from "@/runtime/agent-adapter";
+import { cancelSpaceRun, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
 import { InlineCode, useAnnounce } from "./announce";
-import { focusComposer } from "./approval-card";
+import { SpaceIdContext } from "./approval-card";
+import { focusPaneComposer, usePane } from "./pane";
 
-type Action = "settings" | "retry";
+type Action = "settings" | "retry" | "stop";
 
 /**
  * What went wrong and the way out, per `ErrorCode` (src-tauri/src/agent.rs),
  * plus "ipc" (the call to the backend itself failed). The title names the
  * problem; the body says what to do; actions do it where Phaethon can.
  */
-type Recovery = { title: string; body: ReactNode; actions?: Action[]; ownWords?: boolean };
+type Recovery = {
+  title: string;
+  body: ReactNode | ((retryAfterSecs: number | undefined) => ReactNode);
+  actions?: Action[];
+  ownWords?: boolean;
+};
+
+/** "about 30 seconds", "about 2 minutes". */
+function waitWords(secs: number): string {
+  if (secs < 90) return `about ${Math.max(1, Math.round(secs))} second${Math.round(secs) === 1 ? "" : "s"}`;
+  const min = Math.round(secs / 60);
+  return `about ${min} minute${min === 1 ? "" : "s"}`;
+}
 
 const RECOVERY: Record<string, Recovery> = {
   noApiKey: {
@@ -52,9 +65,11 @@ const RECOVERY: Record<string, Recovery> = {
     actions: ["retry", "settings"],
   },
   busy: {
-    title: "This space is still answering",
-    body: "Wait for the reply above to finish, or stop it, then send again.",
-    actions: ["retry"],
+    // The earlier reply may not be on screen (another conversation, or one
+    // started before a restart), so this never points at "the reply above".
+    title: "Phaethon is still working on an earlier reply in this space",
+    body: "Stop it, then send your message again. Or wait for it to finish.",
+    actions: ["stop", "retry"],
   },
   invalidSpace: {
     title: "This space’s folder can’t be found",
@@ -63,6 +78,29 @@ const RECOVERY: Record<string, Recovery> = {
   cli: {
     title: "Claude Code stopped with an error",
     body: "Send your message again. If it keeps failing, the details say what Claude Code reported.",
+    actions: ["retry"],
+  },
+  billing: {
+    title: "Your Anthropic account is out of credit",
+    body: "Add credit to the Anthropic account your API key belongs to (in its Billing page), then send again. Phaethon itself never charges you.",
+    actions: ["retry"],
+  },
+  rateLimit: {
+    title: "Anthropic asked Phaethon to slow down",
+    body: (secs) =>
+      secs
+        ? `Too many requests in a short time. Wait ${waitWords(secs)}, then send again.`
+        : "Too many requests in a short time. Wait a minute, then send again.",
+    actions: ["retry"],
+  },
+  unavailable: {
+    title: "Anthropic’s service is busy or down",
+    body: "This is on Anthropic’s side and usually passes within minutes. Send again in a little while.",
+    actions: ["retry"],
+  },
+  badRequest: {
+    title: "Anthropic couldn’t accept this message",
+    body: "Something in the message or its files wasn’t accepted. The details say what. Try a shorter message or fewer files.",
     actions: ["retry"],
   },
   provider: {
@@ -121,22 +159,30 @@ function ErrorDetails({ text }: { text: string }) {
 }
 
 /**
- * A failed reply: a quiet banner inside the message. The title and what to do
- * are role="alert", so they are announced at once (the status region stays
- * silent for errors); the actions and folded details follow.
+ * A failed reply: a quiet banner inside the message. Only the title and what
+ * to do are role="alert" (one alert, not nested, without the buttons), so they
+ * are announced at once; the actions and the folded details follow. When part
+ * of the reply had already arrived, the banner says the reply was cut off.
  */
 export function MessageError() {
-  const code = useAuiState((s) => (s.message.metadata.custom as AgentMessageCustom | undefined)?.errorCode);
+  const pane = usePane();
+  const spaceId = useContext(SpaceIdContext);
+  const announce = useAnnounce();
+  const custom = useAuiState((s) => s.message.metadata.custom as AgentMessageCustom | undefined);
+  const code = custom?.errorCode;
+  const retryAfter = custom?.retryAfterSecs;
   const detail = useAuiState((s) =>
     s.message.status?.type === "incomplete" && s.message.status.reason === "error" && s.message.status.error != null
       ? String(s.message.status.error)
       : "",
   );
+  const cutOff = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
   const recovery = (code && RECOVERY[code]) || FALLBACK;
   const actions = recovery.actions ?? [];
+  const body = typeof recovery.body === "function" ? recovery.body(retryAfter) : recovery.body;
   return (
     <MessagePrimitive.Error>
-      <ErrorPrimitive.Root
+      <div
         data-error-code={code ?? "unknown"}
         // A transparent border: forced-colours mode draws it, so the banner keeps a boundary.
         className="flex w-full max-w-(--ph-measure) items-start gap-3 rounded-lg border border-transparent bg-danger-soft px-4 py-3 text-base text-ink"
@@ -145,7 +191,12 @@ export function MessageError() {
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div role="alert" className="flex flex-col gap-0.5">
             <p className="font-semibold text-danger-ink">{recovery.title}</p>
-            <p className="text-ink">{recovery.ownWords && detail ? detail : recovery.body}</p>
+            {cutOff && (
+              <p className="text-ink" data-error-cut-off="">
+                The reply above is incomplete: it was cut off here.
+              </p>
+            )}
+            <p className="text-ink">{recovery.ownWords && detail ? detail : body}</p>
           </div>
           {actions.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -162,6 +213,21 @@ export function MessageError() {
                     <Icon name="settings" />
                     Open Settings
                   </Button>
+                ) : a === "stop" ? (
+                  <Button
+                    key={a}
+                    type="button"
+                    size="default"
+                    variant={i === 0 ? "default" : "outline"}
+                    data-error-action="stop"
+                    onClick={() => {
+                      cancelSpaceRun(spaceId);
+                      announce("Asked the earlier reply to stop. You can send again now.");
+                    }}
+                  >
+                    <Icon name="stop" />
+                    Stop the earlier reply
+                  </Button>
                 ) : (
                   <ActionBarPrimitive.Reload key={a} asChild>
                     <Button
@@ -170,7 +236,7 @@ export function MessageError() {
                       variant={i === 0 ? "default" : "outline"}
                       data-error-action="retry"
                       // The banner goes away as the new reply starts; keep focus where the user writes.
-                      onClick={() => focusComposer()}
+                      onClick={() => focusPaneComposer(pane)}
                     >
                       <Icon name="retry" />
                       Send again
@@ -182,7 +248,7 @@ export function MessageError() {
           )}
           {detail && !recovery.ownWords && <ErrorDetails text={detail} />}
         </div>
-      </ErrorPrimitive.Root>
+      </div>
     </MessagePrimitive.Error>
   );
 }

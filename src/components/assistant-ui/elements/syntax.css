@@ -1,0 +1,78 @@
+/*
+ * Syntax colours for code blocks (Prism token classes). Built from Phaethon's
+ * dials in oklch: every colour keeps at least 4.5:1 on the code block's sunken
+ * surface in both themes, and none carries meaning on its own (a diff keeps its
+ * + and - signs; forced-colours mode drops these colours entirely).
+ */
+:root {
+  --ph-syntax-keyword: oklch(0.47 0.13 300);
+  --ph-syntax-string: oklch(0.46 0.1 150);
+  --ph-syntax-number: oklch(0.49 0.13 50);
+  --ph-syntax-function: oklch(0.46 0.12 250);
+  --ph-syntax-type: oklch(0.47 0.1 200);
+  --ph-syntax-comment: var(--ph-ink-secondary);
+  --ph-syntax-punctuation: var(--ph-ink-secondary);
+}
+.dark {
+  --ph-syntax-keyword: oklch(0.8 0.1 300);
+  --ph-syntax-string: oklch(0.8 0.1 150);
+  --ph-syntax-number: oklch(0.82 0.1 60);
+  --ph-syntax-function: oklch(0.8 0.09 250);
+  --ph-syntax-type: oklch(0.82 0.08 200);
+}
+
+pre .token.comment,
+pre .token.prolog,
+pre .token.doctype,
+pre .token.cdata {
+  color: var(--ph-syntax-comment);
+  font-style: italic;
+}
+pre .token.punctuation,
+pre .token.operator {
+  color: var(--ph-syntax-punctuation);
+}
+pre .token.keyword,
+pre .token.atrule,
+pre .token.important,
+pre .token.selector,
+pre .token.tag {
+  color: var(--ph-syntax-keyword);
+}
+pre .token.string,
+pre .token.char,
+pre .token.attr-value,
+pre .token.regex,
+pre .token.url {
+  color: var(--ph-syntax-string);
+}
+pre .token.number,
+pre .token.boolean,
+pre .token.constant,
+pre .token.symbol {
+  color: var(--ph-syntax-number);
+}
+pre .token.function,
+pre .token.builtin,
+pre .token.property,
+pre .token.attr-name {
+  color: var(--ph-syntax-function);
+}
+pre .token.class-name,
+pre .token.variable,
+pre .token.namespace {
+  color: var(--ph-syntax-type);
+}
+pre .token.important,
+pre .token.bold {
+  font-weight: var(--ph-weight-semibold);
+}
+/* Diffs: whole lines tinted, with the sign kept as text. */
+pre .token.inserted {
+  background: var(--ph-success-soft);
+  color: var(--ph-success-ink);
+}
+pre .token.deleted {
+  background: var(--ph-danger-soft);
+  color: var(--ph-danger-ink);
+}

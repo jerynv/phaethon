@@ -39,6 +39,9 @@ export default defineConfig(() => ({
             { name: "react", test: /node_modules[\\/](?:\.pnpm[\\/])?(?:react|react-dom|scheduler)[@\\/]/ },
             { name: "assistant-ui", test: /node_modules[\\/].*@assistant-ui/ },
             { name: "radix", test: /node_modules[\\/].*(?:@radix-ui|radix-ui)/ },
+            // Syntax colours load only when a reply first shows a code block (own chunk, before
+            // "markdown" so its Markdown grammar doesn't land in the eager markdown chunk).
+            { name: "syntax", test: /node_modules[\\/].*(?:react-syntax-highlighter|refractor|prismjs|highlight\.js|lowlight|hastscript|hast-util-parse-selector)/ },
             { name: "markdown", test: /node_modules[\\/].*(?:remark|rehype|micromark|mdast|hast|unified|unist|vfile|markdown|decode-named|character-entities|property-information|space-separated|comma-separated|ccount|devlop|bail|trough|zwitch|longest-streak|is-plain-obj|html-url-attributes|estree)/ },
             { name: "vendor", test: /node_modules[\\/]/ },
           ],

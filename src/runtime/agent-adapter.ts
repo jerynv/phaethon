@@ -9,15 +9,31 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { notifyGrantsChanged } from "@/lib/grants";
 import { inTauri } from "@/lib/tauri";
 
-/** Mirrors `AgentEvent` in src-tauri/src/agent.rs. */
+import { RECORD_PART, loadUiThread, type AccessAnswer, type ChatRecord, type RecordPartData } from "./records";
+import type { ThreadIndex } from "./thread-index";
+
+export type { AccessAnswer } from "./records";
+
+/** Mirrors `AgentEvent` in src-tauri/src/agent.rs (contracts.md). */
 type AgentEvent =
   | { kind: "text"; delta: string }
   | { kind: "tool"; label: string }
-  | { kind: "approval"; id: string; summary: string; detail: string }
+  | {
+      kind: "approval";
+      id: string;
+      summary: string;
+      detail: string;
+      action?: "create" | "replace";
+      path?: string;
+      space?: string;
+      before?: string | null;
+      truncated?: boolean;
+    }
   | { kind: "approvalDone"; id: string; allowed: boolean }
   | { kind: "accessRequest"; id: string; space: string; path: string; reason: string }
   | { kind: "accessRequestDone"; id: string; answer: AccessAnswer }
-  | { kind: "error"; code: string; message: string }
+  | { kind: "record"; record: ChatRecord }
+  | { kind: "error"; code: string; message: string; retryAfterSecs?: number }
   | { kind: "cancelled" }
   | { kind: "end"; sessionId: string | null };
 
@@ -31,22 +47,30 @@ export type AgentMessageCustom = {
   accessRequest?: PendingAccessRequest;
   /** The backend's error code when the reply failed (`ErrorCode` in agent.rs, or "ipc"). */
   errorCode?: string;
+  /** With a rate limit: how long the provider asked to wait. */
+  retryAfterSecs?: number;
+  /** A saved message's position in thread.json (messages loaded from disk only). */
+  index?: number;
 };
 
-export type PendingApproval = { id: string; summary: string; detail: string };
-
-/** How the user answers an access request (`AccessAnswer` in agent.rs). A cancelled request counts as "deny". */
-export type AccessAnswer = "once" | "always" | "deny";
+/**
+ * A write the agent wants to make. `detail` is the full new content and
+ * `before` the full old content when replacing (null when creating); either is
+ * cut at 512 KiB, and then `truncated` is set.
+ */
+export type PendingApproval = {
+  id: string;
+  summary: string;
+  detail: string;
+  action: "create" | "replace";
+  path: string;
+  space: string;
+  before: string | null;
+  truncated: boolean;
+};
 
 /** The agent asks to read `path` (relative, "" for the whole space) in the other space `space`. */
 export type PendingAccessRequest = { id: string; space: string; path: string; reason: string };
-
-/**
- * What was answered, kept in the reply as a data part where it happened, so the
- * conversation records what was granted ("Allowed once: Work / calendar").
- */
-export type AccessReceipt = { id: string; space: string; path: string; answer: AccessAnswer };
-export const ACCESS_RECEIPT_PART = "access-receipt";
 
 /** One attachment as `agent_send` takes it (`Upload` in src-tauri/src/attachments.rs). */
 export type AttachmentUpload = { name: string; mediaType: string; data: string };
@@ -98,16 +122,24 @@ function eventQueue() {
   };
 }
 
+let recordSeq = 0;
+
 /**
  * Streams replies from the agent the Rust core runs for `spaceId` (Phaethon's own
  * loop, or the `claude` CLI). Only the newest user message is sent, with its
  * attachments: the backend keeps the conversation itself, so earlier turns are
- * already on its side. The Rust core checks the files again and saves them into
- * the space; a refusal comes back as an `attachment` error.
+ * already on its side. An edit or a regenerate forks the thread: the backend
+ * is told where (`replaceFrom`, the saved position of the replaced message),
+ * keeps the old version in the space's archive, and answers the new one.
  */
-export function createAgentAdapter(spaceId: string): ChatModelAdapter {
+export function createAgentAdapter(
+  spaceId: string,
+  threadIndex?: ThreadIndex,
+  /** True once the conversation's view is gone (see onAbort below). */
+  disposed: () => boolean = () => false,
+): ChatModelAdapter {
   return {
-    async *run({ messages, abortSignal }) {
+    async *run({ messages, abortSignal, unstable_assistantMessageId, unstable_getMessage }) {
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const prompt =
         lastUser?.content
@@ -115,36 +147,56 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
           .join("")
           .trim() ?? "";
       const attachments = uploadsOf(lastUser);
+      // An edit or a regenerate: the shown thread before the newest user
+      // message is shorter than (or differs from) the one shown last time.
+      const fork = threadIndex?.forkPoint(messages.slice(0, -1).map((m) => m.id));
+      const replaceFrom = typeof fork === "number" ? fork : undefined;
 
       const queue = eventQueue();
       const channel = new Channel<AgentEvent>();
       channel.onmessage = (e) => queue.push(e);
 
-      const onAbort = () => cancelSpaceRun(spaceId);
+      // Stop (the button, Escape) aborts the run: stop it in the backend. The
+      // runtime also aborts when its view goes away; leaving a space never
+      // stops its reply (the backend finishes and saves it), unless a card was
+      // waiting there, which nobody could answer any more.
+      const onAbort = () =>
+        setTimeout(() => {
+          if (!disposed() || approval || accessRequest) cancelSpaceRun(spaceId);
+        }, 0);
       abortSignal.addEventListener("abort", onAbort);
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
-      invoke("agent_send", { space: spaceId, prompt, attachments, onEvent: channel }).catch((err: unknown) => {
+      const args: Record<string, unknown> = { space: spaceId, prompt, attachments, onEvent: channel };
+      if (replaceFrom !== undefined) args.replaceFrom = replaceFrom;
+      invoke("agent_send", args).catch((err: unknown) => {
         // The banner says what happened in plain words; this raw text goes under "Details".
         queue.push({ kind: "error", code: "ipc", message: String(err) });
         queue.push({ kind: "end", sessionId: null });
       });
 
-      // Text, split wherever an access request was answered so its receipt sits
-      // at that point in the reply.
+      // Text, split wherever something was recorded (an answer, a read in
+      // another space) so its receipt sits at that point in the reply.
       let parts: ThreadAssistantMessagePart[] = [];
       let toolStatus: string | undefined;
       let approval: PendingApproval | undefined;
       let accessRequest: PendingAccessRequest | undefined;
       let errorCode: string | undefined;
+      let retryAfterSecs: number | undefined;
       const update = (): ChatModelRunResult => ({
         content: parts,
-        metadata: { custom: { toolStatus, approval, accessRequest, errorCode } satisfies AgentMessageCustom },
+        metadata: {
+          custom: { toolStatus, approval, accessRequest, errorCode, retryAfterSecs } satisfies AgentMessageCustom,
+        },
       });
       const settle = () => {
         toolStatus = undefined;
         approval = undefined;
         accessRequest = undefined;
+      };
+      /** "Waiting for you to ..." is over once the card is answered. */
+      const clearWaiting = () => {
+        if (toolStatus?.startsWith("Waiting for you")) toolStatus = undefined;
       };
 
       try {
@@ -168,33 +220,47 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
               yield update();
               break;
             case "approval":
-              approval = { id: e.id, summary: e.summary, detail: e.detail };
+              approval = {
+                id: e.id,
+                summary: e.summary,
+                detail: e.detail,
+                action: e.action ?? "create",
+                path: e.path ?? "",
+                space: e.space ?? spaceId,
+                before: e.before ?? null,
+                truncated: !!e.truncated,
+              };
               yield update();
               break;
             case "approvalDone":
-              if (approval?.id === e.id) approval = undefined;
+              if (approval?.id === e.id) {
+                approval = undefined;
+                clearWaiting();
+              }
               yield update();
               break;
             case "accessRequest":
               accessRequest = { id: e.id, space: e.space, path: e.path, reason: e.reason };
               yield update();
               break;
-            case "accessRequestDone": {
-              const asked = accessRequest?.id === e.id ? accessRequest : undefined;
-              if (!asked) break;
+            case "accessRequestDone":
+              if (accessRequest?.id !== e.id) break;
               accessRequest = undefined;
-              // "Waiting for you to answer: ..." is over; the receipt says what happened.
-              if (toolStatus?.startsWith("Waiting for you")) toolStatus = undefined;
-              const receipt: AccessReceipt = { id: e.id, space: asked.space, path: asked.path, answer: e.answer };
-              parts = [...parts, { type: "data", id: e.id, name: ACCESS_RECEIPT_PART, data: receipt }];
+              clearWaiting();
               // A kept grant shows up in the title bar and Settings at once.
               if (e.answer === "always") notifyGrantsChanged();
+              yield update();
+              break;
+            case "record": {
+              const data: RecordPartData = { id: `rec-${++recordSeq}`, record: e.record };
+              parts = [...parts, { type: "data", name: RECORD_PART, data }];
               yield update();
               break;
             }
             case "error":
               settle();
               errorCode = e.code;
+              retryAfterSecs = e.retryAfterSecs;
               yield {
                 ...update(),
                 status: { type: "incomplete", reason: "error", error: e.message },
@@ -214,6 +280,19 @@ export function createAgentAdapter(spaceId: string): ChatModelAdapter {
         }
       } finally {
         abortSignal.removeEventListener("abort", onAbort);
+        if (threadIndex) {
+          // The thread as shown now, matched against what the backend saved.
+          let assistantId = unstable_assistantMessageId;
+          try {
+            assistantId ??= unstable_getMessage().id;
+          } catch {
+            // No message to read: keep the user side only.
+          }
+          const shown = messages.map((m) => ({ id: m.id, role: m.role as string }));
+          if (assistantId) shown.push({ id: assistantId, role: "assistant" });
+          const saved = await loadUiThread(spaceId).catch(() => null);
+          threadIndex.settle(shown, saved);
+        }
       }
     },
   };

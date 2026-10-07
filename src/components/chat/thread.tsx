@@ -1,53 +1,67 @@
 import {
   ActionBarPrimitive,
   AuiIf,
+  ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
   useAuiState,
   useThreadViewportStore,
-  type TextMessagePartComponent,
+  type DataMessagePartComponent,
 } from "@assistant-ui/react";
 import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
+  useId,
   useRef,
   useState,
   useSyncExternalStore,
   type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 
 // Built from the assistant-ui registry thread (MIT), cut down to what Phaethon's
-// backend can honour and restyled with Phaethon tokens. Hidden on purpose: edit,
-// regenerate, branch picker, feedback, dictation, suggestions and export. The
-// backend thread is append-only, so edit and regenerate would not be true.
-// (A failed reply's "Send again" re-sends the same message; see MessageError.)
+// backend can honour and restyled with Phaethon tokens. Edit (your messages) and
+// Regenerate (the last reply) fork the saved thread through agent_send's
+// replaceFrom, so they are offered only where the saved position is known.
+// Hidden on purpose: branch picker, feedback, dictation, suggestions and export.
 
-import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
+import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elements/markdown-text";
+import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { SpaceMark } from "@/components/shell/space-mark";
 import { findSpace } from "@/lib/spaces";
-import { ACCESS_RECEIPT_PART, type AccessReceipt, type AgentMessageCustom } from "@/runtime/agent-adapter";
+import type { AgentMessageCustom } from "@/runtime/agent-adapter";
+import { RECORD_PART, type RecordPartData } from "@/runtime/records";
+import { useKnownIndex } from "@/runtime/thread-index";
 
-import { AccessReceiptLine, AccessRequestCard, receiptText } from "./access-request-card";
-import { AnnounceContext, useAnnounce } from "./announce";
-import { ApprovalCard, SpaceIdContext, focusComposer } from "./approval-card";
+import { AccessRequestCard } from "./access-request-card";
+import { AnnounceContext, spokenReply, useAnnounce } from "./announce";
+import { ApprovalCard, SpaceIdContext } from "./approval-card";
 import { MessageAttachments } from "./attachments";
+import { goToCard, isJumpKey } from "./card-arrival";
 import { Composer, useAddFiles } from "./composer";
 import { MessageError } from "./message-error";
+import { focusPaneComposer, paneShown, usePane } from "./pane";
+import { RecordPart, announcesRecord, recordText } from "./receipts";
 
-const PlainText: TextMessagePartComponent = ({ text }) => <>{text}</>;
 const Nothing = () => null;
 const ASSISTANT_PARTS = {
   Text: MarkdownText,
-  data: { by_name: { [ACCESS_RECEIPT_PART]: AccessReceiptLine } },
+  data: { by_name: { [RECORD_PART]: RecordPart as DataMessagePartComponent } },
 };
+const USER_PARTS = { Text: UserMarkdownText, File: Nothing, Image: Nothing };
 
 /** The card that speaks for itself while a run waits on the user, if any. */
 const waitingCard = (custom: AgentMessageCustom | undefined) => custom?.approval ?? custom?.accessRequest;
+
+/** "Waiting for you to allow: ..." is said by the card itself, never as activity. */
+const isWaitingLine = (label: string | undefined) => !!label?.startsWith("Waiting for you");
+
+const isRecord = (p: { type: string; name?: string }): p is { type: "data"; name: string; data: RecordPartData } =>
+  p.type === "data" && p.name === RECORD_PART;
 
 /**
  * Tool activity as the user reads it. Activity in another space names that
@@ -63,18 +77,116 @@ function activityText(label: string, current: string) {
   return { text: `${m[1]} ${other.name}${rest}`, other };
 }
 
+/** The message's own heading, for screen-reader heading and landmark navigation (C6). */
+function MessageHeading({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <h2 id={id} className="sr-only">
+      {children}
+    </h2>
+  );
+}
+
+/** Edit, under one of your messages: only where the backend can replace from that point. */
+function EditAction() {
+  const pane = usePane();
+  const id = useAuiState((s) => s.message.id);
+  const known = useKnownIndex(pane?.threadIndex ?? null, id);
+  if (!known) return null;
+  return (
+    <ActionBarPrimitive.Root hideWhenRunning className="flex justify-end">
+      <ActionBarPrimitive.Edit asChild>
+        <Button type="button" variant="ghost" size="xs" className="text-ink-secondary hover:text-ink" data-edit-message={id}>
+          <Icon name="edit" />
+          Edit
+          <span className="sr-only"> your message</span>
+        </Button>
+      </ActionBarPrimitive.Edit>
+    </ActionBarPrimitive.Root>
+  );
+}
+
 function UserMessage() {
+  const headingId = useId();
   const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
   return (
-    <MessagePrimitive.Root data-role="user" className="flex flex-col items-end gap-2">
-      <span className="sr-only">You said: </span>
+    <MessagePrimitive.Root
+      role="article"
+      aria-labelledby={headingId}
+      data-role="user"
+      className="flex flex-col items-end gap-2"
+    >
+      <MessageHeading id={headingId}>You said</MessageHeading>
       <MessageAttachments />
       {hasText && (
         // A transparent border: forced-colours mode draws it, so the bubble keeps its boundary.
-        <div className="max-w-(--ph-message-max-width) rounded-xl rounded-ee-sm border border-transparent bg-bubble px-4 py-2.5 text-md whitespace-pre-wrap text-ink wrap-break-word">
-          <MessagePrimitive.Parts components={{ Text: PlainText, File: Nothing, Image: Nothing }} />
+        <div className="max-w-(--ph-message-max-width) min-w-0 rounded-xl rounded-ee-sm border border-transparent bg-bubble px-4 py-2.5 text-md text-ink wrap-break-word">
+          <MessagePrimitive.Parts components={USER_PARTS} />
         </div>
       )}
+      <EditAction />
+    </MessagePrimitive.Root>
+  );
+}
+
+/**
+ * Editing one of your messages, in place (assistant-ui's edit composer).
+ * Enter sends the new version, Escape or Cancel keeps the old one. Sending
+ * replaces this message and everything after it; the old version is kept in
+ * the space's past conversations.
+ */
+function UserEditComposer() {
+  const headingId = useId();
+  const hintId = useId();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pane = usePane();
+  const messageId = useAuiState((s) => s.message.id);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return () => {
+      // Back to this message's Edit button (Cancel), or the composer when the message was replaced (Send).
+      requestAnimationFrame(() => {
+        const edit = pane?.rootRef.current?.querySelector<HTMLElement>(`[data-edit-message="${messageId}"]`);
+        if (edit) edit.focus();
+        else if (!document.activeElement || document.activeElement === document.body) focusPaneComposer(pane);
+      });
+    };
+  }, [pane, messageId]);
+  return (
+    <MessagePrimitive.Root role="article" aria-labelledby={headingId} data-role="user" data-editing="" className="flex flex-col items-end">
+      <MessageHeading id={headingId}>Editing your message</MessageHeading>
+      <ComposerPrimitive.Root
+        aria-label="Edit your message"
+        className="flex w-full max-w-(--ph-message-max-width) flex-col gap-2 rounded-xl border border-ink-tertiary bg-raised p-2 shadow"
+      >
+        <ComposerPrimitive.Input
+          ref={inputRef}
+          aria-label="Your message"
+          aria-describedby={hintId}
+          submitMode="enter"
+          data-edit-input=""
+          className="max-h-[calc(min(10lh,40dvh)+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink"
+        />
+        <p id={hintId} className="px-2 text-xs text-ink-secondary">
+          Enter sends the new version, Escape cancels. Phaethon answers it again; the old version stays in this
+          space’s past conversations.
+        </p>
+        <div className="flex justify-end gap-2">
+          <ComposerPrimitive.Cancel asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </ComposerPrimitive.Cancel>
+          <ComposerPrimitive.Send asChild>
+            <Button type="submit">
+              <Icon name="send" />
+              Send
+            </Button>
+          </ComposerPrimitive.Send>
+        </div>
+      </ComposerPrimitive.Root>
     </MessagePrimitive.Root>
   );
 }
@@ -120,42 +232,68 @@ function ActivityLine() {
   );
 }
 
-function CopyReply() {
+/**
+ * Under a finished reply, always visible (never only on hover): Copy, and on
+ * the last reply Regenerate, or Send again when the reply was stopped (C9).
+ * Shown only once the reply has finished, so Copy never takes a half reply.
+ */
+function ReplyActions() {
+  const pane = usePane();
   const isLast = useAuiState((s) => s.message.isLast);
+  const parentId = useAuiState((s) => s.message.parentId ?? undefined);
   const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
   const copied = useAuiState((s) => s.message.isCopied);
+  const failed = useAuiState((s) => s.message.status?.type === "incomplete" && s.message.status.reason === "error");
+  const stopped = useAuiState(
+    (s) =>
+      (s.message.status?.type === "incomplete" && s.message.status.reason === "cancelled") ||
+      s.message.content.some((p) => isRecord(p) && p.data.record.kind === "stopped"),
+  );
+  const knownParent = useKnownIndex(pane?.threadIndex ?? null, parentId);
   const announce = useAnnounce();
   const was = useRef(false);
   useEffect(() => {
     if (copied && !was.current) announce("Reply copied.");
     was.current = copied;
   }, [copied, announce]);
-  if (!hasText) return null;
+  // A stopped reply can always be sent again (the same question, answered afresh); a finished
+  // one is regenerated only where the backend can replace it truthfully.
+  const again = isLast && !failed && (stopped || knownParent);
+  if (!hasText && !again) return null;
   return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      // Older replies keep their Copy button in the tab order; it fades in when
-      // hovered or focused, and sits in the gap below the reply (the gap is sized
-      // for it), so a hidden button reserves no space of its own.
-      className={
-        isLast
-          ? "flex gap-1"
-          : "absolute start-0 top-full mt-1 flex gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100"
-      }
-    >
-      <ActionBarPrimitive.Copy asChild>
-        {/* The name is the visible label plus context ("Copy reply", "Copied reply"), so voice control matches it. */}
-        <Button type="button" variant="ghost" size="xs" className="-ms-2 text-ink-secondary hover:text-ink" data-copy-reply="">
-          <Icon name={copied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
-          {copied ? "Copied" : "Copy"}
-          <span className="sr-only"> reply</span>
-        </Button>
-      </ActionBarPrimitive.Copy>
+    <ActionBarPrimitive.Root hideWhenRunning className="flex flex-wrap gap-1" data-reply-actions="">
+      {hasText && (
+        <ActionBarPrimitive.Copy asChild>
+          {/* The name is the visible label plus context ("Copy reply", "Copied reply"), so voice control matches it. */}
+          <Button type="button" variant="ghost" size="xs" className="-ms-2 text-ink-secondary hover:text-ink" data-copy-reply="">
+            <Icon name={copied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
+            {copied ? "Copied" : "Copy"}
+            <span className="sr-only"> reply</span>
+          </Button>
+        </ActionBarPrimitive.Copy>
+      )}
+      {again && (
+        <ActionBarPrimitive.Reload asChild>
+          <Button
+            type="button"
+            variant={stopped ? "outline" : "ghost"}
+            size="xs"
+            className={stopped ? undefined : "text-ink-secondary hover:text-ink"}
+            data-reply-again={stopped ? "send-again" : "regenerate"}
+            onClick={() => focusPaneComposer(pane)}
+          >
+            <Icon name="retry" className="size-(--ph-icon-size-sm)" />
+            {stopped ? "Send again" : "Regenerate"}
+            <span className="sr-only">{stopped ? ": answer your last message again" : " this reply"}</span>
+          </Button>
+        </ActionBarPrimitive.Reload>
+      )}
     </ActionBarPrimitive.Root>
   );
 }
 
 function AssistantMessage() {
+  const headingId = useId();
   // Nothing to show until the first word or receipt: an empty running reply
   // would otherwise render only the streaming cursor, above "Thinking…".
   const hasContent = useAuiState((s) =>
@@ -168,9 +306,22 @@ function AssistantMessage() {
     const custom = s.message.metadata.custom as AgentMessageCustom | undefined;
     return !!(waitingCard(custom) || custom?.toolStatus);
   });
+  // A stopped reply says so once: from its saved record, or (when the stop
+  // came before the record could arrive) from its status.
+  const stoppedLine = useAuiState(
+    (s) =>
+      s.message.status?.type === "incomplete" &&
+      s.message.status.reason === "cancelled" &&
+      !s.message.content.some((p) => isRecord(p) && p.data.record.kind === "stopped"),
+  );
   return (
-    <MessagePrimitive.Root data-role="assistant" className="group/msg relative flex flex-col items-start gap-3">
-      <span className="sr-only">Phaethon said: </span>
+    <MessagePrimitive.Root
+      role="article"
+      aria-labelledby={headingId}
+      data-role="assistant"
+      className="relative flex flex-col items-start gap-3"
+    >
+      <MessageHeading id={headingId}>Phaethon replied</MessageHeading>
       {hasContent && (
         <div data-cursor={quiet ? "off" : undefined} className="w-full min-w-0">
           <MessagePrimitive.Parts components={ASSISTANT_PARTS} />
@@ -180,13 +331,13 @@ function AssistantMessage() {
       <ApprovalCard />
       <AccessRequestCard />
       <MessageError />
-      <AuiIf condition={(s) => s.message.status?.type === "incomplete" && s.message.status.reason === "cancelled"}>
-        <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
+      {stoppedLine && (
+        <p className="flex items-center gap-1.5 text-sm text-ink-secondary" data-record="stopped">
           <Icon name="stop" className="size-(--ph-icon-size-sm)" />
           Reply stopped.
         </p>
-      </AuiIf>
-      <CopyReply />
+      )}
+      <ReplyActions />
     </MessagePrimitive.Root>
   );
 }
@@ -202,9 +353,11 @@ function messageText(m: { content: readonly { type: string; text?: string }[] })
 
 /**
  * The thread's single polite live region. Streaming text is NOT spoken token by
- * token (the log has aria-live="off"); instead this announces tool activity and
- * the whole reply once it completes. Errors are announced by their role="alert".
- * Other parts of the thread speak through it with useAnnounce ("Reply copied.").
+ * token (the log has aria-live="off"); instead this says "Phaethon is working"
+ * when a reply starts, tool activity as it happens, each answer you gave once
+ * ("Allowed: create plans/week6.md"), and the reply once it completes, as plain
+ * words (no markdown) and only its first sentences. Errors are announced by
+ * their role="alert". Other parts of the thread speak through useAnnounce.
  */
 function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) => void }) {
   const last = useAuiState((s) => s.thread.messages[s.thread.messages.length - 1]);
@@ -214,12 +367,11 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
   // Only a reply seen streaming here is announced; a saved one loaded with the
   // thread (after a restart or space switch) is not news.
   const streamed = useRef<string | null>(null);
-  // Tool activity is spoken after a short pause: the backend sends "Waiting for
-  // you to allow: ..." just before the approval itself, and that must not be
-  // spoken on top of the card (which takes focus and speaks for itself).
+  // Tool activity is spoken after a short pause, so a line that is replaced at
+  // once (or a card that takes over) is not read.
   const pendingTool = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Access answers already spoken, so each receipt is said once.
-  const saidReceipts = useRef(new Set<string>());
+  // Records already spoken, so each answer is said once.
+  const said = useRef(new Set<string>());
   const holdTool = () => {
     clearTimeout(pendingTool.current);
     pendingTool.current = undefined;
@@ -231,23 +383,22 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
     const status = last.status;
     if (status?.type !== "running" && streamed.current !== last.id) return;
     if (status?.type === "running") {
-      streamed.current = last.id;
-      const custom = last.metadata.custom as AgentMessageCustom | undefined;
-      // A newly answered access request: confirm the choice once ("Allowed
-      // once: Work / calendar"), since focus has just moved to the composer.
-      const receipts = last.content.filter(
-        (p): p is typeof p & { type: "data"; data: AccessReceipt } =>
-          p.type === "data" && p.name === ACCESS_RECEIPT_PART,
-      );
-      const fresh = receipts.filter((p) => !saidReceipts.current.has(p.data.id));
-      fresh.forEach((p) => saidReceipts.current.add(p.data.id));
-      if (fresh.length) {
-        holdTool();
-        setText(`${receiptText(fresh[fresh.length - 1].data)}.`);
+      if (streamed.current !== last.id) {
+        streamed.current = last.id;
+        setText("Sent. Phaethon is working on a reply.");
       }
-      // An approval or access card takes focus and is read as an alertdialog;
-      // announcing it here as well would say it twice.
-      if (waitingCard(custom)) holdTool();
+      const custom = last.metadata.custom as AgentMessageCustom | undefined;
+      // A newly answered card: confirm the choice once, since focus has just moved to the composer.
+      const fresh = last.content.filter(isRecord).filter((p) => !said.current.has(p.data.id));
+      fresh.forEach((p) => said.current.add(p.data.id));
+      const news = fresh.filter((p) => announcesRecord(p.data.record));
+      if (news.length) {
+        holdTool();
+        setText(`${recordText(news[news.length - 1].data.record)}.`);
+      }
+      // An approval or access card speaks for itself (or is announced by its
+      // own arrival); "Waiting for you to ..." is never said on top of it.
+      if (waitingCard(custom) || isWaitingLine(custom?.toolStatus)) holdTool();
       else if (custom?.toolStatus && custom.toolStatus !== lastTool.current) {
         // Said as shown: "Reading Work / calendar/oct.md".
         const say = activityText(custom.toolStatus, spaceId).text;
@@ -261,10 +412,10 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
     if (status?.type === "complete") {
       done.current = last.id;
       const reply = messageText(last);
-      setText(reply ? `Phaethon replied: ${reply}` : "Phaethon finished without a reply.");
+      setText(reply ? `Phaethon replied: ${spokenReply(reply)}` : "Phaethon finished without a reply.");
     } else if (status?.type === "incomplete" && status.reason === "cancelled") {
       done.current = last.id;
-      setText("Reply stopped.");
+      setText("Reply stopped. Send again is under it.");
     } else if (status?.type === "incomplete") {
       done.current = last.id; // the alert inside the message speaks for itself
     }
@@ -279,22 +430,29 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
 }
 
 /** Shown in a space with no conversation yet: where you are and what Phaethon can see. */
-function EmptyState({ spaceName }: { spaceName: string }) {
+function EmptyState({ spaceName, setup }: { spaceName: string; setup?: ReactNode }) {
   return (
     // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
     // starts at the top and scrolls, never clipped above the log.
-    <div data-empty-state="" className="mx-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-4 text-center">
+    <div
+      data-empty-state=""
+      className="group/empty mx-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-4 text-center"
+    >
       <span
         aria-hidden="true"
-        className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] items-center justify-center rounded-full bg-space-tint text-ink-secondary"
+        className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] shrink-0 items-center justify-center rounded-full bg-space-tint text-ink-secondary"
       >
         <Icon name="space" className="size-(--ph-icon-size-lg)" />
       </span>
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
       <p className="max-w-md text-md text-ink-secondary">
-        Phaethon can read and search the files in {spaceName}, and nothing outside it. It asks before it changes
-        anything.
+        Phaethon can read and search the files in {spaceName}. It asks before it changes anything, or before it
+        reads another space.
       </p>
+      {/* First-run setup (no API key yet): the settings team's card; renders nothing when not needed. */}
+      <div data-setup-slot="" className="w-full text-start empty:hidden">
+        {setup}
+      </div>
     </div>
   );
 }
@@ -311,13 +469,12 @@ function ViewportBridge({ onStore }: { onStore: (s: ViewportStore) => void }) {
 const noSubscribe = () => () => {};
 
 /**
- * "Jump to latest": shown only while the conversation is scrolled up, and never
- * while an approval or access card waits (the card needs the attention, and in
- * a small window the button would sit on its answers). It floats over the foot
- * of the log rather than taking a row, so showing it never resizes the
- * conversation. While it shows, the log's bottom scroll padding is the
- * button's row (measured, so it holds at any text size), so a focused message
- * or button scrolls clear of it (WCAG 2.4.11); at the very bottom it is gone.
+ * "Jump to latest", in the composer's own toolbar (C8): it never covers a
+ * message, a table or an open Details, and it takes no room of its own, so
+ * showing it never resizes the conversation (and a small window at large
+ * text keeps every line it has). It stands in for the composer's hint while
+ * shown: only while scrolled up, and never while a card waits (the card
+ * needs the attention, and its shortcut is the hint then).
  */
 function JumpToLatest({ store, logRef }: { store: ViewportStore | null; logRef: RefObject<HTMLDivElement | null> }) {
   const atBottom = useSyncExternalStore(
@@ -328,55 +485,40 @@ function JumpToLatest({ store, logRef }: { store: ViewportStore | null; logRef: 
     const last = s.thread.messages[s.thread.messages.length - 1];
     return last?.status?.type === "running" && !!waitingCard(last.metadata.custom as AgentMessageCustom | undefined);
   });
-  // An empty thread has no "latest" (a short window may still scroll the empty state).
   const empty = useAuiState((s) => s.thread.isEmpty);
   if (!store || atBottom || waiting || empty) return null;
-  return <JumpRow store={store} logRef={logRef} />;
-}
-
-function JumpRow({ store, logRef }: { store: NonNullable<ViewportStore>; logRef: RefObject<HTMLDivElement | null> }) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    const log = logRef.current;
-    if (!row || !log) return;
-    const keepClear = () => (log.style.scrollPaddingBottom = `${row.getBoundingClientRect().height}px`);
-    keepClear();
-    const watch = new ResizeObserver(keepClear);
-    watch.observe(row);
-    return () => {
-      watch.disconnect();
-      log.style.scrollPaddingBottom = "";
-    };
-  }, [logRef]);
   return (
-    <div
-      ref={rowRef}
-      className="absolute bottom-0 left-1/2 z-10 w-max max-w-full -translate-x-1/2 py-2"
-      data-jump-row=""
+    <Button
+      type="button"
+      variant="outline"
+      className="min-w-0 rounded-full whitespace-nowrap"
+      data-jump-latest=""
+      onClick={() => {
+        store.getState().scrollToBottom();
+        // This button goes away at the bottom; keep focus in the conversation.
+        logRef.current?.focus();
+      }}
     >
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        className="rounded-full bg-raised whitespace-nowrap shadow"
-        onClick={() => {
-          store.getState().scrollToBottom();
-          // This button goes away at the bottom; keep focus in the conversation.
-          logRef.current?.focus();
-        }}
-      >
-        <Icon name="arrow-down" />
-        Jump to latest
-      </Button>
-    </div>
+      <Icon name="arrow-down" />
+      Jump to latest
+    </Button>
   );
 }
 
 const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
 
-export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+export function Thread({
+  spaceId,
+  spaceName,
+  inputRef,
+  setup,
+}: {
+  spaceId: string;
+  spaceName: string;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  setup?: ReactNode;
+}) {
+  const pane = usePane();
   const logRef = useRef<HTMLDivElement>(null);
   const stopFocused = useRef(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -393,16 +535,26 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
   }, []);
 
   // When a reply ends while the Stop button has focus, Stop unmounts: put focus
-  // back in the composer instead of dropping it to the document body.
+  // back in the composer instead of dropping it to the document body. Not in a
+  // space that isn't on screen: focus belongs to the one you are in.
   const wasRunning = useRef(false);
   useEffect(() => {
     const ended = wasRunning.current && !isRunning;
     wasRunning.current = isRunning;
     if (!ended) return;
     const lost = !document.activeElement || document.activeElement === document.body;
-    if (stopFocused.current || lost) focusComposer();
+    if ((stopFocused.current || lost) && paneShown(pane)) focusPaneComposer(pane);
     stopFocused.current = false;
-  }, [isRunning]);
+  }, [isRunning, pane]);
+
+  // Alt+Enter (Option+Return) from anywhere in the conversation goes to a waiting card.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || !isJumpKey(e)) return;
+    const card = pane?.rootRef.current?.querySelector<HTMLElement>("[data-waiting-card]");
+    if (!card || card.contains(e.target as Node)) return;
+    e.preventDefault();
+    goToCard(card);
+  };
 
   return (
     <SpaceIdContext.Provider value={spaceId}>
@@ -411,6 +563,7 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
           // Not positioned: the drop overlay below fills the whole pane (#main), the
           // conversations bar above the thread included.
           className="flex min-h-0 flex-1 flex-col"
+          onKeyDown={onKeyDown}
           // Files can be dropped anywhere on the conversation; the + menu is the
           // single-pointer alternative (WCAG 2.5.7).
           onDragEnter={(e) => {
@@ -434,32 +587,36 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
             void addFiles(Array.from(e.dataTransfer.files));
           }}
         >
-          {/* The log, and Jump to latest floating over its foot. */}
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            <ThreadPrimitive.Viewport
-              ref={logRef}
-              role="log"
-              aria-label={`Conversation in ${spaceName}`}
-              // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
-              aria-live="off"
-              tabIndex={0}
-              className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-            >
-              <ViewportBridge onStore={keepViewport} />
-              <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pt-8 pb-6 has-[[data-empty-state]]:justify-center-safe">
-                <AuiIf condition={(s) => s.thread.isEmpty}>
-                  <EmptyState spaceName={spaceName} />
-                </AuiIf>
-                {/* The gap holds an older reply's Copy button (shown on hover or focus) and grows with the text size. */}
-                <div className="flex flex-col gap-[calc(var(--ph-control-height-sm)+var(--ph-space)*3)] empty:hidden">
-                  <ThreadPrimitive.Messages>
-                    {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
-                  </ThreadPrimitive.Messages>
-                </div>
+          <ThreadPrimitive.Viewport
+            ref={logRef}
+            role="log"
+            aria-label={`Conversation in ${spaceName}`}
+            // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
+            aria-live="off"
+            aria-busy={isRunning}
+            tabIndex={0}
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+          >
+            <ViewportBridge onStore={keepViewport} />
+            <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pt-8 pb-4 has-[[data-empty-state]]:justify-center-safe">
+              <AuiIf condition={(s) => s.thread.isEmpty}>
+                <EmptyState spaceName={spaceName} setup={setup} />
+              </AuiIf>
+              <div className="flex flex-col gap-[calc(var(--ph-space)*7)] empty:hidden">
+                <ThreadPrimitive.Messages>
+                  {({ message }) =>
+                    message.composer.isEditing ? (
+                      <UserEditComposer />
+                    ) : message.role === "user" ? (
+                      <UserMessage />
+                    ) : (
+                      <AssistantMessage />
+                    )
+                  }
+                </ThreadPrimitive.Messages>
               </div>
-            </ThreadPrimitive.Viewport>
-            <JumpToLatest store={viewport} logRef={logRef} />
-          </div>
+            </div>
+          </ThreadPrimitive.Viewport>
           <ReplyAnnouncer text={spoken} setText={setSpoken} />
           <Composer
             spaceName={spaceName}
@@ -469,6 +626,7 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
             problems={problems}
             clearProblems={clearProblems}
             dragging={dragging}
+            jump={<JumpToLatest store={viewport} logRef={logRef} />}
           />
           {dragging && (
             <div
@@ -483,7 +641,7 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
                   <Icon name="attach" className="size-(--ph-icon-size-lg)" />
                 </span>
                 <p className="text-lg font-semibold">Drop files to attach them</p>
-                <p className="text-base text-ink-secondary">Images, PDFs and text files, saved in {spaceName}</p>
+                <p className="text-base text-ink-secondary">Images, PDFs, Word documents and text files, saved in {spaceName}</p>
               </div>
             </div>
           )}

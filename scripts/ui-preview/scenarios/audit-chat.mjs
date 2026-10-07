@@ -3,6 +3,10 @@
 // reply; every backend error code; approval and access cards (long, narrow,
 // failed answer, receipts); the composer (focus, multi-line, + menu by
 // keyboard, attachments, refusals, drag-over, Stop); copy feedback; markdown.
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import {
   CONVERSATION,
   EIGHT,
@@ -19,6 +23,10 @@ import {
   pick,
   showSidebar,
 } from "../audit-fixtures.mjs";
+
+// A kind of file Phaethon can't read (Word documents and code are accepted since R4).
+const ZIP = join(mkdtempSync(join(tmpdir(), "phaethon-audit-chat-")), "lecture-recordings.zip");
+writeFileSync(ZIP, "PK");
 
 const WIDE = [[1100, 720]];
 const BOTH = [[1100, 720], [640, 480]];
@@ -89,7 +97,7 @@ const ACTIONS = {
   apiKey: ["settings", "retry"],
   missingCli: ["settings", "retry"],
   notLoggedIn: ["retry", "settings"],
-  busy: ["retry"],
+  busy: ["stop", "retry"],
   cli: ["retry"],
   provider: ["retry"],
   network: ["retry"],
@@ -227,39 +235,21 @@ export default [
       check(Math.abs(during.height - before.height) < 0.5 && Math.abs(during.bottom - before.bottom) < 0.5, "showing Jump to latest leaves the conversation's size unchanged", `${before.height} -> ${during.height}`);
       await park(page);
       await h.shot("middle");
-      // An older reply's Copy only shows on hover.
+      // C12: an older reply's Copy is always visible (hover changes nothing but the pointer).
       const msgs = await page.$$('[data-role="assistant"]');
       const mid = msgs[Math.floor(msgs.length / 2)];
       await mid.hover();
       await h.idle();
       await h.shot("older-reply-hover");
-      // Jump to latest floats over the log's foot, inside the band the log keeps as
-      // bottom scroll padding, so a focused message or button scrolls clear of it.
+      // C8: Jump to latest sits in its own row below the conversation, so it never covers a
+      // message, a table or an open Details (the row is always there, so the log never resizes).
       const jump = await page.evaluate((sel) => {
-        const b = document.querySelector("[data-jump-row] button")?.getBoundingClientRect();
-        const el = document.querySelector(sel);
-        const log = el.getBoundingClientRect();
-        // The band the log keeps clear at its foot while the button shows (set from the row's measured height).
-        const pad = parseFloat(getComputedStyle(el).scrollPaddingBottom) || parseFloat(el.style.scrollPaddingBottom) || 0;
-        return b && { top: b.top, bottom: b.bottom, height: b.height, logTop: log.top, logBottom: log.bottom, pad };
+        const b = document.querySelector("[data-jump-latest]")?.getBoundingClientRect();
+        const log = document.querySelector(sel).getBoundingClientRect();
+        return b && { top: b.top, bottom: b.bottom, height: b.height, logTop: log.top, logBottom: log.bottom };
       }, LOG);
       check(!!jump, "Jump to latest shows while scrolled up");
-      check(jump.bottom <= jump.logBottom + 0.5 && jump.top >= jump.logTop, "it floats inside the conversation's box (no row of its own)", JSON.stringify(jump));
-      check(jump.top >= jump.logBottom - jump.pad - 0.5, "it sits within the log's bottom scroll padding, so focus scrolls clear of it", JSON.stringify(jump));
-      // Tab to a reply's Copy that starts under the button: it scrolls clear rather than staying hidden.
-      const clear = await page.evaluate((sel) => {
-        const log = document.querySelector(sel);
-        const lb = log.getBoundingClientRect();
-        const row = document.querySelector("[data-jump-row] button").getBoundingClientRect();
-        const target = [...log.querySelectorAll("[data-copy-reply]")].find((b) => b.getBoundingClientRect().top > lb.bottom);
-        if (!target) return { skipped: true };
-        target.focus();
-        const r = target.getBoundingClientRect();
-        const btn = document.querySelector("[data-jump-row] button")?.getBoundingClientRect() ?? row;
-        return { skipped: false, overlap: r.bottom > btn.top + 0.5 && r.top < btn.bottom && r.right > btn.left && r.left < btn.right };
-      }, LOG);
-      if (clear.skipped) console.log("     (no Copy below the fold to focus; scroll-padding check above covers it)");
-      else check(!clear.overlap, "a button focused below the fold scrolls clear of Jump to latest", JSON.stringify(clear));
+      check(jump.top >= jump.logBottom - 0.5, "it sits below the conversation, never over it", JSON.stringify(jump));
       await page.evaluate((sel) => {
         const log = document.querySelector(sel);
         log.scrollTop = log.scrollHeight / 2;
@@ -268,23 +258,23 @@ export default [
       await h.idle();
       const lg = await page.evaluate(() => {
         const probe = document.body.appendChild(document.createElement("div"));
-        probe.style.height = "var(--ph-control-height-lg)";
+        probe.style.height = "var(--ph-control-height)";
         const px = probe.getBoundingClientRect().height;
         probe.remove();
         return px;
       });
-      check(jump.height >= lg - 0.5, "it is at least the large control height", `${jump.height} vs ${lg}`);
-      await page.hover("[data-jump-row] button");
+      check(jump.height >= lg - 0.5, "it is a full-size control, as tall as Send beside it", `${jump.height} vs ${lg}`);
+      await page.hover("[data-jump-latest]");
       await h.idle();
       await h.shot("jump-hover");
-      await page.click("[data-jump-row] button");
-      await page.waitForFunction(() => !document.querySelector("[data-jump-row]"), { timeout: 5000 });
+      await page.click("[data-jump-latest]");
+      await page.waitForFunction(() => !document.querySelector("[data-jump-latest]"), { timeout: 5000 });
       const atEnd = await page.evaluate((sel) => {
         const log = document.querySelector(sel);
         return log.scrollHeight - log.scrollTop - log.clientHeight < 2 && document.activeElement === log;
       }, LOG);
       check(atEnd, "clicking it scrolls to the end, hides it, and leaves focus on the conversation");
-      // An older reply's hidden Copy button reserves no space: the gap after a reply equals the gap after a question.
+      // The gap after a reply (with its Copy row inside it) equals the gap after a question.
       const gaps = await page.evaluate(() => {
         const msgs = [...document.querySelectorAll("[data-role]")].slice(0, 4).map((m) => m.getBoundingClientRect());
         return [msgs[1].top - msgs[0].bottom, msgs[2].top - msgs[1].bottom];
@@ -384,6 +374,8 @@ export default [
     async run(page, h) {
       await h.send("Explain recursion at length.");
       await h.waitText("long answer");
+      // A Stop within 800 ms of Send is ignored as a bounce (C9); this one is deliberate.
+      await new Promise((r) => setTimeout(r, 900));
       await h.click('button[aria-label="Stop reply"]');
       await h.waitText("Reply stopped.");
       await park(page);
@@ -391,7 +383,7 @@ export default [
       const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
       check(focused, "after Stop, focus is back in the composer");
       const said = await page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
-      check(said === "Reply stopped.", "the status region says Reply stopped.", said);
+      check(said.startsWith("Reply stopped."), "the status region says Reply stopped.", said);
     },
   },
 
@@ -465,7 +457,7 @@ export default [
       }, LOG);
       await h.idle();
       const pending = await page.evaluate((sel) => ({
-        jump: !!document.querySelector("[data-jump-row]"),
+        jump: !!document.querySelector("[data-jump-latest]"),
         scrolledUp: (() => {
           const log = document.querySelector(sel);
           return log.scrollHeight - log.scrollTop - log.clientHeight > 2;
@@ -490,7 +482,7 @@ export default [
           const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
           return r.top < log.top || r.bottom > log.bottom + 0.5 || !(hit === b || b.contains(hit));
         };
-        return [...document.querySelectorAll('[role="alertdialog"] button')].map((b) => ({ text: b.textContent.trim(), covered: covered(b) }));
+        return [...document.querySelectorAll('[role="alertdialog"] button:not([data-view]):not([data-approval-show-all])')].map((b) => ({ text: b.textContent.trim(), covered: covered(b) }));
       }, LOG);
       check(answers.length === 2 && answers.every((a) => !a.covered), "Don’t allow and Allow are fully visible and uncovered at the card's end", JSON.stringify(answers));
     },
@@ -565,7 +557,7 @@ export default [
         log.dispatchEvent(new Event("scroll"));
       }, LOG);
       await h.idle();
-      const jump = await page.evaluate(() => !!document.querySelector("[data-jump-row]"));
+      const jump = await page.evaluate(() => !!document.querySelector("[data-jump-latest]"));
       check(!jump, "no Jump to latest while an access request waits");
       await page.evaluate((sel) => (document.querySelector(sel).scrollTop = document.querySelector(sel).scrollHeight), LOG);
       await h.idle();
@@ -602,7 +594,9 @@ export default [
     async run(page, h) {
       await h.send("Plan my study evenings around work.");
       await page.waitForSelector("[data-access-request]", { timeout: 5000 });
-      await clickText(page, "[data-access-request]", { once: "Allow once", always: "Always allow", deny: "Deny" }[answer]);
+      // C4: Deny | Allow; keeping the permission is a separate, unchecked box.
+      if (answer === "always") await page.click("[data-access-keep]");
+      await clickText(page, "[data-access-request]", answer === "deny" ? "Deny" : "Allow");
       await page.waitForSelector(`[data-access-receipt="${answer}"]`, { timeout: 5000 });
       await h.waitText("moved problem set 4");
       await park(page);
@@ -709,7 +703,7 @@ export default [
       }, LOG);
       check(empty.top >= empty.logTop - 0.5, "the empty state's icon is not clipped above the conversation", JSON.stringify(empty));
       check(empty.justify.includes("safe"), "it is centred with justify-content: safe center", empty.justify);
-      const jumpOnEmpty = await page.evaluate(() => !!document.querySelector("[data-jump-row]"));
+      const jumpOnEmpty = await page.evaluate(() => !!document.querySelector("[data-jump-latest]"));
       check(!jumpOnEmpty, "no Jump to latest over the empty state, even when it scrolls");
     },
   },
@@ -718,11 +712,11 @@ export default [
     sizes: BOTH,
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
-      await pick(page, [FILES.docx]);
+      await pick(page, [ZIP]);
       await h.waitText("can’t be attached");
       await park(page);
       await h.idle();
-      await h.shot("docx");
+      await h.shot("zip");
       await pick(page, ELEVEN);
       await h.waitText("up to 10 files");
       const said = await page.evaluate(() => document.querySelector('[role="alert"]')?.textContent ?? "");

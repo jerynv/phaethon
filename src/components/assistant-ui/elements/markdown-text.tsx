@@ -11,15 +11,30 @@ import {
   memoizeMarkdownComponents,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { type CSSProperties, type FC, memo, useEffect, useMemo, useRef } from "react";
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type FC,
+  memo,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { TextMessagePartProps } from "@assistant-ui/react";
 
 import { useAnnounce } from "@/components/chat/announce";
 import { Button } from "@/components/ui/button";
+import { setCodeWrap, useCodeWrap } from "@/hooks/use-code-wrap";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
+
+import { SyntaxHighlighter } from "./syntax-highlighter";
 
 type MarkdownTextProps = Partial<TextMessagePartProps> & {
   components?: Parameters<typeof memoizeMarkdownComponents>[0];
@@ -40,7 +55,35 @@ const useShallowStable = <T extends Record<string, unknown> | undefined>(value: 
   return ref.current;
 };
 
-const MarkdownTextImpl: FC<MarkdownTextProps> = ({ components, componentsByLanguage }) => {
+/**
+ * A single line break in what someone typed stays a line break (markdown
+ * would otherwise run the lines together). For the user's own messages.
+ */
+type MdNode = { type: string; value?: string; children?: MdNode[] };
+function remarkSoftBreaks() {
+  const walk = (node: MdNode) => {
+    if (!node.children) return;
+    const next: MdNode[] = [];
+    for (const child of node.children) {
+      if (child.type === "text" && child.value?.includes("\n")) {
+        child.value.split("\n").forEach((piece, i) => {
+          if (i > 0) next.push({ type: "break" });
+          if (piece) next.push({ type: "text", value: piece });
+        });
+      } else {
+        walk(child);
+        next.push(child);
+      }
+    }
+    node.children = next;
+  };
+  return (tree: MdNode) => walk(tree);
+}
+
+const ASSISTANT_PLUGINS = [remarkGfm];
+const USER_PLUGINS = [remarkGfm, remarkSoftBreaks];
+
+const MarkdownTextImpl: FC<MarkdownTextProps & { user?: boolean }> = ({ components, componentsByLanguage, user }) => {
   const stableComponents = useShallowStable(components);
   const stableComponentsByLanguage = useShallowStable(componentsByLanguage);
   const markdownComponents = useMemo(() => {
@@ -50,10 +93,13 @@ const MarkdownTextImpl: FC<MarkdownTextProps> = ({ components, componentsByLangu
 
   return (
     <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
-      className="aui-md max-w-(--ph-measure) text-md text-ink"
+      remarkPlugins={user ? USER_PLUGINS : ASSISTANT_PLUGINS}
+      className={cn("aui-md text-md text-ink", user ? "max-w-full" : "max-w-(--ph-measure)")}
       components={markdownComponents}
       componentsByLanguage={stableComponentsByLanguage}
+      // Text shows as it arrives, with no typing effect: Copy and "Phaethon
+      // replied" then never come before the last words are on screen (C15).
+      smooth={false}
       defer
     />
   );
@@ -61,37 +107,73 @@ const MarkdownTextImpl: FC<MarkdownTextProps> = ({ components, componentsByLangu
 
 export const MarkdownText = memo(MarkdownTextImpl);
 
-/** The bar above a code block: its language and a Copy button that says when it worked. */
+/** The user's own message: the same markdown, with typed line breaks kept. */
+export const UserMarkdownText = memo((props: MarkdownTextProps) => <MarkdownTextImpl {...props} user />);
+
+/**
+ * Markdown outside a message (the approval card's preview of a file): the
+ * same look, no streaming, no syntax colours.
+ */
+export function StaticMarkdown({ text, className }: { text: string; className?: string }) {
+  return (
+    <div className={cn("aui-md text-md text-ink", className)}>
+      <ReactMarkdown remarkPlugins={ASSISTANT_PLUGINS} components={staticComponents}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/** The bar above a code block: its language, Wrap lines and Copy (which says when it worked). */
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const { isCopied, copyToClipboard } = useCopyToClipboard({ copiedDuration: 2000 });
   const announce = useAnnounce();
+  const wrap = useCodeWrap();
   const was = useRef(false);
   useEffect(() => {
     if (isCopied && !was.current) announce("Code copied.");
     was.current = isCopied;
   }, [isCopied, announce]);
   return (
-    <div className="mt-4 flex items-center justify-between gap-2 rounded-t-lg border border-b-0 border-line bg-surface py-1 ps-3 pe-1">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-x-2 rounded-t-lg border border-b-0 border-line bg-surface py-1 ps-3 pe-1">
       <span className="font-mono text-xs text-ink-secondary">{language || "text"}</span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="text-ink-secondary hover:text-ink"
-        onClick={() => code && !isCopied && copyToClipboard(code)}
-      >
-        <Icon name={isCopied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
-        <span>{isCopied ? "Copied" : "Copy"}</span>
-        <span className="sr-only"> code</span>
-      </Button>
+      <span className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          aria-pressed={wrap}
+          data-code-wrap=""
+          className="text-ink-secondary hover:text-ink"
+          onClick={() => {
+            setCodeWrap(!wrap);
+            announce(wrap ? "Long lines scroll sideways." : "Long lines wrap.");
+          }}
+        >
+          {wrap && <Icon name="check" className="size-(--ph-icon-size-sm)" />}
+          Wrap lines
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="text-ink-secondary hover:text-ink"
+          onClick={() => code && !isCopied && copyToClipboard(code)}
+        >
+          <Icon name={isCopied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
+          <span>{isCopied ? "Copied" : "Copy"}</span>
+          <span className="sr-only"> code</span>
+        </Button>
+      </span>
     </div>
   );
 };
 
 /**
- * A wide table's scroll cue, with no script: a soft shadow shows at an edge
- * while there is more table past it. Covers in the page colour scroll with the
- * content ("local") and hide the shadows ("scroll") at the ends.
+ * A wide table's scroll cue: a soft shadow at an edge while there is more
+ * table past it (covers in the page colour scroll with the content, "local",
+ * and hide the shadows at the ends). When the table is wider than the reply,
+ * a line above it says so in words and offers to wrap it to fit instead.
  */
 const EDGE = "color-mix(in oklch, var(--ph-ink) 16%, transparent)";
 const SCROLL_SHADOWS: CSSProperties = {
@@ -103,22 +185,113 @@ const SCROLL_SHADOWS: CSSProperties = {
   ].join(", "),
 };
 
-const defaultComponents = memoizeMarkdownComponents({
+function Table({ className, ...props }: ComponentProps<"table">) {
+  const box = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(false);
+  const [wrap, setWrap] = useState(false);
+  const hintId = useId();
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => setWide(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    if (el.firstElementChild) watch.observe(el.firstElementChild);
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <div className="my-4 flex max-w-full flex-col gap-1" data-md-table="">
+      {(wide || wrap) && (
+        <p className="flex flex-wrap items-center gap-x-2 text-sm text-ink-secondary" data-table-cue="">
+          <span id={hintId}>{wrap ? "Wrapped to fit." : "Wider than the reply: scroll sideways to see it all."}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            aria-pressed={wrap}
+            data-table-wrap=""
+            onClick={() => setWrap(!wrap)}
+          >
+            {wrap ? "Scroll instead" : "Wrap to fit"}
+          </Button>
+        </p>
+      )}
+      <div
+        ref={box}
+        className="w-fit max-w-full overflow-x-auto rounded-lg border border-line"
+        style={SCROLL_SHADOWS}
+        tabIndex={0}
+        role="group"
+        aria-label="Table"
+        aria-describedby={wide && !wrap ? hintId : undefined}
+      >
+        <table
+          className={cn("border-collapse text-base", wrap && "[&_td]:wrap-anywhere [&_th]:wrap-anywhere", className)}
+          {...props}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Code inside a block, or `inline code`. */
+function Code({ className, style, ...props }: ComponentProps<"code">) {
+  const isCodeBlock = useIsMarkdownCodeBlock();
+  // In a block, the code follows "Wrap lines" itself: it is memoised on its
+  // markdown node, so a changed style from the highlighter would not reach it.
+  const wrap = useCodeWrap();
+  return (
+    <code
+      className={cn(!isCodeBlock && "rounded-xs border border-line bg-surface px-1 py-px font-mono text-sm", className)}
+      style={isCodeBlock ? { ...style, whiteSpace: wrap ? "pre-wrap" : "pre" } : style}
+      {...props}
+    />
+  );
+}
+
+/** A code block: wraps long lines or scrolls sideways, as chosen with "Wrap lines". */
+function Pre({ className, style, ...props }: ComponentProps<"pre">) {
+  const wrap = useCodeWrap();
+  return (
+    <pre
+      tabIndex={0}
+      data-wrap={wrap ? "on" : "off"}
+      className={cn(
+        "rounded-b-lg border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal tracking-normal",
+        wrap ? "whitespace-pre-wrap wrap-anywhere" : "overflow-x-auto whitespace-pre",
+        className,
+      )}
+      {...props}
+      style={wrap ? style : { ...SCROLL_SHADOWS_SUNKEN, ...style }}
+    />
+  );
+}
+const SCROLL_SHADOWS_SUNKEN: CSSProperties = {
+  background: String(SCROLL_SHADOWS.background).replaceAll("var(--ph-bg)", "var(--ph-surface-sunken)"),
+};
+
+/**
+ * The elements markdown becomes. Headings sit two levels down: the space is
+ * the page's h1 and each message carries its own h2 ("Phaethon replied"), so
+ * a reply's "## Plan" is an h4 to assistive technology (it looks as written).
+ */
+const elements = {
   h1: ({ className, ...props }) => (
-    <h1 className={cn("mt-6 mb-2 text-xl font-semibold tracking-tight first:mt-0 last:mb-0", className)} {...props} />
+    <h3 className={cn("mt-6 mb-2 text-xl font-semibold tracking-tight first:mt-0 last:mb-0", className)} {...props} />
   ),
   h2: ({ className, ...props }) => (
-    <h2 className={cn("mt-6 mb-2 text-lg font-semibold first:mt-0 last:mb-0", className)} {...props} />
+    <h4 className={cn("mt-6 mb-2 text-lg font-semibold first:mt-0 last:mb-0", className)} {...props} />
   ),
   h3: ({ className, ...props }) => (
-    <h3 className={cn("mt-5 mb-1.5 text-md font-semibold first:mt-0 last:mb-0", className)} {...props} />
+    <h5 className={cn("mt-5 mb-1.5 text-md font-semibold first:mt-0 last:mb-0", className)} {...props} />
   ),
   // Each level steps down in size or colour, so h3 and h4 never look the same.
   h4: ({ className, ...props }) => (
-    <h4 className={cn("mt-4 mb-1 text-base font-semibold first:mt-0 last:mb-0", className)} {...props} />
+    <h6 className={cn("mt-4 mb-1 text-base font-semibold first:mt-0 last:mb-0", className)} {...props} />
   ),
   h5: ({ className, ...props }) => (
-    <h5
+    <h6
       className={cn("mt-4 mb-1 text-base font-semibold text-ink-secondary first:mt-0 last:mb-0", className)}
       {...props}
     />
@@ -149,17 +322,7 @@ const defaultComponents = memoizeMarkdownComponents({
   ),
   li: ({ className, ...props }) => <li className={cn("ps-1", className)} {...props} />,
   hr: ({ className, ...props }) => <hr className={cn("my-5 border-line", className)} {...props} />,
-  table: ({ className, ...props }) => (
-    <div
-      className="my-4 w-fit max-w-full overflow-x-auto rounded-lg border border-line"
-      style={SCROLL_SHADOWS}
-      tabIndex={0}
-      role="group"
-      aria-label="Table"
-    >
-      <table className={cn("border-collapse text-base", className)} {...props} />
-    </div>
-  ),
+  table: Table,
   thead: ({ className, ...props }) => <thead className={cn("bg-surface", className)} {...props} />,
   th: ({ className, ...props }) => (
     <th
@@ -182,27 +345,36 @@ const defaultComponents = memoizeMarkdownComponents({
   tr: ({ className, ...props }) => <tr className={cn("last:[&>td]:border-b-0", className)} {...props} />,
   strong: ({ className, ...props }) => <strong className={cn("font-semibold", className)} {...props} />,
   sup: ({ className, ...props }) => <sup className={cn("[&>a]:text-xs [&>a]:no-underline", className)} {...props} />,
+} satisfies Components;
+
+const defaultComponents = memoizeMarkdownComponents({
+  ...elements,
+  pre: Pre,
+  code: Code,
+  CodeHeader,
+  SyntaxHighlighter,
+});
+
+/** For StaticMarkdown: a code block has no header there, so it gets the full rounded box. */
+const staticComponents: Components = {
+  ...elements,
   pre: ({ className, ...props }) => (
     <pre
       tabIndex={0}
       className={cn(
-        "overflow-x-auto rounded-b-lg border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal",
+        "my-3 overflow-x-auto rounded-lg border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal",
         className,
       )}
       {...props}
     />
   ),
-  code: function Code({ className, ...props }) {
-    const isCodeBlock = useIsMarkdownCodeBlock();
-    return (
-      <code
-        className={cn(
-          !isCodeBlock && "rounded-xs border border-line bg-surface px-1 py-px font-mono text-sm",
-          className,
-        )}
-        {...props}
-      />
-    );
-  },
-  CodeHeader,
-});
+  code: ({ className, ...props }) => (
+    <code
+      className={cn(
+        "rounded-xs border border-line bg-surface px-1 py-px font-mono text-sm [pre_&]:border-0 [pre_&]:bg-transparent [pre_&]:p-0",
+        className,
+      )}
+      {...props}
+    />
+  ),
+};

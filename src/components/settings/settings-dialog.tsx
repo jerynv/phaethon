@@ -213,6 +213,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         <Dialog.Content
           aria-describedby={descId}
           onCloseAutoFocus={onCloseAutoFocus}
+          // Escape in a field with unsaved text (Settings > Spaces) undoes that edit instead of closing.
+          onEscapeKeyDown={(e) => {
+            if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
+          }}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 flex h-(--ph-settings-height) w-(--ph-settings-width) -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-line bg-bg text-ink shadow-lg outline-none",
             "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",

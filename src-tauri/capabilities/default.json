@@ -24,6 +24,9 @@
     "allow-appearance-set",
     "allow-agent-access-answer",
     "allow-grants-list",
-    "allow-grant-revoke"
+    "allow-grant-revoke",
+    "allow-spaces-list",
+    "allow-space-create",
+    "allow-space-update"
   ]
 }

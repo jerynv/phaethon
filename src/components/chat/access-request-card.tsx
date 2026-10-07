@@ -4,7 +4,7 @@ import { useContext, useEffect, useId, useRef, useState, type KeyboardEvent } fr
 import { SpaceMark, spaceHueStyle } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { STUB_SPACES } from "@/lib/spaces";
+import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import {
   answerAccess,
@@ -23,7 +23,7 @@ const ANSWER_NOT_SENT_SHARE =
  * title-cased ("home" as "Home"), with no hue, and `known: false`.
  */
 export function spaceInfo(id: string): { name: string; hue?: number; known: boolean } {
-  const s = STUB_SPACES.find((x) => x.id === id);
+  const s = findSpace(id);
   if (s) return { name: s.name, hue: s.hue, known: true };
   return { name: id.charAt(0).toUpperCase() + id.slice(1), known: false };
 }

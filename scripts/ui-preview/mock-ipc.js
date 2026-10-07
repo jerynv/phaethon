@@ -8,6 +8,11 @@
       threads: {},
       // Grants by receiving space: [{ id, from, path, created, scope }]
       grants: {},
+      // The vault's spaces, as spaces_list returns them (sorted by name there).
+      spaces: [
+        { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 250 },
+        { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 55 },
+      ],
       // Events streamed for each agent_send; { waitApproval: true } pauses until answered.
       turn: [{ kind: "text", delta: "Done." }],
       sendError: null,
@@ -48,6 +53,31 @@
         case "api_key_set": M.settings.hasAnthropicKey = true; return;
         case "api_key_clear": M.settings.hasAnthropicKey = false; return;
         case "appearance_set": M.settings.appearance = args.appearance; return;
+        case "spaces_list":
+          return [...M.spaces].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
+        case "space_create": {
+          // As src-tauri/src/spaces.rs: a slug of the name, made unique with -2, -3...
+          const name = (args.name ?? "").trim();
+          if (!name) throw "A space needs a name.";
+          if (name.length > 60) throw "A space’s name can be at most 60 characters.";
+          const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "space";
+          let id = base;
+          for (let n = 2; M.spaces.some((s) => s.id === id); n++) id = `${base}-${n}`;
+          const space = { id, name, description: (args.description ?? "").trim(), hue: Math.round(args.hue ?? 168) };
+          M.spaces.push(space);
+          return { ...space };
+        }
+        case "space_update": {
+          const space = M.spaces.find((s) => s.id === args.id);
+          if (!space) throw `space "${args.id}" does not exist in this vault`;
+          if (args.name != null) {
+            if (!args.name.trim()) throw "A space needs a name.";
+            space.name = args.name.trim();
+          }
+          if (args.description != null) space.description = args.description.trim();
+          if (args.hue != null) space.hue = Math.round(args.hue);
+          return { ...space };
+        }
         case "thread_load": return M.threads[args.space] ?? [];
         case "grants_list": return { grants: M.grants[args.space] ?? [], problems: M.grantProblems ?? [] };
         case "grant_revoke": {

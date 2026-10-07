@@ -14,7 +14,10 @@ import { SpaceMark } from "./space-mark";
 import { WindowControls } from "./window-controls";
 
 type Props = {
-  space: Space;
+  /** The current space; none while the list loads or when the vault has no spaces. */
+  space: Space | undefined;
+  /** The heading when there is no space ("No spaces yet"). */
+  emptyTitle?: string;
   /** The window does not have focus: the chrome dims, as native windows do. */
   inactive: boolean;
   sidebarOpen: boolean;
@@ -93,7 +96,7 @@ function BarButton({
  * The space's name never gives up room: the grants chip beside it shrinks (and
  * in a narrow window collapses to a count) before the title truncates.
  */
-export function TitleBar({ space, inactive, sidebarOpen, onToggleSidebar, sidebarId, showSettings, actions }: Props) {
+export function TitleBar({ space, emptyTitle = "", inactive, sidebarOpen, onToggleSidebar, sidebarId, showSettings, actions }: Props) {
   const ownControls = platform() !== "mac" && inTauri();
   const mac = platform() === "mac";
   const toggleLabel = sidebarOpen ? "Hide sidebar" : "Show sidebar";
@@ -140,14 +143,14 @@ export function TitleBar({ space, inactive, sidebarOpen, onToggleSidebar, sideba
       </div>
 
       <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarOpen ? "ps-(--ph-pane-inset)" : "ps-1")}>
-        <SpaceMark hue={space.hue} />
+        {space && <SpaceMark hue={space.hue} />}
         <h1
           id="space-title"
           className="max-w-full shrink-0 truncate text-md leading-tight font-semibold text-ink group-data-[inactive]/titlebar:text-ink-secondary"
         >
-          {space.name}
+          {space ? space.name : emptyTitle}
         </h1>
-        <GrantsChip space={space} announce={announce} />
+        {space && <GrantsChip space={space} announce={announce} />}
       </div>
       {/* Outside the chip, which goes away when its last grant is revoked. */}
       <p role="status" className="sr-only">

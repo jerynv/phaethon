@@ -5,6 +5,7 @@ pub mod attachments;
 pub mod grants;
 pub mod provider;
 pub mod secrets;
+pub mod spaces;
 pub mod thread;
 pub mod tools;
 pub mod vault;
@@ -160,6 +161,36 @@ fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::
         .map_err(|e| format!("This space’s conversation couldn’t be read: {e}"))
 }
 
+/// Every space in the vault (valid folders under `spaces/`), sorted by name,
+/// with the name, description and colour from each one's space.json.
+#[tauri::command]
+fn spaces_list(state: State<'_, AppState>) -> Result<Vec<spaces::SpaceView>, String> {
+    spaces::list(&state.vault)
+}
+
+/// Create a space. Its folder name is derived from `name`; the result says which.
+#[tauri::command]
+fn space_create(
+    state: State<'_, AppState>,
+    name: String,
+    description: Option<String>,
+    hue: Option<f64>,
+) -> Result<spaces::SpaceView, String> {
+    spaces::create(&state.vault, &name, description.as_deref(), hue)
+}
+
+/// Rename, describe or recolour a space. Its folder (the id) never changes.
+#[tauri::command]
+fn space_update(
+    state: State<'_, AppState>,
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+    hue: Option<f64>,
+) -> Result<spaces::SpaceView, String> {
+    spaces::update(&state.vault, &id, name.as_deref(), description.as_deref(), hue)
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsView {
@@ -287,7 +318,10 @@ pub fn run() {
             settings_set_backend,
             api_key_set,
             api_key_clear,
-            appearance_set
+            appearance_set,
+            spaces_list,
+            space_create,
+            space_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

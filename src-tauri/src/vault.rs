@@ -312,7 +312,7 @@ fn session_file(space_dir: &Path) -> PathBuf {
     space_dir.join(".phaethon").join("session")
 }
 
-fn is_valid_space_id(id: &str) -> bool {
+pub(crate) fn is_valid_space_id(id: &str) -> bool {
     let mut chars = id.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit())
         && id.len() <= 64

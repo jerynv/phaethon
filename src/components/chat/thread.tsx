@@ -29,7 +29,7 @@ import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import { SpaceMark } from "@/components/shell/space-mark";
-import { STUB_SPACES } from "@/lib/spaces";
+import { findSpace } from "@/lib/spaces";
 import { ACCESS_RECEIPT_PART, type AccessReceipt, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
 import { AccessReceiptLine, AccessRequestCard, receiptText } from "./access-request-card";
@@ -57,7 +57,7 @@ const waitingCard = (custom: AgentMessageCustom | undefined) => custom?.approval
 function activityText(label: string, current: string) {
   const m = /^(Reading|Listing|Searching) ([^/\s]+)(\/|\s|$)([\s\S]*)$/.exec(label);
   if (!m || m[2] === current) return { text: label };
-  const other = STUB_SPACES.find((s) => s.id === m[2]);
+  const other = findSpace(m[2]);
   if (!other) return { text: label };
   const rest = m[4] ? (m[3] === "/" ? ` / ${m[4]}` : ` ${m[4]}`) : "";
   return { text: `${m[1]} ${other.name}${rest}`, other };

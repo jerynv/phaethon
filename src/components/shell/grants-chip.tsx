@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import { grantDate, grantLabel, grantNoun, revokeGrant, shortPath, spaceInfo, useGrants, type GrantView } from "@/lib/grants";
 import { openSettings } from "@/lib/open-settings";
-import type { Space } from "@/lib/spaces";
+import { useSpaces, type Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
 import { SpaceMark } from "./space-mark";
@@ -76,6 +76,8 @@ function breakAfterSlashes(path: string): ReactNode {
  */
 export function GrantsChip({ space, announce }: { space: Space; announce: (message: string) => void }) {
   const { state } = useGrants(space.id);
+  // Labels name other spaces by their display name: redraw when one is renamed.
+  useSpaces();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");

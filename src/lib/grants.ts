@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { STUB_SPACES } from "./spaces";
+import { findSpace } from "./spaces";
 import { inTauri } from "./tauri";
 
 /** Mirrors `GrantView` in src-tauri/src/grants.rs. `path` is relative to `from`, `/`-separated. */
@@ -61,7 +61,7 @@ export function onGrantsChanged(cb: () => void): () => void {
  * dashed neutral ring).
  */
 export function spaceInfo(id: string): { name: string; hue: number | undefined; known: boolean } {
-  const s = STUB_SPACES.find((x) => x.id === id);
+  const s = findSpace(id);
   if (s) return { name: s.name, hue: s.hue, known: true };
   const titled = id ? id.charAt(0).toUpperCase() + id.slice(1) : "Unknown space";
   return { name: `${titled} (not in this vault)`, hue: undefined, known: false };
@@ -115,12 +115,13 @@ const EMPTY: GrantsState = { status: "ready", grants: [], problems: [] };
  * grants. A reload keeps showing the last answer instead of flashing "loading".
  */
 export function useGrants(space: string) {
-  const [state, setState] = useState<GrantsState>(() => (inTauri() ? { status: "loading" } : EMPTY));
+  const [state, setState] = useState<GrantsState>(() => (inTauri() && space ? { status: "loading" } : EMPTY));
   const seq = useRef(0);
   const shownFor = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!inTauri()) return;
+    // No space (a vault with none yet): nothing can be granted.
+    if (!inTauri() || !space) return;
     const mine = ++seq.current;
     if (shownFor.current !== space) setState({ status: "loading" });
     try {

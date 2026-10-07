@@ -1,33 +1,46 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { SpacePane } from "@/components/chat/space-pane";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { NewSpaceDialog } from "@/components/shell/new-space-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
 import { TitleBar, useWindowFocused } from "@/components/shell/title-bar";
 import { useSidebar } from "@/components/shell/use-sidebar";
+import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Icon } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
 import { platform } from "@/lib/platform";
-import { STUB_SPACES } from "@/lib/spaces";
+import { refreshSpaces, useSpaces, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_ID = "spaces-sidebar";
 
 export default function App() {
-  const [activeId, setActiveId] = useState(STUB_SPACES[0].id);
+  const { spaces, status: spacesStatus, error: spacesError } = useSpaces();
+  const [activeId, setActiveId] = useState<string | null>(null);
   // Bumped when settings change (e.g. the backend), so the thread reloads.
   const [reloadKey, setReloadKey] = useState(0);
-  const active = STUB_SPACES.find((s) => s.id === activeId) ?? STUB_SPACES[0];
+  // The chosen space, or the first one when nothing is chosen yet or the
+  // chosen one is gone (its folder was moved or deleted outside Phaethon).
+  const active: Space | undefined = spaces.find((s) => s.id === activeId) ?? spaces[0];
+  // Hold on to that fallback, so a space added later that sorts first does not take over.
+  const shownId = active?.id ?? null;
+  useEffect(() => {
+    if (shownId !== null && shownId !== activeId) setActiveId(shownId);
+  }, [shownId, activeId]);
   const sidebar = useSidebar();
   const focused = useWindowFocused();
   const hasSettings = inTauri();
 
   // The active space's hue tints the whole window, dialogs included (they
   // render in a portal outside the app root), so it is set on <html>.
+  const activeHue = active?.hue;
   useLayoutEffect(() => {
-    document.documentElement.style.setProperty("--ph-space-h", String(active.hue));
-  }, [active.hue]);
+    if (activeHue === undefined) document.documentElement.style.removeProperty("--ph-space-h");
+    else document.documentElement.style.setProperty("--ph-space-h", String(activeHue));
+  }, [activeHue]);
 
   // Cmd+\ (Ctrl+\ elsewhere) shows and hides the sidebar; Cmd+, (Ctrl+,) opens
   // Settings, so Settings stays reachable with the sidebar hidden.
@@ -72,6 +85,30 @@ export default function App() {
     setSidebarOpen(false);
   }, [setSidebarOpen]);
 
+  // New space: a fresh form (new key) each time it opens. After creating, the
+  // new space is chosen and its sidebar entry takes focus (the conversation
+  // when the sidebar is hidden); after cancelling, focus goes back where it was.
+  const [newSpace, setNewSpace] = useState({ key: 0, open: false });
+  const newSpaceOpener = useRef<HTMLElement | null>(null);
+  const createdId = useRef<string | null>(null);
+  const openNewSpace = useCallback(() => {
+    newSpaceOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    createdId.current = null;
+    setNewSpace((n) => ({ key: n.key + 1, open: true }));
+  }, []);
+  const focusAfterNewSpace = useCallback((created: boolean) => {
+    requestAnimationFrame(() => {
+      const main = document.getElementById("main");
+      if (created && createdId.current) {
+        const entry = document.querySelector<HTMLElement>(`#${SIDEBAR_ID}:not([hidden]) [data-space-id="${createdId.current}"]`);
+        (entry ?? main)?.focus();
+        return;
+      }
+      const back = newSpaceOpener.current;
+      (back?.isConnected && back.offsetParent !== null ? back : main)?.focus();
+    });
+  }, []);
+
   return (
     <TooltipProvider>
       {/* data-inactive: the window lost focus, so the chrome and the sidebar selection dim, as native windows do. */}
@@ -90,6 +127,7 @@ export default function App() {
         </a>
         <TitleBar
           space={active}
+          emptyTitle={spacesStatus === "loading" ? "" : spacesStatus === "error" ? "Spaces unavailable" : "No spaces yet"}
           inactive={!focused}
           sidebarOpen={sidebar.open}
           onToggleSidebar={sidebar.toggle}
@@ -100,8 +138,10 @@ export default function App() {
           <Sidebar
             id={SIDEBAR_ID}
             open={sidebar.open}
-            spaces={STUB_SPACES}
-            activeId={activeId}
+            spaces={spaces}
+            loading={spacesStatus !== "ready"}
+            activeId={active?.id ?? ""}
+            onNewSpace={openNewSpace}
             onSelect={chooseSpace}
             onDismiss={sidebarNarrow ? dismissSidebar : undefined}
             footer={hasSettings ? <SettingsDialog onChanged={() => setReloadKey((k) => k + 1)} /> : null}
@@ -120,10 +160,73 @@ export default function App() {
               !sidebar.open && "ms-(--ph-pane-inset)",
             )}
           >
-            <SpacePane space={active} reloadKey={reloadKey} />
+            {active ? (
+              <SpacePane space={active} reloadKey={reloadKey} />
+            ) : spacesStatus === "loading" ? (
+              <p role="status" className="m-auto flex items-center gap-2 text-md text-ink-secondary">
+                <Icon name="spinner" className="animate-spin" />
+                Loading your spaces…
+              </p>
+            ) : spacesStatus === "error" ? (
+              <SpacesError error={spacesError ?? ""} />
+            ) : (
+              <NoSpaces onNewSpace={openNewSpace} />
+            )}
           </main>
         </div>
+        <NewSpaceDialog
+          key={newSpace.key}
+          open={newSpace.open}
+          onOpenChange={(open) => setNewSpace((n) => ({ ...n, open }))}
+          existing={spaces}
+          onCreated={(space) => {
+            createdId.current = space.id;
+            chooseSpace(space.id);
+          }}
+          onCloseFocus={focusAfterNewSpace}
+        />
       </div>
     </TooltipProvider>
+  );
+}
+
+/** A vault with no spaces: what a space is, and the one thing to do. */
+function NoSpaces({ onNewSpace }: { onNewSpace: () => void }) {
+  return (
+    <div data-no-spaces="" className="m-auto flex max-w-(--ph-measure) flex-col items-center gap-3 px-6 text-center">
+      <span className="grid size-[calc(var(--ph-icon-size-lg)*2)] place-items-center rounded-full bg-accent-soft text-accent-soft-ink">
+        <Icon name="space" className="size-(--ph-icon-size-lg)" />
+      </span>
+      <h2 className="text-lg font-semibold text-ink">Make your first space</h2>
+      <p className="text-base text-ink-secondary">
+        A space is a separate place for one part of your life, like school or work. Each has its own files and its own conversation.
+      </p>
+      <Button type="button" onClick={onNewSpace}>
+        <Icon name="plus" />
+        New space
+      </Button>
+    </div>
+  );
+}
+
+function SpacesError({ error }: { error: string }) {
+  return (
+    <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-8">
+      <div className="flex items-start gap-3 rounded-lg border border-transparent bg-danger-soft px-4 py-3 text-base text-ink">
+        <Icon name="error" className="mt-0.5 text-danger-ink" />
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div role="alert" className="flex flex-col gap-0.5">
+            <p className="font-semibold text-danger-ink">Your spaces couldn’t be loaded</p>
+            <p className="wrap-anywhere">{error}</p>
+          </div>
+          <div>
+            <Button type="button" onClick={() => void refreshSpaces()}>
+              <Icon name="retry" />
+              Try again
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

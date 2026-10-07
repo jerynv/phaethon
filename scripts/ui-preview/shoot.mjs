@@ -45,7 +45,9 @@ const match = arg("match", "");
 const sizesGiven = flag("sizes");
 const sizes = arg("sizes", "1100x720,760x560").split(",").map((s) => s.split("x").map(Number));
 const themes = arg("themes", "light,dark").split(",");
-const ws = process.env.OBSCURA_WS || "ws://127.0.0.1:9333/devtools/browser";
+// --connect <ws> (or BROWSER_WS / OBSCURA_WS) joins an already-running browser,
+// e.g. the shared one from chromium-server.mjs, instead of launching one.
+const ws = arg("connect", null) || process.env.BROWSER_WS || process.env.OBSCURA_WS || "ws://127.0.0.1:9333/devtools/browser";
 mkdirSync(out, { recursive: true });
 
 // ---- Variants ----
@@ -100,8 +102,10 @@ async function runAxe(page, name) {
 }
 
 const scenarios = [];
-for (const f of readdirSync(join(here, "scenarios")).sort()) {
-  if (f.endsWith(".mjs")) scenarios.push(...(await import(join(here, "scenarios", f))).default);
+// --scenarios <dir> loads scenario files from another folder instead (kept out of the repo).
+const scenarioDir = arg("scenarios", null) ?? join(here, "scenarios");
+for (const f of readdirSync(scenarioDir).sort()) {
+  if (f.endsWith(".mjs")) scenarios.push(...(await import(join(scenarioDir, f))).default);
 }
 const chosen = scenarios.filter((s) => (!only?.length || only.includes(s.name)) && (!match || s.name.startsWith(match)));
 

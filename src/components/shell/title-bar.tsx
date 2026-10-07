@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
-import { modKeyLabel, platform } from "@/lib/platform";
+import { platform } from "@/lib/platform";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+import { ShellAnnouncer } from "./announcer";
+import { Keys, spokenKeys } from "./command-palette";
 import { GrantsChip } from "./grants-chip";
+import { modAria, modCap } from "./shortcuts";
 import { SpaceMark } from "./space-mark";
 import { WindowControls } from "./window-controls";
 
@@ -20,11 +23,16 @@ type Props = {
   emptyTitle?: string;
   /** The window does not have focus: the chrome dims, as native windows do. */
   inactive: boolean;
+  /** The sidebar is showing (docked or over the conversation). */
   sidebarOpen: boolean;
+  /** The sidebar sits beside the conversation (so the bar's leading cluster lines up with it). */
+  sidebarDocked: boolean;
+  /** The Spaces and Settings buttons show their words, not only an icon (when the sidebar is not docked). */
+  labels: boolean;
   onToggleSidebar: () => void;
   /** Id of the element the sidebar toggle shows and hides. */
   sidebarId: string;
-  /** Show a Settings button (the sidebar, which holds the usual entry, is hidden). */
+  /** Show a Settings button (the sidebar, which holds the usual entry, is not docked). */
   showSettings: boolean;
   /** Room for future per-space actions, at the trailing end of the bar. */
   actions?: ReactNode;
@@ -46,21 +54,29 @@ export function useWindowFocused() {
   return focused;
 }
 
-/** An icon button in the bar with a tooltip that names it and shows its shortcut. */
+/**
+ * A button in the bar: an icon, plus its word when `text` is given (then the
+ * word is its name, as Voice Control expects). A tooltip shows the name and
+ * shortcut for the pointer; as the button's description it gives only the
+ * shortcut, so the name is not said twice.
+ */
 function BarButton({
   label,
-  shortcut,
+  text,
+  keys,
   keyshortcuts,
   icon,
   onClick,
   ...rest
 }: {
   label: string;
-  shortcut: string;
+  text?: string;
+  keys: string[];
   keyshortcuts: string;
   icon: "sidebar" | "settings";
   onClick: () => void;
   "aria-controls"?: string;
+  "aria-expanded"?: boolean;
   "data-testid"?: string;
 }) {
   return (
@@ -68,19 +84,21 @@ function BarButton({
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
-          size="icon"
-          aria-label={label}
+          size={text ? "default" : "icon"}
+          aria-label={text ? undefined : label}
           aria-keyshortcuts={keyshortcuts}
           onClick={onClick}
-          className="group-data-[inactive]/titlebar:text-ink-tertiary"
+          className="min-w-0 group-data-[inactive]/titlebar:text-ink-tertiary"
           {...rest}
         >
           <Icon name={icon} />
+          {text && <span className="truncate">{text}</span>}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
+      {/* While it shows, Radix describes the button by the tooltip: only the shortcut, in words, so the name is not said twice. */}
+      <TooltipContent side="bottom" aria-label={spokenKeys(keys)} className="flex items-center gap-2">
         {label}
-        <kbd className="ms-2 font-sans text-ink-inverse/70">{shortcut}</kbd>
+        <Keys keys={keys} className="[&_kbd]:border-ink-inverse/30 [&_kbd]:bg-transparent [&_kbd]:text-ink-inverse/80" />
       </TooltipContent>
     </Tooltip>
   );
@@ -93,19 +111,30 @@ function BarButton({
  * double-click maximizes it; buttons inside it stay clickable (Tauri skips
  * interactive elements in a "deep" drag region).
  *
- * The space's name never gives up room: the grants chip beside it shrinks (and
- * in a narrow window collapses to a count) before the title truncates.
+ * With the sidebar not docked, its toggle reads "Spaces" and a "Settings"
+ * button stands in for the sidebar's own (both icons only when the window
+ * has no room, never at a large text size).
+ *
+ * The space's name never gives up room: the grant chips beside it ("Also
+ * reads", "Read by") shrink (and in a narrow window collapse to a count)
+ * before the title truncates.
  */
-export function TitleBar({ space, emptyTitle = "", inactive, sidebarOpen, onToggleSidebar, sidebarId, showSettings, actions }: Props) {
+export function TitleBar({
+  space,
+  emptyTitle = "",
+  inactive,
+  sidebarOpen,
+  sidebarDocked,
+  labels,
+  onToggleSidebar,
+  sidebarId,
+  showSettings,
+  actions,
+}: Props) {
   const ownControls = platform() !== "mac" && inTauri();
-  const mac = platform() === "mac";
-  const toggleLabel = sidebarOpen ? "Hide sidebar" : "Show sidebar";
-  const [status, setStatus] = useState("");
-  const announce = useCallback((m: string) => {
-    // Clear first so the same message twice is announced twice.
-    setStatus("");
-    requestAnimationFrame(() => setStatus(m));
-  }, []);
+  const mod = modCap();
+  const aria = modAria();
+  const words = labels && !sidebarDocked;
 
   return (
     <header
@@ -114,27 +143,30 @@ export function TitleBar({ space, emptyTitle = "", inactive, sidebarOpen, onTogg
       data-inactive={inactive ? "" : undefined}
       className="group/titlebar flex h-(--ph-titlebar-height) shrink-0 items-center bg-surface"
     >
-      {/* Leading cluster: as wide as the sidebar when it is open, so the title lines up with the pane below. */}
+      {/* Leading cluster: as wide as the sidebar when it is docked, so the title lines up with the pane below. */}
       <div
         className={cn(
-          "flex h-full shrink-0 items-center gap-1 ps-(--ph-titlebar-inset-start) pe-2",
-          sidebarOpen && "w-(--ph-sidebar-width)",
+          "flex h-full min-w-0 shrink-0 items-center gap-1 ps-(--ph-titlebar-inset-start) pe-2",
+          sidebarDocked && "w-(--ph-sidebar-width)",
         )}
       >
         <BarButton
-          label={toggleLabel}
-          shortcut={`${modKeyLabel()}\\`}
-          keyshortcuts={mac ? "Meta+Backslash" : "Control+Backslash"}
+          label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+          text={words ? "Spaces" : undefined}
+          keys={[mod, "\\"]}
+          keyshortcuts={`${aria}+Backslash`}
           icon="sidebar"
           aria-controls={sidebarId}
+          aria-expanded={sidebarOpen}
           onClick={onToggleSidebar}
         />
-        {/* With the sidebar hidden, its Settings entry is too; this one stands in for it. */}
+        {/* With the sidebar not docked, its Settings entry is out of reach; this one stands in for it. */}
         {showSettings && (
           <BarButton
             label="Settings"
-            shortcut={mac ? "⌘," : "Ctrl+,"}
-            keyshortcuts={mac ? "Meta+Comma" : "Control+Comma"}
+            text={words ? "Settings" : undefined}
+            keys={[mod, ","]}
+            keyshortcuts={`${aria}+Comma`}
             icon="settings"
             data-testid="titlebar-settings"
             onClick={() => openSettings()}
@@ -142,7 +174,7 @@ export function TitleBar({ space, emptyTitle = "", inactive, sidebarOpen, onTogg
         )}
       </div>
 
-      <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarOpen ? "ps-(--ph-pane-inset)" : "ps-1")}>
+      <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarDocked ? "ps-(--ph-pane-inset)" : "ps-1")}>
         {space && <SpaceMark hue={space.hue} />}
         <h1
           id="space-title"
@@ -150,12 +182,11 @@ export function TitleBar({ space, emptyTitle = "", inactive, sidebarOpen, onTogg
         >
           {space ? space.name : emptyTitle}
         </h1>
-        {space && <GrantsChip space={space} announce={announce} />}
+        {space && <GrantsChip space={space} direction="out" />}
+        {space && <GrantsChip space={space} direction="in" />}
       </div>
-      {/* Outside the chip, which goes away when its last grant is revoked. */}
-      <p role="status" className="sr-only">
-        {status}
-      </p>
+      {/* Outside the chips, which go away when their last grant is revoked. */}
+      <ShellAnnouncer />
 
       {actions && <div className="flex h-full shrink-0 items-center gap-1 pe-2">{actions}</div>}
 

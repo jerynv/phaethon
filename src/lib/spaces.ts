@@ -144,3 +144,33 @@ export function useSpaces(): SpacesState {
   }, []);
   return s;
 }
+
+// ---- The space being shown ----
+// Every visited space's conversation stays mounted (hidden when it is not the
+// one shown), so a reply keeps running and a card keeps waiting while you look
+// elsewhere. Code that acts on "the" conversation (a shortcut such as Cmd+N,
+// focusing the composer) checks this first, so only the shown space reacts.
+
+let activeId: string | null = null;
+const activeListeners = new Set<() => void>();
+
+/** Set by the shell whenever the shown space changes. */
+export function setActiveSpaceId(id: string | null): void {
+  if (id === activeId) return;
+  activeId = id;
+  activeListeners.forEach((l) => l());
+}
+
+/** The id of the space being shown, or null when there is none. */
+export const getActiveSpaceId = (): string | null => activeId;
+
+/** The id of the space being shown; re-renders when it changes. */
+export function useActiveSpaceId(): string | null {
+  return useSyncExternalStore(
+    (cb) => {
+      activeListeners.add(cb);
+      return () => activeListeners.delete(cb);
+    },
+    () => activeId,
+  );
+}

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import "./components/shell/shell.css";
+import { setSpaceActivity } from "./lib/activity";
 import { initPlatform } from "./lib/platform";
 import { devLog } from "./lib/tauri";
 import { initAppearance } from "./theme";
@@ -11,6 +12,10 @@ import { initAppearance } from "./theme";
 document.addEventListener("securitypolicyviolation", (e) => {
   void devLog(`CSP violation: ${e.violatedDirective} blocked ${e.blockedURI || "inline"} (${e.sourceFile}:${e.lineNumber})`);
 });
+
+// The UI preview harness (scripts/ui-preview, never shipped) drives the per-space activity
+// store directly, to check the sidebar's "Answering…" / "Needs you" without a real reply.
+if ("__MOCK__" in window) (window as unknown as { __setSpaceActivity: typeof setSpaceActivity }).__setSpaceActivity = setSpaceActivity;
 
 initPlatform();
 initAppearance();

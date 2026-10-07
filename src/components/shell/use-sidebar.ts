@@ -26,9 +26,25 @@ function write(collapsed: boolean) {
   }
 }
 
-function narrowNow(): boolean {
+/** Below this window width (at the default text size) the title bar's buttons are icons only. */
+const LABEL_ROOM = 520;
+
+function textScale(): number {
   const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ph-text-scale"));
-  return window.innerWidth <= NARROW_WIDTH * Math.max(1, Number.isFinite(scale) ? scale : 1);
+  return Math.max(1, Number.isFinite(scale) ? scale : 1);
+}
+
+function narrowNow(): boolean {
+  return window.innerWidth <= NARROW_WIDTH * textScale();
+}
+
+/**
+ * Whether the title bar's Spaces and Settings buttons carry their words: at a
+ * large text size always (an icon alone is hardest to find there), otherwise
+ * whenever the window has room.
+ */
+function labelsNow(): boolean {
+  return textScale() >= 1.5 || window.innerWidth >= LABEL_ROOM;
 }
 
 /**
@@ -40,6 +56,7 @@ function narrowNow(): boolean {
 export function useSidebar() {
   const [preferred, setPreferred] = useState(() => !read());
   const [narrow, setNarrow] = useState(narrowNow);
+  const [labels, setLabels] = useState(labelsNow);
   // While narrow: the open state for this stretch of narrowness (starts hidden).
   const [narrowOpen, setNarrowOpen] = useState(false);
 
@@ -50,6 +67,7 @@ export function useSidebar() {
   useEffect(() => {
     let last: boolean | null = null;
     const sync = () => {
+      setLabels(labelsNow());
       const now = narrowNow();
       if (now === last) return;
       const first = last === null;
@@ -79,5 +97,6 @@ export function useSidebar() {
     },
     [narrow],
   );
-  return { open, setOpen, toggle, narrow };
+  // Docked: beside the conversation. In a narrow window the open sidebar lies over it instead.
+  return { open, setOpen, toggle, narrow, docked: open && !narrow, labels };
 }

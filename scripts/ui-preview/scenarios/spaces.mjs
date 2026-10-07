@@ -14,7 +14,7 @@ function check(ok, what, detail = "") {
 }
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const title = (page) => page.evaluate(() => document.getElementById("space-title")?.textContent ?? "");
-const sidebarNames = (page) => page.evaluate(() => [...document.querySelectorAll("#spaces-sidebar [data-space-id]")].map((b) => `${b.dataset.spaceId}:${b.querySelector("span.truncate")?.textContent}${b.getAttribute("aria-current") ? "*" : ""}`));
+const sidebarNames = (page) => page.evaluate(() => [...document.querySelectorAll("#spaces-sidebar [data-space-id]")].map((b) => `${b.dataset.spaceId}:${b.querySelector("span.truncate > [aria-hidden]")?.textContent}${b.getAttribute("aria-current") ? "*" : ""}`));
 const focused = (page) => page.evaluate(() => {
   const a = document.activeElement;
   return a ? `${a.tagName.toLowerCase()}${a.dataset.spaceId ? `[${a.dataset.spaceId}]` : ""}${a.id === "main" ? "#main" : ""}${a.dataset.spaceField ? `{${a.dataset.spaceField}}` : ""}` : "";

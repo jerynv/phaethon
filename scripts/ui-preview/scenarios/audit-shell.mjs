@@ -62,7 +62,7 @@ const platform = (p) => ({
     check(t.whole, `the space title "${t.text}" shows whole`, `width ${t.w}`);
     const a = await chipA11y(page);
     // N-010: the compact chip says what the number counts.
-    const want = width < 768 ? "Also reads 2 places" : "Also reads Work / calendar +1 more";
+    const want = width < 768 ? "Also reads 2 places" : "Also reads Work / projects/now.md +1 more";
     // A-014: the name is the visible text (no aria-label that could drift from it).
     check(a && !a.label && a.name === want, `chip name is its visible text "${want}"`, JSON.stringify(a));
     check(a.desc === "School can also read 2 places in another space.", "chip description says the whole thing", a.desc);
@@ -127,7 +127,7 @@ export default [
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
       const name = await page.evaluate(() => {
         const b = document.querySelector('header [data-testid="titlebar-settings"]');
-        return `${b.getAttribute("aria-label")} ${b.getAttribute("aria-keyshortcuts")}`;
+        return `${b.getAttribute("aria-label") ?? b.textContent.trim()} ${b.getAttribute("aria-keyshortcuts")}`;
       });
       check(name === "Settings Meta+Comma", "title bar Settings button is named and lists its shortcut", name);
       await page.click('header [data-testid="titlebar-settings"]');
@@ -385,7 +385,8 @@ export default [
       await page.waitForSelector(POPOVER, { timeout: 5000 });
       await h.idle();
       await page.click(`${POPOVER} [data-revoke]`);
-      await h.waitText("Couldn’t revoke");
+      // Revoke waits out its Undo time (6 s) before it is made, and fails then.
+      await page.waitForFunction(() => document.body.innerText.includes("Couldn’t revoke"), { timeout: 9000 });
       await park(page);
       await h.idle();
       // A-015: plain words with a way out, and the box lines up with the rows' text.
@@ -394,7 +395,7 @@ export default [
         const li = document.querySelector(`${sel} li`);
         return { text: alert.textContent, left: alert.getBoundingClientRect().left, rowText: li.getBoundingClientRect().left + parseFloat(getComputedStyle(li).paddingLeft) };
       }, POPOVER);
-      check(e.text === "Couldn’t revoke Work / calendar. grants.json can’t be written: check the vault folder’s permissions, then try again.", "revoke failure says what to do", e.text);
+      check(e.text === "Couldn’t revoke Work / projects/now.md. grants.json can’t be written: check the vault folder’s permissions, then try again.", "revoke failure says what to do", e.text);
       check(Math.abs(e.left - e.rowText) < 1, "the error box lines up with the rows", JSON.stringify(e));
     },
   },

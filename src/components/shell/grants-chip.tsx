@@ -1,16 +1,27 @@
 import { Popover } from "radix-ui";
-import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { grantDate, grantLabel, grantNoun, revokeGrant, shortPath, spaceInfo, useGrants, type GrantView } from "@/lib/grants";
+import {
+  grantDate,
+  grantNoun,
+  revokeGrant,
+  scheduleRevoke,
+  shortPath,
+  spaceInfo,
+  undoRevoke,
+  usePendingRevokes,
+  useGrants,
+} from "@/lib/grants";
 import { openSettings } from "@/lib/open-settings";
 import { useSpaces, type Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
+import { announce } from "./announcer";
 import { SpaceMark } from "./space-mark";
 
-/** Below this width the chip shows only its count and noun. */
+/** Below this width the chips show only a count and what it counts. */
 const NARROW_QUERY = "(max-width: 767px)";
 
 /** True while the window is narrower than NARROW_QUERY. */
@@ -37,11 +48,6 @@ function useNarrowWindow() {
   return narrow;
 }
 
-/** The chip's short form of a grant: the path shortened in the middle, so the part that tells it apart shows. */
-function chipLabel(g: GrantView): string {
-  return g.path ? `${spaceInfo(g.from).name} / ${shortPath(g.path)}` : grantLabel(g);
-}
-
 /** A path with a line-break opportunity after each slash, so a long one wraps between folders, not mid-name. */
 function breakAfterSlashes(path: string): ReactNode {
   const parts = path.split("/");
@@ -58,81 +64,196 @@ function breakAfterSlashes(path: string): ReactNode {
 }
 
 /**
- * The title bar's "can also read" chip: shown only when the active space has
- * saved read-only grants into other spaces, so access is visible up front
- * (like a browser's site-permission chip). It is a button named by its
- * visible text (WCAG 2.5.3: "Also reads Work / calendar +1 more") and
- * described by the whole sentence. In a narrow window it collapses to "Also
- * reads 2 places" (the count and what it counts), so the space's name keeps
- * its room. It opens a popover listing
- * each grant with Revoke; only the list scrolls when it is taller than the
- * window.
- *
- * Keyboard: Enter/Space opens; focus moves to the popover itself (not to a
- * Revoke button, so a second Enter cannot revoke by accident); Tab moves
- * through Revoke buttons and "Manage in Settings"; Escape closes and returns
- * focus to the chip. Revoking moves focus to the next grant's Revoke, or, when
- * none are left and the chip goes away, to the conversation.
+ * One grant as a row of either chip. `other` is the space on the far side
+ * (the one read, for "Also reads"; the one reading, for "Read by"). `who` and
+ * `what` make the sentences: "<who> can no longer read <what>."
  */
-export function GrantsChip({ space, announce }: { space: Space; announce: (message: string) => void }) {
+type Row = {
+  id: string;
+  other: string;
+  path: string;
+  created: string;
+  scope: "always" | "once";
+  who: string;
+  what: string;
+};
+
+type Direction = "out" | "in";
+
+/**
+ * The title bar's grant chips. "Also reads" (direction "out") shows when the
+ * space can read places in other spaces; "Read by" (direction "in", quieter)
+ * shows when other spaces can read places in this one, so the space being read
+ * says so too. Both list the most recent grant first.
+ *
+ * Each chip is a button named by its visible text (WCAG 2.5.3) and described
+ * by the whole sentence. In a narrow window it collapses to a count ("Also
+ * reads 2 places"), so the space's name keeps its room. It opens a popover
+ * listing each grant with Revoke; only the list scrolls when it is taller than
+ * the window.
+ *
+ * Revoke waits six seconds before it is made, with Undo in the row (a grant
+ * cannot be re-created from here); both are announced. "Revoke all" asks
+ * first, inline, and is made at once.
+ *
+ * Keyboard: Enter/Space opens; focus moves to the popover's heading (not to a
+ * Revoke button, so a second Enter cannot revoke by accident); Tab moves
+ * through the rows' buttons, Revoke all and Manage in Settings; Escape closes
+ * and returns focus to the chip. Revoke moves focus to that row's Undo; Undo
+ * moves it back to Revoke; when a row goes, focus moves to the row that took
+ * its place, or, when none are left and the chip goes away, to the
+ * conversation.
+ */
+export function GrantsChip({ space, direction = "out" }: { space: Space; direction?: Direction }) {
   const { state } = useGrants(space.id);
   // Labels name other spaces by their display name: redraw when one is renamed.
   useSpaces();
+  const { pending, revoked } = usePendingRevokes();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [confirmAll, setConfirmAll] = useState(false);
+  const [busyAll, setBusyAll] = useState(false);
   const headingId = useId();
   const descId = useId();
   const contentRef = useRef<HTMLDivElement>(null);
-  const focusAfter = useRef<number | null>(null);
+  // Where focus goes after the next render: a row's Undo or Revoke, or the row at an index.
+  const focusNext = useRef<{ undo: string } | { revoke: string } | { index: number } | "cancel-all" | "revoke-all" | null>(null);
   const toSettings = useRef(false);
-  const grants = state.status === "ready" ? state.grants : [];
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const narrow = useNarrowWindow();
+  const out = direction === "out";
+
+  const all: Row[] =
+    state.status !== "ready"
+      ? []
+      : out
+        ? state.grants.map((g) => {
+            const from = spaceInfo(g.from).name;
+            return { ...g, other: g.from, who: space.name, what: g.path ? `${from} / ${g.path}` : `All of ${from}` };
+          })
+        : state.incoming.map((g) => ({
+            ...g,
+            other: g.to,
+            who: spaceInfo(g.to).name,
+            what: g.path ? `${space.name} / ${g.path}` : `All of ${space.name}`,
+          }));
+  // A grant revoked from here goes at once, before the list has reloaded.
+  const rows = all.filter((r) => !revoked.has(r.id));
+
+  // The rows as they are when a delayed revoke lands (its callback was made earlier).
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  });
 
   // Close and clear when the space changes.
   useEffect(() => {
     setOpen(false);
     setError("");
+    setConfirmAll(false);
   }, [space.id]);
-
-  // After a revoke, put focus on the Revoke button that took the removed one's place.
   useEffect(() => {
-    const i = focusAfter.current;
-    if (i === null || !open) return;
-    focusAfter.current = null;
-    const buttons = contentRef.current?.querySelectorAll<HTMLButtonElement>("[data-revoke]");
-    if (buttons?.length) buttons[Math.min(i, buttons.length - 1)]?.focus();
-    else contentRef.current?.focus();
-  }, [grants, open]);
+    if (!open) setConfirmAll(false);
+  }, [open]);
 
-  if (grants.length === 0) return null;
+  // After a revoke, an undo, or a row going away: put focus where it belongs.
+  const rowIds = rows.map((r) => r.id).join();
+  useLayoutEffect(() => {
+    const want = focusNext.current;
+    const root = contentRef.current;
+    if (!want || !open || !root) return;
+    focusNext.current = null;
+    const q = (sel: string) => root.querySelector<HTMLElement>(sel);
+    if (want === "cancel-all") return void q("[data-revoke-all-cancel]")?.focus();
+    if (want === "revoke-all") return void q("[data-revoke-all]")?.focus();
+    if ("undo" in want) return void (q(`[data-undo="${want.undo}"]`) ?? root).focus();
+    if ("revoke" in want) return void (q(`[data-revoke="${want.revoke}"]`) ?? root).focus();
+    const buttons = root.querySelectorAll<HTMLButtonElement>("li [data-row-action]");
+    if (buttons.length) buttons[Math.min(want.index, buttons.length - 1)]?.focus();
+    else document.getElementById(headingId)?.focus();
+  }, [rowIds, pending, open, confirmAll, headingId]);
 
-  const first = grants[0];
-  const more = grants.length - 1;
-  const noun = grantNoun(grants, grants.length !== 1);
-  const sentence = `${space.name} can also read ${grants.length} ${noun} in ${new Set(grants.map((g) => g.from)).size === 1 ? "another space" : "other spaces"}.`;
+  if (rows.length === 0) return null;
 
-  async function revoke(g: GrantView, index: number) {
-    setBusy(g.id);
+  const first = rows[0];
+  const more = rows.length - 1;
+  const noun = grantNoun(rows, rows.length !== 1);
+  const readers = [...new Set(rows.map((r) => r.other))];
+  const sentence = out
+    ? `${space.name} can also read ${rows.length} ${noun} in ${new Set(rows.map((r) => r.other)).size === 1 ? "another space" : "other spaces"}.`
+    : `${readers.length === 1 ? spaceInfo(readers[0]).name : `${readers.length} other spaces`} can read ${rows.length} ${noun} in ${space.name}.`;
+
+  function revoke(r: Row) {
     setError("");
-    try {
-      const removed = await revokeGrant(g.id);
-      if (grants.length === 1) {
-        // The chip is about to go: focus would fall to the page.
-        setOpen(false);
-        document.getElementById("main")?.focus();
-      } else {
-        focusAfter.current = index;
+    focusNext.current = { undo: r.id };
+    scheduleRevoke(r.id, (result) => {
+      if ("error" in result) {
+        // The only way a revoke fails is grants.json refusing the write; the raw OS error helps nobody here.
+        console.error("grant_revoke failed:", result.error);
+        const message = `Couldn’t revoke ${r.what}. grants.json can’t be written: check the vault folder’s permissions, then try again.`;
+        // Shown (and read, as an alert) in the popover; said by the shell when the popover is gone.
+        if (contentRef.current) {
+          if (document.activeElement?.getAttribute("data-undo") === r.id) focusNext.current = { revoke: r.id };
+          setError(message);
+        } else announce(message);
+        return;
       }
-      announce(removed ? `${space.name} can no longer read ${grantLabel(g)}.` : `${grantLabel(g)} was already removed.`);
-    } catch (e) {
-      // The only way a revoke fails is grants.json refusing the write; the raw OS error helps nobody here.
-      console.error("grant_revoke failed:", e);
-      setError(`Couldn’t revoke ${grantLabel(g)}. grants.json can’t be written: check the vault folder’s permissions, then try again.`);
-    } finally {
-      setBusy(null);
-    }
+      if (result.removed) announce(`${r.who} can no longer read ${r.what}.`);
+      if (!mounted.current) return;
+      const now = rowsRef.current;
+      const at = now.findIndex((x) => x.id === r.id);
+      const focusWasHere = document.activeElement?.getAttribute("data-undo") === r.id;
+      if (now.every((x) => x.id === r.id)) {
+        // The chip is about to go: focus would fall to the page.
+        if (contentRef.current?.contains(document.activeElement) || focusWasHere) document.getElementById("main")?.focus();
+        setOpen(false);
+      } else if (focusWasHere) {
+        focusNext.current = { index: Math.max(0, at) };
+      }
+    });
+    announce(`${r.who} will no longer read ${r.what}. Undo is available for a few seconds.`);
   }
+
+  function undo(r: Row) {
+    if (!undoRevoke(r.id)) return;
+    focusNext.current = { revoke: r.id };
+    announce(`Undone. ${r.who} can still read ${r.what}.`);
+  }
+
+  async function revokeAll() {
+    setBusyAll(true);
+    setError("");
+    let failed = 0;
+    for (const r of rows) {
+      undoRevoke(r.id);
+      try {
+        await revokeGrant(r.id);
+      } catch (e) {
+        console.error("grant_revoke failed:", e);
+        failed++;
+      }
+    }
+    if (!mounted.current) return;
+    setBusyAll(false);
+    setConfirmAll(false);
+    if (failed) {
+      const message = `Couldn’t revoke ${failed === rows.length ? "them" : `${failed} of them`}. grants.json can’t be written: check the vault folder’s permissions, then try again.`;
+      setError(message);
+      focusNext.current = { index: 0 };
+      return;
+    }
+    announce(out ? `${space.name} can no longer read anything in other spaces.` : `No other space can read anything in ${space.name} now.`);
+    setOpen(false);
+    document.getElementById("main")?.focus();
+  }
+
+  const otherHue = (id: string) => spaceInfo(id).hue;
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -140,29 +261,37 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
         <button
           type="button"
           aria-describedby={descId}
-          data-grants-chip=""
+          {...(out ? { "data-grants-chip": "" } : { "data-grants-in-chip": "" })}
           className={cn(
-            "ms-1 flex min-h-(--ph-control-height-sm) min-w-0 items-center gap-1.5 rounded-full border border-line-strong bg-raised ps-2 pe-2.5 text-sm text-ink-secondary shadow-sm",
+            "flex min-h-(--ph-control-height-sm) min-w-0 items-center overflow-hidden gap-1.5 rounded-full border ps-2 pe-2.5 text-sm text-ink-secondary",
             "transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
             "data-[state=open]:bg-selected data-[state=open]:text-ink group-data-[inactive]/titlebar:text-ink-tertiary",
+            // "Read by" is the quieter of the two: no fill, no shadow.
+            out ? "ms-1 border-line-strong bg-raised shadow-sm" : "border-line bg-transparent",
           )}
         >
           <Icon name="link" className="size-(--ph-icon-size-sm) shrink-0" />
           {/* Each part carries its own separating space (inside the span, not as a loose text node
               between flex items), so the name reads as the visible text does. */}
-          <span className="shrink-0">{"Also reads "}</span>
-          {narrow ? (
+          <span className="shrink-0">{out ? "Also reads " : "Read by "}</span>
+          {out && narrow ? (
             // A narrow window: the count and what it counts ("2 places"), so the space's name keeps its room.
-            <span className="shrink-0 font-medium text-ink tabular-nums group-data-[inactive]/titlebar:text-ink-secondary">
-              {`${grants.length} ${noun}`}
+            <span className="min-w-0 truncate font-medium text-ink tabular-nums group-data-[inactive]/titlebar:text-ink-secondary">
+              {`${rows.length} ${noun}`}
+            </span>
+          ) : !out && narrow && readers.length > 1 ? (
+            <span className="min-w-0 truncate font-medium text-ink tabular-nums group-data-[inactive]/titlebar:text-ink-secondary">
+              {`${readers.length} spaces`}
             </span>
           ) : (
             <>
-              <SpaceMark hue={spaceInfo(first.from).hue} />
+              <SpaceMark hue={otherHue(first.other)} />
               <span className="max-w-(--ph-chip-name-width) min-w-0 truncate font-medium text-ink group-data-[inactive]/titlebar:text-ink-secondary">
-                {chipLabel(first)}
+                {out ? (first.path ? `${spaceInfo(first.other).name} / ${shortPath(first.path)}` : first.what) : spaceInfo(first.other).name}
               </span>
-              {more > 0 && <span className="shrink-0 tabular-nums">{` +${more} more`}</span>}
+              {out
+                ? more > 0 && <span className="shrink-0 tabular-nums">{` +${more} more`}</span>
+                : readers.length > 1 && <span className="shrink-0 tabular-nums">{` +${readers.length - 1} more`}</span>}
             </>
           )}
         </button>
@@ -201,65 +330,112 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
         >
           <div className="flex shrink-0 flex-col gap-0.5 px-4 pt-3.5 pb-2.5">
             <h2 id={headingId} tabIndex={-1} className="self-start rounded-xs text-md font-semibold text-ink">
-              {space.name} can also read
+              {out ? `${space.name} can also read` : `Who can read ${space.name}`}
             </h2>
-            <p className="text-sm text-ink-secondary">Read-only. For anything else in another space, Phaethon asks you first.</p>
+            <p className="text-sm text-ink-secondary">
+              {out
+                ? "Read-only. For anything else in another space, Phaethon asks you first."
+                : "Read-only, and only these places. Revoking stops future reads; what was already read stays in that conversation."}
+            </p>
           </div>
-          {/* The list scrolls; the heading and "Manage in Settings" stay in view. */}
+          {/* The list scrolls; the heading and the footer stay in view. */}
           <ul
             className={cn(
               // One grant never shrinks; more keep at least about two rows in view before the panel itself scrolls.
-              grants.length > 1 ? "min-h-[calc(var(--ph-control-height-lg)*2.5)]" : "shrink-0",
+              rows.length > 1 ? "min-h-[calc(var(--ph-control-height-lg)*2.5)]" : "shrink-0",
               "flex flex-col divide-y divide-line overflow-y-auto overscroll-contain border-t border-line",
             )}
-            aria-label={`What ${space.name} can read`}
+            aria-label={out ? `What ${space.name} can read` : `Who can read ${space.name}`}
           >
-            {grants.map((g, i) => {
-              const date = grantDate(g.created);
-              const from = spaceInfo(g.from);
+            {rows.map((r) => {
+              const date = grantDate(r.created);
+              const other = spaceInfo(r.other);
+              const waiting = pending.has(r.id);
               return (
-                <li key={g.id} className="flex shrink-0 items-center gap-3 px-4 py-2.5">
+                <li key={r.id} data-grant-row={r.id} className="flex shrink-0 items-center gap-3 px-4 py-2.5">
                   {/* items-start: when the path wraps, the dot stays on the first line, beside the space's name. */}
-                  <div className="grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-start gap-x-2 gap-y-0.5 text-base">
+                  <div
+                    className={cn(
+                      "grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-start gap-x-2 gap-y-0.5 text-base",
+                      waiting && "text-ink-secondary",
+                    )}
+                  >
                     {/* One line tall, so the dot centres on the first line at any text size. */}
                     <span data-grant-dot="" className="flex h-[1lh] items-center">
-                      <SpaceMark hue={from.hue} />
+                      <SpaceMark hue={other.hue} />
                     </span>
-                    {g.path ? (
-                      // The path wraps rather than truncates: its end is often what tells two grants apart.
-                      // No-break spaces join the name, the slash and the path, so the name never sits alone
-                      // on a line; the path then breaks after a slash where it can.
-                      <span data-grant-label="" className="min-w-0">
-                        <span className="font-medium text-ink">{from.name}</span>
-                        {" "}
-                        <span aria-hidden="true" className="text-ink-secondary">
-                          /
+                    {out ? (
+                      r.path ? (
+                        // The path wraps rather than truncates: its end is often what tells two grants apart.
+                        // No-break spaces join the name, the slash and the path, so the name never sits alone
+                        // on a line; the path then breaks after a slash where it can.
+                        <span data-grant-label="" className={cn("min-w-0", waiting && "line-through")}>
+                          <span className={cn("font-medium", waiting ? "text-ink-secondary" : "text-ink")}>{other.name}</span>
+                          {" "}
+                          <span aria-hidden="true" className="text-ink-secondary">
+                            /
+                          </span>
+                          {" "}
+                          <span className={cn("font-mono text-sm wrap-anywhere", waiting ? "text-ink-secondary" : "text-ink")}>
+                            {breakAfterSlashes(r.path)}
+                          </span>
                         </span>
-                        {" "}
-                        <span className="font-mono text-sm wrap-anywhere text-ink">{breakAfterSlashes(g.path)}</span>
-                      </span>
+                      ) : (
+                        <span data-grant-label="" className={cn("min-w-0 font-medium", waiting ? "text-ink-secondary line-through" : "text-ink")}>
+                          {r.what}
+                        </span>
+                      )
                     ) : (
-                      <span data-grant-label="" className="min-w-0 font-medium text-ink">
-                        {grantLabel(g)}
+                      // Read by: who reads first, then what in this space.
+                      <span data-grant-label="" className={cn("min-w-0", waiting && "line-through")}>
+                        <span className={cn("font-medium", waiting ? "text-ink-secondary" : "text-ink")}>{other.name}</span>
+                        <span className="text-ink-secondary">{" reads "}</span>
+                        {r.path ? (
+                          <span className={cn("font-mono text-sm wrap-anywhere", waiting ? "text-ink-secondary" : "text-ink")}>
+                            {breakAfterSlashes(r.path)}
+                          </span>
+                        ) : (
+                          <span className={waiting ? "text-ink-secondary" : "text-ink"}>{`all of ${space.name}`}</span>
+                        )}
                       </span>
                     )}
                     <span className="col-start-2 text-xs text-ink-secondary">
-                      {g.scope === "once" ? "This time only" : "Always"}
-                      {date && ` · since ${date}`}
+                      {waiting ? "Revoked. Undo within a few seconds." : (
+                        <>
+                          {r.scope === "once" ? "This time only" : "Always"}
+                          {date && ` · since ${date}`}
+                        </>
+                      )}
                     </span>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    data-revoke=""
-                    disabled={busy !== null}
-                    aria-label={`Revoke access to ${grantLabel(g)}`}
-                    onClick={() => void revoke(g, i)}
-                    className="min-h-(--ph-target-min)"
-                  >
-                    {busy === g.id ? "Revoking…" : "Revoke"}
-                  </Button>
+                  {waiting ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      data-undo={r.id}
+                      data-row-action=""
+                      aria-label={`Undo revoking ${r.what}`}
+                      onClick={() => undo(r)}
+                      className="min-h-(--ph-target-min)"
+                    >
+                      Undo
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      data-revoke={r.id}
+                      data-row-action=""
+                      disabled={busyAll}
+                      aria-label={out ? `Revoke access to ${r.what}` : `Revoke ${r.who}’s access to ${r.what}`}
+                      onClick={() => revoke(r)}
+                      className="min-h-(--ph-target-min)"
+                    >
+                      Revoke
+                    </Button>
+                  )}
                 </li>
               );
             })}
@@ -270,25 +446,78 @@ export function GrantsChip({ space, announce }: { space: Space; announce: (messa
               <span className="min-w-0 flex-1">{error}</span>
             </p>
           )}
-          {state.status === "ready" && state.problems.length > 0 && (
+          {out && state.status === "ready" && state.problems.length > 0 && (
             <p className="mx-4 my-2 flex shrink-0 items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-ink">
               <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
               <span className="min-w-0 flex-1">Some saved grants were ignored. Settings explains which.</span>
             </p>
           )}
-          <div className="flex shrink-0 items-center border-t border-line px-4 py-2">
-            <Button
-              type="button"
-              variant="link"
-              className="min-h-(--ph-target-min) text-sm"
-              onClick={() => {
-                toSettings.current = true;
-                setOpen(false);
-              }}
-            >
-              Manage in Settings
-            </Button>
-          </div>
+          {confirmAll ? (
+            // Inline confirm: says what will change, the safe choice first and focused.
+            <div role="group" aria-labelledby={`${headingId}-all`} className="flex shrink-0 flex-col gap-2 border-t border-line px-4 py-2.5">
+              <p id={`${headingId}-all`} className="text-sm text-ink">
+                {out
+                  ? `Revoke all ${rows.length}? ${space.name} will no longer be able to read ${rows.length === 1 ? "it" : "any of them"}.`
+                  : `Revoke all ${rows.length}? ${readers.length === 1 ? spaceInfo(readers[0]).name : "Other spaces"} will no longer be able to read ${rows.length === 1 ? "it" : "any of them"}.`}
+              </p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-revoke-all-cancel=""
+                  disabled={busyAll}
+                  onClick={() => {
+                    focusNext.current = "revoke-all";
+                    setConfirmAll(false);
+                  }}
+                  className="min-h-(--ph-target-min)"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  data-revoke-all-confirm=""
+                  disabled={busyAll}
+                  onClick={() => void revokeAll()}
+                  className="min-h-(--ph-target-min)"
+                >
+                  {busyAll ? "Revoking…" : `Revoke all ${rows.length}`}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 border-t border-line px-4 py-2">
+              <Button
+                type="button"
+                variant="link"
+                className="min-h-(--ph-target-min) text-sm"
+                onClick={() => {
+                  toSettings.current = true;
+                  setOpen(false);
+                }}
+              >
+                Manage in Settings
+              </Button>
+              {rows.length > 1 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  data-revoke-all=""
+                  onClick={() => {
+                    focusNext.current = "cancel-all";
+                    setConfirmAll(true);
+                  }}
+                  className="min-h-(--ph-target-min) text-danger-ink hover:text-danger-ink"
+                >
+                  Revoke all…
+                </Button>
+              )}
+            </div>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

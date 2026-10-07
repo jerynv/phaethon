@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: the app's own commands, plus only the window calls the custom title bar needs (drag, double-click to maximize, and the minimize / maximize / close buttons drawn on Windows and Linux). No menu/tray/path APIs, no plugins; add a permission only when a feature needs it.",
+  "description": "Main window: the app's own commands, plus only the window calls the custom title bar needs (drag, double-click to maximize, the minimize / maximize / close buttons drawn on Windows and Linux, and the window title naming the space). No menu/tray/path APIs, no plugins; add a permission only when a feature needs it.",
   "windows": [
     "main"
   ],
@@ -24,6 +24,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
     "core:window:allow-close",
+    "core:window:allow-set-title",
     "allow-appearance-set",
     "allow-agent-access-answer",
     "allow-grants-list",

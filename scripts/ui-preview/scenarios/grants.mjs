@@ -62,7 +62,7 @@ export default [
       const name = await chipName(page);
       console.log(`     chip name: ${name}`);
       // A narrow window (under 768px) collapses the chip to the count and what it counts.
-      const shown = page.viewport().width < 768 ? "Also reads 2 places" : "Also reads Work / calendar +1 more";
+      const shown = page.viewport().width < 768 ? "Also reads 2 places" : "Also reads Work / projects/now.md +1 more";
       if (name !== `${shown} | School can also read 2 places in another space.`)
         throw new Error(`unexpected chip name: ${name}`);
       // The chip is a button inside the drag region and must not carry the drag attribute itself.
@@ -107,26 +107,32 @@ export default [
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });
       await h.idle();
+      // Most recent first: projects/now.md (Oct 10) is the first row. Revoke waits 6 s (Undo) before it is made.
       await h.click(`${POPOVER} [data-revoke]`);
       await h.idle();
       let calls = await revokeCalls(page);
-      if (calls.join() !== "g-cal") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
+      if (calls.length) throw new Error(`grant_revoke made before its Undo time: ${JSON.stringify(calls)}`);
+      await page.waitForFunction(() => window.__calls.some(([c]) => c === "grant_revoke"), { timeout: 8000 });
+      await h.idle();
+      calls = await revokeCalls(page);
+      if (calls.join() !== "g-now") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
       const name = await chipName(page);
-      const shown = page.viewport().width < 768 ? "Also reads 1 file" : "Also reads Work / projects/now.md";
-      if (name !== `${shown} | School can also read 1 file in another space.`) throw new Error(`chip did not update: ${name}`);
+      const shown = page.viewport().width < 768 ? "Also reads 1 folder" : "Also reads Work / calendar";
+      if (name !== `${shown} | School can also read 1 folder in another space.`) throw new Error(`chip did not update: ${name}`);
       const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
-      if (focused !== "Revoke access to Work / projects/now.md") throw new Error(`focus after revoke: ${focused}`);
+      if (focused !== "Revoke access to Work / calendar") throw new Error(`focus after revoke: ${focused}`);
       const said = await titleStatus(page);
       console.log(`     after first revoke: chip "${name}", status "${said}"`);
-      if (said !== "School can no longer read Work / calendar.") throw new Error(`status: ${said}`);
+      if (said !== "School can no longer read Work / projects/now.md.") throw new Error(`status: ${said}`);
       // The last revoke removes the chip; the shot shows the window after it.
-      await pressEnter(page, () => page.waitForFunction(() => window.__calls.filter(([c]) => c === "grant_revoke").length === 2, { timeout: 1500 }));
+      await pressEnter(page, () => page.waitForSelector(`${POPOVER} [data-undo]`, { timeout: 1500 }));
+      await page.waitForFunction(() => window.__calls.filter(([c]) => c === "grant_revoke").length === 2, { timeout: 8000 });
       await h.idle();
       calls = await revokeCalls(page);
       const gone = await page.evaluate((s) => !document.querySelector(s), CHIP);
       const onMain = await page.evaluate(() => document.activeElement?.id);
       console.log(`     after last revoke: calls ${JSON.stringify(calls)}, chip gone ${gone}, focus #${onMain}, status "${await titleStatus(page)}"`);
-      if (calls.join() !== "g-cal,g-now" || !gone || onMain !== "main") throw new Error("last revoke did not clear the chip and move focus to the conversation");
+      if (calls.join() !== "g-now,g-cal" || !gone || onMain !== "main") throw new Error("last revoke did not clear the chip and move focus to the conversation");
     },
   },
   {

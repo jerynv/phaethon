@@ -1,7 +1,8 @@
 import { RadioGroup } from "radix-ui";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import { clearApiKey, setApiKey, setBackend, type Backend, type Settings } from "@/lib/backend";
@@ -153,11 +154,7 @@ export function AgentSection({
       />
       {!settings ? (
         loadError ? (
-          <div className="flex flex-col items-start gap-3 rounded-md bg-danger-soft px-4 py-3.5 text-sm text-danger-ink">
-            <p role="alert" className="flex items-start gap-2">
-              <Icon name="error" className="mt-0.5 shrink-0" />
-              <span className="min-w-0 wrap-anywhere">{loadError}</span>
-            </p>
+          <LoadProblem raw={loadError}>
             <Button
               type="button"
               variant="outline"
@@ -169,7 +166,7 @@ export function AgentSection({
               <Icon name="retry" />
               {retrying ? "Trying again…" : "Try again"}
             </Button>
-          </div>
+          </LoadProblem>
         ) : (
           <p className="text-base text-ink-secondary" role="status">
             Loading your agent settings…
@@ -315,5 +312,41 @@ export function AgentSection({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * Settings that could not be read, in plain words: what happened, which file,
+ * what to do, then `children` (Try again). The core's own message is folded
+ * under Details for anyone fixing the file by hand. The wording only chooses
+ * between a few known causes; anything else gets the general sentence, and
+ * the raw text is never the headline.
+ */
+function LoadProblem({ raw, children }: { raw: string; children: ReactNode }) {
+  const line = /line (\d+)/i.exec(raw)?.[1];
+  const cause = /keychain/i.test(raw) ? "keychain" : /settings\.json|json|expected|invalid type/i.test(raw) ? "file" : "other";
+  return (
+    <div className="flex items-start gap-2.5 rounded-md bg-danger-soft px-4 py-3.5 text-sm text-danger-ink">
+      <Icon name="error" className="mt-0.5 shrink-0" />
+      <div className="flex min-w-0 flex-col items-start gap-1.5">
+        <p role="alert" className="font-medium">
+          Phaethon can’t read your settings, so it is using the defaults for now.
+        </p>
+        {cause === "file" && (
+          <p>
+            Your settings file has something in it Phaethon doesn’t understand{line ? `, on line ${line}` : ""}. The file is{" "}
+            <span className="font-mono wrap-anywhere">.phaethon/settings.json</span> in your vault folder. Fix or delete it, then choose Try again.
+          </p>
+        )}
+        {cause === "keychain" && (
+          <p>It couldn’t open this computer’s keychain, where your API key is kept. Unlock the keychain or allow Phaethon to use it, then choose Try again.</p>
+        )}
+        {cause === "other" && <p>Choose Try again. If this keeps happening, Details below says what went wrong.</p>}
+        <Details className="text-danger-ink">
+          <p className="font-mono wrap-anywhere">{raw}</p>
+        </Details>
+        <div className="mt-1">{children}</div>
+      </div>
+    </div>
   );
 }

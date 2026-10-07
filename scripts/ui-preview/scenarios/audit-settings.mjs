@@ -23,6 +23,33 @@ const press = async (page, text) => {
   if (!ok) throw new Error(`no button "${text}"`);
 };
 
+/** Scroll an element to the middle of the page it is in. (Obscura's scrollIntoView does not scroll a nested scroller.) */
+const centre = (handle) =>
+  handle.evaluate((el) => {
+    let p = el.parentElement;
+    while (p && !(p.scrollHeight > p.clientHeight && /auto|scroll/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
+    if (!p) return;
+    const r = el.getBoundingClientRect();
+    const pr = p.getBoundingClientRect();
+    p.scrollTop += r.top - pr.top - (pr.height - r.height) / 2;
+  });
+
+/** The Settings button openSettings() clicks: the sidebar's, or the title bar's when the sidebar is hidden. */
+const openerId = (page) =>
+  page.evaluate(() => (document.querySelector('#spaces-sidebar:not([hidden]) [data-testid="open-settings"]') ? "open-settings" : "titlebar-settings"));
+
+/**
+ * The page's text as shown: what sits inside a closed <details> (other than
+ * its summary) is left out. Obscura's innerText includes it, so this is
+ * worked out from the DOM.
+ */
+const shownText = (page) =>
+  page.evaluate((p) => {
+    const copy = document.querySelector(p).cloneNode(true);
+    for (const d of copy.querySelectorAll("details:not([open])")) for (const c of [...d.children]) if (c.tagName !== "SUMMARY") c.remove();
+    return copy.textContent;
+  }, PANEL);
+
 const sliderIn = (page, label) =>
   page.evaluateHandle((label) => {
     for (const t of document.querySelectorAll('[role="slider"]')) {
@@ -231,18 +258,31 @@ export default [
       await openSettings(page, h, "appearance");
       // Tab from the section list into the page until a swatch has focus.
       await page.focus('[data-testid="settings-tab-appearance"]');
-      await h.focusVia('[role="radiogroup"][aria-label="Accent colour"] [role="radio"]');
+      const swatch = '[role="radiogroup"][aria-label="Accent colour"] [role="radio"]';
+      await page.keyboard.press("Tab");
+      if (await page.evaluate(() => document.activeElement?.getAttribute("data-testid") === "settings-tab-appearance")) {
+        // Obscura sometimes does not move focus on Tab; focus the chosen swatch as Tab would.
+        console.log("     note: Tab did not move focus here (an Obscura quirk); focusing the chosen swatch directly");
+        await page.$eval(`${swatch}[aria-checked="true"]`, (el) => el.focus());
+      } else {
+        await h.focusVia(swatch);
+      }
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("ArrowRight");
       await h.idle();
       await page.evaluate(() => document.activeElement.scrollIntoView({ block: "center" }));
       await h.idle();
       await h.shot("swatch-focused");
-      await h.hover('[role="radiogroup"][aria-label="Accent colour"] [role="radio"]:nth-child(5)');
+      // In a short window the swatch can sit outside the scrolled page; bring it into view first.
+      await centre(await page.$(`${swatch}:nth-child(5)`));
+      await h.idle();
+      await h.hover(`${swatch}:nth-child(5)`);
       await h.idle();
       await h.shot("swatch-hover");
       // A hue slider mid-drag: mouse down on the thumb, move, no release.
       const thumb = await sliderIn(page, "Custom hue");
+      await centre(thumb);
+      await h.idle();
       const box = await thumb.boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
@@ -409,6 +449,40 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "spaces");
       await park(page);
+      // N-009: the dot sits on the first line of its row, and the space name is
+      // never alone on a line: the path starts on the same line as "Work /".
+      const rows = await page.evaluate((p) =>
+        [...document.querySelectorAll(`${p} [data-grant-row]`)].map((row) => {
+          const where = row.querySelector("[data-grant-where]");
+          const dot = row.querySelector("[aria-hidden].rounded-full").getBoundingClientRect();
+          const parts = [...where.children];
+          // The first line box: the line rects of the text that sit at the top.
+          const range = document.createRange();
+          range.selectNodeContents(where);
+          const rects = [...range.getClientRects()];
+          const top = Math.min(...rects.map((r) => r.top));
+          const first = { top, bottom: Math.max(...rects.filter((r) => r.top < top + 4).map((r) => r.bottom)) };
+          const name = parts[0].getBoundingClientRect();
+          const path = parts[2] ? parts[2].getClientRects()[0] : name;
+          return {
+            text: where.textContent,
+            dotOnFirstLine: dot.top >= first.top - 1 && dot.bottom <= first.bottom + 1,
+            pathWithName: Math.abs(path.top - name.top) < name.height / 2,
+            wrapped: where.getBoundingClientRect().height > name.height * 1.5,
+          };
+        }),
+      PANEL);
+      check(rows.length > 0, "grant rows are shown", `${rows.length}`);
+      for (const r of rows) {
+        check(r.dotOnFirstLine, `dot sits on the first line: ${r.text.slice(0, 40)}`, JSON.stringify(r));
+        check(r.pathWithName, `the path starts beside the space name: ${r.text.slice(0, 40)}`, JSON.stringify(r));
+      }
+      console.log(`     wrapped grant rows: ${rows.filter((r) => r.wrapped).length} of ${rows.length}`);
+      // N-011: the warning is ours in plain words (what, which file, what to do); the core's lines are listed as they arrive.
+      const warn = await page.evaluate((p) => document.querySelector(`${p} [data-grant-problems]`)?.closest(".bg-warning-soft")?.innerText ?? "", PANEL);
+      check(warn.includes("Some saved grants can’t be used, so they give no access."), "a plain headline for grants.json problems", warn.slice(0, 120));
+      check(warn.includes("/Users/you/Phaethon/default/.phaethon/grants.json") && warn.includes("correct or delete those entries"), "it names the file and says what to do", warn);
+      check(warn.includes("garden") && warn.includes("../../etc"), "each problem the core reports is listed");
       await h.shot("top");
       await h.hover(`${PANEL} [data-revoke]`);
       await h.idle();
@@ -428,9 +502,16 @@ export default [
       await park(page);
       await h.idle();
       const text = await page.evaluate((p) => document.querySelector(p).innerText, PANEL);
-      const raw = text.split("expected `,`").length - 1;
-      check(text.includes("Fix line 3"), "one file-level message names the line", text.slice(0, 300));
-      check(raw <= 1, "the parser text appears at most once (under Details)", `${raw}`);
+      check(text.includes("mistake in it, on line 3") && text.includes("grants.json"), "one file-level message names the file and the line", text.slice(0, 300));
+      check(!(await shownText(page)).includes("expected `,`"), "the parser text is folded under Details");
+      const folded = await page.evaluate((p) => [...document.querySelectorAll(`${p} details`)].filter((d) => d.textContent.includes("expected `,`")).length, PANEL);
+      check(folded === 1, "the parser text sits under one shared Details", `${folded}`);
+      const summary = await page.evaluate((p) => {
+        const s = document.querySelector(`${p} details > summary`);
+        const r = s.getBoundingClientRect();
+        return { h: r.height, chevron: !!s.querySelector("svg"), underline: getComputedStyle(s).textDecorationLine };
+      }, PANEL);
+      check(summary.h >= 24 && summary.chevron && (summary.underline === "none" || summary.underline === ""), "Details is the shared one: a chevron, no underline, at least 24 px tall", JSON.stringify(summary));
     },
   },
 
@@ -441,7 +522,7 @@ export default [
     mock: { settings: { ...SETTINGS, vaultPath: "/Users/someone-with-a-long-name/Library/Mobile Documents/com~apple~CloudDocs/Phaethon/default" }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "about");
-      await clickText(page, PANEL, "Copy path");
+      await press(page, "Copy path");
       await h.idle();
       await park(page);
       await h.shot("copied");
@@ -585,16 +666,18 @@ export default [
       await page.evaluate(() => document.getElementById("temp-opener").remove());
       await close();
       check(await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input")), "opener gone: focus falls back to the composer");
-      // 4. Opened by its own button: focus returns to that button, as before.
+      // 4. Opened by a Settings button: focus returns to that button, as before.
+      // (The sidebar's; in a narrow window, where the sidebar starts hidden, the title bar's.)
+      const opener = await openerId(page);
       await openSettings(page, h);
       await close();
       const own = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
-      check(own === "open-settings", "opened by its button: focus returns to the button", own);
+      check(own === opener, "opened by its button: focus returns to the button", `${own} (opened with ${opener})`);
     },
   },
   {
     name: "audit-settings-load-error",
-    sizes: WIDE,
+    sizes: [[1100, 720], [640, 480]],
     themes: ["light"],
     mock: { settings: SETTINGS, threads: {}, fail: { settings_get: "settings.json: invalid type: string \"yes\", expected a boolean at line 4" } },
     async run(page, h) {
@@ -603,9 +686,26 @@ export default [
       await h.idle();
       await park(page);
       const text = await page.evaluate((p) => document.querySelector(p).innerText, PANEL);
-      check(text.includes("Could not load your settings") && text.includes("Try again"), "after choosing Agent, the load error and Try again are shown", text.slice(0, 200));
+      check(text.includes("Phaethon can’t read your settings, so it is using the defaults") && text.includes("Try again"), "after choosing Agent, a plain load error and Try again are shown", text.slice(0, 300));
+      check(text.includes(".phaethon/settings.json") && text.includes("on line 4") && text.includes("Fix or delete it"), "it names the file, the line and what to do", text.slice(0, 400));
       check(!text.includes("Loading your agent settings"), "no endless Loading…");
+      // The parser's own text is folded under the shared Details, not in the headline.
+      const raw = await page.evaluate((p) => {
+        const panel = document.querySelector(p);
+        const d = panel.querySelector("details");
+        return { folded: !!d && !d.open && d.textContent.includes("invalid type"), alert: panel.querySelector('[role="alert"]')?.textContent };
+      }, PANEL);
+      check(!(await shownText(page)).includes("invalid type") && raw.folded,"the raw parser text is only under a closed Details", JSON.stringify(raw));
+      check(!raw.alert?.includes("invalid type"), "the alert is the plain sentence", raw.alert);
       await h.shot("error");
+      await page.$eval(`${PANEL} details summary`, (s) => {
+        s.click();
+        // Obscura does not toggle <details> on a summary click; a browser does.
+        if (!s.parentElement.open) s.parentElement.open = true;
+      });
+      await h.idle();
+      check((await shownText(page)).includes("invalid type"), "opening Details shows the parser text");
+      await h.shot("details-open");
       // The file is fixed; Try again loads the page and focus goes to its heading.
       await page.evaluate(() => { delete window.__MOCK__.fail.settings_get; });
       await press(page, "Try again");
@@ -613,6 +713,119 @@ export default [
       await h.idle();
       const focus = await page.evaluate(() => document.activeElement?.textContent);
       check(focus === "Agent", "after a good retry, focus moves to the page heading", focus);
+    },
+  },
+  {
+    // A keychain failure gets its own plain sentence, not the settings-file one.
+    name: "audit-settings-load-error-keychain",
+    sizes: WIDE,
+    themes: ["light"],
+    mock: { settings: SETTINGS, threads: {}, fail: { settings_get: "could not read the keychain: User interaction is not allowed." } },
+    async run(page, h) {
+      await openSettings(page, h, "agent");
+      await park(page);
+      const text = await page.evaluate((p) => document.querySelector(p).innerText, PANEL);
+      check(text.includes("couldn’t open this computer’s keychain") && !text.includes("settings.json"), "a keychain failure is named as one", text.slice(0, 300));
+      check(!(await shownText(page)).includes("User interaction is not allowed"), "its raw text is folded under Details");
+    },
+  },
+  {
+    // N-004: the settings page itself is a tab stop (Radix Tabs, so it scrolls
+    // by keyboard); its focus ring is drawn inside it, clear of the section
+    // list's border and the window's rounded corners.
+    name: "audit-settings-panel-focus",
+    sizes: [[1100, 720], [640, 480]],
+    mock: { settings: SETTINGS, threads: {} },
+    async run(page, h) {
+      await openSettings(page, h, "appearance");
+      await page.focus('[data-testid="settings-tab-appearance"]');
+      await page.keyboard.press("Tab");
+      await h.idle();
+      // Obscura may not move focus on Tab; focusing from script after a key press still counts as keyboard focus.
+      if (!(await page.evaluate((p) => document.activeElement === document.querySelector(p), PANEL))) await page.$eval(PANEL, (el) => el.focus());
+      await h.idle();
+      const got = await page.evaluate((p) => {
+        const panel = document.querySelector(p);
+        let cs = getComputedStyle(panel);
+        if (!panel.matches(":focus-visible")) {
+          // Obscura never matches :focus-visible and does not expand rules inside
+          // @layer, so read the stylesheet text: the global ring's width, and the
+          // last !important outline-offset in a :focus-visible rule that matches
+          // the panel (a layered !important beats the unlayered global one).
+          // Resolve both on a probe inside the panel, so var()s resolve.
+          const css = [...document.styleSheets].flatMap((s) => [...s.cssRules].map((r) => r.cssText)).join("\n");
+          const ring = /(?:^|[\s}]):focus-visible\s*\{\s*outline:\s*(\S+)\s+solid/.exec(css)?.[1];
+          let offset = null;
+          for (const m of css.matchAll(/([^{}]+):focus-visible\s*\{([^}]*?)outline-offset:\s*([^;}]+?)\s*!\s*important/g)) {
+            const sel = m[1].trim();
+            try {
+              if (sel && panel.matches(sel)) offset = m[3];
+            } catch {}
+          }
+          const probe = document.createElement("div");
+          panel.append(probe);
+          probe.style.outlineStyle = "solid";
+          if (ring) probe.style.outlineWidth = ring;
+          if (offset) probe.style.outlineOffset = offset;
+          const pc = getComputedStyle(probe);
+          cs = { outlineStyle: ring ? "solid" : "none", outlineWidth: pc.outlineWidth, outlineOffset: offset ? pc.outlineOffset : "2px" };
+          probe.remove();
+        }
+        const width = parseFloat(cs.outlineWidth);
+        const offset = parseFloat(cs.outlineOffset);
+        const r = panel.getBoundingClientRect();
+        const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
+        const nav = document.querySelector('[role="tablist"]').parentElement.getBoundingClientRect();
+        return {
+          focused: document.activeElement === panel,
+          visible: panel.matches(":focus-visible"),
+          tabindex: panel.getAttribute("tabindex"),
+          style: cs.outlineStyle,
+          width,
+          offset,
+          // The ring's outer edge, which must stay inside the panel (and so inside the window).
+          inside: offset + width <= 0 && r.left >= d.left && r.right <= d.right && r.bottom <= d.bottom,
+          clearOfNav: r.left >= nav.right - 1 || r.top >= nav.bottom - 1,
+        };
+      }, PANEL);
+      console.log(`     panel focus: ${JSON.stringify(got)}`);
+      check(got.focused && got.tabindex === "0", "the page is one tab stop after the section list", JSON.stringify(got));
+      check(got.style === "solid" && got.width >= 3, "it shows the full-width ring", JSON.stringify(got));
+      check(got.inside && got.clearOfNav, "the ring is drawn inside the page, not across the seam", JSON.stringify(got));
+    },
+  },
+  {
+    // N-007: at the largest text size the page description keeps its width:
+    // "Everything here is at its default." wraps below the header instead.
+    name: "audit-settings-header-wrap",
+    sizes: SIZES3,
+    themes: ["light"],
+    mock: { settings: { ...SETTINGS, appearance: { tokens: { "--ph-text-scale": 2 } } }, threads: {} },
+    async run(page, h) {
+      await openSettings(page, h, "appearance");
+      await park(page);
+      for (const tab of ["appearance", "accessibility"]) {
+        await page.$eval(`[data-testid="settings-tab-${tab}"]`, (el) => el.click());
+        await h.idle();
+        const got = await page.evaluate((p) => {
+          const header = document.querySelector(`${p} header`);
+          const desc = header.querySelector("p");
+          const action = header.lastElementChild;
+          const em = parseFloat(getComputedStyle(desc).fontSize);
+          const hw = header.getBoundingClientRect().width;
+          return {
+            header: Math.round(hw),
+            desc: Math.round(desc.getBoundingClientRect().width),
+            want: Math.round(Math.min(24 * em, hw)),
+            actionBelow: action.getBoundingClientRect().top >= desc.getBoundingClientRect().bottom - 1,
+            lines: Math.round(desc.getBoundingClientRect().height / parseFloat(getComputedStyle(desc).lineHeight)),
+          };
+        }, PANEL);
+        console.log(`     ${tab} header at 2x: ${JSON.stringify(got)}`);
+        check(got.desc >= got.want - 1, `${tab}: the description keeps at least 24 em (or the full width)`, JSON.stringify(got));
+      }
+      await page.$eval('[data-testid="settings-tab-appearance"]', (el) => el.click());
+      await h.idle();
     },
   },
 ];

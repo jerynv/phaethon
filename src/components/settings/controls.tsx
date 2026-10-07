@@ -40,7 +40,8 @@ export function SectionHeader({
 }) {
   return (
     <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      {/* At least ~24 em wide (it grows with the text size): when the action no longer fits beside it, the action wraps below instead of squeezing the description. */}
+      <div className="flex min-w-0 flex-[1_1_24em] flex-col gap-1 text-base">
         {/* Focusable from script only: moving to a section from another page lands here. */}
         <h3 id={id} tabIndex={-1} className="self-start rounded-xs text-xl font-semibold text-ink">
           {title}

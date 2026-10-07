@@ -78,7 +78,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
       setLoadError("");
       return true;
     } catch (e) {
-      setLoadError(`Could not load your settings: ${String(e)}`);
+      // The core's own text; the Agent page puts it in plain words (LoadProblem).
+      setLoadError(String(e));
       return false;
     }
   }, []);
@@ -275,7 +276,9 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       key={s.id}
                       value={s.id}
                       aria-labelledby={ids[s.id]}
-                      className="min-h-0 flex-1 overflow-y-auto outline-none data-[state=inactive]:hidden"
+                      // A tab stop (Radix), so the page scrolls by keyboard. Its ring is drawn inside
+                      // the panel: outside, the nav border and the window's rounded edge clip it.
+                      className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:[outline-offset:calc(-1*(var(--ph-focus-width)+var(--ph-focus-offset)))]! data-[state=inactive]:hidden"
                     >
                       {/* Starts below the Close button, so a page's Reset never sits under it. */}
                       <div className="mx-auto flex max-w-(--ph-settings-content-width) flex-col gap-7 px-8 pt-(--ph-settings-close-room) pb-10 max-md:pt-6">

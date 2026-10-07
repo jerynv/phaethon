@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { getSettings } from "@/lib/backend";
 import { grantDate, grantLabel, revokeGrant, spaceInfo, useGrants, type GrantView } from "@/lib/grants";
@@ -52,12 +53,14 @@ export function SpacesSection({ headingId }: { headingId: string }) {
       {fileError && (
         <FileNotice tone="danger" icon="error" title="Saved grants can’t be read, so no space can read another.">
           <p>
-            Fix {lineOf(fileError) ?? "the file"} or remove it: <code className="font-mono wrap-anywhere">{grantsFile}</code>
+            The grants file has a mistake in it{lineOf(fileError) ? `, on ${lineOf(fileError)}` : ""}. Fix it, or delete the file: each space then asks again before reading another.
           </p>
-          <details className="text-sm">
-            <summary className="cursor-default rounded-xs underline decoration-1 underline-offset-2">Details</summary>
-            <p className="mt-1 font-mono wrap-anywhere">{fileError}</p>
-          </details>
+          <p>
+            The file is <span className="font-mono wrap-anywhere">{grantsFile}</span>
+          </p>
+          <Details className="text-danger-ink">
+            <p className="font-mono wrap-anywhere">{fileError}</p>
+          </Details>
         </FileNotice>
       )}
       <SettingGroup title="In this vault">
@@ -68,14 +71,17 @@ export function SpacesSection({ headingId }: { headingId: string }) {
         </ul>
       </SettingGroup>
       {problems.length > 0 && (
-        <FileNotice tone="warning" icon="warning" title="Some saved grants were ignored, so they give no access.">
-          <ul className="flex list-disc flex-col gap-0.5 ps-4">
+        // The headline and what to do are written here; the core's line for each problem shows as it arrives.
+        <FileNotice tone="warning" icon="warning" title="Some saved grants can’t be used, so they give no access.">
+          <p>The grants listed above still work. What is wrong:</p>
+          <ul data-grant-problems="" className="flex list-disc flex-col gap-0.5 ps-4">
             {problems.map((p) => (
               <li key={p}>{p}</li>
             ))}
           </ul>
           <p>
-            Fix or remove them in <code className="font-mono wrap-anywhere">{grantsFile}</code>
+            To fix this, correct or delete those entries in the grants file, or delete the whole file: each space then asks again before reading another. The file is{" "}
+            <span className="font-mono wrap-anywhere">{grantsFile}</span>
           </p>
         </FileNotice>
       )}
@@ -160,12 +166,15 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
               Can’t read anything outside {space.name} until the grants file is fixed.
             </p>
           ) : (
-            <p className="flex items-start gap-1.5 text-sm text-danger-ink">
+            <div className="flex items-start gap-1.5 text-sm text-danger-ink">
               <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-              <span className="min-w-0 wrap-anywhere">
-                Could not check what {space.name} can read: {state.error}
-              </span>
-            </p>
+              <div className="flex min-w-0 flex-col items-start">
+                <p>Couldn’t check what {space.name} can read. Close Settings and open it again to retry.</p>
+                <Details className="text-danger-ink">
+                  <p className="font-mono wrap-anywhere">{state.error}</p>
+                </Details>
+              </div>
+            </div>
           ))}
         {state.status === "ready" && grants.length === 0 && (
           <p id={emptyId} tabIndex={-1} className="flex items-center gap-1.5 text-sm text-ink-secondary outline-none">
@@ -182,21 +191,31 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
                 const date = grantDate(g.created);
                 return (
                   // Same two-line layout as the title bar's grants popover: where from, then how long.
-                  <li key={g.id} className="flex items-center gap-3 py-2 ps-3 pe-1.5 not-first:border-t not-first:border-line">
-                    <div className="grid min-w-0 flex-1 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5">
-                      <SpaceMark hue={from.hue} />
-                      <span className="flex min-w-0 items-baseline gap-1.5 text-base">
-                        <span className="shrink-0 font-medium text-ink">{from.name}</span>
-                        <span aria-hidden="true" className="text-ink-secondary">
-                          /
-                        </span>
-                        <span className="min-w-0 truncate font-mono text-sm text-ink" title={g.path}>
-                          {g.path}
-                        </span>
+                  <li key={g.id} data-grant-row="" className="flex items-center gap-3 py-2 ps-3 pe-1.5 not-first:border-t not-first:border-line">
+                    <div className="flex min-w-0 flex-1 items-start gap-x-2">
+                      {/* One line tall, so the dot sits on the first line however the path wraps. */}
+                      <span className="flex h-[1lh] shrink-0 items-center text-base">
+                        <SpaceMark hue={from.hue} />
                       </span>
-                      <span className="col-start-2 text-xs text-ink-secondary">
-                        {g.scope === "once" ? "This time only" : "Always"}
-                        {date && ` · since ${date}`}
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        {/* The path wraps anywhere, and a no-break space ties it to "Work /": the space name never sits alone on a line. */}
+                        <span data-grant-where="" className="text-base wrap-anywhere">
+                          {g.path ? (
+                            <>
+                              <span className="font-medium whitespace-nowrap text-ink">{from.name}</span>
+                              <span aria-hidden="true" className="text-ink-secondary">
+                                {" / "}
+                              </span>
+                              <span className="font-mono text-sm text-ink">{g.path}</span>
+                            </>
+                          ) : (
+                            <span className="font-medium text-ink">All of {from.name}</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-ink-secondary">
+                          {g.scope === "once" ? "This time only" : "Always"}
+                          {date && ` · since ${date}`}
+                        </span>
                       </span>
                     </div>
                     <Button

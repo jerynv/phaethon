@@ -10,7 +10,9 @@ const settings = {
   version: "0.1.0",
 };
 
+/** Opens Settings with the sidebar's button, or the title bar's when a narrow window hides the sidebar. Returns that button's test id. */
 const open = async (page, h, tab) => {
+  const opener = await page.evaluate(() => (document.querySelector('#spaces-sidebar:not([hidden]) [data-testid="open-settings"]') ? "open-settings" : "titlebar-settings"));
   await h.click('#spaces-sidebar:not([hidden]) [data-testid="open-settings"], header [data-testid="titlebar-settings"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   if (tab) {
@@ -18,6 +20,7 @@ const open = async (page, h, tab) => {
     await h.click(`[data-testid="settings-tab-${tab}"]`);
   }
   await h.idle();
+  return opener;
 };
 
 const css = (page, name) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
@@ -82,7 +85,7 @@ export default [
     name: "settings-behaviour",
     mock: { settings },
     async run(page, h) {
-      await open(page, h, "appearance");
+      const opener = await open(page, h, "appearance");
       const before = await css(page, "--ph-accent-h");
       const thumbs = await page.$$('[role="slider"]');
       let hue = null;
@@ -120,7 +123,7 @@ export default [
       await h.idle();
       const focused = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
       console.log(`     after Escape: dialog open=${!!(await page.$('[role="dialog"]'))} focus=${focused}`);
-      if (focused !== "open-settings") throw new Error("focus did not return to the Settings button");
+      if (focused !== opener) throw new Error(`focus did not return to the Settings button (${opener}); it is on ${focused}`);
     },
   },
 ];

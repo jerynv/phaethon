@@ -35,6 +35,15 @@
   let pending = null;
   let pendingAccess = null;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  M.threadArchive ??= {};
+  const BUSY = "Phaethon is still replying in this space. Stop the reply or wait for it to finish, then try again.";
+  // As thread.rs titles a conversation: the first user text, whitespace collapsed, at most 60 characters.
+  const titleOf = (msgs) => {
+    const first = msgs.find((m) => m.role === "user");
+    const t = (first?.text ?? "").split(/\s+/).filter(Boolean).join(" ") || first?.attachments?.[0]?.name;
+    if (!t) return "New conversation";
+    return [...t].length > 60 ? `${[...t].slice(0, 59).join("").trimEnd()}…` : t;
+  };
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
     transformCallback(cb) { const id = next++; callbacks[id] = cb; return id; },
@@ -79,6 +88,31 @@
           return { ...space };
         }
         case "thread_load": return M.threads[args.space] ?? [];
+        // Conversations, as src-tauri/src/thread.rs keeps them: M.threads[space] is the
+        // current one, M.threadArchive[space] = [{ id, updated, messages }] the saved ones.
+        case "thread_new":
+        case "thread_open": {
+          if (window.__liveTurn && M.currentSpace === args.space) throw BUSY;
+          if (cmd === "thread_open" && M.settings.backend !== "phaethon") throw "Past conversations can be reopened only with Phaethon’s own agent.";
+          const archive = (M.threadArchive[args.space] ??= []);
+          const chosen = cmd === "thread_open" ? archive.find((t) => t.id === args.id) : null;
+          if (cmd === "thread_open" && args.id === "current") return;
+          if (cmd === "thread_open" && !chosen) throw "That conversation couldn’t be opened: that conversation is no longer there";
+          const current = M.threads[args.space] ?? [];
+          if (current.length) archive.push({ id: String(Date.now()), updated: M.currentUpdated?.[args.space] ?? Date.now(), messages: current });
+          M.threads[args.space] = chosen ? chosen.messages : [];
+          (M.currentUpdated ??= {})[args.space] = chosen ? chosen.updated : Date.now();
+          if (chosen) archive.splice(archive.indexOf(chosen), 1);
+          return;
+        }
+        case "threads_list": {
+          if (M.settings.backend !== "phaethon") return [];
+          const summary = (id, messages, updated, current) => ({ id, title: titleOf(messages), updated, messages: messages.length, current });
+          const rest = (M.threadArchive[args.space] ?? [])
+            .map((t) => summary(t.id, t.messages, t.updated, false))
+            .sort((a, b) => b.updated - a.updated);
+          return [summary("current", M.threads[args.space] ?? [], M.currentUpdated?.[args.space] ?? Date.now(), true), ...rest];
+        }
         case "grants_list": return { grants: M.grants[args.space] ?? [], problems: M.grantProblems ?? [] };
         case "grant_revoke": {
           for (const k of Object.keys(M.grants)) {

@@ -191,6 +191,43 @@ fn space_update(
     spaces::update(&state.vault, &id, name.as_deref(), description.as_deref(), hue)
 }
 
+/// Start a new conversation in `space`: the current one (if it has messages)
+/// is kept in the space's archive, and the CLI's session is cleared so the CLI
+/// starts fresh too. Refused while a reply is running there.
+#[tauri::command]
+fn thread_new(state: State<'_, AppState>, space: String) -> Result<(), String> {
+    let dir = state.vault.space_dir(&space)?;
+    thread::while_idle(&state.runs, &space, || {
+        thread::start_new(&dir).map_err(|e| format!("A new conversation couldn’t be started: {e}"))?;
+        vault::clear_session(&dir);
+        Ok(())
+    })
+}
+
+/// The conversations in `space`, the current one first. Empty for the CLI
+/// backend, whose history the CLI keeps and Phaethon can't reopen.
+#[tauri::command]
+fn threads_list(state: State<'_, AppState>, space: String) -> Result<Vec<thread::ThreadSummary>, String> {
+    let dir = state.vault.space_dir(&space)?;
+    if state.vault.settings().backend != Backend::Phaethon {
+        return Ok(vec![]);
+    }
+    thread::list(&dir).map_err(|e| format!("This space’s conversations couldn’t be listed: {e}"))
+}
+
+/// Make the saved conversation `id` the current one in `space` (Phaethon's own
+/// agent only). Refused while a reply is running there.
+#[tauri::command]
+fn thread_open(state: State<'_, AppState>, space: String, id: String) -> Result<(), String> {
+    let dir = state.vault.space_dir(&space)?;
+    if state.vault.settings().backend != Backend::Phaethon {
+        return Err("Past conversations can be reopened only with Phaethon’s own agent.".into());
+    }
+    thread::while_idle(&state.runs, &space, || {
+        thread::open(&dir, &id).map_err(|e| format!("That conversation couldn’t be opened: {e}"))
+    })
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsView {
@@ -314,6 +351,9 @@ pub fn run() {
             grants_list,
             grant_revoke,
             thread_load,
+            thread_new,
+            threads_list,
+            thread_open,
             settings_get,
             settings_set_backend,
             api_key_set,

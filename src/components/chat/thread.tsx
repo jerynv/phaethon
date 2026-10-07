@@ -408,7 +408,9 @@ export function Thread({ spaceId, spaceName }: { spaceId: string; spaceName: str
     <SpaceIdContext.Provider value={spaceId}>
       <AnnounceContext.Provider value={announce}>
         <ThreadPrimitive.Root
-          className="relative flex min-h-0 flex-1 flex-col"
+          // Not positioned: the drop overlay below fills the whole pane (#main), the
+          // conversations bar above the thread included.
+          className="flex min-h-0 flex-1 flex-col"
           // Files can be dropped anywhere on the conversation; the + menu is the
           // single-pointer alternative (WCAG 2.5.7).
           onDragEnter={(e) => {

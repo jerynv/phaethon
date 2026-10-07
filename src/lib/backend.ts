@@ -31,3 +31,13 @@ export const clearApiKey = () => invoke<void>("api_key_clear", { provider: "anth
 /** Replaces the vault's saved appearance. Pass only a validated object (src/theme). */
 export const saveAppearance = (appearance: unknown) => invoke<void>("appearance_set", { appearance });
 export const loadThread = (space: string) => invoke<SavedMessage[]>("thread_load", { space });
+
+/** Mirrors `ThreadSummary` in src-tauri/src/thread.rs. `updated` is milliseconds since the epoch. */
+export type ThreadSummary = { id: string; title: string; updated: number; messages: number; current: boolean };
+
+/** Keep the current conversation in the space's archive and start an empty one. Refused while a reply runs. */
+export const newThread = (space: string) => invoke<void>("thread_new", { space });
+/** The space's conversations, the current one first. Empty with the Claude Code backend. */
+export const listThreads = (space: string) => invoke<ThreadSummary[]>("threads_list", { space });
+/** Make a saved conversation the current one. Refused while a reply runs. */
+export const openThread = (space: string, id: string) => invoke<void>("thread_open", { space, id });

@@ -40,6 +40,8 @@ Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is 
 
 ### Cognitive and learning
 
+- Reading font is a setting (Settings > Accessibility): Atkinson Hyperlegible (default), OpenDyslexic, Lexend, or the system font. It applies to all interface text, is saved in the vault and applies before first paint.
+
 - Plain language in UI copy; consistent placement of navigation and controls across spaces (3.2.3, 3.2.6 consistent help).
 - The agent's actions are visible and reversible where possible; destructive actions confirm in plain words and say what will change.
 - No information that must be remembered between steps (3.3.7 redundant entry); authentication never requires a cognitive test (3.3.8).

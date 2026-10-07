@@ -16,6 +16,8 @@
     "@assistant-ui/react-markdown": "^0.14.20",
     "@fontsource-variable/atkinson-hyperlegible-mono": "5.3.0",
     "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource-variable/lexend": "^5.3.0",
+    "@fontsource/opendyslexic": "5.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/api": "^2",
     "class-variance-authority": "^0.7.1",

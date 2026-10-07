@@ -7,6 +7,8 @@
 
 /* ---- Settings window layout ---- */
 :root {
+  /* Reading-font cards wrap to fewer columns before they get cramped. */
+  --ph-font-card-min: 15rem; /* rem already follows the text size */
   /* Every length follows --ph-ui-scale (the text size dial), so at a larger
      text size the window, its columns and its controls grow with the text and
      nothing spills (WCAG 1.4.4). The window itself is capped by the viewport. */

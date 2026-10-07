@@ -30,7 +30,8 @@
   --ph-space-c: 0.09;
 
   /* ---- Type ---- */
-  --ph-font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
+  --ph-font-fallback: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ph-font-sans: "Atkinson Hyperlegible Next Variable", var(--ph-font-fallback);
   --ph-font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   /* The one dial for all text: 1 = default, 1.5 = half again as large. */
   --ph-text-scale: 1;
@@ -117,6 +118,17 @@
   --ph-duration: 160ms;
   --ph-duration-slow: 260ms;
   --ph-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Reading font, chosen in Settings > Accessibility (data-font on <html>). */
+:root[data-font="opendyslexic"] {
+  --ph-font-sans: "OpenDyslexic", var(--ph-font-fallback);
+}
+:root[data-font="lexend"] {
+  --ph-font-sans: "Lexend Variable", var(--ph-font-fallback);
+}
+:root[data-font="system"] {
+  --ph-font-sans: var(--ph-font-fallback);
 }
 
 /* The macOS traffic lights sit inside our title bar. */

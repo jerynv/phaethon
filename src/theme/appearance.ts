@@ -64,6 +64,8 @@ function apply(a: Appearance) {
   const e = effective(a);
   root.classList.toggle("dark", e.dark);
   root.dataset.themePref = a.theme;
+  if (a.readingFont && a.readingFont !== "atkinson") root.dataset.font = a.readingFont;
+  else delete root.dataset.font;
   if (e.moreContrast) root.dataset.contrast = "more";
   else delete root.dataset.contrast;
   if (e.reduceMotion) root.dataset.motion = "reduce";

@@ -382,9 +382,14 @@ export type ThemePref = "system" | "light" | "dark";
 /** "system" follows the OS; "on" forces it. ("off" is accepted from files and treated as system.) */
 export type AccessPref = "system" | "on" | "off";
 
+/** The typeface for all interface and reading text. Mono (code) stays the same. */
+export type ReadingFont = "atkinson" | "opendyslexic" | "lexend" | "system";
+export const READING_FONTS: readonly ReadingFont[] = ["atkinson", "opendyslexic", "lexend", "system"];
+
 export type Appearance = {
   version: 1;
   theme: ThemePref;
+  readingFont: ReadingFont;
   reduceMotion: AccessPref;
   increaseContrast: AccessPref;
   /** Only tokens that differ from their default. */
@@ -394,6 +399,7 @@ export type Appearance = {
 export const DEFAULT_APPEARANCE: Appearance = {
   version: 1,
   theme: "system",
+  readingFont: "atkinson",
   reduceMotion: "system",
   increaseContrast: "system",
   tokens: {},
@@ -432,6 +438,7 @@ export function sanitizeAppearance(raw: unknown): { appearance: Appearance; drop
     appearance: {
       version: 1,
       theme: pick("theme", THEMES, "system"),
+      readingFont: pick("readingFont", READING_FONTS, "atkinson"),
       reduceMotion: pick("reduceMotion", ACCESS, "system"),
       increaseContrast: pick("increaseContrast", ACCESS, "system"),
       tokens,

@@ -49,7 +49,7 @@ export function SectionReset({
   const changed =
     tokens.some((t) => t in a.tokens) ||
     (resetTheme && a.theme !== "system") ||
-    (resetAccess && (a.increaseContrast !== "system" || a.reduceMotion !== "system"));
+    (resetAccess && (a.increaseContrast !== "system" || a.reduceMotion !== "system" || a.readingFont !== "atkinson"));
 
   function reset() {
     const before = getAppearance();
@@ -60,7 +60,7 @@ export function SectionReset({
         ...p,
         tokens: t,
         ...(resetTheme ? { theme: "system" as const } : {}),
-        ...(resetAccess ? { increaseContrast: "system" as const, reduceMotion: "system" as const } : {}),
+        ...(resetAccess ? { increaseContrast: "system" as const, reduceMotion: "system" as const, readingFont: "atkinson" as const } : {}),
       };
     });
     afterReset.current = getAppearance();

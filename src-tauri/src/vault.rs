@@ -51,6 +51,7 @@ const TOKEN_VALUE_MAX_LEN: usize = 64;
 ///
 /// ```json
 /// { "version": 1, "theme": "system|light|dark",
+///   "readingFont": "atkinson|opendyslexic|lexend|system",
 ///   "reduceMotion": "system|on|off", "increaseContrast": "system|on|off",
 ///   "tokens": { "--ph-accent-h": 290, "--ph-tracking-normal": "0.02em" } }
 /// ```
@@ -76,6 +77,7 @@ pub fn validate_appearance(value: &serde_json::Value) -> Result<(), String> {
                 }
             }
             "theme" => one_of(key, v, &["system", "light", "dark"])?,
+            "readingFont" => one_of(key, v, &["atkinson", "opendyslexic", "lexend", "system"])?,
             "reduceMotion" | "increaseContrast" => one_of(key, v, &["system", "on", "off"])?,
             "tokens" => {
                 let tokens = v.as_object().ok_or("Appearance tokens must be an object.")?;
@@ -427,6 +429,7 @@ mod tests {
         assert!(validate_appearance(&json!({
             "version": 1,
             "theme": "dark",
+            "readingFont": "opendyslexic",
             "reduceMotion": "on",
             "increaseContrast": "system",
             "tokens": {
@@ -449,6 +452,7 @@ mod tests {
             json!([]),
             json!("dark"),
             json!({ "theme": "neon" }),
+            json!({ "readingFont": "comic-sans" }),
             json!({ "theme": 1 }),
             json!({ "reduceMotion": "maybe" }),
             json!({ "version": 0 }),

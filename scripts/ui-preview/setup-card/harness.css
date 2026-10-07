@@ -1,0 +1,4 @@
+/* The app's styles, with Tailwind told to scan src/ (this page lives outside it). */
+@import "../../../src/index.css";
+@source "../../../src";
+@source "./";

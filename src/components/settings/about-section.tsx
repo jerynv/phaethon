@@ -4,16 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import type { Settings } from "@/lib/backend";
 
+import { ExternalLink } from "./agent-section";
+import { ANTHROPIC_PRIVACY_URL, KEY_STORE } from "./api-key";
 import { PathText, SectionHeader, SettingGroup, SettingRow } from "./controls";
 import { useStatus } from "./status";
 
 /** How long "Copied" shows before the button reads "Copy path" again. */
 const COPIED_MS = 2000;
 
-export function AboutSection({ headingId, settings }: { headingId: string; settings: Settings | null }) {
+/** A path with a Copy path button that confirms in place and in the status line. */
+function CopyPath({ path, what }: { path: string; what: string }) {
   const [isCopied, setCopied] = useState(false);
   const { say, fail } = useStatus();
-  const vault = settings?.vaultPath;
 
   useEffect(() => {
     if (!isCopied) return;
@@ -22,11 +24,43 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
   }, [isCopied]);
 
   return (
+    <div className="flex flex-wrap items-center gap-2">
+      <code className="min-w-0 flex-1 rounded-md bg-surface-sunken px-2.5 py-1.5 font-mono text-sm wrap-anywhere text-ink">
+        <PathText path={path} />
+      </code>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          navigator.clipboard.writeText(path).then(
+            () => {
+              // Restart the timer when copied twice in a row.
+              setCopied(false);
+              requestAnimationFrame(() => setCopied(true));
+              say(`Path of ${what} copied.`);
+            },
+            () => fail("Could not copy the path. Select it and copy it instead."),
+          )
+        }
+      >
+        <Icon name={isCopied ? "check" : "copy"} />
+        {isCopied ? "Copied" : "Copy path"}
+      </Button>
+    </div>
+  );
+}
+
+export function AboutSection({ headingId, settings }: { headingId: string; settings: Settings | null }) {
+  const vault = settings?.vaultPath;
+  const filesHeading = `${headingId}-files`;
+
+  return (
     <>
       <SectionHeader
         id={headingId}
         title="About Phaethon"
-        description="An accessible workspace for your own AI agent, where everything it knows is plain files you own."
+        description="An accessible workspace for your own AI assistant, where everything it knows is plain files you own."
       />
       <SettingGroup title="This copy">
         <SettingRow label="Version">
@@ -36,38 +70,60 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
           <span className="text-base text-ink">MIT</span>
         </SettingRow>
       </SettingGroup>
-      <SettingGroup title="Your vault" description="Your spaces, notes, conversations and these settings are files in this folder.">
-        <SettingRow stacked label="Vault folder" description="Settings are saved in .phaethon/settings.json inside it. API keys are not: they stay in this computer’s keychain.">
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="min-w-0 flex-1 rounded-md bg-surface-sunken px-2.5 py-1.5 font-mono text-sm wrap-anywhere text-ink">
-              {vault ? <PathText path={vault} /> : "Not available in this preview"}
-            </code>
-            {vault && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  navigator.clipboard.writeText(vault).then(
-                    () => {
-                      // Restart the timer when copied twice in a row.
-                      setCopied(false);
-                      requestAnimationFrame(() => setCopied(true));
-                      say("Vault folder path copied.");
-                    },
-                    () => fail("Could not copy the path. Select it and copy it instead."),
-                  )
-                }
-              >
-                <Icon name={isCopied ? "check" : "copy"} />
-                {isCopied ? "Copied" : "Copy path"}
-              </Button>
-            )}
-          </div>
+
+      <SettingGroup title="Your Phaethon folder" description="Your spaces, conversations, attachments and these settings are files in this folder.">
+        <SettingRow stacked label="Folder" description={`Settings are in .phaethon/settings.json inside it. Your API key isn’t: it stays in ${KEY_STORE}.`}>
+          {vault ? <CopyPath path={vault} what="your Phaethon folder" /> : <span className="text-sm text-ink-secondary">Not available in this preview.</span>}
         </SettingRow>
       </SettingGroup>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-0.5 px-1">
+          {/* Focusable from script: Assistant › "Where they are" lands here. */}
+          <h4 id={filesHeading} data-files-heading="" tabIndex={-1} className="self-start rounded-xs text-md font-semibold text-ink">
+            Your files and privacy
+          </h4>
+        </div>
+        <div data-privacy="" className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised text-sm text-ink-secondary shadow-sm">
+          <div className="flex flex-col gap-1 px-4 py-3.5">
+            <p className="text-base font-medium text-ink">Plain files, not encrypted</p>
+            <p className="max-w-(--ph-measure)">
+              Conversations, attachments and settings are ordinary files that anyone with access to your account on this computer can open.
+              If your Phaethon folder is in iCloud Drive, Dropbox or another synced folder, they sync too.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1 px-4 py-3.5">
+            <p className="text-base font-medium text-ink">MANUAL.md is read in every space</p>
+            <p className="max-w-(--ph-measure)">
+              The MANUAL.md file at the top of your Phaethon folder tells the assistant how you like it to work, and it is read in every
+              space. Keep anything that belongs to one space out of it.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5 px-4 py-3.5">
+            <p className="text-base font-medium text-ink">Deleting a conversation</p>
+            <p className="max-w-(--ph-measure)">Each space keeps its conversations inside its own folder:</p>
+            <ul className="flex list-disc flex-col gap-1 ps-5">
+              <li>
+                the current one in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/thread.json</span>
+              </li>
+              <li>
+                earlier ones in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/threads/</span>
+              </li>
+              <li>
+                files you attached in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/attachments/</span>
+              </li>
+            </ul>
+            <p className="max-w-(--ph-measure)">
+              Delete a file to delete that conversation for good. Folders whose names start with a dot are hidden in Finder: press
+              Command-Shift-full stop to show them. Copies already sent to Anthropic are covered by{" "}
+              <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <p className="max-w-(--ph-measure) text-sm text-ink-secondary">
-        Text is set in Atkinson Hyperlegible, designed by the Braille Institute so similar letters are easy to tell apart.
+        The default reading font is Atkinson Hyperlegible, designed by the Braille Institute so similar letters are easy to tell apart.
       </p>
     </>
   );

@@ -23,7 +23,7 @@ function lineOf(message: string): string | null {
 /**
  * Settings > Spaces: every space in the vault, with its name, description and
  * colour editable in place, and under each, what it may read in other spaces
- * (saved read-only grants), with Revoke. Modelled on the
+ * (saved read-only grants), with Remove. Modelled on the
  * per-app lists of macOS Privacy & Security and the "third-party access" pages
  * of GitHub and Google: who has access to what, since when, and one button to
  * take it back. Nothing here grants access; that only happens in a
@@ -45,19 +45,19 @@ export function SpacesSection({ headingId }: { headingId: string }) {
   const { state } = useGrants(spaces[0]?.id ?? "");
   const problems = state.status === "ready" ? state.problems : [];
   const fileError = state.status === "error" ? state.error : null;
-  const grantsFile = vaultPath ? <PathText path={`${vaultPath}/.phaethon/grants.json`} /> : ".phaethon/grants.json in your vault";
+  const grantsFile = vaultPath ? <PathText path={`${vaultPath}/.phaethon/grants.json`} /> : ".phaethon/grants.json in your Phaethon folder";
 
   return (
     <>
       <SectionHeader
         id={headingId}
         title="Spaces"
-        description="A space only sees its own files. When Phaethon needs something from another space, it asks you in the conversation. Grants you choose to keep are listed here; they are read-only."
+        description="A space only sees its own files. When Phaethon needs something from another space, it asks you in the conversation. Access you chose to keep is listed under each space. It is read-only: one space can never change another’s files."
       />
       {fileError && (
-        <FileNotice tone="danger" icon="error" title="Saved grants can’t be read, so no space can read another.">
+        <FileNotice tone="danger" icon="error" title="Phaethon can’t read its list of access between spaces, so no space can read another.">
           <p>
-            The grants file has a mistake in it{lineOf(fileError) ? `, on ${lineOf(fileError)}` : ""}. Fix it, or delete the file: each space then asks again before reading another.
+            The file that lists access between spaces has a mistake in it{lineOf(fileError) ? `, on ${lineOf(fileError)}` : ""}. Fix it, or delete the file: each space then asks again before reading another.
           </p>
           <p>
             The file is <span className="font-mono wrap-anywhere">{grantsFile}</span>
@@ -67,25 +67,25 @@ export function SpacesSection({ headingId }: { headingId: string }) {
           </Details>
         </FileNotice>
       )}
-      <SettingGroup title="In this vault">
-        <ul className="flex flex-col divide-y divide-line" aria-label="Spaces in this vault">
+      <SettingGroup title="Your spaces">
+        <ul className="flex flex-col divide-y divide-line" aria-label="Your spaces">
           {spaces.map((s) => (
             <SpaceRow key={s.id} space={s} fileError={fileError} />
           ))}
         </ul>
-        {spacesStatus === "ready" && spaces.length === 0 && <p className="px-4 py-3.5 text-sm text-ink-secondary">This vault has no spaces yet.</p>}
+        {spacesStatus === "ready" && spaces.length === 0 && <p className="px-4 py-3.5 text-sm text-ink-secondary">You have no spaces yet.</p>}
       </SettingGroup>
       {problems.length > 0 && (
         // The headline and what to do are written here; the core's line for each problem shows as it arrives.
-        <FileNotice tone="warning" icon="warning" title="Some saved grants can’t be used, so they give no access.">
-          <p>The grants listed above still work. What is wrong:</p>
+        <FileNotice tone="warning" icon="warning" title="Some saved access between spaces can’t be used, so it gives no access.">
+          <p>The access listed above still works. What is wrong:</p>
           <ul data-grant-problems="" className="flex list-disc flex-col gap-0.5 ps-4">
             {problems.map((p) => (
               <li key={p}>{p}</li>
             ))}
           </ul>
           <p>
-            To fix this, correct or delete those entries in the grants file, or delete the whole file: each space then asks again before reading another. The file is{" "}
+            To fix this, correct or delete those entries in the access file, or delete the whole file: each space then asks again before reading another. The file is{" "}
             <span className="font-mono wrap-anywhere">{grantsFile}</span>
           </p>
         </FileNotice>
@@ -144,7 +144,7 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
       focusAfter.current = index;
       say(removed ? `${space.name} can no longer read ${grantLabel(g)}.` : `${grantLabel(g)} was already removed.`);
     } catch (e) {
-      fail(`Could not revoke ${space.name}’s access to ${grantLabel(g)}: ${String(e)}`);
+      fail(`Could not remove ${space.name}’s access to ${grantLabel(g)}: ${String(e)}`);
     } finally {
       setBusy(null);
     }
@@ -160,7 +160,7 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
           (state.error === fileError ? (
             <p className="flex items-start gap-1.5 text-sm text-ink-secondary">
               <Icon name="lock" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-              Can’t read anything outside {space.name} until the grants file is fixed.
+              Can’t read anything outside {space.name} until the access file is fixed.
             </p>
           ) : (
             <div className="flex items-start gap-1.5 text-sm text-danger-ink">
@@ -221,11 +221,11 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
                       size="xs"
                       data-revoke=""
                       disabled={busy !== null}
-                      aria-label={`Revoke ${space.name}’s access to ${grantLabel(g)}`}
+                      aria-label={`Remove ${space.name}’s access to ${grantLabel(g)}`}
                       onClick={() => void revoke(g, i)}
                       className="min-h-(--ph-target-min)"
                     >
-                      {busy === g.id ? "Revoking…" : "Revoke"}
+                      {busy === g.id ? "Removing…" : "Remove"}
                     </Button>
                   </li>
                 );

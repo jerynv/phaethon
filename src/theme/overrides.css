@@ -24,14 +24,22 @@
      flow; pages start below it and banners stop short of it. */
   --ph-settings-close-inset: calc(var(--ph-space) * 3);
   --ph-settings-close-room: calc(var(--ph-settings-close-inset) + var(--ph-control-height-sm) + var(--ph-space) * 2);
-  --ph-swatch-size: calc(26px * var(--ph-ui-scale));
+  /* Larger click targets (Settings › Accessibility) sets --ph-target-min to
+     44px and --ph-target-boost to 1.5; switches, slider thumbs and swatches
+     grow by the boost. Unset, the boost is 1. */
+  --ph-swatch-size: calc(26px * var(--ph-ui-scale) * var(--ph-target-boost, 1));
   --ph-theme-preview-height: calc(58px * var(--ph-ui-scale));
   --ph-slider-track: calc(6px * var(--ph-ui-scale));
-  --ph-slider-thumb: calc(18px * var(--ph-ui-scale));
-  --ph-switch-width: calc(40px * var(--ph-ui-scale));
-  --ph-switch-height: calc(24px * var(--ph-ui-scale));
-  --ph-switch-thumb: calc(18px * var(--ph-ui-scale));
-  --ph-switch-travel: calc(16px * var(--ph-ui-scale));
+  /* WCAG 2.5.8: the thumb itself is at least 24px, whatever the text size. */
+  --ph-slider-thumb: max(24px, calc(22px * var(--ph-ui-scale) * var(--ph-target-boost, 1)));
+  /* The slider's row, and the thumb's invisible hit area: never below the target size. */
+  --ph-slider-row: max(var(--ph-target-min), var(--ph-slider-thumb));
+  --ph-slider-hit: max(var(--ph-focus-offset), calc((var(--ph-target-min) - var(--ph-slider-thumb)) / 2));
+  --ph-slider-halo: calc(4px * var(--ph-ui-scale));
+  --ph-switch-width: calc(40px * var(--ph-ui-scale) * var(--ph-target-boost, 1));
+  --ph-switch-height: calc(24px * var(--ph-ui-scale) * var(--ph-target-boost, 1));
+  --ph-switch-thumb: calc(18px * var(--ph-ui-scale) * var(--ph-target-boost, 1));
+  --ph-switch-travel: calc(16px * var(--ph-ui-scale) * var(--ph-target-boost, 1));
 }
 
 /* ---- Forced colours (Windows High Contrast and similar) ---- */

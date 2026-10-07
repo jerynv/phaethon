@@ -1,7 +1,7 @@
 import { RadioGroup } from "radix-ui";
 import { useId } from "react";
 
-import { effective, setAppearance, useAppearance, useSystemPrefs } from "@/theme";
+import { effective, setAppearance, setToken, useAppearance, useSystemPrefs } from "@/theme";
 import type { ReadingFont } from "@/theme/tokens";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,7 @@ const FONTS: { value: ReadingFont; label: string; description: string; family: s
 ];
 
 /** Typeface for all text in Phaethon; code keeps its own monospace font. */
-function ReadingFontRow() {
+export function ReadingFontRow() {
   const a = useAppearance();
   const labelId = useId();
   const descId = useId();
@@ -99,6 +99,7 @@ export const ACCESSIBILITY_TOKENS = [
   "--ph-leading-normal",
   "--ph-tracking-normal",
   "--ph-duration-scale",
+  "--ph-target-size",
 ] as const;
 
 export function AccessibilitySection({ headingId }: { headingId: string }) {
@@ -143,6 +144,10 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
         <ReadingSample />
       </SettingGroup>
 
+      <SettingGroup title="Clicking and touch">
+        <LargerTargetsRow />
+      </SettingGroup>
+
       <SettingGroup title="Motion">
         <SwitchRow
           label="Reduce motion"
@@ -163,20 +168,6 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
           <TokenRow name="--ph-duration-scale" />
         )}
       </SettingGroup>
-
-      <aside aria-labelledby="a11y-next" className="flex gap-3 rounded-lg bg-surface px-4 py-3.5 text-sm text-ink-secondary">
-        <Icon name="info" className="mt-0.5 text-ink-tertiary" />
-        <div className="flex flex-col gap-1">
-          <h4 id="a11y-next" className="text-base font-medium text-ink">
-            More is coming
-          </h4>
-          <p className="max-w-(--ph-measure)">
-            Next: how much screen readers announce while the agent works, a choice of reading fonts, colour filters, larger click
-            targets, and keyboard shortcuts you can change. Disabled testers are shaping this list, and the settings above already
-            apply everywhere in Phaethon.
-          </p>
-        </div>
-      </aside>
     </>
   );
 }
@@ -207,5 +198,20 @@ function ReadingSample() {
         to redo the recursion exercises first, so Monday evening is set aside for that.
       </p>
     </div>
+  );
+}
+
+/** Larger click targets: a switch over the --ph-target-size token (24 or 44 pixels). */
+function LargerTargetsRow() {
+  const a = useAppearance();
+  const on = Number(a.tokens["--ph-target-size"] ?? 24) > 24;
+  return (
+    <SwitchRow
+      label="Larger click targets"
+      description="Makes buttons, switches and other controls at least 44 pixels across, so they are easier to hit with a shaky hand, a head pointer or dwell clicking."
+      checked={on}
+      onChange={(next) => setToken("--ph-target-size", next ? 44 : 24)}
+      status={on ? "On: controls are at least 44 by 44 pixels." : "Off: controls are at least 24 by 24 pixels, the usual desktop size."}
+    />
   );
 }

@@ -16,10 +16,13 @@ import { NavContext, StatusContext, type SectionId, type SettingsNav, type Setti
 
 /** Opens Settings from anywhere: `window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: { section } }))`. */
 export const OPEN_SETTINGS_EVENT = "phaethon:open-settings";
-export type OpenSettingsDetail = { section?: SectionId };
+/** `focus`: a field to land on ("key" is the default when opening on the Assistant page, since that comes from a key error). */
+export type OpenSettingsDetail = { section?: SectionId; focus?: FocusTarget };
+type FocusTarget = "key" | "model" | "heading";
+const FOCUS_SELECTOR: Record<Exclude<FocusTarget, "heading">, string> = { key: "[data-key-input]", model: "[data-model-select]" };
 
 const SECTIONS: { id: SectionId; label: string; icon: IconName }[] = [
-  { id: "agent", label: "Agent", icon: "agent" },
+  { id: "agent", label: "Assistant", icon: "agent" },
   { id: "appearance", label: "Appearance", icon: "appearance" },
   { id: "accessibility", label: "Accessibility", icon: "accessibility" },
   { id: "spaces", label: "Spaces", icon: "space" },
@@ -71,6 +74,54 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   isOpen.current = open;
   /** Where focus goes on close when the window was opened by the event. */
   const returnTo = useRef<HTMLElement | null | undefined>(undefined);
+  /** A field to focus once the page has it (the key field after a key error). */
+  const pendingFocus = useRef<string | null>(null);
+  const content = useRef<HTMLDivElement | null>(null);
+  /** The window's size, measured when it opens and kept while it is open (see frozenRef). */
+  const [frozen, setFrozen] = useState<{ width: number; height: number } | null>(null);
+  /** Background elements this window made inert, to restore on close. */
+  const madeInert = useRef<HTMLElement[]>([]);
+
+  /**
+   * On mount of the window: make everything behind it inert (no focus, no
+   * pointer, hidden from screen readers' virtual cursor; Radix only sets
+   * aria-hidden, which VoiceOver's cursor and live regions ignore), and fix its
+   * size so a text-size change or a switch of page never makes it jump. A
+   * changed window size measures again. On unmount: undo both.
+   */
+  const contentRef = useCallback((node: HTMLDivElement | null) => {
+    content.current = node;
+    if (node) {
+      for (const el of Array.from(document.body.children)) {
+        if (!(el instanceof HTMLElement) || el.contains(node) || el.tagName === "SCRIPT" || el.inert) continue;
+        el.inert = true;
+        madeInert.current.push(el);
+      }
+      setFrozen({ width: node.offsetWidth, height: node.offsetHeight });
+    } else {
+      for (const el of madeInert.current) el.inert = false;
+      madeInert.current = [];
+      setFrozen(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let frame = 0;
+    const onResize = () => {
+      cancelAnimationFrame(frame);
+      setFrozen(null);
+      frame = requestAnimationFrame(() => {
+        const node = content.current;
+        if (node) setFrozen({ width: node.offsetWidth, height: node.offsetHeight });
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [open]);
 
   const load = useCallback(async () => {
     try {
@@ -92,9 +143,36 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
     void load();
   }, [open, load]);
 
+  /** Focus the field asked for, once its page has rendered it (the key field needs the settings loaded). */
+  function focusPending() {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const sel = pendingFocus.current;
+        const el = sel ? content.current?.querySelector<HTMLElement>(sel) : null;
+        if (!el) return; // not there yet: the settings effect below tries again
+        pendingFocus.current = null;
+        el.scrollIntoView({ block: "center" });
+        el.focus();
+      }),
+    );
+  }
+
+  useEffect(() => {
+    if (open && settings && pendingFocus.current) focusPending();
+  }, [open, settings]);
+
+  function onOpenAutoFocus(e: Event) {
+    if (!pendingFocus.current) return; // Radix focuses the first control
+    // Until the field exists, the page heading holds focus (inside the window, never behind it).
+    e.preventDefault();
+    document.getElementById(ids[section])?.focus();
+    focusPending();
+  }
+
   useEffect(() => {
     function onOpenRequest(e: Event) {
-      const wanted = (e as CustomEvent<OpenSettingsDetail | undefined>).detail?.section;
+      const detail = (e as CustomEvent<OpenSettingsDetail | undefined>).detail;
+      const wanted = detail?.section;
       if (!isOpen.current) {
         const active = document.activeElement;
         returnTo.current = active instanceof HTMLElement && active !== document.body ? active : null;
@@ -103,6 +181,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         lastSection = wanted;
         setSection(wanted);
       }
+      // Opened on the Assistant page by a key error: land on the key field itself.
+      const focus = detail?.focus ?? (wanted === "agent" ? "key" : undefined);
+      pendingFocus.current = focus && focus !== "heading" ? FOCUS_SELECTOR[focus] : null;
+      if (isOpen.current) focusPending();
       setOpen(true);
     }
     window.addEventListener(OPEN_SETTINGS_EVENT, onOpenRequest);
@@ -217,14 +299,22 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-(--ph-overlay) duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content
+          ref={contentRef}
           aria-describedby={descId}
+          // Radix hides the background with aria-hidden only; say it is modal too.
+          aria-modal="true"
+          style={frozen ? { width: frozen.width, height: frozen.height } : undefined}
+          onOpenAutoFocus={onOpenAutoFocus}
           onCloseAutoFocus={onCloseAutoFocus}
+          // Only Escape and Close close it: a click just outside (a tremor, a missed target) does nothing.
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
           // Escape in a field with unsaved text (Settings > Spaces) undoes that edit instead of closing.
           onEscapeKeyDown={(e) => {
             if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
           }}
           className={cn(
-            "fixed top-1/2 left-1/2 z-50 flex h-(--ph-settings-height) w-(--ph-settings-width) -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-line bg-bg text-ink shadow-lg outline-none",
+            "fixed top-1/2 left-1/2 z-50 flex h-(--ph-settings-height) w-(--ph-settings-width) -translate-x-1/2 -translate-y-1/2 overflow-clip rounded-xl border border-line bg-bg text-ink shadow-lg outline-none",
             "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",
           )}
         >
@@ -259,7 +349,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                     ))}
                   </Tabs.List>
                   <div className="mt-auto flex flex-col gap-1.5 px-5 pt-4 pb-5 text-sm text-ink-secondary max-md:hidden">
-                    <Dialog.Description id={descId}>Changes apply as you make them and are saved in this vault.</Dialog.Description>
+                    <Dialog.Description id={descId}>Changes apply as you make them and are saved in your Phaethon folder.</Dialog.Description>
                     <SaveIndicator />
                   </div>
                 </div>

@@ -127,8 +127,8 @@ export default [
       await page.keyboard.press("Shift");
       await h.idle();
       await h.shot("input-focused");
-      await press(page, "Save key");
-      await h.waitText("Paste a key first");
+      await press(page, "Check and save");
+      await h.waitText("Paste your key first");
       await park(page);
       await h.idle();
     },
@@ -136,11 +136,11 @@ export default [
   {
     name: "audit-settings-key-invalid",
     sizes: WIDE,
-    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, fail: { api_key_set: "That doesn't look like an Anthropic API key (it should start with sk-ant-)." } },
+    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, keyCheck: { ok: false, problem: "format", message: "That isn’t an Anthropic API key." } },
     async run(page, h) {
       await openSettings(page, h, "agent");
       await page.type('input[type="password"]', "not-a-real-key");
-      await press(page, "Save key");
+      await press(page, "Check and save");
       await h.idle();
       await park(page);
       const got = await page.evaluate(() => {
@@ -156,7 +156,9 @@ export default [
       console.log(`     key error: ${JSON.stringify(got)}`);
       check(!got.banner, "a rejected key is not shown in the window banner", got.banner);
       check(got.invalid === "true", "the key field is marked invalid");
-      check(got.described.includes("look like an Anthropic API key"), "the field is described by the backend's message", got.described);
+      check(got.described.includes("doesn’t look like an Anthropic API key"), "the field is described by the plain format message", got.described);
+      const sets = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_set").length);
+      check(sets === 0, "a key that fails its check is not saved", `${sets}`);
       check(got.focused, "focus is back in the key field");
     },
   },
@@ -164,11 +166,11 @@ export default [
     name: "audit-settings-key-saving",
     sizes: WIDE,
     themes: ["light"],
-    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, slow: { api_key_set: 60000 } },
+    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, slow: { api_key_check: 60000 } },
     async run(page, h) {
       await openSettings(page, h, "agent");
       await page.type('input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
-      await press(page, "Save key");
+      await press(page, "Check and save");
       await h.idle();
       await park(page);
       const got = await page.evaluate(() => {
@@ -176,14 +178,14 @@ export default [
         return { text: btn?.textContent, ariaDisabled: btn?.getAttribute("aria-disabled"), readOnly: document.querySelector('input[type="password"]').hasAttribute("readonly") };
       });
       console.log(`     while saving: ${JSON.stringify(got)}`);
-      check(got.text === "Saving…" && got.ariaDisabled === "true", "Save key shows Saving… and is aria-disabled while it runs", JSON.stringify(got));
-      check(got.readOnly, "the key field is read-only while saving");
+      check(got.text === "Checking…" && got.ariaDisabled === "true", "Check and save shows Checking… and is aria-disabled while it runs", JSON.stringify(got));
+      check(got.readOnly, "the key field is read-only while checking");
       // A second press (click or Enter) while pending sends nothing more.
       await page.$eval('[role="dialog"] form button[type="submit"]', (b) => b.click());
       await page.$eval('input[type="password"]', (i) => i.form.requestSubmit());
       await h.idle();
-      const sets = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_set").length);
-      check(sets === 1, "only one api_key_set while pending", `${sets}`);
+      const sets = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_check").length);
+      check(sets === 1, "only one api_key_check while pending", `${sets}`);
     },
   },
   {
@@ -193,13 +195,13 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await page.type('input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
-      await press(page, "Save key");
+      await press(page, "Check and save");
       await h.waitText("A key is saved");
       await park(page);
       await h.idle();
       const status = await page.evaluate(() => document.querySelector('[role="dialog"] p[role="status"]')?.textContent);
       console.log(`     after save, status: ${status}; focus: ${await activeDesc(page)}`);
-      const line = await page.evaluate(() => document.querySelector('[role="dialog"] form')?.innerText.includes("Saved to this computer’s keychain."));
+      const line = await page.evaluate(() => document.querySelector('[role="dialog"] form')?.innerText.includes("Your key works. It’s saved in this computer’s password store (Keychain)."));
       check(line, "a visible saved line sits next to the key field");
     },
   },
@@ -480,7 +482,7 @@ export default [
       console.log(`     wrapped grant rows: ${rows.filter((r) => r.wrapped).length} of ${rows.length}`);
       // N-011: the warning is ours in plain words (what, which file, what to do); the core's lines are listed as they arrive.
       const warn = await page.evaluate((p) => document.querySelector(`${p} [data-grant-problems]`)?.closest(".bg-warning-soft")?.innerText ?? "", PANEL);
-      check(warn.includes("Some saved grants can’t be used, so they give no access."), "a plain headline for grants.json problems", warn.slice(0, 120));
+      check(warn.includes("Some saved access between spaces can’t be used, so it gives no access."), "a plain headline for grants.json problems", warn.slice(0, 120));
       check(warn.includes("/Users/you/Phaethon/default/.phaethon/grants.json") && warn.includes("correct or delete those entries"), "it names the file and says what to do", warn);
       check(warn.includes("garden") && warn.includes("../../etc"), "each problem the core reports is listed");
       await h.shot("top");
@@ -581,7 +583,7 @@ export default [
       await press(page, "Remove saved key…");
       await h.idle();
       await press(page, "Remove key");
-      await h.waitText("No key saved yet");
+      await h.waitText("The key comes from Anthropic");
       await h.idle();
       clears = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_clear").length);
       const after = await page.evaluate(() => document.activeElement?.getAttribute("type"));
@@ -686,9 +688,9 @@ export default [
       await h.idle();
       await park(page);
       const text = await page.evaluate((p) => document.querySelector(p).innerText, PANEL);
-      check(text.includes("Phaethon can’t read your settings, so it is using the defaults") && text.includes("Try again"), "after choosing Agent, a plain load error and Try again are shown", text.slice(0, 300));
+      check(text.includes("Phaethon can’t read your settings, so it is using the defaults") && text.includes("Try again"), "after choosing Assistant, a plain load error and Try again are shown", text.slice(0, 300));
       check(text.includes(".phaethon/settings.json") && text.includes("on line 4") && text.includes("Fix or delete it"), "it names the file, the line and what to do", text.slice(0, 400));
-      check(!text.includes("Loading your agent settings"), "no endless Loading…");
+      check(!text.includes("Loading your assistant settings"), "no endless Loading…");
       // The parser's own text is folded under the shared Details, not in the headline.
       const raw = await page.evaluate((p) => {
         const panel = document.querySelector(p);
@@ -709,10 +711,10 @@ export default [
       // The file is fixed; Try again loads the page and focus goes to its heading.
       await page.evaluate(() => { delete window.__MOCK__.fail.settings_get; });
       await press(page, "Try again");
-      await h.waitText("Which agent answers");
+      await h.waitText("Which assistant answers");
       await h.idle();
       const focus = await page.evaluate(() => document.activeElement?.textContent);
-      check(focus === "Agent", "after a good retry, focus moves to the page heading", focus);
+      check(focus === "Assistant", "after a good retry, focus moves to the page heading", focus);
     },
   },
   {
@@ -725,7 +727,7 @@ export default [
       await openSettings(page, h, "agent");
       await park(page);
       const text = await page.evaluate((p) => document.querySelector(p).innerText, PANEL);
-      check(text.includes("couldn’t open this computer’s keychain") && !text.includes("settings.json"), "a keychain failure is named as one", text.slice(0, 300));
+      check(text.includes("couldn’t open this computer’s password store (Keychain)") && !text.includes("settings.json"), "a keychain failure is named as one", text.slice(0, 300));
       check(!(await shownText(page)).includes("User interaction is not allowed"), "its raw text is folded under Details");
     },
   },
@@ -808,7 +810,7 @@ export default [
         await page.$eval(`[data-testid="settings-tab-${tab}"]`, (el) => el.click());
         await h.idle();
         const got = await page.evaluate((p) => {
-          const header = document.querySelector(`${p} header`);
+          const header = document.querySelector(`${p} [data-section-header]`);
           const desc = header.querySelector("p");
           const action = header.lastElementChild;
           const em = parseFloat(getComputedStyle(desc).fontSize);

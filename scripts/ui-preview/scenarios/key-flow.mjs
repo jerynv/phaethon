@@ -21,7 +21,7 @@ export default [
       await page.waitForSelector('[role="dialog"] input[type="password"]', { timeout: 5000 });
       await page.type('[role="dialog"] input[type="password"]', "sk-ant-api03-test-key");
       await page.keyboard.press("Enter");
-      await h.waitText("keychain");
+      await h.waitText("Your key works");
       // The fake backend now accepts sends.
       await page.evaluate(() => {
         window.__MOCK__.sendError = null;

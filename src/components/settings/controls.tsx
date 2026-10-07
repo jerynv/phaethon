@@ -39,7 +39,8 @@ export function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    // A plain div, not <header>: inside the dialog a header would be an unnamed banner landmark on every page.
+    <div data-section-header="" className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       {/* At least ~24 em wide (it grows with the text size): when the action no longer fits beside it, the action wraps below instead of squeezing the description. */}
       <div className="flex min-w-0 flex-[1_1_24em] flex-col gap-1 text-base">
         {/* Focusable from script only: moving to a section from another page lands here. */}
@@ -49,26 +50,34 @@ export function SectionHeader({
         <p className="max-w-(--ph-measure) text-base text-ink-secondary">{description}</p>
       </div>
       {action}
-    </header>
+    </div>
   );
 }
 
-/** A titled group of rows: one bordered list, rows divided by hairlines. */
+/**
+ * A titled group of rows: one bordered list, rows divided by hairlines. A plain
+ * block with a heading, not a region landmark: a page of groups would otherwise
+ * be a page of landmarks.
+ */
 export function SettingGroup({
   title,
+  titleId,
   description,
   children,
   bare,
 }: {
   title: string;
+  /** The heading's id, for a control inside that is labelled by it. */
+  titleId?: string;
   description?: ReactNode;
   children: ReactNode;
   /** No surrounding card: for content that is itself a set of cards (radio cards). */
   bare?: boolean;
 }) {
-  const id = useId();
+  const ownId = useId();
+  const id = titleId ?? ownId;
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-0.5 px-1">
         <h4 id={id} className="text-md font-semibold text-ink">
           {title}
@@ -76,7 +85,7 @@ export function SettingGroup({
         {description && <p className="text-sm text-ink-secondary">{description}</p>}
       </div>
       {bare ? children : <div className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised shadow-sm">{children}</div>}
-    </section>
+    </div>
   );
 }
 
@@ -197,14 +206,14 @@ export function TokenSlider({
       max={max}
       step={step}
       onValueChange={([v]) => onChange(v)}
-      className="relative flex h-(--ph-target-min) w-full touch-none items-center select-none"
+      className="group/slider relative flex h-(--ph-slider-row) w-full touch-none items-center select-none"
     >
       <Slider.Track
         data-slider-track=""
         data-hue-track={trackStyle ? "" : undefined}
         className={cn(
           "relative h-(--ph-slider-track) grow overflow-hidden rounded-full",
-          trackStyle ? "" : "bg-line-strong",
+          trackStyle ? "" : "bg-line-strong group-hover/slider:bg-ink-tertiary",
         )}
         style={trackStyle}
       >
@@ -217,8 +226,10 @@ export function TokenSlider({
         aria-describedby={descriptionId}
         aria-valuetext={valueText}
         className={cn(
-          "relative block size-(--ph-slider-thumb) cursor-grab rounded-full border-2 bg-raised shadow transition-transform duration-(--ph-duration-fast) active:cursor-grabbing",
-          "before:absolute before:-inset-(--ph-focus-offset) before:content-['']",
+          "relative block size-(--ph-slider-thumb) cursor-grab rounded-full border-2 bg-raised shadow transition-[box-shadow,transform] duration-(--ph-duration-fast) active:cursor-grabbing",
+          // Hover: a soft halo, so the thumb under the pointer is clear. The hit area reaches the target size.
+          "group-hover/slider:shadow-[0_0_0_var(--ph-slider-halo)_var(--ph-accent-soft)]",
+          "before:absolute before:-inset-(--ph-slider-hit) before:content-['']",
           trackStyle ? "border-ink" : "border-accent-fill",
         )}
       />
@@ -272,21 +283,24 @@ function QuickPicks({
   format: (v: number) => string;
 }) {
   return (
-    <div role="group" aria-label={`${label} presets`} className="grid grid-flow-col auto-cols-fr overflow-hidden rounded-md border border-line-strong">
+    // Separate bordered buttons with real gaps (not a joined strip), so a slightly
+    // missed click lands between them rather than on the neighbour.
+    <div role="group" aria-label={`${label} presets`} className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,calc(var(--ph-control-height)*1.75)),1fr))] gap-1.5">
       {presets.map((p) => {
         const on = Math.abs(p.value - value) < 1e-6;
         return (
           <button
             key={p.label}
             type="button"
+            data-preset=""
             aria-pressed={on}
             onClick={() => onPick(p.value)}
             aria-label={`${p.label}, ${format(p.value)}`}
             className={cn(
-              "min-h-(--ph-target-min) border-line-strong px-1 text-xs tabular-nums transition-colors duration-(--ph-duration-fast) not-first:border-l",
+              "min-h-(--ph-control-height) rounded-md border px-1 text-sm tabular-nums transition-colors duration-(--ph-duration-fast)",
               on
-                ? "bg-accent-soft font-semibold text-accent-soft-ink"
-                : "text-ink-secondary hover:bg-hover hover:text-ink",
+                ? "border-accent-fill bg-accent-soft font-semibold text-accent-soft-ink shadow-[inset_0_0_0_var(--ph-border-width)_var(--ph-accent)]"
+                : "border-line-strong bg-raised text-ink-secondary shadow-sm hover:bg-hover hover:text-ink",
             )}
           >
             {format(p.value)}

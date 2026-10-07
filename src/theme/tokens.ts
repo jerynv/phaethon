@@ -276,11 +276,26 @@ export const TOKENS: readonly TokenSpec[] = [
     group: "Accessibility",
     kind: "length",
     unit: "em",
-    min: 0,
+    // Slightly below zero for faces that already sit wide (OpenDyslexic).
+    min: -0.02,
     max: 0.12,
     step: 0.01,
     default: 0,
-    format: (v) => (v === 0 ? "None" : `+${Math.round(v * 100)}%`),
+    format: (v) => (v === 0 ? "None" : v < 0 ? `Tighter (−${Math.round(-v * 100)}%)` : `+${Math.round(v * 100)}%`),
+  },
+  {
+    // Not a slider: a switch between the WCAG minimum and the larger 44px target.
+    name: "--ph-target-size",
+    label: "Larger click targets",
+    description: "Makes buttons, switches and other controls at least 44 pixels across, so they are easier to hit.",
+    group: "Accessibility",
+    kind: "number",
+    min: 24,
+    max: 44,
+    step: 20,
+    default: 24,
+    format: (v) => `${v} pixels`,
+    derive: (v) => ({ "--ph-target-min": `${v}px`, "--ph-target-boost": v > 24 ? "1.5" : "1" }),
   },
   {
     name: "--ph-icon-stroke",

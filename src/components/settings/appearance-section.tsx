@@ -18,6 +18,7 @@ import {
 } from "@/theme";
 
 import { DefaultOrReset, HUE_TRACK, HueSwatches, SettingGroup, SettingRow, TokenRow, TokenSlider, radioArrowKeys } from "./controls";
+import { ReadingFontRow } from "./accessibility-section";
 import { SectionReset } from "./section-reset";
 import { useSettingsNav } from "./status";
 
@@ -46,7 +47,7 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
       <SectionReset
         headingId={headingId}
         title="Appearance"
-        description="How Phaethon looks. Changes apply as you make them and are saved in this vault, so they follow it to other computers."
+        description="How Phaethon looks. Changes apply as you make them and are saved in your Phaethon folder, so they go with it if you sync it to another computer."
         what="appearance"
         tokens={APPEARANCE_TOKENS}
         resetTheme
@@ -71,6 +72,8 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-neutral-c" />
       </SettingGroup>
       <SettingGroup title="Text">
+        {/* The same picker as in Accessibility: people look for fonts here too. */}
+        <ReadingFontRow />
         <TextSizeLink />
         <TokenRow name="--ph-weight-normal" />
       </SettingGroup>

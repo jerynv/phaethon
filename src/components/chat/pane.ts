@@ -39,6 +39,9 @@ export function focusPaneComposer(pane: Pane | null): void {
 
 /** The composer on screen (several panes may be mounted; only one shows). */
 export function visibleComposer(): HTMLTextAreaElement | null {
+  // The shell marks the space on screen; other spaces stay mounted but hidden.
+  const shown = document.querySelector<HTMLTextAreaElement>("[data-space-pane][data-shown] [data-composer-input]");
+  if (shown) return shown;
   const all = [...document.querySelectorAll<HTMLTextAreaElement>("[data-composer-input]")];
   return all.find((el) => el.getClientRects().length > 0 && !el.closest("[inert]")) ?? null;
 }

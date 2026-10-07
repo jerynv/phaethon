@@ -136,6 +136,11 @@
           const incoming = Object.entries(M.grants).flatMap(([to, gs]) => gs.filter((g) => g.from === args.space).map((g) => ({ ...g, to })));
           return { grants: M.grants[args.space] ?? [], incoming, problems: M.grantProblems ?? [] };
         }
+        case "grant_restore": {
+          const list = (M.grants[args.to] ??= []);
+          if (!list.some((g) => g.id === args.id)) list.push({ id: args.id, from: args.from, path: args.path, created: args.created, scope: "always" });
+          return;
+        }
         case "grant_revoke": {
           for (const k of Object.keys(M.grants)) {
             const before = M.grants[k].length;

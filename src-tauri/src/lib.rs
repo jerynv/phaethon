@@ -154,6 +154,19 @@ fn grants_list(state: State<'_, AppState>, space: String) -> Result<grants::Gran
     Ok(grants::view(&state.vault, &space))
 }
 
+/// Put back a grant that was just revoked (Undo), with its original id and date.
+#[tauri::command]
+fn grant_restore(
+    state: State<'_, AppState>,
+    id: String,
+    to: String,
+    from: String,
+    path: String,
+    created: String,
+) -> Result<(), String> {
+    grants::restore(&state.vault, &id, &to, &from, &path, &created).map(|_| ())
+}
+
 /// Remove a saved grant. False if no grant has that id.
 #[tauri::command]
 fn grant_revoke(state: State<'_, AppState>, id: String) -> Result<bool, String> {
@@ -399,6 +412,7 @@ pub fn run() {
             agent_access_answer,
             grants_list,
             grant_revoke,
+            grant_restore,
             thread_load,
             thread_new,
             threads_list,

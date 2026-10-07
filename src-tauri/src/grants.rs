@@ -282,6 +282,24 @@ pub fn add_always(vault: &Vault, to: &str, from: &str, path: &str) -> Result<Gra
     Ok(grant)
 }
 
+/// Put back a grant that was just revoked (the Undo after a revoke), with its
+/// original id and date. Validated exactly like an entry read from the file,
+/// so Undo can never create anything the file itself would not accept.
+/// Does nothing if an entry with that id is already there.
+pub fn restore(vault: &Vault, id: &str, to: &str, from: &str, path: &str, created: &str) -> Result<Grant, String> {
+    let entry = serde_json::json!({ "id": id, "to": to, "from": from, "path": path, "created": created, "scope": "always" });
+    let grant = validate(vault, &entry).map_err(|why| format!("That access couldn’t be put back: {why}."))?;
+    let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut doc = read_doc(vault)?;
+    let list = doc["grants"].as_array_mut().expect("read_doc guarantees a list");
+    if list.iter().any(|e| e.get("id").and_then(Value::as_str) == Some(id)) {
+        return Ok(grant);
+    }
+    list.push(serde_json::to_value(&grant).expect("serializes"));
+    write_doc(vault, &doc)?;
+    Ok(grant)
+}
+
 /// Remove the grant `id`. False if no entry has that id.
 pub fn revoke(vault: &Vault, id: &str) -> Result<bool, String> {
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -529,5 +547,32 @@ mod tests {
         let ids: HashSet<String> = (0..1000).map(|_| new_id()).collect();
         assert_eq!(ids.len(), 1000);
         assert!(ids.iter().all(|i| i.len() == 36 && &i[14..15] == "4"));
+    }
+
+    #[test]
+    fn restore_puts_back_exactly_what_was_revoked() {
+        let (vault, dir) = restore_vault();
+        let g = add_always(&vault, "school", "work", "calendar").unwrap();
+        assert!(revoke(&vault, &g.id).unwrap());
+        assert!(load(&vault).grants.is_empty());
+        let back = restore(&vault, &g.id, &g.to, &g.from, &g.path, &g.created).unwrap();
+        assert_eq!(back, g);
+        assert_eq!(load(&vault).grants, vec![g.clone()]);
+        // Twice is harmless; hostile input is refused like a bad file entry.
+        restore(&vault, &g.id, &g.to, &g.from, &g.path, &g.created).unwrap();
+        assert_eq!(load(&vault).grants.len(), 1);
+        assert!(restore(&vault, "x1", "school", "work", "../etc", "").is_err());
+        assert!(restore(&vault, "x2", "school", "school", "notes", "").is_err());
+        assert!(restore(&vault, "x3", "school", "nowhere", "notes", "").is_err());
+        assert!(restore(&vault, "bad id!", "school", "work", "notes", "").is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn restore_vault() -> (Vault, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("phaethon-grant-restore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let vault = Vault::at(&dir);
+        vault.ensure_initialized().unwrap();
+        (vault, dir)
     }
 }

@@ -171,7 +171,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
                       onClick={() => onSelect(space.id)}
                       data-space-hue=""
                       data-space-id={space.id}
-                      data-activity={doing ? (doing.urgent ? "needs-you" : "running") : undefined}
+                      data-space-status={doing ? (doing.urgent ? "needs-you" : "running") : undefined}
                       style={spaceHueStyle(space.hue)}
                       className={cn(
                         // Two rows: the dot centres on the name row, the description sits under the name.

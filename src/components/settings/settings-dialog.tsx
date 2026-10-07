@@ -187,7 +187,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
     if (target === undefined) return; // opened by its own button: Radix returns focus there
     returnTo.current = undefined;
     e.preventDefault();
-    const fallback = document.querySelector<HTMLElement>("[data-composer-input]");
+    // The composer of the space on screen (other spaces stay mounted, hidden).
+    const fallback =
+      document.querySelector<HTMLElement>("[data-space-pane][data-shown] [data-composer-input]") ??
+      document.querySelector<HTMLElement>("[data-composer-input]");
     (canTakeFocus(target) ? target : fallback)?.focus();
   }
 

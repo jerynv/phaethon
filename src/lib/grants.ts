@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { findSpace } from "./spaces";
 import { inTauri } from "./tauri";
@@ -40,8 +40,26 @@ export interface GrantsView {
   problems: string[];
 }
 
+/** What Undo needs to put a revoked grant back exactly as it was. */
+type Known = { id: string; to: string; from: string; path: string; created: string };
+const known = new Map<string, Known>();
+
 /** Grants where `to == space`, and those where `from == space`. Rejects with a message for an invalid space. */
-export const listGrants = (space: string) => invoke<GrantsView>("grants_list", { space });
+export async function listGrants(space: string): Promise<GrantsView> {
+  const view = await invoke<GrantsView>("grants_list", { space });
+  for (const g of view.grants) known.set(g.id, { id: g.id, to: space, from: g.from, path: g.path, created: g.created });
+  for (const g of view.incoming ?? []) known.set(g.id, { id: g.id, to: g.to, from: space, path: g.path, created: g.created });
+  return view;
+}
+
+/** Put a just-revoked grant back (Undo). */
+async function restoreGrant(k: Known): Promise<void> {
+  try {
+    await invoke("grant_restore", { ...k });
+  } finally {
+    notifyGrantsChanged();
+  }
+}
 
 /**
  * Remove a saved grant. Resolves false when no grant has that id (already
@@ -73,71 +91,96 @@ export function onGrantsChanged(cb: () => void): () => void {
 }
 
 // ---- Revoke with Undo ----
-// A revoke from the title bar waits a few seconds before it is made, so it can
-// be undone (grants cannot be re-created from the UI). Until then the grant
-// still stands; the pending state lives here, outside any component, so it is
-// committed even if the popover closes or the space changes.
+// A revoke is made at once: the grant stops working the moment the user says
+// so. For a few seconds afterwards the row offers Undo, which puts the same
+// grant back (same id and date). The state lives here, outside any component,
+// so it survives the popover closing or the space changing.
 
 /** How long a revoke can be undone, in milliseconds. */
 export const UNDO_MS = 6000;
 
-type Pending = { timer: ReturnType<typeof setTimeout>; commit: () => Promise<void>; committing: boolean };
+type Pending = { timer: ReturnType<typeof setTimeout>; grant: Known | undefined; finish: () => void };
 const pending = new Map<string, Pending>();
 // Revoked here and gone from grants.json; hidden at once, before the list reloads.
 const revoked = new Set<string>();
-let snapshot: { pending: ReadonlySet<string>; revoked: ReadonlySet<string> } = { pending: new Set(), revoked: new Set() };
+// Undone here and being put back; shown until a reloaded list has them, so the row (and focus on it) never drops out.
+const restoring = new Map<string, Known>();
+type Snapshot = { pending: ReadonlySet<string>; revoked: ReadonlySet<string>; restoring: ReadonlySet<string> };
+let snapshot: Snapshot = { pending: new Set(), revoked: new Set(), restoring: new Set() };
 const pendingListeners = new Set<() => void>();
 function publishPending() {
-  snapshot = { pending: new Set(pending.keys()), revoked: new Set(revoked) };
+  snapshot = { pending: new Set(pending.keys()), revoked: new Set(revoked), restoring: new Set(restoring.keys()) };
   pendingListeners.forEach((l) => l());
 }
 
 /**
- * Revoke `id` after `ms` unless undone. `done` gets the result when it is
- * made (removed true; false when it was already gone) or the error. `done`
- * runs before the views redraw, so it can still see where focus was.
+ * Revoke `id` now and offer Undo for `ms`. `done` gets the result when the
+ * Undo time is over (removed true; false when it was already gone), or the
+ * error at once if the revoke failed. `done` runs before the views redraw.
  */
 export function scheduleRevoke(id: string, done: (result: { removed: boolean } | { error: unknown }) => void, ms = UNDO_MS): void {
   if (pending.has(id)) return;
-  const commit = async () => {
-    const p = pending.get(id);
-    if (!p || p.committing) return;
-    p.committing = true;
-    clearTimeout(p.timer);
-    let result: { removed: boolean } | { error: unknown };
-    try {
-      result = { removed: await revokeGrant(id) };
-      revoked.add(id);
-    } catch (error) {
-      result = { error };
-    }
-    pending.delete(id);
-    done(result);
-    publishPending();
-  };
-  pending.set(id, { timer: setTimeout(() => void commit(), ms), commit, committing: false });
+  const grant = known.get(id);
+  const entry: Pending = { timer: setTimeout(() => entry.finish(), ms), grant, finish: () => {} };
+  pending.set(id, entry);
   publishPending();
+  void revokeGrant(id).then(
+    (removed) => {
+      entry.finish = () => {
+        if (pending.get(id) !== entry) return;
+        clearTimeout(entry.timer);
+        pending.delete(id);
+        revoked.add(id);
+        done({ removed });
+        publishPending();
+      };
+      // Nothing to put back if it was already gone, or if Undo can't know what it was.
+      if (!removed || !grant) entry.finish();
+    },
+    (error) => {
+      clearTimeout(entry.timer);
+      pending.delete(id);
+      done({ error });
+      publishPending();
+    },
+  );
 }
 
-/** Cancel a pending revoke. True when there was one to cancel (false once it is being made). */
+/** Undo a revoke made in the last few seconds: the same grant is put back. True when there was one to undo. */
 export function undoRevoke(id: string): boolean {
   const p = pending.get(id);
-  if (!p || p.committing) return false;
+  if (!p || !p.grant) return false;
   clearTimeout(p.timer);
   pending.delete(id);
+  restoring.set(id, p.grant);
   publishPending();
+  void restoreGrant(p.grant).catch((e: unknown) => {
+    console.error("grant_restore failed:", e);
+    restoring.delete(id);
+    publishPending();
+  });
   return true;
 }
 
-/** Make every pending revoke now (the window is closing: never leave one undone silently). */
+/** End every Undo window now (the window is closing). The revokes are already made. */
 export function commitPendingRevokes(): void {
-  for (const p of [...pending.values()]) void p.commit();
+  for (const p of [...pending.values()]) p.finish();
 }
 if (typeof window !== "undefined") window.addEventListener("pagehide", commitPendingRevokes);
 
-/** Ids of grants whose revoke is waiting out its Undo time. */
-/** `pending`: revokes waiting out their Undo time; `revoked`: revokes made here (hide those rows). */
-export function usePendingRevokes(): { pending: ReadonlySet<string>; revoked: ReadonlySet<string> } {
+/**
+ * An undone revoke is back in grants.json once a list shows it: stop standing
+ * in for it. Call in the same tick as the state update that shows the list,
+ * so no render has the row from neither.
+ */
+function forgetRestored(view: GrantsView) {
+  let back = false;
+  for (const g of [...view.grants, ...(view.incoming ?? [])]) back = restoring.delete(g.id) || back;
+  if (back) publishPending();
+}
+
+/** `pending`: revokes waiting out their Undo time; `revoked`: revokes made here (hide those rows); `restoring`: undone, being put back. */
+export function usePendingRevokes(): Snapshot {
   return useSyncExternalStore(
     (cb) => {
       pendingListeners.add(cb);
@@ -233,6 +276,7 @@ export function useGrants(space: string) {
       if (mine !== seq.current) return;
       shownFor.current = space;
       setState({ status: "ready", grants: byRecent(v.grants ?? []), incoming: byRecent(v.incoming ?? []), problems: v.problems ?? [] });
+      forgetRestored(v);
     } catch (e) {
       if (mine !== seq.current) return;
       shownFor.current = space;
@@ -251,5 +295,22 @@ export function useGrants(space: string) {
     };
   }, [refresh]);
 
-  return { state, refresh };
+  // A grant revoked in the last few seconds is gone from grants.json but keeps
+  // its row (with Undo) until its Undo time is over; an undone one keeps it
+  // until the reloaded list has it again.
+  const { pending: waiting, restoring: back } = usePendingRevokes();
+  const shown = useMemo<GrantsState>(() => {
+    if (state.status !== "ready" || waiting.size + back.size === 0) return state;
+    const grants = [...state.grants];
+    const incoming = [...state.incoming];
+    for (const id of [...waiting, ...back]) {
+      const k = pending.get(id)?.grant ?? restoring.get(id);
+      if (!k) continue;
+      if (k.to === space && !grants.some((g) => g.id === id)) grants.push({ id, from: k.from, path: k.path, created: k.created, scope: "always" });
+      if (k.from === space && !incoming.some((g) => g.id === id)) incoming.push({ id, to: k.to, path: k.path, created: k.created, scope: "always" });
+    }
+    return { ...state, grants: byRecent(grants), incoming: byRecent(incoming) };
+  }, [state, waiting, back, space]);
+
+  return { state: shown, refresh };
 }

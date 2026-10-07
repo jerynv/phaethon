@@ -107,32 +107,46 @@ export default [
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });
       await h.idle();
-      // Most recent first: projects/now.md (Oct 10) is the first row. Revoke waits 6 s (Undo) before it is made.
+      // Most recent first: projects/now.md (Oct 10) is the first row. Revoke is made at once;
+      // for 6 s the row offers Undo, which puts the same grant back.
       await h.click(`${POPOVER} [data-revoke]`);
       await h.idle();
       let calls = await revokeCalls(page);
-      if (calls.length) throw new Error(`grant_revoke made before its Undo time: ${JSON.stringify(calls)}`);
-      await page.waitForFunction(() => window.__calls.some(([c]) => c === "grant_revoke"), { timeout: 8000 });
+      if (calls.join() !== "g-now") throw new Error(`Revoke must be made at once: ${JSON.stringify(calls)}`);
+      let said = await titleStatus(page);
+      if (!said.startsWith("School can no longer read Work / projects/now.md.")) throw new Error(`status on revoke: ${said}`);
+      console.log("     check: Revoke is made at once and announced once");
+      // Undo puts it back, with the same id.
+      await h.click(`${POPOVER} [data-undo]`);
+      await h.idle();
+      const restored = await page.evaluate(() => window.__calls.filter(([c]) => c === "grant_restore").map(([, a]) => a.id));
+      if (restored.join() !== "g-now") throw new Error(`Undo did not restore the grant: ${JSON.stringify(restored)}`);
+      await page.waitForFunction(() => (window.__MOCK__.grants.school ?? []).some((g) => g.id === "g-now"), { timeout: 3000 });
+      console.log("     check: Undo puts the same grant back");
+      // Revoke it again and let the Undo time pass.
+      await h.click(`${POPOVER} [data-revoke]`);
+      await page.waitForFunction(() => !document.querySelector('[data-undo="g-now"]'), { timeout: 9000 });
       await h.idle();
       calls = await revokeCalls(page);
-      if (calls.join() !== "g-now") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
+      if (calls.join() !== "g-now,g-now") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
       const name = await chipName(page);
       const shown = page.viewport().width < 768 ? "Also reads 1 folder" : "Also reads Work / calendar";
       if (name !== `${shown} | School can also read 1 folder in another space.`) throw new Error(`chip did not update: ${name}`);
       const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
       if (focused !== "Revoke access to Work / calendar") throw new Error(`focus after revoke: ${focused}`);
-      const said = await titleStatus(page);
+      said = await titleStatus(page);
       console.log(`     after first revoke: chip "${name}", status "${said}"`);
-      if (said !== "School can no longer read Work / projects/now.md.") throw new Error(`status: ${said}`);
+      if (!said.startsWith("School can no longer read Work / projects/now.md.")) throw new Error(`status: ${said}`);
       // The last revoke removes the chip; the shot shows the window after it.
       await pressEnter(page, () => page.waitForSelector(`${POPOVER} [data-undo]`, { timeout: 1500 }));
-      await page.waitForFunction(() => window.__calls.filter(([c]) => c === "grant_revoke").length === 2, { timeout: 8000 });
+      await page.waitForFunction(() => window.__calls.filter(([c]) => c === "grant_revoke").length === 3, { timeout: 8000 });
+      await page.waitForFunction(() => !document.querySelector("[data-undo]"), { timeout: 9000 });
       await h.idle();
       calls = await revokeCalls(page);
       const gone = await page.evaluate((s) => !document.querySelector(s), CHIP);
       const onMain = await page.evaluate(() => document.activeElement?.id);
       console.log(`     after last revoke: calls ${JSON.stringify(calls)}, chip gone ${gone}, focus #${onMain}, status "${await titleStatus(page)}"`);
-      if (calls.join() !== "g-now,g-cal" || !gone || onMain !== "main") throw new Error("last revoke did not clear the chip and move focus to the conversation");
+      if (calls.join() !== "g-now,g-now,g-cal" || !gone || onMain !== "main") throw new Error("last revoke did not clear the chip and move focus to the conversation");
     },
   },
   {

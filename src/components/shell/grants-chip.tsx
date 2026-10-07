@@ -92,9 +92,9 @@ type Direction = "out" | "in";
  * listing each grant with Revoke; only the list scrolls when it is taller than
  * the window.
  *
- * Revoke waits six seconds before it is made, with Undo in the row (a grant
- * cannot be re-created from here); both are announced. "Revoke all" asks
- * first, inline, and is made at once.
+ * Revoke is made at once (the grant stops working immediately); for six
+ * seconds the row offers Undo, which puts the same grant back. Both are
+ * announced. "Revoke all" asks first, inline, and is made at once.
  *
  * Keyboard: Enter/Space opens; focus moves to the popover's heading (not to a
  * Revoke button, so a second Enter cannot revoke by accident); Tab moves
@@ -204,7 +204,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
         } else announce(message);
         return;
       }
-      if (result.removed) announce(`${r.who} can no longer read ${r.what}.`);
+      // Already said when Revoke was pressed; nothing more to announce here.
       if (!mounted.current) return;
       const now = rowsRef.current;
       const at = now.findIndex((x) => x.id === r.id);
@@ -217,7 +217,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
         focusNext.current = { index: Math.max(0, at) };
       }
     });
-    announce(`${r.who} will no longer read ${r.what}. Undo is available for a few seconds.`);
+    announce(`${r.who} can no longer read ${r.what}. Undo is available for a few seconds.`);
   }
 
   function undo(r: Row) {
@@ -231,7 +231,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
     setError("");
     let failed = 0;
     for (const r of rows) {
-      undoRevoke(r.id);
+      // A row waiting out its Undo time is already revoked; revoking it again just finds it gone.
       try {
         await revokeGrant(r.id);
       } catch (e) {
@@ -400,7 +400,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                       </span>
                     )}
                     <span className="col-start-2 text-xs text-ink-secondary">
-                      {waiting ? "Revoked. Undo within a few seconds." : (
+                      {waiting ? "Revoked. You can undo this for a few seconds." : (
                         <>
                           {r.scope === "once" ? "This time only" : "Always"}
                           {date && ` · since ${date}`}

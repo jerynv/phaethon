@@ -431,20 +431,23 @@ export default [
       const s = await page.evaluate(() => ({ focus: document.activeElement?.getAttribute("aria-label"), status: document.querySelector("[data-shell-status]")?.textContent }));
       check(s.focus === "Undo revoking Work / calendar", "Revoke puts focus on its Undo", JSON.stringify(s));
       await h.shot("undo");
-      check((await calls(page, "grant_revoke")).length === 0, "nothing is revoked yet");
+      // The revoke is made at once: the grant stops working when the user says so.
+      check((await calls(page, "grant_revoke")).map((a) => a.id).join() === "g-cal", "Revoke is made at once");
+      check(await said(page, "School can no longer read Work / calendar. Undo is available for a few seconds."), "and announced, with Undo", await status(page));
       await page.keyboard.press("Enter");
       await h.idle();
       check(await said(page, "Undone. School can still read Work / calendar."), "Undo is announced", await status(page));
+      const restored = await calls(page, "grant_restore");
+      check(restored.length === 1 && restored[0].id === "g-cal" && restored[0].created === "2026-10-09T15:20:00Z", "Undo puts the same grant back", JSON.stringify(restored));
       const f = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
       check(f === "Revoke School’s access to Work / calendar", "Undo puts focus back on Revoke", f);
       await new Promise((r) => setTimeout(r, 6500));
-      check((await calls(page, "grant_revoke")).length === 0, "an undone revoke is never made");
+      check((await calls(page, "grant_revoke")).length === 1, "an undone revoke is not made again");
       // Now let one go through.
       await page.click("[data-revoke]");
       await new Promise((r) => setTimeout(r, 6600));
       const made = (await calls(page, "grant_revoke")).map((a) => a.id);
-      check(made.join() === "g-cal", "after six seconds the revoke is made", JSON.stringify(made));
-      check(await said(page, "School can no longer read Work / calendar.", 2000), "and announced", await status(page));
+      check(made.join() === "g-cal,g-cal", "the second revoke is made", JSON.stringify(made));
       const after = await page.evaluate(() => ({ chip: !!document.querySelector("[data-grants-in-chip]"), focus: document.activeElement?.id }));
       check(!after.chip && after.focus === "main", "the chip goes; focus is on the conversation", JSON.stringify(after));
     },

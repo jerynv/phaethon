@@ -16,6 +16,13 @@
       // Events streamed for each agent_send; { waitApproval: true } pauses until answered.
       turn: [{ kind: "text", delta: "Done." }],
       sendError: null,
+      // models_list answer; api_key_check answer (null = check the format only).
+      models: [
+        { id: "claude-opus-5-5", name: "Claude Opus 5.5" },
+        { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" },
+        { id: "claude-haiku-5-5", name: "Claude Haiku 5.5" },
+      ],
+      keyCheck: null,
       platform: "mac",
       theme: "light",
     },
@@ -59,6 +66,16 @@
         case "dev_log": return;
         case "settings_get": return M.settings;
         case "settings_set_backend": M.settings.backend = args.backend; return;
+        case "settings_set_model": M.settings.model = args.model ?? "claude-opus-5-5"; return;
+        case "models_list": return M.models;
+        case "api_key_check": {
+          if (M.keyCheck) return M.keyCheck;
+          const k = String(args.key ?? "").trim();
+          return k.startsWith("sk-ant-") && k.length > 20
+            ? { ok: true, message: "This key works." }
+            : { ok: false, problem: "format", message: "That isn’t an Anthropic API key. Keys start with sk-ant-." };
+        }
+        case "file_open": return;
         case "api_key_set": M.settings.hasAnthropicKey = true; return;
         case "api_key_clear": M.settings.hasAnthropicKey = false; return;
         case "appearance_set": M.settings.appearance = args.appearance; return;
@@ -87,7 +104,9 @@
           if (args.hue != null) space.hue = Math.round(args.hue);
           return { ...space };
         }
-        case "thread_load": return M.threads[args.space] ?? [];
+        // As thread.rs returns them: each message carries its index and its records.
+        case "thread_load":
+          return (M.threads[args.space] ?? []).map((m, i) => ({ index: i, records: [], attachments: [], ...m }));
         // Conversations, as src-tauri/src/thread.rs keeps them: M.threads[space] is the
         // current one, M.threadArchive[space] = [{ id, updated, messages }] the saved ones.
         case "thread_new":
@@ -113,7 +132,10 @@
             .sort((a, b) => b.updated - a.updated);
           return [summary("current", M.threads[args.space] ?? [], M.currentUpdated?.[args.space] ?? Date.now(), true), ...rest];
         }
-        case "grants_list": return { grants: M.grants[args.space] ?? [], problems: M.grantProblems ?? [] };
+        case "grants_list": {
+          const incoming = Object.entries(M.grants).flatMap(([to, gs]) => gs.filter((g) => g.from === args.space).map((g) => ({ ...g, to })));
+          return { grants: M.grants[args.space] ?? [], incoming, problems: M.grantProblems ?? [] };
+        }
         case "grant_revoke": {
           for (const k of Object.keys(M.grants)) {
             const before = M.grants[k].length;
@@ -132,6 +154,7 @@
           const live = window.__liveTurn;
           if (!live) return false;
           window.__liveTurn = null;
+          live.send({ kind: "record", record: { kind: "stopped" } });
           live.send({ kind: "cancelled" });
           live.send({ kind: "end", sessionId: null });
           return true;
@@ -143,13 +166,15 @@
         }
         case "agent_send": {
           M.currentSpace = args.space;
+          // Edit / regenerate: everything from that message on is replaced.
+          if (args.replaceFrom != null && M.threads[args.space]) M.threads[args.space] = M.threads[args.space].slice(0, args.replaceFrom);
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
           let index = 0;
           const send = (message) => callbacks[id]?.({ index: index++, message });
           window.__liveTurn = { send };
           (async () => {
             if (M.sendError) {
-              send({ kind: "error", code: M.sendError.code, message: M.sendError.message });
+              send({ kind: "error", code: M.sendError.code, message: M.sendError.message, retryAfterSecs: M.sendError.retryAfterSecs });
               send({ kind: "end", sessionId: null });
               return;
             }
@@ -162,6 +187,7 @@
                 });
                 pendingAccess = null;
                 send({ kind: "accessRequestDone", id: ev.id, answer });
+                send({ kind: "record", record: { kind: "access", space: ev.space, path: ev.path, answer } });
                 if (answer === "always") {
                   (M.grants[M.currentSpace ?? "school"] ??= []).push({ id: "g-" + ev.id, from: ev.space, path: ev.path, created: "2026-10-10T09:00:00Z", scope: "always" });
                 }
@@ -170,10 +196,21 @@
               if (ev.waitApproval) {
                 const allowed = await new Promise((resolve) => {
                   pending = { id: ev.id, resolve };
-                  send({ kind: "approval", id: ev.id, summary: ev.summary, detail: ev.detail });
+                  send({
+                    kind: "approval",
+                    id: ev.id,
+                    summary: ev.summary,
+                    detail: ev.detail,
+                    action: ev.action ?? "create",
+                    path: ev.path ?? "notes.md",
+                    space: ev.space ?? M.currentSpace,
+                    before: ev.before ?? null,
+                    truncated: ev.truncated ?? false,
+                  });
                 });
                 pending = null;
                 send({ kind: "approvalDone", id: ev.id, allowed });
+                send({ kind: "record", record: { kind: "approval", path: ev.path ?? "notes.md", action: ev.action ?? "create", allowed } });
                 continue;
               }
               const { delay, ...message } = ev;

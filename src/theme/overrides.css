@@ -145,3 +145,16 @@
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+
+/* ---- Word spacing ---- */
+/* Settings › Accessibility › Word spacing, for all interface and reading
+   text. Code keeps its columns: monospace text is never respaced. */
+html {
+  word-spacing: var(--ph-word-spacing);
+}
+pre,
+code,
+kbd,
+samp {
+  word-spacing: normal;
+}

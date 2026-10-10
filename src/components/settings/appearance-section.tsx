@@ -52,6 +52,12 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
         tokens={APPEARANCE_TOKENS}
         resetTheme
       />
+      {/* Text first: the reading font is what people come here for most (and it is the same picker as in Accessibility). */}
+      <SettingGroup title="Text">
+        <ReadingFontRow />
+        <TextSizeLink />
+        <TokenRow name="--ph-weight-normal" />
+      </SettingGroup>
       <SettingGroup title="Theme" description="Light, dark, or whatever your computer is set to.">
         <ThemeRow />
       </SettingGroup>
@@ -71,12 +77,6 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
         />
         <TokenRow name="--ph-neutral-c" />
       </SettingGroup>
-      <SettingGroup title="Text">
-        {/* The same picker as in Accessibility: people look for fonts here too. */}
-        <ReadingFontRow />
-        <TextSizeLink />
-        <TokenRow name="--ph-weight-normal" />
-      </SettingGroup>
       <SettingGroup title="Layout">
         <TokenRow name="--ph-density" />
         <TokenRow name="--ph-radius-scale" />
@@ -86,14 +86,14 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
   );
 }
 
-/** Text size is set in Accessibility; this row says so and goes there. */
+/** Text size (and line, letter and word spacing) are set in Accessibility; this row says so and goes there. */
 function TextSizeLink() {
   const { go } = useSettingsNav();
   const a = useAppearance();
   const spec = TOKEN_BY_NAME.get("--ph-text-scale") as NumberToken;
   const value = numericValue(spec, a.tokens["--ph-text-scale"]);
   return (
-    <SettingRow label="Text size" description={`${spec.format(value)}. Set in Accessibility, with the other reading settings.`}>
+    <SettingRow label="Text size" description={`${spec.format(value)}. Set in Accessibility, with line, letter and word spacing.`}>
       <Button
         type="button"
         variant="outline"

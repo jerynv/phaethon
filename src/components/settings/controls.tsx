@@ -9,7 +9,7 @@
  * radioArrowKeys); Space on a switch.
  */
 import { RadioGroup, Slider, Switch } from "radix-ui";
-import { Fragment, useId, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
@@ -175,6 +175,18 @@ function useTokenNumber(name: string) {
   return { spec, value, set, changed: value !== spec.default };
 }
 
+/** How far one press on a slider's track moves it: one step, or a twentieth of the range when steps are tiny (a hue). */
+function clickStep(min: number, max: number, step: number) {
+  const steps = (max - min) / step;
+  return steps <= 25 ? step : Math.max(step, Math.round((max - min) / 20 / step) * step);
+}
+
+/** `v` clamped to [min, max] and snapped to the slider's steps (no float dust: 1.05, not 1.0500000000000003). */
+function snapToStep(v: number, min: number, max: number, step: number) {
+  const snapped = min + Math.round((Math.min(max, Math.max(min, v)) - min) / step) * step;
+  return Math.round(Math.min(max, snapped) * 1e4) / 1e4;
+}
+
 export function TokenSlider({
   label,
   labelId,
@@ -199,6 +211,30 @@ export function TokenSlider({
   /** A custom track (the hue rainbow). Hides the filled range. */
   trackStyle?: React.CSSProperties;
 }) {
+  const thumbRef = useRef<HTMLSpanElement>(null);
+
+  /**
+   * A press on the track (not the thumb) moves one click step toward the
+   * pointer instead of jumping there: a slip of a shaky hand never takes text
+   * size from 100% to 175% at once. Pressing again keeps stepping; dragging
+   * the thumb and the keys work as before. Focus goes to the thumb, so the
+   * arrow keys carry on from there.
+   */
+  function stepTowardPointer(e: PointerEvent<HTMLSpanElement>) {
+    if (e.button !== 0 || thumbRef.current?.contains(e.target as Node)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = e.currentTarget.getBoundingClientRect();
+    let frac = box.width > 0 ? (e.clientX - box.left) / box.width : 0.5;
+    if (getComputedStyle(e.currentTarget).direction === "rtl") frac = 1 - frac;
+    const at = min + Math.min(1, Math.max(0, frac)) * (max - min);
+    const by = clickStep(min, max, step);
+    const target = Math.abs(at - value) <= by ? at : value + Math.sign(at - value) * by;
+    const next = snapToStep(target, min, max, step);
+    if (next !== value) onChange(next);
+    thumbRef.current?.focus();
+  }
+
   return (
     <Slider.Root
       value={[value]}
@@ -206,6 +242,7 @@ export function TokenSlider({
       max={max}
       step={step}
       onValueChange={([v]) => onChange(v)}
+      onPointerDownCapture={stepTowardPointer}
       className="group/slider relative flex h-(--ph-slider-row) w-full touch-none items-center select-none"
     >
       <Slider.Track
@@ -220,6 +257,7 @@ export function TokenSlider({
         {!trackStyle && <Slider.Range data-slider-range="" className="absolute h-full rounded-full bg-accent-fill" />}
       </Slider.Track>
       <Slider.Thumb
+        ref={thumbRef}
         data-slider-thumb=""
         aria-label={labelId ? undefined : label}
         aria-labelledby={labelId}

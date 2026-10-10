@@ -284,6 +284,20 @@ export const TOKENS: readonly TokenSpec[] = [
     format: (v) => (v === 0 ? "None" : v < 0 ? `Tighter (−${Math.round(-v * 100)}%)` : `+${Math.round(v * 100)}%`),
   },
   {
+    name: "--ph-word-spacing",
+    label: "Word spacing",
+    description: "Space between words. Less can help with wide fonts such as OpenDyslexic; more can make words easier to pick out.",
+    group: "Accessibility",
+    kind: "length",
+    unit: "em",
+    // Below zero closes up wide faces; 0.16em is the WCAG 1.4.12 test value, and there is room past it.
+    min: -0.1,
+    max: 0.32,
+    step: 0.02,
+    default: 0,
+    format: (v) => (v === 0 ? "None" : v < 0 ? `Tighter (−${Math.round(-v * 100)}%)` : `+${Math.round(v * 100)}%`),
+  },
+  {
     // Not a slider: a switch between the WCAG minimum and the larger 44px target.
     name: "--ph-target-size",
     label: "Larger click targets",

@@ -10,9 +10,9 @@ import {
   type KeyOutcome,
 } from "@/components/settings/api-key";
 import { ExternalLink, KeyOutcomeLine } from "@/components/settings/agent-section";
+import { switchToClaudeCode } from "@/components/settings/claude-code";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/icons";
-import { setBackend } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 
 type Phase = "setup" | "saved" | "credit" | "cli";
@@ -95,7 +95,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
     setSwitchError("");
     try {
       onResult?.();
-      await setBackend("claude-cli");
+      await switchToClaudeCode();
       setPhase("cli");
       announce("Phaethon now uses Claude Code on this computer.");
       focusComposer(headingRef.current);

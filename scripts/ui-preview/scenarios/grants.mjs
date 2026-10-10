@@ -198,14 +198,17 @@ export default [
     async run(page, h) {
       await openSettings(page, h);
       await h.click('[role="tabpanel"]:not([hidden]) [data-revoke]');
-      // Either apostrophe: Settings' copy is moving to the curly one.
-      await page.waitForFunction(() => /Can[’']t read anything outside School\./.test(document.body.innerText), { timeout: 5000 });
+      // Removed at once; the row keeps an Undo (focused) until Settings closes (t3-undo has the rest).
+      await page.waitForSelector('[role="tabpanel"]:not([hidden]) [data-undo="g-cal"]', { timeout: 5000 });
       await h.idle();
       const calls = await revokeCalls(page);
       const focus = await page.evaluate(() => document.activeElement?.textContent ?? "");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
+      await h.idle();
       const chip = await page.evaluate((s) => !!document.querySelector(s), CHIP);
       console.log(`     settings revoke: calls ${JSON.stringify(calls)}, focus "${focus}", title bar chip still shown ${chip}`);
-      if (calls.join() !== "g-cal" || !/Can[’']t read anything outside School/.test(focus) || chip) throw new Error("revoke from Settings did not update the list, focus and title bar");
+      if (calls.join() !== "g-cal" || focus !== "Undo" || chip) throw new Error("revoke from Settings did not update the list, focus and title bar");
     },
   },
   {

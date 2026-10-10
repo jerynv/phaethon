@@ -72,7 +72,11 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
       </SettingGroup>
 
       <SettingGroup title="Your Phaethon folder" description="Your spaces, conversations, attachments and these settings are files in this folder.">
-        <SettingRow stacked label="Folder" description={`Settings are in .phaethon/settings.json inside it. Your API key isn’t: it stays in ${KEY_STORE}.`}>
+        <SettingRow
+          stacked
+          label="Folder"
+          description={`Phaethon keeps its own files (these settings, your conversations, and what each space may read) in hidden folders named .phaethon, so they stay out of your way; you never need to open them. Settings are in .phaethon/settings.json inside it. Your API key isn’t: it stays in ${KEY_STORE}.`}
+        >
           {vault ? <CopyPath path={vault} what="your Phaethon folder" /> : <span className="text-sm text-ink-secondary">Not available in this preview.</span>}
         </SettingRow>
       </SettingGroup>
@@ -95,13 +99,23 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
           <div className="flex flex-col gap-1 px-4 py-3.5">
             <p className="text-base font-medium text-ink">MANUAL.md is read in every space</p>
             <p className="max-w-(--ph-measure)">
-              The MANUAL.md file at the top of your Phaethon folder tells the assistant how you like it to work, and it is read in every
-              space. Keep anything that belongs to one space out of it.
+              MANUAL.md is a note at the top of your Phaethon folder where you tell the assistant how you like it to work, like the
+              instructions you’d give a new assistant. It is read in every space, so keep anything that belongs to one space out of it.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1 px-4 py-3.5">
+            <p className="text-base font-medium text-ink">What is read from another space stays in this one</p>
+            <p className="max-w-(--ph-measure)">
+              When you let a space read something in another space, what it read from there is saved in that space’s conversation, in that
+              space’s folder, and syncs with it. Removing the access stops future reads; it doesn’t delete what was already read. Delete the
+              conversation to remove it.
             </p>
           </div>
           <div className="flex flex-col gap-1.5 px-4 py-3.5">
             <p className="text-base font-medium text-ink">Deleting a conversation</p>
-            <p className="max-w-(--ph-measure)">Each space keeps its conversations inside its own folder:</p>
+            <p className="max-w-(--ph-measure)">
+              Each space keeps its conversations as files inside its own folder, in a hidden folder named .phaethon:
+            </p>
             <ul className="flex list-disc flex-col gap-1 ps-5">
               <li>
                 the current one in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/thread.json</span>

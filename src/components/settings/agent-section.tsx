@@ -20,6 +20,7 @@ import {
   readableModel,
   type KeyOutcome,
 } from "./api-key";
+import { CLAUDE_CODE_INSTALL_URL, CLAUDE_CODE_MISSING, checkClaudeCode } from "./claude-code";
 import { SectionHeader, SettingGroup, SettingRow, radioArrowKeys } from "./controls";
 import { useSettingsNav, useStatus } from "./status";
 
@@ -80,12 +81,26 @@ export function AgentSection({
   /** The backend last asked for, so one key press never sends two changes. */
   const backendAsked = useRef<Backend | null>(null);
   const backendTitle = useId();
+  /** Claude Code was chosen but isn't installed: say so under the choices, and stay where we are. */
+  const [cliMissing, setCliMissing] = useState(false);
 
   function chooseBackend(v: string) {
     const b = BACKENDS.find((x) => x.value === v);
     if (!b || backendAsked.current === b.value) return;
     backendAsked.current = b.value;
-    void act(() => setBackend(b.value), `Now using ${b.label}.`, undefined, true).finally(() => {
+    setCliMissing(false);
+    void (async () => {
+      // Claude Code: check it is on this computer before switching to it.
+      if (b.value === "claude-cli") {
+        const status = await checkClaudeCode();
+        if (status && !status.installed) {
+          setCliMissing(true);
+          say(CLAUDE_CODE_MISSING);
+          return;
+        }
+      }
+      await act(() => setBackend(b.value), `Now using ${b.label}.`, undefined, true);
+    })().finally(() => {
       backendAsked.current = null;
     });
   }
@@ -145,6 +160,8 @@ export function AgentSection({
                   key={b.value}
                   value={b.value}
                   data-backend={b.value}
+                  // Named by its title alone; the hint is the description, so it is said once.
+                  aria-labelledby={`${backendTitle}-${b.value}-name`}
                   aria-describedby={`${backendTitle}-${b.value}`}
                   className={cn(
                     "group flex w-full min-w-0 items-start gap-3 rounded-lg border border-line-strong bg-raised px-4 py-3 text-left shadow-sm transition-colors duration-(--ph-duration-fast) hover:bg-hover",
@@ -155,7 +172,9 @@ export function AgentSection({
                     <RadioGroup.Indicator className="size-[50%] rounded-full bg-accent-fill" />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-base font-medium text-ink">{b.label}</span>
+                    <span id={`${backendTitle}-${b.value}-name`} className="text-base font-medium text-ink">
+                      {b.label}
+                    </span>
                     <span id={`${backendTitle}-${b.value}`} className="text-sm text-ink-secondary group-data-[state=checked]:text-accent-soft-ink">
                       {b.hint}
                     </span>
@@ -163,6 +182,15 @@ export function AgentSection({
                 </RadioGroup.Item>
               ))}
             </RadioGroup.Root>
+            {cliMissing && (
+              // Said once through the status line when it appears; shown here until another choice is made.
+              <div data-cli-missing="" className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">
+                <Icon name="warning" className="mt-0.5 shrink-0" />
+                <p className="min-w-0">
+                  {CLAUDE_CODE_MISSING} <ExternalLink href={CLAUDE_CODE_INSTALL_URL}>How to install Claude Code</ExternalLink>
+                </p>
+              </div>
+            )}
           </SettingGroup>
 
           <SettingGroup title="Anthropic API key" description="Only needed when Phaethon answers.">
@@ -456,8 +484,14 @@ function SentDisclosure({ backend }: { backend: Backend }) {
               <li>your message and the conversation so far in that space</li>
               <li>any files you attach</li>
               <li>the files Phaethon opens to answer you, in that space or in another space you let it read</li>
-              <li>your MANUAL.md, which is read in every space</li>
+              <li>the names of your other spaces, and the folders and files you’ve let this space read in them</li>
+              <li>
+                your MANUAL.md, a note in your Phaethon folder where you tell the assistant how you like it to work. It’s read in every space.
+              </li>
             </ul>
+            <p>
+              Anything Phaethon reads from another space is saved in this space’s conversation, in this space’s folder, and syncs with it.
+            </p>
           </>
         ) : (
           <p className="text-base text-ink">

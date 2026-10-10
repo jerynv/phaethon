@@ -2,8 +2,10 @@ import { Dialog, Tabs } from "radix-ui";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { IconTip } from "@/components/ui/tooltip";
 import { Icon, type IconName } from "@/icons";
 import { getSettings, type Settings } from "@/lib/backend";
+import { commitPendingRevokes } from "@/lib/grants";
 import { cn } from "@/lib/utils";
 import { flushAppearance, useSaveState } from "@/theme";
 
@@ -234,7 +236,11 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   );
 
   function onOpenChange(next: boolean) {
-    if (!next) void flushAppearance();
+    if (!next) {
+      void flushAppearance();
+      // A Remove in Settings › Spaces offers Undo until the window closes.
+      commitPendingRevokes();
+    }
     setOpen(next);
   }
 
@@ -326,10 +332,12 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                 orientation="vertical"
                 className="flex min-w-0 flex-1 max-md:flex-col"
               >
-                {/* Below 768 px the section list sits above the page and wraps, so no section hides off-screen. */}
-                <div className="flex w-(--ph-settings-nav-width) shrink-0 flex-col border-r border-line bg-surface max-md:w-full max-md:border-r-0 max-md:border-b">
-                  <Dialog.Title className="px-5 pt-5 pb-3 text-lg font-semibold text-ink max-md:pe-(--ph-settings-close-room) max-md:pb-2">Settings</Dialog.Title>
-                  <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2.5 max-md:flex-row max-md:flex-wrap max-md:pb-2">
+                {/* Below 768 px the section list sits above the page and wraps, so no section hides off-screen.
+                    It is kept compact there (title beside the tabs, no icons, shorter tabs), so at a large
+                    text size the page keeps most of the height. */}
+                <div className="flex w-(--ph-settings-nav-width) shrink-0 flex-col border-r border-line bg-surface max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:border-r-0 max-md:border-b max-md:py-1.5 max-md:ps-3 max-md:pe-(--ph-settings-close-room)">
+                  <Dialog.Title className="px-5 pt-5 pb-3 text-lg font-semibold text-ink max-md:p-0 max-md:ps-1.5">Settings</Dialog.Title>
+                  <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2.5 max-md:flex-row max-md:flex-wrap max-md:px-0">
                     {SECTIONS.map((s) => (
                       <Tabs.Trigger
                         key={s.id}
@@ -339,6 +347,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                         onClick={() => choose(s.id)}
                         className={cn(
                           "flex min-h-(--ph-control-height-lg) shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-base text-ink-secondary transition-colors duration-(--ph-duration-fast)",
+                          "max-md:min-h-(--ph-control-height-sm) max-md:px-2 max-md:[&_svg]:hidden",
                           "hover:bg-hover hover:text-ink",
                           "data-[state=active]:bg-selected data-[state=active]:font-medium data-[state=active]:text-ink data-[state=active]:[&_svg]:text-accent-ink",
                         )}
@@ -394,11 +403,14 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
               </p>
             </NavContext.Provider>
 
-            <Dialog.Close asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Close settings" className="absolute top-(--ph-settings-close-inset) right-(--ph-settings-close-inset) min-h-(--ph-target-min) min-w-(--ph-target-min) text-ink-secondary hover:text-ink">
-                <Icon name="close" />
-              </Button>
-            </Dialog.Close>
+            {/* The name shows on hover and focus, so it matches what a voice-control user says. */}
+            <IconTip label="Close settings" spoken="Escape" side="bottom">
+              <Dialog.Close asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Close settings" className="absolute top-(--ph-settings-close-inset) right-(--ph-settings-close-inset) min-h-(--ph-target-min) min-w-(--ph-target-min) text-ink-secondary hover:text-ink">
+                  <Icon name="close" />
+                </Button>
+              </Dialog.Close>
+            </IconTip>
           </StatusContext.Provider>
         </Dialog.Content>
       </Dialog.Portal>

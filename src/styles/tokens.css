@@ -56,6 +56,8 @@
   --ph-tracking-tight: -0.01em;
   --ph-tracking-normal: 0;
   --ph-tracking-wide: 0.02em;
+  /* Extra space between words (Settings › Accessibility › Word spacing); src/theme/overrides.css applies it. */
+  --ph-word-spacing: 0;
   --ph-measure: 68ch;
 
   /* ---- Space ---- */

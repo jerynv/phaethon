@@ -98,6 +98,7 @@ export const ACCESSIBILITY_TOKENS = [
   "--ph-icon-stroke",
   "--ph-leading-normal",
   "--ph-tracking-normal",
+  "--ph-word-spacing",
   "--ph-duration-scale",
   "--ph-target-size",
 ] as const;
@@ -141,6 +142,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
         <ReadingFontRow />
         <TokenRow name="--ph-leading-normal" />
         <TokenRow name="--ph-tracking-normal" />
+        <TokenRow name="--ph-word-spacing" />
         <ReadingSample />
       </SettingGroup>
 
@@ -191,8 +193,9 @@ function ReadingSample() {
   return (
     <div className="px-4 py-3.5">
       <p
+        data-reading-sample=""
         className="max-w-(--ph-measure) rounded-md bg-surface-sunken px-4 py-3 text-md text-ink"
-        style={{ lineHeight: "var(--ph-leading-normal)", letterSpacing: "var(--ph-tracking-normal)" }}
+        style={{ lineHeight: "var(--ph-leading-normal)", letterSpacing: "var(--ph-tracking-normal)", wordSpacing: "var(--ph-word-spacing)" }}
       >
         Two things are due this week: problem set 4 on Wednesday, and Test 1 on Thursday, which covers chapters 1 to 4. You wanted
         to redo the recursion exercises first, so Monday evening is set aside for that.

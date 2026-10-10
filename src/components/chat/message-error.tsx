@@ -1,18 +1,25 @@
 import { ActionBarPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
+import { CONSOLE_BILLING_URL } from "@/components/settings/api-key";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
+import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
 import { openSettings } from "@/lib/open-settings";
+import { cn } from "@/lib/utils";
 import { cancelSpaceRun, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
 import { InlineCode, useAnnounce } from "./announce";
 import { SpaceIdContext } from "./approval-card";
-import { focusPaneComposer, usePane } from "./pane";
+import { revealCard } from "./card-arrival";
+import { focusPaneComposer, paneShown, usePane } from "./pane";
 
-type Action = "settings" | "retry" | "stop";
+type Action = "settings" | "retry" | "stop" | "billing" | "setup";
+
+/** True while the first-run setup card sits under the conversation (no key yet). Provided by Thread. */
+export const SetupBelowContext = createContext(false);
 
 /**
  * What went wrong and the way out, per `ErrorCode` (src-tauri/src/agent.rs),
@@ -83,7 +90,7 @@ const RECOVERY: Record<string, Recovery> = {
   billing: {
     title: "Your Anthropic account is out of credit",
     body: "Add credit to the Anthropic account your API key belongs to (in its Billing page), then send again. Phaethon itself never charges you.",
-    actions: ["retry"],
+    actions: ["billing", "retry"],
   },
   rateLimit: {
     title: "Anthropic asked Phaethon to slow down",
@@ -177,20 +184,22 @@ export function MessageError() {
       : "",
   );
   const cutOff = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
-  const recovery = (code && RECOVERY[code]) || FALLBACK;
+  const setupBelow = useContext(SetupBelowContext);
+  const keySaved = useKeySavedSince(code === "noApiKey" || code === "apiKey");
+  let recovery = (code && RECOVERY[code]) || FALLBACK;
+  if (keySaved) recovery = KEY_SAVED;
+  else if (code === "noApiKey" && setupBelow) recovery = NO_KEY_SETUP_BELOW;
   const actions = recovery.actions ?? [];
   const body = typeof recovery.body === "function" ? recovery.body(retryAfter) : recovery.body;
   return (
     <MessagePrimitive.Error>
-      <div
-        data-error-code={code ?? "unknown"}
-        // A transparent border: forced-colours mode draws it, so the banner keeps a boundary.
-        className="flex w-full max-w-(--ph-measure) items-start gap-3 rounded-lg border border-transparent bg-danger-soft px-4 py-3 text-base text-ink"
-      >
-        <Icon name="error" className="mt-0.5 text-danger-ink" />
+      <ErrorBanner code={code} resolved={keySaved}>
+        <Icon name={keySaved ? "check" : "error"} className={cn("mt-0.5", keySaved ? "text-success-ink" : "text-danger-ink")} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div role="alert" className="flex flex-col gap-0.5">
-            <p className="font-semibold text-danger-ink">{recovery.title}</p>
+            <p className={cn("font-semibold", keySaved ? "text-success-ink" : "text-danger-ink")} data-error-title="">
+              {recovery.title}
+            </p>
             {cutOff && (
               <p className="text-ink" data-error-cut-off="">
                 The reply above is incomplete: it was cut off here.
@@ -212,6 +221,29 @@ export function MessageError() {
                   >
                     <Icon name="settings" />
                     Open Settings
+                  </Button>
+                ) : a === "billing" ? (
+                  <Button key={a} asChild size="default" variant={i === 0 ? "default" : "outline"} data-error-action="billing">
+                    <a href={CONSOLE_BILLING_URL} target="_blank" rel="noreferrer">
+                      Open Billing
+                      <span className="sr-only"> in the Anthropic console (opens in your browser)</span>
+                    </a>
+                  </Button>
+                ) : a === "setup" ? (
+                  <Button
+                    key={a}
+                    type="button"
+                    size="default"
+                    variant={i === 0 ? "default" : "outline"}
+                    data-error-action="setup"
+                    onClick={() => {
+                      const field = pane?.rootRef.current?.querySelector<HTMLElement>("[data-setup-key]");
+                      field?.scrollIntoView({ block: "center" });
+                      field?.focus({ preventScroll: true });
+                    }}
+                  >
+                    <Icon name="key" />
+                    Set up now
                   </Button>
                 ) : a === "stop" ? (
                   <Button
@@ -246,9 +278,84 @@ export function MessageError() {
               )}
             </div>
           )}
-          {detail && !recovery.ownWords && <ErrorDetails text={detail} />}
+          {detail && !recovery.ownWords && !keySaved && <ErrorDetails text={detail} />}
         </div>
-      </div>
+      </ErrorBanner>
     </MessagePrimitive.Error>
+  );
+}
+
+/** The no-key error once a key has been saved: the problem is gone, so it says so and offers Send again. */
+const KEY_SAVED: Recovery = {
+  title: "Your key is saved",
+  body: "Send your message again and Phaethon will answer it.",
+  actions: ["retry"],
+};
+
+/** The no-key error while the setup card is right under it: the way out is there, not in Settings. */
+const NO_KEY_SETUP_BELOW: Recovery = {
+  title: "Phaethon needs an API key to reply",
+  body: "Paste your Anthropic API key in the setup below, then send your message again. Your message is kept.",
+  actions: ["setup", "settings"],
+};
+
+/**
+ * True once an API key has been saved (anywhere: Settings, or the setup card)
+ * after this error appeared, so a key error can say it is solved. Only
+ * listens while `watch` (a key error) is true.
+ */
+function useKeySavedSince(watch: boolean): boolean {
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!watch) return;
+    let live = true;
+    const onChanged = (e: Event) => {
+      if ((e as CustomEvent<SettingsChangedDetail>).detail?.what !== "key") return;
+      getSettings().then(
+        (s) => live && setSaved(s.hasAnthropicKey),
+        () => {},
+      );
+    };
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+    return () => {
+      live = false;
+      window.removeEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+    };
+  }, [watch]);
+  return watch && saved;
+}
+
+/**
+ * The banner around a failed reply. When it appears in the space on screen,
+ * the conversation scrolls so its title is in view (the log otherwise sticks
+ * to the bottom, and in a short window the title would sit above the fold).
+ */
+function ErrorBanner({ code, resolved, children }: { code: string | undefined; resolved: boolean; children: ReactNode }) {
+  const pane = usePane();
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // After the log has laid out (and followed its end), then placed: twice, as the log's
+    // own stick-to-bottom may run in the frame after this one.
+    let frame = requestAnimationFrame(function place() {
+      const el = ref.current;
+      if (!el?.isConnected || !paneShown(pane)) return;
+      revealCard(el);
+      frame = requestAnimationFrame(() => el.isConnected && revealCard(el));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pane]);
+  return (
+    <div
+      ref={ref}
+      data-error-code={code ?? "unknown"}
+      data-error-resolved={resolved ? "" : undefined}
+      // A transparent border: forced-colours mode draws it, so the banner keeps a boundary.
+      className={cn(
+        "flex w-full max-w-(--ph-measure) items-start gap-3 rounded-lg border border-transparent px-4 py-3 text-base text-ink",
+        resolved ? "bg-success-soft" : "bg-danger-soft",
+      )}
+    >
+      {children}
+    </div>
   );
 }

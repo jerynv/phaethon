@@ -1,5 +1,5 @@
 import { useAuiState } from "@assistant-ui/react";
-import { useContext, useId, useRef, useState, useEffect, type KeyboardEvent } from "react";
+import { useContext, useId, useRef, useState, useEffect } from "react";
 
 import { SpaceMark, spaceHueStyle } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,8 @@ import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { answerAccess, type AccessAnswer, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
-import { CardProblem, SpaceIdContext, type CardProblemState } from "./approval-card";
-import { useCardArrival } from "./card-arrival";
+import { CARD_ACTIONS, CardProblem, SpaceIdContext, allowKeys, refuseKeys, type CardProblemState } from "./approval-card";
+import { useCardArrival, useCardKeys } from "./card-arrival";
 import { focusPaneComposer, usePane } from "./pane";
 
 const ANSWER_NOT_SENT_SHARE =
@@ -58,8 +58,6 @@ export function SpacePath({ space, path, className }: { space: string; path: str
   );
 }
 
-const ESCAPE_NOTE = "Choose Deny or Allow. Nothing is shared until you choose.";
-
 /**
  * The agent asks to read part of another space, read-only. A sibling of the
  * approval card: an inline, non-modal alertdialog. It takes focus when it
@@ -69,7 +67,9 @@ const ESCAPE_NOTE = "Choose Deny or Allow. Nothing is shared until you choose.";
  * Two answers, Deny and Allow, with the primary last and on the right. Keeping
  * the permission is a separate, unchecked box ("Always allow School to read
  * Work / calendar"), so a slip onto a neighbouring button can never grant
- * something permanent. Escape does not answer: it only says how to choose.
+ * something permanent. Each button says how long its yes lasts ("Allow for
+ * this reply", or with the box ticked "Allow from now on"). Escape does not
+ * answer: it goes back to the composer and says the card still waits.
  * Once answered, focus goes back to the composer and a receipt stays in the reply.
  */
 export function AccessRequestCard() {
@@ -91,7 +91,6 @@ export function AccessRequestCard() {
   const [busy, setBusy] = useState(false);
   const [keep, setKeep] = useState(false);
   const [problem, setProblem] = useState<CardProblemState | null>(null);
-  const [note, setNote] = useState("");
 
   const asker = spaceInfo(spaceId).name;
   const target = request ? spaceInfo(request.space) : undefined;
@@ -105,8 +104,12 @@ export function AccessRequestCard() {
     setBusy(false);
     setKeep(false);
     setProblem(null);
-    setNote("");
   }, [request?.id]);
+  const onKeyDown = useCardKeys({
+    allow: () => void answer(keep ? "always" : "once"),
+    refuse: () => void answer("deny"),
+    busy: busy || !!problem,
+  });
 
   if (!request || !target) return null;
   const { name, hue, known } = target;
@@ -119,7 +122,6 @@ export function AccessRequestCard() {
   async function answer(choice: AccessAnswer) {
     if (!request) return;
     setBusy(true);
-    setNote("");
     let failed: CardProblemState | null = null;
     try {
       const ok = await answerAccess(spaceId, request.id, choice);
@@ -135,13 +137,6 @@ export function AccessRequestCard() {
       return;
     }
     focusPaneComposer(pane);
-  }
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopPropagation();
-    setNote(ESCAPE_NOTE);
   }
 
   return (
@@ -215,8 +210,7 @@ export function AccessRequestCard() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 px-4 pt-4 pb-4">
-        <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-0.5 px-4 pt-4">
           <label
             htmlFor={keepId}
             className="flex min-h-(--ph-target-min) w-fit cursor-default items-start gap-2.5 text-base text-ink"
@@ -246,22 +240,24 @@ export function AccessRequestCard() {
             {kind === "folder" ? "Includes everything in that folder, now and later. " : ""}You can take it back in
             Settings › Spaces.
           </p>
-        </div>
-        {/* The primary answer last and on the right, as on the approval card, so Tab order matches. */}
-        <div className="flex flex-wrap items-center justify-end gap-3" data-access-actions="">
-          <Button disabled={busy} variant="outline" size="lg" onClick={() => void answer("deny")}>
-            Deny
-          </Button>
-          <Button disabled={busy} size="lg" onClick={() => void answer(keep ? "always" : "once")}>
-            <Icon name="check" />
-            Allow
-          </Button>
-        </div>
-        {problem && <CardProblem problem={problem} />}
-        <p role="status" className={cn("flex items-center gap-1.5 text-sm text-ink", !note && "sr-only")}>
-          {note && <Icon name="info" className="size-(--ph-icon-size-sm) shrink-0 text-ink-secondary" />}
-          {note}
-        </p>
+      </div>
+      {/* The primary answer last and on the right, as on the approval card, so Tab order matches. Sticky
+          at the bottom of the conversation while the card runs past it, so the buttons stay in view. */}
+      <div className={CARD_ACTIONS} data-access-actions="" data-card-actions="">
+        {problem && <CardProblem problem={problem} className="me-auto" />}
+        <Button disabled={busy} variant="outline" size="lg" aria-keyshortcuts={refuseKeys()} onClick={() => void answer("deny")}>
+          Deny
+        </Button>
+        <Button
+          disabled={busy}
+          size="lg"
+          aria-keyshortcuts={allowKeys()}
+          data-access-allow={keep ? "always" : "once"}
+          onClick={() => void answer(keep ? "always" : "once")}
+        >
+          <Icon name="check" />
+          {keep ? "Allow from now on" : "Allow for this reply"}
+        </Button>
       </div>
     </div>
   );

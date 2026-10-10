@@ -32,7 +32,9 @@ import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elemen
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
+import { grantLabel, useGrants } from "@/lib/grants";
 import { findSpace } from "@/lib/spaces";
+import { cn } from "@/lib/utils";
 import type { AgentMessageCustom } from "@/runtime/agent-adapter";
 import { RECORD_PART, type RecordPartData } from "@/runtime/records";
 import { useKnownIndex } from "@/runtime/thread-index";
@@ -43,7 +45,7 @@ import { ApprovalCard, SpaceIdContext } from "./approval-card";
 import { MessageAttachments } from "./attachments";
 import { goToCard, isJumpKey } from "./card-arrival";
 import { Composer, useAddFiles } from "./composer";
-import { MessageError } from "./message-error";
+import { MessageError, SetupBelowContext } from "./message-error";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
 import { RecordPart, announcesRecord, recordText } from "./receipts";
 
@@ -252,41 +254,105 @@ function ReplyActions() {
   const knownParent = useKnownIndex(pane?.threadIndex ?? null, parentId);
   const announce = useAnnounce();
   const was = useRef(false);
+  // Regenerate replaces the reply you may be reading, so it asks first (a slip off Copy must not
+  // replace anything): "Keep this reply" takes focus, "Replace it" sits at the far end.
+  const id = useId();
+  const [confirming, setConfirming] = useState(false);
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const regenRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (copied && !was.current) announce("Reply copied.");
     was.current = copied;
   }, [copied, announce]);
+  useEffect(() => {
+    if (confirming) keepRef.current?.focus();
+  }, [confirming]);
   // A stopped reply can always be sent again (the same question, answered afresh); a finished
   // one is regenerated only where the backend can replace it truthfully.
   const again = isLast && !failed && (stopped || knownParent);
   if (!hasText && !again) return null;
+  const keep = () => {
+    setConfirming(false);
+    requestAnimationFrame(() => regenRef.current?.focus());
+  };
   return (
-    <ActionBarPrimitive.Root hideWhenRunning className="flex flex-wrap gap-1" data-reply-actions="">
+    <ActionBarPrimitive.Root
+      hideWhenRunning
+      // Copy and Regenerate sit at least a whole target apart (more with Larger click targets).
+      className="flex flex-wrap items-center gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2"
+      data-reply-actions=""
+    >
       {hasText && (
         <ActionBarPrimitive.Copy asChild>
-          {/* The name is the visible label plus context ("Copy reply", "Copied reply"), so voice control matches it. */}
+          {/* The visible label says what it copies, so voice control and the spoken name agree. */}
           <Button type="button" variant="ghost" size="xs" className="-ms-2 text-ink-secondary hover:text-ink" data-copy-reply="">
             <Icon name={copied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
-            {copied ? "Copied" : "Copy"}
-            <span className="sr-only"> reply</span>
+            {copied ? "Copied reply" : "Copy reply"}
           </Button>
         </ActionBarPrimitive.Copy>
       )}
-      {again && (
+      {again && stopped && (
         <ActionBarPrimitive.Reload asChild>
-          <Button
-            type="button"
-            variant={stopped ? "outline" : "ghost"}
-            size="xs"
-            className={stopped ? undefined : "text-ink-secondary hover:text-ink"}
-            data-reply-again={stopped ? "send-again" : "regenerate"}
-            onClick={() => focusPaneComposer(pane)}
-          >
+          <Button type="button" variant="outline" size="xs" data-reply-again="send-again" onClick={() => focusPaneComposer(pane)}>
             <Icon name="retry" className="size-(--ph-icon-size-sm)" />
-            {stopped ? "Send again" : "Regenerate"}
-            <span className="sr-only">{stopped ? ": answer your last message again" : " this reply"}</span>
+            Send again
+            <span className="sr-only">: answer your last message again</span>
           </Button>
         </ActionBarPrimitive.Reload>
+      )}
+      {again && !stopped && !confirming && (
+        <Button
+          ref={regenRef}
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="text-ink-secondary hover:text-ink"
+          data-reply-again="regenerate"
+          onClick={() => setConfirming(true)}
+        >
+          <Icon name="retry" className="size-(--ph-icon-size-sm)" />
+          Regenerate
+          <span className="sr-only"> this reply</span>
+        </Button>
+      )}
+      {again && !stopped && confirming && (
+        <div
+          role="group"
+          aria-labelledby={`${id}-regen-q`}
+          className="flex flex-wrap items-center gap-x-3 gap-y-2"
+          data-regenerate-confirm=""
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            e.preventDefault();
+            e.stopPropagation();
+            keep();
+          }}
+        >
+          <p id={`${id}-regen-q`} className="text-sm text-ink">
+            Replace this reply with a new one? This one is kept in past conversations.
+          </p>
+          <span className="flex flex-wrap items-center gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2">
+            <Button ref={keepRef} type="button" variant="outline" size="xs" data-regenerate-keep="" onClick={keep}>
+              Keep this reply
+            </Button>
+            <ActionBarPrimitive.Reload asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                className="text-ink-secondary hover:text-ink"
+                data-regenerate-replace=""
+                onClick={() => {
+                  setConfirming(false);
+                  focusPaneComposer(pane);
+                }}
+              >
+                <Icon name="retry" className="size-(--ph-icon-size-sm)" />
+                Replace it
+              </Button>
+            </ActionBarPrimitive.Reload>
+          </span>
+        </div>
       )}
     </ActionBarPrimitive.Root>
   );
@@ -343,6 +409,8 @@ function AssistantMessage() {
 }
 
 const TOOL_ANNOUNCE_DELAY_MS = 300;
+/** How long an answer just spoken is repeated in front of the line that would replace it. */
+const ANSWER_KEEP_MS = 3000;
 
 function messageText(m: { content: readonly { type: string; text?: string }[] }) {
   return m.content
@@ -372,6 +440,17 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
   const pendingTool = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Records already spoken, so each answer is said once.
   const said = useRef(new Set<string>());
+  // The last answer spoken ("Not allowed: create notes.md."), and when.
+  const lastAnswer = useRef<{ text: string; at: number } | null>(null);
+  /**
+   * A line for the region, after the answer given moments ago, if any: a screen reader
+   * reads only the latest text here, so the next line would cut the answer off.
+   */
+  const withAnswer = (line: string) => {
+    const a = lastAnswer.current;
+    lastAnswer.current = null;
+    return a && Date.now() - a.at < ANSWER_KEEP_MS ? `${a.text} ${line}` : line;
+  };
   const holdTool = () => {
     clearTimeout(pendingTool.current);
     pendingTool.current = undefined;
@@ -394,7 +473,9 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
       const news = fresh.filter((p) => announcesRecord(p.data.record));
       if (news.length) {
         holdTool();
-        setText(`${recordText(news[news.length - 1].data.record)}.`);
+        const said = `${recordText(news[news.length - 1].data.record)}.`;
+        lastAnswer.current = { text: said, at: Date.now() };
+        setText(said);
       }
       // An approval or access card speaks for itself (or is announced by its
       // own arrival); "Waiting for you to ..." is never said on top of it.
@@ -403,21 +484,26 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
         // Said as shown: "Reading Work / calendar/oct.md".
         const say = activityText(custom.toolStatus, spaceId).text;
         holdTool();
-        pendingTool.current = setTimeout(() => setText(say), TOOL_ANNOUNCE_DELAY_MS);
+        pendingTool.current = setTimeout(() => setText(withAnswer(say)), TOOL_ANNOUNCE_DELAY_MS);
       }
       lastTool.current = custom?.toolStatus;
       return;
     }
     holdTool();
+    // An answer said moments ago would be cut off by the next line in this same region (a
+    // screen reader reads only the latest), so it is said again at the start of that line.
     if (status?.type === "complete") {
       done.current = last.id;
       const reply = messageText(last);
-      setText(reply ? `Phaethon replied: ${spokenReply(reply)}` : "Phaethon finished without a reply.");
+      setText(withAnswer(reply ? `Phaethon replied: ${spokenReply(reply)}` : "Phaethon finished without a reply."));
     } else if (status?.type === "incomplete" && status.reason === "cancelled") {
       done.current = last.id;
-      setText("Reply stopped. Send again is under it.");
+      setText(withAnswer("Reply stopped. Send again is under it."));
     } else if (status?.type === "incomplete") {
-      done.current = last.id; // the alert inside the message speaks for itself
+      done.current = last.id;
+      // The alert inside the message speaks for itself; what the reply was doing ("Reading
+      // file…") is no longer true, so it goes (an answer just given stays, if any).
+      setText(withAnswer("").trim());
     }
     lastTool.current = undefined;
   }, [last, setText, spaceId]);
@@ -429,8 +515,29 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
   );
 }
 
-/** Shown in a space with no conversation yet: where you are and what Phaethon can see. */
-function EmptyState({ spaceName, setup }: { spaceName: string; setup?: ReactNode }) {
+/**
+ * What Phaethon may already read outside this space without asking: the
+ * standing ("always") grants, as "Work / clients", at most two named.
+ */
+function standingReads(state: ReturnType<typeof useGrants>["state"]): string | null {
+  if (state.status !== "ready") return null;
+  const labels = state.grants.filter((g) => g.scope === "always").map(grantLabel);
+  if (labels.length === 0) return null;
+  const named = labels.slice(0, 2);
+  const rest = labels.length - named.length;
+  const list = rest > 0 ? `${named.join(", ")} and ${rest} more` : named.join(" and ");
+  // "All of Work" reads naturally mid-sentence as "all of Work".
+  return list.replace(/^All of /, "all of ");
+}
+
+/**
+ * Shown in a space with no conversation yet: where you are and what Phaethon
+ * can see. True to the grants: when this space may already read part of
+ * another, it says so instead of promising to ask.
+ */
+function EmptyState({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
+  const { state } = useGrants(spaceId);
+  const reads = standingReads(state);
   return (
     // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
     // starts at the top and scrolls, never clipped above the log.
@@ -445,14 +552,19 @@ function EmptyState({ spaceName, setup }: { spaceName: string; setup?: ReactNode
         <Icon name="space" className="size-(--ph-icon-size-lg)" />
       </span>
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
-      <p className="max-w-md text-md text-ink-secondary">
-        Phaethon can read and search the files in {spaceName}. It asks before it changes anything, or before it
-        reads another space.
+      <p className="max-w-md text-md text-ink-secondary" data-empty-reach="">
+        {reads ? (
+          <>
+            Phaethon can read and search the files in {spaceName}, and it can already read {reads}, because you
+            allowed that. It asks before it changes anything, or before it reads anything else in another space.
+          </>
+        ) : (
+          <>
+            Phaethon can read and search the files in {spaceName}. It asks before it changes anything, or before it
+            reads another space.
+          </>
+        )}
       </p>
-      {/* First-run setup (no API key yet): the settings team's card; renders nothing when not needed. */}
-      <div data-setup-slot="" className="w-full text-start empty:hidden">
-        {setup}
-      </div>
     </div>
   );
 }
@@ -512,11 +624,15 @@ export function Thread({
   spaceName,
   inputRef,
   setup,
+  needsKey = false,
 }: {
   spaceId: string;
   spaceName: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  /** The first-run setup card, when it may show (null otherwise). */
   setup?: ReactNode;
+  /** No key is saved yet: the card stays under the conversation too, not only when it is empty. */
+  needsKey?: boolean;
 }) {
   const pane = usePane();
   const logRef = useRef<HTMLDivElement>(null);
@@ -524,6 +640,13 @@ export function Thread({
   const isRunning = useAuiState((s) => s.thread.isRunning);
   // The empty state (and first-run setup card) reads from the top; only a conversation follows its end.
   const isEmpty = useAuiState((s) => s.thread.isEmpty);
+  // Once the card has shown under a message, it stays there to show what saving did
+  // (saved, or one more step: add credit) until the conversation changes.
+  const [setupBelow, setSetupBelow] = useState(false);
+  const setupShown = !!setup && (isEmpty || needsKey || setupBelow);
+  useEffect(() => {
+    if (setupShown && !isEmpty) setSetupBelow(true);
+  }, [setupShown, isEmpty]);
   const { addFiles, problems, clearProblems } = useAddFiles();
   const [dragging, setDragging] = useState(false);
   const [viewport, setViewport] = useState<ViewportStore | null>(null);
@@ -561,94 +684,114 @@ export function Thread({
   return (
     <SpaceIdContext.Provider value={spaceId}>
       <AnnounceContext.Provider value={announce}>
-        <ThreadPrimitive.Root
-          // Not positioned: the drop overlay below fills the whole pane (#main), the
-          // conversations bar above the thread included.
-          className="flex min-h-0 flex-1 flex-col"
-          onKeyDown={onKeyDown}
-          // Files can be dropped anywhere on the conversation; the + menu is the
-          // single-pointer alternative (WCAG 2.5.7).
-          onDragEnter={(e) => {
-            if (!hasFiles(e)) return;
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragOver={(e) => {
-            if (!hasFiles(e)) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-          }}
-          onDragLeave={(e) => {
-            const next = e.relatedTarget as Node | null;
-            if (!next || !e.currentTarget.contains(next)) setDragging(false);
-          }}
-          onDrop={(e) => {
-            if (!hasFiles(e)) return;
-            e.preventDefault();
-            setDragging(false);
-            void addFiles(Array.from(e.dataTransfer.files));
-          }}
-        >
-          <ThreadPrimitive.Viewport
-            ref={logRef}
-            role="log"
-            aria-label={`Conversation in ${spaceName}`}
-            // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
-            aria-live="off"
-            aria-busy={isRunning}
-            autoScroll={!isEmpty}
-            tabIndex={0}
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        <SetupBelowContext.Provider value={setupShown && !isEmpty}>
+          <ThreadPrimitive.Root
+            // Not positioned: the drop overlay below fills the whole pane (#main), the
+            // conversations bar above the thread included.
+            className="flex min-h-0 flex-1 flex-col"
+            onKeyDown={onKeyDown}
+            // Files can be dropped anywhere on the conversation; the + menu is the
+            // single-pointer alternative (WCAG 2.5.7).
+            onDragEnter={(e) => {
+              if (!hasFiles(e)) return;
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragOver={(e) => {
+              if (!hasFiles(e)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }}
+            onDragLeave={(e) => {
+              const next = e.relatedTarget as Node | null;
+              if (!next || !e.currentTarget.contains(next)) setDragging(false);
+            }}
+            onDrop={(e) => {
+              if (!hasFiles(e)) return;
+              e.preventDefault();
+              setDragging(false);
+              void addFiles(Array.from(e.dataTransfer.files));
+            }}
           >
-            <ViewportBridge onStore={keepViewport} />
-            <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pt-8 pb-4 has-[[data-empty-state]]:justify-center-safe">
-              <AuiIf condition={(s) => s.thread.isEmpty}>
-                <EmptyState spaceName={spaceName} setup={setup} />
-              </AuiIf>
-              <div className="flex flex-col gap-[calc(var(--ph-space)*7)] empty:hidden">
-                <ThreadPrimitive.Messages>
-                  {({ message }) =>
-                    message.composer.isEditing ? (
-                      <UserEditComposer />
-                    ) : message.role === "user" ? (
-                      <UserMessage />
-                    ) : (
-                      <AssistantMessage />
-                    )
-                  }
-                </ThreadPrimitive.Messages>
-              </div>
-            </div>
-          </ThreadPrimitive.Viewport>
-          <ReplyAnnouncer text={spoken} setText={setSpoken} />
-          <Composer
-            spaceName={spaceName}
-            inputRef={inputRef}
-            stopFocused={stopFocused}
-            addFiles={addFiles}
-            problems={problems}
-            clearProblems={clearProblems}
-            dragging={dragging}
-            jump={<JumpToLatest store={viewport} logRef={logRef} />}
-          />
-          {dragging && (
-            <div
-              aria-hidden="true"
-              data-drop-overlay=""
-              // Opaque and edge to edge, so no slice of the conversation shows around the
-              // drop zone; the dashed box sits inside it.
-              className="pointer-events-none absolute inset-0 z-20 flex bg-bg p-3"
+            <ThreadPrimitive.Viewport
+              ref={logRef}
+              role="log"
+              aria-label={`Conversation in ${spaceName}`}
+              // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
+              aria-live="off"
+              aria-busy={isRunning}
+              autoScroll={!isEmpty}
+              tabIndex={0}
+              className="flex min-h-0 flex-1 flex-col overflow-y-auto"
             >
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus text-ink">
-                <span className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] items-center justify-center rounded-full bg-accent-soft text-accent-soft-ink">
-                  <Icon name="attach" className="size-(--ph-icon-size-lg)" />
-                </span>
-                <p className="text-lg font-semibold">Drop files to attach them</p>
-                <p className="text-base text-ink-secondary">Images, PDFs, Word documents and text files, saved in {spaceName}</p>
+              <ViewportBridge onStore={keepViewport} />
+              <div
+                className={cn(
+                  "mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pb-4 has-[[data-empty-state]]:justify-center-safe",
+                  setupShown && isEmpty ? "pt-4" : "pt-8",
+                )}
+              >
+                {/* First run: the setup card leads, in place of the generic empty state. */}
+                {!setupShown && (
+                  <AuiIf condition={(s) => s.thread.isEmpty}>
+                    <EmptyState spaceId={spaceId} spaceName={spaceName} />
+                  </AuiIf>
+                )}
+                <div className="flex flex-col gap-[calc(var(--ph-space)*7)] empty:hidden">
+                  <ThreadPrimitive.Messages>
+                    {({ message }) =>
+                      message.composer.isEditing ? (
+                        <UserEditComposer />
+                      ) : message.role === "user" ? (
+                        <UserMessage />
+                      ) : (
+                        <AssistantMessage />
+                      )
+                    }
+                  </ThreadPrimitive.Messages>
+                </div>
+                {/*
+                 * First-run setup (no API key yet), the settings team's card. One place for it, so it
+                 * stays mounted (with what was typed) when a message is sent before setting up: it then
+                 * sits under the error, which points to it.
+                 */}
+                {setupShown && (
+                  <div data-setup-slot="" className={cn("w-full text-start", !isEmpty && "mt-[calc(var(--ph-space)*7)]")}>
+                    {setup}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
-        </ThreadPrimitive.Root>
+            </ThreadPrimitive.Viewport>
+            <ReplyAnnouncer text={spoken} setText={setSpoken} />
+            <Composer
+              spaceName={spaceName}
+              inputRef={inputRef}
+              stopFocused={stopFocused}
+              addFiles={addFiles}
+              problems={problems}
+              clearProblems={clearProblems}
+              dragging={dragging}
+              jump={<JumpToLatest store={viewport} logRef={logRef} />}
+            />
+            {dragging && (
+              <div
+                aria-hidden="true"
+                data-drop-overlay=""
+                // Opaque and edge to edge, so no slice of the conversation shows around the
+                // drop zone; the dashed box sits inside it.
+                className="pointer-events-none absolute inset-0 z-20 flex bg-bg p-3"
+              >
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus text-ink">
+                  <span className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] items-center justify-center rounded-full bg-accent-soft text-accent-soft-ink">
+                    <Icon name="attach" className="size-(--ph-icon-size-lg)" />
+                  </span>
+                  <p className="text-lg font-semibold">Drop files to attach them</p>
+                  <p className="text-base text-ink-secondary">Images, PDFs, Word documents and text files, saved in {spaceName}</p>
+                </div>
+              </div>
+            )}
+          </ThreadPrimitive.Root>
+        </SetupBelowContext.Provider>
       </AnnounceContext.Provider>
     </SpaceIdContext.Provider>
   );

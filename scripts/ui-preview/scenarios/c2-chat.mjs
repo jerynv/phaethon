@@ -54,6 +54,8 @@ const clickByText = async (page, scope, text) => {
     text,
   );
   check(!!(await h.evaluate((b) => !!b)), `there is a "${text}" button in ${scope}`);
+  // To the middle of the view first: a waiting card's answer row sticks to the bottom edge.
+  await h.evaluate((b) => b.scrollIntoView({ block: "center" }));
   await h.click();
 };
 
@@ -379,7 +381,7 @@ export default [
           focused: document.activeElement === c,
         };
       });
-      check(card.buttons.join("|") === "Deny|Allow", "two answers: Deny, then Allow (primary last)", card.buttons.join("|"));
+      check(card.buttons.join("|") === "Deny|Allow for this reply", "two answers: Deny, then Allow for this reply (primary last)", card.buttons.join("|"));
       check(card.checked === false, "Always allow is a separate box, unchecked by default");
       check(card.label === "Always allow School to read Work / calendar", "the box says exactly what it keeps", card.label);
       check(card.caption.includes("AI’s own words") && card.caption.includes("may be wrong"), "the reason is labelled as the AI's own words that may be wrong", card.caption);
@@ -440,7 +442,7 @@ export default [
         const md = document.querySelector('[data-role="assistant"] .aui-md');
         return [...md.querySelectorAll("h1,h2,h3,h4,h5,h6")].map((x) => `${x.tagName}:${x.textContent}`);
       });
-      check(heads.join() === "H4:Study plan", "a reply's ## heading sits below the message heading (h4), not beside app headings", heads.join());
+      check(heads.join() === "H3:Study plan", "a reply's top heading sits right below the message heading (h3, no level skipped), not beside app headings", heads.join());
     },
   },
   // ---- C7: one alert, distinct copy, wait time, cut-off, busy has Stop ----
@@ -592,6 +594,7 @@ export default [
       const again = await page.evaluate(() => [...document.querySelectorAll("[data-reply-again]")].map((b) => b.dataset.replyAgain));
       check(again.join() === "regenerate", "only the last reply offers Regenerate", again.join());
       await page.click('[data-reply-again="regenerate"]');
+      await page.click("[data-regenerate-replace]");
       await h.waitText("Test 1 is on Thursday at 9.");
       const [send] = await calls(page, "agent_send");
       check(send.prompt === "And next week?" && send.replaceFrom === 2, "Regenerate re-asks the last question with replaceFrom = its index", JSON.stringify({ p: send.prompt, r: send.replaceFrom }));
@@ -622,6 +625,7 @@ export default [
         await page.keyboard.press("Enter");
       } else {
         await page.click('[data-reply-again="regenerate"]');
+        await page.click("[data-regenerate-replace]");
       }
       await h.waitText("Test 2, the week after.");
       const [send] = await calls(page, "agent_send");
@@ -722,11 +726,12 @@ export default [
         check(cue, "a table wider than the reply says so in words");
         await page.click("[data-table-wrap]");
         await sleep(100);
-        const fits = await page.evaluate(() => {
+        const after = await page.evaluate(() => {
           const g = document.querySelector('[data-md-table] [role="group"]');
-          return g.scrollWidth <= g.clientWidth + 1;
+          return { fits: g.scrollWidth <= g.clientWidth + 1, cue: document.querySelector("[data-table-cue]").textContent };
         });
-        check(fits, "Wrap to fit makes the table fit the reply");
+        // Words are never broken to make it fit (c3-table-wrap-words); when whole words can't fit, it says so.
+        check(after.fits || after.cue.includes("still wider than the reply"), "Wrap to fit makes the table fit the reply, or says it is still wider", JSON.stringify(after));
       } else {
         check(!cue, "a table that fits shows no cue");
       }
@@ -788,6 +793,11 @@ export default [
       check(name.shown?.endsWith("with-comments.pdf") && name.shown.includes("…"), "a long name is shortened in the middle, keeping its end", name.shown);
       check(name.full === "syllabus-c241-fall-2026-final-version-3-with-comments.pdf" && name.title === name.full, "the full name is the accessible name and tooltip", JSON.stringify(name));
       await h.shot("tray");
+      // In a window short for its text size the files fold into one button: open it first.
+      if (await page.$("[data-attachment-fold]")) {
+        await page.click("[data-attachment-fold]");
+        await sleep(100);
+      }
       // Remove the second file from the keyboard.
       await page.focus('[aria-label="Remove syllabus-c241-fall-2026-final-version-3-with-comments.pdf"]');
       await page.keyboard.press("Enter");
@@ -915,13 +925,13 @@ export default [
     sizes: [[1100, 720], [760, 560]],
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
     async run(page, h) {
-      await page.waitForSelector("[data-empty-state]", { timeout: 5000 });
+      await page.waitForSelector("[data-setup-slot] [data-setup-card]", { timeout: 5000 });
       await sleep(300);
       const s = await page.evaluate(() => ({
-        slot: !!document.querySelector("[data-empty-state] [data-setup-slot]"),
-        heading: document.querySelector("[data-empty-state] h2")?.textContent,
+        empty: !!document.querySelector("[data-empty-state]"),
+        heading: document.querySelector('[role="log"] h2')?.textContent,
       }));
-      check(s.slot && s.heading === "Start a conversation in School", "the empty state holds the setup card's slot (today's empty state when it renders nothing)", JSON.stringify(s));
+      check(!s.empty && s.heading?.startsWith("Set up Phaethon"), "with no key the setup card takes the empty state's place and leads", JSON.stringify(s));
       const asked = await calls(page, "settings_get");
       check(asked.length >= 1, "the pane read the settings to decide");
     },

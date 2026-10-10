@@ -101,7 +101,7 @@ function FileLink({ path }: { path: string }) {
  * happened; a reloaded reply lists them after its text. Quiet lines, not cards.
  */
 export function RecordLine({ record }: { record: ChatRecord }) {
-  const box = "my-3 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line bg-surface px-2.5 py-1 text-sm text-ink-secondary first:mt-0";
+  const box = "my-4 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-line bg-surface px-2.5 py-1 text-sm text-ink-secondary first:mt-0";
   const mark = (icon: IconName, ok?: boolean) => (
     <Icon name={icon} className={cn("size-(--ph-icon-size-sm) shrink-0", ok ? "text-success-ink" : "text-ink-secondary")} />
   );

@@ -57,6 +57,7 @@ function SpaceChat({
   onMounted,
   rootRef,
   setup,
+  needsKey,
 }: {
   space: Space;
   initial: { messages: readonly ThreadMessageLike[]; index: ThreadIndex };
@@ -64,6 +65,7 @@ function SpaceChat({
   onMounted: () => void;
   rootRef: RefObject<HTMLElement | null>;
   setup: ReactNode;
+  needsKey: boolean;
 }) {
   // Inside the desktop app: the agent via the Rust core. In a plain browser
   // (`pnpm dev`) there is no IPC, so fall back to the local echo stub.
@@ -94,7 +96,7 @@ function SpaceChat({
     <AssistantRuntimeProvider runtime={runtime}>
       <PaneContext.Provider value={pane}>
         <ActivityProbe spaceId={space.id} onRunning={onRunning} />
-        <Thread spaceId={space.id} spaceName={space.name} inputRef={inputRef} setup={setup} />
+        <Thread spaceId={space.id} spaceName={space.name} inputRef={inputRef} setup={setup} needsKey={needsKey} />
       </PaneContext.Provider>
     </AssistantRuntimeProvider>
   );
@@ -261,6 +263,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
         onMounted={onMounted}
         rootRef={rootRef}
         setup={needsKey || cardKept === key ? <SetupCard space={space} onResult={() => setCardKept(key)} /> : null}
+        needsKey={needsKey}
       />
     );
   }

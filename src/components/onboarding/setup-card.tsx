@@ -12,7 +12,9 @@ import {
 import { ExternalLink, KeyOutcomeLine } from "@/components/settings/agent-section";
 import { switchToClaudeCode } from "@/components/settings/claude-code";
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon, type IconName } from "@/icons";
+import { checkApiKey } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 
 type Phase = "setup" | "saved" | "credit" | "cli";
@@ -55,6 +57,9 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
   const outcomeId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const creditKey = useRef("");
+  const [rechecking, setRechecking] = useState(false);
+  const [recheck, setRecheck] = useState("");
 
   function announce(text: string) {
     // Cleared first so the same words twice are said twice.
@@ -76,12 +81,41 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
       focusComposer(headingRef.current);
     } else if (result.kind === "no-credit") {
       // Saved, but it can't answer until the account has credit: say only that, with the way there.
+      // The key (already typed here) is kept in memory only while this card shows, for Check again.
+      creditKey.current = draft.trim();
       setDraft("");
       setPhase("credit");
       requestAnimationFrame(() => headingRef.current?.focus());
     } else {
       requestAnimationFrame(() => inputRef.current?.focus());
     }
+  }
+
+  /** After adding credit: ask Anthropic again whether the saved key can answer now. */
+  async function checkAgain() {
+    const key = creditKey.current;
+    if (!key || rechecking) return;
+    setRechecking(true);
+    setRecheck("");
+    let said: string;
+    try {
+      const r = await checkApiKey(key);
+      if (r.ok) {
+        creditKey.current = "";
+        setPhase("saved");
+        said = "Your account has credit now. Phaethon is ready to answer.";
+        focusComposer(headingRef.current);
+      } else if (r.problem === "billing") {
+        said = "There’s still no credit on this account. A new payment can take a few minutes to arrive; check again shortly.";
+      } else {
+        said = `Phaethon couldn’t check the key just now. ${r.message}`;
+      }
+    } catch (e) {
+      said = `Phaethon couldn’t reach Anthropic to check. ${String(e)}`;
+    }
+    setRechecking(false);
+    setRecheck(said);
+    announce(said);
   }
 
   function submit(e: FormEvent) {
@@ -123,14 +157,16 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
         </span>
         <div className="flex min-w-0 flex-col gap-1">
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className="self-start rounded-xs text-xl font-semibold text-ink">
-            {phase === "setup" ? `Set up Phaethon to answer in ${space.name}` : phase === "credit" ? "One more step: add credit" : "You’re set up"}
+            {phase === "setup" ? (
+              <>
+                Set up Phaethon<span className="sr-only"> to answer in {space.name}</span>
+              </>
+            ) : phase === "credit" ? (
+              "One more step: add credit"
+            ) : (
+              "You’re set up"
+            )}
           </h2>
-          {phase === "setup" && (
-            <p className="text-ink-secondary">
-              Phaethon writes its replies with Claude, an AI made by Anthropic. To use it, Phaethon needs an API key: a long code, like a
-              password, from your own Anthropic account.
-            </p>
-          )}
         </div>
       </div>
 
@@ -146,6 +182,26 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
           <p>
             <ExternalLink href={CONSOLE_BILLING_URL}>Open Billing in the Anthropic console</ExternalLink>
           </p>
+          {creditKey.current && (
+            <div className="flex flex-col items-start gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                data-setup-recheck=""
+                aria-disabled={rechecking || undefined}
+                className="aria-disabled:cursor-progress"
+                onClick={() => void checkAgain()}
+              >
+                <Icon name="retry" />
+                {rechecking ? "Checking…" : "Check again"}
+              </Button>
+              {recheck && (
+                <p className="text-sm text-ink" data-setup-recheck-result="">
+                  {recheck}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
       {phase === "cli" && (
@@ -157,66 +213,74 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
 
       {phase === "setup" && (
         <>
-          <ul className="flex flex-col gap-2 text-ink-secondary">
-            <Fact icon="info">
-              <strong className="font-semibold text-ink">A separate account.</strong> A ChatGPT or Claude.ai subscription doesn’t include an
-              API key.
-            </Fact>
-            <Fact icon="key">
-              <strong className="font-semibold text-ink">Pay as you go.</strong> Light use usually costs a few dollars a month. You can set a
-              spending limit in the Anthropic console.
-            </Fact>
-            <Fact icon="lock">
-              <strong className="font-semibold text-ink">Kept on this computer.</strong> Your key stays in {KEY_STORE} and never syncs.
-            </Fact>
-          </ul>
+          {/* The key field comes first, so it is in view even in a small window at large text; where to
+              get a key follows, and what an API key is (and what it costs) is folded underneath. */}
+          <form onSubmit={submit} className="flex flex-col gap-2">
+            <label htmlFor={keyId} className="font-medium text-ink">
+              Paste your Anthropic API key
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={inputRef}
+                id={keyId}
+                data-setup-key=""
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={draft}
+                readOnly={saving}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  if (outcome) setOutcome(null);
+                }}
+                aria-describedby={[hintId, outcome && outcomeId].filter(Boolean).join(" ")}
+                aria-invalid={bad ? true : undefined}
+                className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink read-only:text-ink-secondary aria-invalid:border-danger"
+              />
+              <Button type="submit" aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
+                {saving ? "Checking…" : "Check and save"}
+              </Button>
+            </div>
+            <p id={hintId} className="text-sm text-ink-secondary">
+              It starts with sk-ant-. Phaethon checks it with Anthropic before saving it.
+            </p>
+            {outcome && <KeyOutcomeLine id={outcomeId} outcome={outcome} />}
+            {canSaveUnchecked(outcome) && (
+              <Button type="button" variant="outline" className="self-start" onClick={() => void save(true)}>
+                Save without checking
+              </Button>
+            )}
+          </form>
 
-          <ol className="flex flex-col gap-4">
-            <Step n={1} title="Get a key">
-              <p className="text-ink-secondary">
-                Sign in at <ExternalLink href={CONSOLE_KEYS_URL}>console.anthropic.com</ExternalLink>, add some credit under Billing, then
-                choose Create Key and copy it.
+          <div className="flex flex-col gap-1" data-setup-get="">
+            <h3 className="font-semibold text-ink">No key yet?</h3>
+            <p className="text-ink-secondary">
+              Sign in at <ExternalLink href={CONSOLE_KEYS_URL}>console.anthropic.com</ExternalLink>, add some credit under Billing, then
+              choose Create Key, copy it and paste it above.
+            </p>
+          </div>
+
+          <Details summary="What is an API key?" className="text-md">
+            <div data-setup-facts="" className="flex flex-col gap-2 text-ink-secondary">
+              <p>
+                Phaethon writes its replies with Claude, an AI made by Anthropic. To use it, Phaethon needs an API key: a long code, like a
+                password, from your own Anthropic account.
               </p>
-            </Step>
-            <Step n={2} title="Paste it here">
-              <form onSubmit={submit} className="flex flex-col gap-2">
-                <label htmlFor={keyId} className="font-medium text-ink">
-                  Your Anthropic API key
-                </label>
-                <p id={hintId} className="text-sm text-ink-secondary">
-                  It starts with sk-ant-. Phaethon checks it with Anthropic before saving it.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    ref={inputRef}
-                    id={keyId}
-                    data-setup-key=""
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={draft}
-                    readOnly={saving}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      if (outcome) setOutcome(null);
-                    }}
-                    aria-describedby={[hintId, outcome && outcomeId].filter(Boolean).join(" ")}
-                    aria-invalid={bad ? true : undefined}
-                    className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink read-only:text-ink-secondary aria-invalid:border-danger"
-                  />
-                  <Button type="submit" aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
-                    {saving ? "Checking…" : "Check and save"}
-                  </Button>
-                </div>
-                {outcome && <KeyOutcomeLine id={outcomeId} outcome={outcome} />}
-                {canSaveUnchecked(outcome) && (
-                  <Button type="button" variant="outline" className="self-start" onClick={() => void save(true)}>
-                    Save without checking
-                  </Button>
-                )}
-              </form>
-            </Step>
-          </ol>
+              <ul className="flex flex-col gap-2">
+                <Fact icon="info">
+                  <strong className="font-semibold text-ink">A separate account.</strong> A ChatGPT or Claude.ai subscription doesn’t include
+                  an API key.
+                </Fact>
+                <Fact icon="key">
+                  <strong className="font-semibold text-ink">Pay as you go.</strong> Light use usually costs a few dollars a month. You can set
+                  a spending limit in the Anthropic console.
+                </Fact>
+                <Fact icon="lock">
+                  <strong className="font-semibold text-ink">Kept on this computer.</strong> Your key stays in {KEY_STORE} and never syncs.
+                </Fact>
+              </ul>
+            </div>
+          </Details>
 
           <div className="flex flex-col items-start gap-2 border-t border-line pt-4">
             <p className="text-sm text-ink-secondary">
@@ -255,26 +319,6 @@ function Fact({ icon, children }: { icon: IconName; children: ReactNode }) {
     <li className="flex items-start gap-2">
       <Icon name={icon} className="mt-0.5 shrink-0 text-ink-tertiary" />
       <span className="min-w-0">{children}</span>
-    </li>
-  );
-}
-
-function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
-  return (
-    <li className="flex items-start gap-3">
-      <span
-        aria-hidden="true"
-        className="grid size-(--ph-control-height) shrink-0 place-items-center rounded-full border border-line-strong text-sm font-semibold text-ink"
-      >
-        {n}
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <h3 className="font-semibold text-ink">
-          <span className="sr-only">Step {n}: </span>
-          {title}
-        </h3>
-        {children}
-      </div>
     </li>
   );
 }

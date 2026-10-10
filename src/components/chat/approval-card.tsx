@@ -2,6 +2,7 @@ import { useAuiState } from "@assistant-ui/react";
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { StaticMarkdown } from "@/components/assistant-ui/elements/markdown-text";
+import { modAria } from "@/components/shell/shortcuts";
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
@@ -10,7 +11,7 @@ import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { answerApproval, type AgentMessageCustom, type PendingApproval } from "@/runtime/agent-adapter";
 
-import { useCardArrival } from "./card-arrival";
+import { useCardArrival, useCardKeys } from "./card-arrival";
 import { diffLines, diffSummary, foldDiff, type DiffRow } from "./diff";
 import { focusPaneComposer, usePane, visibleComposer } from "./pane";
 
@@ -117,6 +118,8 @@ export function ApprovalCard() {
     setAll(false);
   }, [approval?.id]);
 
+  const onKeyDown = useCardKeys({ allow: () => void answer(true), refuse: () => void answer(false), busy: busy || !!problem });
+
   const diff = useMemo(
     () => (approval?.action === "replace" && approval.before !== null ? diffLines(approval.before, approval.detail) : null),
     [approval?.id],
@@ -176,6 +179,7 @@ export function ApprovalCard() {
       data-approval-card=""
       data-action={approval.action}
       data-waiting-card=""
+      onKeyDown={onKeyDown}
       className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
     >
       <div className="flex items-start gap-3 p-4 pb-3">
@@ -253,12 +257,14 @@ export function ApprovalCard() {
           )}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center justify-end gap-3 px-4 pt-3 pb-4">
+      {/* Sticks to the bottom of the conversation while the card runs past it (a short window,
+          large text or targets), so the answer buttons are always in view, never under the composer. */}
+      <div className={CARD_ACTIONS} data-card-actions="">
         {problem && <CardProblem problem={problem} className="me-auto" />}
-        <Button disabled={busy} variant="outline" size="lg" onClick={() => void answer(false)}>
+        <Button disabled={busy} variant="outline" size="lg" aria-keyshortcuts={refuseKeys()} onClick={() => void answer(false)}>
           Don&rsquo;t allow
         </Button>
-        <Button disabled={busy} size="lg" onClick={() => void answer(true)}>
+        <Button disabled={busy} size="lg" aria-keyshortcuts={allowKeys()} onClick={() => void answer(true)}>
           <Icon name="check" />
           Allow
         </Button>
@@ -328,6 +334,18 @@ function Preview({
     </>
   );
 }
+
+/**
+ * A waiting card's answer row: sticky at the bottom of the conversation's
+ * scroll area, on the card's own background with a rule above, so while the
+ * card is taller than the space it has, its buttons stay in view.
+ */
+export const CARD_ACTIONS =
+  "sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 rounded-b-lg border-t border-line bg-raised px-4 pt-3 pb-4";
+
+/** aria-keyshortcuts for a card's yes and no (Cmd+Enter, Cmd+Backspace). */
+export const allowKeys = () => `${modAria()}+Enter`;
+export const refuseKeys = () => `${modAria()}+Backspace`;
 
 export type CardProblemState = { text: string; detail?: string };
 

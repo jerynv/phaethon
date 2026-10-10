@@ -306,7 +306,7 @@ export default [
       const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
       check(back, "focus is back in the composer after answering");
       await h.waitText("Done: plans/week6.md");
-      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("Phaethon replied"), { timeout: 5000 });
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.includes("Phaethon replied"), { timeout: 5000 });
       const done = await page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
       check(done.includes("Done: plans/week6.md"), "status region announces the reply after the approval", done);
       await h.idle();

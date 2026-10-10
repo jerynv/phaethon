@@ -1,5 +1,5 @@
 import { AttachmentPrimitive, ComposerPrimitive, MessagePrimitive, useAui, useAuiState } from "@assistant-ui/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAttachmentSrc } from "@/hooks/use-attachment-src";
@@ -115,10 +115,38 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
   );
 }
 
+/** The window is short for its text size (under 28 lines of text tall): a 760x560 window at 200%. */
+const SHORT_LINES = 28;
+
+function isShortWindow(): boolean {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return window.innerHeight / rem < SHORT_LINES;
+}
+
+/** Whether the window is short for its text size, kept current as the window or the text size changes. */
+function useShortWindow(): boolean {
+  const [short, setShort] = useState(isShortWindow);
+  useEffect(() => {
+    const update = () => setShort(isShortWindow());
+    window.addEventListener("resize", update);
+    // The text size is set on the root element (Settings › Appearance) without a resize.
+    const watch = new MutationObserver(update);
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+    return () => {
+      window.removeEventListener("resize", update);
+      watch.disconnect();
+    };
+  }, []);
+  return short;
+}
+
 /**
  * Files waiting to go with the message being written: a count, then the
  * files. Capped in height so many files never squeeze the conversation away
- * (the list scrolls, with room around each chip for its focus ring).
+ * (the list scrolls, with room around each chip for its focus ring). In a
+ * window that is short for its text size, two or more files fold into one
+ * "3 files attached" button that shows them on demand, and the tray always
+ * keeps a gap above the text field.
  *
  * Removing a file keeps focus in the tray (on the next file's Remove, or on
  * Undo when none is left), says "Removed notes.md", and offers Undo.
@@ -132,6 +160,10 @@ export function ComposerAttachments() {
   const undoRef = useRef<HTMLButtonElement>(null);
   const [removed, setRemoved] = useState<Removed | null>(null);
   const focusAfter = useRef<number | null>(null);
+  const short = useShortWindow();
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const folded = short && count > 1 && !open;
 
   // Sent: the undo is about a message that's gone.
   useEffect(() => {
@@ -168,12 +200,31 @@ export function ComposerAttachments() {
   }
 
   if (count === 0 && !removed) return null;
+  const countText = count === 0 ? "No files attached" : `${count} file${count === 1 ? "" : "s"} attached`;
   return (
-    <div className="flex flex-col gap-1 px-1.5 pt-1" data-attachment-tray="">
-      <div className="flex min-h-(--ph-control-height-sm) flex-wrap items-center gap-x-2 text-xs text-ink-secondary">
-        <span data-attachment-count="">
-          {count === 0 ? "No files attached" : `${count} file${count === 1 ? "" : "s"} attached`}
-        </span>
+    // Gives way (its list scrolls) when the message box is at its height cap, never below its count line.
+    <div
+      className="relative mb-1 flex min-h-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] shrink flex-col gap-1 px-1.5 pt-1"
+      data-attachment-tray="" data-folded={folded ? "" : undefined}>
+      <div className="flex min-h-(--ph-control-height-sm) shrink-0 flex-wrap items-center gap-x-2 text-xs text-ink-secondary">
+        {short && count > 1 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            aria-expanded={open}
+            aria-controls={listId}
+            data-attachment-count=""
+            data-attachment-fold=""
+            onClick={() => setOpen(!open)}
+          >
+            <Icon name="attach" />
+            {countText}
+            <Icon name={open ? "chevron-up" : "chevron-down"} />
+          </Button>
+        ) : (
+          <span data-attachment-count="">{countText}</span>
+        )}
         {removed && (
           <span className="flex min-w-0 items-center gap-1" data-attachment-undo="">
             <span aria-hidden="true">·</span>
@@ -196,8 +247,25 @@ export function ComposerAttachments() {
       </div>
       <ul
         ref={list}
+        id={listId}
         aria-label="Attached files"
-        className="flex max-h-[min(9rem,20dvh)] flex-wrap gap-2 overflow-y-auto p-1.5 empty:hidden"
+        hidden={folded}
+        data-attachment-list=""
+        className={cn(
+          "flex min-h-0 flex-wrap gap-2 overflow-y-auto p-1.5 empty:hidden",
+          // Opened from the folded button in a short window: a panel over the conversation, just above
+          // the message box, so showing the files never makes the message box taller.
+          short && count > 1
+            ? "absolute start-0 bottom-full z-20 mb-2 max-h-[min(20rem,40dvh)] w-full rounded-lg border border-line bg-raised shadow-lg"
+            : "max-h-[min(9rem,20dvh)]",
+        )}
+        onKeyDown={(e) => {
+          if (e.key !== "Escape" || !(short && count > 1)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+          requestAnimationFrame(() => list.current?.parentElement?.querySelector<HTMLElement>("[data-attachment-fold]")?.focus());
+        }}
       >
         <ComposerPrimitive.Attachments>{() => <AttachmentChip onRemoved={onRemoved} />}</ComposerPrimitive.Attachments>
       </ul>

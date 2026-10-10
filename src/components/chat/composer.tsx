@@ -79,7 +79,7 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
   return (
     <div
       role="alert"
-      className="mb-2 flex max-h-[25dvh] items-start gap-2.5 overflow-y-auto rounded-lg border border-transparent bg-warning-soft py-2 ps-3 pe-1 text-base text-warning-ink"
+      className="mb-2 flex max-h-[25dvh] min-h-0 shrink items-start gap-2.5 overflow-y-auto rounded-lg border border-transparent bg-warning-soft py-2 ps-3 pe-1 text-base text-warning-ink"
     >
       <Icon name="warning" className="mt-0.5" />
       <ul className="flex min-w-0 flex-1 flex-col gap-0.5 wrap-anywhere">
@@ -240,6 +240,16 @@ export function Composer({
       }
       return;
     }
+    // Arrow Up in an empty message box edits your last message (where it can be edited).
+    if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !isRunning && e.currentTarget.value === "") {
+      const edits = pane?.rootRef.current?.querySelectorAll<HTMLElement>("[data-edit-message]");
+      const last = edits?.[edits.length - 1];
+      if (last) {
+        e.preventDefault();
+        last.click();
+      }
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && isRunning && !e.nativeEvent.isComposing) {
       // assistant-ui would let the newline through; keep the text and say why.
       e.preventDefault();
@@ -257,7 +267,9 @@ export function Composer({
         : "Enter to send, Shift+Enter for a new line";
 
   return (
-    <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-2 pb-4">
+    // Never more than about 40% of the window: what is inside (problems, files, the text) gives
+    // way first, each scrolling in its own box, so the conversation always keeps the rest.
+    <div className="mx-auto flex max-h-[40dvh] w-full max-w-(--ph-thread-width) flex-col px-6 pt-2 pb-4" data-composer-wrap="">
       <AttachProblems problems={problems} onDismiss={clearProblems} />
       <ComposerPrimitive.Root
         aria-label="Message composer"
@@ -269,7 +281,7 @@ export function Composer({
         }}
         className={cn(
           // The border is ink-tertiary, at least 3:1 against the page in both themes (WCAG 1.4.11).
-          "flex flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow transition-colors",
+          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow transition-colors",
           dragging ? "border-focus bg-accent-soft" : "border-ink-tertiary",
         )}
       >
@@ -299,13 +311,13 @@ export function Composer({
           // At most 7 whole lines, and never more than about a fifth of the window (rounded down to whole
           // lines), so a long message never pushes the conversation away; it scrolls by whole lines.
           // Forced colours: the placeholder is GrayText, the system colour for hint text (not a mapped author colour).
-          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
+          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full shrink resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
         />
         <span id={hintId} className="sr-only">
           Press Enter to send, Shift+Enter for a new line, Escape to stop a reply, and {jumpKeyLabel()} to go to a
           question Phaethon is waiting on.
         </span>
-        <div className="group/toolbar flex items-center gap-2">
+        <div className="group/toolbar flex shrink-0 items-center gap-2">
           <AddMenu onAttach={() => fileInput.current?.click()} />
           <input
             ref={fileInput}
@@ -333,26 +345,27 @@ export function Composer({
           {jump}
           <span aria-hidden="true" className="hidden flex-1 group-has-[[data-jump-latest]]/toolbar:block" />
           {isRunning ? (
-            <ComposerPrimitive.Cancel
-              asChild
-              // A second press of Send landing on Stop (a tremor, a bouncing switch) is not a Stop.
-              onClick={(e) => {
-                if (Date.now() - startedAt.current < STOP_GUARD_MS) e.preventDefault();
-              }}
-            >
-              <Button
-                type="button"
-                size="icon"
-                className="rounded-full"
-                aria-label="Stop reply"
-                title="Stop reply"
-                data-stop=""
-                onFocus={() => (stopFocused.current = true)}
-                onBlur={() => (stopFocused.current = false)}
+            <IconTip label="Stop reply" spoken="Escape">
+              <ComposerPrimitive.Cancel
+                asChild
+                // A second press of Send landing on Stop (a tremor, a bouncing switch) is not a Stop.
+                onClick={(e) => {
+                  if (Date.now() - startedAt.current < STOP_GUARD_MS) e.preventDefault();
+                }}
               >
-                <Icon name="stop" />
-              </Button>
-            </ComposerPrimitive.Cancel>
+                <Button
+                  type="button"
+                  size="icon"
+                  className="rounded-full"
+                  aria-label="Stop reply"
+                  data-stop=""
+                  onFocus={() => (stopFocused.current = true)}
+                  onBlur={() => (stopFocused.current = false)}
+                >
+                  <Icon name="stop" />
+                </Button>
+              </ComposerPrimitive.Cancel>
+            </IconTip>
           ) : (
             <IconTip label="Send message" spoken="Return">
               <ComposerPrimitive.Send asChild>

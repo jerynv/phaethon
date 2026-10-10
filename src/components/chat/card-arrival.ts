@@ -1,9 +1,10 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, type KeyboardEvent, type RefObject } from "react";
 
+import { isModChord } from "@/components/shell/shortcuts";
 import { platform } from "@/lib/platform";
 
 import { useAnnounce } from "./announce";
-import { mayTakeFocus, paneShown, usePane } from "./pane";
+import { focusPaneComposer, mayTakeFocus, paneShown, usePane } from "./pane";
 
 /** The chord that moves focus from the composer to a waiting card (C1). */
 export const jumpKeyLabel = () => (platform() === "mac" ? "Option+Return" : "Alt+Enter");
@@ -26,6 +27,32 @@ export function revealCard(card: HTMLElement) {
   } else if (c.bottom > l.bottom - margin) {
     log.scrollTop += c.bottom - l.bottom + margin;
   }
+}
+
+/**
+ * The keys on a waiting card (approval or access), while focus is in it:
+ * Cmd+Enter (Ctrl+Enter) answers yes, Cmd+Backspace (Ctrl+Backspace) answers
+ * no, and Escape goes back to the composer, saying the card still waits and
+ * how to come back. Escape never answers.
+ */
+export function useCardKeys({ allow, refuse, busy }: { allow: () => void; refuse: () => void; busy: boolean }) {
+  const pane = usePane();
+  const announce = useAnnounce();
+  return (e: KeyboardEvent) => {
+    if (e.defaultPrevented) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      focusPaneComposer(pane);
+      announce(`Phaethon’s question is still waiting for your answer. Press ${jumpKeyLabel()} to go back to it.`);
+      return;
+    }
+    if (!isModChord(e.nativeEvent) || (e.key !== "Enter" && e.key !== "Backspace")) return;
+    e.preventDefault();
+    if (busy) return;
+    if (e.key === "Enter") allow();
+    else refuse();
+  };
 }
 
 /** Move focus to the card and show its top. */

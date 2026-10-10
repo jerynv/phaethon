@@ -596,7 +596,7 @@ export default [
       await page.waitForSelector("[data-access-request]", { timeout: 5000 });
       // C4: Deny | Allow; keeping the permission is a separate, unchecked box.
       if (answer === "always") await page.click("[data-access-keep]");
-      await clickText(page, "[data-access-request]", answer === "deny" ? "Deny" : "Allow");
+      await clickText(page, "[data-access-request]", answer === "deny" ? "Deny" : answer === "always" ? "Allow from now on" : "Allow for this reply");
       await page.waitForSelector(`[data-access-receipt="${answer}"]`, { timeout: 5000 });
       await h.waitText("moved problem set 4");
       await park(page);

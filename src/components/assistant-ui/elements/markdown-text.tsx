@@ -80,8 +80,32 @@ function remarkSoftBreaks() {
   return (tree: MdNode) => walk(tree);
 }
 
-const ASSISTANT_PLUGINS = [remarkGfm];
-const USER_PLUGINS = [remarkGfm, remarkSoftBreaks];
+/**
+ * Heading levels without gaps, for screen-reader navigation: the levels a
+ * reply uses are ranked (a reply of "##" and "####" becomes levels 1 and 2),
+ * so under the message's own h2 they render as h3, h4 and never jump. The
+ * written level is kept in `data-md-depth`, so each still looks as written.
+ */
+type HeadingNode = MdNode & { depth?: number; data?: { hProperties?: Record<string, unknown> } };
+function remarkHeadingLevels() {
+  return (tree: MdNode) => {
+    const heads: HeadingNode[] = [];
+    const walk = (n: HeadingNode) => {
+      if (n.type === "heading") heads.push(n);
+      n.children?.forEach(walk);
+    };
+    walk(tree);
+    const depths = [...new Set(heads.map((h) => h.depth ?? 1))].sort((a, b) => a - b);
+    for (const h of heads) {
+      const written = h.depth ?? 1;
+      h.data = { ...h.data, hProperties: { ...h.data?.hProperties, "data-md-depth": written } };
+      h.depth = depths.indexOf(written) + 1;
+    }
+  };
+}
+
+const ASSISTANT_PLUGINS = [remarkGfm, remarkHeadingLevels];
+const USER_PLUGINS = [remarkGfm, remarkSoftBreaks, remarkHeadingLevels];
 
 const MarkdownTextImpl: FC<MarkdownTextProps & { user?: boolean }> = ({ components, componentsByLanguage, user }) => {
   const stableComponents = useShallowStable(components);
@@ -161,8 +185,8 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
           onClick={() => code && !isCopied && copyToClipboard(code)}
         >
           <Icon name={isCopied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
-          <span>{isCopied ? "Copied" : "Copy"}</span>
-          <span className="sr-only"> code</span>
+          {/* Says what it copies, on screen too, so voice control and sight agree ("Copy code"). */}
+          <span>{isCopied ? "Copied" : "Copy code"}</span>
         </Button>
       </span>
     </div>
@@ -204,7 +228,13 @@ function Table({ className, ...props }: ComponentProps<"table">) {
     <div className="my-4 flex max-w-full flex-col gap-1" data-md-table="">
       {(wide || wrap) && (
         <p className="flex flex-wrap items-center gap-x-2 text-sm text-ink-secondary" data-table-cue="">
-          <span id={hintId}>{wrap ? "Wrapped to fit." : "Wider than the reply: scroll sideways to see it all."}</span>
+          <span id={hintId}>
+            {wrap
+              ? wide
+                ? "Wrapped between words, and still wider than the reply: scroll sideways for the rest."
+                : "Wrapped to fit."
+              : "Wider than the reply: scroll sideways to see it all."}
+          </span>
           <Button
             type="button"
             variant="outline"
@@ -224,10 +254,17 @@ function Table({ className, ...props }: ComponentProps<"table">) {
         tabIndex={0}
         role="group"
         aria-label="Table"
-        aria-describedby={wide && !wrap ? hintId : undefined}
+        aria-describedby={wide ? hintId : undefined}
       >
         <table
-          className={cn("border-collapse text-base", wrap && "[&_td]:wrap-anywhere [&_th]:wrap-anywhere", className)}
+          className={cn(
+            "border-collapse text-base",
+            // Wrapped between words (hyphenated where the language allows), never mid-word;
+            // only long unbroken tokens (code, links) may break anywhere.
+            wrap &&
+              "[&_a]:wrap-anywhere [&_code]:wrap-anywhere [&_td]:break-words [&_td]:hyphens-auto [&_th]:break-words [&_th]:hyphens-auto",
+            className,
+          )}
           {...props}
         />
       </div>
@@ -271,37 +308,56 @@ const SCROLL_SHADOWS_SUNKEN: CSSProperties = {
   background: String(SCROLL_SHADOWS.background).replaceAll("var(--ph-bg)", "var(--ph-surface-sunken)"),
 };
 
-/**
- * The elements markdown becomes. Headings sit two levels down: the space is
- * the page's h1 and each message carries its own h2 ("Phaethon replied"), so
- * a reply's "## Plan" is an h4 to assistive technology (it looks as written).
- */
-const elements = {
-  h1: ({ className, ...props }) => (
-    <h3 className={cn("mt-6 mb-2 text-xl font-semibold tracking-tight first:mt-0 last:mb-0", className)} {...props} />
-  ),
-  h2: ({ className, ...props }) => (
-    <h4 className={cn("mt-6 mb-2 text-lg font-semibold first:mt-0 last:mb-0", className)} {...props} />
-  ),
-  h3: ({ className, ...props }) => (
-    <h5 className={cn("mt-5 mb-1.5 text-md font-semibold first:mt-0 last:mb-0", className)} {...props} />
-  ),
+/** How a heading looks, by the level it was written at (1 to 6). */
+const HEADING_LOOK: Record<number, string> = {
+  1: "mt-6 mb-2 text-xl font-semibold tracking-tight",
+  2: "mt-6 mb-2 text-lg font-semibold",
+  3: "mt-5 mb-1.5 text-md font-semibold",
   // Each level steps down in size or colour, so h3 and h4 never look the same.
-  h4: ({ className, ...props }) => (
-    <h6 className={cn("mt-4 mb-1 text-base font-semibold first:mt-0 last:mb-0", className)} {...props} />
-  ),
-  h5: ({ className, ...props }) => (
-    <h6
-      className={cn("mt-4 mb-1 text-base font-semibold text-ink-secondary first:mt-0 last:mb-0", className)}
-      {...props}
-    />
-  ),
-  h6: ({ className, ...props }) => (
-    <h6
-      className={cn("mt-4 mb-1 text-sm font-semibold text-ink-secondary first:mt-0 last:mb-0", className)}
-      {...props}
-    />
-  ),
+  4: "mt-4 mb-1 text-base font-semibold",
+  5: "mt-4 mb-1 text-base font-semibold text-ink-secondary",
+  6: "mt-4 mb-1 text-sm font-semibold text-ink-secondary",
+};
+
+/**
+ * A markdown heading at `rank` (1 = the reply's top level, see
+ * remarkHeadingLevels) as an element two levels down: the space is the page's
+ * h1 and each message carries its own h2 ("Phaethon replied"), so a reply's
+ * top level is an h3 and no level is skipped. It looks as it was written.
+ */
+function heading(rank: number) {
+  const Tag = `h${Math.min(6, rank + 2)}` as "h3" | "h4" | "h5" | "h6";
+  return function Heading({ className, ...props }: ComponentProps<"h3"> & { "data-md-depth"?: number | string }) {
+    const written = Number(props["data-md-depth"] ?? rank);
+    return <Tag className={cn(HEADING_LOOK[written] ?? HEADING_LOOK[6], "first:mt-0 last:mb-0", className)} {...props} />;
+  };
+}
+
+/**
+ * A task-list box ("- [x] Read chapter 7"): a plain box at full strength, with
+ * a tick when done, read as "Done:" or "To do:". Not a disabled checkbox, which
+ * looks greyed out, like a control you may not use yet.
+ */
+function TaskBox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      data-task={checked ? "done" : "todo"}
+      className="absolute start-0 top-[calc((1lh-var(--ph-icon-size))/2)] inline-flex size-(--ph-icon-size) items-center justify-center rounded-xs border-2 border-ink-secondary text-ink"
+    >
+      {checked && <Icon name="check" className="size-(--ph-icon-size-sm)" />}
+      <span className="sr-only">{checked ? "Done: " : "To do: "}</span>
+    </span>
+  );
+}
+
+/** The elements markdown becomes. */
+const elements = {
+  h1: heading(1),
+  h2: heading(2),
+  h3: heading(3),
+  h4: heading(4),
+  h5: heading(5),
+  h6: heading(6),
   p: ({ className, ...props }) => <p className={cn("my-3 first:mt-0 last:mb-0", className)} {...props} />,
   a: ({ className, ...props }) => (
     <a
@@ -314,13 +370,25 @@ const elements = {
   blockquote: ({ className, ...props }) => (
     <blockquote className={cn("my-3 border-s-2 border-line-strong ps-4 text-ink-secondary", className)} {...props} />
   ),
-  ul: ({ className, ...props }) => (
-    <ul className={cn("my-3 ms-5 list-disc marker:text-ink-tertiary [&>li]:mt-1", className)} {...props} />
-  ),
+  // A task list ("- [ ] …") has no bullets: the box marks each item.
+  ul: ({ className, ...props }) =>
+    className?.includes("contains-task-list") ? (
+      <ul className={cn("my-3 flex list-none flex-col gap-1", className)} {...props} />
+    ) : (
+      <ul className={cn("my-3 ms-5 list-disc marker:text-ink-tertiary [&>li]:mt-1", className)} {...props} />
+    ),
   ol: ({ className, ...props }) => (
     <ol className={cn("my-3 ms-5 list-decimal marker:text-ink-secondary [&>li]:mt-1", className)} {...props} />
   ),
-  li: ({ className, ...props }) => <li className={cn("ps-1", className)} {...props} />,
+  li: ({ className, ...props }) =>
+    className?.includes("task-list-item") ? (
+      // The box hangs in the indent, so wrapped lines (and nested items) start under the text.
+      <li className={cn("relative ps-[calc(var(--ph-icon-size)+var(--ph-space)*2)]", className)} {...props} />
+    ) : (
+      <li className={cn("ps-1", className)} {...props} />
+    ),
+  input: ({ type, checked, ...props }) =>
+    type === "checkbox" ? <TaskBox checked={!!checked} /> : <input type={type} checked={checked} {...props} />,
   hr: ({ className, ...props }) => <hr className={cn("my-5 border-line", className)} {...props} />,
   table: Table,
   thead: ({ className, ...props }) => <thead className={cn("bg-surface", className)} {...props} />,

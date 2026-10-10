@@ -105,7 +105,7 @@ export default [
         });
       });
       const order = actions.map((a) => a.text);
-      check(order.join("|") === "Deny|Allow", "two answers, Deny then Allow (C4)", order.join("|"));
+      check(order.join("|") === "Deny|Allow for this reply", "two answers, Deny then Allow for this reply (C4; Allow says how long)", order.join("|"));
       // On the last row (the answers may wrap in a narrow window), and at its right end. (`top` is each button's vertical centre.)
       const primary = actions[actions.length - 1];
       const lastRow = actions.filter((a) => Math.abs(a.top - primary.top) < 8);
@@ -128,15 +128,17 @@ export default [
       }
       // Obscura does not move focus on Tab from a tabindex=-1 element; Chromium does.
       if (tabs[0] === "card") console.log("     (this engine does not Tab out of a focused card; DOM order check above stands)");
-      else check(tabs.join("|") === "keep|Deny|Allow", "Tab from the card visits the Always allow box, Deny, Allow", tabs.join("|"));
+      else check(tabs.join("|") === "keep|Deny|Allow for this reply", "Tab from the card visits the Always allow box, Deny, Allow", tabs.join("|"));
       await page.evaluate(() => document.querySelector("[data-access-request]").focus());
       await page.keyboard.press("Escape");
       await h.idle();
       const still = await page.evaluate(() => !!document.querySelector("[data-access-request]"));
       const none = await calls(page, "agent_access_answer");
       check(still && none.length === 0, "Escape does not answer; the card stays");
-      const note = await page.evaluate(() => document.querySelector('[data-access-request] [role="status"]').textContent);
-      check(note.startsWith("Choose Deny or Allow"), "Escape says how to choose instead, in the order shown", note);
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.includes("still waiting"), { timeout: 3000 });
+      const note = await status(page);
+      const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
+      check(back && note.includes("Option+Return"), "Escape goes back to the composer and says the card still waits, and how to return", note);
       // Leave the card unfocused for the picture, with the hint visible.
       await page.evaluate(() => document.activeElement?.blur());
       await h.idle();
@@ -146,10 +148,10 @@ export default [
     name: "access-once",
     mock: { threads: { school: prior }, turn: turn() },
     async run(page, h) {
-      await answered(page, h, "Allow", "once", "Allowed once: Work / calendar");
+      await answered(page, h, "Allow for this reply", "once", "Allowed once: Work / calendar");
       await page.waitForFunction(() => document.querySelector('[data-activity-space="work"]'), { timeout: 5000 });
       check(true, 'the activity line "Reading Work / calendar/oct.md" carries Work\'s hue mark');
-      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent === "Reading Work / calendar/oct.md", { timeout: 5000 });
+      await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.endsWith("Reading Work / calendar/oct.md"), { timeout: 5000 });
       check(true, "the status region announces the cross-space read, naming Work");
       await h.waitText("moved problem set 4");
       await page.waitForFunction(() => document.querySelector('[data-testid="reply-status"]').textContent.startsWith("Phaethon replied"), { timeout: 5000 });
@@ -162,7 +164,7 @@ export default [
     name: "access-always",
     mock: { threads: { school: prior }, turn: turn() },
     async run(page, h) {
-      await answered(page, h, "Allow", "always", "Always allowed: Work / calendar");
+      await answered(page, h, "Allow from now on", "always", "Always allowed: Work / calendar");
       await h.waitText("moved problem set 4");
       // The kept grant appears in the title bar without a reload.
       await page.waitForFunction(() => document.querySelector("header")?.innerText.includes("Also reads"), { timeout: 4000 });

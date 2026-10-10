@@ -124,6 +124,21 @@
           if (chosen) archive.splice(archive.indexOf(chosen), 1);
           return;
         }
+        case "thread_delete": {
+          // Contract: deletes a saved past conversation for good; the current one ("current") is emptied. Refused while a reply runs there.
+          if (window.__liveTurn && M.currentSpace === args.space) throw BUSY;
+          if (args.id === "current") {
+            M.threads[args.space] = [];
+            return;
+          }
+          const archive = M.threadArchive[args.space] ?? [];
+          if (!archive.some((t) => t.id === args.id)) throw "That conversation couldn’t be deleted: it is no longer there.";
+          M.threadArchive[args.space] = archive.filter((t) => t.id !== args.id);
+          return;
+        }
+        case "claude_cli_status":
+          // Contract: whether the claude command is installed (and where). Never says anything about the login.
+          return M.claudeCli ?? { installed: true, path: "/Users/you/.local/bin/claude" };
         case "threads_list": {
           if (M.settings.backend !== "phaethon") return [];
           const summary = (id, messages, updated, current) => ({ id, title: titleOf(messages), updated, messages: messages.length, current });

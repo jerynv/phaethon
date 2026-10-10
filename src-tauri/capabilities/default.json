@@ -41,6 +41,9 @@
     "allow-file-open",
     "allow-grant-restore",
     "allow-thread-delete",
-    "allow-claude-cli-status"
+    "allow-claude-cli-status",
+    "allow-thread-clear",
+    "allow-thread-forget",
+    "allow-thread-forget-preview"
   ]
 }

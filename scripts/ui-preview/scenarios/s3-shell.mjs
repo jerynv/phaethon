@@ -141,28 +141,29 @@ export default [
       await page.click(`[data-delete-thread="${yesterday}"]`);
       await page.waitForSelector(`[data-delete-confirm="${yesterday}"]`, { timeout: 3000 });
       const confirmText = await page.$eval(`[data-delete-confirm="${yesterday}"] p`, (p) => p.textContent);
-      check(confirmText === "Delete “Summarise my M301 notes on eigenvalues” for good? It can’t be opened again.", "the confirm names the conversation and says it is for good", confirmText);
+      check(confirmText === "Clear or delete “Summarise my M301 notes on eigenvalues”?", "the confirm names the conversation and asks clear or delete", confirmText);
       check(await waitActive(page, `cancel:${yesterday}`), "focus is on Cancel (the safe choice)", await active(page));
       const named = await page.$eval(`[data-delete-confirm="${yesterday}"]`, (g) => ({ role: g.getAttribute("role"), label: document.getElementById(g.getAttribute("aria-labelledby"))?.textContent }));
       check(named.role === "group" && named.label === confirmText, "the confirm is a group named by its question", JSON.stringify(named));
-      // Sam: it says which one (when, how long) and what stays behind, and is described by both.
+      // Sam: it says which one (when, how long) and what was sent stays sent; the group is described by when.
       const more = await page.$eval(`[data-delete-confirm="${yesterday}"]`, (g) => ({
         stamp: g.querySelector("[data-delete-stamp]")?.textContent,
         stays: g.querySelector("[data-delete-stays]")?.textContent.replace(/\s+/g, " "),
         described: (g.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" | "),
       }));
       check(/^Yesterday at .+ · 2 messages$/.test(more.stamp ?? ""), "the confirm says when it was last used", JSON.stringify(more));
-      check(more.stays === "Files you attached to it stay in School’s attachments folder, and what was already sent to Anthropic isn’t affected.", "the confirm says attachments stay and what was sent to Anthropic isn't affected", JSON.stringify(more));
-      check(more.described.includes("Yesterday at") && more.described.includes("attachments folder"), "the group is described by both lines", more.described);
-      check((await calls(page, "thread_delete")).length === 0, "nothing is deleted before confirming");
+      check(more.stays === "What was already sent to Anthropic isn’t affected.", "the confirm says what was sent to Anthropic isn't affected", JSON.stringify(more));
+      check(more.described.includes("Yesterday at"), "the group is described by when it was used", more.described);
+      check((await calls(page, "thread_forget")).length + (await calls(page, "thread_clear")).length === 0, "nothing is removed before confirming");
       await h.idle(); // past the menu's open animation
       const apart = await page.evaluate((id) => {
-        const c = document.querySelector(`[data-delete-cancel="${id}"]`).getBoundingClientRect();
-        const d = document.querySelector(`[data-delete-confirm-button="${id}"]`).getBoundingClientRect();
+        const box = (sel) => document.querySelector(`[${sel}="${id}"]`).getBoundingClientRect();
+        const gap = (a, b) => Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+        const [c, k, d] = [box("data-delete-cancel"), box("data-clear-button"), box("data-delete-confirm-button")];
         const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ph-target-min")) || 24;
-        return { gap: Math.max(d.left - c.right, c.left - d.right, d.top - c.bottom), min };
+        return { gap: Math.min(gap(c, k), gap(c, d), gap(k, d)), min };
       }, yesterday);
-      check(apart.gap >= apart.min, "Cancel and Delete are at least a target apart, so a slip off Cancel can't delete", JSON.stringify(apart));
+      check(apart.gap >= apart.min, "Cancel, Clear and Delete everything are each at least a target apart, so a slip can't remove anything", JSON.stringify(apart));
       await h.shot("confirm");
       // Cancel puts focus back on that row's Delete.
       await page.keyboard.press("Enter");
@@ -174,16 +175,18 @@ export default [
       await page.keyboard.press("Escape");
       check(await waitActive(page, `delete:${yesterday}`), "Escape in the confirm returns focus to Delete", await active(page));
       check(!!(await page.$('[role="menu"]')) && !(await page.$(`[data-delete-confirm="${yesterday}"]`)), "and the menu stays open");
-      // Delete for real, from the keyboard.
+      // Delete everything for real, from the keyboard (past Clear).
       await page.keyboard.press("Enter");
       check(await waitActive(page, `cancel:${yesterday}`), "Delete opens the confirm again", await active(page));
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction((id) => document.activeElement?.getAttribute("data-clear-button") === id, { timeout: 3000 }, yesterday);
       await page.keyboard.press("ArrowDown");
       await page.waitForFunction((id) => document.activeElement?.getAttribute("data-delete-confirm-button") === id, { timeout: 3000 }, yesterday);
       await page.keyboard.press("Enter");
       await page.waitForFunction((id) => !document.querySelector(`[data-thread-id="${id}"]`), { timeout: 3000 }, yesterday);
-      const del = await calls(page, "thread_delete");
-      check(JSON.stringify(del) === JSON.stringify([{ space: "school", id: yesterday }]), "thread_delete gets the space and that conversation's id", JSON.stringify(del));
-      check(await shellSaid(page, "Deleted the conversation “Summarise my M301 notes on eigenvalues”."), "the delete is announced", await shellStatus(page));
+      const del = await calls(page, "thread_forget");
+      check(JSON.stringify(del) === JSON.stringify([{ space: "school", id: yesterday }]), "thread_forget gets the space and that conversation's id", JSON.stringify(del));
+      check(await shellSaid(page, "Deleted “Summarise my M301 notes on eigenvalues”."), "the delete is announced", await shellStatus(page));
       check(!!(await page.$("[data-conversations-menu]")), "the menu stays open");
       check(await waitActive(page, String(now - 2 * DAY)), "focus moves to the conversation that took its place", await active(page));
       await h.shot("deleted");
@@ -195,7 +198,7 @@ export default [
       await page.click('[data-delete-confirm-button="current"]');
       await h.waitText("Start a conversation in School");
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
-      const del2 = (await calls(page, "thread_delete")).at(-1);
+      const del2 = (await calls(page, "thread_forget")).at(-1);
       check(del2?.id === "current", "the open one is deleted as \"current\"", JSON.stringify(del2));
       check((await calls(page, "thread_new")).length === 0, "no thread_new (it would keep a copy in the list)");
       check(await paneSaid(page, "Deleted “What do I have due this week for C241?”. A new conversation has started."), "the new start is announced", "");
@@ -222,7 +225,7 @@ export default [
       await page.click(`[data-delete-thread="${now - DAY}"]`);
       await page.click(`[data-delete-confirm-button="${now - DAY}"]`);
       await page.waitForSelector('[data-conversations-problem][role="alert"]', { timeout: 3000 });
-      check((await calls(page, "thread_delete")).length === 0, "nothing is deleted while a reply runs");
+      check((await calls(page, "thread_forget")).length === 0, "nothing is deleted while a reply runs");
       await menuGone(page);
       check(await page.evaluate(() => document.activeElement?.matches("[data-conversations-trigger]")), "focus goes back to Conversations, next to the alert");
     },
@@ -252,18 +255,19 @@ export default [
       // Delete key: the same inline confirm, focus on Cancel; Cancel goes back to the conversation.
       await page.keyboard.press("Delete");
       check(await waitActive(page, `cancel:${yesterday}`), "the Delete key opens the confirm, on Cancel", await active(page));
-      check((await calls(page, "thread_delete")).length === 0, "nothing is deleted yet");
+      check((await calls(page, "thread_forget")).length === 0, "nothing is deleted yet");
       await page.keyboard.press("Enter");
       check(await waitActive(page, yesterday), "Cancel goes back to the conversation the key was pressed on", await active(page));
       // Backspace too, then confirm.
       await page.keyboard.press("Backspace");
       check(await waitActive(page, `cancel:${yesterday}`), "Backspace opens the confirm too", await active(page));
       await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
       await page.waitForFunction((id) => document.activeElement?.getAttribute("data-delete-confirm-button") === id, { timeout: 3000 }, yesterday);
       await page.keyboard.press("Enter");
       await page.waitForFunction((id) => !document.querySelector(`[data-thread-id="${id}"]`), { timeout: 3000 }, yesterday);
-      const del = await calls(page, "thread_delete");
-      check(JSON.stringify(del) === JSON.stringify([{ space: "school", id: yesterday }]), "Backspace, then Delete, deletes that one", JSON.stringify(del));
+      const del = await calls(page, "thread_forget");
+      check(JSON.stringify(del) === JSON.stringify([{ space: "school", id: yesterday }]), "Backspace, then Delete everything, deletes that one", JSON.stringify(del));
       check(await waitActive(page, older), "focus moves to the conversation that took its place", await active(page));
       // ArrowUp skips Delete items too.
       await page.keyboard.press("ArrowUp");

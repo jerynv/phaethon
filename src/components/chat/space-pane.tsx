@@ -114,7 +114,7 @@ function SpaceChat({
  */
 function toThreadMessage(m: UiMessage, i: number): ThreadMessageLike {
   const id = `saved-${i}`;
-  const metadata = { custom: { index: m.index } satisfies AgentMessageCustom };
+  const metadata = { custom: { index: m.index, at: m.at } satisfies AgentMessageCustom };
   if (m.role === "assistant") {
     const records = (m.records ?? []).map((record, j) => ({
       type: "data" as const,

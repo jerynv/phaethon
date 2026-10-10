@@ -19,7 +19,7 @@ use crate::grants::{self, AccessAnswer, Grant};
 use crate::provider::{Delta, ErrorKind, ModelRequest, Provider};
 use crate::thread::{ReadTool, Record, WriteAction};
 use crate::vault::Vault;
-use crate::{attachments, thread, tools};
+use crate::{attachments, memory, thread, tools};
 
 /// Model calls allowed in one turn before Phaethon stops the agent.
 const MAX_STEPS: usize = 30;
@@ -102,8 +102,9 @@ pub struct LoopRequest<'a> {
 }
 
 /// The system prompt: Phaethon's own instructions, the other spaces and this
-/// space's grants, plus the vault's MANUAL.md. Stable across turns (spaces and
-/// grants are sorted) so the prompt cache keeps working until they change.
+/// space's grants, the vault's MANUAL.md, and this space's memory. Stable
+/// across turns (spaces and grants are sorted) so the prompt cache keeps
+/// working until they change.
 pub fn system_prompt(vault_root: &Path, space_id: &str) -> String {
     let mut s = format!("{BASE_PROMPT}\n\nThis space is called \"{space_id}\".");
     let vault = Vault::at(vault_root);
@@ -131,6 +132,11 @@ Once access is granted, read it with list_files, read_file or search_files using
     {
         s.push_str("\n\n# The user's manual\n\nThe user wrote this to tell you how they want you to work.\n\n");
         s.push_str(manual.trim());
+    }
+    // This space's memory only: another space's is never read here.
+    if let Some(memory) = vault.space_dir(space_id).ok().and_then(|dir| memory::for_prompt(&dir)) {
+        s.push_str("\n\n");
+        s.push_str(&memory);
     }
     s
 }
@@ -178,7 +184,7 @@ async fn drive<P: Provider>(
     {
         return fail(emit, ErrorCode::Storage, e);
     }
-    msgs.push(thread::user_message(req.prompt, &req.attachments));
+    msgs.push(thread::stamped(thread::user_message(req.prompt, &req.attachments)));
     if let Err(e) = thread::save(req.space_dir, &msgs) {
         return fail(emit, ErrorCode::Storage, format!("The conversation could not be saved, so nothing was sent: {e}"));
     }
@@ -232,7 +238,7 @@ async fn drive<P: Provider>(
         };
         let turn = match result {
             None => {
-                msgs.extend(partial_reply(&partial, true));
+                msgs.extend(partial_reply(&partial, true).map(thread::stamped));
                 emit(AgentEvent::Record { record: Record::Stopped });
                 if let Err(e) = thread::save(req.space_dir, &msgs) {
                     fail(emit, ErrorCode::Storage, format!("The stopped reply could not be saved: {e}"));
@@ -242,7 +248,7 @@ async fn drive<P: Provider>(
             Some(Err(e)) => {
                 // Keep what streamed before the failure; the next message carries on from it.
                 if let Some(m) = partial_reply(&partial, false) {
-                    msgs.push(m);
+                    msgs.push(thread::stamped(m));
                     let _ = thread::save(req.space_dir, &msgs);
                 }
                 return emit(AgentEvent::Error { code: error_code(e.kind), message: e.message, retry_after_secs: e.retry_after });
@@ -259,7 +265,7 @@ async fn drive<P: Provider>(
             .filter(|b| b["type"] == "tool_use")
             .cloned()
             .collect();
-        msgs.push(json!({"role": "assistant", "content": turn.content}));
+        msgs.push(thread::stamped(json!({"role": "assistant", "content": turn.content})));
         // Records from this step's tool calls are appended to this message.
         let reply = msgs.len() - 1;
         if let Err(e) = thread::save(req.space_dir, &msgs) {
@@ -411,7 +417,7 @@ Do not ask for it again in this conversation. Work without it, or tell the user 
         if cancelled {
             record(&mut msgs, reply, Record::Stopped, emit);
         }
-        msgs.push(json!({"role": "user", "content": results}));
+        msgs.push(thread::stamped(json!({"role": "user", "content": results})));
         if let Err(e) = thread::save(req.space_dir, &msgs) {
             return fail(emit, ErrorCode::Storage, format!("The conversation could not be saved: {e}"));
         }
@@ -1382,5 +1388,41 @@ mod tests {
         assert!(serde_json::to_value(&expected[0]).unwrap().get("query").is_none());
         assert!(!serde_json::to_string(&p.seen.lock().unwrap()[1]).unwrap().contains("phaethon_record"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_prompt_carries_this_spaces_memory_only_and_messages_keep_their_time() {
+        let dir = std::env::temp_dir().join(format!("phaethon-loop-memory-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for s in ["school", "work"] {
+            std::fs::create_dir_all(dir.join("spaces").join(s)).unwrap();
+        }
+        memory::append(&dir.join("spaces/school"), &["M301 exam is Oct 21.".into()], "1").unwrap();
+        memory::append(&dir.join("spaces/work"), &["Shift on Tuesdays.".into()], "2").unwrap();
+        let school = system_prompt(&dir, "school");
+        assert!(school.contains("- M301 exam is Oct 21.") && school.contains("What the user chose to keep"), "{school}");
+        assert!(!school.contains("Tuesdays"), "another space's memory never reaches this prompt");
+        let work = system_prompt(&dir, "work");
+        assert!(work.contains("Shift on Tuesdays.") && !work.contains("M301"));
+
+        let before = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        let p = Scripted::new(vec![tool_then_text_a(), done()]);
+        run(&dir, &p, &Approvals::default(), "what's in here?", |_| {});
+        assert!(p.systems.lock().unwrap().iter().all(|s| s.contains("M301 exam is Oct 21.")));
+        // Saved with their times; never sent with them.
+        let saved = thread::load(&dir.join("spaces/school")).unwrap();
+        assert_eq!(saved.len(), 4);
+        assert!(saved.iter().all(|m| m["at"].as_u64().is_some_and(|t| t >= before)), "{saved:?}");
+        assert!(p.seen.lock().unwrap().iter().flatten().all(|m| m.get("at").is_none()));
+        let ui = thread::to_ui(&saved);
+        assert_eq!(ui.len(), 2);
+        assert_eq!(ui[0].at, saved[0]["at"].as_u64());
+        assert_eq!(ui[1].at, saved[3]["at"].as_u64(), "a reply's time is when it finished");
+        assert_eq!(serde_json::to_value(&ui[0]).unwrap()["at"], saved[0]["at"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn tool_then_text_a() -> Result<ModelTurn, ProviderError> {
+        turn(json!([{"type": "text", "text": "Looking."}, {"type": "tool_use", "id": "t1", "name": "list_files", "input": {}}]), "tool_use")
     }
 }

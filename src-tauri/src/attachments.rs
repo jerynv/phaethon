@@ -253,6 +253,46 @@ pub fn save(space: &Path, uploads: &[Upload]) -> Result<Vec<Value>, String> {
     Ok(refs)
 }
 
+/// Remove saved attachments by their paths in the space (from a thread the
+/// user may have edited, so each is checked): only regular files under
+/// `attachments/`, reached without leaving the space or following a link. A
+/// date folder left empty goes too. Returns (removed, could not be removed);
+/// a file already gone counts as removed.
+pub fn remove(space: &Path, paths: &[String]) -> (usize, usize) {
+    let (mut removed, mut failed) = (0, 0);
+    for p in paths {
+        let under = tools::clean_rel(p)
+            .is_ok_and(|c| c.components().count() >= 2 && c.components().next().is_some_and(|f| f.as_os_str() == FOLDER));
+        if !under {
+            failed += 1;
+            continue;
+        }
+        let full = match tools::resolve(space, p, true) {
+            Ok(f) => f,
+            Err(e) if e.ends_with("does not exist") => {
+                removed += 1;
+                continue;
+            }
+            Err(_) => {
+                failed += 1;
+                continue;
+            }
+        };
+        if !fs::symlink_metadata(&full).is_ok_and(|m| m.file_type().is_file()) || fs::remove_file(&full).is_err() {
+            failed += 1;
+            continue;
+        }
+        removed += 1;
+        // Only succeeds when empty; never the attachments folder itself.
+        if let (Some(dir), Ok(folder)) = (full.parent(), tools::resolve(space, FOLDER, true))
+            && dir.parent() == Some(folder.as_path())
+        {
+            let _ = fs::remove_dir(dir);
+        }
+    }
+    (removed, failed)
+}
+
 /// A name as the user knows it, without any folders the browser included.
 fn display_name(name: &str) -> String {
     Path::new(name)
@@ -796,6 +836,37 @@ mod tests {
         std::os::unix::fs::symlink(&outside, space.join(FOLDER)).unwrap();
         assert!(save(&space, &[up("a.md", "", b"x")]).is_err());
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir_all(&space).unwrap();
+        fs::remove_dir_all(&outside).unwrap();
+    }
+
+    #[test]
+    fn remove_takes_only_attachments_inside_the_space() {
+        let space = temp_space("remove");
+        let outside = temp_space("remove-outside");
+        let refs = save(&space, &[up("a.md", "", b"a"), up("b.md", "", b"b")]).unwrap();
+        let paths: Vec<String> = refs.iter().map(|r| r["path"].as_str().unwrap().to_string()).collect();
+        fs::write(space.join("notes.md"), "mine").unwrap();
+        fs::write(outside.join("x.md"), "theirs").unwrap();
+        let bad = ["notes.md", "../x.md", "attachments", "attachments/../notes.md", ".phaethon/thread.json", "/etc/hosts"];
+        let (removed, failed) = remove(&space, &bad.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!((removed, failed), (0, bad.len()));
+        assert!(space.join("notes.md").exists() && outside.join("x.md").exists());
+        // One of the two: the other and its date folder stay; then the last takes the folder.
+        assert_eq!(remove(&space, &paths[..1]), (1, 0));
+        assert!(!space.join(&paths[0]).exists() && space.join(&paths[1]).exists());
+        assert_eq!(remove(&space, &paths[1..]), (1, 0));
+        assert!(!space.join(FOLDER).join(today()).exists() && space.join(FOLDER).is_dir());
+        // Already gone counts as removed.
+        assert_eq!(remove(&space, &paths[..1]), (1, 0));
+        #[cfg(unix)]
+        {
+            let day = space.join(FOLDER).join("2026-01-01");
+            fs::create_dir_all(&day).unwrap();
+            std::os::unix::fs::symlink(outside.join("x.md"), day.join("link.md")).unwrap();
+            assert_eq!(remove(&space, &["attachments/2026-01-01/link.md".to_string()]), (0, 1));
+            assert!(outside.join("x.md").exists());
+        }
         fs::remove_dir_all(&space).unwrap();
         fs::remove_dir_all(&outside).unwrap();
     }

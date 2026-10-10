@@ -44,6 +44,7 @@ import { ApprovalCard, SpaceIdContext } from "./approval-card";
 import { MessageAttachments } from "./attachments";
 import { Composer, useAddFiles } from "./composer";
 import { MessageError, SetupBelowContext } from "./message-error";
+import { MessageTime } from "./message-time";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
 import { RecordPart, announcesRecord, recordText } from "./receipts";
 
@@ -123,6 +124,7 @@ function UserMessage() {
           <MessagePrimitive.Parts components={USER_PARTS} />
         </div>
       )}
+      <MessageTime role="user" />
       <EditAction />
     </MessagePrimitive.Root>
   );
@@ -408,6 +410,7 @@ function AssistantMessage() {
           Reply stopped.
         </p>
       )}
+      <MessageTime role="assistant" />
       <ReplyActions />
     </MessagePrimitive.Root>
   );

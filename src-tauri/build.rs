@@ -5,6 +5,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "dev_log", "agent_send", "agent_cancel", "agent_approve", "agent_access_answer", "grants_list", "grant_revoke", "grant_restore",
             "thread_load", "thread_new", "threads_list", "thread_open", "thread_delete", "claude_cli_status",
+            "thread_clear", "thread_forget", "thread_forget_preview",
             "settings_get", "settings_set_backend", "api_key_set", "api_key_clear", "appearance_set",
             "spaces_list", "space_create", "space_update",
             "api_key_check", "models_list", "settings_set_model", "file_open",

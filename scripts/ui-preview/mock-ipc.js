@@ -117,6 +117,7 @@
         }
         // As thread.rs returns them: each message carries its index and its records.
         case "thread_load":
+          // `at` only where a scenario gives one (older saves have none).
           return (M.threads[args.space] ?? []).map((m, i) => ({ index: i, records: [], attachments: [], ...m }));
         // Conversations, as src-tauri/src/thread.rs keeps them: M.threads[space] is the
         // current one, M.threadArchive[space] = [{ id, updated, messages }] the saved ones.
@@ -146,6 +147,29 @@
           if (!archive.some((t) => t.id === args.id)) throw "That conversation couldn’t be deleted: it is no longer there.";
           M.threadArchive[args.space] = archive.filter((t) => t.id !== args.id);
           return;
+        }
+        // Clear and Delete everything (src-tauri/src/memory.rs). M.keep: the details Clear keeps;
+        // M.clearFails: a reason the details can't be picked out (nothing changes); M.preview /
+        // M.forgotten: what Delete everything says it takes and took.
+        case "thread_forget_preview":
+        case "thread_clear":
+        case "thread_forget": {
+          if (cmd !== "thread_forget_preview" && window.__liveTurn && M.currentSpace === args.space) throw BUSY;
+          const archive = M.threadArchive[args.space] ?? [];
+          const msgs = args.id === "current" ? M.threads[args.space] ?? [] : archive.find((t) => t.id === args.id)?.messages;
+          if (!msgs) throw "That conversation couldn’t be read: that conversation is no longer there";
+          const files = msgs.reduce((n, m) => n + (m.attachments?.length ?? 0), 0);
+          if (cmd === "thread_forget_preview") return M.preview ?? { files, sharedFiles: 0, facts: 0 };
+          if (cmd === "thread_clear") {
+            if (M.settings.backend !== "phaethon") return { status: "notKept", reason: "Claude Code is answering in this vault, and Phaethon can’t ask it to pick out details." };
+            if (M.clearFails) return { status: "notKept", reason: M.clearFails };
+          }
+          if (args.id === "current") M.threads[args.space] = [];
+          else M.threadArchive[args.space] = archive.filter((t) => t.id !== args.id);
+          if (cmd === "thread_forget") return M.forgotten ?? { files, filesLeft: 0, facts: 0 };
+          const kept = M.keep ?? ["Test 1 for C241 is on Thursday.", "Problem set 4 is due Wednesday."];
+          (M.memory ??= {})[args.space] = [...(M.memory[args.space] ?? []), ...kept];
+          return { status: "cleared", kept };
         }
         case "claude_cli_status":
           // Contract: whether the claude command is installed (and where). Never says anything about the login.

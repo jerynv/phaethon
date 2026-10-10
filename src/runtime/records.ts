@@ -29,6 +29,8 @@ export type UiMessage = {
   /** Position of the message's first raw entry in thread.json: what replaceFrom takes. */
   index: number;
   records: ChatRecord[];
+  /** When it was sent (yours) or finished (a reply), ms since the epoch; missing on older saves. */
+  at?: number;
 };
 
 export const loadUiThread = (space: string) => invoke<UiMessage[]>("thread_load", { space });

@@ -8,11 +8,23 @@ import { modCap } from "@/components/shell/shortcuts";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
-import { getSettings, listThreads, newThread, openThread, type ThreadSummary } from "@/lib/backend";
+import {
+  clearThread,
+  forgetThread,
+  getSettings,
+  listThreads,
+  MEMORY_FILE,
+  newThread,
+  openThread,
+  previewForget,
+  type ForgetPreview,
+  type ThreadSummary,
+} from "@/lib/backend";
 import { modKeyLabel, platform } from "@/lib/platform";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { openSpaceFile } from "@/runtime/records";
 
 /** Said when a switch is asked for while a reply runs (the Rust core refuses it too). */
 const BUSY = "Phaethon is still replying. Stop the reply or wait for it to finish, then try again.";
@@ -41,13 +53,29 @@ export function relativeDate(ms: number, now = Date.now(), withTime = false): st
 /**
  * Delete a conversation for good (`thread_delete`): a saved one by its id, or
  * the open one ("current"), which leaves the space with an empty conversation.
- * Refused while a reply runs in the space.
+ * Its files and the space's memory are left as they are: this is Clear when
+ * nothing could be kept. Refused while a reply runs in the space.
  */
 const deleteThread = (space: string, id: string) => invoke<void>("thread_delete", { space, id });
 
 function countText(n: number) {
   return n === 0 ? "No messages yet" : `${n} message${n === 1 ? "" : "s"}`;
 }
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** What Delete everything takes beside the messages, in words, from its preview (unknown until it loads). */
+function forgetWhat(p: ForgetPreview | null): string {
+  if (!p) return "the files attached only here and any details kept from it";
+  const parts = [
+    p.files > 0 ? `the ${plural(p.files, "file")} attached only here` : "",
+    p.facts > 0 ? `the ${plural(p.facts, "detail")} kept from it` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" and ") : "";
+}
+
+/** The confirm's stage: asking, picking out details, or the pick failed (nothing changed). */
+type ConfirmStage = { stage: "ask" } | { stage: "clearing" } | { stage: "notKept"; reason: string };
 
 /**
  * A conversation's line under its title: "Current" or when, and how long. Edit and Regenerate
@@ -80,11 +108,18 @@ type ListState =
  * returns focus to the button). ArrowUp and ArrowDown move by conversation;
  * each one's "Delete" sits beside it, reached with ArrowRight (ArrowLeft goes
  * back), and the Delete or Backspace key on a conversation does the same.
- * Delete swaps the row for an inline confirm that names the conversation,
- * says when it was last used and what stays, with focus on Cancel (the safe
- * choice); Cancel goes back to where Delete was asked from. Deleting a saved
- * conversation keeps the menu open, focus moving to the row that took its
- * place, and is announced; deleting the open one starts a new conversation.
+ * Delete swaps the row for an inline confirm that names the conversation and
+ * says when it was last used, with two choices after Cancel (focused, the safe
+ * one), each a whole target from the next: Clear keeps its key details in the
+ * space's MEMORY.md (the model picks them out) and removes its messages;
+ * Delete everything (red) removes its messages, the files only it uses and
+ * the details kept from it. Cancel goes back to where Delete was asked from.
+ * If the details can't be picked out (no key, offline, Claude Code) nothing
+ * changes and the confirm offers Clear without keeping anything. A Clear
+ * closes the menu and leaves a note under the bar that can show what was
+ * kept and open the memory file; Delete everything on a saved conversation
+ * keeps the menu open, focus moving to the row that took its place. Each is
+ * announced; removing the open one starts a new conversation.
  * Switching remounts the conversation and puts focus in the composer (see
  * SpacePane); the result is said once through SpacePane's status region. A
  * switch or delete asked for while a reply runs is refused with an alert
@@ -115,8 +150,14 @@ export function ConversationsBar({
   // The open conversation, as the bar shows it; reloaded after a switch and when a reply ends.
   const [current, setCurrent] = useState<ThreadSummary | null>(null);
   const [changes, setChanges] = useState(0);
-  // The conversation whose Delete is waiting for a confirm.
+  // The conversation whose Delete is waiting for a confirm, where that confirm is, and what
+  // Delete everything would take with it.
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [stage, setStage] = useState<ConfirmStage>({ stage: "ask" });
+  const [preview, setPreview] = useState<ForgetPreview | null>(null);
+  // After a Clear: what was kept, shown under the bar until dismissed.
+  const [kept, setKept] = useState<{ title: string; facts: string[] } | null>(null);
+  const [showKept, setShowKept] = useState(false);
   // Where Cancel puts focus back: the row (Delete key) or its Delete item.
   const confirmFrom = useRef<"row" | "del">("del");
   const contentRef = useRef<HTMLDivElement>(null);
@@ -141,10 +182,25 @@ export function ConversationsBar({
   useEffect(() => {
     setProblem("");
     setOpen(false);
+    setKept(null);
   }, [space.id]);
   useEffect(() => {
     if (!open) setConfirming(null);
   }, [open]);
+  // Each confirm starts by asking, and learns what Delete everything would take.
+  useEffect(() => {
+    setStage({ stage: "ask" });
+    setPreview(null);
+    if (confirming == null || !inTauri()) return;
+    let live = true;
+    previewForget(space.id, confirming).then(
+      (p) => live && setPreview(p),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [confirming, space.id]);
 
   // The open conversation's title and date. A reply ending can give it its first title.
   useEffect(() => {
@@ -206,27 +262,69 @@ export function ConversationsBar({
     }
   }
 
-  async function remove(t: ThreadSummary, index: number) {
+  /**
+   * Remove `t` one of three ways: "forget" (Delete everything: its messages, the files only it
+   * uses, the details kept from it), "clear" (its key details kept in the space's memory first;
+   * if they can't be picked out nothing changes and the confirm offers the next step) or "plain"
+   * (Clear without keeping anything: only its messages). The open one is replaced by a new
+   * conversation; a saved one leaves the list with focus on the row that took its place, except
+   * after a Clear, which closes the menu to show what was kept under the bar.
+   */
+  async function remove(t: ThreadSummary, index: number, how: "forget" | "clear" | "plain") {
     if (running) {
       // Closing returns focus to the button, next to the alert.
       setProblem(BUSY);
       setOpen(false);
       return;
     }
+    const id = t.current ? "current" : t.id;
+    if (how !== "clear") setKept(null);
     setProblem("");
     setWorking(true);
-    if (t.current) switching.current = true;
+    let said = "";
+    let leftFiles = 0;
     try {
-      await deleteThread(space.id, t.current ? "current" : t.id);
+      if (how === "clear") {
+        setStage({ stage: "clearing" });
+        announce("Picking out what to keep…");
+        const out = await clearThread(space.id, id);
+        if (out.status === "notKept") {
+          setStage({ stage: "notKept", reason: out.reason });
+          focusNext.current = { cancel: t.id };
+          announce(`Nothing was cleared: Phaethon couldn’t pick out what to keep. ${out.reason}`);
+          return;
+        }
+        const n = out.kept.length;
+        said = n
+          ? `Cleared “${t.title}”. Kept ${plural(n, "detail")} in ${space.name}’s memory.`
+          : `Cleared “${t.title}”. There was nothing in it to keep.`;
+        setKept({ title: t.title, facts: out.kept });
+        setShowKept(false);
+      } else if (how === "forget") {
+        const done = await forgetThread(space.id, id);
+        leftFiles = done.filesLeft;
+        const also = [done.files > 0 && plural(done.files, "file"), done.facts > 0 && plural(done.facts, "kept detail")].filter(Boolean);
+        said = `Deleted “${t.title}”${also.length ? ` with its ${also.join(" and its ")}` : ""}.`;
+      } else {
+        await deleteThread(space.id, id);
+        said = `Cleared “${t.title}” without keeping anything.`;
+      }
+      if (leftFiles > 0) setProblem(`${plural(leftFiles, "file")} attached to it couldn’t be removed from ${space.name}’s attachments folder.`);
       if (t.current) {
+        switching.current = true;
         setOpen(false);
-        switched(`Deleted “${t.title}”. A new conversation has started.`);
+        switched(`${said} A new conversation has started.`);
         return;
       }
-      setConfirming(null);
-      focusNext.current = { index };
       setList((l) => (l.status === "ready" ? { ...l, threads: l.threads.filter((x) => x.id !== t.id) } : l));
-      announce(`Deleted the conversation “${t.title}”.`);
+      setConfirming(null);
+      if (how === "clear") {
+        // Focus goes back to Conversations, beside the note that shows what was kept.
+        setOpen(false);
+      } else {
+        focusNext.current = { index };
+      }
+      announce(said);
     } catch (e) {
       switching.current = false;
       setConfirming(null);
@@ -366,7 +464,7 @@ export function ConversationsBar({
             </span>
           </p>
         )}
-        <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
+        <DropdownMenu.Root open={open} onOpenChange={(o) => (o || stage.stage !== "clearing") && setOpen(o)} modal={false}>
           <DropdownMenu.Trigger asChild>
             <Button ref={triggerRef} type="button" variant="ghost" size="sm" data-conversations-trigger="">
               Conversations
@@ -392,6 +490,8 @@ export function ConversationsBar({
               onEscapeKeyDown={(e) => {
                 if (confirming == null) return;
                 e.preventDefault();
+                // While details are being picked out, the confirm stays: its outcome shows there.
+                if (stage.stage === "clearing") return;
                 focusNext.current = confirmFrom.current === "row" ? { row: confirming } : { del: confirming };
                 setConfirming(null);
               }}
@@ -436,30 +536,62 @@ export function ConversationsBar({
                     const stamp = stampOf(t, threads);
                     if (confirming === t.id) {
                       // Inline confirm in place of the row: says which one (its stamp, so one of several
-                      // versions can be told apart), what goes and what stays, the safe choice first and focused.
+                      // versions can be told apart), what each choice removes and keeps, the safe choice
+                      // first and focused. Clear keeps the key details in memory; Delete everything doesn't.
                       const labelId = `delete-${space.id}-${t.id}`;
+                      const failed = stage.stage === "notKept" ? stage.reason : null;
+                      const clearing = stage.stage === "clearing";
+                      const takes = forgetWhat(preview);
+                      const shared = preview?.sharedFiles ?? 0;
+                      const button =
+                        "flex min-h-(--ph-control-height) cursor-default items-center gap-1.5 rounded-md px-3 text-base font-medium outline-none select-none data-disabled:opacity-45";
                       return (
                         <DropdownMenu.Group
                           key={t.id}
                           aria-labelledby={labelId}
-                          aria-describedby={`${labelId}-stamp ${labelId}-stays`}
+                          aria-describedby={`${labelId}-stamp`}
                           data-delete-confirm={t.id}
-                          // Its frame stays in forced colours, where the tint is dropped.
-                          className="my-0.5 flex flex-col gap-2 rounded-md bg-danger-soft px-2.5 py-2 forced-colors:border forced-colors:border-[CanvasText]"
+                          // A neutral frame (Clear is the safe choice); it stays in forced colours.
+                          className="my-0.5 flex flex-col gap-2 rounded-md border border-line bg-surface-sunken px-2.5 py-2 forced-colors:border-[CanvasText]"
                         >
                           <p id={labelId} className="text-base text-ink">
-                            Delete “<span className="font-medium wrap-break-word">{t.title}</span>” for good?
-                            {t.current ? " A new conversation starts in its place." : " It can’t be opened again."}
+                            {failed == null ? "Clear or delete “" : "Clear “"}
+                            <span className="font-medium wrap-break-word">{t.title}</span>
+                            {failed == null ? "”?" : "” without keeping anything?"}
+                            {t.current && " A new conversation starts in its place."}
                           </p>
                           <p id={`${labelId}-stamp`} data-delete-stamp="" className="text-sm text-ink-secondary">
                             {stamp}
                           </p>
-                          <p id={`${labelId}-stays`} data-delete-stays="" className="text-sm text-ink-secondary">
-                            Files you attached to it stay in {space.name}’s attachments folder, and what was already sent to Anthropic
-                            isn’t affected.
+                          {failed != null ? (
+                            // Said through the announcer (a menu can't hold an alert); it describes the next step.
+                            <p id={`${labelId}-failed`} data-clear-failed="" className="flex items-start gap-2 text-sm text-warning-ink">
+                              <Icon name="warning" className="mt-0.5 shrink-0" />
+                              <span className="min-w-0 wrap-break-word">
+                                Phaethon couldn’t pick out what to keep, so nothing was cleared. {failed} You can clear it
+                                without keeping anything, or cancel and try again later.
+                              </span>
+                            </p>
+                          ) : (
+                            <>
+                              <p id={`${labelId}-clear`} data-clear-says="" className="text-sm text-ink-secondary">
+                                <span className="font-medium text-ink">Clear</span> removes the messages but keeps a few key
+                                details (facts about you, decisions, deadlines) in {space.name}’s memory. Anthropic picks them out,
+                                so the conversation is sent once more.
+                              </p>
+                              <p id={`${labelId}-forget`} data-forget-says="" className="text-sm text-ink-secondary">
+                                <span className="font-medium text-danger-ink">Delete everything</span> removes the messages
+                                {takes ? `, ${takes}` : ""}. Nothing is kept, and it can’t be undone.
+                                {shared > 0 && ` ${plural(shared, "file")} another conversation also uses ${shared === 1 ? "stays" : "stay"}.`}
+                              </p>
+                            </>
+                          )}
+                          <p data-delete-stays="" className="text-sm text-ink-secondary">
+                            What was already sent to Anthropic isn’t affected.
                           </p>
-                          {/* As far apart as Regenerate's question: a slip off Cancel must not delete for good. */}
-                          <div className="flex flex-wrap justify-end gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2">
+                          {/* Every choice at least a whole target from the next, across and down: a slip off
+                              Cancel must not remove anything. */}
+                          <div className="flex flex-wrap justify-end gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-[max(var(--ph-target-min),calc(var(--ph-space)*4))]">
                             <DropdownMenu.Item
                               data-delete-cancel={t.id}
                               disabled={working}
@@ -475,22 +607,51 @@ export function ConversationsBar({
                             >
                               Cancel
                             </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                              data-delete-confirm-button={t.id}
-                              disabled={working}
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                void remove(t, i);
-                              }}
-                              // An icon and a heavier border tell it from Cancel where colours are forced.
-                              className={cn(
-                                "flex min-h-(--ph-control-height) cursor-default items-center gap-1.5 rounded-md bg-danger px-3 text-base font-medium text-ink-inverse outline-none select-none data-disabled:opacity-45",
-                                "data-highlighted:bg-danger/90 forced-colors:border-2 forced-colors:border-[ButtonText]",
-                              )}
-                            >
-                              <Icon name="remove" className="shrink-0" />
-                              {working ? "Deleting…" : "Delete"}
-                            </DropdownMenu.Item>
+                            {failed != null ? (
+                              <DropdownMenu.Item
+                                data-clear-plain={t.id}
+                                disabled={working}
+                                aria-describedby={`${labelId}-failed`}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  void remove(t, i, "plain");
+                                }}
+                                className={cn(button, "border-2 border-ink bg-raised text-ink data-highlighted:bg-hover")}
+                              >
+                                Clear without keeping anything
+                              </DropdownMenu.Item>
+                            ) : (
+                              <>
+                                <DropdownMenu.Item
+                                  data-clear-button={t.id}
+                                  disabled={working}
+                                  aria-describedby={`${labelId}-clear`}
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void remove(t, i, "clear");
+                                  }}
+                                  // Neutral and solid: told from Cancel by its fill, and by a heavier border where colours are forced.
+                                  className={cn(button, "bg-ink text-ink-inverse data-highlighted:bg-ink/85 forced-colors:border-2 forced-colors:border-[ButtonText]")}
+                                >
+                                  {clearing && <Icon name="spinner" className="shrink-0 animate-spin" />}
+                                  {clearing ? "Keeping details…" : "Clear"}
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                  data-delete-confirm-button={t.id}
+                                  disabled={working}
+                                  aria-describedby={`${labelId}-forget`}
+                                  onSelect={(e) => {
+                                    e.preventDefault();
+                                    void remove(t, i, "forget");
+                                  }}
+                                  // An icon and a heavier border tell it apart where colours are forced.
+                                  className={cn(button, "bg-danger text-ink-inverse data-highlighted:bg-danger/90 forced-colors:border-2 forced-colors:border-[ButtonText]")}
+                                >
+                                  <Icon name="remove" className="shrink-0" />
+                                  {working && !clearing ? "Deleting…" : "Delete everything"}
+                                </DropdownMenu.Item>
+                              </>
+                            )}
                           </div>
                         </DropdownMenu.Group>
                       );
@@ -613,6 +774,68 @@ export function ConversationsBar({
             >
               <Icon name="close" className="size-(--ph-icon-size-sm)" />
             </Button>
+          </div>
+        </div>
+      )}
+      {kept && (
+        // What the last Clear kept, until dismissed. Already announced, so not a live region.
+        <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-2">
+          <div data-kept-note="" className="flex flex-col gap-2 rounded-lg border border-line bg-surface-sunken py-2 ps-3 pe-1 text-base text-ink">
+            <div className="flex items-start gap-2.5">
+              <Icon name="check" className="mt-0.5 shrink-0 text-success-ink" />
+              <p className="min-w-0 flex-1 wrap-break-word">
+                Cleared “{kept.title}”.{" "}
+                {kept.facts.length
+                  ? `Kept ${plural(kept.facts.length, "detail")} in ${space.name}’s memory.`
+                  : "There was nothing in it to keep."}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="text-ink-secondary"
+                aria-label="Dismiss"
+                data-kept-dismiss=""
+                onClick={() => setKept(null)}
+              >
+                <Icon name="close" className="size-(--ph-icon-size-sm)" />
+              </Button>
+            </div>
+            {kept.facts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*4))] gap-y-1 ps-[calc(var(--ph-icon-size)+var(--ph-space)*2.5)]">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="-ms-2"
+                  aria-expanded={showKept}
+                  aria-controls={`kept-${space.id}`}
+                  data-kept-show=""
+                  onClick={() => setShowKept((s) => !s)}
+                >
+                  <Icon name="chevron-down" className={cn("size-(--ph-icon-size-sm)", showKept && "rotate-180")} />
+                  {showKept ? "Hide what was kept" : "Show what was kept"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  data-kept-open=""
+                  onClick={() => openSpaceFile(space.id, MEMORY_FILE).catch((e: unknown) => setProblem(String(e)))}
+                >
+                  Open {MEMORY_FILE}
+                </Button>
+              </div>
+            )}
+            {showKept && (
+              <ul id={`kept-${space.id}`} data-kept-list="" className="list-disc ps-[calc(var(--ph-icon-size)+var(--ph-space)*6)] pe-3 text-sm text-ink-secondary">
+                {kept.facts.map((f, i) => (
+                  <li key={i} className="wrap-break-word">
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}

@@ -61,7 +61,7 @@ impl Anthropic {
     }
 
     fn body(&self, req: &ModelRequest<'_>) -> Value {
-        json!({
+        let mut body = json!({
             "model": self.model,
             "max_tokens": MAX_TOKENS,
             "stream": true,
@@ -72,7 +72,12 @@ impl Anthropic {
             "system": [{"type": "text", "text": req.system}],
             "tools": req.tools,
             "messages": req.messages,
-        })
+        });
+        // A call without tools (picking out details to keep) sends none at all.
+        if req.tools.as_array().is_some_and(|t| t.is_empty()) {
+            body.as_object_mut().expect("an object").remove("tools");
+        }
+        body
     }
 }
 
@@ -531,6 +536,16 @@ fn echo_safe(blocks: Vec<Value>) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_call_without_tools_sends_no_tools_field() {
+        let a = Anthropic::new("k".into(), None, None);
+        let msgs = [json!({"role": "user", "content": "hi"})];
+        let none = json!([]);
+        let some = json!([{"name": "read_file"}]);
+        assert!(a.body(&ModelRequest { system: "s", messages: &msgs, tools: &none }).get("tools").is_none());
+        assert_eq!(a.body(&ModelRequest { system: "s", messages: &msgs, tools: &some })["tools"], some);
+    }
 
     fn run_sse(raw: &str) -> (Result<ModelTurn, ProviderError>, Vec<String>) {
         let mut acc = Accumulator::default();

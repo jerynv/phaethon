@@ -31,7 +31,8 @@ export type ThreadRecord =
 /**
  * Mirrors `UiMessage` in src-tauri/src/thread.rs. `index` (where the message
  * starts in thread.json, for edit and regenerate) and `records` may be missing
- * from an older core.
+ * from an older core. `at` (when it was sent, or a reply finished, in ms since
+ * the epoch) is missing for messages saved before times were kept.
  */
 export type SavedMessage = {
   role: "user" | "assistant";
@@ -39,6 +40,7 @@ export type SavedMessage = {
   attachments: SavedAttachment[];
   index?: number;
   records?: ThreadRecord[];
+  at?: number;
 };
 
 /** Mirrors `UiAttachment` in src-tauri/src/thread.rs. `path` is relative to the space. */
@@ -91,3 +93,21 @@ export const newThread = (space: string) => invoke<void>("thread_new", { space }
 export const listThreads = (space: string) => invoke<ThreadSummary[]>("threads_list", { space });
 /** Make a saved conversation the current one. Refused while a reply runs. */
 export const openThread = (space: string, id: string) => invoke<void>("thread_open", { space, id });
+
+/** Mirrors `ClearOutcome` in src-tauri/src/memory.rs. "notKept": nothing was changed. */
+export type ClearOutcome = { status: "cleared"; kept: string[] } | { status: "notKept"; reason: string };
+/**
+ * Clear a conversation ("current" or a saved id): the model picks out its key details, which are
+ * kept in the space's MEMORY.md, then its messages are removed. Refused while a reply runs.
+ */
+export const clearThread = (space: string, id: string) => invoke<ClearOutcome>("thread_clear", { space, id });
+/** Mirrors `ForgetPreview` in src-tauri/src/memory.rs. */
+export type ForgetPreview = { files: number; sharedFiles: number; facts: number };
+/** What deleting a conversation with everything would remove, asked before the confirm. */
+export const previewForget = (space: string, id: string) => invoke<ForgetPreview>("thread_forget_preview", { space, id });
+/** Mirrors `Forgotten` in src-tauri/src/memory.rs. */
+export type Forgotten = { files: number; filesLeft: number; facts: number };
+/** Delete a conversation, the files only it uses and what was kept from it. Refused while a reply runs. */
+export const forgetThread = (space: string, id: string) => invoke<Forgotten>("thread_forget", { space, id });
+/** The space's memory file, relative to the space (file_open can open it). */
+export const MEMORY_FILE = "MEMORY.md";

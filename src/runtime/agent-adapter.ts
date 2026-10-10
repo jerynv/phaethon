@@ -51,6 +51,8 @@ export type AgentMessageCustom = {
   retryAfterSecs?: number;
   /** A saved message's position in thread.json (messages loaded from disk only). */
   index?: number;
+  /** When a reply finished (or a saved message was sent or finished), ms since the epoch. */
+  at?: number;
 };
 
 /**
@@ -197,10 +199,13 @@ export function createAgentAdapter(
       let accessRequest: PendingAccessRequest | undefined;
       let errorCode: string | undefined;
       let retryAfterSecs: number | undefined;
+      let at: number | undefined;
+      // How the reply ended, when it failed or was stopped: kept by the last update too.
+      let ended: ChatModelRunResult["status"];
       const update = (): ChatModelRunResult => ({
         content: parts,
         metadata: {
-          custom: { toolStatus, approval, accessRequest, errorCode, retryAfterSecs } satisfies AgentMessageCustom,
+          custom: { toolStatus, approval, accessRequest, errorCode, retryAfterSecs, at } satisfies AgentMessageCustom,
         },
       });
       const settle = () => {
@@ -275,20 +280,19 @@ export function createAgentAdapter(
               settle();
               errorCode = e.code;
               retryAfterSecs = e.retryAfterSecs;
-              yield {
-                ...update(),
-                status: { type: "incomplete", reason: "error", error: e.message },
-              };
+              ended = { type: "incomplete", reason: "error", error: e.message };
+              yield { ...update(), status: ended };
               break;
             case "cancelled":
               settle();
-              yield { ...update(), status: { type: "incomplete", reason: "cancelled" } };
+              ended = { type: "incomplete", reason: "cancelled" };
+              yield { ...update(), status: ended };
               break;
             case "end":
-              if (toolStatus !== undefined) {
-                toolStatus = undefined;
-                yield update();
-              }
+              // The reply's time is when it finished, as the backend saves it.
+              toolStatus = undefined;
+              at = Date.now();
+              yield ended ? { ...update(), status: ended } : update();
               return;
           }
         }

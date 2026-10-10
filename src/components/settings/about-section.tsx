@@ -116,8 +116,10 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
             <p className="text-base font-medium text-ink">Deleting a conversation</p>
             {/* The menu first; the files only as a fallback, folded away. */}
             <p className="max-w-(--ph-measure)">
-              To delete a conversation, open Conversations at the top of the space and choose Delete beside it. It’s deleted for good.
-              Files you attached to it stay in the space’s attachments folder. Copies already sent to Anthropic are covered by{" "}
+              To delete a conversation, open Conversations at the top of the space and choose Delete beside it, then Clear or Delete
+              everything. Clear keeps a few key details from it in the space’s MEMORY.md file, which you can edit; files you attached stay
+              in the space’s attachments folder. Delete everything also removes the files attached only to it and anything kept from it.
+              Either way the messages are gone for good. Copies already sent to Anthropic are covered by{" "}
               <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
             </p>
             <p className="max-w-(--ph-measure)" data-about-cli-history="">

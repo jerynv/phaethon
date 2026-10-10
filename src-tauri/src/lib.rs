@@ -3,6 +3,7 @@ pub mod agent_loop;
 pub mod anthropic;
 pub mod attachments;
 pub mod grants;
+pub mod memory;
 pub mod open;
 pub mod provider;
 pub mod secrets;
@@ -278,6 +279,58 @@ fn thread_delete(state: State<'_, AppState>, space: String, id: String) -> Resul
     })
 }
 
+/// Clear the conversation `id` in `space` (Phaethon's own agent): the model
+/// picks out its key details in one call, they are added to the space's
+/// MEMORY.md, then the conversation is removed (for `"current"`, the CLI
+/// session too). `notKept` (no key, Claude Code, offline, ...) changes nothing.
+/// Refused while a reply is running there.
+#[tauri::command]
+async fn thread_clear(state: State<'_, AppState>, space: String, id: String) -> Result<memory::ClearOutcome, String> {
+    let dir = state.vault.space_dir(&space)?;
+    let settings = state.vault.settings();
+    let provider = if settings.backend != Backend::Phaethon {
+        Err("Claude Code is answering in this vault, and Phaethon can’t ask it to pick out details.".to_string())
+    } else {
+        match secrets::get(&state.vault.name(), "anthropic") {
+            Ok(Some(key)) => Ok(anthropic::Anthropic::new(key, settings.model, settings.effort)),
+            Ok(None) => Err("There’s no Anthropic key in Settings, so Phaethon can’t pick out details to keep.".to_string()),
+            Err(e) => Err(e),
+        }
+    };
+    if state.runs.claim(&space).is_none() {
+        return Err(thread::BUSY.into());
+    }
+    let out = memory::clear(&dir, &id, provider.as_ref().map_err(Clone::clone)).await;
+    state.runs.release(&space);
+    if matches!(out, Ok(memory::ClearOutcome::Cleared { .. })) && id == thread::CURRENT_ID {
+        vault::clear_session(&dir);
+    }
+    out
+}
+
+/// What deleting `id` with everything would remove: files only it uses, files
+/// another conversation also uses (they stay), and details kept from it.
+#[tauri::command]
+fn thread_forget_preview(state: State<'_, AppState>, space: String, id: String) -> Result<memory::ForgetPreview, String> {
+    let dir = state.vault.space_dir(&space)?;
+    memory::forget_preview(&dir, &id).map_err(|e| format!("That conversation couldn’t be read: {e}"))
+}
+
+/// Delete the conversation `id` in `space` with everything it brought: its
+/// messages, files attached only there, and the details kept from it. Refused
+/// while a reply is running there.
+#[tauri::command]
+fn thread_forget(state: State<'_, AppState>, space: String, id: String) -> Result<memory::Forgotten, String> {
+    let dir = state.vault.space_dir(&space)?;
+    thread::while_idle(&state.runs, &space, || {
+        let done = memory::forget(&dir, &id)?;
+        if id == thread::CURRENT_ID {
+            vault::clear_session(&dir);
+        }
+        Ok(done)
+    })
+}
+
 /// Whether Claude Code is installed (and where), so the UI can say how to
 /// install it before switching to it. Never looks at the user's login.
 #[tauri::command]
@@ -469,6 +522,9 @@ pub fn run() {
             threads_list,
             thread_open,
             thread_delete,
+            thread_clear,
+            thread_forget,
+            thread_forget_preview,
             claude_cli_status,
             settings_get,
             settings_set_backend,

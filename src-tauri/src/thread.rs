@@ -129,19 +129,32 @@ fn is_shown(r: &Record) -> bool {
     !matches!(r, Record::DeniedEarlier { .. })
 }
 
-/// The thread as the provider gets it: record blocks removed, and a message
+/// The thread as the provider gets it: only each message's role and content
+/// (its saved time is Phaethon's own), record blocks removed, and a message
 /// left with nothing in it (a reply stopped before any text) dropped.
 pub fn for_provider(msgs: &[Value]) -> Vec<Value> {
     msgs.iter()
         .filter_map(|m| {
             let blocks = m["content"].as_array()?;
-            if !blocks.iter().any(is_record) {
-                return Some(m.clone());
-            }
             let kept: Vec<Value> = blocks.iter().filter(|b| !is_record(b)).cloned().collect();
             (!kept.is_empty()).then(|| json!({"role": m["role"], "content": kept}))
         })
         .collect()
+}
+
+/// `m` with the time it was saved (`"at"`, milliseconds since the epoch).
+/// Messages saved before this existed have none, and still load.
+pub fn stamped(mut m: Value) -> Value {
+    m["at"] = now_ms().into();
+    m
+}
+
+/// A conversation's lasting identity: when its first message was saved. It
+/// survives the renames that archiving and reopening do, and an earlier
+/// version kept by an edit or regenerate shares it. `None` for conversations
+/// saved before messages had times.
+pub fn key(msgs: &[Value]) -> Option<String> {
+    msgs.first().and_then(|m| m["at"].as_u64()).map(|t| t.to_string())
 }
 
 fn file(space: &Path) -> PathBuf {
@@ -204,6 +217,10 @@ pub struct UiMessage {
     pub index: usize,
     /// The record for this reply, in order (empty for user messages).
     pub records: Vec<Record>,
+    /// When it was sent (yours) or finished (a reply), in milliseconds since
+    /// the epoch. Absent for messages saved before times were kept.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<u64>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -252,6 +269,7 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
             .filter_map(Record::from_block)
             .filter(is_shown)
             .collect();
+        let at = m["at"].as_u64();
         match m["role"].as_str() {
             Some("user") if !texts.is_empty() || !files.is_empty() => {
                 reply_start = None;
@@ -261,6 +279,7 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
                     attachments: files,
                     index,
                     records: vec![],
+                    at,
                 })
             }
             Some("assistant") if !texts.is_empty() || !records.is_empty() => {
@@ -272,6 +291,8 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
                         }
                         last.text.push_str(&joined);
                         last.records.extend(records);
+                        // A reply finishes with its last part.
+                        last.at = at.or(last.at);
                     }
                     _ => out.push(UiMessage {
                         role: "assistant",
@@ -279,6 +300,7 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
                         attachments: vec![],
                         index: reply_start.unwrap_or(index),
                         records,
+                        at,
                     }),
                 }
             }
@@ -582,6 +604,82 @@ pub fn delete(space: &Path, id: &str) -> io::Result<()> {
     fs::remove_file(chosen)
 }
 
+/// The saved messages of conversation `id`: `"current"`, or an archive id
+/// naming a regular file in the archive (never turned into a path otherwise).
+pub fn load_id(space: &Path, id: &str) -> io::Result<Vec<Value>> {
+    if id == CURRENT_ID {
+        return load(space);
+    }
+    if !is_valid_id(id) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a conversation id"));
+    }
+    let chosen = archived(space, id);
+    if !is_regular_file(&chosen) {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "that conversation is no longer there"));
+    }
+    read_messages(&chosen)
+}
+
+/// The saved paths of the files attached in `msgs`, each once, in order.
+pub fn attachment_paths(msgs: &[Value]) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for b in msgs.iter().filter_map(|m| m["content"].as_array()).flatten().filter(|b| is_attachment_ref(b)) {
+        if let Some(p) = b["path"].as_str()
+            && !out.iter().any(|o| o == p)
+        {
+            out.push(p.to_string());
+        }
+    }
+    out
+}
+
+/// What deleting conversation `id` with everything it brought would remove.
+#[derive(Debug, PartialEq)]
+pub struct ForgetPlan {
+    /// Attached files no other conversation in the space mentions.
+    pub only_here: Vec<String>,
+    /// Attached files another conversation (an earlier version, say) still uses; they stay.
+    pub shared: usize,
+    /// The conversation's [`key`], which tags what was kept from it in memory.
+    pub key: Option<String>,
+}
+
+/// Work out what goes with conversation `id`. Other conversations are
+/// searched as raw text, so one that can't be read still keeps any file it
+/// names. A conversation that can't be read itself brings no files.
+pub fn plan_forget(space: &Path, id: &str) -> io::Result<ForgetPlan> {
+    let msgs = match load_id(space, id) {
+        Ok(m) => m,
+        Err(e) if matches!(e.kind(), io::ErrorKind::InvalidInput | io::ErrorKind::NotFound) => return Err(e),
+        Err(_) => vec![],
+    };
+    let mut others: Vec<String> = vec![];
+    if id != CURRENT_ID && let Ok(raw) = fs::read_to_string(file(space)) {
+        others.push(raw);
+    }
+    if let Ok(entries) = fs::read_dir(archive_dir(space)) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(other) = name.to_str().and_then(|n| n.strip_suffix(".json")) else { continue };
+            if other != id && is_valid_id(other) && is_regular_file(&entry.path())
+                && let Ok(raw) = fs::read_to_string(entry.path())
+            {
+                others.push(raw);
+            }
+        }
+    }
+    let (mut only_here, mut shared) = (vec![], 0);
+    for path in attachment_paths(&msgs) {
+        let quoted = serde_json::to_string(&path).expect("a string serializes");
+        if others.iter().any(|raw| raw.contains(&quoted)) {
+            shared += 1;
+        } else {
+            only_here.push(path);
+        }
+    }
+    Ok(ForgetPlan { only_here, shared, key: key(&msgs) })
+}
+
 /// Run `f` with the space marked busy, so no reply can start while the files
 /// move. Refused with [`BUSY`] if a reply is already running there.
 pub fn while_idle<T>(runs: &Runs, space_id: &str, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
@@ -789,12 +887,57 @@ mod tests {
         assert_eq!(
             to_ui(&msgs),
             vec![
-                UiMessage { role: "user", text: "what's in notes?".into(), attachments: vec![], index: 0, records: vec![] },
-                UiMessage { role: "assistant", text: "Let me look.\n\nThere is a.md.".into(), attachments: vec![], index: 1, records: vec![] },
+                UiMessage { role: "user", text: "what's in notes?".into(), attachments: vec![], index: 0, records: vec![], at: None },
+                UiMessage { role: "assistant", text: "Let me look.\n\nThere is a.md.".into(), attachments: vec![], index: 1, records: vec![], at: None },
             ]
         );
         fs::write(file(&dir), "{\"not\": \"a list\"}").unwrap();
         assert!(load(&dir).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn times_round_trip_old_files_load_and_the_provider_never_sees_them() {
+        let dir = temp_space("times");
+        // A file saved before times existed.
+        fs::create_dir_all(dir.join(STATE_DIR)).unwrap();
+        fs::write(file(&dir), r#"[{"role":"user","content":[{"type":"text","text":"old"}]},{"role":"assistant","content":[{"type":"text","text":"reply"}]}]"#).unwrap();
+        let old = load(&dir).unwrap();
+        assert!(to_ui(&old).iter().all(|m| m.at.is_none()));
+        assert_eq!(key(&old), None);
+        assert!(serde_json::to_value(&to_ui(&old)[0]).unwrap().get("at").is_none(), "no time, no field");
+        // New messages carry one, kept through a save and a load; the UI gets it.
+        let mut msgs = old.clone();
+        msgs.push(stamped(user_text("new")));
+        save(&dir, &msgs).unwrap();
+        let back = load(&dir).unwrap();
+        assert_eq!(back, msgs);
+        let at = back[2]["at"].as_u64().unwrap();
+        assert!(at > 1_700_000_000_000);
+        assert_eq!(to_ui(&back)[2].at, Some(at));
+        assert_eq!(key(&[stamped(user_text("x"))]).map(|k| k.len()), Some(13));
+        // Only role and content go to the provider.
+        assert_eq!(for_provider(&back)[2], json!({"role": "user", "content": [{"type": "text", "text": "new"}]}));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn plan_forget_keeps_files_other_conversations_name() {
+        let dir = temp_space("plan");
+        let f = |p: &str| crate::attachments::reference(p, "text/plain", "x.md");
+        let mut a = vec![user_message("a", &[f("attachments/d/one.md"), f("attachments/d/two.md")])];
+        a[0]["at"] = 5.into();
+        save(&dir, &a).unwrap();
+        start_new(&dir).unwrap();
+        save(&dir, &[user_message("b", &[f("attachments/d/two.md")])]).unwrap();
+        let a_id = list(&dir).unwrap()[1].id.clone();
+        let plan = plan_forget(&dir, &a_id).unwrap();
+        assert_eq!(plan, ForgetPlan { only_here: vec!["attachments/d/one.md".into()], shared: 1, key: Some("5".into()) });
+        // An unreadable conversation still keeps any file it names (and only those).
+        fs::write(file(&dir), "{ broken \"attachments/d/one.md\"").unwrap();
+        assert_eq!(plan_forget(&dir, &a_id).unwrap().only_here, vec!["attachments/d/two.md".to_string()]);
+        assert_eq!(plan_forget(&dir, CURRENT_ID).unwrap(), ForgetPlan { only_here: vec![], shared: 0, key: None });
+        assert_eq!(plan_forget(&dir, "../x").unwrap_err().kind(), io::ErrorKind::InvalidInput);
         fs::remove_dir_all(&dir).unwrap();
     }
 

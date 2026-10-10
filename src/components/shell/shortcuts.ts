@@ -48,6 +48,7 @@ export function shortcutGroups(): ShortcutGroup[] {
         { id: "send", does: "Send", keys: ["Enter"] },
         { id: "newline", does: "New line", keys: ["Shift", "Enter"] },
         { id: "stop", does: "Stop the reply", keys: ["Esc"] },
+        { id: "card", does: "Go to the question waiting for your answer (Allow, or access to another space)", keys: [mac() ? "⌥" : "Alt", "Enter"] },
       ],
     },
     {

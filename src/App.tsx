@@ -19,6 +19,9 @@ import { refreshSpaces, setActiveSpaceId, useSpaces, type Space } from "@/lib/sp
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+/** A dialog that is open (one closing keeps focus until it is gone, and must not swallow shortcuts). */
+const OPEN_DIALOG = '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]';
+
 const SIDEBAR_ID = "spaces-sidebar";
 const APP_NAME = "Phaethon";
 
@@ -189,7 +192,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isModChord(e) || e.defaultPrevented) return;
-      const inDialog = !!(document.activeElement as HTMLElement | null)?.closest('[role="dialog"], [role="alertdialog"]');
+      const inDialog = !!(document.activeElement as HTMLElement | null)?.closest(OPEN_DIALOG);
       if (e.key === "," && hasSettings) {
         e.preventDefault();
         openSettings();
@@ -234,7 +237,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isModChord(e) || (e.key.toLowerCase() !== "n" && e.code !== "KeyN")) return;
-      if ((document.activeElement as HTMLElement | null)?.closest('[role="dialog"], [role="alertdialog"]')) return;
+      if ((document.activeElement as HTMLElement | null)?.closest(OPEN_DIALOG)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       newConversationInShown();

@@ -329,6 +329,13 @@ export default [
       await h.idle();
       const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
       check(back, "Escape closes the palette and focus returns to the composer");
+      // Straight away (while the palette is still fading out), Cmd+K opens it again.
+      await chord(page, "k");
+      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      await chord(page, "k");
+      const reopened = await page.waitForSelector('[data-command-palette][data-state="open"] [data-palette-input]', { timeout: 1000 }).then(() => true, () => false);
+      check(reopened, "Cmd+K right after Escape opens the palette again");
     },
   },
   {
@@ -359,6 +366,17 @@ export default [
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-shortcuts-sheet]", { timeout: 3000 });
       check(true, "the palette opens it too");
+      check(t.text.includes("Go to the question waiting for your answer"), "Option+Return (go to the waiting card) is listed");
+      // Closing returns focus where it was (it was opened by a shortcut, so there is no button to go back to).
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-shortcuts-sheet]"), { timeout: 3000 });
+      await page.focus("[data-composer-input]");
+      await chord(page, "/");
+      await page.waitForSelector("[data-shortcuts-sheet]", { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-shortcuts-sheet]"), { timeout: 3000 });
+      const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
+      check(back, "Escape closes the sheet and focus goes back to the message box");
     },
   },
   {

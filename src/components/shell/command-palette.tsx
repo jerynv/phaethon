@@ -27,6 +27,7 @@ export type Command = {
 /** How a key cap is spoken: screen readers say "⌘" and "\" badly or not at all. */
 const SPOKEN: Record<string, string> = {
   "⌘": "Command",
+  "⌥": "Option",
   "\\": "Backslash",
   "/": "Slash",
   ",": "Comma",
@@ -256,9 +257,25 @@ export function CommandPalette({
  */
 export function ShortcutsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const groups = shortcutGroups();
+  // Opened by a shortcut, so there is no trigger for Radix to return focus to: remember where it was.
+  const returnTo = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (open) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, [open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-shortcuts-sheet="" className="max-w-[calc(520px*var(--ph-ui-scale))]">
+      <DialogContent
+        data-shortcuts-sheet=""
+        className="max-w-[calc(520px*var(--ph-ui-scale))]"
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          const back = returnTo.current;
+          returnTo.current = null;
+          // Back where focus was, if that is still on screen; else the conversation.
+          const visible = back?.isConnected && !back.closest("[hidden],[inert]") && back.getClientRects().length > 0;
+          (visible ? back : document.getElementById("main"))?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>On Windows and Linux, Ctrl takes the place of ⌘.</DialogDescription>

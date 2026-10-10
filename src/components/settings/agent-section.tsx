@@ -6,6 +6,9 @@ import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import { clearApiKey, listModels, setBackend, setModel, type Backend, type ModelInfo, type Settings } from "@/lib/backend";
+import { changedText, modelName, setSpaceModel, useModels } from "@/lib/space-model";
+import { useSpaces } from "@/lib/spaces";
+import { modCap } from "@/components/shell/shortcuts";
 
 import {
   ANTHROPIC_PRIVACY_URL,
@@ -123,7 +126,7 @@ export function AgentSection({
       <SectionHeader
         id={headingId}
         title="Assistant"
-        description="Which assistant answers in your spaces, and what it needs. This applies to every space."
+        description="Which assistant answers in your spaces, and what it needs. This applies to every space, though a space can choose its own model."
       />
       {!settings ? (
         loadError ? (
@@ -433,19 +436,20 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
 
   function choose(v: string) {
     const id = v === DEFAULT_OPTION ? null : v;
-    const name = id ? nameOf(id) : `the default, ${nameOf(DEFAULT_MODEL)}`;
-    void act(() => setModel(id), `Phaethon now answers with ${name}.`);
+    const name = id ? nameOf(id) : `the recommended one, ${nameOf(DEFAULT_MODEL)}`;
+    void act(() => setModel(id), `The default model is now ${name}.`);
   }
 
   return (
+    <>
     <SettingRow
       stacked
-      label="Model"
+      label="Default model"
       htmlFor={selectId}
       description={
         <>
           Which Claude model writes Phaethon’s replies. Larger models handle harder questions and cost more per message; smaller ones are
-          faster and cheaper.
+          faster and cheaper. A space can choose its own: use the model button beside Send, or Change model in {modCap()} K.
           {listFailed && " Phaethon couldn’t fetch the full list just now, so only the default is shown."}
         </>
       }
@@ -468,6 +472,64 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
         ))}
       </select>
     </SettingRow>
+    <OwnModels />
+    </>
+  );
+}
+
+/**
+ * The spaces that chose their own model, each with a way back to the default.
+ * Nothing when every space uses the default.
+ */
+function OwnModels() {
+  const s = useModels();
+  const { spaces } = useSpaces();
+  const { say, fail } = useStatus();
+  const listRef = useRef<HTMLUListElement>(null);
+  const titleId = useId();
+  const own = spaces.filter((sp) => s.own[sp.id]);
+  if (!own.length) return null;
+
+  async function reset(id: string, name: string, at: number) {
+    try {
+      await setSpaceModel(id, null);
+      say(changedText(name, null, s));
+      // The row goes; focus the next one's button, or the default model's select when none is left.
+      requestAnimationFrame(() => {
+        const buttons = listRef.current?.querySelectorAll<HTMLElement>("[data-own-model-reset]");
+        const next = buttons?.[Math.min(at, buttons.length - 1)];
+        (next ?? document.querySelector<HTMLElement>("[data-model-select]"))?.focus();
+      });
+    } catch (e) {
+      fail(`The model couldn’t be changed. ${String(e)}`);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3.5" data-own-models="">
+      <p id={titleId} className="text-base font-medium text-ink">
+        Spaces with their own model
+      </p>
+      <ul ref={listRef} aria-labelledby={titleId} className="flex flex-col gap-2">
+        {own.map((sp, i) => (
+          <li key={sp.id} data-own-model={sp.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="min-w-0 flex-1 text-base text-ink">
+              {sp.name}: <span className="text-ink-secondary">{modelName(s.own[sp.id], s.models)}</span>
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-own-model-reset={sp.id}
+              aria-label={`Use the default model in ${sp.name}`}
+              onClick={() => void reset(sp.id, sp.name, i)}
+            >
+              Use the default
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

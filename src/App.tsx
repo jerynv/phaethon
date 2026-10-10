@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { goToCard, isJumpKey } from "@/components/chat/card-arrival";
+import { useModelCommands } from "@/components/chat/model-picker";
 import { SpacePane } from "@/components/chat/space-pane";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { announce } from "@/components/shell/announcer";
@@ -74,6 +75,7 @@ export default function App() {
   const sidebar = useSidebar();
   const focused = useWindowFocused();
   const hasSettings = inTauri();
+  const modelCommands = useModelCommands(active);
 
   // Every space visited stays mounted (hidden while another is shown), so a
   // reply keeps running, a card keeps waiting and a draft keeps its words.
@@ -316,6 +318,7 @@ export default function App() {
         shortcut: shortcutById("new"),
         run: newConversationInShown,
       });
+      list.push(...modelCommands);
     }
     list.push(
       {
@@ -374,7 +377,7 @@ export default function App() {
       }
     }
     return list;
-  }, [spaces, shownId, active, goToSpace, openNewSpace, sidebarOpen, toggleSidebar, hasSettings]);
+  }, [spaces, shownId, active, goToSpace, openNewSpace, sidebarOpen, toggleSidebar, hasSettings, modelCommands]);
 
   return (
     <TooltipProvider>

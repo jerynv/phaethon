@@ -119,7 +119,7 @@ export default [
       check(opts[0][1] === "Default (recommended): Claude Opus 5.5", "Default comes first, with the model's readable name", opts[0][1]);
       check(opts.every(([, t]) => !/claude-/.test(t)), "no option shows a raw model id");
       const label = await page.$eval("[data-model-select]", (s) => s.labels?.[0]?.textContent);
-      check(label === "Model", "the select is labelled Model", label);
+      check(label === "Default model", "the select is labelled Default model", label);
       await page.focus("[data-model-select]");
       await page.select("[data-model-select]", "claude-sonnet-5-5");
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "settings_set_model"), { timeout: 3000 });

@@ -6,6 +6,7 @@ pub mod grants;
 pub mod open;
 pub mod provider;
 pub mod secrets;
+pub mod space_model;
 pub mod spaces;
 pub mod thread;
 pub mod tools;
@@ -107,7 +108,10 @@ async fn agent_send(
                     return Ok(());
                 }
             };
-            let provider = anthropic::Anthropic::new(key, settings.model, settings.effort);
+            // The space's own model if it has one, else the default; read once per
+            // turn, so a change applies from the next message, never mid-reply.
+            let model = space_model::resolve(&space_dir, settings.model);
+            let provider = anthropic::Anthropic::new(key, model, settings.effort);
             let req = LoopRequest {
                 space_id: &space,
                 space_dir: &space_dir,
@@ -373,6 +377,25 @@ fn settings_set_model(state: State<'_, AppState>, model: Option<String>) -> Resu
         .map_err(|e| format!("Could not save the setting: {e}"))
 }
 
+/// The model `space` has chosen for itself, or `None` when it uses the default.
+#[tauri::command]
+fn space_model_get(state: State<'_, AppState>, space: String) -> Result<Option<String>, String> {
+    Ok(space_model::get(&state.vault.space_dir(&space)?))
+}
+
+/// Choose the model Phaethon's own agent answers with in `space`; `None` goes
+/// back to the default. Applies from the next message in that space.
+#[tauri::command]
+fn space_model_set(state: State<'_, AppState>, space: String, model: Option<String>) -> Result<(), String> {
+    space_model::set(&state.vault, &space, model.as_deref())
+}
+
+/// Every space that has its own model, by space id.
+#[tauri::command]
+fn space_models_list(state: State<'_, AppState>) -> Result<std::collections::BTreeMap<String, String>, String> {
+    space_model::list(&state.vault)
+}
+
 /// Open a file in `space` with its default app, or show it in Finder when
 /// `reveal`. Only files inside the space itself; see open.rs.
 #[tauri::command]
@@ -458,7 +481,10 @@ pub fn run() {
             appearance_set,
             spaces_list,
             space_create,
-            space_update
+            space_update,
+            space_model_get,
+            space_model_set,
+            space_models_list
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

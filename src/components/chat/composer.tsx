@@ -20,6 +20,7 @@ import {
 import { useAnnounce } from "./announce";
 import { AttachmentFold, ComposerAttachments, useAttachmentTray } from "./attachments";
 import { jumpKeyLabel } from "./card-arrival";
+import { ModelPicker } from "./model-picker";
 import { focusPaneComposer, usePane } from "./pane";
 
 /**
@@ -347,6 +348,7 @@ export function Composer({
           </p>
           {jump}
           <span aria-hidden="true" className="hidden flex-1 group-has-[[data-jump-latest]]/toolbar:block" />
+          {pane && <ModelPicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />}
           {isRunning ? (
             <IconTip label="Stop reply" spoken="Escape">
               <ComposerPrimitive.Cancel

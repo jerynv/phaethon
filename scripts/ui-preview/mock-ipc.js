@@ -68,6 +68,17 @@
         case "settings_set_backend": M.settings.backend = args.backend; return;
         case "settings_set_model": M.settings.model = args.model ?? "claude-opus-5-5"; return;
         case "models_list": return M.models;
+        // A space's own model (space.json "model"), as src-tauri/src/space_model.rs: M.spaceModels[id].
+        case "space_model_get": return (M.spaceModels ?? {})[args.space] ?? null;
+        case "space_model_set": {
+          if (!M.spaces.some((s) => s.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          if (args.model != null && !/^claude-[a-z0-9.-]+$/.test(args.model)) throw "That isn’t a model Phaethon knows how to use.";
+          M.spaceModels ??= {};
+          if (args.model == null) delete M.spaceModels[args.space];
+          else M.spaceModels[args.space] = args.model;
+          return;
+        }
+        case "space_models_list": return { ...(M.spaceModels ?? {}) };
         case "api_key_check": {
           if (M.keyCheck) return M.keyCheck;
           const k = String(args.key ?? "").trim();

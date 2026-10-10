@@ -177,14 +177,14 @@ fn view(id: &str, dir: &Path) -> SpaceView {
     }
 }
 
-fn meta_file(dir: &Path) -> PathBuf {
+pub(crate) fn meta_file(dir: &Path) -> PathBuf {
     dir.join(".phaethon").join("space.json")
 }
 
 /// space.json as JSON, `None` when it does not exist. Refuses a `.phaethon`
 /// folder or space.json that is a symlink (it could point outside the vault),
 /// anything that is not a plain file, and anything too large.
-fn read_meta_raw(dir: &Path) -> io::Result<Option<serde_json::Value>> {
+pub(crate) fn read_meta_raw(dir: &Path) -> io::Result<Option<serde_json::Value>> {
     let state = dir.join(".phaethon");
     match state.symlink_metadata() {
         Ok(m) if !m.is_dir() => return Err(io::Error::other(".phaethon is not a folder")),
@@ -207,7 +207,7 @@ fn read_meta_raw(dir: &Path) -> io::Result<Option<serde_json::Value>> {
 
 /// Write space.json through a temporary file and a rename, so a crash never
 /// leaves half a file.
-fn write_meta(dir: &Path, meta: &serde_json::Map<String, serde_json::Value>) -> io::Result<()> {
+pub(crate) fn write_meta(dir: &Path, meta: &serde_json::Map<String, serde_json::Value>) -> io::Result<()> {
     let state = dir.join(".phaethon");
     if state.symlink_metadata().is_ok_and(|m| !m.is_dir()) {
         return Err(io::Error::other(".phaethon in this space is not a folder"));

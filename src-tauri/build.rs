@@ -8,6 +8,7 @@ fn main() {
             "settings_get", "settings_set_backend", "api_key_set", "api_key_clear", "appearance_set",
             "spaces_list", "space_create", "space_update",
             "api_key_check", "models_list", "settings_set_model", "file_open",
+            "space_model_get", "space_model_set", "space_models_list",
         ]),
     ))
     .expect("failed to run tauri-build");

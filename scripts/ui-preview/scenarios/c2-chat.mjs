@@ -913,6 +913,11 @@ export default [
     async run(page, h) {
       await sendClick(page, "Long task");
       await h.waitText("Working on it");
+      // A narrow window (or large text) hides the sidebar: open it first, as a person would.
+      if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+        await page.click('button[aria-controls="spaces-sidebar"]');
+        await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
+      }
       await page.click('[data-space-id="work"]');
       await sleep(500);
       const cancels = await calls(page, "agent_cancel");

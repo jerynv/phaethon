@@ -168,6 +168,12 @@ export default [
       await page.keyboard.press("Enter");
       check(await waitActive(page, `delete:${yesterday}`), "Cancel returns focus to Delete", await active(page));
       check(!(await page.$(`[data-delete-confirm="${yesterday}"]`)), "the confirm is gone after Cancel");
+      // Escape in the confirm backs out of the confirm only; the menu stays open.
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(`[data-delete-confirm="${yesterday}"]`, { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      check(await waitActive(page, `delete:${yesterday}`), "Escape in the confirm returns focus to Delete", await active(page));
+      check(!!(await page.$('[role="menu"]')) && !(await page.$(`[data-delete-confirm="${yesterday}"]`)), "and the menu stays open");
       // Delete for real, from the keyboard.
       await page.keyboard.press("Enter");
       check(await waitActive(page, `cancel:${yesterday}`), "Delete opens the confirm again", await active(page));

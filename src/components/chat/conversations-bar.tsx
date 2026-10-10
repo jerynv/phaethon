@@ -387,6 +387,14 @@ export function ConversationsBar({
               aria-label={`Conversations in ${space.name}`}
               data-conversations-menu=""
               onKeyDownCapture={onMenuKeyDown}
+              // Escape in a delete confirm backs out of the confirm only, like Cancel; a second Escape closes the menu.
+              // (Radix listens for Escape on the document, ahead of the menu's own key handler.)
+              onEscapeKeyDown={(e) => {
+                if (confirming == null) return;
+                e.preventDefault();
+                focusNext.current = confirmFrom.current === "row" ? { row: confirming } : { del: confirming };
+                setConfirming(null);
+              }}
               className={cn(
                 // 22rem at the default text size, growing with it; never wider or taller than the room.
                 "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none",

@@ -55,6 +55,11 @@ const tabbables = (root: HTMLElement) =>
  * your answer. Its accessible name is its text, each part said once: the
  * name, that state in words, the description ("School, needs your answer,
  * Courses, deadlines, study notes"); no separate description repeats it.
+ * The name never gives way to that state: when both do not fit on one line,
+ * the state moves to a line of its own under the name.
+ *
+ * The items stand apart (a gap that grows with Larger click targets), so a
+ * slip off one never lands on its neighbour's edge.
  *
  * A vault with no spaces says so above "New space".
  */
@@ -155,9 +160,9 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
         </h2>
         <ScrollArea className="min-h-0 flex-1">
           {/* p-2 on every side: the scroll viewport clips, and the focus ring sits outside each item. */}
-          <div ref={listRef} onKeyDown={onKeyDown} className="flex flex-col gap-0.5 p-2">
+          <div ref={listRef} onKeyDown={onKeyDown} className="flex flex-col gap-(--ph-sidebar-item-gap) p-2">
             {!loading && spaces.length === 0 && <p className="px-2 py-1.5 text-sm text-ink-secondary">No spaces yet.</p>}
-            <ul className="flex flex-col gap-0.5 empty:hidden">
+            <ul className="flex flex-col gap-(--ph-sidebar-item-gap) empty:hidden">
               {spaces.map((space) => {
                 const active = space.id === activeId;
                 const doing = activityWords(activity[space.id]);
@@ -174,42 +179,46 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
                       data-space-status={doing ? (doing.urgent ? "needs-you" : "running") : undefined}
                       style={spaceHueStyle(space.hue)}
                       className={cn(
-                        // Two rows: the dot centres on the name row, the description sits under the name.
-                        "grid w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1.5 text-start",
+                        // Two rows: the dot centres on the name's first line, the description sits under the name.
+                        "grid w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-start gap-x-2.5 rounded-md px-2 py-1.5 text-start",
                         "transition-colors duration-(--ph-duration-fast)",
                         // In a background window the selection greys, as macOS does.
                         active ? "bg-space-tint group-data-[inactive]/app:bg-selected" : "hover:bg-hover active:bg-selected",
                       )}
                     >
-                      <SpaceMark hue={space.hue} />
-                      <span className={cn("truncate text-base text-ink", active ? "font-semibold" : "font-medium")}>
-                        {/* Spoken as one piece of text, so no stray space lands before a comma. */}
-                        <span aria-hidden="true">{space.name}</span>
-                        <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : ""}${space.description ? "," : ""}`}</span>
+                      {/* One line tall, so the dot centres on the name at any text size. */}
+                      <span className="flex h-[1lh] items-center text-base">
+                        <SpaceMark hue={space.hue} />
                       </span>
-                      {doing ? (
-                        <span
-                          aria-hidden="true"
-                          data-space-activity=""
-                          className={cn(
-                            "flex shrink-0 items-center gap-1 text-xs",
-                            doing.urgent
-                              ? "rounded-full bg-warning-soft px-1.5 font-semibold text-warning-ink forced-colors:border forced-colors:border-[CanvasText]"
-                              : "text-ink-secondary",
-                          )}
-                        >
-                          {doing.urgent ? (
-                            <Icon name="warning" className="size-(--ph-icon-size-sm)" />
-                          ) : (
-                            <Icon name="spinner" className="size-(--ph-icon-size-sm) motion-safe:animate-spin" />
-                          )}
-                          {doing.shown}
+                      {/* The name and what the space is doing share a line while both fit; otherwise the state wraps below. */}
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span data-space-name="" className={cn("max-w-full min-w-0 truncate text-base text-ink", active ? "font-semibold" : "font-medium")}>
+                          {/* Spoken as one piece of text, so no stray space lands before a comma. */}
+                          <span aria-hidden="true">{space.name}</span>
+                          <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : ""}${space.description ? "," : ""}`}</span>
                         </span>
-                      ) : (
-                        <span />
-                      )}
+                        {doing && (
+                          <span
+                            aria-hidden="true"
+                            data-space-activity=""
+                            className={cn(
+                              "flex shrink-0 items-center gap-1 text-xs",
+                              doing.urgent
+                                ? "rounded-full bg-warning-soft px-1.5 font-semibold text-warning-ink forced-colors:border forced-colors:border-[CanvasText]"
+                                : "text-ink-secondary",
+                            )}
+                          >
+                            {doing.urgent ? (
+                              <Icon name="warning" className="size-(--ph-icon-size-sm)" />
+                            ) : (
+                              <Icon name="spinner" className="size-(--ph-icon-size-sm) motion-safe:animate-spin" />
+                            )}
+                            {doing.shown}
+                          </span>
+                        )}
+                      </span>
                       {space.description && (
-                        <span className="col-span-2 col-start-2 truncate text-xs text-ink-secondary">
+                        <span className="col-start-2 truncate text-xs text-ink-secondary">
                           {space.description}
                         </span>
                       )}

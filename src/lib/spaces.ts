@@ -55,11 +55,44 @@ const listeners = new Set<() => void>();
 let inFlight: Promise<void> | null = null;
 
 function set(next: SpacesState) {
-  state = next;
+  state = { ...next, spaces: inKeptOrder(next.spaces) };
   listeners.forEach((l) => l());
 }
 
-const byName = (a: Space, b: Space) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id);
+// ---- Order ----
+// The order is what Cmd+1…9 follow, so a space keeps its place: a new space
+// (made here, or a folder added by hand) goes after the ones already listed,
+// and a rename never moves one. The core lists spaces by name; that order is
+// used only for spaces seen for the first time (on first launch, all of
+// them). The order is kept on this computer only, like the sidebar's state.
+
+const ORDER_KEY = "phaethon.space-order";
+
+function readOrder(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** `list` with the spaces seen before in their old places, then any new ones (in the order given). Remembers the result. */
+function inKeptOrder(list: readonly Space[]): readonly Space[] {
+  const order = readOrder();
+  const at = new Map(order.map((id, i) => [id, i]));
+  const seen = list.filter((s) => at.has(s.id)).sort((a, b) => (at.get(a.id) ?? 0) - (at.get(b.id) ?? 0));
+  const fresh = list.filter((s) => !at.has(s.id));
+  if (fresh.length) {
+    // Spaces that are missing for now (a folder mid-sync) keep their place for when they come back.
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify([...order, ...fresh.map((s) => s.id)]));
+    } catch {
+      // No storage (a private window): the order still holds for this session's list.
+    }
+  }
+  return [...seen, ...fresh];
+}
 
 /** Load the list again from the vault. A failed reload keeps the last list shown. */
 export function refreshSpaces(): Promise<void> {
@@ -95,7 +128,7 @@ export async function createSpace(input: NewSpace): Promise<Space> {
     let id = base;
     for (let n = 2; state.spaces.some((s) => s.id === id); n++) id = `${base}-${n}`;
     made = { id, name, description: input.description?.trim() ?? "", hue: input.hue ?? 168 };
-    set({ ...state, spaces: [...state.spaces, made].sort(byName) });
+    set({ ...state, spaces: [...state.spaces, made] });
   }
   await refreshSpaces();
   return made;
@@ -111,7 +144,7 @@ export async function updateSpace(id: string, patch: SpacePatch): Promise<Space>
     if (!old) throw `There is no space “${id}” in this vault.`;
     if (patch.name !== undefined && !patch.name.trim()) throw "A space needs a name.";
     saved = { ...old, ...patch, name: patch.name?.trim() ?? old.name, description: patch.description?.trim() ?? old.description };
-    set({ ...state, spaces: state.spaces.map((s) => (s.id === id ? saved : s)).sort(byName) });
+    set({ ...state, spaces: state.spaces.map((s) => (s.id === id ? saved : s)) });
   }
   await refreshSpaces();
   return saved;

@@ -107,8 +107,8 @@ export default [
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });
       await h.idle();
-      // Most recent first: projects/now.md (Oct 10) is the first row. Revoke is made at once;
-      // for 6 s the row offers Undo, which puts the same grant back.
+      // Most recent first: projects/now.md (Oct 10) is the first row. Remove is made at once;
+      // while the list is open the row offers Undo, which puts the same grant back.
       await h.click(`${POPOVER} [data-revoke]`);
       await h.idle();
       let calls = await revokeCalls(page);
@@ -123,10 +123,16 @@ export default [
       if (restored.join() !== "g-now") throw new Error(`Undo did not restore the grant: ${JSON.stringify(restored)}`);
       await page.waitForFunction(() => (window.__MOCK__.grants.school ?? []).some((g) => g.id === "g-now"), { timeout: 3000 });
       console.log("     check: Undo puts the same grant back");
-      // Revoke it again and let the Undo time pass.
+      // Remove it again; Undo stays while the list is open, and closing the list ends it.
       await h.click(`${POPOVER} [data-revoke]`);
-      await page.waitForFunction(() => !document.querySelector('[data-undo="g-now"]'), { timeout: 9000 });
+      await page.waitForSelector('[data-undo="g-now"]', { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      await page.waitForFunction((s) => document.activeElement === document.querySelector(s), { timeout: 3000 }, CHIP);
+      await h.click(CHIP);
+      await page.waitForSelector(POPOVER, { timeout: 5000 });
       await h.idle();
+      if (await page.$('[data-undo="g-now"]')) throw new Error("Undo is still offered after the list was closed");
+      await h.focusVia(`${POPOVER} [data-revoke="g-cal"]`, 3);
       calls = await revokeCalls(page);
       if (calls.join() !== "g-now,g-now") throw new Error(`grant_revoke calls: ${JSON.stringify(calls)}`);
       const name = await chipName(page);
@@ -137,9 +143,10 @@ export default [
       said = await titleStatus(page);
       console.log(`     after first revoke: chip "${name}", status "${said}"`);
       if (!said.startsWith("School can no longer read Work / projects/now.md.")) throw new Error(`status: ${said}`);
-      // The last revoke removes the chip; the shot shows the window after it.
+      // The last revoke removes the chip once the list closes; the shot shows the window after it.
       await pressEnter(page, () => page.waitForSelector(`${POPOVER} [data-undo]`, { timeout: 1500 }));
       await page.waitForFunction(() => window.__calls.filter(([c]) => c === "grant_revoke").length === 3, { timeout: 8000 });
+      await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("[data-undo]"), { timeout: 9000 });
       await h.idle();
       calls = await revokeCalls(page);

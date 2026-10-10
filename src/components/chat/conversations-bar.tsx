@@ -1,6 +1,10 @@
+import { invoke } from "@tauri-apps/api/core";
 import { DropdownMenu } from "radix-ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { announce } from "@/components/shell/announcer";
+import { Keys, spokenKeys } from "@/components/shell/command-palette";
+import { modCap } from "@/components/shell/shortcuts";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
@@ -29,6 +33,13 @@ export function relativeDate(ms: number, now = Date.now()): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: sameYear ? undefined : "numeric" });
 }
 
+/**
+ * Delete a conversation for good (`thread_delete`): a saved one by its id, or
+ * the open one ("current"), which leaves the space with an empty conversation.
+ * Refused while a reply runs in the space.
+ */
+const deleteThread = (space: string, id: string) => invoke<void>("thread_delete", { space, id });
+
 function countText(n: number) {
   return n === 0 ? "No messages yet" : `${n} message${n === 1 ? "" : "s"}`;
 }
@@ -39,16 +50,22 @@ type ListState =
   | { status: "error"; message: string };
 
 /**
- * The row at the top of a space's conversation: "Conversations" (a menu of
- * this space's past conversations, the current one checked) and "New
- * conversation" (Cmd+N, Ctrl+N elsewhere).
+ * The row at the top of a space's conversation: the open conversation's
+ * title and date, "Conversations" (a menu of this space's conversations, the
+ * current one checked, each with Delete) and "New conversation" (Cmd+N,
+ * Ctrl+N elsewhere).
  *
  * Keyboard: the menu is a Radix dropdown (Enter, Space or ArrowDown opens it;
  * arrows move, typing jumps by title, Enter opens one, Escape closes and
- * returns focus to the button). Switching remounts the conversation and puts
- * focus in the composer (see SpacePane); the result is said once through
- * SpacePane's status region. A switch asked for while a reply runs is refused
- * with an alert here, which clears itself once the reply ends.
+ * returns focus to the button). Each conversation is followed by its own
+ * "Delete" item; choosing it swaps the row for an inline confirm that names
+ * the conversation, with focus on Cancel (the safe choice). Deleting a saved
+ * conversation keeps the menu open, focus moving to the row that took its
+ * place, and is announced; deleting the open one starts a new conversation.
+ * Switching remounts the conversation and puts focus in the composer (see
+ * SpacePane); the result is said once through SpacePane's status region. A
+ * switch or delete asked for while a reply runs is refused with an alert
+ * here, which clears itself once the reply ends.
  *
  * With the Claude Code backend there is no list: the CLI keeps its own history
  * and Phaethon can't reopen it, which the menu says. New conversation still
@@ -72,10 +89,25 @@ export function ConversationsBar({
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState(false);
+  // The open conversation, as the bar shows it; reloaded after a switch and when a reply ends.
+  const [current, setCurrent] = useState<ThreadSummary | null>(null);
+  const [changes, setChanges] = useState(0);
+  // The conversation whose Delete is waiting for a confirm.
+  const [confirming, setConfirming] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const switching = useRef(false);
+  // Where focus goes in the menu after the next render.
+  const focusNext = useRef<{ cancel: string } | { del: string } | { index: number } | null>(null);
   const mac = platform() === "mac";
+
+  const switched = useCallback(
+    (message: string) => {
+      setChanges((n) => n + 1);
+      onSwitched(message);
+    },
+    [onSwitched],
+  );
 
   // The busy alert is about a reply that has now ended; anything else is cleared by the next action.
   useEffect(() => {
@@ -85,6 +117,22 @@ export function ConversationsBar({
     setProblem("");
     setOpen(false);
   }, [space.id]);
+  useEffect(() => {
+    if (!open) setConfirming(null);
+  }, [open]);
+
+  // The open conversation's title and date. A reply ending can give it its first title.
+  useEffect(() => {
+    if (!inTauri() || running) return;
+    let live = true;
+    listThreads(space.id).then(
+      (threads) => live && setCurrent(threads.find((t) => t.current) ?? null),
+      () => live && setCurrent(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [space.id, running, changes]);
 
   const startNew = useCallback(async () => {
     if (working) return;
@@ -96,7 +144,7 @@ export function ConversationsBar({
     setWorking(true);
     try {
       if (inTauri()) await newThread(space.id);
-      onSwitched("New conversation started.");
+      switched("New conversation started.");
     } catch (e) {
       setProblem(String(e));
       // Started from the menu: focus would otherwise be left on nothing.
@@ -107,7 +155,7 @@ export function ConversationsBar({
     } finally {
       setWorking(false);
     }
-  }, [running, space.id, onSwitched, working]);
+  }, [running, space.id, switched, working]);
 
   async function choose(t: ThreadSummary) {
     if (t.current) return;
@@ -122,12 +170,43 @@ export function ConversationsBar({
     switching.current = true;
     try {
       await openThread(space.id, t.id);
-      onSwitched(`Opened the conversation “${t.title}”.`);
+      switched(`Opened the conversation “${t.title}”.`);
     } catch (e) {
       // Refused: focus goes back to the button, next to the alert.
       switching.current = false;
       setProblem(String(e));
       triggerRef.current?.focus();
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function remove(t: ThreadSummary, index: number) {
+    if (running) {
+      // Closing returns focus to the button, next to the alert.
+      setProblem(BUSY);
+      setOpen(false);
+      return;
+    }
+    setProblem("");
+    setWorking(true);
+    if (t.current) switching.current = true;
+    try {
+      await deleteThread(space.id, t.current ? "current" : t.id);
+      if (t.current) {
+        setOpen(false);
+        switched(`Deleted “${t.title}”. A new conversation has started.`);
+        return;
+      }
+      setConfirming(null);
+      focusNext.current = { index };
+      setList((l) => (l.status === "ready" ? { ...l, threads: l.threads.filter((x) => x.id !== t.id) } : l));
+      announce(`Deleted the conversation “${t.title}”.`);
+    } catch (e) {
+      switching.current = false;
+      setConfirming(null);
+      setProblem(String(e));
+      setOpen(false);
     } finally {
       setWorking(false);
     }
@@ -177,7 +256,21 @@ export function ConversationsBar({
     content.querySelector<HTMLElement>('[role="menuitemradio"][data-state="checked"]')?.focus();
   }, [open, list]);
 
+  // After Delete, Cancel or a delete: put focus where it belongs.
+  useLayoutEffect(() => {
+    const want = focusNext.current;
+    const root = contentRef.current;
+    if (!want || !root) return;
+    focusNext.current = null;
+    const q = (sel: string) => root.querySelector<HTMLElement>(sel);
+    if ("cancel" in want) return void q(`[data-delete-cancel="${want.cancel}"]`)?.focus();
+    if ("del" in want) return void q(`[data-delete-thread="${want.del}"]`)?.focus();
+    const rows = root.querySelectorAll<HTMLElement>('[role="menuitemradio"]');
+    (rows[Math.min(want.index, rows.length - 1)] ?? q("[data-menu-new-conversation]"))?.focus();
+  });
+
   const threads = list.status === "ready" ? list.threads : [];
+  const itemClass = "cursor-default rounded-md outline-none select-none data-highlighted:bg-hover data-disabled:opacity-45";
 
   return (
     <div
@@ -192,6 +285,21 @@ export function ConversationsBar({
     >
       {/* Padded below too, so a focused button's ring is never under the fade. */}
       <div className="flex items-center justify-end gap-1 px-2 py-1.5">
+        {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used. */}
+        {current && (
+          <p data-conversation-current="" className="flex min-w-0 flex-1 items-baseline gap-1.5 ps-2 text-sm text-ink-secondary">
+            <span className="min-w-0 truncate font-medium text-ink" title={current.title}>
+              {current.messages === 0 ? "New conversation" : current.title}
+            </span>
+            {current.messages > 0 && (
+              <span className="shrink-0">
+                <span aria-hidden="true">· </span>
+                <span className="sr-only">, </span>
+                {relativeDate(current.updated)}
+              </span>
+            )}
+          </p>
+        )}
         <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
           <DropdownMenu.Trigger asChild>
             <Button ref={triggerRef} type="button" variant="ghost" size="sm" data-conversations-trigger="">
@@ -247,33 +355,107 @@ export function ConversationsBar({
               )}
               {threads.length > 0 && (
                 <DropdownMenu.RadioGroup value="current" className="flex flex-col">
-                  {threads.map((t) => (
-                    <DropdownMenu.RadioItem
-                      key={t.id}
-                      value={t.id}
-                      textValue={t.title}
-                      disabled={working}
-                      data-thread-id={t.id}
-                      onSelect={() => void choose(t)}
-                      className={cn(
-                        "grid cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 rounded-md px-2.5 py-2 outline-none select-none",
-                        "data-highlighted:bg-hover data-disabled:opacity-45",
-                      )}
-                    >
-                      {/* One line tall, so the check centres on the title at any text size. */}
-                      <span className="flex h-[1lh] items-center text-base">
-                        <DropdownMenu.ItemIndicator>
-                          <Icon name="check" className="text-accent-ink" />
-                        </DropdownMenu.ItemIndicator>
-                      </span>
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate text-base font-medium">{t.title}</span>
-                        <span className="text-sm text-ink-secondary">
-                          {t.current ? "Current" : relativeDate(t.updated)} · {countText(t.messages)}
-                        </span>
-                      </span>
-                    </DropdownMenu.RadioItem>
-                  ))}
+                  {threads.map((t, i) => {
+                    const empty = t.current && t.messages === 0;
+                    if (confirming === t.id) {
+                      // Inline confirm in place of the row: says what goes, the safe choice first and focused.
+                      const labelId = `delete-${space.id}-${t.id}`;
+                      return (
+                        <DropdownMenu.Group
+                          key={t.id}
+                          aria-labelledby={labelId}
+                          data-delete-confirm={t.id}
+                          className="my-0.5 flex flex-col gap-2 rounded-md bg-danger-soft px-2.5 py-2"
+                        >
+                          <p id={labelId} className="text-base text-ink">
+                            Delete “<span className="font-medium wrap-break-word">{t.title}</span>” for good?
+                            {t.current ? " A new conversation starts in its place." : " It can’t be opened again."}
+                          </p>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <DropdownMenu.Item
+                              data-delete-cancel={t.id}
+                              disabled={working}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                focusNext.current = { del: t.id };
+                                setConfirming(null);
+                              }}
+                              className={cn(
+                                itemClass,
+                                "flex min-h-(--ph-control-height) items-center border border-line-strong bg-raised px-3 text-base font-medium data-highlighted:bg-hover",
+                              )}
+                            >
+                              Cancel
+                            </DropdownMenu.Item>
+                            <DropdownMenu.Item
+                              data-delete-confirm-button={t.id}
+                              disabled={working}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                void remove(t, i);
+                              }}
+                              className={cn(
+                                "flex min-h-(--ph-control-height) cursor-default items-center rounded-md bg-danger px-3 text-base font-medium text-ink-inverse outline-none select-none data-disabled:opacity-45",
+                                "data-highlighted:bg-danger/90 forced-colors:border forced-colors:border-[ButtonText]",
+                              )}
+                            >
+                              {working ? "Deleting…" : "Delete"}
+                            </DropdownMenu.Item>
+                          </div>
+                        </DropdownMenu.Group>
+                      );
+                    }
+                    return (
+                      <div key={t.id} className="flex items-start gap-1">
+                        <DropdownMenu.RadioItem
+                          value={t.id}
+                          textValue={t.title}
+                          disabled={working}
+                          data-thread-id={t.id}
+                          onSelect={() => void choose(t)}
+                          className={cn(
+                            itemClass,
+                            "grid min-w-0 flex-1 grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 px-2.5 py-2",
+                          )}
+                        >
+                          {/* One line tall, so the check centres on the title at any text size. */}
+                          <span className="flex h-[1lh] items-center text-base">
+                            <DropdownMenu.ItemIndicator>
+                              <Icon name="check" className="text-accent-ink" />
+                            </DropdownMenu.ItemIndicator>
+                          </span>
+                          <span className="flex min-w-0 flex-col">
+                            {/* Up to two lines, so titles that start alike can be told apart in any reading font. */}
+                            <span className="line-clamp-2 text-base font-medium wrap-break-word" title={t.title}>
+                              {t.title}
+                            </span>
+                            <span className="text-sm text-ink-secondary">
+                              {t.current ? "Current" : relativeDate(t.updated)} · {countText(t.messages)}
+                            </span>
+                          </span>
+                        </DropdownMenu.RadioItem>
+                        {!empty && (
+                          <DropdownMenu.Item
+                            data-delete-thread={t.id}
+                            textValue={`Delete ${t.title}`}
+                            disabled={working}
+                            aria-label={`Delete “${t.title}”`}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              focusNext.current = { cancel: t.id };
+                              setConfirming(t.id);
+                            }}
+                            className={cn(
+                              itemClass,
+                              "mt-1 flex min-h-(--ph-control-height) shrink-0 items-center px-2 text-sm text-ink-secondary data-highlighted:text-danger-ink",
+                            )}
+                          >
+                            Delete
+                          </DropdownMenu.Item>
+                        )}
+                      </div>
+                    );
+                  })}
                 </DropdownMenu.RadioGroup>
               )}
               {list.status === "ready" && !list.cli && threads.length <= 1 && (
@@ -290,10 +472,7 @@ export function ConversationsBar({
                   switching.current = !running;
                   void startNew();
                 }}
-                className={cn(
-                  "flex shrink-0 cursor-default items-center gap-2 rounded-md px-2.5 py-2 text-base font-medium outline-none select-none",
-                  "data-highlighted:bg-hover data-disabled:opacity-45",
-                )}
+                className={cn(itemClass, "flex shrink-0 items-center gap-2 px-2.5 py-2 text-base font-medium")}
               >
                 <Icon name="plus" className="text-ink-secondary" />
                 <span className="flex-1">New conversation</span>
@@ -318,9 +497,10 @@ export function ConversationsBar({
               New conversation
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">
+          {/* As the title bar's buttons: while it shows, Radix describes the button by the tooltip, so it gives only the shortcut, in words. */}
+          <TooltipContent side="bottom" aria-label={spokenKeys([modCap(), "N"])} className="flex items-center gap-2">
             New conversation
-            <kbd className="ms-2 font-sans text-ink-inverse/70">{`${modKeyLabel()}${mac ? "" : "+"}N`}</kbd>
+            <Keys keys={[modCap(), "N"]} className="[&_kbd]:border-ink-inverse/30 [&_kbd]:bg-transparent [&_kbd]:text-ink-inverse/80" />
           </TooltipContent>
         </Tooltip>
       </div>

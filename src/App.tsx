@@ -366,7 +366,7 @@ export default function App() {
         <a
           href="#main"
           className={cn(
-            "sr-only focus:not-sr-only focus:fixed focus:top-[calc(var(--ph-titlebar-height)+var(--ph-space)*3)] focus:left-1/2 focus:z-50 focus:-translate-x-1/2",
+            "sr-only focus:not-sr-only focus:fixed focus:top-[calc(var(--ph-titlebar-room)+var(--ph-space)*3)] focus:left-1/2 focus:z-50 focus:-translate-x-1/2",
             "focus:rounded-md focus:bg-raised focus:px-3 focus:py-1 focus:text-base focus:font-medium focus:text-ink focus:shadow",
           )}
         >

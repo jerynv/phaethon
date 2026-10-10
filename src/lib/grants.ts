@@ -92,14 +92,22 @@ export function onGrantsChanged(cb: () => void): () => void {
 
 // ---- Revoke with Undo ----
 // A revoke is made at once: the grant stops working the moment the user says
-// so. For a few seconds afterwards the row offers Undo, which puts the same
-// grant back (same id and date). The state lives here, outside any component,
-// so it survives the popover closing or the space changing.
+// so. The row then offers Undo, which puts the same grant back (same id and
+// date), until the view that offered it closes (it calls commitRevokes) or
+// UNDO_MS passes. Undo is never taken away on a short timer while the user is
+// still looking at it: someone who needs time to reach a button must not lose
+// it. The state lives here, outside any component, so it survives the space
+// changing.
 
-/** How long a revoke can be undone, in milliseconds. */
-export const UNDO_MS = 6000;
+/**
+ * The longest a revoke can be undone, in milliseconds: just under the ten
+ * minutes the core keeps a revoked grant for `grant_restore`, so an Undo that
+ * is shown always works. Views end it sooner, when they close.
+ */
+export const UNDO_MS = 9 * 60_000;
 
-type Pending = { timer: ReturnType<typeof setTimeout>; grant: Known | undefined; finish: () => void };
+/** `finish` ends the Undo time; asked for before the revoke has answered, it only marks it `ended`, and the answer finishes it. */
+type Pending = { timer: ReturnType<typeof setTimeout>; grant: Known | undefined; finish: () => void; ended: boolean };
 const pending = new Map<string, Pending>();
 // Revoked here and gone from grants.json; hidden at once, before the list reloads.
 const revoked = new Set<string>();
@@ -114,14 +122,22 @@ function publishPending() {
 }
 
 /**
- * Revoke `id` now and offer Undo for `ms`. `done` gets the result when the
- * Undo time is over (removed true; false when it was already gone), or the
- * error at once if the revoke failed. `done` runs before the views redraw.
+ * Revoke `id` now and offer Undo until commitRevokes([id]) (the view closing)
+ * or `ms`, whichever is first. `done` gets the result when the Undo time is
+ * over (removed true; false when it was already gone), or the error at once if
+ * the revoke failed. `done` runs before the views redraw.
  */
 export function scheduleRevoke(id: string, done: (result: { removed: boolean } | { error: unknown }) => void, ms = UNDO_MS): void {
   if (pending.has(id)) return;
   const grant = known.get(id);
-  const entry: Pending = { timer: setTimeout(() => entry.finish(), ms), grant, finish: () => {} };
+  const entry: Pending = {
+    timer: setTimeout(() => entry.finish(), ms),
+    grant,
+    ended: false,
+    finish: () => {
+      entry.ended = true;
+    },
+  };
   pending.set(id, entry);
   publishPending();
   void revokeGrant(id).then(
@@ -134,8 +150,9 @@ export function scheduleRevoke(id: string, done: (result: { removed: boolean } |
         done({ removed });
         publishPending();
       };
-      // Nothing to put back if it was already gone, or if Undo can't know what it was.
-      if (!removed || !grant) entry.finish();
+      // Nothing to put back if it was already gone, or if Undo can't know what it was;
+      // and nothing to wait for if the view already closed.
+      if (!removed || !grant || entry.ended) entry.finish();
     },
     (error) => {
       clearTimeout(entry.timer);
@@ -146,7 +163,7 @@ export function scheduleRevoke(id: string, done: (result: { removed: boolean } |
   );
 }
 
-/** Undo a revoke made in the last few seconds: the same grant is put back. True when there was one to undo. */
+/** Undo a revoke still waiting out its Undo time: the same grant is put back. True when there was one to undo. */
 export function undoRevoke(id: string): boolean {
   const p = pending.get(id);
   if (!p || !p.grant) return false;
@@ -160,6 +177,15 @@ export function undoRevoke(id: string): boolean {
     publishPending();
   });
   return true;
+}
+
+/**
+ * End the Undo time of these revokes now (the view that offered Undo is
+ * closing). The revokes are already made; their rows go. Ids with no Undo
+ * waiting are ignored.
+ */
+export function commitRevokes(ids: Iterable<string>): void {
+  for (const id of ids) pending.get(id)?.finish();
 }
 
 /** End every Undo window now (the window is closing). The revokes are already made. */
@@ -295,7 +321,7 @@ export function useGrants(space: string) {
     };
   }, [refresh]);
 
-  // A grant revoked in the last few seconds is gone from grants.json but keeps
+  // A grant revoked but still undoable is gone from grants.json but keeps
   // its row (with Undo) until its Undo time is over; an undone one keeps it
   // until the reloaded list has it again.
   const { pending: waiting, restoring: back } = usePendingRevokes();

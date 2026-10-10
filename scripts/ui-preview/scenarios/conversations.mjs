@@ -48,7 +48,7 @@ const focusOn = (page, id, what) =>
   page
     .waitForFunction((id) => document.activeElement?.getAttribute("data-thread-id") === id, { timeout: 3000 }, id)
     .catch(async () => {
-      const at = await page.evaluate(() => document.activeElement?.getAttribute("data-thread-id") ?? document.activeElement?.tagName);
+      const at = await page.evaluate(() => document.activeElement?.getAttribute("data-thread-id") ?? document.activeElement?.outerHTML.slice(0, 160));
       throw new Error(`${what} went to ${at}, not ${id}`);
     });
 const statusText =(page) => page.evaluate(() => document.querySelector('[data-testid="conversation-status"]')?.textContent ?? "");
@@ -214,6 +214,9 @@ export default [
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-conversations-menu] [role="menuitemradio"]', { timeout: 5000 });
       await page.waitForFunction(() => document.activeElement?.getAttribute("data-thread-id") === "current", { timeout: 3000 });
+      // Each conversation is followed by its own Delete.
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-delete-thread") === "current", { timeout: 3000 });
       await page.keyboard.press("ArrowDown");
       await focusOn(page, archive[0].id, "ArrowDown");
       await h.idle(); // past the menu's open animation
@@ -225,7 +228,11 @@ export default [
       await page.keyboard.press("ArrowDown");
       await page.waitForFunction(() => document.activeElement?.getAttribute("data-thread-id") === "current", { timeout: 3000 });
       await page.keyboard.press("ArrowDown");
+      await page.waitForFunction((id) => document.activeElement?.getAttribute("data-delete-thread") === id, { timeout: 3000 }, "current");
+      await page.keyboard.press("ArrowDown");
       await focusOn(page, archive[0].id, "ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction((id) => document.activeElement?.getAttribute("data-delete-thread") === id, { timeout: 3000 }, archive[0].id);
       await page.keyboard.press("ArrowDown");
       await focusOn(page, archive[1].id, "second ArrowDown");
       await page.keyboard.press("Enter");
@@ -291,9 +298,11 @@ export default [
       expect((await items(page)).length === 15, "not all 15 listed");
       await fits(page);
       // The list scrolls inside the menu; the last one can be reached.
-      // End goes to the menu's own New conversation; one up is the oldest conversation.
+      // End goes to the menu's own New conversation; one up is the oldest conversation's Delete, two up the conversation.
       await page.keyboard.press("End");
       await page.waitForFunction(() => document.activeElement?.matches("[data-menu-new-conversation]"), { timeout: 3000 });
+      await page.keyboard.press("ArrowUp");
+      await page.waitForFunction((id) => document.activeElement?.getAttribute("data-delete-thread") === id, { timeout: 3000 }, String(now - 14 * DAY));
       await page.keyboard.press("ArrowUp");
       await focusOn(page, String(now - 14 * DAY), "End, ArrowUp");
       const last = await page.evaluate(() => {

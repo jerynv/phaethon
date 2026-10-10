@@ -18,3 +18,18 @@
   --window-close-pressed: var(--ph-window-close-pressed, oklch(0.49 0.19 27));
   --window-close-ink: var(--ph-window-close-ink, oklch(0.99 0.004 80));
 }
+
+/*
+ * The title bar's height: its usual height, or taller when Larger click
+ * targets (Settings › Accessibility) makes its buttons and chips bigger than
+ * the bar, so nothing in it is cut off. Everything placed below the bar uses
+ * this, not --ph-titlebar-height.
+ */
+:root {
+  --ph-titlebar-room: max(var(--ph-titlebar-height), calc(var(--ph-target-min) + var(--ph-space) * 2));
+}
+
+/* Between the sidebar's spaces: never edge to edge, wider with Larger click targets. */
+:root {
+  --ph-sidebar-item-gap: calc(var(--ph-space) * 1.5 * var(--ph-target-boost, 1));
+}

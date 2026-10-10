@@ -165,7 +165,7 @@ export function CommandPalette({
         }}
         className={cn(
           // Near the top, like a browser's address bar, so the list grows down into the room.
-          "top-[calc(var(--ph-titlebar-height)+var(--ph-space)*6)] max-h-[calc(100dvh-var(--ph-titlebar-height)-var(--ph-space)*12)] translate-y-0",
+          "top-[calc(var(--ph-titlebar-room)+var(--ph-space)*6)] max-h-[calc(100dvh-var(--ph-titlebar-room)-var(--ph-space)*12)] translate-y-0",
           "flex max-w-[calc(560px*var(--ph-ui-scale))] flex-col gap-0 overflow-hidden p-0",
         )}
       >

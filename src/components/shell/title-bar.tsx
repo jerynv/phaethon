@@ -141,7 +141,7 @@ export function TitleBar({
       data-tauri-drag-region="deep"
       data-shell-chrome=""
       data-inactive={inactive ? "" : undefined}
-      className="group/titlebar flex h-(--ph-titlebar-height) shrink-0 items-center bg-surface"
+      className="group/titlebar flex h-(--ph-titlebar-room) shrink-0 items-center bg-surface"
     >
       {/* Leading cluster: as wide as the sidebar when it is docked, so the title lines up with the pane below. */}
       <div

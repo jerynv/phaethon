@@ -452,7 +452,7 @@ export default [
       await h.shot("undo");
       // The revoke is made at once: the grant stops working when the user says so.
       check((await calls(page, "grant_revoke")).map((a) => a.id).join() === "g-cal", "Revoke is made at once");
-      check(await said(page, "School can no longer read Work / calendar. Undo is available for a few seconds."), "and announced, with Undo", await status(page));
+      check(await said(page, "School can no longer read Work / calendar. Anything already read stays in School’s conversation. Undo is next to it until you close this list."), "and announced, with what stays and Undo", await status(page));
       await page.keyboard.press("Enter");
       await h.idle();
       check(await said(page, "Undone. School can still read Work / calendar."), "Undo is announced", await status(page));
@@ -460,11 +460,14 @@ export default [
       check(restored.length === 1 && JSON.stringify(restored[0]) === '{"id":"g-cal"}', "Undo asks the core to put back that grant, by its id only", JSON.stringify(restored));
       const f = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
       check(f === "Remove School’s access to Work / calendar", "Undo puts focus back on Revoke", f);
-      await new Promise((r) => setTimeout(r, 6500));
+      await h.idle();
       check((await calls(page, "grant_revoke")).length === 1, "an undone revoke is not made again");
-      // Now let one go through.
+      // Now let one go through: Remove, then close the list (Undo lasts until then).
       await page.click("[data-revoke]");
-      await new Promise((r) => setTimeout(r, 6600));
+      await page.waitForSelector("[data-undo]", { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-grants-in-chip]"), { timeout: 3000 });
+      await h.idle();
       const made = (await calls(page, "grant_revoke")).map((a) => a.id);
       check(made.join() === "g-cal,g-cal", "the second revoke is made", JSON.stringify(made));
       const after = await page.evaluate(() => ({ chip: !!document.querySelector("[data-grants-in-chip]"), focus: document.activeElement?.id }));
@@ -509,7 +512,7 @@ export default [
       await page.waitForFunction(() => !document.querySelector("[data-grants-in-chip]"), { timeout: 5000 });
       const made = (await calls(page, "grant_revoke")).map((a) => a.id).sort();
       check(made.join() === "g-cal,g-now", "Revoke all revokes both", made.join());
-      check(await said(page, "No other space can read anything in Work now.", 2000), "and says so", await status(page));
+      check(await said(page, "No other space can read anything in Work now. Anything already read stays in their conversations.", 2000), "and says so, with what stays", await status(page));
     },
   },
 ];

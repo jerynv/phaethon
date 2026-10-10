@@ -385,8 +385,8 @@ export default [
       await page.waitForSelector(POPOVER, { timeout: 5000 });
       await h.idle();
       await page.click(`${POPOVER} [data-revoke]`);
-      // Revoke waits out its Undo time (6 s) before it is made, and fails then.
-      await page.waitForFunction(() => document.body.innerText.includes("Couldn’t revoke"), { timeout: 9000 });
+      // Remove is made at once, and fails at once.
+      await page.waitForFunction(() => document.body.innerText.includes("Couldn’t remove"), { timeout: 9000 });
       await park(page);
       await h.idle();
       // A-015: plain words with a way out, and the box lines up with the rows' text.
@@ -395,7 +395,7 @@ export default [
         const li = document.querySelector(`${sel} li`);
         return { text: alert.textContent, left: alert.getBoundingClientRect().left, rowText: li.getBoundingClientRect().left + parseFloat(getComputedStyle(li).paddingLeft) };
       }, POPOVER);
-      check(e.text === "Couldn’t revoke Work / projects/now.md. grants.json can’t be written: check the vault folder’s permissions, then try again.", "revoke failure says what to do", e.text);
+      check(e.text === "Couldn’t remove access to Work / projects/now.md. Phaethon couldn’t save the change in your Phaethon folder: check that the folder isn’t read-only, then try again.", "a failed Remove says what to do, in plain words", e.text);
       check(Math.abs(e.left - e.rowText) < 1, "the error box lines up with the rows", JSON.stringify(e));
     },
   },

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type Rea
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import {
+  commitRevokes,
   grantDate,
   grantNoun,
   revokeGrant,
@@ -89,19 +90,22 @@ type Direction = "out" | "in";
  * Each chip is a button named by its visible text (WCAG 2.5.3) and described
  * by the whole sentence. In a narrow window it collapses to a count ("Also
  * reads 2 places"), so the space's name keeps its room. It opens a popover
- * listing each grant with Revoke; only the list scrolls when it is taller than
+ * listing each grant with Remove; only the list scrolls when it is taller than
  * the window.
  *
- * Revoke is made at once (the grant stops working immediately); for six
- * seconds the row offers Undo, which puts the same grant back. Both are
- * announced. "Revoke all" asks first, inline, and is made at once.
+ * Remove is made at once (the grant stops working immediately); the row then
+ * offers Undo, which puts the same grant back, for as long as the popover is
+ * open (no timer takes it away while you are looking at it). Both are
+ * announced, with what happens to what was already read: it stays in the
+ * conversation that read it. "Remove all" asks first, inline, and is made at
+ * once. One verb everywhere: Remove.
  *
  * Keyboard: Enter/Space opens; focus moves to the popover's heading (not to a
- * Revoke button, so a second Enter cannot revoke by accident); Tab moves
- * through the rows' buttons, Revoke all and Manage in Settings; Escape closes
- * and returns focus to the chip. Revoke moves focus to that row's Undo; Undo
- * moves it back to Revoke; when a row goes, focus moves to the row that took
- * its place, or, when none are left and the chip goes away, to the
+ * Remove button, so a second Enter cannot remove by accident); Tab moves
+ * through the rows' buttons, Remove all and Manage in Settings; Escape closes
+ * and returns focus to the chip. Remove moves focus to that row's Undo; Undo
+ * moves it back to Remove; closing the popover ends the Undo time and its
+ * rows go. When none are left and the chip goes away, focus moves to the
  * conversation.
  */
 export function GrantsChip({ space, direction = "out" }: { space: Space; direction?: Direction }) {
@@ -119,11 +123,17 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
   // Where focus goes after the next render: a row's Undo or Revoke, or the row at an index.
   const focusNext = useRef<{ undo: string } | { revoke: string } | { index: number } | "cancel-all" | "revoke-all" | null>(null);
   const toSettings = useRef(false);
+  // Removes made from this chip still offering Undo; their Undo ends when the popover closes.
+  const mine = useRef(new Set<string>());
+  // The popover closed with every row removed: the chip goes, so focus goes to the conversation.
+  const closingToMain = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
+    const own = mine.current;
     return () => {
       mounted.current = false;
+      commitRevokes(own);
     };
   }, []);
   const narrow = useNarrowWindow();
@@ -158,9 +168,21 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
     setError("");
     setConfirmAll(false);
   }, [space.id]);
+  // Closed (by the user, or by moving to another space): Undo ends and the removed rows go.
   useEffect(() => {
-    if (!open) setConfirmAll(false);
+    if (open) return;
+    setConfirmAll(false);
+    commitRevokes(mine.current);
+    mine.current.clear();
   }, [open]);
+
+  function onOpenChange(next: boolean) {
+    // Every row removed: once the Undo ends, the chip goes with the popover.
+    if (!next && rowsRef.current.length > 0 && rowsRef.current.every((r) => mine.current.has(r.id) && pending.has(r.id))) {
+      closingToMain.current = true;
+    }
+    setOpen(next);
+  }
 
   // After a revoke, an undo, or a row going away: put focus where it belongs.
   const rowIds = rows.map((r) => r.id).join();
@@ -192,11 +214,13 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
   function revoke(r: Row) {
     setError("");
     focusNext.current = { undo: r.id };
+    mine.current.add(r.id);
     scheduleRevoke(r.id, (result) => {
+      mine.current.delete(r.id);
       if ("error" in result) {
         // The only way a revoke fails is grants.json refusing the write; the raw OS error helps nobody here.
         console.error("grant_revoke failed:", result.error);
-        const message = `Couldn’t revoke ${r.what}. grants.json can’t be written: check the vault folder’s permissions, then try again.`;
+        const message = `Couldn’t remove access to ${r.what}. Phaethon couldn’t save the change in your Phaethon folder: check that the folder isn’t read-only, then try again.`;
         // Shown (and read, as an alert) in the popover; said by the shell when the popover is gone.
         if (contentRef.current) {
           if (document.activeElement?.getAttribute("data-undo") === r.id) focusNext.current = { revoke: r.id };
@@ -217,11 +241,12 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
         focusNext.current = { index: Math.max(0, at) };
       }
     });
-    announce(`${r.who} can no longer read ${r.what}. Undo is available for a few seconds.`);
+    announce(`${r.who} can no longer read ${r.what}. Anything already read stays in ${r.who}’s conversation. Undo is next to it until you close this list.`);
   }
 
   function undo(r: Row) {
     if (!undoRevoke(r.id)) return;
+    mine.current.delete(r.id);
     focusNext.current = { revoke: r.id };
     announce(`Undone. ${r.who} can still read ${r.what}.`);
   }
@@ -243,12 +268,16 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
     setBusyAll(false);
     setConfirmAll(false);
     if (failed) {
-      const message = `Couldn’t revoke ${failed === rows.length ? "them" : `${failed} of them`}. grants.json can’t be written: check the vault folder’s permissions, then try again.`;
+      const message = `Couldn’t remove ${failed === rows.length ? "them" : `${failed} of them`}. Phaethon couldn’t save the change in your Phaethon folder: check that the folder isn’t read-only, then try again.`;
       setError(message);
       focusNext.current = { index: 0 };
       return;
     }
-    announce(out ? `${space.name} can no longer read anything in other spaces.` : `No other space can read anything in ${space.name} now.`);
+    announce(
+      out
+        ? `${space.name} can no longer read anything in other spaces. Anything already read stays in ${space.name}’s conversations.`
+        : `No other space can read anything in ${space.name} now. Anything already read stays in their conversations.`,
+    );
     setOpen(false);
     document.getElementById("main")?.focus();
   }
@@ -256,7 +285,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
   const otherHue = (id: string) => spaceInfo(id).hue;
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Trigger asChild>
         <button
           type="button"
@@ -314,6 +343,13 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
             document.getElementById(headingId)?.focus();
           }}
           onCloseAutoFocus={(e) => {
+            // The chip is going (every row removed): the conversation takes focus, not the page.
+            if (closingToMain.current) {
+              closingToMain.current = false;
+              e.preventDefault();
+              document.getElementById("main")?.focus();
+              return;
+            }
             // Going to Settings: the settings window takes focus.
             if (!toSettings.current) return;
             toSettings.current = false;
@@ -334,8 +370,8 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
             </h2>
             <p className="text-sm text-ink-secondary">
               {out
-                ? "Read-only. For anything else in another space, Phaethon asks you first."
-                : "Read-only, and only these places. Removing it stops future reads; what was already read stays in that conversation."}
+                ? "Read-only. For anything else in another space, Phaethon asks you first. Removing access stops future reads; anything already read stays in this space’s conversation."
+                : "Read-only, and only these places. Removing access stops future reads; anything already read stays in that space’s conversation."}
             </p>
           </div>
           {/* The list scrolls; the heading and the footer stay in view. */}
@@ -400,7 +436,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                       </span>
                     )}
                     <span className="col-start-2 text-xs text-ink-secondary">
-                      {waiting ? "Removed. You can undo this for a few seconds." : (
+                      {waiting ? "Removed. Undo stays here until you close this list." : (
                         <>
                           {r.scope === "once" ? "This time only" : "Always"}
                           {date && ` · since ${date}`}

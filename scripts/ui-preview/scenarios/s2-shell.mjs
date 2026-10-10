@@ -430,7 +430,7 @@ export default [
       await page.click("[data-revoke]");
       await page.waitForSelector("[data-undo]", { timeout: 3000 });
       const s = await page.evaluate(() => ({ focus: document.activeElement?.getAttribute("aria-label"), status: document.querySelector("[data-shell-status]")?.textContent }));
-      check(s.focus === "Undo revoking Work / calendar", "Revoke puts focus on its Undo", JSON.stringify(s));
+      check(s.focus === "Undo removing Work / calendar", "Revoke puts focus on its Undo", JSON.stringify(s));
       await h.shot("undo");
       // The revoke is made at once: the grant stops working when the user says so.
       check((await calls(page, "grant_revoke")).map((a) => a.id).join() === "g-cal", "Revoke is made at once");
@@ -441,7 +441,7 @@ export default [
       const restored = await calls(page, "grant_restore");
       check(restored.length === 1 && restored[0].id === "g-cal" && restored[0].created === "2026-10-09T15:20:00Z", "Undo puts the same grant back", JSON.stringify(restored));
       const f = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
-      check(f === "Revoke School’s access to Work / calendar", "Undo puts focus back on Revoke", f);
+      check(f === "Remove School’s access to Work / calendar", "Undo puts focus back on Revoke", f);
       await new Promise((r) => setTimeout(r, 6500));
       check((await calls(page, "grant_revoke")).length === 1, "an undone revoke is not made again");
       // Now let one go through.

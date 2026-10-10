@@ -335,7 +335,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
             <p className="text-sm text-ink-secondary">
               {out
                 ? "Read-only. For anything else in another space, Phaethon asks you first."
-                : "Read-only, and only these places. Revoking stops future reads; what was already read stays in that conversation."}
+                : "Read-only, and only these places. Removing it stops future reads; what was already read stays in that conversation."}
             </p>
           </div>
           {/* The list scrolls; the heading and the footer stay in view. */}
@@ -400,7 +400,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                       </span>
                     )}
                     <span className="col-start-2 text-xs text-ink-secondary">
-                      {waiting ? "Revoked. You can undo this for a few seconds." : (
+                      {waiting ? "Removed. You can undo this for a few seconds." : (
                         <>
                           {r.scope === "once" ? "This time only" : "Always"}
                           {date && ` · since ${date}`}
@@ -415,7 +415,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                       size="xs"
                       data-undo={r.id}
                       data-row-action=""
-                      aria-label={`Undo revoking ${r.what}`}
+                      aria-label={`Undo removing ${r.what}`}
                       onClick={() => undo(r)}
                       className="min-h-(--ph-target-min)"
                     >
@@ -429,11 +429,11 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                       data-revoke={r.id}
                       data-row-action=""
                       disabled={busyAll}
-                      aria-label={out ? `Revoke access to ${r.what}` : `Revoke ${r.who}’s access to ${r.what}`}
+                      aria-label={out ? `Remove access to ${r.what}` : `Remove ${r.who}’s access to ${r.what}`}
                       onClick={() => revoke(r)}
                       className="min-h-(--ph-target-min)"
                     >
-                      Revoke
+                      Remove
                     </Button>
                   )}
                 </li>
@@ -457,8 +457,8 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
             <div role="group" aria-labelledby={`${headingId}-all`} className="flex shrink-0 flex-col gap-2 border-t border-line px-4 py-2.5">
               <p id={`${headingId}-all`} className="text-sm text-ink">
                 {out
-                  ? `Revoke all ${rows.length}? ${space.name} will no longer be able to read ${rows.length === 1 ? "it" : "any of them"}.`
-                  : `Revoke all ${rows.length}? ${readers.length === 1 ? spaceInfo(readers[0]).name : "Other spaces"} will no longer be able to read ${rows.length === 1 ? "it" : "any of them"}.`}
+                  ? `Remove all ${rows.length}? ${space.name} will no longer be able to read ${rows.length === 1 ? "it" : "any of them"}.`
+                  : `Remove all ${rows.length}? ${readers.length === 1 ? spaceInfo(readers[0]).name : "Other spaces"} will no longer be able to read ${rows.length === 1 ? "it" : "any of them"}.`}
               </p>
               <div className="flex flex-wrap justify-end gap-2">
                 <Button
@@ -484,7 +484,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                   onClick={() => void revokeAll()}
                   className="min-h-(--ph-target-min)"
                 >
-                  {busyAll ? "Revoking…" : `Revoke all ${rows.length}`}
+                  {busyAll ? "Removing…" : `Remove all ${rows.length}`}
                 </Button>
               </div>
             </div>
@@ -513,7 +513,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                   }}
                   className="min-h-(--ph-target-min) text-danger-ink hover:text-danger-ink"
                 >
-                  Revoke all…
+                  Remove all…
                 </Button>
               )}
             </div>

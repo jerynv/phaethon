@@ -133,7 +133,7 @@ export default [
       const shown = page.viewport().width < 768 ? "Also reads 1 folder" : "Also reads Work / calendar";
       if (name !== `${shown} | School can also read 1 folder in another space.`) throw new Error(`chip did not update: ${name}`);
       const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
-      if (focused !== "Revoke access to Work / calendar") throw new Error(`focus after revoke: ${focused}`);
+      if (focused !== "Remove access to Work / calendar") throw new Error(`focus after revoke: ${focused}`);
       said = await titleStatus(page);
       console.log(`     after first revoke: chip "${name}", status "${said}"`);
       if (!said.startsWith("School can no longer read Work / projects/now.md.")) throw new Error(`status: ${said}`);

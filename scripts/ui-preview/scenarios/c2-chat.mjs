@@ -947,4 +947,31 @@ export default [
       check(gone, "a key saved in Settings puts the card away");
     },
   },
+  // ---- Icon buttons say their name once: a visible tooltip whose spoken description adds something, never the name again ----
+  ...[
+    ["send", "Send message", "Return"],
+    ["add", "Add to message", "Attach files"],
+  ].map(([id, label, spoken]) => ({
+    name: `c2-icon-name-${id}`,
+    sizes: [[1100, 720]],
+    mock: { threads: {} },
+    async run(page, h) {
+      const sel = `button[aria-label="${label}"]`;
+      await page.waitForSelector(sel, { timeout: 5000 });
+      // Send is disabled (no pointer events, so no tooltip) until there is something to send.
+      await page.type("[data-composer-input]", "Hi");
+      await page.hover(sel);
+      const shown = await page
+        .waitForFunction((t) => [...document.querySelectorAll('[data-slot="tooltip-content"]')].some((n) => n.textContent.startsWith(t)), { timeout: 3000 }, label)
+        .then(() => true, () => false);
+      check(shown, `${label}: the tooltip shows its name on hover`);
+      await sleep(300);
+      await h.shot("tip");
+      await page.focus(sel);
+      const snap = await page.accessibility.snapshot({ root: await page.$(sel) });
+      const title = await page.$eval(sel, (b) => b.getAttribute("title"));
+      check(snap?.name === label && (!snap?.description || snap.description === spoken), `${label}: said once; any description is "${spoken}", not the name again`, JSON.stringify(snap));
+      check(!title, `${label}: no title repeating the name`);
+    },
+  })),
 ];

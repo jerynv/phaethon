@@ -3,6 +3,7 @@ import { DropdownMenu } from "radix-ui";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
+import { IconTip } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom } from "@/runtime/agent-adapter";
@@ -92,7 +93,6 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
         size="icon-xs"
         className="text-warning-ink hover:bg-transparent hover:underline"
         aria-label="Dismiss"
-        title="Dismiss"
         onClick={onDismiss}
       >
         <Icon name="close" className="size-(--ph-icon-size-sm)" />
@@ -109,18 +109,19 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
 function AddMenu({ onAttach }: { onAttach: () => void }) {
   return (
     <DropdownMenu.Root modal={false}>
-      <DropdownMenu.Trigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="rounded-full text-ink-secondary hover:text-ink data-[state=open]:bg-hover data-[state=open]:text-ink"
-          aria-label="Add to message"
-          title="Add to message"
-        >
-          <Icon name="plus" className="size-(--ph-icon-size-lg)" />
-        </Button>
-      </DropdownMenu.Trigger>
+      <IconTip label="Add to message" spoken="Attach files">
+        <DropdownMenu.Trigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full text-ink-secondary hover:text-ink data-[state=open]:bg-hover data-[state=open]:text-ink"
+            aria-label="Add to message"
+          >
+            <Icon name="plus" className="size-(--ph-icon-size-lg)" />
+          </Button>
+        </DropdownMenu.Trigger>
+      </IconTip>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           side="top"
@@ -353,18 +354,19 @@ export function Composer({
               </Button>
             </ComposerPrimitive.Cancel>
           ) : (
-            <ComposerPrimitive.Send asChild>
-              <Button
-                type="submit"
-                size="icon"
-                // Nothing to send yet: a quiet outlined button at full opacity, not a washed-out fill.
-                className="rounded-full disabled:border-line-strong disabled:bg-surface disabled:text-ink-secondary disabled:opacity-100 disabled:shadow-none"
-                aria-label="Send message"
-                title="Send message"
-              >
-                <Icon name="send" />
-              </Button>
-            </ComposerPrimitive.Send>
+            <IconTip label="Send message" spoken="Return">
+              <ComposerPrimitive.Send asChild>
+                <Button
+                  type="submit"
+                  size="icon"
+                  // Nothing to send yet: a quiet outlined button at full opacity, not a washed-out fill.
+                  className="rounded-full disabled:border-line-strong disabled:bg-surface disabled:text-ink-secondary disabled:opacity-100 disabled:shadow-none"
+                  aria-label="Send message"
+                >
+                  <Icon name="send" />
+                </Button>
+              </ComposerPrimitive.Send>
+            </IconTip>
           )}
         </div>
       </ComposerPrimitive.Root>

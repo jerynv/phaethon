@@ -339,7 +339,6 @@ export function ConversationsBar({
               size="icon-xs"
               className="text-warning-ink hover:bg-transparent hover:underline"
               aria-label="Dismiss"
-              title="Dismiss"
               onClick={() => setProblem("")}
             >
               <Icon name="close" className="size-(--ph-icon-size-sm)" />

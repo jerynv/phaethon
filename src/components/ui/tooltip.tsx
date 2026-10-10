@@ -61,4 +61,21 @@ function TooltipContent({
   )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+/*
+ * A tooltip for an icon button that already has its name (aria-label). It
+ * shows the name for sighted people on hover and focus. Radix always adds the
+ * tooltip as the button's description while it is open, so the spoken text is
+ * `spoken` (a shortcut, or what the button leads to), never the name again.
+ */
+function IconTip({ label, spoken, children, side = "top" }: { label: string; spoken: string; children: React.ReactElement; side?: React.ComponentProps<typeof TooltipPrimitive.Content>["side"] }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side} aria-label={spoken}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, IconTip }

@@ -10,8 +10,8 @@
       grants: {},
       // The vault's spaces, as spaces_list returns them (sorted by name there).
       spaces: [
-        { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 250 },
-        { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 55 },
+        { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240 },
+        { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50 },
       ],
       // Events streamed for each agent_send; { waitApproval: true } pauses until answered.
       turn: [{ kind: "text", delta: "Done." }],

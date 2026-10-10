@@ -65,18 +65,19 @@ export default [
         const card = document.querySelector(sel);
         return {
           name: document.getElementById(card.getAttribute("aria-labelledby"))?.textContent,
-          text: card.innerText,
+          // textContent: the facts are inside the folded "What is an API key?" section.
+          text: card.textContent,
           link: card.querySelector('a[href="https://console.anthropic.com/settings/keys"]')?.textContent,
           label: document.querySelector("[data-setup-key]").labels?.[0]?.textContent,
           cli: !!card.querySelector("[data-setup-cli]"),
         };
       }, CARD);
       check(c.name === "Set up Phaethon to answer in School", "the card is a region named by its heading", c.name);
-      for (const want of ["API key", "separate account", "ChatGPT or Claude.ai subscription", "few dollars a month", "spending limit", "never syncs", "Get a key", "Paste it here"]) {
+      for (const want of ["API key", "separate account", "ChatGPT or Claude.ai subscription", "few dollars a month", "spending limit", "never syncs", "No key yet?", "What is an API key?"]) {
         check(c.text.includes(want), `it says: ${want}`);
       }
       check(c.link?.startsWith("console.anthropic.com"), "it links straight to the API keys page", c.link);
-      check(c.label === "Your Anthropic API key", "the field has a visible label", c.label);
+      check(c.label === "Paste your Anthropic API key", "the field has a visible label", c.label);
       check(c.cli, "Use Claude Code instead is offered");
       await page.focus("[data-setup-key]");
       await h.shot("field-focused");

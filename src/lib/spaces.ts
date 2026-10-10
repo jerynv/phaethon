@@ -32,8 +32,8 @@ export const SPACE_DESCRIPTION_MAX = 160;
 
 /** Outside the desktop app (`pnpm dev`) there is no vault: these stand in, and changes stay in memory. */
 const FIXTURE: readonly Space[] = [
-  { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 250 },
-  { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 55 },
+  { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240 },
+  { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50 },
 ];
 
 export type SpacesState = {

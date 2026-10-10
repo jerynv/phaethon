@@ -9,7 +9,7 @@ import { setSpaceActivity } from "@/lib/activity";
 import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
-import { createAgentAdapter, type AgentMessageCustom } from "@/runtime/agent-adapter";
+import { createAgentAdapter, savedAttachmentId, type AgentMessageCustom } from "@/runtime/agent-adapter";
 import { attachmentAdapter } from "@/runtime/attachments";
 import { echoAdapter } from "@/runtime/echo-adapter";
 import { RECORD_PART, loadUiThread, type RecordPartData, type UiMessage } from "@/runtime/records";
@@ -123,8 +123,8 @@ function toThreadMessage(m: UiMessage, i: number): ThreadMessageLike {
     role: "user",
     metadata,
     content: m.text,
-    attachments: (m.attachments ?? []).map((a, k) => ({
-      id: `${id}-att-${k}`,
+    attachments: (m.attachments ?? []).map((a) => ({
+      id: savedAttachmentId(a.path),
       type: a.mediaType.startsWith("image/") ? "image" : "document",
       name: a.name,
       contentType: a.mediaType,

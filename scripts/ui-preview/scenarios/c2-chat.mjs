@@ -597,6 +597,43 @@ export default [
       check(send.prompt === "And next week?" && send.replaceFrom === 2, "Regenerate re-asks the last question with replaceFrom = its index", JSON.stringify({ p: send.prompt, r: send.replaceFrom }));
     },
   },
+  // ---- Edit and Regenerate keep the files on the replaced message ----
+  ...["edit", "regenerate"].map((how) => ({
+    name: `c2-${how}-keeps-files`,
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: {
+      threads: {
+        school: [
+          LOADED[0],
+          LOADED[1],
+          { role: "user", text: "And next week?", attachments: [{ name: "syllabus.pdf", path: "attachments/2026-10-09/syllabus.pdf", mediaType: "application/pdf" }] },
+          LOADED[3],
+        ],
+      },
+      turn: [{ kind: "text", delta: "Test 2, the week after." }],
+    },
+    async run(page, h) {
+      await h.waitText("Test 1, on Thursday.");
+      if (how === "edit") {
+        await (await page.$$("[data-edit-message]"))[1].click();
+        await page.waitForSelector("[data-edit-input]", { timeout: 5000 });
+        await page.keyboard.type(" Thanks.");
+        await page.keyboard.press("Enter");
+      } else {
+        await page.click('[data-reply-again="regenerate"]');
+      }
+      await h.waitText("Test 2, the week after.");
+      const [send] = await calls(page, "agent_send");
+      check(
+        send.replaceFrom === 2 && JSON.stringify(send.keepAttachments) === '["attachments/2026-10-09/syllabus.pdf"]' && send.attachments.length === 0,
+        `${how} keeps the message's saved file by its path, without sending it again`,
+        JSON.stringify({ r: send.replaceFrom, keep: send.keepAttachments, n: send.attachments.length }),
+      );
+      const still = await page.evaluate(() => document.body.innerText.includes("syllabus.pdf"));
+      check(still, "the file still shows on the message");
+    },
+  })),
   // ---- C10: Enter while replying keeps the text and says why ----
   {
     name: "c2-enter-while-replying",

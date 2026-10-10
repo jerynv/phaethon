@@ -455,6 +455,23 @@ pub fn is_user_boundary(msgs: &[Value], index: usize) -> bool {
     })
 }
 
+/// The saved files on the user message at `index` whose paths are in `keep`,
+/// in their original order: what an edit or regenerate carries over. Only
+/// files already on that message can be kept, so a caller cannot name any
+/// other file in the space.
+pub fn kept_attachments(msgs: &[Value], index: usize, keep: &[String]) -> Vec<Value> {
+    if !is_user_boundary(msgs, index) {
+        return vec![];
+    }
+    msgs[index]["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|b| b["type"] == "phaethon_attachment" && b["path"].as_str().is_some_and(|p| keep.iter().any(|k| k == p)))
+        .cloned()
+        .collect()
+}
+
 /// Said when an edit points at a message that isn't (or is no longer) there.
 pub const STALE_EDIT: &str =
     "That message can’t be changed: the conversation has changed since it was shown. Reload the conversation and try again.";
@@ -825,5 +842,23 @@ mod tests {
         // The current file is not touched by the cut itself; the caller saves.
         assert_eq!(load(&dir).unwrap(), original);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn kept_attachments_come_only_from_the_replaced_message() {
+        let file = |p: &str| crate::attachments::reference(p, "image/png", "photo.png");
+        let msgs = vec![
+            user_message("first", &[file("attachments/2026-10-10/a.png"), file("attachments/2026-10-10/b.png")]),
+            json!({"role": "assistant", "content": [{"type": "text", "text": "ok"}]}),
+            user_message("second", &[file("attachments/2026-10-10/c.png")]),
+        ];
+        let paths = |v: Vec<Value>| v.iter().map(|b| b["path"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let keep = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(paths(kept_attachments(&msgs, 0, &keep(&["attachments/2026-10-10/b.png", "attachments/2026-10-10/a.png"]))), keep(&["attachments/2026-10-10/a.png", "attachments/2026-10-10/b.png"]));
+        assert_eq!(paths(kept_attachments(&msgs, 0, &keep(&["attachments/2026-10-10/b.png"]))), keep(&["attachments/2026-10-10/b.png"]));
+        // Another message's file, a made-up path, a reply, out of range: nothing.
+        assert!(kept_attachments(&msgs, 0, &keep(&["attachments/2026-10-10/c.png", "../../secret.txt"])).is_empty());
+        assert!(kept_attachments(&msgs, 1, &keep(&["attachments/2026-10-10/a.png"])).is_empty());
+        assert!(kept_attachments(&msgs, 9, &keep(&["attachments/2026-10-10/a.png"])).is_empty());
     }
 }

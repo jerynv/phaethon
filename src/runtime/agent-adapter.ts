@@ -89,6 +89,16 @@ export function uploadsOf(message: ThreadMessage | undefined): AttachmentUpload[
   return uploads;
 }
 
+/** A reloaded file's id carries where it is saved in the space, so an edit or regenerate can keep it. */
+const SAVED_ATTACHMENT = "saved-file:";
+export const savedAttachmentId = (path: string) => `${SAVED_ATTACHMENT}${path}`;
+
+/** The saved paths of the reloaded files still on a user message (an edit may have removed some). */
+export function keptPathsOf(message: ThreadMessage | undefined): string[] {
+  if (!message || message.role !== "user") return [];
+  return (message.attachments ?? []).filter((a) => a.id.startsWith(SAVED_ATTACHMENT)).map((a) => a.id.slice(SAVED_ATTACHMENT.length));
+}
+
 /** Answer a pending write in `spaceId`. Resolves false if it is no longer waiting. */
 export async function answerApproval(spaceId: string, id: string, allow: boolean): Promise<boolean> {
   return invoke<boolean>("agent_approve", { space: spaceId, id, allow });
@@ -168,7 +178,11 @@ export function createAgentAdapter(
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
       const args: Record<string, unknown> = { space: spaceId, prompt, attachments, onEvent: channel };
-      if (replaceFrom !== undefined) args.replaceFrom = replaceFrom;
+      if (replaceFrom !== undefined) {
+        args.replaceFrom = replaceFrom;
+        // Files on the replaced message stay with it (a reloaded file has no bytes here to send again).
+        args.keepAttachments = keptPathsOf(lastUser);
+      }
       invoke("agent_send", args).catch((err: unknown) => {
         // The banner says what happened in plain words; this raw text goes under "Details".
         queue.push({ kind: "error", code: "ipc", message: String(err) });

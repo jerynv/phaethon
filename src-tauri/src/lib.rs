@@ -45,7 +45,9 @@ struct AppState {
 /// `replace_from` (edit / regenerate, Phaethon's own agent only) is the
 /// `index` of a user message from `thread_load`: that message and everything
 /// after it are replaced by this one, after the whole conversation as it was
-/// is copied into the space's archive.
+/// is copied into the space's archive. `keep_attachments` lists the saved
+/// paths of that message's files to carry over to the new one (only its own
+/// files can be named); new `attachments` are added after them.
 #[tauri::command]
 async fn agent_send(
     state: State<'_, AppState>,
@@ -54,6 +56,7 @@ async fn agent_send(
     attachments: Vec<attachments::Upload>,
     on_event: Channel<AgentEvent>,
     replace_from: Option<usize>,
+    keep_attachments: Option<Vec<String>>,
 ) -> Result<(), ()> {
     let emit = |ev: AgentEvent| {
         // The webview may have reloaded or closed; the turn still finishes cleanly.
@@ -76,13 +79,21 @@ async fn agent_send(
         return Ok(());
     }
     // Saved before the agent runs, so they are in the space whatever the backend.
-    let refs = match attachments::save(&space_dir, &attachments) {
+    let new_refs = match attachments::save(&space_dir, &attachments) {
         Ok(r) => r,
         Err(message) => {
             fail(ErrorCode::Attachment, message);
             return Ok(());
         }
     };
+    // An edit or regenerate keeps the replaced message's files the webview still shows.
+    let mut refs = match (replace_from, &keep_attachments) {
+        (Some(index), Some(keep)) if !keep.is_empty() => {
+            thread::load(&space_dir).map(|msgs| thread::kept_attachments(&msgs, index, keep)).unwrap_or_default()
+        }
+        _ => vec![],
+    };
+    refs.extend(new_refs);
     match settings.backend {
         Backend::Phaethon => {
             let key = match secrets::get(&state.vault.name(), "anthropic") {

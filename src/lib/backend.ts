@@ -78,8 +78,6 @@ export const listModels = () => invoke<ModelInfo[]>("models_list");
 /** `null` goes back to the default model. */
 export const setModel = (model: string | null) => announce("model", invoke<void>("settings_set_model", { model }));
 
-/** Open a file in a space with its default app, or show it in Finder (`reveal`). `path` is relative to the space. */
-export const openFile = (space: string, path: string, reveal = false) => invoke<void>("file_open", { space, path, reveal });
 /** Replaces the vault's saved appearance. Pass only a validated object (src/theme). */
 export const saveAppearance = (appearance: unknown) => invoke<void>("appearance_set", { appearance });
 export const loadThread = (space: string) => invoke<SavedMessage[]>("thread_load", { space });

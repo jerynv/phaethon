@@ -44,6 +44,10 @@
     "allow-claude-cli-status",
     "allow-thread-clear",
     "allow-thread-forget",
-    "allow-thread-forget-preview"
+    "allow-thread-forget-preview",
+    "allow-space-touch",
+    "allow-space-show",
+    "allow-space-export",
+    "allow-export-show"
   ]
 }

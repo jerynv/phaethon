@@ -2,6 +2,7 @@ pub mod agent;
 pub mod agent_loop;
 pub mod anthropic;
 pub mod attachments;
+pub mod export;
 pub mod grants;
 pub mod memory;
 pub mod open;
@@ -39,6 +40,9 @@ struct AppState {
     /// Where per-vault CLI config dirs live when a vault opts in. Outside the
     /// vault on purpose: the CLI may keep credentials there, and vaults sync.
     isolated_config_root: Option<std::path::PathBuf>,
+    /// The last file Export wrote, for its Show in Finder. Kept here so the
+    /// webview never names a path outside a space.
+    last_export: std::sync::Mutex<Option<std::path::PathBuf>>,
 }
 
 /// Send one message to the agent in `space` and stream the reply over `on_event`.
@@ -75,6 +79,8 @@ async fn agent_send(
             return Ok(());
         }
     };
+    // Sending counts as using the space (the sidebar lists the most recent first); so does the reply ending.
+    let _ = spaces::touch(&state.vault, &space);
     let settings = state.vault.settings();
     if replace_from.is_some() && settings.backend != Backend::Phaethon {
         fail(ErrorCode::Cli, "Editing or regenerating a message works only with Phaethon’s own agent.".into());
@@ -143,6 +149,7 @@ async fn agent_send(
             agent::run_turn(&state.runs, &space, req, emit).await;
         }
     }
+    let _ = spaces::touch(&state.vault, &space);
     Ok(())
 }
 
@@ -196,8 +203,8 @@ fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::
         .map_err(|e| format!("This space’s conversation couldn’t be read: {e}"))
 }
 
-/// Every space in the vault (valid folders under `spaces/`), sorted by name,
-/// with the name, description and colour from each one's space.json.
+/// Every space in the vault (valid folders under `spaces/`), the most recently
+/// used first, with the name, description and colour from each one's space.json.
 #[tauri::command]
 fn spaces_list(state: State<'_, AppState>) -> Result<Vec<spaces::SpaceView>, String> {
     spaces::list(&state.vault)
@@ -224,6 +231,73 @@ fn space_update(
     hue: Option<f64>,
 ) -> Result<spaces::SpaceView, String> {
     spaces::update(&state.vault, &id, name.as_deref(), description.as_deref(), hue)
+}
+
+/// Mark `space` as used now (it was opened). The time is the core's own.
+#[tauri::command]
+fn space_touch(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    spaces::touch(&state.vault, &id)
+}
+
+/// Open a space's folder in the file manager. Only an id: the folder comes
+/// from the vault, and anything that isn't a space is refused.
+#[tauri::command]
+fn space_show(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let dir = state.vault.space_dir(&id).map_err(|_| "That space isn’t in your Phaethon folder any more.".to_string())?;
+    open::show_space(&dir)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportDone {
+    /// The file's name only; the full path stays in the core.
+    file_name: String,
+    files: usize,
+}
+
+/// Export a whole space as one .zip. The core asks where to save it in a
+/// native save dialog (so the webview never names a path); `None` when the
+/// person cancels it.
+#[tauri::command]
+async fn space_export(app: tauri::AppHandle, state: State<'_, AppState>, id: String) -> Result<Option<ExportDone>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let space = spaces::get(&state.vault, &id)?;
+    let dir = state.vault.space_dir(&id)?;
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title(format!("Export {}", space.name))
+        .set_file_name(export::suggested_name(&space.name, &id))
+        .add_filter("Zip archive", &["zip"]);
+    if let Ok(downloads) = app.path().download_dir() {
+        dialog = dialog.set_directory(downloads);
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    dialog.save_file(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let Some(picked) = rx.await.ok().flatten() else {
+        return Ok(None);
+    };
+    let dest = picked
+        .into_path()
+        .map_err(|_| "Phaethon can’t save there. Choose a folder on this computer.".to_string())?;
+    let done = tauri::async_runtime::spawn_blocking(move || export::export(&dir, &id, &dest))
+        .await
+        .map_err(|e| format!("The export stopped unexpectedly: {e}"))??;
+    let file_name = done.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    *state.last_export.lock().unwrap_or_else(|p| p.into_inner()) = Some(done.file);
+    Ok(Some(ExportDone { file_name, files: done.files }))
+}
+
+/// Show the last exported file in the file manager.
+#[tauri::command]
+fn export_show(state: State<'_, AppState>) -> Result<(), String> {
+    let file = state.last_export.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    open::reveal_file(&file.ok_or("There’s no export to show yet.")?)
 }
 
 /// Start a new conversation in `space`: the current one (if it has messages)
@@ -489,6 +563,8 @@ fn kill_children_on_signal(handle: tauri::AppHandle, runs: Runs) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        // Used from Rust only (Export's save dialog); no capability lets the webview call it.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let vault = Vault::default_location()?;
             vault.ensure_initialized()?;
@@ -505,6 +581,7 @@ pub fn run() {
                 runs,
                 approvals: Approvals::default(),
                 isolated_config_root,
+                last_export: Default::default(),
             });
             Ok(())
         })
@@ -540,7 +617,11 @@ pub fn run() {
             space_update,
             space_model_get,
             space_model_set,
-            space_models_list
+            space_models_list,
+            space_touch,
+            space_show,
+            space_export,
+            export_show
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

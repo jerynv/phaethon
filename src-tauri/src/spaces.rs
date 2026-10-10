@@ -15,6 +15,12 @@
 //! directory all use it, so renaming a space changes only its display name.
 //! There is no delete: removing a space destroys its files, and that needs its
 //! own confirmation flow.
+//!
+//! When a space was last used (opened, a message sent, a reply finished) is
+//! kept apart from space.json, in `<space>/.phaethon/last-used` (milliseconds
+//! since 1970, as text), so the frequent write never rewrites the person's own
+//! settings and a sync conflict on it costs nothing. The list is ordered by it,
+//! most recent first.
 
 use std::fs;
 use std::io;
@@ -39,9 +45,13 @@ pub struct SpaceView {
     pub description: String,
     /// oklch hue angle, 0 to 360.
     pub hue: u16,
+    /// When the space was last used, in milliseconds since 1970; `None` if never.
+    #[serde(rename = "lastUsed")]
+    pub last_used: Option<u64>,
 }
 
-/// Every valid space in the vault, sorted by name (then id). Folders that are
+/// Every valid space in the vault, the most recently used first; spaces never
+/// used follow, sorted by name (then id). Folders that are
 /// not valid spaces (bad names, symlinks, files, anything outside the vault)
 /// are skipped. A vault without a `spaces/` folder has no spaces.
 pub fn list(vault: &Vault) -> Result<Vec<SpaceView>, String> {
@@ -65,12 +75,63 @@ pub fn list(vault: &Vault) -> Result<Vec<SpaceView>, String> {
         })
         .collect();
     out.sort_by(|a, b| {
-        a.name
-            .to_lowercase()
-            .cmp(&b.name.to_lowercase())
+        b.last_used
+            .cmp(&a.last_used)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
             .then_with(|| a.id.cmp(&b.id))
     });
     Ok(out)
+}
+
+/// One space by id, as the list shows it.
+pub fn get(vault: &Vault, id: &str) -> Result<SpaceView, String> {
+    let dir = vault.space_dir(id)?;
+    Ok(view(id, &dir))
+}
+
+/// Mark `id` as used now. The time is the core's clock, never the webview's.
+pub fn touch(vault: &Vault, id: &str) -> Result<(), String> {
+    let dir = vault.space_dir(id)?;
+    touch_at(&dir, now_ms()).map_err(|e| format!("This space’s last use couldn’t be saved: {e}"))
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn used_file(dir: &Path) -> PathBuf {
+    dir.join(".phaethon").join("last-used")
+}
+
+fn touch_at(dir: &Path, ms: u64) -> io::Result<()> {
+    let state = state_dir_for_write(dir)?;
+    let file = used_file(dir);
+    if file.symlink_metadata().is_ok_and(|m| !m.is_file()) {
+        return Err(io::Error::other("last-used in this space is not a plain file"));
+    }
+    let tmp = state.join("last-used.tmp");
+    fs::write(&tmp, format!("{ms}\n"))?;
+    fs::rename(tmp, file)
+}
+
+/// The saved last use, `None` when there is none or it can't be trusted (not a
+/// small plain file, not a number). A time in the future (another computer's
+/// clock was ahead) counts as now, so it can't pin a space to the top.
+fn read_last_used(dir: &Path) -> Option<u64> {
+    let state = dir.join(".phaethon");
+    if !state.symlink_metadata().ok()?.is_dir() {
+        return None;
+    }
+    let file = used_file(dir);
+    let m = file.symlink_metadata().ok()?;
+    if !m.is_file() || m.len() > 64 {
+        return None;
+    }
+    let ms: u64 = fs::read_to_string(file).ok()?.trim().parse().ok()?;
+    Some(ms.min(now_ms()))
 }
 
 /// Create a new space from a display name. The id is a slug of the name made
@@ -174,6 +235,7 @@ fn view(id: &str, dir: &Path) -> SpaceView {
             .and_then(|v| v.as_f64())
             .and_then(|h| check_hue(h).ok())
             .unwrap_or_else(|| default_hue(id)),
+        last_used: read_last_used(dir),
     }
 }
 
@@ -208,11 +270,7 @@ pub(crate) fn read_meta_raw(dir: &Path) -> io::Result<Option<serde_json::Value>>
 /// Write space.json through a temporary file and a rename, so a crash never
 /// leaves half a file.
 pub(crate) fn write_meta(dir: &Path, meta: &serde_json::Map<String, serde_json::Value>) -> io::Result<()> {
-    let state = dir.join(".phaethon");
-    if state.symlink_metadata().is_ok_and(|m| !m.is_dir()) {
-        return Err(io::Error::other(".phaethon in this space is not a folder"));
-    }
-    fs::create_dir_all(&state)?;
+    let state = state_dir_for_write(dir)?;
     let file = meta_file(dir);
     if file.symlink_metadata().is_ok_and(|m| !m.is_file()) {
         return Err(io::Error::other("space.json in this space is not a plain file"));
@@ -222,6 +280,17 @@ pub(crate) fn write_meta(dir: &Path, meta: &serde_json::Map<String, serde_json::
     bytes.push(b'\n');
     fs::write(&tmp, bytes)?;
     fs::rename(tmp, file)
+}
+
+/// `<space>/.phaethon`, created if missing; refused when it is anything but a
+/// real folder (a symlink could lead the write outside the vault).
+fn state_dir_for_write(dir: &Path) -> io::Result<PathBuf> {
+    let state = dir.join(".phaethon");
+    if state.symlink_metadata().is_ok_and(|m| !m.is_dir()) {
+        return Err(io::Error::other(".phaethon in this space is not a folder"));
+    }
+    fs::create_dir_all(&state)?;
+    Ok(state)
 }
 
 /// Trimmed, 1 to 60 characters, no control characters.
@@ -331,8 +400,8 @@ mod tests {
         assert_eq!(
             spaces,
             vec![
-                SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240 },
-                SpaceView { id: "work".into(), name: "Work".into(), description: String::new(), hue: 50 },
+                SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240, last_used: None },
+                SpaceView { id: "work".into(), name: "Work".into(), description: String::new(), hue: 50, last_used: None },
             ]
         );
         fs::remove_dir_all(root).unwrap();
@@ -395,7 +464,7 @@ mod tests {
         ] {
             fs::write(state.join("space.json"), bad.to_string()).unwrap();
             let s = view("school", &root.join("spaces/school"));
-            assert_eq!(s, SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240 }, "{bad}");
+            assert_eq!(s, SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240, last_used: None }, "{bad}");
         }
         fs::write(state.join("space.json"), "{ not json").unwrap();
         assert_eq!(view("school", &root.join("spaces/school")).name, "School");
@@ -427,7 +496,7 @@ mod tests {
     fn create_derives_a_unique_id_and_saves_metadata() {
         let (root, vault) = temp_vault("create");
         let a = create(&vault, "  Side Project! ", Some("Weekend things"), Some(130.0)).unwrap();
-        assert_eq!(a, SpaceView { id: "side-project".into(), name: "Side Project!".into(), description: "Weekend things".into(), hue: 130 });
+        assert_eq!(a, SpaceView { id: "side-project".into(), name: "Side Project!".into(), description: "Weekend things".into(), hue: 130, last_used: None });
         let b = create(&vault, "side project", None, None).unwrap();
         assert_eq!(b.id, "side-project-2");
         assert_eq!(b.hue, default_hue("side-project-2"));
@@ -511,6 +580,50 @@ mod tests {
         let err = update(&vault, "work", Some("X"), None, None).unwrap_err();
         assert!(err.contains("can’t be read"), "{err}");
         assert_eq!(fs::read_to_string(state.join("space.json")).unwrap(), "{ broken");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn listed_most_recently_used_first() {
+        let (root, vault) = temp_vault("mru");
+        create(&vault, "Art", None, None).unwrap();
+        create(&vault, "Home", None, None).unwrap();
+        // Never used: by name.
+        assert_eq!(ids(&list(&vault).unwrap()), ["art", "home", "school", "work"]);
+        let dir = |id: &str| root.join("spaces").join(id);
+        touch_at(&dir("work"), 1_000).unwrap();
+        touch_at(&dir("home"), 3_000).unwrap();
+        touch_at(&dir("school"), 2_000).unwrap();
+        assert_eq!(ids(&list(&vault).unwrap()), ["home", "school", "work", "art"]);
+        // Using one moves it to the top (touch uses the clock, which is far past 3 000).
+        touch(&vault, "art").unwrap();
+        let listed = list(&vault).unwrap();
+        assert_eq!(ids(&listed), ["art", "home", "school", "work"]);
+        assert!(listed[0].last_used.unwrap() > 3_000);
+        assert_eq!(listed[1].last_used, Some(3_000));
+        assert_eq!(fs::read_to_string(dir("work").join(".phaethon/last-used")).unwrap(), "1000\n");
+        // space.json is never touched by it.
+        assert!(!dir("work").join(".phaethon/space.json").exists());
+        // A time from a clock that ran ahead counts as now, not forever first.
+        fs::write(dir("work").join(".phaethon/last-used"), u64::MAX.to_string()).unwrap();
+        assert!(list(&vault).unwrap().iter().find(|s| s.id == "work").unwrap().last_used.unwrap() <= now_ms());
+        // Junk, or a link, counts as never used.
+        for junk in ["", "soon", "-5", "1.5"] {
+            fs::write(dir("work").join(".phaethon/last-used"), junk).unwrap();
+            assert_eq!(get(&vault, "work").unwrap().last_used, None, "{junk:?}");
+        }
+        #[cfg(unix)]
+        {
+            fs::write(root.join("outside"), "9999").unwrap();
+            fs::remove_file(dir("work").join(".phaethon/last-used")).unwrap();
+            std::os::unix::fs::symlink(root.join("outside"), dir("work").join(".phaethon/last-used")).unwrap();
+            assert_eq!(get(&vault, "work").unwrap().last_used, None);
+            assert!(touch(&vault, "work").is_err(), "never written through a link");
+            assert_eq!(fs::read_to_string(root.join("outside")).unwrap(), "9999");
+        }
+        for bad in ["nope", "../memory", "", "School"] {
+            assert!(touch(&vault, bad).is_err(), "{bad:?}");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 

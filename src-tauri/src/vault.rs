@@ -202,6 +202,11 @@ impl Vault {
             .join("spaces")
             .canonicalize()
             .map_err(|e| format!("spaces folder unavailable: {e}"))?;
+        // A symlink is never a space, even one to a sibling (spaces::list skips
+        // it too): it would let one folder answer to two ids.
+        if spaces.join(space_id).symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(format!("space \"{space_id}\" is not a folder inside this vault"));
+        }
         let dir = spaces
             .join(space_id)
             .canonicalize()
@@ -372,6 +377,10 @@ mod tests {
             std::os::unix::fs::symlink(tmp.join("memory"), tmp.join("spaces").join("sneaky"))
                 .unwrap();
             assert!(vault.space_dir("sneaky").is_err());
+            // A link to a sibling space is not a second name for it.
+            std::os::unix::fs::symlink(tmp.join("spaces").join("school"), tmp.join("spaces").join("alias"))
+                .unwrap();
+            assert!(vault.space_dir("alias").is_err());
         }
         fs::remove_dir_all(&tmp).unwrap();
     }

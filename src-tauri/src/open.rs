@@ -7,6 +7,10 @@
 //! outright, grant or not. The path is passed to the opener as one argument,
 //! never through a shell. Files that could run a program are only ever shown,
 //! never opened, because the agent can write files into the space.
+//!
+//! A whole space can be opened in the file manager too, by its id only: the
+//! folder comes from [`Vault::space_dir`](crate::vault::Vault::space_dir),
+//! which refuses anything that is not a real folder directly under `spaces/`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -97,12 +101,29 @@ pub fn open(space: &Path, path: &str, reveal: bool) -> Result<(), String> {
     if !reveal && is_runnable(&full) {
         return Err("This file can run a program, so Phaethon won’t open it. Use Show in Finder to see where it is instead.".into());
     }
-    let mut child = opener(&full, reveal)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("The file couldn’t be opened: {e}"))?;
+    launch(opener(&full, reveal)).map_err(|e| format!("The file couldn’t be opened: {e}"))
+}
+
+/// Open a space's folder (from `Vault::space_dir`) in the file manager. A
+/// space id has no dots, so the folder can never be an app bundle that opening
+/// would run.
+pub fn show_space(dir: &Path) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Err("This space’s folder isn’t there any more.".into());
+    }
+    launch(opener(dir, false)).map_err(|e| format!("The space’s folder couldn’t be shown: {e}"))
+}
+
+/// Show (select, never open) a file the core itself wrote, such as an export.
+pub fn reveal_file(file: &Path) -> Result<(), String> {
+    if !file.is_file() {
+        return Err("That file isn’t there any more. It may have been moved or deleted.".into());
+    }
+    launch(opener(file, true)).map_err(|e| format!("The file couldn’t be shown: {e}"))
+}
+
+fn launch(mut cmd: Command) -> std::io::Result<()> {
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
     // Reap the opener when it exits (it returns as soon as the app is asked).
     std::thread::spawn(move || {
         let _ = child.wait();
@@ -153,6 +174,30 @@ mod tests {
             std::os::unix::fs::symlink(dir.join("spaces/work/secret.md"), space.join("link.md")).unwrap();
             assert!(target(&space, "link.md").is_err(), "a symlink out of the space is refused");
         }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn show_space_takes_only_a_space_id() {
+        let dir = std::env::temp_dir().join(format!("phaethon-open-space-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let vault = crate::vault::Vault::at(&dir);
+        vault.ensure_initialized().unwrap();
+        fs::write(dir.join("spaces/notes.md"), "a file, not a space").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.join("memory"), dir.join("spaces/linked")).unwrap();
+            std::os::unix::fs::symlink("/", dir.join("spaces/root")).unwrap();
+            std::os::unix::fs::symlink(dir.join("spaces/school"), dir.join("spaces/alias")).unwrap();
+        }
+        // What the space_show command does: the id goes through space_dir, then show_space.
+        for bad in ["..", "../..", "", ".", "spaces", "school/..", "school/../work", "/", "/etc", "notes.md", "linked", "root", "alias", "School", "nope", "a.app"] {
+            assert!(vault.space_dir(bad).is_err(), "{bad:?} must not resolve to a folder");
+        }
+        assert!(vault.space_dir("school").unwrap().ends_with("spaces/school"));
+        // A folder gone since it was resolved is refused before anything is launched.
+        assert!(show_space(&dir.join("spaces/gone")).is_err());
+        assert!(reveal_file(&dir.join("spaces/gone.zip")).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 

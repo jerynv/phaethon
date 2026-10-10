@@ -40,7 +40,7 @@ export interface GrantsView {
   problems: string[];
 }
 
-/** What Undo needs to put a revoked grant back exactly as it was. */
+/** A revoked grant as it was, to keep showing its row (with Undo) until the Undo time is over. */
 type Known = { id: string; to: string; from: string; path: string; created: string };
 const known = new Map<string, Known>();
 
@@ -52,10 +52,10 @@ export async function listGrants(space: string): Promise<GrantsView> {
   return view;
 }
 
-/** Put a just-revoked grant back (Undo). */
+/** Put a just-revoked grant back (Undo). Only the id goes: the core restores what it removed. */
 async function restoreGrant(k: Known): Promise<void> {
   try {
-    await invoke("grant_restore", { ...k });
+    await invoke("grant_restore", { id: k.id });
   } finally {
     notifyGrantsChanged();
   }

@@ -457,7 +457,7 @@ export default [
       await h.idle();
       check(await said(page, "Undone. School can still read Work / calendar."), "Undo is announced", await status(page));
       const restored = await calls(page, "grant_restore");
-      check(restored.length === 1 && restored[0].id === "g-cal" && restored[0].created === "2026-10-09T15:20:00Z", "Undo puts the same grant back", JSON.stringify(restored));
+      check(restored.length === 1 && JSON.stringify(restored[0]) === '{"id":"g-cal"}', "Undo asks the core to put back that grant, by its id only", JSON.stringify(restored));
       const f = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
       check(f === "Remove School’s access to Work / calendar", "Undo puts focus back on Revoke", f);
       await new Promise((r) => setTimeout(r, 6500));

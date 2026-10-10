@@ -19,7 +19,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -282,21 +282,34 @@ pub fn add_always(vault: &Vault, to: &str, from: &str, path: &str) -> Result<Gra
     Ok(grant)
 }
 
-/// Put back a grant that was just revoked (the Undo after a revoke), with its
-/// original id and date. Validated exactly like an entry read from the file,
-/// so Undo can never create anything the file itself would not accept.
-/// Does nothing if an entry with that id is already there.
-pub fn restore(vault: &Vault, id: &str, to: &str, from: &str, path: &str, created: &str) -> Result<Grant, String> {
-    let entry = serde_json::json!({ "id": id, "to": to, "from": from, "path": path, "created": created, "scope": "always" });
+/// How long a revoke can be undone. Long enough for a slow click; the
+/// webview's own Undo window is shorter.
+const UNDO_FOR: Duration = Duration::from_secs(10 * 60);
+
+/// Entries removed by [`revoke`] in this run, by vault and id, kept only in
+/// memory so Undo can put back exactly what was there. The webview names a
+/// grant by id and nothing else: it can never describe a new grant itself.
+static REVOKED: Mutex<Vec<(PathBuf, String, Value, Instant)>> = Mutex::new(Vec::new());
+
+/// Undo a revoke made in the last few minutes in this run: the entry that was
+/// removed goes back unchanged (same id, date and folder). Once only. Err if
+/// there is no such recent revoke, or if the entry would no longer be valid
+/// (a space has gone since).
+pub fn restore(vault: &Vault, id: &str) -> Result<Grant, String> {
+    let entry = {
+        let mut revoked = REVOKED.lock().unwrap_or_else(|e| e.into_inner());
+        revoked.retain(|(_, _, _, at)| at.elapsed() < UNDO_FOR);
+        let at = revoked.iter().position(|(root, rid, _, _)| root == vault.root() && rid == id);
+        at.map(|i| revoked.remove(i).2).ok_or_else(|| "That access can’t be put back any more.".to_string())?
+    };
     let grant = validate(vault, &entry).map_err(|why| format!("That access couldn’t be put back: {why}."))?;
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut doc = read_doc(vault)?;
     let list = doc["grants"].as_array_mut().expect("read_doc guarantees a list");
-    if list.iter().any(|e| e.get("id").and_then(Value::as_str) == Some(id)) {
-        return Ok(grant);
+    if !list.iter().any(|e| e.get("id").and_then(Value::as_str) == Some(id)) {
+        list.push(entry);
+        write_doc(vault, &doc)?;
     }
-    list.push(serde_json::to_value(&grant).expect("serializes"));
-    write_doc(vault, &doc)?;
     Ok(grant)
 }
 
@@ -305,12 +318,14 @@ pub fn revoke(vault: &Vault, id: &str) -> Result<bool, String> {
     let _guard = FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut doc = read_doc(vault)?;
     let list = doc["grants"].as_array_mut().expect("read_doc guarantees a list");
-    let before = list.len();
-    list.retain(|e| e.get("id").and_then(Value::as_str) != Some(id));
-    if list.len() == before {
+    let Some(at) = list.iter().position(|e| e.get("id").and_then(Value::as_str) == Some(id)) else {
         return Ok(false);
-    }
+    };
+    let removed = list.remove(at);
+    // A hand-edited file may hold the same id twice: remove every copy.
+    list.retain(|e| e.get("id").and_then(Value::as_str) != Some(id));
     write_doc(vault, &doc)?;
+    REVOKED.lock().unwrap_or_else(|e| e.into_inner()).push((vault.root().to_path_buf(), id.to_string(), removed, Instant::now()));
     Ok(true)
 }
 
@@ -553,18 +568,19 @@ mod tests {
     fn restore_puts_back_exactly_what_was_revoked() {
         let (vault, dir) = restore_vault();
         let g = add_always(&vault, "school", "work", "calendar").unwrap();
+        // Nothing revoked yet: nothing to put back, and nothing is created.
+        assert!(restore(&vault, &g.id).is_err());
         assert!(revoke(&vault, &g.id).unwrap());
         assert!(load(&vault).grants.is_empty());
-        let back = restore(&vault, &g.id, &g.to, &g.from, &g.path, &g.created).unwrap();
+        let back = restore(&vault, &g.id).unwrap();
         assert_eq!(back, g);
         assert_eq!(load(&vault).grants, vec![g.clone()]);
-        // Twice is harmless; hostile input is refused like a bad file entry.
-        restore(&vault, &g.id, &g.to, &g.from, &g.path, &g.created).unwrap();
+        // Once only: a second Undo has nothing to put back.
+        assert!(restore(&vault, &g.id).is_err());
         assert_eq!(load(&vault).grants.len(), 1);
-        assert!(restore(&vault, "x1", "school", "work", "../etc", "").is_err());
-        assert!(restore(&vault, "x2", "school", "school", "notes", "").is_err());
-        assert!(restore(&vault, "x3", "school", "nowhere", "notes", "").is_err());
-        assert!(restore(&vault, "bad id!", "school", "work", "notes", "").is_err());
+        // An id that was never revoked here can't be made up.
+        assert!(restore(&vault, "x1").is_err());
+        assert_eq!(load(&vault).grants.len(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

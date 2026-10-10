@@ -165,17 +165,11 @@ fn grants_list(state: State<'_, AppState>, space: String) -> Result<grants::Gran
     Ok(grants::view(&state.vault, &space))
 }
 
-/// Put back a grant that was just revoked (Undo), with its original id and date.
+/// Put back a grant revoked in the last few minutes (Undo), exactly as it was.
+/// Only an id: what comes back is what Rust removed, never what the webview says.
 #[tauri::command]
-fn grant_restore(
-    state: State<'_, AppState>,
-    id: String,
-    to: String,
-    from: String,
-    path: String,
-    created: String,
-) -> Result<(), String> {
-    grants::restore(&state.vault, &id, &to, &from, &path, &created).map(|_| ())
+fn grant_restore(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    grants::restore(&state.vault, &id).map(|_| ())
 }
 
 /// Remove a saved grant. False if no grant has that id.

@@ -137,13 +137,19 @@
           return { grants: M.grants[args.space] ?? [], incoming, problems: M.grantProblems ?? [] };
         }
         case "grant_restore": {
-          const list = (M.grants[args.to] ??= []);
-          if (!list.some((g) => g.id === args.id)) list.push({ id: args.id, from: args.from, path: args.path, created: args.created, scope: "always" });
+          // As the core: only a grant revoked here can come back, once, exactly as it was.
+          const r = M.revokedGrants?.[args.id];
+          if (!r) throw "That access can’t be put back any more.";
+          delete M.revokedGrants[args.id];
+          const list = (M.grants[r.to] ??= []);
+          if (!list.some((g) => g.id === args.id)) list.push(r.grant);
           return;
         }
         case "grant_revoke": {
           for (const k of Object.keys(M.grants)) {
             const before = M.grants[k].length;
+            const gone = M.grants[k].find((g) => g.id === args.id);
+            if (gone) (M.revokedGrants ??= {})[args.id] = { to: k, grant: gone };
             M.grants[k] = M.grants[k].filter((g) => g.id !== args.id);
             if (M.grants[k].length !== before) return true;
           }

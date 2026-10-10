@@ -311,7 +311,7 @@ export default [
       if (page.viewport().height <= 560) check(m.scrolls, "at 560px tall the six grants overflow and the list scrolls");
       // A-012: a whole-space grant and a grant from a space outside this vault read plainly.
       check(m.text.includes("All of Work") && !m.text.includes("Work / ·"), "a whole-space grant reads \"All of Work\"");
-      check(m.text.includes("Home (not in this vault)"), "an unknown space reads \"Home (not in this vault)\"");
+      check(m.text.includes("Home (no longer one of your spaces)"), "an unknown space reads \"Home (no longer one of your spaces)\"");
     },
   },
   {

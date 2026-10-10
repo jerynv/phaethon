@@ -498,4 +498,33 @@ export default [
       await park(page);
     },
   },
+  {
+    // With Claude Code answering, a single-file grant says it isn't used (Claude Code gets granted folders only).
+    name: "s3-chip-claude-code",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: {
+      settings: { backend: "claude-cli", hasAnthropicKey: false, model: "claude-opus-5-5" },
+      threads: { school: structuredClone(current) },
+      grants: {
+        school: [
+          { id: "g-cal", from: "work", path: "calendar", created: "2026-10-09T15:20:00Z", scope: "always" },
+          { id: "g-pdf", from: "work", path: "intake.pdf", created: "2026-10-10T09:00:00Z", scope: "always" },
+        ],
+      },
+    },
+    async run(page, h) {
+      await page.click("[data-grants-chip]");
+      await page.waitForSelector('[data-radix-popper-content-wrapper] [role="dialog"]', { timeout: 5000 });
+      await h.idle();
+      const notes = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-revoke]")].map((b) => ({ id: b.getAttribute("data-revoke"), note: !!b.closest("li")?.querySelector("[data-cli-cant-read]") })),
+      );
+      const by = Object.fromEntries(notes.map((n) => [n.id, n.note]));
+      check(by["g-pdf"] === true && by["g-cal"] === false, "only the single-file grant says Claude Code can't read it", JSON.stringify(notes));
+      const intro = await page.$eval('[data-radix-popper-content-wrapper] [role="dialog"]', (d) => d.innerText);
+      check(intro.includes("Claude Code can’t ask") && !intro.includes("Phaethon asks you first"), "the intro doesn't promise that Claude Code will ask");
+      await h.shot("cli-note");
+    },
+  },
 ];

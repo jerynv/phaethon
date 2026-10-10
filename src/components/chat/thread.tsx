@@ -31,7 +31,7 @@ import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elemen
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { grantLabel, useGrants } from "@/lib/grants";
+import { grantLabel, isFileGrant, useGrants } from "@/lib/grants";
 import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom } from "@/runtime/agent-adapter";
@@ -526,10 +526,9 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
  */
 function standingReads(state: ReturnType<typeof useGrants>["state"], foldersOnly = false): string | null {
   if (state.status !== "ready") return null;
-  // Claude Code is given granted folders (and whole spaces) only, never single files (grants.rs cli_dirs).
-  const isFile = (path: string) => /\.[^/.]+$/.test(path.replace(/\/+$/, "").split("/").pop() ?? "");
+  // Claude Code is given granted folders (and whole spaces) only, never single files.
   const labels = state.grants
-    .filter((g) => g.scope === "always" && !(foldersOnly && isFile(g.path)))
+    .filter((g) => g.scope === "always" && !(foldersOnly && isFileGrant(g.path)))
     .map(grantLabel);
   if (labels.length === 0) return null;
   const named = labels.slice(0, 2);

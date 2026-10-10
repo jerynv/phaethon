@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "./backend";
 import { findSpace } from "./spaces";
 import { inTauri } from "./tauri";
 
@@ -237,6 +238,33 @@ export function usePendingRevokes(): Snapshot {
 
 // ---- Presentation helpers ----
 
+/**
+ * True for a grant on a single file (its last part has an extension). Claude
+ * Code is given granted folders and whole spaces only, never single files
+ * (grants.rs cli_dirs), so these can't be read when it answers.
+ */
+export const isFileGrant = (path: string) => /\.[^/.]+$/.test(path.replace(/\/+$/, "").split("/").pop() ?? "");
+
+/** True while Claude Code (not Phaethon's own assistant) answers; follows Settings. */
+export function useClaudeCodeAnswers(): boolean {
+  const [cli, setCli] = useState(false);
+  useEffect(() => {
+    if (!inTauri()) return;
+    let live = true;
+    const read = () => void getSettings().then((s) => live && setCli(s.backend === "claude-cli"), () => {});
+    read();
+    const onChanged = (e: Event) => {
+      if ((e as CustomEvent<SettingsChangedDetail>).detail?.what === "backend") read();
+    };
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+    return () => {
+      live = false;
+      window.removeEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+    };
+  }, []);
+  return cli;
+}
+
 /** Most recent first; an unreadable date sorts last. Stable for equal dates. */
 export function byRecent<T extends { created: string }>(list: readonly T[]): T[] {
   const t = (g: T) => {
@@ -248,14 +276,14 @@ export function byRecent<T extends { created: string }>(list: readonly T[]): T[]
 
 /**
  * A space's display name and hue. An id that is not a space in this vault
- * reads "Home (not in this vault)", title-cased, and has no hue (its mark is a
+ * reads "Home (no longer one of your spaces)", title-cased, and has no hue (its mark is a
  * dashed neutral ring).
  */
 export function spaceInfo(id: string): { name: string; hue: number | undefined; known: boolean } {
   const s = findSpace(id);
   if (s) return { name: s.name, hue: s.hue, known: true };
   const titled = id ? id.charAt(0).toUpperCase() + id.slice(1) : "Unknown space";
-  return { name: `${titled} (not in this vault)`, hue: undefined, known: false };
+  return { name: `${titled} (no longer one of your spaces)`, hue: undefined, known: false };
 }
 
 /** "Work / calendar", or "All of Work" for a grant on a whole space; as spoken and shown. */

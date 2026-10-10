@@ -7,11 +7,13 @@ import {
   commitRevokes,
   grantDate,
   grantNoun,
+  isFileGrant,
   revokeGrant,
   scheduleRevoke,
   shortPath,
   spaceInfo,
   undoRevoke,
+  useClaudeCodeAnswers,
   usePendingRevokes,
   useGrants,
 } from "@/lib/grants";
@@ -110,6 +112,8 @@ type Direction = "out" | "in";
  */
 export function GrantsChip({ space, direction = "out" }: { space: Space; direction?: Direction }) {
   const { state } = useGrants(space.id);
+  // Claude Code can't use single-file grants: such rows say so.
+  const cli = useClaudeCodeAnswers();
   // Labels name other spaces by their display name: redraw when one is renamed.
   useSpaces();
   const { pending, revoked } = usePendingRevokes();
@@ -370,7 +374,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
             </h2>
             <p className="text-sm text-ink-secondary">
               {out
-                ? "Read-only. For anything else in another space, Phaethon asks you first. Removing access stops future reads; anything already read stays in this space’s conversation."
+                ? `Read-only. ${cli ? "Claude Code can’t ask for anything else in another space." : "For anything else in another space, Phaethon asks you first."} Removing access stops future reads; anything already read stays in this space’s conversation.`
                 : "Read-only, and only these places. Removing access stops future reads; anything already read stays in that space’s conversation."}
             </p>
           </div>
@@ -440,6 +444,11 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
                         <>
                           {r.scope === "once" ? "This time only" : "Always"}
                           {date && ` · since ${date}`}
+                          {cli && isFileGrant(r.path) && (
+                            <span className="block" data-cli-cant-read="">
+                              Claude Code can’t read single files, so this is used only by Phaethon’s own assistant.
+                            </span>
+                          )}
                         </>
                       )}
                     </span>

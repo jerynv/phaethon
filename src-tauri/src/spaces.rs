@@ -5,7 +5,7 @@
 //! `<space>/.phaethon/space.json`:
 //!
 //! ```json
-//! { "name": "School", "description": "Courses, deadlines, study notes", "hue": 250 }
+//! { "name": "School", "description": "Courses, deadlines, study notes", "hue": 240 }
 //! ```
 //!
 //! The file is user-editable and may sync, so every field is checked on the
@@ -269,13 +269,15 @@ fn default_name(id: &str) -> String {
     }
 }
 
-/// A colour for a space with none saved: the built-in spaces keep the hues
-/// they always had; any other id gets a stable hue from a hash of the id,
-/// stepped by the golden angle so different ids land far apart on the wheel.
+/// A colour for a space with none saved: the built-in spaces get accent
+/// presets (Sky and Clay in src/theme/tokens.ts `ACCENT_PRESETS`), so
+/// Settings names them instead of showing "custom"; any other id gets a
+/// stable hue from a hash of the id, stepped by the golden angle so different
+/// ids land far apart on the wheel. A hue saved in space.json always wins.
 pub fn default_hue(id: &str) -> u16 {
     match id {
-        "school" => 250,
-        "work" => 55,
+        "school" => 240,
+        "work" => 50,
         _ => {
             // FNV-1a: stable across runs and platforms (std's hasher is not).
             let hash = id
@@ -329,8 +331,8 @@ mod tests {
         assert_eq!(
             spaces,
             vec![
-                SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 250 },
-                SpaceView { id: "work".into(), name: "Work".into(), description: String::new(), hue: 55 },
+                SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240 },
+                SpaceView { id: "work".into(), name: "Work".into(), description: String::new(), hue: 50 },
             ]
         );
         fs::remove_dir_all(root).unwrap();
@@ -393,7 +395,7 @@ mod tests {
         ] {
             fs::write(state.join("space.json"), bad.to_string()).unwrap();
             let s = view("school", &root.join("spaces/school"));
-            assert_eq!(s, SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 250 }, "{bad}");
+            assert_eq!(s, SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240 }, "{bad}");
         }
         fs::write(state.join("space.json"), "{ not json").unwrap();
         assert_eq!(view("school", &root.join("spaces/school")).name, "School");
@@ -475,7 +477,7 @@ mod tests {
         fs::write(state.join("session"), "kept").unwrap();
 
         let w = update(&vault, "work", Some("Job"), None, None).unwrap();
-        assert_eq!((w.id.as_str(), w.name.as_str(), w.hue), ("work", "Job", 55));
+        assert_eq!((w.id.as_str(), w.name.as_str(), w.hue), ("work", "Job", 50));
         let w = update(&vault, "work", None, Some("Meetings"), Some(200.0)).unwrap();
         assert_eq!((w.name.as_str(), w.description.as_str(), w.hue), ("Job", "Meetings", 200));
         let w = update(&vault, "work", None, Some(""), None).unwrap();
@@ -524,9 +526,25 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_hue_outlives_a_change_of_default() {
+        // Vaults made before School/Work moved to presets saved 250 and 55;
+        // those stay as they are.
+        let (root, vault) = temp_vault("oldhue");
+        for (id, hue) in [("school", 250), ("work", 55)] {
+            let state = root.join("spaces").join(id).join(".phaethon");
+            fs::create_dir_all(&state).unwrap();
+            fs::write(state.join("space.json"), format!(r#"{{"hue":{hue}}}"#)).unwrap();
+        }
+        let hues: Vec<u16> = list(&vault).unwrap().iter().map(|s| s.hue).collect();
+        assert_eq!(hues, [250, 55]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn default_hues_are_stable_and_spread() {
-        assert_eq!(default_hue("school"), 250);
-        assert_eq!(default_hue("work"), 55);
+        // Sky and Clay: accent presets, so Settings names them.
+        assert_eq!(default_hue("school"), 240);
+        assert_eq!(default_hue("work"), 50);
         assert_eq!(default_hue("garden"), default_hue("garden"));
         let hues: Vec<u16> = ["home", "garden", "music", "health", "travel", "money"].iter().map(|i| default_hue(i)).collect();
         assert!(hues.iter().all(|h| *h < 360));

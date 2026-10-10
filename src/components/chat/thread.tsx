@@ -522,6 +522,8 @@ export function Thread({
   const logRef = useRef<HTMLDivElement>(null);
   const stopFocused = useRef(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
+  // The empty state (and first-run setup card) reads from the top; only a conversation follows its end.
+  const isEmpty = useAuiState((s) => s.thread.isEmpty);
   const { addFiles, problems, clearProblems } = useAddFiles();
   const [dragging, setDragging] = useState(false);
   const [viewport, setViewport] = useState<ViewportStore | null>(null);
@@ -594,6 +596,7 @@ export function Thread({
             // role="log" is implicitly polite; turn that off so streaming text is not read token by token.
             aria-live="off"
             aria-busy={isRunning}
+            autoScroll={!isEmpty}
             tabIndex={0}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto"
           >

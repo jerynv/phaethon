@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { setSpaceActivity } from "@/lib/activity";
-import { getSettings } from "@/lib/backend";
+import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { createAgentAdapter, type AgentMessageCustom } from "@/runtime/agent-adapter";
@@ -154,6 +154,8 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   const [running, setRunning] = useState(false);
   // First run: Phaethon's own agent with no key saved shows the setup card in the empty conversation.
   const [needsKey, setNeedsKey] = useState(false);
+  // The card that just saved a key (or switched to Claude Code) stays to show its result until the conversation changes.
+  const [cardKept, setCardKept] = useState<string | null>(null);
   // What the last switch did, said once ("New conversation started.").
   const [said, setSaid] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -195,12 +197,21 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   useEffect(() => {
     if (!inTauri()) return;
     let live = true;
-    getSettings().then(
-      (s) => live && setNeedsKey(s.backend === "phaethon" && !s.hasAnthropicKey),
-      () => {},
-    );
+    const read = () =>
+      getSettings().then(
+        (s) => live && setNeedsKey(s.backend === "phaethon" && !s.hasAnthropicKey),
+        () => {},
+      );
+    void read();
+    // A key saved or a backend chosen anywhere (Settings, or the card in another space) puts the card away.
+    const onChanged = (e: Event) => {
+      const what = (e as CustomEvent<SettingsChangedDetail>).detail?.what;
+      if (what === "key" || what === "backend") void read();
+    };
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onChanged);
     return () => {
       live = false;
+      window.removeEventListener(SETTINGS_CHANGED_EVENT, onChanged);
     };
   }, [reloadKey]);
 
@@ -249,7 +260,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
         onRunning={setRunning}
         onMounted={onMounted}
         rootRef={rootRef}
-        setup={needsKey ? <SetupCard space={space} /> : null}
+        setup={needsKey || cardKept === key ? <SetupCard space={space} onResult={() => setCardKept(key)} /> : null}
       />
     );
   }

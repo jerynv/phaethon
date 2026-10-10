@@ -196,6 +196,7 @@ export default [
   {
     // S2: narrow window: the sidebar lies over the conversation, traps focus, and closes three ways.
     name: "s2-overlay",
+    sizesRequired: true,
     sizes: [[700, 560], [640, 480]],
     mock: { threads: { school: SCHOOL, work: WORK } },
     async run(page, h) {

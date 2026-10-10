@@ -889,4 +889,62 @@ export default [
       check(asked.length >= 1, "the pane read the settings to decide");
     },
   },
+  // ---- C18 wired: a key saved anywhere puts every other space's card away; the card that saved it stays to say so ----
+  {
+    name: "c2-setup-saved",
+    sizes: [[1100, 720]],
+    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
+    async run(page, h) {
+      const goTo = async (id) => {
+        if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) await page.click('button[aria-controls="spaces-sidebar"]');
+        await page.click(`#spaces-sidebar [data-space-id="${id}"]`);
+        await page.waitForSelector(`[data-space-pane="${id}"][data-shown] [data-setup-card]`, { timeout: 5000 });
+      };
+      await page.waitForSelector('[data-space-pane="school"] [data-setup-card]', { timeout: 5000 });
+      await goTo("work");
+      await goTo("school");
+      await page.type('[data-space-pane="school"] [data-setup-key]', "sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[data-space-pane="school"] [data-setup-done]', { timeout: 5000 });
+      await sleep(300);
+      const s = await page.evaluate(() => ({
+        school: !!document.querySelector('[data-space-pane="school"] [data-setup-card]'),
+        work: !!document.querySelector('[data-space-pane="work"] [data-setup-card]'),
+        focus: document.activeElement?.hasAttribute("data-composer-input"),
+      }));
+      check(s.school, "the card that saved the key stays to say it worked");
+      check(!s.work, "Work, kept open in the background, puts its card away", JSON.stringify(s));
+      check(s.focus, "focus moves to the message box");
+      await h.shot("saved");
+    },
+  },
+  {
+    name: "c2-setup-credit",
+    sizes: [[1100, 720]],
+    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, keyCheck: { ok: false, problem: "billing", message: "No credit." } },
+    async run(page, h) {
+      await page.waitForSelector("[data-setup-key]", { timeout: 5000 });
+      await page.type("[data-setup-key]", "sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector("[data-setup-credit]", { timeout: 5000 });
+      await sleep(300);
+      check(!!(await page.$("[data-setup-credit]")), "a key with no credit keeps the card up with the step still to do");
+      await h.shot("credit");
+    },
+  },
+  {
+    name: "c2-setup-from-settings",
+    sizes: [[1100, 720]],
+    mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
+    async run(page) {
+      await page.waitForSelector("[data-setup-card]", { timeout: 5000 });
+      // As Settings does: save the key through the backend module, which tells every listener.
+      await page.evaluate(async () => {
+        await window.__TAURI_INTERNALS__.invoke("api_key_set", { provider: "anthropic", key: "sk-ant-api03-abcdefghijklmnopqrstuvwxyz" });
+        window.dispatchEvent(new CustomEvent("phaethon:settings-changed", { detail: { what: "key" } }));
+      });
+      const gone = await page.waitForFunction(() => !document.querySelector("[data-setup-card]"), { timeout: 3000 }).then(() => true, () => false);
+      check(gone, "a key saved in Settings puts the card away");
+    },
+  },
 ];

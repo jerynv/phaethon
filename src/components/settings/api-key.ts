@@ -63,9 +63,10 @@ export const canSaveUnchecked = (o: KeyOutcome | null) => o?.kind === "problem" 
  * Check the key, then save it if it works. A key that is real but whose
  * account has no credit is saved too: adding credit is done at Anthropic, and
  * the person should not have to paste the key again afterwards.
- * `skipCheck` saves without checking (after a network failure).
+ * `skipCheck` saves without checking (after a network failure); `beforeSave`
+ * runs just before the key is written.
  */
-export async function checkAndSave(raw: string, skipCheck = false): Promise<KeyOutcome> {
+export async function checkAndSave(raw: string, skipCheck = false, beforeSave?: () => void): Promise<KeyOutcome> {
   const key = raw.trim();
   if (!key) return { kind: "problem", problem: "empty" };
   let noCredit = false;
@@ -80,6 +81,7 @@ export async function checkAndSave(raw: string, skipCheck = false): Promise<KeyO
       return { kind: "problem", problem: "unchecked", detail: String(e) };
     }
   }
+  beforeSave?.();
   try {
     await setApiKey(key);
   } catch (e) {

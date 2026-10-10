@@ -22,7 +22,8 @@
 //   --axe              run axe-core (WCAG 2.0/2.1/2.2 A and AA) after each shot,
 //                      merge into <out>/axe.json, print a count per shot.
 // A scenario may set `sizes: [[w, h], ...]` and `themes: [...]` to use instead of the defaults
-// (an explicit --sizes / --themes still wins). Scenario helpers: idle, waitText,
+// (an explicit --sizes / --themes still wins, unless the scenario sets `sizesRequired: true`
+// because what it checks only exists at those sizes). Scenario helpers: idle, waitText,
 // click, send, hover, press (mouse down, no up: :active), tab, focusVia (Tab
 // until a selector has focus), shot(label) (an extra screenshot mid-run,
 // named <scenario>--<label>-<theme>-<w>x<h>[-variant].png).
@@ -140,7 +141,7 @@ let failed = 0;
 let shots = 0;
 for (const s of chosen) {
   for (const theme of flag("themes") || !s.themes ? themes : s.themes) {
-    for (const [w, h] of sizesGiven || !s.sizes ? sizes : s.sizes) {
+    for (const [w, h] of s.sizes && (s.sizesRequired || !sizesGiven) ? s.sizes : sizes) {
       current = { mock: withVariant({ ...s.mock, theme, platform: s.mock.platform ?? "mac" }) };
       // A fresh context per shot: no localStorage carried between scenarios.
       const ctx = await browser.createBrowserContext().catch(() => null);

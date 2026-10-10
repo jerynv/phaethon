@@ -123,7 +123,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.focus('input[type="password"]');
+      await page.focus('[role="dialog"] input[type="password"]');
       await page.keyboard.press("Shift");
       await h.idle();
       await h.shot("input-focused");
@@ -139,12 +139,12 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, keyCheck: { ok: false, problem: "format", message: "That isn’t an Anthropic API key." } },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.type('input[type="password"]', "not-a-real-key");
+      await page.type('[role="dialog"] input[type="password"]', "not-a-real-key");
       await press(page, "Check and save");
       await h.idle();
       await park(page);
       const got = await page.evaluate(() => {
-        const input = document.querySelector('input[type="password"]');
+        const input = document.querySelector('[role="dialog"] input[type="password"]');
         const ids = (input.getAttribute("aria-describedby") ?? "").split(" ");
         return {
           banner: document.querySelector('[role="dialog"] [role="alert"]')?.textContent ?? "",
@@ -169,20 +169,20 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, slow: { api_key_check: 60000 } },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.type('input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
+      await page.type('[role="dialog"] input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
       await press(page, "Check and save");
       await h.idle();
       await park(page);
       const got = await page.evaluate(() => {
         const btn = document.querySelector('[role="dialog"] form button[type="submit"]');
-        return { text: btn?.textContent, ariaDisabled: btn?.getAttribute("aria-disabled"), readOnly: document.querySelector('input[type="password"]').hasAttribute("readonly") };
+        return { text: btn?.textContent, ariaDisabled: btn?.getAttribute("aria-disabled"), readOnly: document.querySelector('[role="dialog"] input[type="password"]').hasAttribute("readonly") };
       });
       console.log(`     while saving: ${JSON.stringify(got)}`);
       check(got.text === "Checking…" && got.ariaDisabled === "true", "Check and save shows Checking… and is aria-disabled while it runs", JSON.stringify(got));
       check(got.readOnly, "the key field is read-only while checking");
       // A second press (click or Enter) while pending sends nothing more.
       await page.$eval('[role="dialog"] form button[type="submit"]', (b) => b.click());
-      await page.$eval('input[type="password"]', (i) => i.form.requestSubmit());
+      await page.$eval('[role="dialog"] input[type="password"]', (i) => i.form.requestSubmit());
       await h.idle();
       const sets = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_check").length);
       check(sets === 1, "only one api_key_check while pending", `${sets}`);
@@ -194,7 +194,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.type('input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
+      await page.type('[role="dialog"] input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
       await press(page, "Check and save");
       await h.waitText("A key is saved");
       await park(page);

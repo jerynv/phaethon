@@ -37,9 +37,11 @@ function focusComposer(fallback: HTMLElement | null) {
  * a form (Enter checks and saves); the result is said in a polite status line
  * and shown under the field; on success focus moves to the message box.
  * Saving fires SETTINGS_CHANGED_EVENT (src/lib/backend.ts), which is how the
- * chat knows to put the card away.
+ * chat knows to put the card away; `onResult` is called first so the chat can
+ * keep this card up to show what happened (a key with no credit needs one
+ * more step).
  */
-export function SetupCard({ space }: { space: Space }) {
+export function SetupCard({ space, onResult }: { space: Space; onResult?: () => void }) {
   const [phase, setPhase] = useState<Phase>("setup");
   const [draft, setDraft] = useState("");
   const [outcome, setOutcome] = useState<KeyOutcome | null>(null);
@@ -64,7 +66,7 @@ export function SetupCard({ space }: { space: Space }) {
     if (saving) return;
     setSaving(true);
     setOutcome(null);
-    const result = await checkAndSave(draft, skipCheck);
+    const result = await checkAndSave(draft, skipCheck, () => onResult?.());
     setSaving(false);
     setOutcome(result);
     announce(outcomeText(result));
@@ -92,6 +94,7 @@ export function SetupCard({ space }: { space: Space }) {
     setSwitching(true);
     setSwitchError("");
     try {
+      onResult?.();
       await setBackend("claude-cli");
       setPhase("cli");
       announce("Phaethon now uses Claude Code on this computer.");
@@ -112,7 +115,10 @@ export function SetupCard({ space }: { space: Space }) {
       className="mx-auto flex w-full max-w-(--ph-measure) flex-col gap-4 rounded-xl border border-line bg-raised px-6 py-5 text-left text-md text-ink shadow-sm"
     >
       <div className="flex items-start gap-3">
-        <span aria-hidden="true" className="mt-0.5 grid size-(--ph-control-height-lg) shrink-0 place-items-center rounded-full bg-accent-soft text-accent-soft-ink">
+        <span
+          aria-hidden="true"
+          className={`mt-0.5 grid size-(--ph-control-height-lg) shrink-0 place-items-center rounded-full ${phase === "credit" ? "bg-warning-soft text-warning-ink" : "bg-accent-soft text-accent-soft-ink"}`}
+        >
           <Icon name={phase === "setup" ? "key" : phase === "credit" ? "warning" : "check"} />
         </span>
         <div className="flex min-w-0 flex-col gap-1">

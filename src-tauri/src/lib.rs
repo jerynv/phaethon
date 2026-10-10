@@ -2,11 +2,13 @@ pub mod agent;
 pub mod agent_loop;
 pub mod anthropic;
 pub mod attachments;
+pub mod continuation;
 pub mod export;
 pub mod grants;
 pub mod memory;
 pub mod open;
 pub mod provider;
+pub mod search;
 pub mod secrets;
 pub mod space_model;
 pub mod spaces;
@@ -54,7 +56,12 @@ struct AppState {
 /// is copied into the space's archive. `keep_attachments` lists the saved
 /// paths of that message's files to carry over to the new one (only its own
 /// files can be named); new `attachments` are added after them.
+///
+/// `continue_from` (Phaethon's own agent only) is the `index` of the last
+/// reply, which the user stopped: the model carries on from where it stopped
+/// instead of answering `prompt` (see continuation.rs).
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // each one is a named IPC argument
 async fn agent_send(
     state: State<'_, AppState>,
     space: String,
@@ -63,6 +70,7 @@ async fn agent_send(
     on_event: Channel<AgentEvent>,
     replace_from: Option<usize>,
     keep_attachments: Option<Vec<String>>,
+    continue_from: Option<usize>,
 ) -> Result<(), ()> {
     let emit = |ev: AgentEvent| {
         // The webview may have reloaded or closed; the turn still finishes cleanly.
@@ -84,6 +92,10 @@ async fn agent_send(
     let settings = state.vault.settings();
     if replace_from.is_some() && settings.backend != Backend::Phaethon {
         fail(ErrorCode::Cli, "Editing or regenerating a message works only with Phaethon’s own agent.".into());
+        return Ok(());
+    }
+    if continue_from.is_some() && settings.backend != Backend::Phaethon {
+        fail(ErrorCode::Cli, "Continuing a stopped reply works only with Phaethon’s own agent.".into());
         return Ok(());
     }
     // Saved before the agent runs, so they are in the space whatever the backend.
@@ -118,7 +130,17 @@ async fn agent_send(
             // The space's own model if it has one, else the default; read once per
             // turn, so a change applies from the next message, never mid-reply.
             let model = space_model::resolve(&space_dir, settings.model);
-            let provider = anthropic::Anthropic::new(key, model, settings.effort);
+            let provider = continuation::Wire(anthropic::Anthropic::new(key, model, settings.effort));
+            if let Some(from) = continue_from {
+                let req = continuation::ContinueRequest {
+                    space_id: &space,
+                    space_dir: &space_dir,
+                    vault_root: state.vault.root(),
+                    from,
+                };
+                continuation::run_turn(&state.runs, &state.approvals, &provider, req, emit).await;
+                return Ok(());
+            }
             let req = LoopRequest {
                 space_id: &space,
                 space_dir: &space_dir,
@@ -201,6 +223,32 @@ fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::
     thread::load(&dir)
         .map(|m| thread::to_ui(&m))
         .map_err(|e| format!("This space’s conversation couldn’t be read: {e}"))
+}
+
+/// Search the text of the saved conversations in `space`, or in every space
+/// with `all_spaces`: the user's own view, never sent to the model. Phaethon's
+/// own agent only (Claude Code keeps its own history).
+#[tauri::command]
+async fn conversations_search(
+    state: State<'_, AppState>,
+    space: String,
+    query: String,
+    all_spaces: bool,
+) -> Result<search::Results, String> {
+    if state.vault.settings().backend != Backend::Phaethon {
+        return Err(search::CLI.into());
+    }
+    let targets = if all_spaces {
+        spaces::list(&state.vault)?
+            .into_iter()
+            .filter_map(|s| state.vault.space_dir(&s.id).ok().map(|d| (s.id, d)))
+            .collect()
+    } else {
+        vec![(space.clone(), state.vault.space_dir(&space)?)]
+    };
+    tauri::async_runtime::spawn_blocking(move || search::search(&targets, &query))
+        .await
+        .map_err(|e| format!("The search stopped unexpectedly: {e}"))
 }
 
 /// Every space in the vault (valid folders under `spaces/`), the most recently
@@ -621,7 +669,8 @@ pub fn run() {
             space_touch,
             space_show,
             space_export,
-            export_show
+            export_show,
+            conversations_search
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

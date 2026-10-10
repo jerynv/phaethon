@@ -9,6 +9,7 @@ import { setSpaceActivity } from "@/lib/activity";
 import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
+import { useOpenRequests } from "@/lib/open-conversation";
 import { createAgentAdapter, savedAttachmentId, type AgentMessageCustom } from "@/runtime/agent-adapter";
 import { attachmentAdapter } from "@/runtime/attachments";
 import { echoAdapter } from "@/runtime/echo-adapter";
@@ -180,6 +181,9 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     setSaid("");
     requestAnimationFrame(() => setSaid(message));
   }, []);
+  // Search conversations opens a conversation here and shows the message it found.
+  // The bar is remounted then, so it shows the conversation now open.
+  const opened = useOpenRequests(space.id, running, onSwitched, rootRef);
 
   useEffect(() => {
     let live = true;
@@ -280,7 +284,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
 
   return (
     <div ref={rootRef} data-space-pane={space.id} className="flex min-h-0 flex-1 flex-col">
-      <ConversationsBar space={space} running={running} onSwitched={onSwitched} shown={shown} />
+      <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} shown={shown} />
       <p role="status" className="sr-only" data-testid="conversation-status">
         {said}
       </p>

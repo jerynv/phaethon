@@ -346,11 +346,11 @@ export default [
       check(lines[2] === squash("Searched Work / calendar for “shift”"), "a cross-space search names the query", lines[2]);
       check(lines[3].startsWith(squash("Allowed: create plans/week6.md")), "the write approval survives the reload", lines[3]);
       check(lines[4] === squash("Reply stopped."), "a stopped reply says so after a reload", lines[4]);
-      const again = await page.evaluate(() => document.querySelector("[data-reply-again]")?.dataset.replyAgain);
-      check(again === "send-again", "the stopped last reply offers Send again", again);
+      const again = await page.evaluate(() => [...document.querySelectorAll("[data-reply-again]")].map((b) => b.dataset.replyAgain).join());
+      check(again === "continue,send-again", "the stopped last reply offers Continue and Send again", again);
       const said = await status(page);
       check(said === "", "nothing loaded from disk is announced", said);
-      await page.click("[data-reply-again]");
+      await page.click('[data-reply-again="send-again"]');
       await page.waitForFunction(() => window.__calls.some((c) => c[0] === "agent_send"), { timeout: 5000 });
       const [send] = await calls(page, "agent_send");
       check(send.prompt === "And for next week?" && send.replaceFrom === 2, "Send again re-asks the same question, replacing the stopped reply (replaceFrom 2)", JSON.stringify({ p: send.prompt, r: send.replaceFrom }));

@@ -4,6 +4,7 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAui,
   useAuiState,
   useThreadViewportStore,
   type DataMessagePartComponent,
@@ -34,7 +35,7 @@ import { Icon } from "@/icons";
 import { grantLabel, isFileGrant, useGrants } from "@/lib/grants";
 import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
-import type { AgentMessageCustom } from "@/runtime/agent-adapter";
+import type { AgentMessageCustom, ContinueRun } from "@/runtime/agent-adapter";
 import { RECORD_PART, type RecordPartData } from "@/runtime/records";
 import { useKnownIndex } from "@/runtime/thread-index";
 
@@ -298,6 +299,7 @@ function ReplyActions() {
           </Button>
         </ActionBarPrimitive.Copy>
       )}
+      {again && stopped && <ContinueAction />}
       {again && stopped && (
         <ActionBarPrimitive.Reload asChild>
           <Button type="button" variant="outline" size="xs" data-reply-again="send-again" onClick={() => focusPaneComposer(pane)}>
@@ -362,6 +364,38 @@ function ReplyActions() {
         </div>
       )}
     </ActionBarPrimitive.Root>
+  );
+}
+
+/**
+ * Continue, beside Send again on a stopped reply: the model carries on from
+ * where it stopped and the words join this reply. Only where the backend knows
+ * the reply's saved position (Phaethon's own agent), and only with text to go on.
+ */
+function ContinueAction() {
+  const pane = usePane();
+  const aui = useAui();
+  const id = useAuiState((s) => s.message.id);
+  const known = useKnownIndex(pane?.threadIndex ?? null, id);
+  const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
+  if (!known || !hasText) return null;
+  const go = () => {
+    const from = pane?.threadIndex?.indexOf(id);
+    if (from === undefined) return;
+    const prefix = aui
+      .message()
+      .getState()
+      .content.filter((p) => !(isRecord(p) && p.data.record.kind === "stopped")) as ContinueRun["prefix"];
+    const custom: ContinueRun = { continueFrom: from, prefix };
+    aui.message().reload({ runConfig: { custom } });
+    focusPaneComposer(pane);
+  };
+  return (
+    <Button type="button" variant="outline" size="xs" data-reply-again="continue" onClick={go}>
+      <Icon name="play" className="size-(--ph-icon-size-sm)" />
+      Continue
+      <span className="sr-only"> this reply from where it stopped</span>
+    </Button>
   );
 }
 
@@ -435,7 +469,7 @@ function messageText(m: { content: readonly { type: string; text?: string }[] })
  * words (no markdown) and only its first sentences. Errors are announced by
  * their role="alert". Other parts of the thread speak through useAnnounce.
  */
-function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) => void }) {
+function ReplyAnnouncer({ text, setText, cli }: { text: string; setText: (t: string) => void; cli: boolean }) {
   const last = useAuiState((s) => s.thread.messages[s.thread.messages.length - 1]);
   const spaceId = useContext(SpaceIdContext);
   const done = useRef<string | null>(null);
@@ -443,6 +477,7 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
   // Only a reply seen streaming here is announced; a saved one loaded with the
   // thread (after a restart or space switch) is not news.
   const streamed = useRef<string | null>(null);
+  const continued = useRef<string | null>(null);
   // Tool activity is spoken after a short pause, so a line that is replaced at
   // once (or a card that takes over) is not read.
   const pendingTool = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -470,11 +505,18 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
     const status = last.status;
     if (status?.type !== "running" && streamed.current !== last.id) return;
     if (status?.type === "running") {
+      const custom = last.metadata.custom as AgentMessageCustom | undefined;
       if (streamed.current !== last.id) {
         streamed.current = last.id;
         setText("Sent. Phaethon is working on a reply.");
       }
-      const custom = last.metadata.custom as AgentMessageCustom | undefined;
+      // A continued reply shows its earlier text with its first update: said as such, and its
+      // earlier receipts are not said again.
+      if (custom?.continuedAfter !== undefined && continued.current !== last.id) {
+        continued.current = last.id;
+        last.content.filter(isRecord).forEach((p) => said.current.add(p.data.id));
+        setText("Continuing the reply.");
+      }
       // A newly answered card: confirm the choice once, since focus has just moved to the composer.
       const fresh = last.content.filter(isRecord).filter((p) => !said.current.has(p.data.id));
       fresh.forEach((p) => said.current.add(p.data.id));
@@ -502,11 +544,15 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
     // screen reader reads only the latest), so it is said again at the start of that line.
     if (status?.type === "complete") {
       done.current = last.id;
-      const reply = messageText(last);
-      setText(withAnswer(reply ? `Phaethon replied: ${spokenReply(reply)}` : "Phaethon finished without a reply."));
+      // A continuation is spoken from where it picked up, not from the start of the reply.
+      const after = (last.metadata.custom as AgentMessageCustom | undefined)?.continuedAfter;
+      const reply = after === undefined ? messageText(last) : messageText(last).slice(after).trim();
+      const lead = after === undefined ? "Phaethon replied" : "Phaethon continued";
+      setText(withAnswer(reply ? `${lead}: ${spokenReply(reply)}` : "Phaethon finished without a reply."));
     } else if (status?.type === "incomplete" && status.reason === "cancelled") {
       done.current = last.id;
-      setText(withAnswer("Reply stopped. Send again is under it."));
+      const more = !cli && messageText(last) !== "" ? "Continue and Send again are under it." : "Send again is under it.";
+      setText(withAnswer(`Reply stopped. ${more}`));
     } else if (status?.type === "incomplete") {
       done.current = last.id;
       // The alert inside the message speaks for itself; what the reply was doing ("Reading
@@ -773,7 +819,7 @@ export function Thread({
                 )}
               </div>
             </ThreadPrimitive.Viewport>
-            <ReplyAnnouncer text={spoken} setText={setSpoken} />
+            <ReplyAnnouncer text={spoken} setText={setSpoken} cli={cli} />
             <Composer
               spaceName={spaceName}
               inputRef={inputRef}

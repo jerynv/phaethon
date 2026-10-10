@@ -48,6 +48,7 @@
     "allow-space-touch",
     "allow-space-show",
     "allow-space-export",
-    "allow-export-show"
+    "allow-export-show",
+    "allow-conversations-search"
   ]
 }

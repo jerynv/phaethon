@@ -696,6 +696,22 @@ pub fn while_idle<T>(runs: &Runs, space_id: &str, f: impl FnOnce() -> Result<T, 
     f()
 }
 
+/// Read one conversation without moving anything (for search): `"current"`,
+/// or an archive id naming a regular file in the archive.
+pub fn load_conversation(space: &Path, id: &str) -> io::Result<Vec<Value>> {
+    if id == CURRENT_ID {
+        return load(space);
+    }
+    if !is_valid_id(id) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a conversation id"));
+    }
+    let path = archived(space, id);
+    if !is_regular_file(&path) {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "that conversation is no longer there"));
+    }
+    read_messages(&path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

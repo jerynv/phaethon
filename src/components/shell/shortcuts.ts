@@ -21,6 +21,12 @@ export function isModChord(e: KeyboardEvent): boolean {
   return mod && !e.altKey && !e.shiftKey;
 }
 
+/** True when the command key and Shift (no Alt) are held: Cmd+Shift+F and the like. */
+export function isModShiftChord(e: KeyboardEvent): boolean {
+  const mod = mac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  return mod && e.shiftKey && !e.altKey;
+}
+
 /** 1 to 9 for Cmd+1…9 (by the key's position, so it works on any layout), or null. */
 export function digitOf(e: KeyboardEvent): number | null {
   const m = /^Digit([1-9])$/.exec(e.code) ?? /^([1-9])$/.exec(e.key);
@@ -37,6 +43,8 @@ export function shortcutGroups(): ShortcutGroup[] {
         { id: "palette", does: "Find a space or command", keys: [m, "K"], aria: `${a}+K` },
         { id: "spaces", does: "Go to space 1 to 9 (in the sidebar’s order: the most recently used first)", keys: [m, "1…9"], aria: `${a}+1` },
         { id: "new", does: "New conversation", keys: [m, "N"], aria: `${a}+N` },
+        { id: "search", does: "Search conversations", keys: [m, "Shift", "F"], aria: `${a}+Shift+F` },
+        { id: "wide", does: "Wide reading on or off", keys: [m, "Shift", "L"], aria: `${a}+Shift+L` },
         { id: "sidebar", does: "Show or hide the sidebar", keys: [m, "\\"], aria: `${a}+Backslash` },
         { id: "settings", does: "Settings", keys: [m, ","], aria: `${a}+Comma` },
         { id: "shortcuts", does: "Keyboard shortcuts (this list)", keys: [m, "/"], aria: `${a}+Slash` },

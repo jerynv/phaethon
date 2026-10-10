@@ -11,6 +11,7 @@ fn main() {
             "api_key_check", "models_list", "settings_set_model", "file_open",
             "space_model_get", "space_model_set", "space_models_list",
             "space_touch", "space_show", "space_export", "export_show",
+            "conversations_search",
         ]),
     ))
     .expect("failed to run tauri-build");

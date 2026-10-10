@@ -8,7 +8,8 @@ import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { announce } from "@/components/shell/announcer";
 import { CommandPalette, ShortcutsSheet, type Command } from "@/components/shell/command-palette";
 import { NewSpaceDialog } from "@/components/shell/new-space-dialog";
-import { digitOf, isModChord, modAria, modCap, shortcutById } from "@/components/shell/shortcuts";
+import { SearchDialog } from "@/components/shell/search-dialog";
+import { digitOf, isModChord, isModShiftChord, modAria, modCap, shortcutById } from "@/components/shell/shortcuts";
 import { Sidebar } from "@/components/shell/sidebar";
 import { TitleBar, useWindowFocused } from "@/components/shell/title-bar";
 import { useSidebar } from "@/components/shell/use-sidebar";
@@ -16,10 +17,12 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
 import { useSpaceActivity } from "@/lib/activity";
+import { requestOpenConversation } from "@/lib/open-conversation";
 import { openSettings } from "@/lib/open-settings";
 import { refreshSpaces, setActiveSpaceId, useSpaces, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { isWideReading, toggleWideReading, useAppearance } from "@/theme";
 
 /** A dialog that is open (one closing keeps focus until it is gone, and must not swallow shortcuts). */
 const OPEN_DIALOG = '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]';
@@ -186,6 +189,11 @@ export default function App() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const wide = isWideReading(useAppearance());
+  const toggleWide = useCallback(() => {
+    announce(toggleWideReading() ? "Wide reading on." : "Wide reading off.");
+  }, []);
 
   // Shortcuts, all chords with the command key (Ctrl elsewhere), so they work
   // while typing and never take a key a text field needs:
@@ -194,6 +202,21 @@ export default function App() {
   // and Cmd+K / Cmd+/ close their own window again.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Cmd+Shift+F search conversations · Cmd+Shift+L wide reading.
+      if (isModShiftChord(e) && !e.defaultPrevented) {
+        const inDialog = !!(document.activeElement as HTMLElement | null)?.closest(OPEN_DIALOG);
+        if (e.code === "KeyF" || e.key.toLowerCase() === "f") {
+          if (inDialog && !searchOpen) return;
+          e.preventDefault();
+          setPaletteOpen(false);
+          setSheetOpen(false);
+          setSearchOpen((o) => !o);
+        } else if (e.code === "KeyL" || e.key.toLowerCase() === "l") {
+          e.preventDefault();
+          toggleWide();
+        }
+        return;
+      }
       if (!isModChord(e) || e.defaultPrevented) return;
       const inDialog = !!(document.activeElement as HTMLElement | null)?.closest(OPEN_DIALOG);
       if (e.key === "," && hasSettings) {
@@ -231,7 +254,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleSidebarKeepingFocus, hasSettings, spaces, goToSpace, paletteOpen, sheetOpen]);
+  }, [toggleSidebarKeepingFocus, hasSettings, spaces, goToSpace, paletteOpen, sheetOpen, searchOpen, toggleWide]);
 
   // Option+Return (Alt+Enter) from anywhere in the window goes to the card waiting for an answer in the
   // space on screen. Taken first (capture), so a focused button is never pressed by the Return; with
@@ -319,6 +342,16 @@ export default function App() {
         run: newConversationInShown,
       });
       list.push(...modelCommands);
+      list.push({
+        id: "search-conversations",
+        group: "Actions",
+        label: "Search conversations…",
+        hint: `in ${active.name} or all spaces`,
+        keywords: "find history past text words",
+        icon: "search",
+        shortcut: shortcutById("search"),
+        run: () => setSearchOpen(true),
+      });
     }
     list.push(
       {
@@ -337,6 +370,16 @@ export default function App() {
         icon: "sidebar",
         shortcut: shortcutById("sidebar"),
         run: toggleSidebar,
+      },
+      {
+        id: "wide-reading",
+        group: "Actions",
+        label: wide ? "Turn wide reading off" : "Turn wide reading on",
+        hint: wide ? "back to a comfortable line length" : "the conversation uses most of the window",
+        keywords: "width full line length column layout",
+        icon: "appearance",
+        shortcut: shortcutById("wide"),
+        run: toggleWide,
       },
       {
         id: "shortcuts",
@@ -377,7 +420,7 @@ export default function App() {
       }
     }
     return list;
-  }, [spaces, shownId, active, goToSpace, openNewSpace, sidebarOpen, toggleSidebar, hasSettings, modelCommands]);
+  }, [spaces, shownId, active, goToSpace, openNewSpace, sidebarOpen, toggleSidebar, hasSettings, modelCommands, wide, toggleWide]);
 
   return (
     <TooltipProvider>
@@ -478,6 +521,16 @@ export default function App() {
         />
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
         <ShortcutsSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+        <SearchDialog
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          spaces={spaces}
+          spaceId={shownId}
+          onChoose={(c) => {
+            goToSpace(c.space);
+            requestOpenConversation(c);
+          }}
+        />
       </div>
     </TooltipProvider>
   );

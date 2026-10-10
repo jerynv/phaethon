@@ -53,7 +53,30 @@ export type AgentMessageCustom = {
   index?: number;
   /** When a reply finished (or a saved message was sent or finished), ms since the epoch. */
   at?: number;
+  /** A stopped reply being continued: how many characters of its text were there before. */
+  continuedAfter?: number;
 };
+
+/**
+ * Continue a stopped reply (Phaethon's own agent only): passed as
+ * `runConfig.custom` when the reply is run again. `from` is its saved
+ * position; `prefix` is what it showed, which the new run starts from.
+ */
+export type ContinueRun = { continueFrom: number; prefix: readonly ThreadAssistantMessagePart[] };
+
+function continueRunOf(custom: Record<string, unknown> | undefined): ContinueRun | undefined {
+  const from = custom?.continueFrom;
+  const prefix = custom?.prefix;
+  return typeof from === "number" && Array.isArray(prefix) ? { continueFrom: from, prefix } : undefined;
+}
+
+/** The prefix's text, with the trailing space the backend trims when it saves a stopped reply. */
+function trimmedPrefix(prefix: readonly ThreadAssistantMessagePart[]): ThreadAssistantMessagePart[] {
+  const parts = [...prefix];
+  const last = parts[parts.length - 1];
+  if (last?.type === "text") parts[parts.length - 1] = { type: "text", text: last.text.trimEnd() };
+  return parts;
+}
 
 /**
  * A write the agent wants to make. `detail` is the full new content and
@@ -151,7 +174,9 @@ export function createAgentAdapter(
   disposed: () => boolean = () => false,
 ): ChatModelAdapter {
   return {
-    async *run({ messages, abortSignal, unstable_assistantMessageId, unstable_getMessage }) {
+    async *run({ messages, abortSignal, runConfig, unstable_assistantMessageId, unstable_getMessage }) {
+      // Continue: the stopped reply's text stays, and the model carries on after it.
+      const cont = continueRunOf(runConfig?.custom);
       const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const prompt =
         lastUser?.content
@@ -161,7 +186,7 @@ export function createAgentAdapter(
       const attachments = uploadsOf(lastUser);
       // An edit or a regenerate: the shown thread before the newest user
       // message is shorter than (or differs from) the one shown last time.
-      const fork = threadIndex?.forkPoint(messages.slice(0, -1).map((m) => m.id));
+      const fork = cont ? undefined : threadIndex?.forkPoint(messages.slice(0, -1).map((m) => m.id));
       const replaceFrom = typeof fork === "number" ? fork : undefined;
 
       const queue = eventQueue();
@@ -179,7 +204,9 @@ export function createAgentAdapter(
       abortSignal.addEventListener("abort", onAbort);
 
       // Every outcome arrives as events; a rejection here means the IPC call itself failed.
-      const args: Record<string, unknown> = { space: spaceId, prompt, attachments, onEvent: channel };
+      const args: Record<string, unknown> = cont
+        ? { space: spaceId, prompt: "", attachments: [], onEvent: channel, continueFrom: cont.continueFrom }
+        : { space: spaceId, prompt, attachments, onEvent: channel };
       if (replaceFrom !== undefined) {
         args.replaceFrom = replaceFrom;
         // Files on the replaced message stay with it (a reloaded file has no bytes here to send again).
@@ -193,7 +220,12 @@ export function createAgentAdapter(
 
       // Text, split wherever something was recorded (an answer, a read in
       // another space) so its receipt sits at that point in the reply.
-      let parts: ThreadAssistantMessagePart[] = [];
+      let parts: ThreadAssistantMessagePart[] = cont ? trimmedPrefix(cont.prefix) : [];
+      // The continuation starts a new paragraph after the stopped text, as the saved reply joins them.
+      let joinNext = !!cont;
+      const continuedAfter = cont
+        ? parts.reduce((n, p) => n + (p.type === "text" ? p.text.length : 0), 0)
+        : undefined;
       let toolStatus: string | undefined;
       let approval: PendingApproval | undefined;
       let accessRequest: PendingAccessRequest | undefined;
@@ -205,7 +237,7 @@ export function createAgentAdapter(
       const update = (): ChatModelRunResult => ({
         content: parts,
         metadata: {
-          custom: { toolStatus, approval, accessRequest, errorCode, retryAfterSecs, at } satisfies AgentMessageCustom,
+          custom: { toolStatus, approval, accessRequest, errorCode, retryAfterSecs, at, continuedAfter } satisfies AgentMessageCustom,
         },
       });
       const settle = () => {
@@ -219,6 +251,8 @@ export function createAgentAdapter(
       };
 
       try {
+        // A continued reply shows its earlier text at once, not only from the first new word.
+        if (cont) yield update();
         for (;;) {
           const e = await queue.next();
           switch (e.kind) {
@@ -227,9 +261,11 @@ export function createAgentAdapter(
               // "Reading file ..." (a later tool event sets a new one).
               toolStatus = undefined;
               const last = parts[parts.length - 1];
+              const joint = joinNext && last?.type === "text" && last.text !== "" ? "\n\n" : "";
+              joinNext = false;
               parts =
                 last?.type === "text"
-                  ? [...parts.slice(0, -1), { type: "text", text: last.text + e.delta }]
+                  ? [...parts.slice(0, -1), { type: "text", text: last.text + joint + e.delta }]
                   : [...parts, { type: "text", text: e.delta }];
               yield update();
               break;

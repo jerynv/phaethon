@@ -1,7 +1,7 @@
 import { RadioGroup } from "radix-ui";
 import { useId } from "react";
 
-import { effective, setAppearance, setToken, useAppearance, useSystemPrefs } from "@/theme";
+import { effective, setAppearance, setToken, setWideReading, useAppearance, useSystemPrefs } from "@/theme";
 import type { ReadingFont } from "@/theme/tokens";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
@@ -101,6 +101,7 @@ export const ACCESSIBILITY_TOKENS = [
   "--ph-word-spacing",
   "--ph-duration-scale",
   "--ph-target-size",
+  "--ph-wide-reading",
 ] as const;
 
 export function AccessibilitySection({ headingId }: { headingId: string }) {
@@ -143,6 +144,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-leading-normal" />
         <TokenRow name="--ph-tracking-normal" />
         <TokenRow name="--ph-word-spacing" />
+        <WideReadingRow />
         <ReadingSample />
       </SettingGroup>
 
@@ -201,6 +203,21 @@ function ReadingSample() {
         to redo the recursion exercises first, so Monday evening is set aside for that.
       </p>
     </div>
+  );
+}
+
+/** Wide reading: a switch over the --ph-wide-reading token (the comfortable column, or most of the window). */
+function WideReadingRow() {
+  const a = useAppearance();
+  const on = Number(a.tokens["--ph-wide-reading"] ?? 0) > 0;
+  return (
+    <SwitchRow
+      label="Wide reading"
+      description={"The conversation and the message box use most of the window instead of a comfortable line length. Handy for wide tables and code, or with large text."}
+      checked={on}
+      onChange={(next) => setWideReading(next)}
+      status={on ? "On: the conversation uses most of the window." : "Off: lines keep a comfortable reading length."}
+    />
   );
 }
 

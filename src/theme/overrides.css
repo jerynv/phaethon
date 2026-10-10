@@ -158,3 +158,19 @@ kbd,
 samp {
   word-spacing: normal;
 }
+
+/* ---- A message opened from Search conversations ---- */
+/* Marked for a moment so the eye finds it: a ring (not colour alone) and a
+   soft tint, both gone after a couple of seconds (src/lib/open-conversation.ts). */
+[data-found-message] {
+  border-radius: var(--ph-radius-lg);
+  background: var(--ph-accent-soft);
+  box-shadow: 0 0 0 calc(var(--ph-space) * 2) var(--ph-accent-soft);
+  outline: var(--ph-focus-width) solid var(--ph-focus);
+  outline-offset: calc(var(--ph-space) * 2);
+}
+@media (forced-colors: active) {
+  [data-found-message] {
+    outline-color: Highlight;
+  }
+}

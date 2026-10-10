@@ -98,6 +98,8 @@
   --ph-titlebar-inset-start: calc(var(--ph-space) * 3);
   --ph-sidebar-width: calc(232px * var(--ph-ui-scale));
   --ph-thread-width: 58rem; /* rem follows text size, so the column grows with it */
+  /* Wide reading (Settings › Accessibility): the column takes the pane, less its own padding. */
+  --ph-thread-width-wide: 100%;
   --ph-message-max-width: 85%;
   --ph-composer-radius: var(--ph-radius-xl);
   --ph-dialog-width: 40rem;

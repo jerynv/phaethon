@@ -159,6 +159,20 @@ export function setToken(name: string, value: TokenValue): string | null {
   return null;
 }
 
+/** Wide reading: the conversation uses most of the window (the --ph-wide-reading token). */
+export const isWideReading = (a: Appearance = current): boolean => Number(a.tokens["--ph-wide-reading"] ?? 0) > 0;
+
+export function setWideReading(on: boolean): void {
+  setToken("--ph-wide-reading", on ? 1 : 0);
+}
+
+/** Turn wide reading on or off; returns whether it is now on. */
+export function toggleWideReading(): boolean {
+  const next = !isWideReading();
+  setWideReading(next);
+  return next;
+}
+
 export function resetTokens(names: readonly string[]): void {
   setAppearance((prev) => {
     const tokens = { ...prev.tokens };

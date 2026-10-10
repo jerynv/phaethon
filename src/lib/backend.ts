@@ -111,3 +111,19 @@ export type Forgotten = { files: number; filesLeft: number; facts: number };
 export const forgetThread = (space: string, id: string) => invoke<Forgotten>("thread_forget", { space, id });
 /** The space's memory file, relative to the space (file_open can open it). */
 export const MEMORY_FILE = "MEMORY.md";
+/** Mirrors `Snippet` in src-tauri/src/search.rs: a match in its context (plain text; the UI marks `matched`). */
+export type SearchSnippet = { message: number; role: "user" | "assistant"; before: string; matched: string; after: string };
+/** Mirrors `Conversation` in src-tauri/src/search.rs. `threadId` is what openThread takes. */
+export type SearchConversation = {
+  space: string;
+  threadId: string;
+  title: string;
+  updated: number;
+  current: boolean;
+  matches: number;
+  snippets: SearchSnippet[];
+};
+export type SearchResults = { conversations: SearchConversation[]; truncated: boolean };
+/** Search the saved conversations in `space`, or in every space. Refused with the Claude Code backend. */
+export const searchConversations = (space: string, query: string, allSpaces: boolean) =>
+  invoke<SearchResults>("conversations_search", { space, query, allSpaces });

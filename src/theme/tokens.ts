@@ -313,6 +313,20 @@ export const TOKENS: readonly TokenSpec[] = [
     derive: (v) => ({ "--ph-target-min": `${v}px`, "--ph-target-boost": v > 24 ? "1.5" : "1" }),
   },
   {
+    // Not a slider: a switch between the comfortable line length and most of the window.
+    name: "--ph-wide-reading",
+    label: "Wide reading",
+    description: "The conversation and the message box use most of the window instead of a comfortable line length.",
+    group: "Accessibility",
+    kind: "number",
+    min: 0,
+    max: 1,
+    step: 1,
+    default: 0,
+    format: (v) => (v ? "On" : "Off"),
+    derive: (v): Record<string, string> => (v ? { "--ph-thread-width": "var(--ph-thread-width-wide)" } : {}),
+  },
+  {
     name: "--ph-icon-stroke",
     label: "Icon line weight",
     description: "How thick the lines in icons are.",

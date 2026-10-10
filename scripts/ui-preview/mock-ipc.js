@@ -248,10 +248,57 @@
           if (ok) pending.resolve(args.allow);
           return !!ok;
         }
+        // As src-tauri/src/search.rs: case- and accent-insensitive, in the shown text of every
+        // conversation of the space (or every space), newest first, 3 snippets each.
+        case "conversations_search": {
+          if (M.settings.backend !== "phaethon") throw "Claude Code keeps its own history, which Phaethon can’t search. Only conversations with Phaethon’s own agent can be searched.";
+          const fold = (text) => {
+            let out = "";
+            const at = [];
+            [...text].forEach((ch, i, all) => {
+              const start = all.slice(0, i).join("").length;
+              for (const f of ch.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()) {
+                out += f;
+                at.push([start, start + ch.length]);
+              }
+            });
+            return { out, at };
+          };
+          const needle = fold(String(args.query).trim().replace(/\s+/g, " ")).out;
+          const spaces = args.allSpaces ? M.spaces.map((s) => s.id) : [args.space];
+          const found = [];
+          for (const space of spaces) {
+            const convs = [
+              { id: "current", messages: M.threads[space] ?? [], updated: M.currentUpdated?.[space] ?? Date.now(), current: true },
+              ...(M.threadArchive[space] ?? []).map((t) => ({ ...t, current: false })),
+            ];
+            for (const c of convs) {
+              let matches = 0;
+              const snippets = [];
+              c.messages.forEach((m, pos) => {
+                const text = m.text ?? "";
+                const f = fold(text);
+                for (let i = f.out.indexOf(needle); needle && i >= 0; i = f.out.indexOf(needle, i + needle.length)) {
+                  matches++;
+                  if (snippets.length >= 3) continue;
+                  const [a, b] = [f.at[i][0], f.at[i + needle.length - 1][1]];
+                  snippets.push({ message: pos, role: m.role, before: text.slice(Math.max(0, a - 48), a), matched: text.slice(a, b), after: text.slice(b, b + 96) });
+                }
+              });
+              if (matches) found.push({ space, threadId: c.id, title: titleOf(c.messages), updated: c.updated, current: c.current, matches, snippets });
+            }
+          }
+          found.sort((a, b) => b.updated - a.updated);
+          return { conversations: found.slice(0, 50), truncated: found.length > 50 };
+        }
         case "agent_send": {
           M.currentSpace = args.space;
           const usedSpace = M.spaces.find((s) => s.id === args.space);
           if (usedSpace) usedSpace.lastUsed = Date.now();
+          // Continue a stopped reply: the backend carries on after its text (contract: continueFrom is its index).
+          if (args.continueFrom != null) {
+            M.continued = { space: args.space, from: args.continueFrom, prompt: args.prompt };
+          }
           // Edit / regenerate: everything from that message on is replaced.
           if (args.replaceFrom != null && M.threads[args.space]) M.threads[args.space] = M.threads[args.space].slice(0, args.replaceFrom);
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);

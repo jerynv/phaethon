@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import {
   CONSOLE_BILLING_URL,
@@ -10,7 +10,12 @@ import {
   type KeyOutcome,
 } from "@/components/settings/api-key";
 import { ExternalLink, KeyOutcomeLine } from "@/components/settings/agent-section";
-import { switchToClaudeCode } from "@/components/settings/claude-code";
+import {
+  CLAUDE_CODE_INSTALL_URL,
+  CLAUDE_CODE_MISSING,
+  ClaudeCodeMissing,
+  switchToClaudeCode,
+} from "@/components/settings/claude-code";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon, type IconName } from "@/icons";
@@ -25,6 +30,48 @@ function focusComposer(fallback: HTMLElement | null) {
     const composer = document.querySelector<HTMLElement>("[data-composer-input]");
     (composer && composer.getClientRects().length > 0 ? composer : fallback)?.focus();
   });
+}
+
+/**
+ * The key error on the conversation's last message, when there is one: a
+ * message sent before setup that is waiting to be sent again.
+ */
+function waitingKeyError(card: HTMLElement | null): HTMLElement | null {
+  const log = card?.closest<HTMLElement>("[role=log]");
+  if (!log) return null;
+  const messages = log.querySelectorAll<HTMLElement>("[data-role]");
+  const last = messages[messages.length - 1];
+  const error = last?.querySelector<HTMLElement>('[data-error-code="noApiKey"], [data-error-code="apiKey"]');
+  return error ?? null;
+}
+
+/**
+ * Once the key is saved, the waiting message's error turns into "Your key is
+ * saved" with Send again (as soon as it hears of the key): focus goes to Send
+ * again, with the error and the button in view. Falls back to the message box.
+ */
+function focusSendAgain(error: HTMLElement, fallback: HTMLElement | null) {
+  let frames = 0;
+  const attempt = () => {
+    const button = error.isConnected ? error.querySelector<HTMLElement>('[data-error-action="retry"]') : null;
+    if (!button) {
+      if (++frames < 90) requestAnimationFrame(attempt);
+      else focusComposer(fallback);
+      return;
+    }
+    const log = error.closest<HTMLElement>("[role=log]");
+    if (log) {
+      // The error's top in view when it fits, and always the button.
+      const l = log.getBoundingClientRect();
+      const e = error.getBoundingClientRect();
+      const margin = 16;
+      if (e.top < l.top + margin || e.bottom > l.bottom - margin) log.scrollTop += e.top - l.top - margin;
+      const b = button.getBoundingClientRect();
+      if (b.bottom > l.bottom - margin) log.scrollTop += b.bottom - l.bottom + margin;
+    }
+    button.focus({ preventScroll: true });
+  };
+  requestAnimationFrame(attempt);
 }
 
 /**
@@ -50,7 +97,11 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
   const [saving, setSaving] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
+  const [cliMissing, setCliMissing] = useState(false);
   const [said, setSaid] = useState("");
+  // A message sent before setup waits above, with its own Send again.
+  const [waiting, setWaiting] = useState<"none" | "waiting" | "sent">("none");
+  const sectionRef = useRef<HTMLElement>(null);
   const headingId = useId();
   const keyId = useId();
   const hintId = useId();
@@ -60,6 +111,17 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
   const creditKey = useRef("");
   const [rechecking, setRechecking] = useState(false);
   const [recheck, setRecheck] = useState("");
+
+  // Once the waiting message is sent again (its error goes), the card stops pointing at it.
+  useEffect(() => {
+    const log = sectionRef.current?.closest("[role=log]");
+    if (waiting !== "waiting" || !log) return;
+    const watch = new MutationObserver(() => {
+      if (!waitingKeyError(sectionRef.current)) setWaiting("sent");
+    });
+    watch.observe(log, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [waiting]);
 
   function announce(text: string) {
     // Cleared first so the same words twice are said twice.
@@ -74,11 +136,15 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
     const result = await checkAndSave(draft, skipCheck, () => onResult?.());
     setSaving(false);
     setOutcome(result);
-    announce(outcomeText(result));
+    const error = result.kind === "saved" || result.kind === "no-credit" ? waitingKeyError(sectionRef.current) : null;
+    setWaiting(error ? "waiting" : "none");
+    // With a message waiting, Send again (described by "Your key is saved…") says it once, as it takes focus.
+    if (!error || result.kind !== "saved") announce(outcomeText(result));
     if (result.kind === "saved") {
       setDraft("");
       setPhase("saved");
-      focusComposer(headingRef.current);
+      if (error) focusSendAgain(error, headingRef.current);
+      else focusComposer(headingRef.current);
     } else if (result.kind === "no-credit") {
       // Saved, but it can't answer until the account has credit: say only that, with the way there.
       // The key (already typed here) is kept in memory only while this card shows, for Check again.
@@ -104,7 +170,9 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
         creditKey.current = "";
         setPhase("saved");
         said = "Your account has credit now. Phaethon is ready to answer.";
-        focusComposer(headingRef.current);
+        const error = waitingKeyError(sectionRef.current);
+        if (error) focusSendAgain(error, headingRef.current);
+        else focusComposer(headingRef.current);
       } else if (r.problem === "billing") {
         said = "There’s still no credit on this account. A new payment can take a few minutes to arrive; check again shortly.";
       } else {
@@ -127,6 +195,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
     if (switching) return;
     setSwitching(true);
     setSwitchError("");
+    setCliMissing(false);
     try {
       onResult?.();
       await switchToClaudeCode();
@@ -134,7 +203,10 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
       announce("Phaethon now uses Claude Code on this computer.");
       focusComposer(headingRef.current);
     } catch (e) {
-      setSwitchError(`Phaethon couldn’t switch to Claude Code. ${String(e)}`);
+      if (e instanceof ClaudeCodeMissing) {
+        setCliMissing(true);
+        announce(CLAUDE_CODE_MISSING);
+      } else setSwitchError(`Phaethon couldn’t switch to Claude Code. ${String(e)}`);
     } finally {
       setSwitching(false);
     }
@@ -144,6 +216,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
 
   return (
     <section
+      ref={sectionRef}
       aria-labelledby={headingId}
       data-setup-card=""
       className="mx-auto flex w-full max-w-(--ph-measure) flex-col gap-4 rounded-xl border border-line bg-raised px-6 py-5 text-left text-md text-ink shadow-sm"
@@ -171,13 +244,21 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
       </div>
 
       {phase === "saved" && (
-        <p data-setup-done="" className="text-ink">Your key works and is saved in {KEY_STORE}. Type your first message in the box below.</p>
+        <p data-setup-done="" className="text-ink">
+          Your key works and is saved in {KEY_STORE}.{" "}
+          {waiting === "waiting"
+            ? "Your message is waiting above: press Send again to send it."
+            : waiting === "none"
+              ? "Type your first message in the box below."
+              : ""}
+        </p>
       )}
       {phase === "credit" && (
         <div data-setup-credit="" className="flex flex-col gap-2">
           <p>
             Your key is saved, but your Anthropic account has no credit yet, so Phaethon can’t answer. Add credit under Billing in the
-            Anthropic console; nothing else needs changing here. Then type your first message below.
+            Anthropic console; nothing else needs changing here.{" "}
+            {waiting === "waiting" ? "Then press Send again on your message above." : waiting === "none" ? "Then type your first message below." : ""}
           </p>
           <p>
             <ExternalLink href={CONSOLE_BILLING_URL}>Open Billing in the Anthropic console</ExternalLink>
@@ -297,11 +378,21 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
             >
               {switching ? "Switching…" : "Use Claude Code instead"}
             </Button>
-            {switchError && (
-              <p className="flex items-start gap-1.5 text-sm text-danger-ink">
-                <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-                <span className="min-w-0">{switchError}</span>
-              </p>
+            {cliMissing ? (
+              // Not an alarm: nothing went wrong, Claude Code just isn't here yet. The same words and link as Settings.
+              <div data-cli-missing="" className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">
+                <Icon name="warning" className="mt-0.5 shrink-0" />
+                <p className="min-w-0">
+                  {CLAUDE_CODE_MISSING} <ExternalLink href={CLAUDE_CODE_INSTALL_URL}>How to install Claude Code</ExternalLink>
+                </p>
+              </div>
+            ) : (
+              switchError && (
+                <p className="flex items-start gap-1.5 text-sm text-danger-ink">
+                  <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+                  <span className="min-w-0">{switchError}</span>
+                </p>
+              )
             )}
           </div>
         </>

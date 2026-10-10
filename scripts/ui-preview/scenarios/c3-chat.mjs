@@ -92,6 +92,29 @@ const firstRun = (name, scale) => ({
   },
 });
 
+/** Chips in the composer's tray that show only in part (the list is in view and clips them). */
+const chipsWhole = (page) =>
+  page.evaluate(() => {
+    const list = document.querySelector("[data-attachment-list]");
+    if (!list || list.hidden) return { folded: true, partial: [] };
+    const l = list.getBoundingClientRect();
+    const partial = [...list.querySelectorAll("li")]
+      .map((li) => li.getBoundingClientRect())
+      .filter((r) => r.top < l.top - 0.5 || r.bottom > l.bottom + 0.5)
+      .map((r) => [Math.round(r.top), Math.round(r.bottom), Math.round(l.top), Math.round(l.bottom)]);
+    return { folded: !!document.querySelector("[data-attachment-fold]"), partial };
+  });
+/** How many lines of text the message box shows, and whether that is a whole number. */
+const textLines = (page) =>
+  page.evaluate(() => {
+    const input = document.querySelector("[data-composer-input]");
+    const cs = getComputedStyle(input);
+    const lh = parseFloat(cs.lineHeight);
+    const inner = input.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const lines = inner / lh;
+    return { lines: Number(lines.toFixed(2)), whole: Math.abs(lines - Math.round(lines)) < 0.08, lh, height: input.clientHeight, scrollHeight: input.scrollHeight, pad: cs.paddingTop, style: input.style.height, max: cs.maxHeight };
+  });
+
 /** Eight files and a long message: the composer stays within 40% of the window. */
 async function composerCap(page, h) {
   await h.waitText("Test 1, on Thursday.");
@@ -106,14 +129,16 @@ async function composerCap(page, h) {
     const tray = document.querySelector("[data-attachment-tray]").getBoundingClientRect();
     const input = document.querySelector("[data-composer-input]").getBoundingClientRect();
     const list = document.querySelector("[data-attachment-list]").getBoundingClientRect();
-    const short = innerHeight / parseFloat(getComputedStyle(document.documentElement).fontSize) < 28;
-    return { share: wrap.height / innerHeight, fold: fold?.textContent.trim() ?? null, expanded: fold?.getAttribute("aria-expanded") ?? null, gap: Math.round(input.top - tray.bottom), clear: list.height === 0 || list.bottom <= input.top, short };
+    return { share: wrap.height / innerHeight, fold: fold?.textContent.trim() ?? null, expanded: fold?.getAttribute("aria-expanded") ?? null, gap: Math.round(input.top - tray.bottom), clear: list.height === 0 || list.bottom <= input.top };
   });
   check(m.share <= 0.401, "the composer takes at most 40% of the window", m.share.toFixed(3));
-  check(m.gap >= 8 && m.clear, "the files never sit flush on, or over, the text field", JSON.stringify(m));
-  if (!m.short) check(m.fold === null, "a window tall enough for its text keeps the files in view", JSON.stringify(m));
-  else {
-    check(m.fold === "8 files attached" && m.expanded === "false", "in a short window the files fold into one “8 files attached” button", JSON.stringify(m));
+  check(m.fold !== null || (m.gap >= 8 && m.clear), "the files never sit flush on, or over, the text field", JSON.stringify(m));
+  const whole = await chipsWhole(page);
+  check(whole.partial.length === 0, "every file shows whole, or they fold away", JSON.stringify(whole));
+  const lines = await textLines(page);
+  check(lines.lines >= 1.98 && lines.whole, "the text field keeps at least 2 whole lines of the message", JSON.stringify(lines));
+  if (m.fold !== null) {
+    check(m.fold === "8 files attached" && m.expanded === "false", "where they don't fit, the files fold into one “8 files attached” button", JSON.stringify(m));
     await h.shot("folded");
     await page.click("[data-attachment-fold]");
     await sleep(200);
@@ -138,7 +163,382 @@ async function composerCap(page, h) {
   }
 }
 
+// ---- Round 3 (personas' second re-check, brief "Team C3") ----
+
+const replaceApproval = {
+  waitApproval: true,
+  id: "toolu_r",
+  summary: "Replace the file clients/hartwell.md with new contents (5 lines).",
+  detail: "# Hartwell\n\n- Call on Monday\n- Send the draft\n- Invoice in November",
+  before: "# Hartwell\n\n- Call on Monday\n- Send the draft\n- Invoice in October",
+  path: "clients/hartwell.md",
+  action: "replace",
+};
+/** The visible text of an element that a screen reader reads (not aria-hidden), whitespace collapsed. */
+const readText = (page, sel) =>
+  page.evaluate((sel) => {
+    const root = document.querySelector(sel);
+    if (!root) return null;
+    const out = [];
+    const walk = (n) => {
+      if (n.nodeType === 3) out.push(n.textContent);
+      else if (n.nodeType === 1 && n.getAttribute("aria-hidden") !== "true") n.childNodes.forEach(walk);
+    };
+    walk(root);
+    return out.join(" ").replace(/\s+/g, " ").trim();
+  }, sel);
+/** The text of the elements an element's aria-describedby names. */
+const description = (page, sel) =>
+  page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    return (el?.getAttribute("aria-describedby") ?? "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent.replace(/\s+/g, " ").trim())
+      .join(" | ");
+  }, sel);
+
+const ROUND3 = [
+  // 1. Files attached never squeeze the message below 2 whole lines: the files fold first (Tomás M1).
+  {
+    name: "c3r-composer-two-lines",
+    sizes: [[760, 560]],
+    sizesRequired: true,
+    mock: { settings: scaled(SETTINGS, 2), threads: { school: LOADED } },
+    async run(page, h) {
+      await h.waitText("Test 1, on Thursday.");
+      await pick(page, EIGHT.slice(0, 3));
+      await page.waitForFunction(() => document.querySelectorAll("[data-attachment-list] li").length === 3, { timeout: 5000 });
+      await page.focus(COMPOSER);
+      await page.keyboard.type("Here are my notes for the week. ".repeat(8));
+      await sleep(300);
+      const lines = await textLines(page);
+      check(lines.lines >= 1.98 && lines.whole, "with files attached the text field still shows 2 or more whole lines", JSON.stringify(lines));
+      const clip = await page.evaluate(() => {
+        const input = document.querySelector("[data-composer-input]");
+        const lh = parseFloat(getComputedStyle(input).lineHeight);
+        const off = input.scrollTop % lh;
+        return { clip: getComputedStyle(input).clipPath, aligned: off < 1 || off > lh - 1, scrollTop: input.scrollTop, lh };
+      });
+      check(clip.clip.startsWith("inset") && clip.aligned, "scrolled by whole lines, with no half line showing in the padding", JSON.stringify({ ...clip, ...lines }));
+      const whole = await chipsWhole(page);
+      check(whole.partial.length === 0, "no file shows in part", JSON.stringify(whole));
+      const m = await page.evaluate(() => {
+        const wrap = document.querySelector("[data-composer-wrap]").getBoundingClientRect();
+        const bar = document.querySelector("[data-composer] .group\\/toolbar").getBoundingClientRect();
+        const root = document.querySelector("[data-composer]").getBoundingClientRect();
+        return { share: wrap.height / innerHeight, inside: bar.bottom <= root.bottom + 0.5 && root.bottom <= wrap.bottom + 0.5 };
+      });
+      check(m.share <= 0.401 && m.inside, "and the message box stays within 40% of the window, nothing spilling out", JSON.stringify(m));
+      await h.shot("typed");
+    },
+  },
+
+  // 4. The tray shows whole chips or folds, also with Larger click targets (Jordan N5, Priya N10).
+  ...[
+    ["large-3", 3, scaled(SETTINGS, 1, LARGE), [[760, 560], [1100, 720]]],
+    ["six", 6, SETTINGS, [[760, 560]]],
+  ].map(([label, n, settings, sizes]) => ({
+    name: `c3r-tray-whole-${label}`,
+    sizes,
+    sizesRequired: true,
+    mock: { settings, threads: { school: LOADED } },
+    async run(page, h) {
+      await h.waitText("Test 1, on Thursday.");
+      await pick(page, EIGHT.slice(0, n));
+      await page.waitForFunction((n) => document.querySelectorAll("[data-attachment-list] li").length === n, { timeout: 5000 }, n);
+      await sleep(300);
+      const whole = await chipsWhole(page);
+      check(whole.partial.length === 0, `${n} files: every chip shows whole, or the files fold into one button`, JSON.stringify(whole));
+      await h.shot("tray");
+    },
+  })),
+  {
+    name: "c3r-fold-closes",
+    sizes: [[760, 560]],
+    sizesRequired: true,
+    mock: { settings: scaled(SETTINGS, 2), threads: { school: LOADED } },
+    async run(page, h) {
+      await h.waitText("Test 1, on Thursday.");
+      await pick(page, EIGHT);
+      await page.waitForSelector("[data-attachment-fold]", { timeout: 5000 });
+      const inBar = await page.evaluate(() => !!document.querySelector("[data-attachment-fold]").closest(".group\\/toolbar"));
+      check(inBar, "folded, the files' button sits in the toolbar (no row of its own above the text)");
+      const isOpen = () => page.evaluate(() => !document.querySelector("[data-attachment-list]").hidden);
+      await page.click("[data-attachment-fold]");
+      await sleep(150);
+      check(await isOpen(), "the button opens the list");
+      await page.keyboard.press("Escape");
+      await sleep(150);
+      const esc = await page.evaluate(() => ({ open: !document.querySelector("[data-attachment-list]").hidden, focus: document.activeElement?.hasAttribute("data-attachment-fold") }));
+      check(!esc.open && esc.focus, "Escape on the button itself closes the list, focus stays on the button", JSON.stringify(esc));
+      await page.click("[data-attachment-fold]");
+      await sleep(150);
+      await page.click(COMPOSER);
+      await page.keyboard.type("Typing now");
+      await sleep(150);
+      check(!(await isOpen()), "moving into the text field to type closes the list");
+      await h.shot("typing");
+    },
+  },
+
+  // 2. A key saved after the no-key error: Send again takes focus, in view; said once (Linda, Maya M2, Tomás M2).
+  {
+    name: "c3r-key-saved-send-again",
+    sizes: [[1100, 720], [760, 560]],
+    mock: { settings: NO_KEY, threads: {}, sendError: { code: "noApiKey", message: "no API key saved" } },
+    async run(page, h) {
+      await page.waitForSelector("[data-setup-card]", { timeout: 5000 });
+      await send(page, "When is Test 1?");
+      await page.waitForSelector('[data-error-code="noApiKey"]', { timeout: 5000 });
+      await page.click('[data-error-action="setup"]');
+      await sleep(150);
+      // Count what is spoken from here: alert text that appears, and live-region text.
+      await page.evaluate(() => {
+        window.__spoken = [];
+        new MutationObserver((ms) => {
+          for (const m of ms) {
+            const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+            const live = el?.closest('[role="alert"], [role="status"], [aria-live="polite"], [aria-live="assertive"]');
+            if (live && live.textContent.trim()) window.__spoken.push(live.textContent.trim());
+            for (const n of m.addedNodes) if (n.nodeType === 1 && n.matches('[role="alert"]') && n.textContent.trim()) window.__spoken.push(n.textContent.trim());
+          }
+        }).observe(document.body, { subtree: true, childList: true, characterData: true });
+      });
+      await page.keyboard.type(GOOD_KEY);
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => document.activeElement?.dataset.errorAction === "retry", { timeout: 3000 }).catch(() => {});
+      await sleep(300);
+      const s = await page.evaluate(() => {
+        const b = document.activeElement;
+        const desc = (b?.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent).join(" ");
+        return { focus: b?.dataset.errorAction ?? b?.tagName, desc, spoken: window.__spoken, done: document.querySelector("[data-setup-done]")?.textContent.replace(/\s+/g, " ") };
+      });
+      check(s.focus === "retry", "focus goes to the message's Send again, not the empty message box", JSON.stringify(s));
+      check(s.desc.includes("Your key is saved"), "Send again is described by “Your key is saved…”, said as it takes focus", s.desc);
+      check(s.spoken.length === 0, "nothing else is announced on top (no alert, no second status line)", JSON.stringify(s.spoken));
+      check(s.done.includes("Send again") && !s.done.includes("first message"), "the setup card points to Send again, not “type your first message”", s.done);
+      const vis = await inLog(page, '[data-error-action="retry"]');
+      check(vis.inside, "Send again is in view", JSON.stringify(vis));
+      await h.shot("saved");
+      await mock(page, { sendError: null });
+      await page.keyboard.press("Enter");
+      await h.waitText("Done.");
+      const after = await page.evaluate(() => document.querySelector("[data-setup-done]")?.textContent);
+      check(!after.includes("waiting above"), "once sent, the setup card no longer says the message is waiting", after);
+    },
+  },
+  {
+    name: "c3r-key-saved-send-again-200",
+    sizes: [[760, 560]],
+    sizesRequired: true,
+    mock: { settings: scaled(NO_KEY, 2), threads: {}, sendError: { code: "noApiKey", message: "no API key saved" } },
+    async run(page, h) {
+      await page.waitForSelector("[data-setup-card]", { timeout: 5000 });
+      await send(page, "When is Test 1?");
+      await page.waitForSelector('[data-error-code="noApiKey"]', { timeout: 5000 });
+      await page.click('[data-error-action="setup"]');
+      await sleep(150);
+      await page.keyboard.type(GOOD_KEY);
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => document.activeElement?.dataset.errorAction === "retry", { timeout: 3000 }).catch(() => {});
+      await sleep(300);
+      const focus = await page.evaluate(() => document.activeElement?.dataset.errorAction ?? document.activeElement?.tagName);
+      check(focus === "retry", "at 200% in a small window focus goes to Send again", focus);
+      const vis = await inLog(page, '[data-error-action="retry"]');
+      check(vis.inside, "and Send again is scrolled into view, not under the message box", JSON.stringify(vis));
+      await h.shot("saved");
+    },
+  },
+
+  // 3. Claude Code not installed, from the setup card: a warning with the install link (Linda 3).
+  {
+    name: "c3r-setup-cli-missing",
+    sizes: [[1100, 720]],
+    mock: { settings: NO_KEY, threads: {}, claudeCli: { installed: false } },
+    async run(page, h) {
+      await page.waitForSelector("[data-setup-cli]", { timeout: 5000 });
+      await page.click("[data-setup-cli]");
+      await page.waitForFunction(() => document.querySelector("[data-setup-card]").textContent.includes("isn’t installed"), { timeout: 3000 });
+      const s = await page.evaluate(() => {
+        const card = document.querySelector("[data-setup-card]");
+        const box = card.querySelector("[data-cli-missing]");
+        const link = box?.querySelector("a");
+        return { box: !!box, href: link?.getAttribute("href"), text: link?.textContent, red: !!card.querySelector(".text-danger-ink") };
+      });
+      check(s.box && s.href === "https://docs.anthropic.com/en/docs/claude-code/setup" && s.text.startsWith("How to install Claude Code"), "it links to how to install Claude Code, as Settings does", JSON.stringify(s));
+      check(!s.red, "shown as a warning, not a red error", JSON.stringify(s));
+      check((await calls(page, "settings_set_backend")).length === 0, "and nothing was switched");
+      await h.shot("missing");
+    },
+  },
+
+  // 5. Card verbosity and key hints (Maya N6, N9, M3; Dev nits).
+  {
+    name: "c3r-approval-verbosity",
+    sizes: [[1100, 720]],
+    mock: { threads: {}, turn: [{ kind: "text", delta: "Updating it." }, replaceApproval] },
+    async run(page, h) {
+      await send(page, "Update Hartwell.");
+      await page.waitForSelector("[data-approval-card]", { timeout: 5000 });
+      await page.waitForFunction(() => document.activeElement?.matches("[data-approval-card]"), { timeout: 3000 });
+      const heading = await page.$eval("[data-approval-card] h3", (e) => e.textContent.replace(/\s+/g, " ").trim());
+      const desc = await description(page, "[data-approval-card]");
+      check(!desc.includes("Replace") && !desc.includes("clients/hartwell.md"), "the description doesn't repeat the heading", `${heading} || ${desc}`);
+      const read = await readText(page, "[data-approval-card]");
+      const summary = (read.match(/1 line removed, 1 added/g) ?? []).length;
+      check(summary === 0, "the change summary isn't read as text before the preview (it is the preview's name)", read);
+      const name = await page.$eval("[data-approval-preview]", (e) => document.getElementById(e.getAttribute("aria-labelledby"))?.textContent);
+      check(name?.includes("1 line removed, 1 added"), "the preview is named by the summary, read once there", name);
+      // Tab stops from the card to Don't allow.
+      const stops = [];
+      for (let i = 0; i < 8; i++) {
+        await page.keyboard.press("Tab");
+        const t = await page.evaluate(() => document.activeElement?.textContent.replace(/\s+/g, " ").trim().slice(0, 20) || document.activeElement?.getAttribute("role"));
+        stops.push(t);
+        if (t.startsWith("Don’t allow")) break;
+      }
+      const viewStops = stops.filter((s) => ["Changes", "Formatted", "Plain text"].includes(s)).length;
+      check(viewStops === 1 && stops.length <= 4, "the three views are one Tab stop (views, preview, Show all, then Don't allow)", JSON.stringify(stops));
+      const keys = await page.$$eval("[data-approval-card] [data-card-actions] button", (bs) => bs.map((b) => ({ caps: [...b.querySelectorAll("[data-cap]")].map((k) => getComputedStyle(k, "::after").content.replace(/"/g, "")).join(""), hidden: b.querySelector("[data-key-hint]")?.getAttribute("aria-hidden"), shown: getComputedStyle(b.querySelector("[data-key-hint]")).display !== "none", aria: b.getAttribute("aria-keyshortcuts") })));
+      check(keys[0].caps === "⌘⌫" && keys[1].caps === "⌘↩" && keys.every((k) => k.hidden === "true" && k.shown), "Don’t allow and Allow show ⌘⌫ and ⌘↩", JSON.stringify(keys));
+      check(keys[0].aria === "Meta+Backspace" && keys[1].aria === "Meta+Enter", "and say them as aria-keyshortcuts", JSON.stringify(keys));
+      // The views: one group, the arrows choose.
+      await page.focus('[data-approval-views] [aria-checked="true"]');
+      await page.keyboard.press("ArrowRight");
+      await sleep(100);
+      const v = await page.evaluate(() => ({ checked: document.querySelector('[data-approval-views] [aria-checked="true"]')?.dataset.view, focus: document.activeElement?.dataset.view }));
+      check(v.checked === "formatted" && v.focus === "formatted", "Arrow Right shows the next view", JSON.stringify(v));
+      await h.shot("card");
+    },
+  },
+  {
+    name: "c3r-access-verbosity",
+    sizes: [[1100, 720]],
+    mock: { threads: {}, turn: [{ kind: "text", delta: "One moment." }, access] },
+    async run(page, h) {
+      await send(page, "Plan my week.");
+      await page.waitForSelector("[data-access-request]", { timeout: 5000 });
+      const read = await readText(page, "[data-access-request]");
+      const wrong = (read.match(/may be wrong/g) ?? []).length;
+      check(wrong === 1, "“may be wrong” is read once", read);
+      const desc = await description(page, "[data-access-request]");
+      check(desc.split(" | ").length === 2 && !desc.includes("Read only") && !desc.includes("Always allow"), "the description is the summary and the reason, not the whole card", desc);
+      const keys = await page.$$eval("[data-access-request] [data-card-actions] > button", (bs) => bs.map((b) => [...b.querySelectorAll("[data-cap]")].map((k) => getComputedStyle(k, "::after").content.replace(/"/g, "")).join("")));
+      check(keys.join() === "⌘⌫,⌘↩", "Deny and Allow show their keys", JSON.stringify(keys));
+    },
+  },
+
+  // 6. The access card's "Always allow" box is never hidden behind the answer row (Jordan 2).
+  {
+    name: "c3r-access-keep-visible",
+    sizes: [[760, 560]],
+    sizesRequired: true,
+    mock: { settings: scaled(SETTINGS, 1, LARGE), threads: { school: LOADED }, turn: [{ kind: "text", delta: "One moment." }, access] },
+    async run(page, h) {
+      await send(page, "Plan my week.");
+      await page.waitForSelector("[data-access-request]", { timeout: 5000 });
+      await sleep(500);
+      const s = await page.evaluate(() => {
+        const box = document.querySelector("[data-access-keep]");
+        const r = box.getBoundingClientRect();
+        const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const log = document.querySelector('[role="log"]').getBoundingClientRect();
+        return { hits: at === box || box.closest("label").contains(at), inLog: r.top >= log.top && r.bottom <= log.bottom };
+      });
+      check(s.hits && s.inLog, "the Always allow box is in view and clickable, not under the button row", JSON.stringify(s));
+      const row = await page.$$eval("[data-access-request] [data-card-actions] > button", (bs) => bs.map((b) => Math.round(b.getBoundingClientRect().top)));
+      check(row.length === 2 && row[0] === row[1], "Deny and Allow stay on one row (key caps give way first)", JSON.stringify(row));
+      await page.click("[data-access-keep]");
+      const allow = await page.$eval("[data-access-allow]", (b) => b.dataset.accessAllow);
+      check(allow === "always", "a click on it ticks it", allow);
+      await h.shot("card");
+    },
+  },
+
+  // 7. Escape from an Arrow Up edit goes back to the message box (Dev).
+  {
+    name: "c3r-arrow-up-escape",
+    sizes: [[1100, 720]],
+    mock: { threads: { school: LOADED } },
+    async run(page, h) {
+      await h.waitText("Test 1, on Thursday.");
+      await page.focus(COMPOSER);
+      await page.keyboard.press("ArrowUp");
+      await page.waitForSelector("[data-editing]", { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      await sleep(200);
+      const a = await page.evaluate(() => ({ editing: !!document.querySelector("[data-editing]"), composer: document.activeElement?.hasAttribute("data-composer-input") }));
+      check(!a.editing && a.composer, "Escape from an Arrow Up edit returns to the message box", JSON.stringify(a));
+      // Opened with the Edit button, Escape still goes back to that button.
+      const edits = await page.$$("[data-edit-message]");
+      await edits[edits.length - 1].click();
+      await page.waitForSelector("[data-editing]", { timeout: 3000 });
+      await page.keyboard.press("Escape");
+      await sleep(200);
+      const b = await page.evaluate(() => document.activeElement?.hasAttribute("data-edit-message"));
+      check(b, "an edit opened with its Edit button returns to that button");
+    },
+  },
+
+  // 8. Plain words: no "vault", no "revoke", a short composer description (Priya, Maya N8).
+  {
+    name: "c3r-plain-words-error",
+    sizes: [[1100, 720]],
+    mock: { threads: {}, sendError: { code: "invalidSpace", message: "space folder missing" } },
+    async run(page, h) {
+      await send(page, "Hi");
+      await page.waitForSelector('[data-error-code="invalidSpace"]', { timeout: 5000 });
+      const t = await page.$eval('[data-error-code="invalidSpace"]', (e) => e.textContent);
+      check(!/vault/i.test(t) && t.includes("Phaethon folder"), "the missing-folder error says “your Phaethon folder”, not “vault”", t);
+      const hint = await description(page, COMPOSER);
+      check(hint.length <= 60 && !hint.includes("Option"), "the message box's description is one short hint", hint);
+    },
+  },
+  {
+    name: "c3r-plain-words-access",
+    sizes: [[1100, 720]],
+    mock: { threads: {}, turn: [{ ...access, space: "home", path: "budget.md" }, { kind: "text", delta: "Read it." }] },
+    async run(page, h) {
+      await send(page, "Budget?");
+      await page.waitForSelector("[data-access-request]", { timeout: 5000 });
+      const t = await page.$eval("[data-access-request]", (e) => e.textContent);
+      check(!/vault|take it back|revoke/i.test(t) && t.includes("Phaethon folder") && t.includes("remove it in"), "the access card says “your Phaethon folder” and “remove”", t);
+      await page.click("[data-access-keep]");
+      await page.click("[data-access-allow]");
+      await h.waitText("Read it.");
+      const r = await page.$eval('[data-access-receipt="always"]', (e) => e.textContent);
+      check(!/revoke/i.test(r) && r.includes("remove it"), "the receipt says “remove”, not “revoke”", r);
+    },
+  },
+
+  // 9. With Claude Code answering, the empty state says what it can do, and nothing it can't (Sam 4b, 5).
+  {
+    name: "c3r-empty-claude-code",
+    sizes: [[1100, 720]],
+    mock: {
+      settings: { ...SETTINGS, backend: "claude-cli" },
+      threads: {},
+      grants: {
+        school: [
+          { id: "g1", from: "work", path: "clients/mk/intake.pdf", created: "2026-10-09T10:00:00Z", scope: "always" },
+          { id: "g2", from: "work", path: "calendar", created: "2026-10-09T10:00:00Z", scope: "always" },
+        ],
+      },
+    },
+    async run(page, h) {
+      await page.waitForFunction(() => document.querySelector("[data-empty-reach]")?.textContent.includes("Claude Code"), { timeout: 5000 });
+      await h.idle();
+      const t = await page.$eval("[data-empty-reach]", (e) => e.textContent.replace(/\s+/g, " ").trim());
+      check(!t.includes("asks before"), "it doesn't promise to ask before changing anything", t);
+      check(t.includes("can’t change") && t.includes("Work / calendar") && !t.includes("intake.pdf"), "it says it can't change files, and names only the folders Claude Code can read", t);
+      await h.shot("empty");
+    },
+  },
+];
+
 export default [
+  ...ROUND3,
   firstRun("c3-first-run", 1),
   firstRun("c3-first-run-200", 2),
 
@@ -172,7 +572,7 @@ export default [
       const after = await page.evaluate(() => ({
         actions: [...document.querySelectorAll("[data-error-action]")].map((b) => b.dataset.errorAction),
         resolved: document.querySelector("[data-error-code]").hasAttribute("data-error-resolved"),
-        body: document.querySelector('[data-error-code] [role="alert"]').textContent,
+        title: document.querySelector("[data-error-title]").textContent,
       }));
       check(after.actions.join() === "retry" && after.resolved, "once the key is saved the error says so and offers Send again", JSON.stringify(after));
       await h.shot("saved");

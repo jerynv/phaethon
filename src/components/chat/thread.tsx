@@ -140,14 +140,21 @@ function UserEditComposer() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pane = usePane();
   const messageId = useAuiState((s) => s.message.id);
+  // Opened with Arrow Up from the message box: leaving it (Escape, Cancel or Send) goes back there.
+  const fromComposer = useRef(!!pane?.editFromComposer.current);
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
+    if (pane) pane.editFromComposer.current = false;
     return () => {
       // Back to this message's Edit button (Cancel), or the composer when the message was replaced (Send).
       requestAnimationFrame(() => {
+        if (fromComposer.current) {
+          focusPaneComposer(pane);
+          return;
+        }
         const edit = pane?.rootRef.current?.querySelector<HTMLElement>(`[data-edit-message="${messageId}"]`);
         if (edit) edit.focus();
         else if (!document.activeElement || document.activeElement === document.body) focusPaneComposer(pane);
@@ -517,9 +524,13 @@ function ReplyAnnouncer({ text, setText }: { text: string; setText: (t: string) 
  * What Phaethon may already read outside this space without asking: the
  * standing ("always") grants, as "Work / clients", at most two named.
  */
-function standingReads(state: ReturnType<typeof useGrants>["state"]): string | null {
+function standingReads(state: ReturnType<typeof useGrants>["state"], foldersOnly = false): string | null {
   if (state.status !== "ready") return null;
-  const labels = state.grants.filter((g) => g.scope === "always").map(grantLabel);
+  // Claude Code is given granted folders (and whole spaces) only, never single files (grants.rs cli_dirs).
+  const isFile = (path: string) => /\.[^/.]+$/.test(path.replace(/\/+$/, "").split("/").pop() ?? "");
+  const labels = state.grants
+    .filter((g) => g.scope === "always" && !(foldersOnly && isFile(g.path)))
+    .map(grantLabel);
   if (labels.length === 0) return null;
   const named = labels.slice(0, 2);
   const rest = labels.length - named.length;
@@ -533,9 +544,9 @@ function standingReads(state: ReturnType<typeof useGrants>["state"]): string | n
  * can see. True to the grants: when this space may already read part of
  * another, it says so instead of promising to ask.
  */
-function EmptyState({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
+function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: string; cli: boolean }) {
   const { state } = useGrants(spaceId);
-  const reads = standingReads(state);
+  const reads = standingReads(state, cli);
   return (
     // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
     // starts at the top and scrolls, never clipped above the log.
@@ -551,7 +562,14 @@ function EmptyState({ spaceId, spaceName }: { spaceId: string; spaceName: string
       </span>
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
       <p className="max-w-md text-md text-ink-secondary" data-empty-reach="">
-        {reads ? (
+        {cli ? (
+          // Claude Code here is read-only and has no way to ask (agent.rs): say what it can do, nothing more.
+          <>
+            Claude Code answers here. It can read and search the files in {spaceName}
+            {reads ? `, and ${reads} because you allowed that` : ""}. It can’t change any file, and it can’t ask to read
+            anything else.
+          </>
+        ) : reads ? (
           <>
             Phaethon can read and search the files in {spaceName}, and it can already read {reads}, because you
             allowed that. It asks before it changes anything, or before it reads anything else in another space.
@@ -623,10 +641,13 @@ export function Thread({
   inputRef,
   setup,
   needsKey = false,
+  cli = false,
 }: {
   spaceId: string;
   spaceName: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  /** Claude Code answers in this space, not Phaethon's own agent. */
+  cli?: boolean;
   /** The first-run setup card, when it may show (null otherwise). */
   setup?: ReactNode;
   /** No key is saved yet: the card stays under the conversation too, not only when it is empty. */
@@ -722,7 +743,7 @@ export function Thread({
                 {/* First run: the setup card leads, in place of the generic empty state. */}
                 {!setupShown && (
                   <AuiIf condition={(s) => s.thread.isEmpty}>
-                    <EmptyState spaceId={spaceId} spaceName={spaceName} />
+                    <EmptyState spaceId={spaceId} spaceName={spaceName} cli={cli} />
                   </AuiIf>
                 )}
                 <div className="flex flex-col gap-[calc(var(--ph-space)*7)] empty:hidden">

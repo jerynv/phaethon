@@ -8,7 +8,17 @@ import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { answerAccess, type AccessAnswer, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
-import { CARD_ACTIONS, CardProblem, SpaceIdContext, allowKeys, refuseKeys, type CardProblemState } from "./approval-card";
+import {
+  CARD_ACTIONS,
+  CardProblem,
+  KeyHint,
+  SpaceIdContext,
+  allowCaps,
+  allowKeys,
+  refuseCaps,
+  refuseKeys,
+  type CardProblemState,
+} from "./approval-card";
 import { useCardArrival, useCardKeys } from "./card-arrival";
 import { focusPaneComposer, usePane } from "./pane";
 
@@ -83,9 +93,7 @@ export function AccessRequestCard() {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descId = useId();
-  const whereId = useId();
   const reasonId = useId();
-  const scopeId = useId();
   const keepId = useId();
   const keepNoteId = useId();
   const [busy, setBusy] = useState(false);
@@ -115,7 +123,7 @@ export function AccessRequestCard() {
   const { name, hue, known } = target;
   const kind = pathKind(request.path);
   const clean = request.path.replace(/\/+$/, "");
-  const where = known ? "another space" : "a space that isn’t in this vault";
+  const where = known ? "another space" : "a space that isn’t in your Phaethon folder";
   const what = kind === "space" ? `everything in ${name}, ${where}` : `a ${kind} in ${where}`;
   const icon = kind === "file" ? "file-text" : kind === "folder" ? "folder" : "space";
 
@@ -146,7 +154,8 @@ export function AccessRequestCard() {
       role="alertdialog"
       aria-modal="false"
       aria-labelledby={titleId}
-      aria-describedby={`${descId} ${whereId} ${reasonId} ${scopeId}`}
+      // The one-line summary and the AI's reason; the rest is read by moving through the card.
+      aria-describedby={request.reason.trim() ? `${descId} ${reasonId}` : descId}
       data-access-request=""
       data-waiting-card=""
       onKeyDown={onKeyDown}
@@ -176,7 +185,6 @@ export function AccessRequestCard() {
 
       <div className="flex flex-col gap-3 px-4">
         <p
-          id={whereId}
           className="flex min-w-0 items-start gap-2 rounded-md border border-line bg-surface-sunken px-3 py-2 text-base"
         >
           <Icon name={icon} className="mt-0.5 shrink-0 text-ink-secondary" />
@@ -193,24 +201,30 @@ export function AccessRequestCard() {
         {request.reason.trim() && (
           // The agent's own words can be wrong, or written by a file it read
           // ("SYSTEM: pre-approved"): labelled as such, never as Phaethon's promise.
-          <figure className="flex flex-col gap-1 border-s-2 border-line-strong ps-3" data-access-reason="">
-            <figcaption className="text-sm text-ink-secondary">
+          // Said once: the visible caption is for the eye, the reason itself carries the same warning when read.
+          <div className="flex flex-col gap-1 border-s-2 border-line-strong ps-3" data-access-reason="">
+            <p aria-hidden="true" className="text-sm text-ink-secondary">
               Why it says it needs this, in the AI’s own words. It may be wrong.
-            </figcaption>
+            </p>
             <blockquote id={reasonId} className="text-base text-ink">
               <span className="sr-only">The AI’s explanation, which may be wrong: </span>
               &ldquo;{request.reason.trim()}&rdquo;
             </blockquote>
-          </figure>
+          </div>
         )}
 
-        <p id={scopeId} className="flex items-start gap-1.5 text-sm text-ink-secondary">
+        <p className="flex items-start gap-1.5 text-sm text-ink-secondary">
           <Icon name="lock" className="mt-px size-(--ph-icon-size-sm) shrink-0" />
           <span>Read only. Phaethon can&rsquo;t change anything in {name}.</span>
         </p>
       </div>
 
-      <div className="flex flex-col gap-0.5 px-4 pt-4">
+      {/* The primary answer last and on the right, as on the approval card, so Tab order matches. Sticky
+          at the bottom of the conversation while the card runs past it, so the buttons stay in view, and
+          the "Always allow" box rides with them: the choice that changes what Allow does is never hidden
+          behind the row it changes. */}
+      <div className={cn(CARD_ACTIONS, "mt-4")} data-access-actions="" data-card-actions="">
+        <div className="flex w-full min-w-0 flex-col gap-0.5" data-access-keep-row="">
           <label
             htmlFor={keepId}
             className="flex min-h-(--ph-target-min) w-fit cursor-default items-start gap-2.5 text-base text-ink"
@@ -237,16 +251,14 @@ export function AccessRequestCard() {
             </span>
           </label>
           <p id={keepNoteId} className="ps-[calc(var(--ph-icon-size)+var(--ph-space)*2.5)] text-sm text-ink-secondary">
-            {kind === "folder" ? "Includes everything in that folder, now and later. " : ""}You can take it back in
+            {kind === "folder" ? "Includes everything in that folder, now and later. " : ""}You can remove it in
             Settings › Spaces.
           </p>
-      </div>
-      {/* The primary answer last and on the right, as on the approval card, so Tab order matches. Sticky
-          at the bottom of the conversation while the card runs past it, so the buttons stay in view. */}
-      <div className={CARD_ACTIONS} data-access-actions="" data-card-actions="">
+        </div>
         {problem && <CardProblem problem={problem} className="me-auto" />}
         <Button disabled={busy} variant="outline" size="lg" aria-keyshortcuts={refuseKeys()} onClick={() => void answer("deny")}>
           Deny
+          <KeyHint keys={refuseCaps()} />
         </Button>
         <Button
           disabled={busy}
@@ -257,6 +269,7 @@ export function AccessRequestCard() {
         >
           <Icon name="check" />
           {keep ? "Allow from now on" : "Allow for this reply"}
+          <KeyHint keys={allowCaps()} primary />
         </Button>
       </div>
     </div>

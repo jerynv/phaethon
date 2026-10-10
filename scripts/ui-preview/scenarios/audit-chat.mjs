@@ -581,7 +581,7 @@ export default [
         return { title: c.querySelector("h3").textContent, desc: c.querySelector("h3 + p").textContent, where: copy(c.querySelectorAll("p")[1]) };
       });
       check(card.title === "Phaethon wants to read from Home", "an unknown space id is title-cased", card.title);
-      check(card.desc.includes("a space that isn’t in this vault"), "and said to be outside this vault", card.desc);
+      check(card.desc.includes("a space that isn’t in your Phaethon folder"), "and said to be outside your Phaethon folder", card.desc);
       check(card.where === "Everything in Home", "the whole space reads as Everything in Home", card.where);
       await park(page);
       await h.idle();

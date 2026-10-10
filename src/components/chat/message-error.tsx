@@ -1,5 +1,5 @@
 import { ActionBarPrimitive, MessagePrimitive, useAuiState } from "@assistant-ui/react";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { CONSOLE_BILLING_URL } from "@/components/settings/api-key";
 import { Button } from "@/components/ui/button";
@@ -80,7 +80,7 @@ const RECOVERY: Record<string, Recovery> = {
   },
   invalidSpace: {
     title: "This space’s folder can’t be found",
-    body: "Check that the folder still exists in your vault, or choose another space.",
+    body: "Check that the space’s folder is still in your Phaethon folder, or choose another space.",
   },
   cli: {
     title: "Claude Code stopped with an error",
@@ -185,6 +185,7 @@ export function MessageError() {
   );
   const cutOff = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
   const setupBelow = useContext(SetupBelowContext);
+  const textId = useId();
   const keySaved = useKeySavedSince(code === "noApiKey" || code === "apiKey");
   let recovery = (code && RECOVERY[code]) || FALLBACK;
   if (keySaved) recovery = KEY_SAVED;
@@ -196,7 +197,10 @@ export function MessageError() {
       <ErrorBanner code={code} resolved={keySaved}>
         <Icon name={keySaved ? "check" : "error"} className={cn("mt-0.5", keySaved ? "text-success-ink" : "text-danger-ink")} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <div role="alert" className="flex flex-col gap-0.5">
+          {/* Once the key is saved the problem is gone: the words change without being announced (a
+              new element, not a live one), and Send again, which then takes focus when the key was saved
+              right here, is described by them, so they are said once. */}
+          <div key={keySaved ? "saved" : "alert"} id={textId} role={keySaved ? undefined : "alert"} className="flex flex-col gap-0.5">
             <p className={cn("font-semibold", keySaved ? "text-success-ink" : "text-danger-ink")} data-error-title="">
               {recovery.title}
             </p>
@@ -267,6 +271,7 @@ export function MessageError() {
                       size="default"
                       variant={i === 0 ? "default" : "outline"}
                       data-error-action="retry"
+                      aria-describedby={keySaved ? textId : undefined}
                       // The banner goes away as the new reply starts; keep focus where the user writes.
                       onClick={() => focusPaneComposer(pane)}
                     >

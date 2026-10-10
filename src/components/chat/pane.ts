@@ -16,6 +16,8 @@ export type Pane = {
   rootRef: RefObject<HTMLElement | null>;
   /** When the user last typed in the composer (ms since the epoch), for C1. */
   typedAt: RefObject<number>;
+  /** The open edit of a message was started with Arrow Up from the composer: leaving it returns there. */
+  editFromComposer: RefObject<boolean>;
   /** Saved positions of the shown messages (Edit / Regenerate), when the backend keeps them. */
   threadIndex: ThreadIndex | null;
 };

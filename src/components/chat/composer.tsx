@@ -18,7 +18,7 @@ import {
 } from "@/runtime/attachments";
 
 import { useAnnounce } from "./announce";
-import { ComposerAttachments } from "./attachments";
+import { AttachmentFold, ComposerAttachments, useAttachmentTray } from "./attachments";
 import { jumpKeyLabel } from "./card-arrival";
 import { focusPaneComposer, usePane } from "./pane";
 
@@ -230,14 +230,17 @@ export function Composer({
     else setHeld(false);
   }, [isRunning]);
   useDraft(pane?.spaceId ?? spaceName);
+  const tray = useAttachmentTray(inputRef);
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // Arrow Up in an empty message box edits your last message (where it can be edited).
+    // Arrow Up in an empty message box edits your last message (where it can be edited); Escape
+    // or Send there comes back here (the edit knows it was opened from the message box).
     if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !isRunning && e.currentTarget.value === "") {
       const edits = pane?.rootRef.current?.querySelectorAll<HTMLElement>("[data-edit-message]");
       const last = edits?.[edits.length - 1];
       if (last) {
         e.preventDefault();
+        if (pane) pane.editFromComposer.current = true;
         last.click();
       }
       return;
@@ -277,7 +280,7 @@ export function Composer({
           dragging ? "border-focus bg-accent-soft" : "border-ink-tertiary",
         )}
       >
-        <ComposerAttachments />
+        <ComposerAttachments tray={tray} />
         <label htmlFor={inputId} className="sr-only">
           Message Phaethon in {spaceName}
         </label>
@@ -290,8 +293,12 @@ export function Composer({
           submitMode="enter"
           addAttachmentOnPaste={false}
           onKeyDown={onKeyDown}
-          onChange={() => {
+          onChange={(e) => {
             if (pane) pane.typedAt.current = Date.now();
+            // Writing at the end: show the end itself (the browser stops a part-line short, inside the
+            // padding), so the box shows whole lines and the line above the caret isn't sliced.
+            const el = e.currentTarget;
+            if (el.selectionStart === el.value.length) requestAnimationFrame(() => (el.scrollTop = el.scrollHeight));
           }}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData?.files ?? []);
@@ -302,15 +309,19 @@ export function Composer({
           rows={1}
           // At most 7 whole lines, and never more than about a fifth of the window (rounded down to whole
           // lines), so a long message never pushes the conversation away; it scrolls by whole lines.
+          // It never shrinks below that (at least 2 whole lines once written): files fold away first.
+          // Scrolled text is clipped at the padding, so no half line shows above or below the whole ones
+          // (focus is drawn on the composer's frame, so nothing else is clipped).
           // Forced colours: the placeholder is GrayText, the system colour for hint text (not a mapped author colour).
-          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full shrink resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
+          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full shrink-0 resize-none rounded-md [clip-path:inset(calc(var(--ph-space)*1.5)_0)] bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
         />
+        {/* One short hint; every key is in the Shortcuts sheet. */}
         <span id={hintId} className="sr-only">
-          Press Enter to send, Shift+Enter for a new line, Escape to stop a reply, and {jumpKeyLabel()} to go to a
-          question Phaethon is waiting on.
+          Enter to send, Shift+Enter for a new line.
         </span>
         <div className="group/toolbar flex shrink-0 items-center gap-2">
           <AddMenu onAttach={() => fileInput.current?.click()} />
+          <AttachmentFold tray={tray} />
           <input
             ref={fileInput}
             type="file"

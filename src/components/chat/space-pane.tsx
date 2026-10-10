@@ -58,6 +58,7 @@ function SpaceChat({
   rootRef,
   setup,
   needsKey,
+  cli,
 }: {
   space: Space;
   initial: { messages: readonly ThreadMessageLike[]; index: ThreadIndex };
@@ -66,6 +67,7 @@ function SpaceChat({
   rootRef: RefObject<HTMLElement | null>;
   setup: ReactNode;
   needsKey: boolean;
+  cli: boolean;
 }) {
   // Inside the desktop app: the agent via the Rust core. In a plain browser
   // (`pnpm dev`) there is no IPC, so fall back to the local echo stub.
@@ -87,8 +89,9 @@ function SpaceChat({
   });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typedAt = useRef(0);
+  const editFromComposer = useRef(false);
   const pane = useMemo<Pane>(
-    () => ({ spaceId: space.id, inputRef, rootRef, typedAt, threadIndex: tauri ? initial.index : null }),
+    () => ({ spaceId: space.id, inputRef, rootRef, typedAt, editFromComposer, threadIndex: tauri ? initial.index : null }),
     [space.id, rootRef, tauri, initial.index],
   );
   useEffect(onMounted, [onMounted]);
@@ -96,7 +99,7 @@ function SpaceChat({
     <AssistantRuntimeProvider runtime={runtime}>
       <PaneContext.Provider value={pane}>
         <ActivityProbe spaceId={space.id} onRunning={onRunning} />
-        <Thread spaceId={space.id} spaceName={space.name} inputRef={inputRef} setup={setup} needsKey={needsKey} />
+        <Thread spaceId={space.id} spaceName={space.name} inputRef={inputRef} setup={setup} needsKey={needsKey} cli={cli} />
       </PaneContext.Provider>
     </AssistantRuntimeProvider>
   );
@@ -156,6 +159,8 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   const [running, setRunning] = useState(false);
   // First run: Phaethon's own agent with no key saved shows the setup card in the empty conversation.
   const [needsKey, setNeedsKey] = useState(false);
+  // Claude Code answers (not Phaethon's own agent): it reads but can't write or ask, so the empty state says so.
+  const [cli, setCli] = useState(false);
   // The card that just saved a key (or switched to Claude Code) stays to show its result until the conversation changes.
   const [cardKept, setCardKept] = useState<string | null>(null);
   // What the last switch did, said once ("New conversation started.").
@@ -201,7 +206,11 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     let live = true;
     const read = () =>
       getSettings().then(
-        (s) => live && setNeedsKey(s.backend === "phaethon" && !s.hasAnthropicKey),
+        (s) => {
+          if (!live) return;
+          setNeedsKey(s.backend === "phaethon" && !s.hasAnthropicKey);
+          setCli(s.backend !== "phaethon");
+        },
         () => {},
       );
     void read();
@@ -264,6 +273,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
         rootRef={rootRef}
         setup={needsKey || cardKept === key ? <SetupCard space={space} onResult={() => setCardKept(key)} /> : null}
         needsKey={needsKey}
+        cli={cli}
       />
     );
   }

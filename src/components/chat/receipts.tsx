@@ -134,7 +134,7 @@ export function RecordLine({ record }: { record: ChatRecord }) {
               all of <SpacePath space={record.space} path="" />
             </span>
           )}
-          {record.answer === "always" && <span className="sr-only">. You can revoke it in Settings, Spaces.</span>}
+          {record.answer === "always" && <span className="sr-only">. You can remove it in Settings, Spaces.</span>}
           {record.answer === "deny" && <span className="sr-only">. Phaethon won’t ask for it again in this conversation.</span>}
         </p>
       );

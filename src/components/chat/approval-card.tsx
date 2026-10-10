@@ -2,11 +2,12 @@ import { useAuiState } from "@assistant-ui/react";
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { StaticMarkdown } from "@/components/assistant-ui/elements/markdown-text";
-import { modAria } from "@/components/shell/shortcuts";
+import { modAria, modCap } from "@/components/shell/shortcuts";
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
+import { platform } from "@/lib/platform";
 import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { answerApproval, type AgentMessageCustom, type PendingApproval } from "@/runtime/agent-adapter";
@@ -202,34 +203,18 @@ export function ApprovalCard() {
             {space && <span className="sr-only"> in {space.name}</span>}
           </h3>
           <p id={descId} className="text-base text-ink-secondary">
-            {approval.summary} Nothing changes unless you allow it.
+            {path ? sizeLine(approval.summary, replacing) : approval.summary} Nothing changes unless you allow it.
           </p>
         </div>
       </div>
       {approval.detail !== "" || diff ? (
         <div className="flex flex-col gap-1.5 px-4 pb-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p id={previewId} className="text-sm font-medium text-ink-secondary">
+            {/* Read once, as the preview's name when it is reached, not again as text before it. */}
+            <p id={previewId} aria-hidden="true" className="text-sm font-medium text-ink-secondary">
               {caption}
             </p>
-            {views.length > 1 && (
-              <div role="group" aria-label="Show" className="flex flex-wrap gap-1" data-approval-views="">
-                {views.map((v) => (
-                  <Button
-                    key={v}
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    aria-pressed={shown === v}
-                    data-view={v}
-                    className="border-line aria-pressed:border-line-strong"
-                    onClick={() => setView(v)}
-                  >
-                    {VIEW_LABEL[v]}
-                  </Button>
-                ))}
-              </div>
-            )}
+            {views.length > 1 && <ViewChoice views={views} shown={shown} onChoose={setView} />}
           </div>
           <Preview
             key={`${approval.id}:${shown}:${all}`}
@@ -263,13 +248,96 @@ export function ApprovalCard() {
         {problem && <CardProblem problem={problem} className="me-auto" />}
         <Button disabled={busy} variant="outline" size="lg" aria-keyshortcuts={refuseKeys()} onClick={() => void answer(false)}>
           Don&rsquo;t allow
+          <KeyHint keys={refuseCaps()} />
         </Button>
         <Button disabled={busy} size="lg" aria-keyshortcuts={allowKeys()} onClick={() => void answer(true)}>
           <Icon name="check" />
           Allow
+          <KeyHint keys={allowCaps()} primary />
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The card's description without repeating its heading: the heading already
+ * says "Replace notes.md", so this says how long the new version is. Falls
+ * back to the backend's whole sentence when it isn't in the expected form.
+ */
+function sizeLine(summary: string, replacing: boolean): string {
+  const m = /\((\d+) lines?\)\.?$/.exec(summary.trim());
+  if (!m) return summary;
+  const n = Number(m[1]);
+  return `${replacing ? "The new version" : "The new file"} has ${n} line${n === 1 ? "" : "s"}.`;
+}
+
+/**
+ * Changes / Formatted / Plain text: one choice, so one Tab stop (a radio
+ * group: the arrow keys move between the views and show each).
+ */
+function ViewChoice({ views, shown, onChoose }: { views: View[]; shown: View; onChoose: (v: View) => void }) {
+  const group = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={group}
+      role="radiogroup"
+      aria-label="Show"
+      className="flex flex-wrap gap-1"
+      data-approval-views=""
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+        if (!step) return;
+        e.preventDefault();
+        const next = views[(views.indexOf(shown) + step + views.length) % views.length];
+        onChoose(next);
+        requestAnimationFrame(() => group.current?.querySelector<HTMLElement>(`[data-view="${next}"]`)?.focus());
+      }}
+    >
+      {views.map((v) => (
+        <Button
+          key={v}
+          type="button"
+          role="radio"
+          variant="ghost"
+          size="xs"
+          aria-checked={shown === v}
+          tabIndex={shown === v ? 0 : -1}
+          data-view={v}
+          className="border-line aria-checked:border-line-strong"
+          onClick={() => onChoose(v)}
+        >
+          {VIEW_LABEL[v]}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+/** The key caps shown on a card's yes and no (⌘↩, ⌘⌫); spoken through aria-keyshortcuts instead. */
+export const allowCaps = () => [modCap(), platform() === "mac" ? "↩" : "Enter"];
+export const refuseCaps = () => [modCap(), platform() === "mac" ? "⌫" : "Backspace"];
+
+/**
+ * Key caps inside a card's answer button, visible only (the button's aria-keyshortcuts says them).
+ * Left out where the answer row is narrow, so the two buttons stay on one row.
+ */
+export function KeyHint({ keys, primary = false }: { keys: string[]; primary?: boolean }) {
+  return (
+    <span aria-hidden="true" className="ms-1 hidden items-center gap-0.5 @xl:inline-flex" data-key-hint="">
+      {keys.map((k) => (
+        // The cap is drawn from data-cap, not written as text: it is not part of the button's name or text.
+        <kbd
+          key={k}
+          data-cap={k}
+          className={cn(
+            "after:content-[attr(data-cap)]",
+            "inline-grid min-w-(--ph-control-height-sm) place-items-center rounded-sm border px-1 font-sans text-xs leading-snug",
+            primary ? "border-ink-inverse/40 text-ink-inverse" : "border-line-strong text-ink-secondary",
+          )}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -341,7 +409,7 @@ function Preview({
  * card is taller than the space it has, its buttons stay in view.
  */
 export const CARD_ACTIONS =
-  "sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 rounded-b-lg border-t border-line bg-raised px-4 pt-3 pb-4";
+  "@container sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 rounded-b-lg border-t border-line bg-raised px-4 pt-3 pb-4";
 
 /** aria-keyshortcuts for a card's yes and no (Cmd+Enter, Cmd+Backspace). */
 export const allowKeys = () => `${modAria()}+Enter`;

@@ -199,7 +199,7 @@ export default [
           title: c.querySelector("h3").textContent,
           space: c.querySelector("[data-approval-space]").textContent,
           mark: !!c.querySelector("[data-approval-space] [data-space-hue]"),
-          views: [...c.querySelectorAll("[data-approval-views] button")].map((b) => `${b.textContent}:${b.getAttribute("aria-pressed")}`),
+          views: [...c.querySelectorAll("[data-approval-views] button")].map((b) => `${b.textContent}:${b.getAttribute("aria-checked")}`),
           removed: [...c.querySelectorAll('[data-diff="removed"]')].map((r) => r.textContent),
           added: [...c.querySelectorAll('[data-diff="added"]')].map((r) => r.textContent),
           fold: c.querySelectorAll('[data-diff="fold"]').length,
@@ -237,7 +237,7 @@ export default [
         const c = document.querySelector("[data-approval-card]");
         return {
           title: c.querySelector("h3").textContent,
-          views: [...c.querySelectorAll("[data-approval-views] button")].map((b) => `${b.textContent}:${b.getAttribute("aria-pressed")}`),
+          views: [...c.querySelectorAll("[data-approval-views] button")].map((b) => `${b.textContent}:${b.getAttribute("aria-checked")}`),
           table: !!c.querySelector("[data-approval-preview] table"),
           heading: c.querySelector("[data-approval-preview] h3")?.textContent,
           truncated: c.querySelector("[data-approval-truncated]")?.textContent ?? "",
@@ -377,7 +377,7 @@ export default [
           buttons: [...c.querySelectorAll("[data-access-actions] button")].map((b) => b.textContent.trim()),
           checked: keep.checked,
           label: keep.closest("label").textContent.replace(/\s+/g, " ").trim(),
-          caption: c.querySelector("[data-access-reason] figcaption").textContent,
+          caption: c.querySelector("[data-access-reason] p").textContent,
           focused: document.activeElement === c,
         };
       });

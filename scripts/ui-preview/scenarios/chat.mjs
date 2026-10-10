@@ -294,7 +294,7 @@ export default [
       }
       // Obscura does not move focus on Tab from a tabindex=-1 element; Chromium does.
       if (stops[0] === "card") console.log("     (this engine does not Tab out of a focused card; DOM order check above stands)");
-      else check(stops.join("|") === "Formatted|Plain text|preview|Don’t allow|Allow", "Tab from the card visits the views, the preview, Don’t allow, Allow", stops.join("|"));
+      else check(stops.join("|") === "Formatted|preview|Don’t allow|Allow", "Tab from the card visits the views (one stop), the preview, Don’t allow, Allow", stops.join("|"));
       await page.evaluate(() => document.querySelector('[role="alertdialog"]').focus());
       const status = await page.evaluate(() => document.querySelector('[data-testid="reply-status"]').textContent);
       check(!status.includes("Waiting for you"), "the status region does not also announce the approval", status);

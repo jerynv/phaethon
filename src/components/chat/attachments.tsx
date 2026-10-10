@@ -1,5 +1,5 @@
 import { AttachmentPrimitive, ComposerPrimitive, MessagePrimitive, useAui, useAuiState } from "@assistant-ui/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAttachmentSrc } from "@/hooks/use-attachment-src";
@@ -115,55 +115,140 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
   );
 }
 
-/** The window is short for its text size (under 28 lines of text tall): a 760x560 window at 200%. */
-const SHORT_LINES = 28;
+export type AttachmentTray = ReturnType<typeof useAttachmentTray>;
 
-function isShortWindow(): boolean {
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  return window.innerHeight / rem < SHORT_LINES;
+/**
+ * The files waiting to go with the message: shared by the tray above the text
+ * field and its fold button in the toolbar (Composer). The files show in the
+ * tray only while every chip fits whole; otherwise (many files, a short
+ * window, large text or Larger click targets, a long message taking the
+ * room) they fold into one "3 files attached" button in the toolbar, which
+ * takes no row of its own, so the text field keeps its whole lines.
+ *
+ * Whether they fit is measured, not guessed: on any change that could matter
+ * (files added or removed, the window, the text size or target size, the text
+ * field's height) the list is laid out in the tray once and checked for
+ * overflow before the browser paints, so nothing flickers and the button
+ * (and focus on it) stays while the check runs.
+ */
+export function useAttachmentTray(inputRef: RefObject<HTMLTextAreaElement | null>) {
+  const count = useAuiState((s) => s.composer.attachments.length);
+  const list = useRef<HTMLUListElement>(null);
+  const foldRef = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  const [folded, setFolded] = useState(false);
+  const [open, setOpen] = useState(false);
+  // Bumped to lay the list out in the tray and check it again; `measured` catches up once checked.
+  const [tick, setTick] = useState(0);
+  const [measured, setMeasured] = useState(-1);
+  const measuring = tick !== measured;
+  const remeasure = useCallback(() => setTick((t) => t + 1), []);
+
+  useLayoutEffect(remeasure, [count, remeasure]);
+  useLayoutEffect(() => {
+    if (!measuring) return;
+    const ul = list.current;
+    const over = !!ul && count > 0 && ul.scrollHeight > ul.clientHeight + 1;
+    setFolded(over);
+    if (!over) setOpen(false);
+    setMeasured(tick);
+  });
+  useEffect(() => {
+    window.addEventListener("resize", remeasure);
+    // The text size and Larger click targets are set on the root element, without a resize.
+    const watch = new MutationObserver(remeasure);
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
+    // The text field growing or shrinking as a message is written; the problems line coming and going.
+    const sizes = new ResizeObserver(remeasure);
+    const input = inputRef.current;
+    if (input) {
+      sizes.observe(input);
+      const wrap = input.closest("[data-composer-wrap]");
+      if (wrap) sizes.observe(wrap);
+    }
+    return () => {
+      window.removeEventListener("resize", remeasure);
+      watch.disconnect();
+      sizes.disconnect();
+    };
+  }, [inputRef, remeasure]);
+
+  const close = useCallback((refocus: boolean) => {
+    setOpen(false);
+    if (refocus) requestAnimationFrame(() => foldRef.current?.focus());
+  }, []);
+  /** Focus left both the button and the opened list (for the text field, the conversation…): fold the list away. */
+  const onBlurOut = useCallback((e: FocusEvent) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && (list.current?.contains(next) || foldRef.current?.contains(next))) return;
+    setOpen(false);
+  }, []);
+
+  return {
+    count,
+    list,
+    foldRef,
+    listId,
+    /** The files are behind the toolbar button (the list shows only while `open`). */
+    folded: folded && !measuring,
+    /** The button stays while a check runs, so focus on it is never lost. */
+    showButton: folded && count > 0,
+    open: open && folded && !measuring,
+    setOpen,
+    close,
+    onBlurOut,
+  };
 }
 
-/** Whether the window is short for its text size, kept current as the window or the text size changes. */
-function useShortWindow(): boolean {
-  const [short, setShort] = useState(isShortWindow);
-  useEffect(() => {
-    const update = () => setShort(isShortWindow());
-    window.addEventListener("resize", update);
-    // The text size is set on the root element (Settings › Appearance) without a resize.
-    const watch = new MutationObserver(update);
-    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
-    return () => {
-      window.removeEventListener("resize", update);
-      watch.disconnect();
-    };
-  }, []);
-  return short;
+/**
+ * The toolbar's "3 files attached" button, while the files are folded. It
+ * opens them in a panel just above the message box; Escape (on the button or
+ * in the panel) closes it, and so does focus moving anywhere else.
+ */
+export function AttachmentFold({ tray }: { tray: AttachmentTray }) {
+  if (!tray.showButton) return null;
+  return (
+    <Button
+      ref={tray.foldRef}
+      type="button"
+      variant="outline"
+      size="xs"
+      className="min-w-0 shrink-0"
+      aria-expanded={tray.open}
+      aria-controls={tray.listId}
+      data-attachment-count=""
+      data-attachment-fold=""
+      onClick={() => tray.setOpen(!tray.open)}
+      onBlur={tray.onBlurOut}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !tray.open) return;
+        e.preventDefault();
+        e.stopPropagation();
+        tray.close(false);
+      }}
+    >
+      <Icon name="attach" />
+      {tray.count} file{tray.count === 1 ? "" : "s"} attached
+      <Icon name={tray.open ? "chevron-up" : "chevron-down"} />
+    </Button>
+  );
 }
 
 /**
  * Files waiting to go with the message being written: a count, then the
- * files. Capped in height so many files never squeeze the conversation away
- * (the list scrolls, with room around each chip for its focus ring). In a
- * window that is short for its text size, two or more files fold into one
- * "3 files attached" button that shows them on demand, and the tray always
- * keeps a gap above the text field.
+ * files, each chip whole (useAttachmentTray says when they fold away).
  *
  * Removing a file keeps focus in the tray (on the next file's Remove, or on
  * Undo when none is left), says "Removed notes.md", and offers Undo.
  */
-export function ComposerAttachments() {
+export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
   const aui = useAui();
   const announce = useAnnounce();
-  const count = useAuiState((s) => s.composer.attachments.length);
+  const { count, list, listId, folded, open } = tray;
   const running = useAuiState((s) => s.thread.isRunning);
-  const list = useRef<HTMLUListElement>(null);
   const undoRef = useRef<HTMLButtonElement>(null);
   const [removed, setRemoved] = useState<Removed | null>(null);
   const focusAfter = useRef<number | null>(null);
-  const short = useShortWindow();
-  const [open, setOpen] = useState(false);
-  const listId = useId();
-  const folded = short && count > 1 && !open;
 
   // Sent: the undo is about a message that's gone.
   useEffect(() => {
@@ -201,33 +286,24 @@ export function ComposerAttachments() {
 
   if (count === 0 && !removed) return null;
   const countText = count === 0 ? "No files attached" : `${count} file${count === 1 ? "" : "s"} attached`;
+  // Folded with nothing to undo: the tray takes no room (its button is in the toolbar).
+  const bare = folded && !removed;
   return (
-    // Gives way (its list scrolls) when the message box is at its height cap, never below its count line.
+    // Gives way when the message box is at its height cap (the files then fold), never below its count line.
     <div
-      className="relative mb-1 flex min-h-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] shrink flex-col gap-1 px-1.5 pt-1"
-      data-attachment-tray="" data-folded={folded ? "" : undefined}>
+      className={cn(
+        "relative flex shrink flex-col gap-1 px-1.5",
+        !bare && "mb-1 min-h-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] pt-1",
+      )}
+      data-attachment-tray=""
+      data-folded={folded ? "" : undefined}
+    >
+      {!bare && (
       <div className="flex min-h-(--ph-control-height-sm) shrink-0 flex-wrap items-center gap-x-2 text-xs text-ink-secondary">
-        {short && count > 1 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            aria-expanded={open}
-            aria-controls={listId}
-            data-attachment-count=""
-            data-attachment-fold=""
-            onClick={() => setOpen(!open)}
-          >
-            <Icon name="attach" />
-            {countText}
-            <Icon name={open ? "chevron-up" : "chevron-down"} />
-          </Button>
-        ) : (
-          <span data-attachment-count="">{countText}</span>
-        )}
+        {!folded && <span data-attachment-count="">{countText}</span>}
         {removed && (
           <span className="flex min-w-0 items-center gap-1" data-attachment-undo="">
-            <span aria-hidden="true">·</span>
+            {!folded && <span aria-hidden="true">·</span>}
             <span className="min-w-0 truncate" title={removed.name}>
               Removed {middleEllipsis(removed.name, 24)}
             </span>
@@ -245,26 +321,29 @@ export function ComposerAttachments() {
           </span>
         )}
       </div>
+      )}
       <ul
         ref={list}
         id={listId}
         aria-label="Attached files"
-        hidden={folded}
+        hidden={folded && !open}
         data-attachment-list=""
         className={cn(
-          "flex min-h-0 flex-wrap gap-2 overflow-y-auto p-1.5 empty:hidden",
-          // Opened from the folded button in a short window: a panel over the conversation, just above
-          // the message box, so showing the files never makes the message box taller.
-          short && count > 1
-            ? "absolute start-0 bottom-full z-20 mb-2 max-h-[min(20rem,40dvh)] w-full rounded-lg border border-line bg-raised shadow-lg"
-            : "max-h-[min(9rem,20dvh)]",
+          "flex min-h-0 flex-wrap gap-2 p-1.5 empty:hidden",
+          // Opened from the folded button: a panel over the conversation, just above the message box,
+          // so showing the files never makes the message box taller. In the tray every chip shows
+          // whole (else the files fold), so the list never scrolls there.
+          folded
+            ? "absolute start-0 bottom-full z-20 mb-2 max-h-[min(20rem,40dvh)] w-full overflow-y-auto rounded-lg border border-line bg-raised shadow-lg"
+            // Room for two rows of chips (with Larger click targets too) where the window allows it.
+            : "max-h-[min(12rem,20dvh)] overflow-hidden",
         )}
+        onBlur={folded ? tray.onBlurOut : undefined}
         onKeyDown={(e) => {
-          if (e.key !== "Escape" || !(short && count > 1)) return;
+          if (e.key !== "Escape" || !folded) return;
           e.preventDefault();
           e.stopPropagation();
-          setOpen(false);
-          requestAnimationFrame(() => list.current?.parentElement?.querySelector<HTMLElement>("[data-attachment-fold]")?.focus());
+          tray.close(true);
         }}
       >
         <ComposerPrimitive.Attachments>{() => <AttachmentChip onRemoved={onRemoved} />}</ComposerPrimitive.Attachments>

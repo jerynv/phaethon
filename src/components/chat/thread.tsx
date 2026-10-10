@@ -17,7 +17,6 @@ import {
   useState,
   useSyncExternalStore,
   type DragEvent,
-  type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -43,7 +42,6 @@ import { AccessRequestCard } from "./access-request-card";
 import { AnnounceContext, spokenReply, useAnnounce } from "./announce";
 import { ApprovalCard, SpaceIdContext } from "./approval-card";
 import { MessageAttachments } from "./attachments";
-import { goToCard, isJumpKey } from "./card-arrival";
 import { Composer, useAddFiles } from "./composer";
 import { MessageError, SetupBelowContext } from "./message-error";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
@@ -672,15 +670,6 @@ export function Thread({
     stopFocused.current = false;
   }, [isRunning, pane]);
 
-  // Alt+Enter (Option+Return) from anywhere in the conversation goes to a waiting card.
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.defaultPrevented || !isJumpKey(e)) return;
-    const card = pane?.rootRef.current?.querySelector<HTMLElement>("[data-waiting-card]");
-    if (!card || card.contains(e.target as Node)) return;
-    e.preventDefault();
-    goToCard(card);
-  };
-
   return (
     <SpaceIdContext.Provider value={spaceId}>
       <AnnounceContext.Provider value={announce}>
@@ -689,7 +678,6 @@ export function Thread({
             // Not positioned: the drop overlay below fills the whole pane (#main), the
             // conversations bar above the thread included.
             className="flex min-h-0 flex-1 flex-col"
-            onKeyDown={onKeyDown}
             // Files can be dropped anywhere on the conversation; the + menu is the
             // single-pointer alternative (WCAG 2.5.7).
             onDragEnter={(e) => {

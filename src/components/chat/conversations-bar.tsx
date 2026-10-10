@@ -287,13 +287,14 @@ export function ConversationsBar({
       <div className="flex items-center justify-end gap-1 px-2 py-1.5">
         {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used. */}
         {current && (
-          <p data-conversation-current="" className="flex min-w-0 flex-1 items-baseline gap-1.5 ps-2 text-sm text-ink-secondary">
+          // Title over date, each cut to fit on its own line: a long date (large text, a wide reading font)
+          // can never run into the Conversations button.
+          <p data-conversation-current="" className="flex min-w-0 flex-1 flex-col ps-2 text-sm leading-snug text-ink-secondary">
             <span className="min-w-0 truncate font-medium text-ink" title={current.title}>
               {current.messages === 0 ? "New conversation" : current.title}
             </span>
             {current.messages > 0 && (
-              <span className="shrink-0">
-                <span aria-hidden="true">· </span>
+              <span className="min-w-0 truncate text-xs">
                 <span className="sr-only">, </span>
                 {relativeDate(current.updated)}
               </span>
@@ -371,7 +372,8 @@ export function ConversationsBar({
                             Delete “<span className="font-medium wrap-break-word">{t.title}</span>” for good?
                             {t.current ? " A new conversation starts in its place." : " It can’t be opened again."}
                           </p>
-                          <div className="flex flex-wrap justify-end gap-2">
+                          {/* As far apart as Regenerate's question: a slip off Cancel must not delete for good. */}
+                          <div className="flex flex-wrap justify-end gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2">
                             <DropdownMenu.Item
                               data-delete-cancel={t.id}
                               disabled={working}

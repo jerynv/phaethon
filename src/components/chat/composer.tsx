@@ -19,7 +19,7 @@ import {
 
 import { useAnnounce } from "./announce";
 import { ComposerAttachments } from "./attachments";
-import { goToCard, isJumpKey, jumpKeyLabel } from "./card-arrival";
+import { jumpKeyLabel } from "./card-arrival";
 import { focusPaneComposer, usePane } from "./pane";
 
 /**
@@ -232,14 +232,6 @@ export function Composer({
   useDraft(pane?.spaceId ?? spaceName);
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (isJumpKey(e)) {
-      const card = pane?.rootRef.current?.querySelector<HTMLElement>("[data-waiting-card]");
-      if (card) {
-        e.preventDefault();
-        goToCard(card);
-      }
-      return;
-    }
     // Arrow Up in an empty message box edits your last message (where it can be edited).
     if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey && !isRunning && e.currentTarget.value === "") {
       const edits = pane?.rootRef.current?.querySelectorAll<HTMLElement>("[data-edit-message]");

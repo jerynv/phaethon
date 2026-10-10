@@ -81,6 +81,14 @@ export default [
     async run(page, h) {
       await h.waitText("Problem set 4");
       await page.waitForSelector("[data-conversation-current]", { timeout: 5000 });
+      const clash = await page.evaluate(() => {
+        const trigger = document.querySelector("[data-conversations-trigger]").getBoundingClientRect();
+        return [...document.querySelectorAll("[data-conversation-current] > span")].some((n) => {
+          const r = n.getBoundingClientRect();
+          return r.right > trigger.left + 0.5 && r.bottom > trigger.top && r.top < trigger.bottom;
+        });
+      });
+      check(!clash, "neither the title nor the date runs into the Conversations button");
       let bar = await barText(page);
       check(bar.startsWith("What do I have due this week for C241?") && bar.includes("Today at"), "the bar names the open conversation and when it was last used", bar);
       // The title may be cut to fit, but the date never is.
@@ -133,6 +141,13 @@ export default [
       check(named.role === "group" && named.label === confirmText, "the confirm is a group named by its question", JSON.stringify(named));
       check((await calls(page, "thread_delete")).length === 0, "nothing is deleted before confirming");
       await h.idle(); // past the menu's open animation
+      const apart = await page.evaluate((id) => {
+        const c = document.querySelector(`[data-delete-cancel="${id}"]`).getBoundingClientRect();
+        const d = document.querySelector(`[data-delete-confirm-button="${id}"]`).getBoundingClientRect();
+        const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ph-target-min")) || 24;
+        return { gap: Math.max(d.left - c.right, c.left - d.right, d.top - c.bottom), min };
+      }, yesterday);
+      check(apart.gap >= apart.min, "Cancel and Delete are at least a target apart, so a slip off Cancel can't delete", JSON.stringify(apart));
       await h.shot("confirm");
       // Cancel puts focus back on that row's Delete.
       await page.keyboard.press("Enter");

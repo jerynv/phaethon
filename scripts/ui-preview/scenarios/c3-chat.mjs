@@ -603,4 +603,35 @@ export default [
       await park(page);
     },
   },
+  // Option+Return reaches the waiting card from anywhere in the window, and never presses the focused button.
+  {
+    name: "c3-jump-anywhere",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: { threads: { school: LOADED }, turn: [{ kind: "text", delta: "I’ll write that." }, approval()] },
+    async run(page) {
+      await page.waitForSelector(COMPOSER, { timeout: 5000 });
+      // Nothing waiting yet: it says so.
+      await page.focus(COMPOSER);
+      await chord(page, "Alt", "Enter");
+      const none = await page.waitForFunction(() => document.querySelector("[data-shell-status]")?.textContent === "Nothing in this space is waiting for your answer.", { timeout: 2000 }).then(() => true, () => false);
+      check(none, "with nothing waiting, Option+Return says so");
+      await send(page, "Make notes");
+      await page.waitForSelector("[data-waiting-card]", { timeout: 5000 });
+      for (const [where, sel] of [
+        ["Add to message", 'button[aria-label="Add to message"]'],
+        ["Conversations", "[data-conversations-trigger]"],
+        ["the sidebar", "#spaces-sidebar [data-space-id]"],
+      ]) {
+        await page.focus(sel);
+        await chord(page, "Alt", "Enter");
+        await sleep(150);
+        const r = await page.evaluate(() => ({
+          onCard: !!document.activeElement?.closest("[data-waiting-card]"),
+          menu: !!document.querySelector('[role="menu"]'),
+        }));
+        check(r.onCard && !r.menu, `from ${where}, Option+Return goes to the card and presses nothing`, JSON.stringify(r));
+      }
+    },
+  },
 ];

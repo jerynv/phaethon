@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { goToCard, isJumpKey } from "@/components/chat/card-arrival";
 import { SpacePane } from "@/components/chat/space-pane";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { announce } from "@/components/shell/announcer";
@@ -229,6 +230,25 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleSidebarKeepingFocus, hasSettings, spaces, goToSpace, paletteOpen, sheetOpen]);
+
+  // Option+Return (Alt+Enter) from anywhere in the window goes to the card waiting for an answer in the
+  // space on screen. Taken first (capture), so a focused button is never pressed by the Return; with
+  // nothing waiting it says so rather than doing nothing. Inside a dialog it is left alone.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isJumpKey(e) || e.defaultPrevented) return;
+      const at = document.activeElement as HTMLElement | null;
+      if (at?.closest(OPEN_DIALOG)) return;
+      const card = document.querySelector<HTMLElement>("[data-space-pane][data-shown] [data-waiting-card]");
+      if (card?.contains(at)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (card) goToCard(card);
+      else announce("Nothing in this space is waiting for your answer.");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   // Cmd+N (Ctrl+N) belongs to the conversations bar, but every visited space
   // has one mounted, each listening on the window: the first one mounted would

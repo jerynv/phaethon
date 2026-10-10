@@ -107,7 +107,14 @@ export function onGrantsChanged(cb: () => void): () => void {
 export const UNDO_MS = 9 * 60_000;
 
 /** `finish` ends the Undo time; asked for before the revoke has answered, it only marks it `ended`, and the answer finishes it. */
-type Pending = { timer: ReturnType<typeof setTimeout>; grant: Known | undefined; finish: () => void; ended: boolean };
+type Pending = {
+  timer: ReturnType<typeof setTimeout>;
+  grant: Known | undefined;
+  finish: () => void;
+  ended: boolean;
+  /** The revoke call: Undo waits for it, so the core has removed the grant before it is asked to put it back. */
+  made: Promise<boolean>;
+};
 const pending = new Map<string, Pending>();
 // Revoked here and gone from grants.json; hidden at once, before the list reloads.
 const revoked = new Set<string>();
@@ -137,10 +144,11 @@ export function scheduleRevoke(id: string, done: (result: { removed: boolean } |
     finish: () => {
       entry.ended = true;
     },
+    made: revokeGrant(id),
   };
   pending.set(id, entry);
   publishPending();
-  void revokeGrant(id).then(
+  void entry.made.then(
     (removed) => {
       entry.finish = () => {
         if (pending.get(id) !== entry) return;
@@ -171,11 +179,22 @@ export function undoRevoke(id: string): boolean {
   pending.delete(id);
   restoring.set(id, p.grant);
   publishPending();
-  void restoreGrant(p.grant).catch((e: unknown) => {
-    console.error("grant_restore failed:", e);
+  const grant = p.grant;
+  const settle = () => {
     restoring.delete(id);
     publishPending();
-  });
+  };
+  // A revoke that failed or found nothing left nothing to put back; the list reloads either way.
+  void p.made.then(
+    (removed) =>
+      removed
+        ? restoreGrant(grant).catch((e: unknown) => {
+            console.error("grant_restore failed:", e);
+            settle();
+          })
+        : settle(),
+    settle,
+  );
   return true;
 }
 

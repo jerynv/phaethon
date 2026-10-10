@@ -245,6 +245,31 @@ export default [
     },
   },
   {
+    // Undo pressed before the core has answered the remove: the grant still comes back (the restore waits for the remove).
+    name: "s3-undo-early",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: {
+      threads: { school: structuredClone(current) },
+      grants: { school: [{ id: "g-now", from: "work", path: "projects/now.md", created: "2026-10-10T09:00:00Z", scope: "always" }] },
+      slow: { grant_revoke: 800 },
+    },
+    async run(page, h) {
+      await page.click("[data-grants-chip]");
+      await page.waitForSelector('[data-radix-popper-content-wrapper] [role="dialog"]', { timeout: 5000 });
+      await page.click('[data-revoke="g-now"]');
+      await page.waitForSelector('[data-undo="g-now"]', { timeout: 3000 });
+      await page.click('[data-undo="g-now"]');
+      // Past the slow remove (800 ms) and the restore after it.
+      await new Promise((r) => setTimeout(r, 1800));
+      const order = await page.evaluate(() => window.__calls.filter(([c]) => c === "grant_revoke" || c === "grant_restore").map(([c]) => c));
+      const back = await page.evaluate(() => (window.__MOCK__.grants.school ?? []).some((g) => g.id === "g-now"));
+      check(order.join() === "grant_revoke,grant_restore", "the restore is asked only after the remove", order.join());
+      check(back, "an Undo pressed before the remove finished still puts the grant back");
+      check(!!(await page.$('[data-revoke="g-now"]')), "and its row offers Remove again");
+    },
+  },
+  {
     name: "s3-undo-stays",
     sizes: [[1100, 720]],
     mock: {

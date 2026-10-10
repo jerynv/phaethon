@@ -36,6 +36,8 @@
     "allow-models-list",
     "allow-settings-set-model",
     "allow-file-open",
-    "allow-grant-restore"
+    "allow-grant-restore",
+    "allow-thread-delete",
+    "allow-claude-cli-status"
   ]
 }

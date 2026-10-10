@@ -6,6 +6,8 @@ use phaethon_lib::agent::{self, AgentEvent, ErrorCode, Runs, TurnRequest};
 fn missing_binary_reports_install_hint() {
     // Debug builds honour this override; point it at nothing.
     unsafe { std::env::set_var("PHAETHON_CLAUDE_BIN", "/nonexistent/claude") };
+    // Settings' check says so too, rather than trusting a path that isn't there.
+    assert_eq!(agent::cli_status(), agent::CliStatus { installed: false, path: None });
     let dir = std::env::temp_dir();
     let mut events = vec![];
     tauri::async_runtime::block_on(agent::run_turn(

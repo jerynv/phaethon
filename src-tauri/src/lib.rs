@@ -258,6 +258,29 @@ fn thread_open(state: State<'_, AppState>, space: String, id: String) -> Result<
     })
 }
 
+/// Delete the conversation `id` in `space` for good: a saved past one by its
+/// archive id, or `"current"` to empty the current one (its file and the CLI's
+/// session). Refused while a reply is running there; an id that isn't one is
+/// refused, never turned into a path.
+#[tauri::command]
+fn thread_delete(state: State<'_, AppState>, space: String, id: String) -> Result<(), String> {
+    let dir = state.vault.space_dir(&space)?;
+    thread::while_idle(&state.runs, &space, || {
+        thread::delete(&dir, &id).map_err(|e| format!("That conversation couldn’t be deleted: {e}"))?;
+        if id == thread::CURRENT_ID {
+            vault::clear_session(&dir);
+        }
+        Ok(())
+    })
+}
+
+/// Whether Claude Code is installed (and where), so the UI can say how to
+/// install it before switching to it. Never looks at the user's login.
+#[tauri::command]
+fn claude_cli_status() -> agent::CliStatus {
+    agent::cli_status()
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsView {
@@ -422,6 +445,8 @@ pub fn run() {
             thread_new,
             threads_list,
             thread_open,
+            thread_delete,
+            claude_cli_status,
             settings_get,
             settings_set_backend,
             api_key_set,

@@ -68,6 +68,11 @@ pub enum Record {
     },
     /// The user stopped the reply.
     Stopped,
+    /// A refusal of access carried over from the part of the conversation an
+    /// edit or regenerate replaced (see [`cut_at`]), so the model can't get
+    /// past a Deny by asking again in the new version. Counts for [`denied`];
+    /// never shown (its receipt is in the archived version where it was given).
+    DeniedEarlier { space: String, path: String },
 }
 
 impl Record {
@@ -106,10 +111,22 @@ pub fn records(msgs: &[Value]) -> impl Iterator<Item = Record> + '_ {
 /// it) earlier in this conversation. Read from the saved record, so it holds
 /// across restarts until a new conversation starts.
 pub fn denied(msgs: &[Value], space: &str, path: &str) -> bool {
-    records(msgs).any(|r| {
-        matches!(r, Record::Access { space: s, path: p, answer: AccessAnswer::Deny }
-            if s == space && grants::covers(&p, Path::new(path)))
-    })
+    records(msgs).any(|r| refusal(&r).is_some_and(|(s, p)| s == space && grants::covers(p, Path::new(path))))
+}
+
+/// The space and path a record refuses access to, if it is a refusal.
+fn refusal(r: &Record) -> Option<(&str, &str)> {
+    match r {
+        Record::Access { space, path, answer: AccessAnswer::Deny } | Record::DeniedEarlier { space, path } => {
+            Some((space, path))
+        }
+        _ => None,
+    }
+}
+
+/// Whether the UI shows this record on its reply.
+fn is_shown(r: &Record) -> bool {
+    !matches!(r, Record::DeniedEarlier { .. })
 }
 
 /// The thread as the provider gets it: record blocks removed, and a message
@@ -233,6 +250,7 @@ pub fn to_ui(msgs: &[Value]) -> Vec<UiMessage> {
             .into_iter()
             .flatten()
             .filter_map(Record::from_block)
+            .filter(is_shown)
             .collect();
         match m["role"].as_str() {
             Some("user") if !texts.is_empty() || !files.is_empty() => {
@@ -480,6 +498,10 @@ pub const STALE_EDIT: &str =
 /// it, so a new message can take its place. The conversation as it was is
 /// first saved whole into the archive (a copy, under a new id), so nothing
 /// is lost. The caller saves the shortened thread.
+///
+/// Refusals of access in the dropped part still hold: they are added at the
+/// end as one record-only assistant message ([`Record::DeniedEarlier`]),
+/// which the model never sees ([`for_provider`]) and the UI doesn't show.
 pub fn cut_at(space: &Path, msgs: &mut Vec<Value>, index: usize) -> Result<(), String> {
     if !is_user_boundary(msgs, index) {
         return Err(STALE_EDIT.into());
@@ -492,7 +514,18 @@ pub fn cut_at(space: &Path, msgs: &mut Vec<Value>, index: usize) -> Result<(), S
         fs::rename(&tmp, &path)
     };
     keep().map_err(|e| format!("The earlier version of this conversation couldn’t be kept, so nothing was changed: {e}"))?;
-    msgs.truncate(index);
+    let dropped = msgs.split_off(index);
+    let mut carried: Vec<Value> = vec![];
+    for r in records(&dropped) {
+        let Some((space, path)) = refusal(&r) else { continue };
+        let block = Record::DeniedEarlier { space: space.into(), path: path.into() }.to_block();
+        if !denied(msgs, space, path) && !carried.contains(&block) {
+            carried.push(block);
+        }
+    }
+    if !carried.is_empty() {
+        msgs.push(json!({"role": "assistant", "content": carried}));
+    }
     Ok(())
 }
 
@@ -523,6 +556,30 @@ pub fn open(space: &Path, id: &str) -> io::Result<()> {
         return Err(e);
     }
     Ok(())
+}
+
+/// Delete a conversation for good. `"current"` empties the current one (its
+/// file is removed; the caller also clears the CLI session); any other id
+/// must be an archive id ([`is_valid_id`]) naming a regular file in the
+/// archive, and is never turned into a path otherwise. Files the user
+/// attached stay in the space: they are the user's files and other versions
+/// of the conversation may still show them.
+pub fn delete(space: &Path, id: &str) -> io::Result<()> {
+    if id == CURRENT_ID {
+        let _ = fs::remove_file(file(space).with_extension("json.tmp"));
+        return match fs::remove_file(file(space)) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        };
+    }
+    if !is_valid_id(id) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a conversation id"));
+    }
+    let chosen = archived(space, id);
+    if !is_regular_file(&chosen) {
+        return Err(io::Error::new(io::ErrorKind::NotFound, "that conversation is no longer there"));
+    }
+    fs::remove_file(chosen)
 }
 
 /// Run `f` with the space marked busy, so no reply can start while the files
@@ -841,6 +898,110 @@ mod tests {
         assert_eq!(read_messages(&archive_dir(&dir).join(&files[0])).unwrap(), original);
         // The current file is not touched by the cut itself; the caller saves.
         assert_eq!(load(&dir).unwrap(), original);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_deny_outlives_the_cut_that_drops_it() {
+        let dir = temp_space("cutdeny");
+        let rec = |space: &str, path: &str, answer| json!({"role": "assistant", "content": [
+            {"type": "text", "text": "I can't, then."},
+            Record::Access { space: space.into(), path: path.into(), answer }.to_block(),
+        ]});
+        // Turn 1 refused work/notes; turn 2 refused work/calendar twice and
+        // home/diary once, and allowed work/tasks once.
+        let mut msgs = vec![
+            user_text("first"),
+            rec("work", "notes", AccessAnswer::Deny),
+            user_text("second"),
+            rec("work", "calendar", AccessAnswer::Deny),
+            user_text("again"),
+            rec("work", "calendar", AccessAnswer::Deny),
+            rec("home", "diary", AccessAnswer::Deny),
+            rec("work", "tasks", AccessAnswer::Once),
+        ];
+        let before_ui = to_ui(&msgs[..2]);
+        cut_at(&dir, &mut msgs, 2).unwrap();
+        // The kept part is untouched; one record-only message carries the
+        // dropped refusals, each once, and not the one already in the kept part.
+        assert_eq!(msgs.len(), 3);
+        let carried: Vec<Record> = msgs[2]["content"].as_array().unwrap().iter().filter_map(Record::from_block).collect();
+        assert_eq!(
+            carried,
+            vec![
+                Record::DeniedEarlier { space: "work".into(), path: "calendar".into() },
+                Record::DeniedEarlier { space: "home".into(), path: "diary".into() },
+            ]
+        );
+        assert!(denied(&msgs, "work", "calendar/oct.md") && denied(&msgs, "home", "diary") && denied(&msgs, "work", "notes"));
+        assert!(!denied(&msgs, "work", "tasks"), "only refusals carry over");
+
+        // The new message goes on after it: the model never sees the carried
+        // message, the UI shows the same as before plus the new message.
+        msgs.push(user_text("second, reworded"));
+        let wire = for_provider(&msgs);
+        assert_eq!(wire, vec![msgs[0].clone(), for_provider(&msgs[1..2])[0].clone(), msgs[3].clone()]);
+        let ui = to_ui(&msgs);
+        assert_eq!(&ui[..2], &before_ui[..]);
+        assert_eq!((ui.len(), ui[2].role, ui[2].index), (3, "user", 3));
+        assert!(is_user_boundary(&msgs, 3));
+
+        // A second regenerate keeps them (they are before the cut now), with no duplicates.
+        msgs.push(json!({"role": "assistant", "content": [{"type": "text", "text": "ok"}]}));
+        cut_at(&dir, &mut msgs, 3).unwrap();
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(records(&msgs).filter(|r| matches!(r, Record::DeniedEarlier { .. })).count(), 2);
+        // Editing the very first message keeps them all, before any user message.
+        msgs.push(user_text("x"));
+        cut_at(&dir, &mut msgs, 0).unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(records(&msgs).count(), 3);
+        assert!(for_provider(&msgs).is_empty() && to_ui(&msgs).is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn delete_removes_one_conversation_and_refuses_bad_ids() {
+        let dir = temp_space("delete");
+        save(&dir, &chat("old", "one")).unwrap();
+        start_new(&dir).unwrap();
+        save(&dir, &chat("keep", "two")).unwrap();
+        start_new(&dir).unwrap();
+        save(&dir, &chat("now", "three")).unwrap();
+        let l = list(&dir).unwrap();
+        let (keep_id, old_id) = (l[1].id.clone(), l[2].id.clone());
+        assert_eq!(l[2].title, "old");
+
+        delete(&dir, &old_id).unwrap();
+        let l = list(&dir).unwrap();
+        assert_eq!(l.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["now", "keep"]);
+        assert!(!archived(&dir, &old_id).exists());
+        // Gone means gone: a second delete or an open says so.
+        assert_eq!(delete(&dir, &old_id).unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(open(&dir, &old_id).unwrap_err().kind(), io::ErrorKind::NotFound);
+
+        // Bad ids never become paths: a file next to the archive survives.
+        fs::write(dir.join("secret.json"), "[]").unwrap();
+        fs::write(dir.join(STATE_DIR).join("grants.json"), "{}").unwrap();
+        for bad in ["", "..", "../thread", "../../secret", "/etc/passwd", "1/2", "12.json", "Current", "current/..", "thread"] {
+            assert_eq!(delete(&dir, bad).unwrap_err().kind(), io::ErrorKind::InvalidInput, "{bad:?}");
+        }
+        assert!(dir.join("secret.json").exists() && dir.join(STATE_DIR).join("grants.json").exists() && file(&dir).exists());
+        #[cfg(unix)]
+        {
+            // A link in the archive is not followed, and what it points at survives.
+            std::os::unix::fs::symlink(dir.join("secret.json"), archived(&dir, "1700000000000")).unwrap();
+            assert_eq!(delete(&dir, "1700000000000").unwrap_err().kind(), io::ErrorKind::NotFound);
+            assert!(dir.join("secret.json").exists());
+        }
+
+        // "current" empties the current conversation; the archive is untouched.
+        delete(&dir, CURRENT_ID).unwrap();
+        assert!(!file(&dir).exists());
+        assert!(load(&dir).unwrap().is_empty());
+        assert!(archived(&dir, &keep_id).exists());
+        // Already empty: still fine.
+        delete(&dir, CURRENT_ID).unwrap();
         fs::remove_dir_all(&dir).unwrap();
     }
 

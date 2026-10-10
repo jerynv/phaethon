@@ -178,6 +178,29 @@ pub fn find_claude() -> Option<PathBuf> {
         .find(|p| is_executable(p))
 }
 
+/// Whether Claude Code is installed, for Settings and the setup card to check
+/// before offering it. Only looks for the program: nothing about the user's
+/// login is read or reported (Anthropic's terms; see CLAUDE.md).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CliStatus {
+    pub installed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+pub fn cli_status() -> CliStatus {
+    status_of(find_claude())
+}
+
+/// A found path counts only if it is an executable file (the debug-build
+/// override may name one that isn't there).
+fn status_of(found: Option<PathBuf>) -> CliStatus {
+    match found.filter(|p| is_executable(p)) {
+        Some(p) => CliStatus { installed: true, path: Some(p.to_string_lossy().into_owned()) },
+        None => CliStatus { installed: false, path: None },
+    }
+}
+
 fn is_executable(p: &Path) -> bool {
     #[cfg(unix)]
     {
@@ -684,6 +707,31 @@ mod tests {
         let mut p = StreamParser::new(Path::new("/vault/spaces/school"));
         let evs = lines.iter().flat_map(|l| p.feed(l)).collect();
         (evs, p.finish())
+    }
+
+    #[test]
+    fn cli_status_reports_only_an_executable_and_its_path() {
+        let dir = std::env::temp_dir().join(format!("phaethon-cli-status-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("claude");
+        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Not executable yet: not installed.
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert_eq!(status_of(Some(bin.clone())), CliStatus { installed: false, path: None });
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let found = status_of(Some(bin.clone()));
+        assert_eq!(found, CliStatus { installed: true, path: Some(bin.to_string_lossy().into_owned()) });
+        assert_eq!(serde_json::to_value(&found).unwrap(), serde_json::json!({"installed": true, "path": bin.to_string_lossy()}));
+        // Missing, or a folder: not installed, and no path key at all.
+        assert_eq!(serde_json::to_value(status_of(None)).unwrap(), serde_json::json!({"installed": false}));
+        assert!(!status_of(Some(dir.join("nope"))).installed);
+        assert!(!status_of(Some(dir.clone())).installed);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

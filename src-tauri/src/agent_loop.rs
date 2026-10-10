@@ -182,7 +182,6 @@ async fn drive<P: Provider>(
     if let Err(e) = thread::save(req.space_dir, &msgs) {
         return fail(emit, ErrorCode::Storage, format!("The conversation could not be saved, so nothing was sent: {e}"));
     }
-    let system = system_prompt(req.vault_root, req.space_id);
     let tool_defs = tools::definitions();
     let mut emitted_text = false;
     let vault = Vault::at(req.vault_root);
@@ -197,6 +196,10 @@ async fn drive<P: Provider>(
     };
 
     for _ in 0..MAX_STEPS {
+        // Built for every model call, so a grant removed mid-reply is no longer
+        // listed (reads of it are refused anyway, by `ctx`). The text only
+        // changes when spaces, grants or MANUAL.md do, so the cache still holds.
+        let system = system_prompt(req.vault_root, req.space_id);
         let wire = attachments::expand(req.space_dir, &thread::for_provider(&msgs));
         // The text of this model call as it streams, one entry per text block,
         // so a stopped or failed reply keeps what the user already saw.
@@ -1135,6 +1138,31 @@ mod tests {
     }
 
     #[test]
+    fn a_grant_removed_mid_reply_leaves_the_prompt_at_the_next_model_call() {
+        let dir = setup_cross("revokemid");
+        let vault = Vault::at(&dir);
+        let g = grants::add_always(&vault, "school", "work", "calendar").unwrap();
+        let p = Scripted::new(vec![read_oct("r1"), read_oct("r2"), done()]);
+        let mut revoked = false;
+        run(&dir, &p, &Approvals::default(), "when do I work?", |e| {
+            // The user removes the grant while the reply is still running.
+            if matches!(e, AgentEvent::Tool { .. }) && !revoked {
+                assert!(grants::revoke(&Vault::at(&dir), &g.id).unwrap());
+                revoked = true;
+            }
+        });
+        let systems = p.systems.lock().unwrap().clone();
+        assert_eq!(systems.len(), 3);
+        assert!(systems[0].contains("- @work/calendar"), "{}", systems[0]);
+        for s in &systems[1..] {
+            assert!(!s.contains("@work/calendar") && s.contains("no standing access"), "{s}");
+        }
+        assert_eq!(last_result(&p, 1)["content"], "Oct 14: shift 9-5");
+        assert_eq!(last_result(&p, 2)["is_error"], true, "the read after removing is refused");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn access_denied_or_invalid_is_an_error_and_saves_nothing() {
         let dir = setup_cross("deny");
         let p = Scripted::new(vec![ask("a1"), read_oct("r1"), done()]);
@@ -1257,6 +1285,60 @@ mod tests {
             }
         });
         assert!(events.iter().any(|e| matches!(e, AgentEvent::AccessRequest { .. })));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_deny_holds_after_regenerate_and_edit() {
+        let dir = setup_cross("denyregen");
+        let space = dir.join("spaces/school");
+        // Answers any question with Once (so a wrongly asked one shows up rather than hanging).
+        let send = |script: Vec<Result<ModelTurn, ProviderError>>, prompt: &str, replace_from: Option<usize>, answer: AccessAnswer| {
+            let p = Scripted::new(script);
+            let approvals = Approvals::default();
+            let answerer = approvals.clone();
+            let mut events = vec![];
+            tauri::async_runtime::block_on(run_turn(
+                &Runs::default(),
+                &approvals,
+                &p,
+                LoopRequest { space_id: "school", space_dir: &space, vault_root: &dir, prompt, attachments: vec![], replace_from },
+                |e| {
+                    if let AgentEvent::AccessRequest { id, .. } = &e {
+                        assert!(answerer.answer_access("school", id, answer));
+                    }
+                    events.push(e)
+                },
+            ));
+            (p, events)
+        };
+        let asked = |events: &[AgentEvent]| events.iter().any(|e| matches!(e, AgentEvent::AccessRequest { .. }));
+
+        let (_, events) = send(vec![ask("a1"), done()], "plan my week", None, AccessAnswer::Deny);
+        assert!(asked(&events));
+
+        // Regenerate the reply (same message, from index 0): the model asks
+        // again, and is told it was declined without the user being asked.
+        let (p, events) = send(vec![ask("a2"), read_oct("r2"), done()], "plan my week", Some(0), AccessAnswer::Once);
+        assert!(!asked(&events), "{events:?}");
+        assert!(last_result(&p, 1)["content"].as_str().unwrap().contains("already declined"));
+        assert_eq!(last_result(&p, 2)["is_error"], true);
+        assert!(!serde_json::to_string(&p.seen.lock().unwrap()[0]).unwrap().contains("phaethon_record"));
+        // The UI shows the new version only: the old receipt is in the archived copy.
+        let ui = thread::to_ui(&thread::load(&space).unwrap());
+        assert_eq!(ui.iter().map(|m| m.role).collect::<Vec<_>>(), ["user", "assistant"]);
+        assert!(ui[1].records.is_empty(), "{:?}", ui[1].records);
+
+        // Edit the message: still declined.
+        let index = ui[0].index;
+        let (p, events) = send(vec![ask("a3"), done()], "plan my week, edited", Some(index), AccessAnswer::Once);
+        assert!(!asked(&events));
+        assert!(last_result(&p, 1)["content"].as_str().unwrap().contains("already declined"));
+
+        // A new conversation is a clean slate.
+        thread::start_new(&space).unwrap();
+        let (_, events) = send(vec![ask("a4"), read_oct("r4"), done()], "plan my week", None, AccessAnswer::Once);
+        assert!(asked(&events));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

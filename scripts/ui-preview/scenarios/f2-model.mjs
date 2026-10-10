@@ -30,11 +30,13 @@ async function choose(page, value) {
   await page.click(`[data-model-menu] [data-model-option="${value}"]`);
   await page.waitForFunction(() => !document.querySelector("[data-model-menu]"), { timeout: 3000 });
 }
-async function goTo(page, n) {
+// By the space's place in the sidebar, which is most recently used first.
+async function goTo(page, id) {
+  const n = await page.$$eval("[data-space-id]", (els, id) => els.findIndex((e) => e.dataset.spaceId === id) + 1, id);
   await page.keyboard.down("Meta");
   await page.keyboard.press(String(n));
   await page.keyboard.up("Meta");
-  await page.waitForFunction((n) => document.querySelector("[data-space-pane][data-shown]")?.dataset.spacePane === n, { timeout: 5000 }, n === 1 ? "school" : "work");
+  await page.waitForFunction((id) => document.querySelector("[data-space-pane][data-shown]")?.dataset.spacePane === id, { timeout: 5000 }, id);
   await page.waitForSelector("[data-space-pane][data-shown] [data-model-picker]", { timeout: 5000 });
 }
 async function palette(page, query) {
@@ -73,16 +75,16 @@ export default [
       check(p.text === "Sonnet 5.5" && p.label === "Model in School: Claude Sonnet 5.5", "the button now shows Sonnet, as School's own", JSON.stringify(p));
       check((await calls(page, "settings_set_model")).length === 0, "the default model is not touched");
 
-      await goTo(page, 2);
+      await goTo(page, "work");
       p = await pickerState(page);
       check(p.space === "work" && p.text === "Opus 5.5", "Work still uses the default", JSON.stringify(p));
       await openPicker(page);
       await choose(page, "claude-haiku-5-5");
       check(await shellSaid(page, "Work now uses Claude Haiku 5.5."), "Work's change is said", await shellStatus(page));
-      await goTo(page, 1);
+      await goTo(page, "school");
       p = await pickerState(page);
       check(p.text === "Sonnet 5.5", "back in School: Sonnet, its own", JSON.stringify(p));
-      await goTo(page, 2);
+      await goTo(page, "work");
       check((await pickerState(page)).text === "Haiku 5.5", "and Work: Haiku, its own");
       const saved = await page.evaluate(() => window.__MOCK__.spaceModels);
       check(saved.school === "claude-sonnet-5-5" && saved.work === "claude-haiku-5-5", "each space's choice is kept by the backend", JSON.stringify(saved));

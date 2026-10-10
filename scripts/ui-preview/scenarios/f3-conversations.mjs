@@ -173,9 +173,10 @@ export default [
       await h.waitText("Problem set 4");
       await openMenu(page);
       await askDelete(page, yesterday);
-      await h.click(`[data-clear-button="${yesterday}"]`);
-      // Out of the menu: a pointer resting on an item would take focus as the confirm changes under it.
+      // By keyboard: a pointer moving out of the menu sends focus to the menu itself (Radix).
       await park(page);
+      await page.focus(`[data-clear-button="${yesterday}"]`);
+      await page.keyboard.press("Enter");
       await page.waitForSelector("[data-clear-failed]", { timeout: 3000 });
       const alert = await page.$eval("[data-clear-failed]", (a) => a.textContent.replace(/\s+/g, " "));
       check(/nothing was cleared/.test(alert) && /internet connection/.test(alert), "it says plainly that nothing was cleared, and why", alert);

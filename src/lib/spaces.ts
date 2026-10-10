@@ -19,6 +19,12 @@ export type Space = {
    * soft and keeps its contrast.
    */
   hue: number;
+  /**
+   * When the space was last used (opened, a message sent, a reply finished),
+   * in milliseconds since 1970; null or missing when never. Kept by the core in
+   * the space's own folder, so it syncs with the vault.
+   */
+  lastUsed?: number | null;
 };
 
 /** What a new space starts with. Description and hue are optional. */
@@ -48,50 +54,76 @@ export type SpacesState = {
 // read it, and it reloads after a change here and whenever the window regains
 // focus (a folder may have been added or space.json edited by hand).
 
-let state: SpacesState = inTauri()
+// The list as the core gave it (most recently used first), and the list as
+// shown. They differ only while the order is held (see holdSpaceOrder).
+let data: SpacesState = inTauri()
   ? { status: "loading", spaces: [], error: null }
   : { status: "ready", spaces: FIXTURE, error: null };
+let state: SpacesState = data;
 const listeners = new Set<() => void>();
 let inFlight: Promise<void> | null = null;
 
 function set(next: SpacesState) {
-  state = { ...next, spaces: inKeptOrder(next.spaces) };
+  data = { ...next, spaces: byUse(next.spaces) };
+  show();
+}
+
+function show() {
+  const spaces = holds.size ? inShownOrder(data.spaces) : data.spaces;
+  state = { ...data, spaces };
   listeners.forEach((l) => l());
 }
 
 // ---- Order ----
-// The order is what Cmd+1…9 follow, so a space keeps its place: a new space
-// (made here, or a folder added by hand) goes after the ones already listed,
-// and a rename never moves one. The core lists spaces by name; that order is
-// used only for spaces seen for the first time (on first launch, all of
-// them). The order is kept on this computer only, like the sidebar's state.
+// Most recently used first: opening a space, sending a message in it or a
+// reply finishing there moves it to the top. Cmd+1…9 follow the order shown.
+// The core keeps when each space was last used and lists them in that order
+// (spaces never used after, by name); a use seen here moves the space at once,
+// without waiting for the core. So that the list never jumps under the
+// pointer or the keyboard focus, the sidebar holds the order while it is
+// pointed at, focused or showing a space's menu; the new order shows once all
+// of those end.
 
-const ORDER_KEY = "phaethon.space-order";
-
-function readOrder(): string[] {
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+// The manual order this computer once kept; no longer used.
+try {
+  localStorage.removeItem("phaethon.space-order");
+} catch {
+  // No storage: nothing to clear.
 }
 
-/** `list` with the spaces seen before in their old places, then any new ones (in the order given). Remembers the result. */
-function inKeptOrder(list: readonly Space[]): readonly Space[] {
-  const order = readOrder();
-  const at = new Map(order.map((id, i) => [id, i]));
-  const seen = list.filter((s) => at.has(s.id)).sort((a, b) => (at.get(a.id) ?? 0) - (at.get(b.id) ?? 0));
-  const fresh = list.filter((s) => !at.has(s.id));
-  if (fresh.length) {
-    // Spaces that are missing for now (a folder mid-sync) keep their place for when they come back.
-    try {
-      localStorage.setItem(ORDER_KEY, JSON.stringify([...order, ...fresh.map((s) => s.id)]));
-    } catch {
-      // No storage (a private window): the order still holds for this session's list.
-    }
-  }
-  return [...seen, ...fresh];
+/** Most recent first; spaces never used keep the order they came in (the core's: by name). */
+const byUse = (list: readonly Space[]): readonly Space[] => [...list].sort((a, b) => (b.lastUsed ?? -1) - (a.lastUsed ?? -1));
+
+const holds = new Set<string>();
+
+/** `list` in the order shown now, with spaces not shown yet after them. */
+function inShownOrder(list: readonly Space[]): readonly Space[] {
+  const at = new Map(state.spaces.map((s, i) => [s.id, i]));
+  const kept = list.filter((s) => at.has(s.id)).sort((a, b) => (at.get(a.id) ?? 0) - (at.get(b.id) ?? 0));
+  return [...kept, ...list.filter((s) => !at.has(s.id))];
+}
+
+/**
+ * Hold the order shown (`on`) for `reason` ("pointer", "focus", "menu"), or
+ * stop holding it for that reason. Names, colours and new spaces still update
+ * while it is held; the order catches up once nothing holds it.
+ */
+export function holdSpaceOrder(reason: string, on: boolean): void {
+  const had = holds.size > 0;
+  if (on) holds.add(reason);
+  else holds.delete(reason);
+  if (had && holds.size === 0) show();
+}
+
+/**
+ * Note that the space `id` was just used. `save` also tells the core (when it
+ * is opened; sending and replies the core notes itself).
+ */
+export function markSpaceUsed(id: string, save: boolean): void {
+  if (!data.spaces.some((s) => s.id === id)) return;
+  const now = Date.now();
+  set({ ...data, spaces: data.spaces.map((s) => (s.id === id ? { ...s, lastUsed: now } : s)) });
+  if (save && inTauri()) invoke("space_touch", { id }).catch((e: unknown) => console.warn("space_touch:", e));
 }
 
 /** Load the list again from the vault. A failed reload keeps the last list shown. */
@@ -101,7 +133,7 @@ export function refreshSpaces(): Promise<void> {
     .then(
       (spaces) => set({ status: "ready", spaces, error: null }),
       (e: unknown) => {
-        if (state.status !== "ready") set({ status: "error", spaces: [], error: String(e) });
+        if (data.status !== "ready") set({ status: "error", spaces: [], error: String(e) });
       },
     )
     .finally(() => {
@@ -126,9 +158,9 @@ export async function createSpace(input: NewSpace): Promise<Space> {
     if (!name) throw "A space needs a name.";
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "space";
     let id = base;
-    for (let n = 2; state.spaces.some((s) => s.id === id); n++) id = `${base}-${n}`;
+    for (let n = 2; data.spaces.some((s) => s.id === id); n++) id = `${base}-${n}`;
     made = { id, name, description: input.description?.trim() ?? "", hue: input.hue ?? 168 };
-    set({ ...state, spaces: [...state.spaces, made] });
+    set({ ...data, spaces: [...data.spaces, made] });
   }
   await refreshSpaces();
   return made;
@@ -144,7 +176,7 @@ export async function updateSpace(id: string, patch: SpacePatch): Promise<Space>
     if (!old) throw `There is no space “${id}” in this vault.`;
     if (patch.name !== undefined && !patch.name.trim()) throw "A space needs a name.";
     saved = { ...old, ...patch, name: patch.name?.trim() ?? old.name, description: patch.description?.trim() ?? old.description };
-    set({ ...state, spaces: state.spaces.map((s) => (s.id === id ? saved : s)) });
+    set({ ...data, spaces: data.spaces.map((s) => (s.id === id ? saved : s)) });
   }
   await refreshSpaces();
   return saved;
@@ -173,7 +205,7 @@ export function useSpaces(): SpacesState {
   const s = useSyncExternalStore(subscribe, snapshot);
   useEffect(() => {
     watchFocus();
-    if (state.status === "loading") void refreshSpaces();
+    if (data.status === "loading") void refreshSpaces();
   }, []);
   return s;
 }
@@ -187,10 +219,11 @@ export function useSpaces(): SpacesState {
 let activeId: string | null = null;
 const activeListeners = new Set<() => void>();
 
-/** Set by the shell whenever the shown space changes. */
+/** Set by the shell whenever the shown space changes. Showing a space counts as using it. */
 export function setActiveSpaceId(id: string | null): void {
   if (id === activeId) return;
   activeId = id;
+  if (id) markSpaceUsed(id, true);
   activeListeners.forEach((l) => l());
 }
 

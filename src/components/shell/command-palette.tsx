@@ -2,9 +2,11 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEve
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icon, type IconName } from "@/icons";
+import { findSpace, useActiveSpaceId } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
 import { shortcutGroups, type Shortcut } from "./shortcuts";
+import { exportSpace, fileManagerName, showSpaceFolder } from "./space-actions";
 import { SpaceMark } from "./space-mark";
 
 export type Command = {
@@ -101,7 +103,36 @@ export function CommandPalette({
     returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   }, [open]);
 
-  const shown = useMemo(() => commands.filter((c) => matches(c, query)), [commands, query]);
+  // The space actions (as in its menu in the sidebar), for the space on screen, at the end of
+  // Actions: the list keeps the order shown, so the first match is the one highlighted.
+  const activeSpaceId = useActiveSpaceId();
+  const all = useMemo<Command[]>(() => {
+    const space = activeSpaceId ? findSpace(activeSpaceId) : undefined;
+    if (!space) return commands;
+    const actions: Command[] = [
+      {
+        id: "space-show",
+        group: "Actions",
+        label: `Show space in ${fileManagerName()}`,
+        hint: space.name,
+        keywords: "folder files open reveal finder explorer",
+        icon: "folder",
+        run: () => void showSpaceFolder(space.id),
+      },
+      {
+        id: "space-export",
+        group: "Actions",
+        label: "Export space…",
+        hint: space.name,
+        keywords: "zip backup copy save download archive",
+        icon: "download",
+        run: () => void exportSpace(space.id),
+      },
+    ];
+    const at = commands.findIndex((c) => c.group !== "Spaces" && c.group !== "Actions");
+    return at === -1 ? [...commands, ...actions] : [...commands.slice(0, at), ...actions, ...commands.slice(at)];
+  }, [commands, activeSpaceId]);
+  const shown = useMemo(() => all.filter((c) => matches(c, query)), [all, query]);
   const groups = useMemo(() => {
     const out: { name: string; items: { c: Command; i: number }[] }[] = [];
     shown.forEach((c, i) => {

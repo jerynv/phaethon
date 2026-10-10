@@ -35,7 +35,7 @@ export function shortcutGroups(): ShortcutGroup[] {
       title: "Anywhere",
       shortcuts: [
         { id: "palette", does: "Find a space or command", keys: [m, "K"], aria: `${a}+K` },
-        { id: "spaces", does: "Go to space 1 to 9 (in the sidebar’s order)", keys: [m, "1…9"], aria: `${a}+1` },
+        { id: "spaces", does: "Go to space 1 to 9 (in the sidebar’s order: the most recently used first)", keys: [m, "1…9"], aria: `${a}+1` },
         { id: "new", does: "New conversation", keys: [m, "N"], aria: `${a}+N` },
         { id: "sidebar", does: "Show or hide the sidebar", keys: [m, "\\"], aria: `${a}+Backslash` },
         { id: "settings", does: "Settings", keys: [m, ","], aria: `${a}+Comma` },
@@ -66,6 +66,8 @@ export function shortcutGroups(): ShortcutGroup[] {
       shortcuts: [
         { id: "move", does: "Move between spaces", keys: ["↑", "↓"] },
         { id: "ends", does: "First or last space", keys: ["Home", "End"] },
+        { id: "space-menu", does: `A space’s menu (Show in ${mac() ? "Finder" : platform() === "windows" ? "File Explorer" : "Files"}, Export…)`, keys: ["Shift", "F10"], aria: "Shift+F10" },
+        { id: "space-more", does: "Go to a space’s More button, and back", keys: ["→", "←"] },
         { id: "close", does: "Close the sidebar (narrow window)", keys: ["Esc"] },
       ],
     },

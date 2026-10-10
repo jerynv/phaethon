@@ -270,10 +270,11 @@ export default [
       await h.idle();
       const f = await page.evaluate(() => document.activeElement?.closest("[data-space-pane]")?.getAttribute("data-space-pane") ?? document.activeElement?.id);
       check(f === "work", "Cmd+2 shows Work and focus moves into Work's conversation", f);
-      await chord(page, "1");
+      // Most recently used first: Work is now space 1 and School space 2.
+      await chord(page, "2");
       await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "School", { timeout: 3000 });
       const v = await page.evaluate((p) => document.querySelector(`${p} [data-composer-input]`)?.value, pane("school"));
-      check(v === "draft", "Cmd+1 goes back; the draft is still there", v);
+      check(v === "draft", "Cmd+2 again goes back to School (Work, used last, is first now); the draft is still there", v);
       await chord(page, "9");
       await h.idle();
       check((await page.$eval("#space-title", (e) => e.textContent)) === "School", "Cmd+9 with no ninth space does nothing");
@@ -324,7 +325,7 @@ export default [
       await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
       await page.keyboard.press("ArrowDown");
       const second = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute("aria-activedescendant"))?.getAttribute("data-command"));
-      check(second === "space:work", "ArrowDown moves to the second option", second);
+      check(second === "space:school", "ArrowDown moves to the second option (School: Work, used last, is listed first)", second);
       await page.keyboard.press("Escape");
       await h.idle();
       const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));

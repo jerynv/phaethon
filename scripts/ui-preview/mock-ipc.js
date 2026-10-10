@@ -8,7 +8,7 @@
       threads: {},
       // Grants by receiving space: [{ id, from, path, created, scope }]
       grants: {},
-      // The vault's spaces, as spaces_list returns them (sorted by name there).
+      // The vault's spaces; spaces_list returns them most recently used first (lastUsed), then by name.
       spaces: [
         { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240 },
         { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50 },
@@ -91,7 +91,30 @@
         case "api_key_clear": M.settings.hasAnthropicKey = false; return;
         case "appearance_set": M.settings.appearance = args.appearance; return;
         case "spaces_list":
-          return [...M.spaces].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
+          return [...M.spaces]
+            .map((s) => ({ ...s, lastUsed: s.lastUsed ?? null }))
+            .sort((a, b) => (b.lastUsed ?? -1) - (a.lastUsed ?? -1) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id));
+        // Contract (src-tauri/src/lib.rs): ids only; the core resolves the folder and refuses anything that isn't a space.
+        case "space_touch": {
+          const space = M.spaces.find((s) => s.id === args.id);
+          if (!space) throw `space "${args.id}" does not exist in this vault`;
+          space.lastUsed = Date.now();
+          return;
+        }
+        case "space_show":
+          if (!M.spaces.some((s) => s.id === args.id)) throw "That space isn’t in your Phaethon folder any more.";
+          return;
+        // { exportResult: null } is the save dialog cancelled; M.fail.space_export a failed export.
+        case "space_export": {
+          if (!M.spaces.some((s) => s.id === args.id)) throw "That space isn’t in your Phaethon folder any more.";
+          if (M.exportResult === null) return null;
+          const name = M.spaces.find((s) => s.id === args.id).name;
+          M.exported = true;
+          return M.exportResult ?? { fileName: `${name} 2026-10-10.zip`, files: 12 };
+        }
+        case "export_show":
+          if (!M.exported) throw "There’s no export to show yet.";
+          return;
         case "space_create": {
           // As src-tauri/src/spaces.rs: a slug of the name, made unique with -2, -3...
           const name = (args.name ?? "").trim();
@@ -227,6 +250,8 @@
         }
         case "agent_send": {
           M.currentSpace = args.space;
+          const usedSpace = M.spaces.find((s) => s.id === args.space);
+          if (usedSpace) usedSpace.lastUsed = Date.now();
           // Edit / regenerate: everything from that message on is replaced.
           if (args.replaceFrom != null && M.threads[args.space]) M.threads[args.space] = M.threads[args.space].slice(0, args.replaceFrom);
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);

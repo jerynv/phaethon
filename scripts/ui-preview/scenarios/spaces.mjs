@@ -100,7 +100,7 @@ export default [
       const names = await sidebarNames(page);
       const wide = !(await narrow(page));
       if (wide) {
-        check(names.join() === "school:School,work:Work,garden:Garden*", "Garden goes after the spaces already listed (their Cmd+1…9 stay) and is the current space", names.join());
+        check(names.join() === "garden:Garden*,school:School,work:Work", "Garden, just made and opened, is the most recently used space: first, and current", names.join());
         check((await focused(page)) === "button[garden]", "focus is on Garden in the sidebar", await focused(page));
       } else {
         check((await focused(page)) === "main#main", "the narrow sidebar closed and focus is on the conversation", await focused(page));
@@ -236,7 +236,7 @@ export default [
       await page.waitForSelector('#spaces-sidebar [data-space-id="art"]', { timeout: 5000 });
       await h.idle();
       const names = await sidebarNames(page);
-      check(names.join() === "school:School*,work:Work,art:Art", "the new folder goes after the spaces already listed, and the current space stays current", names.join());
+      check(names.join() === "school:School*,art:Art,work:Work", "the new folder (never used) goes after the space in use, with the other unused ones by name, and the current space stays current", names.join());
     },
   },
   {

@@ -2,6 +2,9 @@
 //   s3-conv-current    the bar names the open conversation and its date; menu titles wrap to two lines (Priya 3)
 //   s3-conv-delete     Delete in the Conversations menu: inline confirm, announced, the open one starts afresh (Sam 13)
 //   s3-conv-delete-busy  Delete while a reply runs is refused, nothing deleted
+//   s3-conv-keys       arrows skip the rows' Delete (ArrowRight reaches it); Delete/Backspace on a row asks (Dev)
+//   s3-conv-versions   Edit/Regenerate copies read "Earlier version" with their time, in the menu and the confirm (Sam)
+//   s3-conv-forced     forced colours: the confirm keeps its frame, Delete has an icon and a heavier border (Tomás)
 //   s3-conv-tip        New conversation's tooltip gives only the shortcut as its description (Maya)
 //   s3-needs-you-name  a space's name is never cut for its "Needs you" (Priya)
 //   s3-undo-stays      the popover's Undo stays while it is open; closing ends it; words say what stays (Jordan 3, Sam 12)
@@ -118,8 +121,11 @@ export default [
       await menuGone(page);
       await page.click("[data-new-conversation]");
       await h.waitText("Start a conversation in School");
-      await page.waitForFunction(() => document.querySelector("[data-conversation-current]")?.textContent === "New conversation", { timeout: 3000 });
-      check(true, "a new conversation reads \"New conversation\" in the bar");
+      // Priya: an empty conversation shows no title, so "New conversation" isn't there twice (it read as a second button).
+      await page.waitForFunction(() => !document.querySelector("[data-conversation-current]"), { timeout: 3000 }).catch(() => {});
+      const words = await page.$eval("[data-conversations-bar]", (b) => b.innerText.match(/New conversation/g)?.length ?? 0);
+      check(!(await page.$("[data-conversation-current]")) && words === 1, "an empty conversation shows no title; \"New conversation\" is only the button", `${words}`);
+      await h.shot("empty");
       await park(page);
     },
   },
@@ -139,6 +145,15 @@ export default [
       check(await waitActive(page, `cancel:${yesterday}`), "focus is on Cancel (the safe choice)", await active(page));
       const named = await page.$eval(`[data-delete-confirm="${yesterday}"]`, (g) => ({ role: g.getAttribute("role"), label: document.getElementById(g.getAttribute("aria-labelledby"))?.textContent }));
       check(named.role === "group" && named.label === confirmText, "the confirm is a group named by its question", JSON.stringify(named));
+      // Sam: it says which one (when, how long) and what stays behind, and is described by both.
+      const more = await page.$eval(`[data-delete-confirm="${yesterday}"]`, (g) => ({
+        stamp: g.querySelector("[data-delete-stamp]")?.textContent,
+        stays: g.querySelector("[data-delete-stays]")?.textContent.replace(/\s+/g, " "),
+        described: (g.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" | "),
+      }));
+      check(/^Yesterday at .+ · 2 messages$/.test(more.stamp ?? ""), "the confirm says when it was last used", JSON.stringify(more));
+      check(more.stays === "Files you attached to it stay in School’s attachments folder, and what was already sent to Anthropic isn’t affected.", "the confirm says attachments stay and what was sent to Anthropic isn't affected", JSON.stringify(more));
+      check(more.described.includes("Yesterday at") && more.described.includes("attachments folder"), "the group is described by both lines", more.described);
       check((await calls(page, "thread_delete")).length === 0, "nothing is deleted before confirming");
       await h.idle(); // past the menu's open animation
       const apart = await page.evaluate((id) => {
@@ -204,6 +219,121 @@ export default [
       check((await calls(page, "thread_delete")).length === 0, "nothing is deleted while a reply runs");
       await menuGone(page);
       check(await page.evaluate(() => document.activeElement?.matches("[data-conversations-trigger]")), "focus goes back to Conversations, next to the alert");
+    },
+  },
+  {
+    // Dev: arrows go conversation to conversation (Delete is beside each, on ArrowRight), and the
+    // Delete or Backspace key on a conversation asks to delete it.
+    name: "s3-conv-keys",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: conversations(),
+    async run(page, h) {
+      await h.waitText("Problem set 4");
+      await h.focusVia("[data-conversations-trigger]");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector('[data-conversations-menu] [role="menuitemradio"]', { timeout: 5000 });
+      check(await waitActive(page, "current"), "the menu opens on the open conversation", await active(page));
+      const [yesterday, older] = [String(now - DAY), String(now - 2 * DAY)];
+      await page.keyboard.press("ArrowDown");
+      check(await waitActive(page, yesterday), "ArrowDown goes to the next conversation, not to a Delete", await active(page));
+      const keys = await page.$eval(`[data-thread-id="${yesterday}"]`, (r) => r.getAttribute("aria-keyshortcuts"));
+      check(keys === "Delete", "each conversation tells assistive tech its Delete key", keys);
+      await page.keyboard.press("ArrowRight");
+      check(await waitActive(page, `delete:${yesterday}`), "ArrowRight goes to its Delete", await active(page));
+      await page.keyboard.press("ArrowLeft");
+      check(await waitActive(page, yesterday), "ArrowLeft comes back", await active(page));
+      // Delete key: the same inline confirm, focus on Cancel; Cancel goes back to the conversation.
+      await page.keyboard.press("Delete");
+      check(await waitActive(page, `cancel:${yesterday}`), "the Delete key opens the confirm, on Cancel", await active(page));
+      check((await calls(page, "thread_delete")).length === 0, "nothing is deleted yet");
+      await page.keyboard.press("Enter");
+      check(await waitActive(page, yesterday), "Cancel goes back to the conversation the key was pressed on", await active(page));
+      // Backspace too, then confirm.
+      await page.keyboard.press("Backspace");
+      check(await waitActive(page, `cancel:${yesterday}`), "Backspace opens the confirm too", await active(page));
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction((id) => document.activeElement?.getAttribute("data-delete-confirm-button") === id, { timeout: 3000 }, yesterday);
+      await page.keyboard.press("Enter");
+      await page.waitForFunction((id) => !document.querySelector(`[data-thread-id="${id}"]`), { timeout: 3000 }, yesterday);
+      const del = await calls(page, "thread_delete");
+      check(JSON.stringify(del) === JSON.stringify([{ space: "school", id: yesterday }]), "Backspace, then Delete, deletes that one", JSON.stringify(del));
+      check(await waitActive(page, older), "focus moves to the conversation that took its place", await active(page));
+      // ArrowUp skips Delete items too.
+      await page.keyboard.press("ArrowUp");
+      check(await waitActive(page, "current"), "ArrowUp goes to the conversation above, not its Delete", await active(page));
+      await h.shot("after");
+      await page.keyboard.press("Escape");
+      await menuGone(page);
+    },
+  },
+  {
+    // Sam: versions kept by Edit or Regenerate (same title) are told apart: time of day and "Earlier version".
+    name: "s3-conv-versions",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: conversations({
+      threadArchive: {
+        school: [
+          { id: String(now - 3 * DAY - 3600000), updated: now - 3 * DAY - 3600000, messages: structuredClone(current).slice(0, 2) },
+          { id: String(now - 3 * DAY), updated: now - 3 * DAY, messages: structuredClone(current) },
+          ...archive(),
+        ],
+      },
+    }),
+    async run(page, h) {
+      await h.waitText("Problem set 4");
+      await openMenu(page);
+      await h.idle();
+      const stamps = await page.$$eval('[data-conversations-menu] [role="menuitemradio"]', (rows) =>
+        Object.fromEntries(rows.map((r) => [r.dataset.threadId, r.querySelector("[data-thread-stamp]")?.textContent])),
+      );
+      const [v1, v2] = [String(now - 3 * DAY - 3600000), String(now - 3 * DAY)];
+      check(/^Earlier version · \S+ at .+ · 2 messages$/.test(stamps[v1] ?? "") && /^Earlier version · \S+ at /.test(stamps[v2] ?? ""), "older copies of the open conversation read \"Earlier version\" with their time", JSON.stringify(stamps));
+      check(stamps[v1] !== stamps[v2], "two versions from the same day can be told apart", JSON.stringify(stamps));
+      check(stamps.current === "Current · 2 messages", "the open one is still Current", stamps.current);
+      check(/^Yesterday at .+ · 2 messages$/.test(stamps[String(now - DAY)] ?? "") && !/Earlier/.test(stamps[String(now - DAY)]), "a conversation with its own title is unchanged", JSON.stringify(stamps));
+      await h.shot("menu");
+      await page.click(`[data-delete-thread="${v1}"]`);
+      await page.waitForSelector(`[data-delete-confirm="${v1}"]`, { timeout: 3000 });
+      const s = await page.$eval(`[data-delete-confirm="${v1}"] [data-delete-stamp]`, (p) => p.textContent);
+      check(s === stamps[v1], "the confirm shows which version it is about", s);
+      await h.shot("confirm");
+    },
+  },
+  {
+    // Tomás: in forced colours the delete confirm keeps its frame, and Delete is told from Cancel by more than colour.
+    name: "s3-conv-forced",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: conversations(),
+    async run(page, h) {
+      // Puppeteer refuses forced-colors, so through CDP (as shoot.mjs --forced-colors does).
+      const cdp = await page.createCDPSession();
+      await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }, { name: "forced-colors", value: "active" }] });
+      await h.waitText("Problem set 4");
+      await openMenu(page);
+      const id = String(now - DAY);
+      await page.click(`[data-delete-thread="${id}"]`);
+      await page.waitForSelector(`[data-delete-confirm="${id}"]`, { timeout: 3000 });
+      await h.idle();
+      const r = await page.evaluate((id) => {
+        const g = getComputedStyle(document.querySelector(`[data-delete-confirm="${id}"]`));
+        const cancel = document.querySelector(`[data-delete-cancel="${id}"]`);
+        const del = document.querySelector(`[data-delete-confirm-button="${id}"]`);
+        return {
+          frame: g.borderTopStyle !== "none" && parseFloat(g.borderTopWidth) > 0,
+          delIcon: !!del.querySelector("svg"),
+          cancelIcon: !!cancel.querySelector("svg"),
+          delBorder: parseFloat(getComputedStyle(del).borderTopWidth),
+          cancelBorder: parseFloat(getComputedStyle(cancel).borderTopWidth),
+        };
+      }, id);
+      check(r.frame, "the confirm keeps a frame in forced colours", JSON.stringify(r));
+      check(r.delIcon && !r.cancelIcon && r.delBorder > r.cancelBorder, "Delete has an icon and a heavier border; Cancel has neither", JSON.stringify(r));
+      // No mid-run shot here: --axe would read the author colours under forced colours and
+      // report contrast that isn't shown (shoot.mjs turns that rule off only for --forced-colors).
+      await cdp.send("Emulation.setEmulatedMedia", { features: [] });
     },
   },
   {

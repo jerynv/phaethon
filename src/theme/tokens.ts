@@ -290,8 +290,9 @@ export const TOKENS: readonly TokenSpec[] = [
     group: "Accessibility",
     kind: "length",
     unit: "em",
-    // Below zero closes up wide faces; 0.16em is the WCAG 1.4.12 test value, and there is room past it.
-    min: -0.1,
+    // Below zero closes up wide faces (OpenDyslexic's own space is wide, so down to −0.2em);
+    // 0.16em is the WCAG 1.4.12 test value, and there is room past it.
+    min: -0.2,
     max: 0.32,
     step: 0.02,
     default: 0,

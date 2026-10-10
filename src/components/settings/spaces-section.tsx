@@ -361,9 +361,9 @@ function SpaceEditor({ space }: { space: Space }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <SpaceMark hue={space.hue} />
         <h5 className="min-w-0 flex-1 truncate text-base font-medium text-ink">{space.name}</h5>
-        <span className="text-xs text-ink-secondary">
-          {"Folder: "}
-          <span className="font-mono">spaces/{space.id}</span>
+        {/* Where its files are, in words rather than a path. */}
+        <span className="text-xs text-ink-secondary" data-space-folder="">
+          Kept in the folder named “{space.id}”, inside the spaces folder of your Phaethon folder.
         </span>
       </div>
       <div className="ms-(--ph-space-mark-size) flex flex-wrap gap-x-4 gap-y-3 ps-3">

@@ -494,9 +494,15 @@ function SentDisclosure({ backend }: { backend: Backend }) {
             </p>
           </>
         ) : (
-          <p className="text-base text-ink">
-            Claude Code sends your messages, and the files it reads to answer, to Anthropic under your own Claude account, with every message.
-          </p>
+          <>
+            <p className="text-base text-ink">
+              Claude Code sends your messages, and the files it reads to answer, to Anthropic under your own Claude account, with every message.
+            </p>
+            <p data-cli-history="">
+              Claude Code also keeps its own copy of each conversation, usually in the hidden .claude folder in your home folder. Deleting a
+              conversation in Phaethon doesn’t delete that copy.
+            </p>
+          </>
         )}
         <p>
           How long Anthropic keeps it and what they may use it for is in{" "}

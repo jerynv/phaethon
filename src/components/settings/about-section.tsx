@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import type { Settings } from "@/lib/backend";
 
@@ -111,27 +112,38 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
               conversation to remove it.
             </p>
           </div>
-          <div className="flex flex-col gap-1.5 px-4 py-3.5">
+          <div className="flex flex-col gap-1.5 px-4 py-3.5" data-about-delete="">
             <p className="text-base font-medium text-ink">Deleting a conversation</p>
+            {/* The menu first; the files only as a fallback, folded away. */}
             <p className="max-w-(--ph-measure)">
-              Each space keeps its conversations as files inside its own folder, in a hidden folder named .phaethon:
-            </p>
-            <ul className="flex list-disc flex-col gap-1 ps-5">
-              <li>
-                the current one in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/thread.json</span>
-              </li>
-              <li>
-                earlier ones in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/threads/</span>
-              </li>
-              <li>
-                files you attached in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/attachments/</span>
-              </li>
-            </ul>
-            <p className="max-w-(--ph-measure)">
-              Delete a file to delete that conversation for good. Folders whose names start with a dot are hidden in Finder: press
-              Command-Shift-full stop to show them. Copies already sent to Anthropic are covered by{" "}
+              To delete a conversation, open Conversations at the top of the space and choose Delete beside it. It’s deleted for good.
+              Files you attached to it stay in the space’s attachments folder. Copies already sent to Anthropic are covered by{" "}
               <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
             </p>
+            <p className="max-w-(--ph-measure)" data-about-cli-history="">
+              {settings?.backend === "claude-cli" ? "You use Claude Code, which" : "If you use Claude Code, it"} also keeps its own copy of
+              each conversation, usually in the hidden .claude folder in your home folder. Phaethon doesn’t delete that copy.
+            </p>
+            <Details summary="Where the files are" className="max-w-(--ph-measure)">
+              <div data-about-files="" className="flex flex-col gap-1.5">
+                <p>Each space keeps its conversations as files inside its own folder, in a hidden folder named .phaethon:</p>
+                <ul className="flex list-disc flex-col gap-1 ps-5">
+                  <li>
+                    the current one in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/thread.json</span>
+                  </li>
+                  <li>
+                    earlier ones in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/.phaethon/threads/</span>
+                  </li>
+                  <li>
+                    files you attached in <span className="font-mono wrap-anywhere text-ink">spaces/<i>space</i>/attachments/</span>
+                  </li>
+                </ul>
+                <p>
+                  Deleting one of these files deletes that conversation too. Folders whose names start with a dot are hidden in Finder:
+                  press Command-Shift-full stop to show them.
+                </p>
+              </div>
+            </Details>
           </div>
         </div>
       </div>

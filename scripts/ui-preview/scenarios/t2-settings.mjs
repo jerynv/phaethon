@@ -157,6 +157,8 @@ export default [
       await page.waitForFunction(() => document.activeElement?.hasAttribute("data-files-heading"), { timeout: 3000 });
       const tab = await page.evaluate(() => document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent);
       check(tab === "About", "Where they are goes to About, focused on Your files and privacy", tab);
+      // The file paths are folded under "Where the files are" (the Conversations menu's Delete comes first).
+      await page.$eval("[data-about-delete] summary", (s) => s.click());
       const about = await panelText(page);
       for (const want of ["not encrypted", "sync too", "read in every space", ".phaethon/thread.json", ".phaethon/threads/", "Command-Shift-full stop"]) {
         check(about.includes(want), `About says: ${want}`);
@@ -175,7 +177,15 @@ export default [
       check(text.includes("Claude Code sends your messages") && !text.includes("MANUAL.md"), "with Claude Code it says what Claude Code sends", text.slice(0, 160));
       const model = await panelText(page);
       check(model.includes("Claude Code chooses its own model"), "the model row says Claude Code chooses");
+      // Sam: Claude Code's own history isn't deleted by Phaethon, and Assistant and About both say so.
+      check(/keeps its own copy of each conversation.*doesn’t delete that copy/s.test(text), "with Claude Code it says Claude Code keeps its own copy, which Phaethon doesn't delete", text);
       await page.$eval("[data-disclosure]", (el) => el.scrollIntoView({ block: "center" }));
+      await park(page);
+      await h.shot("agent");
+      await page.$$eval("[data-disclosure] button", (bs) => bs[0].click());
+      await page.waitForFunction(() => document.activeElement?.hasAttribute("data-files-heading"), { timeout: 3000 });
+      const cli = await page.$eval("[data-about-cli-history]", (p) => p.textContent.replace(/\s+/g, " "));
+      check(cli.startsWith("You use Claude Code, which also keeps its own copy") && cli.includes("Phaethon doesn’t delete that copy"), "About says the same, for someone using Claude Code", cli);
     },
   },
   {

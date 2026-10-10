@@ -49,7 +49,16 @@ export function shortcutGroups(): ShortcutGroup[] {
         { id: "newline", does: "New line", keys: ["Shift", "Enter"] },
         { id: "stop", does: "Stop the reply", keys: ["Esc"] },
         { id: "card", does: "Go to the question waiting for your answer (Allow, or access to another space)", keys: [mac() ? "⌥" : "Alt", "Enter"] },
-        { id: "card-allow", does: "On that question: allow", keys: [m, "Enter"], aria: `${a}+Enter` }, { id: "card-refuse", does: "On that question: don’t allow", keys: [m, mac() ? "⌫" : "Backspace"], aria: `${a}+Backspace` }, { id: "edit-last", does: "Edit your last message (in an empty message box)", keys: ["↑"] },
+        { id: "card-allow", does: "On that question: allow", keys: [m, "Enter"], aria: `${a}+Enter` },
+        { id: "card-refuse", does: "On that question: don’t allow", keys: [m, mac() ? "⌫" : "Backspace"], aria: `${a}+Backspace` },
+        { id: "edit-last", does: "Edit your last message (in an empty message box)", keys: ["↑"] },
+      ],
+    },
+    {
+      title: "Conversations menu",
+      shortcuts: [
+        { id: "conv-delete", does: "Delete the conversation you’re on (asks first)", keys: [mac() ? "⌫" : "Delete"], aria: mac() ? "Backspace" : "Delete" },
+        { id: "conv-delete-button", does: "Go to a conversation’s Delete button, and back", keys: ["→", "←"] },
       ],
     },
     {

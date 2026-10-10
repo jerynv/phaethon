@@ -367,6 +367,7 @@ export default [
       await page.waitForSelector("[data-shortcuts-sheet]", { timeout: 3000 });
       check(true, "the palette opens it too");
       check(t.text.includes("Go to the question waiting for your answer"), "Option+Return (go to the waiting card) is listed");
+      check(t.text.includes("Conversations menu") && t.text.includes("Delete the conversation you’re on (asks first)"), "the Conversations menu's Delete key is listed (Dev)");
       // Closing returns focus where it was (it was opened by a shortcut, so there is no button to go back to).
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("[data-shortcuts-sheet]"), { timeout: 3000 });

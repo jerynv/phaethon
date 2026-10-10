@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { DropdownMenu } from "radix-ui";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { announce } from "@/components/shell/announcer";
 import { Keys, spokenKeys } from "@/components/shell/command-palette";
@@ -17,8 +17,12 @@ import { cn } from "@/lib/utils";
 /** Said when a switch is asked for while a reply runs (the Rust core refuses it too). */
 const BUSY = "Phaethon is still replying. Stop the reply or wait for it to finish, then try again.";
 
-/** "Just now", "12 minutes ago", "Today at 3:12 PM", "Yesterday at 9:05 AM", "Monday", "Oct 3", "Oct 3, 2025". */
-export function relativeDate(ms: number, now = Date.now()): string {
+/**
+ * "Just now", "12 minutes ago", "Today at 3:12 PM", "Yesterday at 9:05 AM", "Monday", "Oct 3", "Oct 3, 2025".
+ * With `withTime`, older days keep their time too ("Monday at 3:12 PM", "Oct 3 at 9:05 AM"), so two
+ * versions of one conversation from the same day can be told apart.
+ */
+export function relativeDate(ms: number, now = Date.now(), withTime = false): string {
   const d = new Date(ms);
   const mins = Math.round((now - ms) / 60000);
   if (mins < 1) return "Just now";
@@ -28,9 +32,10 @@ export function relativeDate(ms: number, now = Date.now()): string {
   const days = Math.round((startOf(now) - startOf(ms)) / 86400000);
   if (days <= 0) return `Today at ${time}`;
   if (days === 1) return `Yesterday at ${time}`;
-  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  const at = withTime ? ` at ${time}` : "";
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" }) + at;
   const sameYear = d.getFullYear() === new Date(now).getFullYear();
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: sameYear ? undefined : "numeric" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: sameYear ? undefined : "numeric" }) + at;
 }
 
 /**
@@ -43,6 +48,21 @@ const deleteThread = (space: string, id: string) => invoke<void>("thread_delete"
 function countText(n: number) {
   return n === 0 ? "No messages yet" : `${n} message${n === 1 ? "" : "s"}`;
 }
+
+/**
+ * A conversation's line under its title: "Current" or when, and how long. Edit and Regenerate
+ * keep the version they replace as a saved conversation with the same title, so where titles
+ * repeat each one gets its time of day, and all but the newest read "Earlier version".
+ */
+function stampOf(t: ThreadSummary, threads: ThreadSummary[]): string {
+  const twins = threads.filter((o) => o.id !== t.id && o.title === t.title);
+  const earlier = !t.current && twins.some((o) => o.updated > t.updated);
+  const when = t.current ? "Current" : relativeDate(t.updated, undefined, twins.length > 0);
+  return [earlier && "Earlier version", when, countText(t.messages)].filter(Boolean).join(" · ");
+}
+
+/** Stops for ArrowUp and ArrowDown: every item but the rows' own Delete (reached with ArrowRight). */
+const STOPS = '[role^="menuitem"]:not([data-delete-thread]):not([data-disabled])';
 
 type ListState =
   | { status: "loading" }
@@ -57,9 +77,12 @@ type ListState =
  *
  * Keyboard: the menu is a Radix dropdown (Enter, Space or ArrowDown opens it;
  * arrows move, typing jumps by title, Enter opens one, Escape closes and
- * returns focus to the button). Each conversation is followed by its own
- * "Delete" item; choosing it swaps the row for an inline confirm that names
- * the conversation, with focus on Cancel (the safe choice). Deleting a saved
+ * returns focus to the button). ArrowUp and ArrowDown move by conversation;
+ * each one's "Delete" sits beside it, reached with ArrowRight (ArrowLeft goes
+ * back), and the Delete or Backspace key on a conversation does the same.
+ * Delete swaps the row for an inline confirm that names the conversation,
+ * says when it was last used and what stays, with focus on Cancel (the safe
+ * choice); Cancel goes back to where Delete was asked from. Deleting a saved
  * conversation keeps the menu open, focus moving to the row that took its
  * place, and is announced; deleting the open one starts a new conversation.
  * Switching remounts the conversation and puts focus in the composer (see
@@ -94,11 +117,13 @@ export function ConversationsBar({
   const [changes, setChanges] = useState(0);
   // The conversation whose Delete is waiting for a confirm.
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Where Cancel puts focus back: the row (Delete key) or its Delete item.
+  const confirmFrom = useRef<"row" | "del">("del");
   const contentRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const switching = useRef(false);
   // Where focus goes in the menu after the next render.
-  const focusNext = useRef<{ cancel: string } | { del: string } | { index: number } | null>(null);
+  const focusNext = useRef<{ cancel: string } | { del: string } | { row: string } | { index: number } | null>(null);
   const mac = platform() === "mac";
 
   const switched = useCallback(
@@ -265,11 +290,52 @@ export function ConversationsBar({
     const q = (sel: string) => root.querySelector<HTMLElement>(sel);
     if ("cancel" in want) return void q(`[data-delete-cancel="${want.cancel}"]`)?.focus();
     if ("del" in want) return void q(`[data-delete-thread="${want.del}"]`)?.focus();
+    if ("row" in want) return void q(`[data-thread-id="${want.row}"]`)?.focus();
     const rows = root.querySelectorAll<HTMLElement>('[role="menuitemradio"]');
     (rows[Math.min(want.index, rows.length - 1)] ?? q("[data-menu-new-conversation]"))?.focus();
   });
 
   const threads = list.status === "ready" ? list.threads : [];
+
+  function askDelete(id: string, from: "row" | "del") {
+    confirmFrom.current = from;
+    focusNext.current = { cancel: id };
+    setConfirming(id);
+  }
+
+  // ArrowUp and ArrowDown skip the rows' Delete items; ArrowRight and ArrowLeft go between a row
+  // and its Delete; Delete or Backspace on a row asks to delete it. Every other key is Radix's.
+  // Run while capturing, and stopped there: Radix's items move focus on these keys themselves.
+  function onMenuKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const root = contentRef.current;
+    const el = document.activeElement;
+    if (!root || !(el instanceof HTMLElement) || !root.contains(el) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const handled = () => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const id = el.getAttribute("data-thread-id") ?? el.getAttribute("data-delete-thread");
+    const onRow = el.hasAttribute("data-thread-id");
+    const row = id == null ? null : root.querySelector<HTMLElement>(`[data-thread-id="${id}"]`);
+    const del = id == null ? null : root.querySelector<HTMLElement>(`[data-delete-thread="${id}"]`);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      // From a Delete, move as from its row.
+      const stops = [...root.querySelectorAll<HTMLElement>(STOPS)];
+      const at = stops.indexOf(row ?? el);
+      if (at < 0) return;
+      handled();
+      stops[at + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
+    } else if (e.key === "ArrowRight" && onRow && del) {
+      handled();
+      del.focus();
+    } else if (e.key === "ArrowLeft" && !onRow && row) {
+      handled();
+      row.focus();
+    } else if ((e.key === "Delete" || e.key === "Backspace") && onRow && del && !working && id != null) {
+      handled();
+      askDelete(id, "row");
+    }
+  }
   const itemClass = "cursor-default rounded-md outline-none select-none data-highlighted:bg-hover data-disabled:opacity-45";
 
   return (
@@ -285,20 +351,19 @@ export function ConversationsBar({
     >
       {/* Padded below too, so a focused button's ring is never under the fade. */}
       <div className="flex items-center justify-end gap-1 px-2 py-1.5">
-        {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used. */}
-        {current && (
+        {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used.
+            Nothing while it is empty: "New conversation" here read as a second button beside the real one. */}
+        {current && current.messages > 0 && (
           // Title over date, each cut to fit on its own line: a long date (large text, a wide reading font)
           // can never run into the Conversations button.
           <p data-conversation-current="" className="flex min-w-0 flex-1 flex-col ps-2 text-sm leading-snug text-ink-secondary">
             <span className="min-w-0 truncate font-medium text-ink" title={current.title}>
-              {current.messages === 0 ? "New conversation" : current.title}
+              {current.title}
             </span>
-            {current.messages > 0 && (
-              <span className="min-w-0 truncate text-xs">
-                <span className="sr-only">, </span>
-                {relativeDate(current.updated)}
-              </span>
-            )}
+            <span className="min-w-0 truncate text-xs">
+              <span className="sr-only">, </span>
+              {relativeDate(current.updated)}
+            </span>
           </p>
         )}
         <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
@@ -321,6 +386,7 @@ export function ConversationsBar({
               collisionPadding={8}
               aria-label={`Conversations in ${space.name}`}
               data-conversations-menu=""
+              onKeyDownCapture={onMenuKeyDown}
               className={cn(
                 // 22rem at the default text size, growing with it; never wider or taller than the room.
                 "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none",
@@ -350,7 +416,8 @@ export function ConversationsBar({
                   <Icon name="info" className="mt-0.5 shrink-0" />
                   <span className="min-w-0">
                     Claude Code keeps its own history, so past conversations can’t be reopened here. Only
-                    Phaethon’s own agent keeps them. A new conversation starts Claude Code afresh.
+                    Phaethon’s own agent keeps them. A new conversation starts Claude Code afresh. Phaethon doesn’t
+                    delete Claude Code’s history; that stays in Claude Code’s own folder.
                   </span>
                 </p>
               )}
@@ -358,19 +425,30 @@ export function ConversationsBar({
                 <DropdownMenu.RadioGroup value="current" className="flex flex-col">
                   {threads.map((t, i) => {
                     const empty = t.current && t.messages === 0;
+                    const stamp = stampOf(t, threads);
                     if (confirming === t.id) {
-                      // Inline confirm in place of the row: says what goes, the safe choice first and focused.
+                      // Inline confirm in place of the row: says which one (its stamp, so one of several
+                      // versions can be told apart), what goes and what stays, the safe choice first and focused.
                       const labelId = `delete-${space.id}-${t.id}`;
                       return (
                         <DropdownMenu.Group
                           key={t.id}
                           aria-labelledby={labelId}
+                          aria-describedby={`${labelId}-stamp ${labelId}-stays`}
                           data-delete-confirm={t.id}
-                          className="my-0.5 flex flex-col gap-2 rounded-md bg-danger-soft px-2.5 py-2"
+                          // Its frame stays in forced colours, where the tint is dropped.
+                          className="my-0.5 flex flex-col gap-2 rounded-md bg-danger-soft px-2.5 py-2 forced-colors:border forced-colors:border-[CanvasText]"
                         >
                           <p id={labelId} className="text-base text-ink">
                             Delete “<span className="font-medium wrap-break-word">{t.title}</span>” for good?
                             {t.current ? " A new conversation starts in its place." : " It can’t be opened again."}
+                          </p>
+                          <p id={`${labelId}-stamp`} data-delete-stamp="" className="text-sm text-ink-secondary">
+                            {stamp}
+                          </p>
+                          <p id={`${labelId}-stays`} data-delete-stays="" className="text-sm text-ink-secondary">
+                            Files you attached to it stay in {space.name}’s attachments folder, and what was already sent to Anthropic
+                            isn’t affected.
                           </p>
                           {/* As far apart as Regenerate's question: a slip off Cancel must not delete for good. */}
                           <div className="flex flex-wrap justify-end gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2">
@@ -379,7 +457,7 @@ export function ConversationsBar({
                               disabled={working}
                               onSelect={(e) => {
                                 e.preventDefault();
-                                focusNext.current = { del: t.id };
+                                focusNext.current = confirmFrom.current === "row" ? { row: t.id } : { del: t.id };
                                 setConfirming(null);
                               }}
                               className={cn(
@@ -396,11 +474,13 @@ export function ConversationsBar({
                                 e.preventDefault();
                                 void remove(t, i);
                               }}
+                              // An icon and a heavier border tell it from Cancel where colours are forced.
                               className={cn(
-                                "flex min-h-(--ph-control-height) cursor-default items-center rounded-md bg-danger px-3 text-base font-medium text-ink-inverse outline-none select-none data-disabled:opacity-45",
-                                "data-highlighted:bg-danger/90 forced-colors:border forced-colors:border-[ButtonText]",
+                                "flex min-h-(--ph-control-height) cursor-default items-center gap-1.5 rounded-md bg-danger px-3 text-base font-medium text-ink-inverse outline-none select-none data-disabled:opacity-45",
+                                "data-highlighted:bg-danger/90 forced-colors:border-2 forced-colors:border-[ButtonText]",
                               )}
                             >
+                              <Icon name="remove" className="shrink-0" />
                               {working ? "Deleting…" : "Delete"}
                             </DropdownMenu.Item>
                           </div>
@@ -414,6 +494,7 @@ export function ConversationsBar({
                           textValue={t.title}
                           disabled={working}
                           data-thread-id={t.id}
+                          aria-keyshortcuts={empty ? undefined : "Delete"}
                           onSelect={() => void choose(t)}
                           className={cn(
                             itemClass,
@@ -431,8 +512,8 @@ export function ConversationsBar({
                             <span className="line-clamp-2 text-base font-medium wrap-break-word" title={t.title}>
                               {t.title}
                             </span>
-                            <span className="text-sm text-ink-secondary">
-                              {t.current ? "Current" : relativeDate(t.updated)} · {countText(t.messages)}
+                            <span className="text-sm text-ink-secondary" data-thread-stamp="">
+                              {stamp}
                             </span>
                           </span>
                         </DropdownMenu.RadioItem>
@@ -444,8 +525,7 @@ export function ConversationsBar({
                             aria-label={`Delete “${t.title}”`}
                             onSelect={(e) => {
                               e.preventDefault();
-                              focusNext.current = { cancel: t.id };
-                              setConfirming(t.id);
+                              askDelete(t.id, "del");
                             }}
                             className={cn(
                               itemClass,

@@ -10,6 +10,8 @@
 //   t3-slider-click   a click on a track steps toward it, never jumps (jordan5); Close has a tooltip
 //   t3-compact        at 760x560 and 200% the header and tabs take at most a quarter of the height (tomas6)
 //   t3-disclosure     space names, granted folders, and what is saved where (sam14)
+//   t3-about-delete   About leads with the menu's Delete; the hidden files are folded (linda r3)
+//   t3-space-folder   a space's folder in plain words, not "Folder: spaces/school" (linda r3)
 import { SETTINGS, check, openSettings, park, PANEL } from "../audit-fixtures.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
@@ -209,6 +211,8 @@ export default [
       await h.idle();
       const low = { vt: await ws.evaluate((t) => t.getAttribute("aria-valuetext")), token: await css(page, "--ph-word-spacing") };
       check(low.token.startsWith("-") && /Tighter/.test(low.vt), "word spacing goes below zero for wide fonts", JSON.stringify(low));
+      // Priya: OpenDyslexic's own space is wide, so the floor is about −0.2em, not −0.1em.
+      check(parseFloat(low.token) <= -0.2 && low.token.endsWith("em"), "word spacing goes down to −0.2em", JSON.stringify(low));
       await page.keyboard.press("End");
       await h.idle();
       const high = await page.evaluate(() => ({
@@ -306,6 +310,45 @@ export default [
       await h.idle();
       const about = await panelText(page);
       check(/read from another space/.test(about) && /conversation/.test(about), "About's privacy notes say it too", about.slice(0, 400));
+    },
+  },
+  {
+    // Linda: About leads with the Conversations menu's Delete; the hidden-folder steps are a folded fallback.
+    name: "t3-about-delete",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: { settings: SETTINGS, threads: {} },
+    async run(page, h) {
+      await openSettings(page, h, "about");
+      const shown = await page.$eval("[data-about-delete]", (el) => el.innerText);
+      check(/^Deleting a conversation\s+To delete a conversation, open Conversations at the top of the space and choose Delete/.test(shown), "it starts with the Conversations menu's Delete", shown.slice(0, 200));
+      check(!/Command-Shift|thread\.json/.test(shown), "the hidden files and Finder keys are not on show", shown);
+      check(/attachments folder/.test(shown) && /Anthropic/.test(shown), "it says attachments stay and what was sent to Anthropic", shown);
+      check(/If you use Claude Code, it also keeps its own copy/.test(shown), "it says Claude Code keeps its own copy", shown);
+      await page.$eval("[data-about-delete]", (el) => el.scrollIntoView({ block: "center" }));
+      await park(page);
+      await h.shot("folded");
+      await page.focus("[data-about-delete] summary");
+      await page.keyboard.press("Enter");
+      await h.idle();
+      const open = await page.$eval("[data-about-delete]", (el) => el.innerText);
+      check(/Where the files are/.test(open) && /\.phaethon\/thread\.json/.test(open) && /Command-Shift-full stop/.test(open), "Where the files are opens from the keyboard and lists them", open);
+      await park(page);
+    },
+  },
+  {
+    // Linda: a space's folder is said in words, not as the path "spaces/school".
+    name: "t3-space-folder",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: { settings: SETTINGS, threads: {} },
+    async run(page, h) {
+      await openSettings(page, h, "spaces");
+      const text = await panelText(page);
+      check(!/Folder: |spaces\/school/.test(text), "no \"Folder: spaces/school\" path", text.slice(0, 400));
+      const f = await page.$$eval("[data-space-folder]", (els) => els.map((e) => ({ text: e.textContent, mono: getComputedStyle(e).fontFamily.includes("Mono") })));
+      check(f[0]?.text === "Kept in the folder named “school”, inside the spaces folder of your Phaethon folder." && !f[0].mono, "it says where in plain words", JSON.stringify(f));
+      await park(page);
     },
   },
 ];

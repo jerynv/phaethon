@@ -41,6 +41,17 @@ lopdf = { version = "0.45", default-features = false }
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Text recognition for handwritten and scanned pages (lms/ocr.rs): Apple's own
+# Vision, PDF rendering and image reading, on the device. The objc2 crates are
+# Zlib OR Apache-2.0 OR MIT and already in the tree through Tauri.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSObject", "NSString"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFData", "CFDictionary", "CFNumber", "CFString", "CFURL"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGAffineTransform", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDataProvider", "CGImage", "CGPDFDocument", "CGPDFPage"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "objc2-core-graphics"] }
+objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNTypes", "objc2-core-graphics"] }
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

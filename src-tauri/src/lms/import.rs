@@ -517,7 +517,8 @@ pub async fn import_course(
             files_state.insert(key, rec);
             let mut md = rel.as_os_str().to_owned();
             md.push(".md");
-            if !root.join(&md).exists()
+            // Missing, or made before handwritten and scanned pages were recognised.
+            if text::copy_is_stale(&root.join(&md))
                 && let Err(e) = text_copy(&root, rel).await
             {
                 skipped.push(e);
@@ -608,6 +609,7 @@ pub async fn import_course(
     let mut links_state: BTreeMap<String, LinkRec> = BTreeMap::new();
     let readings_dir = names::dir_in(&root, Path::new("readings")).map_err(|e| format!("The readings folder couldn’t be made: {e}"))?;
     let mut to_fetch = vec![];
+    let mut stale_readings: Vec<PathBuf> = vec![];
     for (n, &i) in order.iter().enumerate() {
         let key = file_key(&seen[i].found.url);
         let reuse = prev_links.get(&key).filter(|r| match &r.path {
@@ -617,6 +619,9 @@ pub async fn import_course(
         if let Some(r) = reuse {
             if let Some(p) = &r.path {
                 taken.reserve(Path::new(p));
+                if text::copy_is_stale(&root.join(format!("{p}.md"))) {
+                    stale_readings.push(PathBuf::from(p));
+                }
             }
             links_state.insert(key, r.clone());
         } else if n < opts.max_links {
@@ -669,7 +674,7 @@ pub async fn import_course(
             targets.readings.insert(link_key(&l.found.url), p);
         }
     }
-    for rel in &new_readings {
+    for rel in new_readings.iter().chain(&stale_readings) {
         if let Err(e) = text_copy(&root, rel).await {
             skipped.push(e);
         }

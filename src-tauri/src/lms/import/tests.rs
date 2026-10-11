@@ -244,10 +244,16 @@ async fn a_course_is_imported_and_reimported_with_only_what_changed() {
     let evil_before = std::fs::metadata(c.join("files/evil.txt")).unwrap().modified().unwrap();
     let web_before = f.web.log.lock().unwrap().len();
     serve(&f, "Integrals lecture", "\"v2\"");
+    // Text copies made before pages were recognised (a page left empty) are made again, without downloading.
+    let old_copy = "# Text of storage.pdf\n\n## Page 1\n\n\n\n## Page 2\n\nkept\n";
+    std::fs::write(c.join("files/storage.pdf.md"), old_copy).unwrap();
+    std::fs::write(c.join("readings/notes.pdf.md"), "# Text of notes.pdf\n\n(This file has no text in it: it may be scanned pages or pictures.)\n").unwrap();
     let again = import_course(&f.session, &courses, &course(), content(&f), Some(&out.state), &[], &opts, &mut |_, _, _| {}).await.unwrap();
     assert_eq!(again.state.folder, "Calculus I");
     assert_eq!(again.downloaded, 1, "only the changed file: {:?}", again.skipped);
     assert!(read(&c.join("files/Week 1/Lecture 1.pdf.md")).contains("Integrals lecture"));
+    assert!(read(&c.join("files/storage.pdf.md")).contains("Stored on another host"));
+    assert!(read(&c.join("readings/notes.pdf.md")).contains("Lecture notes"));
     assert_eq!(std::fs::metadata(c.join("files/evil.txt")).unwrap().modified().unwrap(), evil_before);
     assert!(c.join("files/Evil (2).txt").exists() && !c.join("files/Evil (3).txt").exists(), "paths are kept, not renumbered");
     let web_after: Vec<String> = f.web.log.lock().unwrap()[web_before..].iter().map(|(p, _)| p.clone()).collect();

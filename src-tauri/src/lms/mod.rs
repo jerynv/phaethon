@@ -68,6 +68,12 @@ impl Site {
         Ok(Site { kind, base })
     }
 
+    /// A site on a local test server (plain http allowed).
+    #[cfg(test)]
+    pub fn for_test(kind: Kind, base: &str) -> Site {
+        Site { kind, base: Url::parse(base).expect("test base") }
+    }
+
     /// True when `u` is on this site's origin (scheme, host and port all match).
     pub fn owns(&self, u: &Url) -> bool {
         u.origin() == self.base.origin()
@@ -258,7 +264,7 @@ impl Session {
                 let Some(next) = res.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).and_then(|l| at.join(l).ok()) else {
                     return Err(LmsError::Other("The site sent a redirect without an address.".into()));
                 };
-                if next.scheme() != "https" {
+                if next.scheme() != "https" && !self.site.owns(&next) {
                     return Err(LmsError::Other("The site redirected to an insecure address.".into()));
                 }
                 at = next;

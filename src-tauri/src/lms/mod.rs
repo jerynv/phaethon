@@ -356,23 +356,84 @@ impl Session {
     }
 
     /// GET a link out of the course (a publisher's PDF, an open textbook) without any
-    /// credential. https and http only.
+    /// credential. https and http only, and only to the public internet: a link (or a
+    /// redirect) to this computer or its local network is refused, so course content
+    /// can't make Phaethon read a router page or a local service.
     pub async fn fetch_external(&self, url: &Url) -> Result<reqwest::Response, LmsError> {
-        if !matches!(url.scheme(), "https" | "http") {
-            return Err(LmsError::Other("Not a web link.".into()));
-        }
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(120))
             .user_agent(concat!("Phaethon/", env!("CARGO_PKG_VERSION")))
-            .redirect(reqwest::redirect::Policy::limited(5))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("http client");
-        let res = client.get(url.clone()).send().await.map_err(|e| LmsError::Network(e.to_string()))?;
-        if !res.status().is_success() {
-            return Err(LmsError::Other(format!("The link answered with an error ({}).", res.status().as_u16())));
+        let mut at = url.clone();
+        for _ in 0..6 {
+            if !matches!(at.scheme(), "https" | "http") {
+                return Err(LmsError::Other("Not a web link.".into()));
+            }
+            if !cfg!(test) && !reaches_only_public(&at).await {
+                return Err(LmsError::Other("Not downloaded: the link points at this computer or its local network.".into()));
+            }
+            let res = client.get(at.clone()).send().await.map_err(|e| LmsError::Network(e.to_string()))?;
+            if res.status().is_redirection() {
+                let Some(next) = res.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).and_then(|l| at.join(l).ok()) else {
+                    return Err(LmsError::Other("The link redirected without an address.".into()));
+                };
+                at = next;
+                continue;
+            }
+            if !res.status().is_success() {
+                return Err(LmsError::Other(format!("The link answered with an error ({}).", res.status().as_u16())));
+            }
+            return Ok(res);
         }
-        Ok(res)
+        Err(LmsError::Other("The link redirected too many times.".into()))
+    }
+}
+
+/// True when every address `url`'s host resolves to is on the public internet.
+async fn reaches_only_public(url: &Url) -> bool {
+    let Some(host) = url.host_str() else { return false };
+    let port = url.port_or_known_default().unwrap_or(443);
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    match tokio::net::lookup_host((host, port)).await {
+        Ok(addrs) => {
+            let addrs: Vec<_> = addrs.collect();
+            !addrs.is_empty() && addrs.iter().all(|a| is_public(a.ip()))
+        }
+        Err(_) => false,
+    }
+}
+
+/// Not loopback, private, link-local, shared (CGNAT), unspecified, multicast or
+/// documentation space, for IPv4, IPv6 and IPv4 inside IPv6.
+fn is_public(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v) => {
+            let o = v.octets();
+            !(v.is_loopback()
+                || v.is_private()
+                || v.is_link_local()
+                || v.is_unspecified()
+                || v.is_multicast()
+                || v.is_broadcast()
+                || v.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (64..128).contains(&o[1])))
+        }
+        IpAddr::V6(v) => {
+            if let Some(v4) = v.to_ipv4_mapped() {
+                return is_public(IpAddr::V4(v4));
+            }
+            let first = v.segments()[0];
+            !(v.is_loopback()
+                || v.is_unspecified()
+                || v.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
     }
 }
 
@@ -435,5 +496,15 @@ mod tests {
         let m = Site::new(Kind::Moodle, "https://x.edu/moodle/").unwrap();
         assert_eq!(m.base.join("lib/ajax/service.php").unwrap().as_str(), "https://x.edu/moodle/lib/ajax/service.php");
         assert!(m.owns(&Url::parse("https://x.edu/other").unwrap()));
+    }
+
+    #[test]
+    fn links_out_reach_only_the_public_internet() {
+        for local in ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fe80::1", "fd00::1", "::ffff:192.168.1.1"] {
+            assert!(!is_public(local.parse().unwrap()), "{local}");
+        }
+        for public in ["93.184.216.34", "1.1.1.1", "2606:4700:4700::1111"] {
+            assert!(is_public(public.parse().unwrap()), "{public}");
+        }
     }
 }

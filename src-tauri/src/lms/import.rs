@@ -363,6 +363,9 @@ async fn text_copy(root: &Path, rel: &Path) -> Result<(), String> {
 struct Targets {
     /// link_key → path relative to the course folder (with an optional #anchor).
     local: HashMap<String, String>,
+    /// Links out of the course that were downloaded into readings/: link_key → path.
+    /// The syllabus then points at the copy the agent can read, not the web.
+    readings: HashMap<String, String>,
 }
 
 impl Targets {
@@ -378,6 +381,11 @@ impl Targets {
                 s.push_str(f);
             }
             return s;
+        }
+        if !session.site.owns(u)
+            && let Some(rel) = self.readings.get(&link_key(u))
+        {
+            return format!("{}{}", "../".repeat(depth), names::link_target(Path::new(rel)));
         }
         u.to_string()
     }
@@ -457,7 +465,7 @@ pub async fn import_course(
             local.entry(link_key(u)).or_insert_with(|| format!("assignments.md#{anc}"));
         }
     }
-    let targets = Targets { local };
+    let mut targets = Targets { local, readings: HashMap::new() };
 
     // ---- Course files, with the session. ----
     let total = content.files.len();
@@ -619,12 +627,16 @@ pub async fn import_course(
     }
     let fetch_total = to_fetch.len();
     progress(STEP_READINGS, 0, fetch_total);
-    let mut fetches = futures_util::stream::iter(to_fetch.into_iter().map(|i| {
-        let url = seen[i].found.url.clone();
-        let textbook = seen[i].textbook;
-        let dir = readings_dir.clone();
-        async move { (i, fetch_link(session, &dir, &url, textbook, opts.max_download).await) }
-    }))
+    let reads: Vec<_> = to_fetch
+        .into_iter()
+        .map(|i| {
+            let url = seen[i].found.url.clone();
+            let textbook = seen[i].textbook;
+            let dir = readings_dir.clone();
+            async move { (i, fetch_link(session, &dir, &url, textbook, opts.max_download).await) }
+        })
+        .collect();
+    let mut fetches = futures_util::stream::iter(reads)
     .buffer_unordered(4);
     let mut done = 0;
     let mut new_readings: Vec<PathBuf> = vec![];
@@ -652,6 +664,11 @@ pub async fn import_course(
         links_state.insert(key, rec);
     }
     drop(fetches);
+    for l in &seen {
+        if let Some(p) = links_state.get(&file_key(&l.found.url)).and_then(|r| r.path.clone()) {
+            targets.readings.insert(link_key(&l.found.url), p);
+        }
+    }
     for rel in &new_readings {
         if let Err(e) = text_copy(&root, rel).await {
             skipped.push(e);
@@ -761,7 +778,7 @@ pub async fn import_course(
         }
         acc
     });
-    let readme = readme(course, session, &content, &assignments, &seen, &links_state, &isbns, &files_state, &planned, &page_paths, &skipped);
+    let readme = readme(course, session, &content, &assignments, &seen, &links_state, &isbns, &files_state, &planned, &page_paths, &skipped, &root);
     write(README, &readme)?;
     progress(STEP_WRITING, 1, 1);
 
@@ -793,6 +810,7 @@ fn readme(
     planned: &[PathBuf],
     pages: &[PathBuf],
     skipped: &[String],
+    root: &Path,
 ) -> String {
     let mut s = format!("# {}\n\n", one_line(&course.name));
     let facts: Vec<String> = [course.code.clone(), course.term.clone()].into_iter().flatten().collect();
@@ -824,18 +842,32 @@ fn readme(
         let t = if t.is_empty() { l.found.url.to_string() } else { t };
         t.replace(['[', ']'], "")
     };
+    // An ISBN in the same sentence as a linked textbook belongs to that entry.
+    let mut placed = vec![false; isbns.len()];
+    let mut isbn_of = |l: &LinkSeen| -> String {
+        let text = one_line(&l.found.text);
+        let mut s = String::new();
+        for (n, i) in isbns.iter().enumerate() {
+            if !placed[n] && !text.is_empty() && (i.line.contains(&text) || l.found.context.contains(&i.line) || l.found.context.contains(i.isbn.as_str())) {
+                placed[n] = true;
+                s.push_str(&format!(" ISBN {}.", i.isbn));
+            }
+        }
+        s
+    };
     for l in seen.iter().filter(|l| l.textbook) {
         let Some(r) = links.get(&file_key(&l.found.url)) else { continue };
         any = true;
+        let isbn = isbn_of(l);
         match (&r.path, r.web_page) {
             (Some(p), _) => {
                 let source = match r.via.as_deref() {
                     Some(page) => format!("the PDF linked from its page {page}"),
                     None => format!("downloaded from {}", l.found.url),
                 };
-                let copy = if text::kind_of(Path::new(p)) != text::Doc::Other { format!(" Text copy: [{p}.md]({}.md).", names::link_target(Path::new(p))) } else { String::new() };
+                let copy = if text::kind_of(Path::new(p)) != text::Doc::Other && root.join(format!("{p}.md")).is_file() { format!(" Text copy: [{p}.md]({}.md).", names::link_target(Path::new(p))) } else { String::new() };
                 s.push_str(&format!(
-                    "- **Textbook**: [{}]({}), {source} (linked from {}).{copy}\n",
+                    "- **Textbook**: [{}]({}), {source} (linked from {}).{isbn}{copy}\n",
                     label(l, r),
                     names::link_target(Path::new(p)),
                     l.from
@@ -856,7 +888,7 @@ fn readme(
             )),
         }
     }
-    for i in isbns {
+    for (_, i) in isbns.iter().enumerate().filter(|(n, _)| !placed[*n]) {
         any = true;
         s.push_str(&format!(
             "- **Textbook**: ISBN {}, from “{}”. The course doesn’t link a copy; the library or bookstore can find it by this number.\n",

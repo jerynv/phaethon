@@ -305,10 +305,14 @@ pub async fn courses(s: &Session) -> Result<Vec<Course>, LmsError> {
 
     // The course offering has the semester and its own dates; students can be
     // refused it, and then the enrollment's dates stand.
-    let offerings: Vec<Result<CourseOffering, LmsError>> = stream::iter(enrollments.iter().map(|e| {
-        let path = api.lp(&format!("/courses/{}", e.org_unit.id));
-        async move { s.get_json::<CourseOffering>(&path).await }
-    }))
+    let reads: Vec<_> = enrollments
+        .iter()
+        .map(|e| {
+            let path = api.lp(&format!("/courses/{}", e.org_unit.id));
+            async move { s.get_json::<CourseOffering>(&path).await }
+        })
+        .collect();
+    let offerings: Vec<Result<CourseOffering, LmsError>> = stream::iter(reads)
     .buffered(4)
     .collect()
     .await;
@@ -365,10 +369,14 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
 
     // HTML topics become pages, read as the browser would show them so their
     // relative links resolve against the page's own address.
-    let fetched: Vec<(String, Url, Result<String, LmsError>)> = stream::iter(html_topics.into_iter().map(|(title, url)| async move {
-        let r = fetch_html(s, &url).await;
-        (title, url, r)
-    }))
+    let reads: Vec<_> = html_topics
+        .into_iter()
+        .map(|(title, url)| async move {
+            let r = fetch_html(s, &url).await;
+            (title, url, r)
+        })
+        .collect();
+    let fetched: Vec<(String, Url, Result<String, LmsError>)> = stream::iter(reads)
     .buffered(4)
     .collect()
     .await;

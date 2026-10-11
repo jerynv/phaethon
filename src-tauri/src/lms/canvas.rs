@@ -123,7 +123,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
         if let Some(list) = part(s, get_all(s, &api(s, &["courses", cid, "pages"], &[("per_page", "100")])).await, "Pages", &mut c.skipped).await? {
             let slugs: Vec<String> = list.iter().filter_map(|p| p["url"].as_str()).map(str::to_string).collect();
             let urls: Vec<Url> = slugs.iter().map(|slug| api(s, &["courses", cid, "pages", slug], &[])).collect();
-            let got: Vec<_> = futures_util::stream::iter(urls.iter()).map(|u| get_one(s, u)).buffered(4).collect().await;
+            let got: Vec<_> = futures_util::stream::iter(urls.iter().map(|u| get_one(s, u)).collect::<Vec<_>>()).buffered(4).collect().await;
             for (slug, r) in slugs.iter().zip(got) {
                 if let Some(v) = part(s, r, &format!("Page “{slug}”"), &mut c.skipped).await? {
                     page_into(s, cid, slug, &v, &mut pages, &mut c.skipped);
@@ -915,6 +915,60 @@ mod tests {
         assert!(seen.iter().all(|h| h.starts_with("GET ") && h.contains("_normandy_session=sess123")));
     }
 
+    /// Canvas and the importer together: the course as the person would find it in
+    /// their space, the syllabus's file link and textbook PDF resolved to local copies.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_canvas_course_imported_end_to_end() {
+        const PDF: &str = "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n";
+        let pdf = |_: &Url, _: &str| Reply { status: "200 OK", ctype: "application/pdf", headers: vec![], body: PDF.into() };
+        // The publisher's copy is a real PDF, so the agent gets its words.
+        let book = String::from_utf8(crate::lms::text::test_pdf("Chapter 1. Arrays: a contiguous block of memory.")).unwrap();
+        let (books, books_seen) = serve(Arc::new(move |_: &Url, _: &str| Reply { status: "200 OK", ctype: "application/pdf", headers: vec![], body: book.clone() })).await;
+        let (base, _) = serve(Arc::new(move |u: &Url, b: &str| match u.path() {
+            "/api/v1/users/self" => json(r#"{"id":42,"name":"Sam Student"}"#.into()),
+            "/api/v1/courses/1001" => json(fixture("course", b).replace("https://open.example.org", &books)),
+            "/api/v1/courses/1001/tabs" => json(fixture("tabs", b)),
+            "/api/v1/courses/1001/folders" => json(fixture("folders", b)),
+            "/api/v1/courses/1001/files" => json(fixture("files", b)),
+            "/api/v1/courses/1001/files/5009" => json(fixture("file_5009", b)),
+            "/api/v1/courses/1001/pages/reading-guide" => json(fixture("page_reading_guide", b)),
+            "/api/v1/courses/1001/assignments" => json(fixture("assignments", b)),
+            "/api/v1/courses/1001/discussion_topics" => json(fixture("announcements", b)),
+            "/api/v1/courses/1001/modules" => json(fixture("modules", b)),
+            "/api/v1/courses/1001/modules/2/items" => json(fixture("module_2_items", b)),
+            p if p.ends_with("/download") => pdf(u, b),
+            _ => status("404 Not Found", "{}"),
+        }))
+        .await;
+        let s = session(&base);
+        let c = content(&s, "1001").await.unwrap();
+        let course = Course { id: "1001".into(), name: "C343 Data Structures".into(), code: Some("C343".into()), term: Some("Fall 2026".into()), current: true };
+        let tmp = std::env::temp_dir().join(format!("phaethon-canvas-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let out = crate::lms::import::import_course(&s, &tmp, &course, c, None, &[], &Default::default(), &mut |_, _, _| {}).await.unwrap();
+
+        let dir = std::fs::read_dir(&tmp).unwrap().next().unwrap().unwrap().path();
+        let read = |p: &str| std::fs::read_to_string(dir.join(p)).unwrap_or_else(|e| panic!("{p}: {e}"));
+        let syllabus = read("syllabus.md");
+        let readme = read("README.md");
+        eprintln!("--- folder {}\n--- README.md\n{readme}\n--- syllabus.md\n{syllabus}\n--- outcome {out:?}", dir.display());
+        assert!(out.files >= 3 && out.readings >= 1, "{out:?}");
+        assert!(dir.join("files/Lectures/Week 1/Lecture 1 - Arrays.pdf").is_file());
+        assert!(!books_seen.lock().unwrap().iter().any(|h| h.contains("sess123")), "the textbook site never got the session");
+        assert!(!syllabus.contains(&base), "every course link points at a local copy: {syllabus}");
+        assert!(std::fs::read_dir(dir.join("readings")).unwrap().count() >= 1, "the textbook PDF is in readings/");
+        assert!(readme.contains("Textbooks") && readme.contains("readings/"), "the README points at the textbook copy");
+        assert!(syllabus.contains("](readings/ods-java.pdf)"), "the syllabus's textbook link opens the downloaded copy");
+        assert_eq!(readme.matches("**Textbook**").count(), 1, "one entry for the book, its ISBN beside the copy");
+        assert!(readme.contains("ISBN 9781927356388"));
+        let words = read("readings/ods-java.pdf.md");
+        assert!(words.contains("contiguous block of memory"), "the textbook's text copy holds its words: {words}");
+        assert!(readme.contains("Text copy: [readings/ods-java.pdf.md]"));
+        assert!(!dir.join("files/schedule.pdf.md").exists() && !readme.contains("schedule.pdf.md"), "no text copy is promised for an unreadable file");
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn never_leaves_the_site() {
         let (other, other_seen) = serve(Arc::new(|_: &Url, _: &str| json("[]".into()))).await;
@@ -930,10 +984,13 @@ mod tests {
         let s = session(&base);
         // A next page on another site is refused before anything is sent.
         assert!(matches!(courses(&s).await, Err(LmsError::Other(_))));
-        // A file whose download redirects to another (plain http) site: Session refuses to follow.
+        assert!(other_seen.lock().unwrap().is_empty(), "the next page on another site was never asked for");
+        // A file whose download redirects to another site (a storage host): followed, without the session.
         let dl = Url::parse(&format!("{base}/files/1/download")).unwrap();
-        assert!(s.get(&dl).await.is_err());
-        assert!(other_seen.lock().unwrap().is_empty(), "nothing reached the other site");
+        let _ = s.get(&dl).await;
+        let seen = other_seen.lock().unwrap();
+        assert_eq!(seen.len(), 1, "the redirect was followed once");
+        assert!(seen.iter().all(|h| !h.contains("sess123") && !h.to_ascii_lowercase().contains("cookie:")), "without the session: {seen:?}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

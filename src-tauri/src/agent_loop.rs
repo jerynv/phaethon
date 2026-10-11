@@ -138,6 +138,12 @@ Once access is granted, read it with list_files, read_file or search_files using
         s.push_str("\n\n");
         s.push_str(&memory);
     }
+    // This space's imported courses only (its own .phaethon/lms.json). The due
+    // dates shown change only when one passes, so the prompt cache still holds.
+    if let Some(courses) = vault.space_dir(space_id).ok().and_then(|dir| crate::lms::store::prompt_index(&dir, crate::lms::store::now_secs())) {
+        s.push_str("\n\n");
+        s.push_str(&courses);
+    }
     s
 }
 
@@ -1419,6 +1425,33 @@ mod tests {
         assert_eq!(ui[0].at, saved[0]["at"].as_u64());
         assert_eq!(ui[1].at, saved[3]["at"].as_u64(), "a reply's time is when it finished");
         assert_eq!(serde_json::to_value(&ui[0]).unwrap()["at"], saved[0]["at"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_prompt_indexes_this_spaces_courses_only() {
+        let dir = std::env::temp_dir().join(format!("phaethon-loop-courses-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for s in ["school", "work"] {
+            std::fs::create_dir_all(dir.join("spaces").join(s)).unwrap();
+        }
+        let mut st = crate::lms::store::Store::default();
+        let mut conn = crate::lms::store::Conn {
+            id: "canvas-x".into(),
+            kind: crate::lms::Kind::Canvas,
+            address: "https://x".into(),
+            school_name: None,
+            last_sync: None,
+            courses: Default::default(),
+        };
+        let course = crate::lms::store::CourseState { name: "Calculus II".into(), folder: "Calculus II".into(), ..Default::default() };
+        conn.courses.insert("1".into(), course);
+        st.connections.push(conn);
+        crate::lms::store::save(&dir.join("spaces/school"), &st).unwrap();
+        let school = system_prompt(&dir, "school");
+        assert!(school.contains("# Courses") && school.contains("- Calculus II: courses/Calculus II/"), "{school}");
+        let work = system_prompt(&dir, "work");
+        assert!(!work.contains("Calculus") && !work.contains("# Courses"), "another space's courses never reach this prompt");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

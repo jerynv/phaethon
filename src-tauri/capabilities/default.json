@@ -49,6 +49,12 @@
     "allow-space-show",
     "allow-space-export",
     "allow-export-show",
-    "allow-conversations-search"
+    "allow-conversations-search",
+    "allow-lms-schools",
+    "allow-lms-connect",
+    "allow-lms-connections",
+    "allow-lms-courses",
+    "allow-lms-import",
+    "allow-lms-disconnect"
   ]
 }

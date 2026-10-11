@@ -58,3 +58,67 @@ pub fn clear(vault: &str, provider: &str) -> Result<(), String> {
         Err(e) => Err(format!("could not remove the key from the keychain: {e}")),
     }
 }
+
+// ---- Course site sessions ---------------------------------------------------
+//
+// A separate family from the provider keys above: one entry per connection,
+// namespaced by vault and space (`<vault>/space/<space>/lms/<id>`), so one
+// space's school sign-in is never another's. The value is the credential as
+// JSON (cookies and CSRF token); like the keys, it never leaves the core.
+
+/// The keychain account for a course site connection. Refuses names that could
+/// step into another namespace (a `/`, or anything but letters, digits, `-`, `_`).
+pub fn lms_account(vault: &str, space: &str, connection: &str) -> Result<String, String> {
+    let plain = |s: &str| !s.is_empty() && s.len() <= 100 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !plain(space) || !plain(connection) || vault.is_empty() || vault.contains('/') {
+        return Err("That isn’t a course site connection Phaethon knows.".into());
+    }
+    Ok(format!("{vault}/space/{space}/lms/{connection}"))
+}
+
+fn lms_entry(vault: &str, space: &str, connection: &str) -> Result<Entry, String> {
+    Entry::new(SERVICE, &lms_account(vault, space, connection)?).map_err(|e| format!("keychain unavailable: {e}"))
+}
+
+pub fn lms_get(vault: &str, space: &str, connection: &str) -> Result<Option<String>, String> {
+    match lms_entry(vault, space, connection)?.get_password() {
+        Ok(s) => Ok(Some(s)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(format!("could not read the keychain: {e}")),
+    }
+}
+
+pub fn lms_set(vault: &str, space: &str, connection: &str, secret: &str) -> Result<(), String> {
+    lms_entry(vault, space, connection)?
+        .set_password(secret)
+        .map_err(|e| format!("could not save to the keychain: {e}"))
+}
+
+pub fn lms_clear(vault: &str, space: &str, connection: &str) -> Result<(), String> {
+    match lms_entry(vault, space, connection)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("could not remove the sign-in from the keychain: {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn course_site_sessions_are_namespaced_by_vault_and_space() {
+        assert_eq!(
+            lms_account("default", "school", "canvas-iu-instructure-com").unwrap(),
+            "default/space/school/lms/canvas-iu-instructure-com"
+        );
+        assert_ne!(lms_account("default", "school", "x").unwrap(), lms_account("default", "work", "x").unwrap());
+        assert_ne!(lms_account("default", "school", "x").unwrap(), lms_account("other", "school", "x").unwrap());
+        // Never the provider keys' namespace, never a way into another space's.
+        assert!(!lms_account("default", "school", "x").unwrap().contains("/provider/"));
+        for bad in ["../work", "a/b", "", "x y", "work/lms/x"] {
+            assert!(lms_account("default", bad, "x").is_err(), "{bad}");
+            assert!(lms_account("default", "school", bad).is_err(), "{bad}");
+        }
+        assert!(lms_account("", "school", "x").is_err());
+    }
+}

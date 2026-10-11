@@ -580,6 +580,98 @@ fn file_open(state: State<'_, AppState>, space: String, path: String, reveal: Op
     open::open(&dir, &path, reveal.unwrap_or(false))
 }
 
+// ---- Course sites (lms/) ----------------------------------------------------
+
+/// Canvas schools whose name matches `query` (Canvas's public search); `[]` for the other kinds.
+#[tauri::command]
+async fn lms_schools(kind: lms::Kind, query: String) -> Result<Vec<lms::service::School>, String> {
+    lms::service::schools(kind, &query).await
+}
+
+/// Open the sign-in window on the school's own page and wait until the person
+/// is signed in; the session goes to the keychain, never to the webview.
+/// `Err("cancelled")` when the window is closed. `school_name` (optional, from
+/// the school search) titles the window and is kept with the connection.
+#[tauri::command]
+async fn lms_connect(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    space: String,
+    kind: lms::Kind,
+    address: String,
+    school_name: Option<String>,
+) -> Result<lms::service::ConnectionView, String> {
+    let dir = state.vault.space_dir(&space)?;
+    let site = lms::Site::new(kind, &address).map_err(|e| e.to_string())?;
+    let school = school_name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| site.base.host_str().unwrap_or("your school").to_string());
+    let vault = state.vault.name();
+    let store_id = lms::login::data_store_id(&vault, &space);
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("lms-login")
+        .join(store_id.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    let credential = lms::login::sign_in(&app, &site, &format!("Sign in to {school}"), store_id, data_dir).await?;
+    let view = lms::service::save_sign_in(&vault, &space, &dir, &site, &credential)?;
+    if let Some(name) = school_name {
+        lms::service::set_school_name(&dir, &view.id, &name)?;
+        return lms::service::connections(&vault, &space, &dir)?
+            .into_iter()
+            .find(|c| c.id == view.id)
+            .ok_or_else(|| "The connection wasn’t saved.".into());
+    }
+    Ok(view)
+}
+
+/// The course sites `space` is connected to.
+#[tauri::command]
+fn lms_connections(state: State<'_, AppState>, space: String) -> Result<Vec<lms::service::ConnectionView>, String> {
+    let dir = state.vault.space_dir(&space)?;
+    lms::service::connections(&state.vault.name(), &space, &dir)
+}
+
+/// The person's courses on a connected site. `Err("signedOut")` when the session ended.
+#[tauri::command]
+async fn lms_courses(state: State<'_, AppState>, space: String, connection: String) -> Result<Vec<lms::service::CourseView>, String> {
+    let dir = state.vault.space_dir(&space)?;
+    lms::service::courses(&state.vault.name(), &space, &dir, &connection).await
+}
+
+/// Import (or update) courses into `<space>/courses/`, streaming progress; always ends with `done`.
+#[tauri::command]
+async fn lms_import(
+    state: State<'_, AppState>,
+    space: String,
+    connection: String,
+    course_ids: Vec<String>,
+    on_event: Channel<lms::service::ImportEvent>,
+) -> Result<(), String> {
+    let emit = |e: lms::service::ImportEvent| {
+        let _ = on_event.send(e);
+    };
+    let dir = match state.vault.space_dir(&space) {
+        Ok(d) => d,
+        Err(message) => {
+            emit(lms::service::ImportEvent::Error { message });
+            emit(lms::service::ImportEvent::Done);
+            return Ok(());
+        }
+    };
+    lms::service::import(&state.vault.name(), &space, &dir, &connection, &course_ids, &emit).await;
+    Ok(())
+}
+
+/// Forget a connection's session and the connection; imported files stay.
+#[tauri::command]
+fn lms_disconnect(state: State<'_, AppState>, space: String, connection: String) -> Result<(), String> {
+    let dir = state.vault.space_dir(&space)?;
+    lms::service::disconnect(&state.vault.name(), &space, &dir, &connection)
+}
+
 /// Stop the turn running in `space`, if any. The stream then ends with `Cancelled`.
 #[tauri::command]
 fn agent_cancel(state: State<'_, AppState>, space: String) -> bool {
@@ -611,6 +703,10 @@ fn kill_children_on_signal(handle: tauri::AppHandle, runs: Runs) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Started as the PDF reader for a course import (see lms/text.rs): read, print, exit.
+    if let Some(code) = lms::text::child_main() {
+        std::process::exit(code);
+    }
     let app = tauri::Builder::default()
         // Used from Rust only (Export's save dialog); no capability lets the webview call it.
         .plugin(tauri_plugin_dialog::init())
@@ -671,7 +767,13 @@ pub fn run() {
             space_show,
             space_export,
             export_show,
-            conversations_search
+            conversations_search,
+            lms_schools,
+            lms_connect,
+            lms_connections,
+            lms_courses,
+            lms_import,
+            lms_disconnect
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

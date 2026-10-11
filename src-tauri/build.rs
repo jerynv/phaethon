@@ -12,6 +12,7 @@ fn main() {
             "space_model_get", "space_model_set", "space_models_list",
             "space_touch", "space_show", "space_export", "export_show",
             "conversations_search",
+            "lms_schools", "lms_connect", "lms_connections", "lms_courses", "lms_import", "lms_disconnect",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -30,6 +30,17 @@ pub mod brightspace;
 pub mod canvas;
 pub mod moodle;
 
+// Core (not site specific): turning a course into files, signing in, the space's record.
+pub mod csrf;
+pub mod html;
+pub mod import;
+pub mod login;
+pub mod names;
+pub mod service;
+pub mod store;
+pub mod textbooks;
+pub mod text;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -313,7 +324,9 @@ impl Session {
                 let Some(next) = res.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).and_then(|l| at.join(l).ok()) else {
                     return Err(LmsError::Other("The site sent a redirect without an address.".into()));
                 };
-                if next.scheme() != "https" && !self.site.owns(&next) {
+                // (lms core, tests only: a plain-http loopback server stands in for an https storage host.)
+                let test_loopback = cfg!(test) && next.host_str().is_some_and(|h| h == "127.0.0.1" || h == "localhost");
+                if next.scheme() != "https" && !self.site.owns(&next) && !test_loopback {
                     return Err(LmsError::Other("The site redirected to an insecure address.".into()));
                 }
                 at = next;

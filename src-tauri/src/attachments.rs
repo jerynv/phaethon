@@ -421,7 +421,7 @@ fn u32_at(b: &[u8], i: usize) -> Option<usize> {
 /// One file's bytes from a zip archive, by exact name. Just enough of the
 /// format for .docx: the central directory, stored or deflated entries, no
 /// zip64 or encryption.
-fn zip_entry(zip: &[u8], wanted: &str, limit: usize) -> Option<Vec<u8>> {
+pub(crate) fn zip_entry(zip: &[u8], wanted: &str, limit: usize) -> Option<Vec<u8>> {
     // End of central directory: 22 bytes plus a comment of up to 64 KiB.
     let floor = zip.len().saturating_sub(22 + 0xFFFF);
     let eocd = (floor..=zip.len().checked_sub(22)?).rev().find(|&i| zip[i..].starts_with(b"PK\x05\x06"))?;
@@ -459,7 +459,7 @@ fn zip_entry(zip: &[u8], wanted: &str, limit: usize) -> Option<Vec<u8>> {
 }
 
 /// The text of a .docx: each paragraph on its own line, tabs and line breaks kept.
-fn docx_text(bytes: &[u8]) -> Result<String, String> {
+pub(crate) fn docx_text(bytes: &[u8]) -> Result<String, String> {
     let unreadable = || "it couldn’t be read as a Word document (.docx)".to_string();
     let xml = zip_entry(bytes, "word/document.xml", MAX_DOCX_XML).ok_or_else(unreadable)?;
     let xml = String::from_utf8(xml).map_err(|_| unreadable())?;
@@ -488,7 +488,7 @@ fn docx_text(bytes: &[u8]) -> Result<String, String> {
 }
 
 /// XML's five named entities and numeric character references.
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     if !s.contains('&') {
         return s.to_string();
     }

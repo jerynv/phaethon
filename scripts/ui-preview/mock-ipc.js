@@ -291,6 +291,116 @@
           found.sort((a, b) => b.updated - a.updated);
           return { conversations: found.slice(0, 50), truncated: found.length > 50 };
         }
+        // Course sites, as src-tauri/src/lms/service.rs and the lms_* commands (contract: src/lib/lms.ts).
+        // M.lms: { schools, connections: { [space]: Connection[] }, courses: { [connectionId]: Course[] },
+        // connectFails: "cancelled" | message, connectDelay, signedOut: { [connectionId]: true },
+        // importDelay, importSkipped: string[], importErrors: { [courseId]: message } }.
+        case "lms_schools":
+        case "lms_connect":
+        case "lms_connections":
+        case "lms_courses":
+        case "lms_import":
+        case "lms_disconnect": {
+          const L = (M.lms ??= {});
+          L.connections ??= {};
+          L.signedOut ??= {};
+          const spaceOk = (s) => {
+            if (!M.spaces.some((x) => x.id === s)) throw `space "${s}" does not exist in this vault`;
+          };
+          const conns = (s) => (L.connections[s] ??= []);
+          const findConn = (s, id) => {
+            const c = conns(s).find((x) => x.id === id);
+            if (!c) throw "That course site isn’t connected to this space.";
+            return c;
+          };
+          const view = (c) => ({ ...c, courses: [...c.courses], signedIn: c.signedIn && !L.signedOut[c.id] });
+          if (cmd === "lms_schools") {
+            if (args.kind !== "canvas") return [];
+            const q = String(args.query ?? "").trim().toLowerCase();
+            if ([...q].length < 2) return [];
+            const all = L.schools ?? [
+              { name: "Indiana University", address: "https://iu.instructure.com" },
+              { name: "Indiana State University", address: "https://indstate.instructure.com" },
+              { name: "Ivy Tech Community College", address: "https://ivytech.instructure.com" },
+              { name: "Purdue University", address: "https://purdue.instructure.com" },
+            ];
+            return all.filter((s) => s.name.toLowerCase().includes(q));
+          }
+          spaceOk(args.space);
+          if (cmd === "lms_connections") return conns(args.space).map(view);
+          if (cmd === "lms_connect") {
+            let raw = String(args.address ?? "").trim();
+            if (!raw.includes("://")) raw = `https://${raw}`;
+            let u;
+            try {
+              u = new URL(raw);
+            } catch {
+              throw "That isn’t a web address.";
+            }
+            if (u.protocol !== "https:" || !u.hostname || u.username || u.password) throw "Use the https address you see when you open your course site.";
+            // The sign-in window is open for a while; closing it rejects with "cancelled".
+            await sleep(L.connectDelay ?? 300);
+            if (L.connectFails) throw L.connectFails;
+            const id = `${args.kind}-${u.host}`.toLowerCase().replace(/[^a-z0-9]/g, "-").slice(0, 100);
+            let c = conns(args.space).find((x) => x.id === id);
+            if (!c) {
+              c = { id, kind: args.kind, address: u.origin, courses: [] };
+              conns(args.space).push(c);
+            }
+            c.signedIn = true;
+            if (args.schoolName?.trim()) c.schoolName = args.schoolName.trim();
+            delete L.signedOut[id];
+            return view(c);
+          }
+          const c = findConn(args.space, args.connection);
+          if (cmd === "lms_disconnect") {
+            L.connections[args.space] = conns(args.space).filter((x) => x.id !== c.id);
+            return;
+          }
+          const courses = (L.courses ?? {})[c.id] ?? [
+            { id: "101", name: "Calculus II", code: "MATH-M212", term: "Fall 2026", current: true },
+            { id: "102", name: "Data Structures", code: "CSCI-C241", term: "Fall 2026", current: true },
+            { id: "90", name: "Intro to Psychology", code: "PSY-P101", term: "Spring 2026", current: false },
+          ];
+          if (cmd === "lms_courses") {
+            if (L.signedOut[c.id] || !c.signedIn) throw "signedOut";
+            return courses.map((x) => ({ ...x, imported: c.courses.includes(x.id) }));
+          }
+          // lms_import: progress for each course, then its summary; always ends with done.
+          const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
+          let index = 0;
+          const send = (message) => callbacks[id]?.({ index: index++, message });
+          (async () => {
+            const wait = () => sleep(L.importDelay ?? 30);
+            if (L.signedOut[c.id] || !c.signedIn) {
+              send({ type: "error", message: "signedOut" });
+              send({ type: "done" });
+              return;
+            }
+            for (const cid of args.courseIds) {
+              const course = courses.find((x) => x.id === cid);
+              if (!course) {
+                send({ type: "error", message: "Some of the chosen courses aren’t on the course site any more." });
+                continue;
+              }
+              for (const [step, total] of [["reading", 1], ["files", 3], ["readings", 2], ["writing", 1]]) {
+                for (let done = 0; done <= total; done++) {
+                  await wait();
+                  send({ type: "progress", course: cid, step, done, total });
+                }
+              }
+              if (L.importErrors?.[cid]) {
+                send({ type: "error", message: `${course.name}: ${L.importErrors[cid]}` });
+                continue;
+              }
+              if (!c.courses.includes(cid)) c.courses.push(cid);
+              c.lastSync = Date.now();
+              send({ type: "course", course: cid, folder: `courses/${course.name}`, files: 12, readings: 2, links: 3, skipped: L.importSkipped ?? [] });
+            }
+            send({ type: "done" });
+          })();
+          return;
+        }
         case "agent_send": {
           M.currentSpace = args.space;
           const usedSpace = M.spaces.find((s) => s.id === args.space);

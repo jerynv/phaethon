@@ -32,6 +32,11 @@ pub struct Conn {
     pub school_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_sync: Option<u64>,
+    /// Whether a session was kept at the last sign-in and hasn't been seen to
+    /// end since: a hint, so listing connections never reads the keychain (which
+    /// may stop to ask the person for access). The session itself is never here.
+    #[serde(default)]
+    pub signed_in: bool,
     /// Imported courses by the site's course id.
     #[serde(default)]
     pub courses: BTreeMap<String, CourseState>,
@@ -349,40 +354,46 @@ const INDEX_COURSES: usize = 20;
 const INDEX_DUE: usize = 3;
 const INDEX_MAX: usize = 4000;
 
-/// A short index of this space's imported courses for the system prompt, or
-/// `None` when there are none. Only this space's lms.json is read.
-pub fn prompt_index(space_dir: &Path, now: i64) -> Option<String> {
-    let store = load(space_dir).ok()?;
-    let grades = load_grades(space_dir).unwrap_or_default();
+/// A short index of the courses a space may see, for the system prompt, or
+/// `None` when it sees none. Due dates only where it may see them (overview or
+/// assignments), a grade only where it may see grades; `grades` is the vault's
+/// grades.json.
+pub fn prompt_index(courses: &[super::access::Seen], grades: &GradeBook, now: i64) -> Option<String> {
+    use super::access::Part;
     let mut lines = vec![];
-    for conn in &store.connections {
-        for (cid, c) in &conn.courses {
-            if lines.len() >= INDEX_COURSES {
-                break;
-            }
-            let label = match &c.code {
-                Some(code) if !c.name.contains(code.as_str()) => format!("{} ({code})", c.name),
-                _ => c.name.clone(),
-            };
-            let mut line = format!("- {label}: courses/{}/", c.folder);
+    for seen in courses.iter().take(INDEX_COURSES) {
+        let c = &seen.state;
+        let label = match &c.code {
+            Some(code) if !c.name.contains(code.as_str()) => format!("{} ({code})", c.name),
+            _ => c.name.clone(),
+        };
+        let mut line = format!("- {label}: courses/{}/", c.folder);
+        if !Part::ALL.iter().all(|p| seen.can(*p)) {
+            let parts: Vec<&str> = Part::ALL.iter().filter(|p| seen.can(**p)).map(|p| p.name()).collect();
+            line.push_str(&format!(" (this space sees only: {})", parts.join(", ")));
+        }
+        if seen.sees_due() {
             let next: Vec<String> = upcoming(&c.due, now).into_iter().take(INDEX_DUE).map(|(t, d)| format!("{} ({})", d.title, display_time(t))).collect();
             if !next.is_empty() {
                 line.push_str(&format!(" Next due: {}.", next.join("; ")));
             }
-            if let Some(g) = grades.courses.get(&grade_key(&conn.id, cid)).and_then(|r| grade_words(&r.grades.current)) {
-                line.push_str(&format!(" Current grade: {g} (grades.md)."));
-            }
-            lines.push(line);
         }
+        if seen.can(Part::Grades)
+            && let Some(g) = grades.courses.get(&seen.key).and_then(|r| grade_words(&r.grades.current))
+        {
+            line.push_str(&format!(" Current grade: {g} (grades.md)."));
+        }
+        lines.push(line);
     }
     if lines.is_empty() {
         return None;
     }
     let mut s = String::from(
-        "# Courses\n\nThese courses were imported from the user's course site into this space, one folder each under courses/. \
+        "# Courses\n\nThese courses were imported from the user's course site, one folder each under courses/ (read-only: they are the site's copy). \
 Before answering anything about a course, read its folder with your file tools: README.md (what's coming up, the textbooks and readings), \
 syllabus.md, assignments.md, grades.md (their grades so far), modules.md, and the files and readings the question touches. PDFs and Office files have a text copy beside them \
-(the same name ending in .md); read that. Answer from the course's own material and say which file it came from.\n\n",
+(the same name ending in .md); read that. Answer from the course's own material and say which file it came from. \
+Where a course lists only some parts, the user chose not to show this space the rest; don't ask for it.\n\n",
     );
     for l in lines {
         if s.len() + l.len() > INDEX_MAX {
@@ -417,9 +428,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("phaethon-lms-index-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(prompt_index(&dir, 0), None);
+        assert_eq!(prompt_index(&[], &GradeBook::default(), 0), None);
         let mut store = Store::default();
-        let mut conn = Conn { id: "canvas-x".into(), kind: Kind::Canvas, address: "https://x".into(), school_name: None, last_sync: None, courses: BTreeMap::new() };
+        let mut conn = Conn { id: "canvas-x".into(), kind: Kind::Canvas, address: "https://x".into(), school_name: None, last_sync: None, signed_in: false, courses: BTreeMap::new() };
         conn.courses.insert(
             "1".into(),
             CourseState {
@@ -438,10 +449,25 @@ mod tests {
         save(&dir, &store).unwrap();
         assert_eq!(load(&dir).unwrap(), store);
         let now = parse_time("2026-10-10T00:00:00Z").unwrap();
-        let idx = prompt_index(&dir, now).unwrap();
+        use super::super::access::{Part, Seen};
+        let state = store.connections[0].courses["1"].clone();
+        let mut book = GradeBook::default();
+        let g = CourseGrades { current: GradeSummary { percent: Some(91.0), letter: Some("A-".into()), ..Default::default() }, ..Default::default() };
+        book.courses.insert("canvas-x/1".into(), GradeRec { connection: "canvas-x".into(), course_id: "1".into(), course: "Calculus II".into(), folder: "courses/Calculus II".into(), updated: 0, grades: g });
+        let seen = |parts: &[Part]| Seen { key: "canvas-x/1".into(), connection: "canvas-x".into(), course_id: "1".into(), state: state.clone(), parts: parts.iter().copied().collect() };
+        let idx = prompt_index(&[seen(&Part::ALL)], &book, now).unwrap();
         assert!(idx.contains("- Calculus II (M212): courses/Calculus II/ Next due: PS 4 ("), "{idx}");
+        assert!(idx.contains("Current grade: 91% (A-)"), "{idx}");
         assert!(idx.find("PS 4").unwrap() < idx.find("PS 5").unwrap());
         assert!(!idx.contains("Old"));
+        // Only what the space may see: no due dates without overview or assignments, no grade without grades.
+        let idx = prompt_index(&[seen(&[Part::Syllabus, Part::Files])], &book, now).unwrap();
+        assert!(idx.contains("- Calculus II (M212): courses/Calculus II/ (this space sees only: syllabus, files)"), "{idx}");
+        assert!(!idx.contains("PS 4") && !idx.contains("91%"), "{idx}");
+        let idx = prompt_index(&[seen(&[Part::Assignments])], &book, now).unwrap();
+        assert!(idx.contains("Next due: PS 4") && !idx.contains("91%"), "{idx}");
+        let idx = prompt_index(&[seen(&[Part::Grades])], &book, now).unwrap();
+        assert!(!idx.contains("PS 4") && idx.contains("91%"), "{idx}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

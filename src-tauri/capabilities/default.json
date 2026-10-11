@@ -58,6 +58,8 @@
     "allow-lms-disconnect",
     "allow-lms-grades",
     "allow-lms-grades-refresh",
+    "allow-course-access-get",
+    "allow-course-access-set",
     "allow-study-sources",
     "allow-study-overview",
     "allow-study-deck",

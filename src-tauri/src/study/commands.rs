@@ -21,10 +21,11 @@ fn model_for(state: &AppState, dir: &std::path::Path) -> Result<AnyModel, String
     model::for_space(&state.vault, dir, state.isolated_config_root.as_deref())
 }
 
-/// The space's imported courses and the parts each has, for choosing what to make cards from.
+/// The courses the space may see and the parts of each it may see, for choosing what to make cards from.
 #[tauri::command]
 pub(crate) fn study_sources(state: State<'_, AppState>, space: String) -> Result<Vec<super::sources::CourseSource>, String> {
-    Ok(super::sources::courses(&space_dir(&state, &space)?))
+    space_dir(&state, &space)?;
+    Ok(super::sources::courses(&crate::lms::access::visible(&state.vault, &space)))
 }
 
 #[tauri::command]
@@ -77,7 +78,7 @@ pub(crate) async fn study_make_deck(state: State<'_, AppState>, space: String, s
     let run = async {
         let dir = space_dir(&state, &space)?;
         let m = model_for(&state, &dir)?;
-        generate::make_deck(&dir, &sources, &options, &m, &emit).await
+        generate::make_deck(&dir, &crate::lms::access::visible(&state.vault, &space), &sources, &options, &m, &emit).await
     };
     emit(match run.await {
         Ok((path, cards)) => StudyEvent::Done(Finished { path: Some(path), cards: Some(cards), ..Default::default() }),
@@ -92,7 +93,7 @@ pub(crate) async fn study_make_quiz(state: State<'_, AppState>, space: String, s
     let run = async {
         let dir = space_dir(&state, &space)?;
         let m = model_for(&state, &dir)?;
-        generate::make_quiz(&dir, &sources, &options, &m, &emit, super::now_ms()).await
+        generate::make_quiz(&dir, &crate::lms::access::visible(&state.vault, &space), &sources, &options, &m, &emit, super::now_ms()).await
     };
     emit(match run.await {
         Ok((path, questions)) => StudyEvent::Done(Finished { path: Some(path), questions: Some(questions), ..Default::default() }),

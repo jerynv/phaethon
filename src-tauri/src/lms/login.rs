@@ -90,9 +90,10 @@ fn where_(u: &Url) -> String {
     format!("{}://{}{}", u.scheme(), u.host_str().unwrap_or(""), u.path())
 }
 
-/// The sign-in window's website data store for a vault and space: 16 stable bytes.
-pub fn data_store_id(vault: &str, space: &str) -> [u8; 16] {
-    let key = format!("phaethon-lms-login\0{vault}\0{space}");
+/// The sign-in window's website data store for a vault (course sites belong to
+/// the vault, not a space): 16 stable bytes.
+pub fn data_store_id(vault: &str) -> [u8; 16] {
+    let key = format!("phaethon-lms-login\0{vault}\0vault");
     let fnv = |seed: u64| key.bytes().fold(seed, |h, b| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01B3));
     let mut id = [0u8; 16];
     id[..8].copy_from_slice(&fnv(0xcbf2_9ce4_8422_2325).to_be_bytes());
@@ -279,10 +280,9 @@ mod tests {
 
     #[test]
     fn each_space_has_its_own_sign_in_store() {
-        let a = data_store_id("default", "school");
-        assert_eq!(a, data_store_id("default", "school"));
-        assert_ne!(a, data_store_id("default", "work"));
-        assert_ne!(a, data_store_id("other", "school"));
+        let a = data_store_id("default");
+        assert_eq!(a, data_store_id("default"));
+        assert_ne!(a, data_store_id("other"));
         assert_eq!(a[6] >> 4, 4);
     }
 

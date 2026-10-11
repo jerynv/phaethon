@@ -558,9 +558,9 @@ pub fn existing_fronts(space: &Path, course: Option<&str>) -> Vec<String> {
 
 /// A short note for the agent's system prompt about the study folder and the
 /// deck format, so it can find decks and make one with write_file. Only for a
-/// space with courses or a study folder.
-pub fn prompt_section(space: &Path, now: u64) -> Option<String> {
-    if plain_dir(space, "courses").is_none() && plain_dir(space, "study").is_none() {
+/// space that sees courses or has a study folder.
+pub fn prompt_section(space: &Path, has_courses: bool, now: u64) -> Option<String> {
+    if !has_courses && plain_dir(space, "study").is_none() {
         return None;
     }
     let mut s = String::from(
@@ -713,7 +713,8 @@ mod tests {
     #[test]
     fn exams_cap_intervals_and_reach_the_prompt() {
         let dir = space("exams");
-        assert_eq!(prompt_section(&dir, T0), None, "no courses, no study folder: nothing");
+        assert_eq!(prompt_section(&dir, false, T0), None, "no courses, no study folder: nothing");
+        assert!(prompt_section(&dir, true, T0).is_some(), "a space that sees courses gets it");
         fs::create_dir_all(dir.join("study")).unwrap();
         let path = deck_save(&dir, None, "Logic", &cards(&[("p → q is false when?", "p true, q false")])).unwrap();
         let mut text = fs::read_to_string(dir.join(&path)).unwrap();
@@ -726,9 +727,9 @@ mod tests {
         let r = rate(&dir, &path, &id, 5, now).unwrap();
         let exam = schedule::exam_start(exam_day, schedule::local_offset_secs(now)).unwrap();
         assert!(r.due < exam, "seen again before the exam");
-        let p = prompt_section(&dir, now).unwrap();
+        let p = prompt_section(&dir, false, now).unwrap();
         assert!(p.contains("study/decks/<Title>.md") && p.contains("Q: <question>") && p.contains("Test 1 (CSCI-C 241) on 2026-10-15"), "{p}");
-        assert!(!prompt_section(&dir, exam + DAY).unwrap().contains("Upcoming"));
+        assert!(!prompt_section(&dir, false, exam + DAY).unwrap().contains("Upcoming"));
         fs::remove_dir_all(dir).unwrap();
     }
 }

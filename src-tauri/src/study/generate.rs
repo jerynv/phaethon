@@ -13,6 +13,7 @@ use super::deck::{self, Deck, Note};
 use super::model::{Model, ask_json};
 use super::quiz::{self, Answer, Attempt, Question, QuestionResult, Quiz};
 use super::sources::{self, Material};
+use crate::lms::access::Visible;
 
 pub const CARDS_MAX: usize = 100;
 pub const QUESTIONS_MAX: usize = 50;
@@ -207,7 +208,7 @@ pub fn check_cards(v: &Value, m: &Material, existing: &[String], count: usize) -
 }
 
 /// Make a deck and save it. Returns its path and how many cards it has.
-pub async fn make_deck<M: Model>(space: &Path, inputs: &[String], opts: &DeckOptions, model: &M, emit: Emit<'_>) -> Result<(String, usize), String> {
+pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[String], opts: &DeckOptions, model: &M, emit: Emit<'_>) -> Result<(String, usize), String> {
     let count = if opts.count == 0 { 20 } else { opts.count.min(CARDS_MAX) };
     let mut inputs = inputs.to_vec();
     let mut focus = opts.focus.clone().filter(|f| !f.trim().is_empty());
@@ -236,7 +237,7 @@ pub async fn make_deck<M: Model>(space: &Path, inputs: &[String], opts: &DeckOpt
         return Err("Choose a course or some files to make cards from.".into());
     }
     emit(progress("reading", 0, 1));
-    let material = sources::gather(space, &inputs, focus.as_deref(), sources::BUDGET)?;
+    let material = sources::gather(space, courses, &inputs, focus.as_deref(), sources::BUDGET)?;
     let existing = super::existing_fronts(space, material.course.as_deref());
     emit(progress("reading", 1, 1));
 
@@ -333,7 +334,7 @@ pub fn check_questions(v: &Value, m: &Material, kinds: &[String], count: usize, 
     Ok((Some(str_field(v, "title")).filter(|t| !t.is_empty()), out))
 }
 
-pub async fn make_quiz<M: Model>(space: &Path, inputs: &[String], opts: &QuizOptions, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize), String> {
+pub async fn make_quiz<M: Model>(space: &Path, courses: &Visible, inputs: &[String], opts: &QuizOptions, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize), String> {
     let count = if opts.count == 0 { 10 } else { opts.count.min(QUESTIONS_MAX) };
     let mut kinds: Vec<String> = opts.kinds.iter().filter(|k| quiz::KINDS.contains(&k.as_str())).cloned().collect();
     kinds.dedup();
@@ -351,7 +352,7 @@ pub async fn make_quiz<M: Model>(space: &Path, inputs: &[String], opts: &QuizOpt
         return Err("Choose a course or some files to make the quiz from.".into());
     }
     emit(progress("reading", 0, 1));
-    let material = sources::gather(space, inputs, opts.focus.as_deref(), sources::BUDGET)?;
+    let material = sources::gather(space, courses, inputs, opts.focus.as_deref(), sources::BUDGET)?;
     emit(progress("reading", 1, 1));
     let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!(" Focus on: {f}.")).unwrap_or_default();
     let user = format!(
@@ -557,7 +558,13 @@ mod tests {
         fs::create_dir_all(&c).unwrap();
         fs::write(c.join("Test 1 Review.pdf"), "%PDF").unwrap();
         fs::write(c.join("Test 1 Review.pdf.md"), "# Text of Test 1 Review.pdf\n\nA conditional p → q is false only when p is true and q is false.\nThe power set of a set with n members has 2^n members.").unwrap();
-        dir.canonicalize().unwrap()
+        crate::lms::access::fixture(&dir, "s", &[("CSCI-C 241", &crate::lms::access::Part::ALL)]);
+        dir.join("spaces/s").canonicalize().unwrap()
+    }
+
+    /// What the test space sees (the vault is two folders up).
+    fn vis(space: &std::path::Path) -> Visible {
+        crate::lms::access::visible(&crate::vault::Vault::at(space.parent().unwrap().parent().unwrap()), "s")
     }
 
     const SRC: &str = "courses/CSCI-C 241/files/HW/Test 1 Review.pdf";
@@ -585,7 +592,7 @@ mod tests {
         let m = Scripted::new(&[r#"{"cards": [{"front": "Q", "back": "A", "source": "made-up.pdf"}]}"#, &good]);
         let (events,) = collect();
         let emit = |e: StudyEvent| events.lock().unwrap().push(e);
-        let (path, n) = block_on(make_deck(&dir, &["courses/CSCI-C 241".into()], &DeckOptions { count: 8, ..Default::default() }, &m, &emit)).unwrap();
+        let (path, n) = block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions { count: 8, ..Default::default() }, &m, &emit)).unwrap();
         assert_eq!((path.as_str(), n), ("study/decks/Logic basics.md", 2));
         assert_eq!(m.calls(), 2);
         let asked = m.asked.lock().unwrap();
@@ -603,7 +610,7 @@ mod tests {
         // Again for the same course: the existing cards are shown, and repeats are dropped.
         let again = format!(r#"{{"cards": [{{"front": "When is p → q false?", "back": "x", "source": "{SRC}"}}, {{"front": "What is ¬(p ∧ q) equivalent to?", "back": "¬p ∨ ¬q", "source": "{SRC}"}}]}}"#);
         let m = Scripted::new(&[&again]);
-        let (path2, n) = block_on(make_deck(&dir, &[SRC.into()], &DeckOptions { count: 5, title: Some("More logic".into()), ..Default::default() }, &m, &emit)).unwrap();
+        let (path2, n) = block_on(make_deck(&dir, &vis(&dir), &[SRC.into()], &DeckOptions { count: 5, title: Some("More logic".into()), ..Default::default() }, &m, &emit)).unwrap();
         assert_eq!((path2.as_str(), n), ("study/decks/More logic.md", 1));
         assert!(m.asked.lock().unwrap()[0].1.contains("<existing_cards>\nA set with n members"));
         fs::remove_dir_all(dir).unwrap();
@@ -614,13 +621,13 @@ mod tests {
         let dir = space("bad");
         let m = Scripted::new(&["Sorry, I can't.", r#"{"cards": [{"front": "", "back": "x", "source": "x"}]}"#]);
         let emit = |_: StudyEvent| {};
-        let err = block_on(make_deck(&dir, &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit)).unwrap_err();
+        let err = block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit)).unwrap_err();
         assert!(err.contains("nothing was saved"), "{err}");
         assert!(!dir.join("study/decks").exists());
         // No model at all: its message, and nothing written.
         let m = Scripted::failing(super::super::model::NO_MODEL);
-        assert_eq!(block_on(make_deck(&dir, &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit)).unwrap_err(), super::super::model::NO_MODEL);
-        assert!(block_on(make_deck(&dir, &["../elsewhere".into()], &DeckOptions::default(), &m, &emit)).is_err());
+        assert_eq!(block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit)).unwrap_err(), super::super::model::NO_MODEL);
+        assert!(block_on(make_deck(&dir, &vis(&dir), &["../elsewhere".into()], &DeckOptions::default(), &m, &emit)).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -642,7 +649,7 @@ mod tests {
         let wrong_kind = format!(r#"{{"questions": [{{"kind": "essay", "prompt": "x", "answer": "y", "explanation": "z", "source": "{SRC}"}}]}}"#);
         let m = Scripted::new(&[&wrong_kind, &quiz_reply()]);
         let kinds = ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec();
-        let (path, n) = block_on(make_quiz(&dir, &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), focus: None, title: None }, &m, &emit, 1_791_000_000_000)).unwrap();
+        let (path, n) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), focus: None, title: None }, &m, &emit, 1_791_000_000_000)).unwrap();
         assert_eq!((path.as_str(), n), ("study/quizzes/Test 1 practice.json", 4));
         assert!(m.asked.lock().unwrap()[1].1.contains("only these kinds"));
         let (_, q) = super::super::load_quiz(&dir, &path).unwrap();
@@ -682,7 +689,7 @@ mod tests {
         // A deck from the mistakes.
         let cards = format!(r#"{{"cards": [{{"front": "If p is false, what is p → q?", "back": "True, whatever q is.", "source": "{SRC}"}}]}}"#);
         let m = Scripted::new(&[&cards]);
-        let (deck, _) = block_on(make_deck(&dir, &[], &DeckOptions { from_attempt: Some(a.path.clone()), ..Default::default() }, &m, &emit)).unwrap();
+        let (deck, _) = block_on(make_deck(&dir, &vis(&dir), &[], &DeckOptions { from_attempt: Some(a.path.clone()), ..Default::default() }, &m, &emit)).unwrap();
         assert_eq!(deck, "study/decks/Mistakes from Test 1 practice.md");
         assert!(m.asked.lock().unwrap()[0].1.contains("<mistakes>") && m.asked.lock().unwrap()[0].1.contains("Their answer: p false, q true"));
 

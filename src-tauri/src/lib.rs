@@ -181,7 +181,8 @@ async fn agent_send(
                 space_dir: &space_dir,
                 prompt: &prompt,
                 config_dir,
-                add_dirs: grants::cli_dirs(&state.vault, &space),
+                // Granted folders of other spaces, and the courses this space sees in full.
+                add_dirs: grants::cli_dirs(&state.vault, &space).into_iter().chain(lms::access::visible(&state.vault, &space).cli_dirs()).collect(),
             };
             agent::run_turn(&state.runs, &space, req, emit).await;
         }
@@ -609,7 +610,8 @@ fn space_tutor_modes_list(state: State<'_, AppState>) -> Result<std::collections
 /// The space's imported courses and what's due from now on in them.
 #[tauri::command]
 fn plan_upcoming(state: State<'_, AppState>, space: String) -> Result<plan::UpcomingView, String> {
-    plan::upcoming(&state.vault.space_dir(&space)?, lms::store::now_secs())
+    state.vault.space_dir(&space)?;
+    plan::upcoming(&lms::access::visible(&state.vault, &space), lms::store::now_secs())
 }
 
 /// The exams added in `space` (`study/exams.json`).
@@ -646,10 +648,14 @@ fn plan_state_set(state: State<'_, AppState>, space: String, plan_state: plan::P
 #[tauri::command]
 fn file_open(state: State<'_, AppState>, space: String, path: String, reveal: Option<bool>) -> Result<(), String> {
     let dir = state.vault.space_dir(&space)?;
-    open::open(&dir, &path, reveal.unwrap_or(false))
+    open::open(&dir, &lms::access::visible(&state.vault, &space), &path, reveal.unwrap_or(false))
 }
 
 // ---- Course sites (lms/) ----------------------------------------------------
+//
+// Course sites belong to the vault: their connections, sessions and imported
+// courses are shared by every space, and course-access.json says which space
+// sees which courses, and which parts of them (lms/access.rs).
 
 /// Canvas schools whose name matches `query` (Canvas's public search); `[]` for the other kinds.
 #[tauri::command]
@@ -665,19 +671,16 @@ async fn lms_schools(kind: lms::Kind, query: String) -> Result<Vec<lms::service:
 async fn lms_connect(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
-    space: String,
     kind: lms::Kind,
     address: String,
     school_name: Option<String>,
 ) -> Result<lms::service::ConnectionView, String> {
-    let dir = state.vault.space_dir(&space)?;
     let site = lms::Site::new(kind, &address).map_err(|e| e.to_string())?;
     let school = school_name
         .clone()
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| site.base.host_str().unwrap_or("your school").to_string());
-    let vault = state.vault.name();
-    let store_id = lms::login::data_store_id(&vault, &space);
+    let store_id = lms::login::data_store_id(&state.vault.name());
     let data_dir = app
         .path()
         .app_data_dir()
@@ -687,79 +690,71 @@ async fn lms_connect(
     // A made-up or mistyped address says so, instead of opening a blank window.
     lms::probe::check(&site).await?;
     let credential = lms::login::sign_in(&app, &site, &format!("Sign in to {school}"), store_id, data_dir).await?;
-    let view = lms::service::save_sign_in(&vault, &space, &dir, &site, &credential)?;
-    if let Some(name) = school_name {
-        lms::service::set_school_name(&dir, &view.id, &name)?;
-        return lms::service::connections(&vault, &space, &dir)?
-            .into_iter()
-            .find(|c| c.id == view.id)
-            .ok_or_else(|| "The connection wasn’t saved.".into());
-    }
-    Ok(view)
+    let vault = state.vault.clone();
+    off_main(move || {
+        let view = lms::service::save_sign_in(&vault, &site, &credential)?;
+        let Some(name) = school_name else { return Ok(view) };
+        lms::service::set_school_name(vault.root(), &view.id, &name)?;
+        lms::service::connections(&vault)?.into_iter().find(|c| c.id == view.id).ok_or_else(|| "The connection wasn’t saved.".into())
+    })
+    .await
 }
 
-/// The course sites `space` is connected to.
+/// The vault's course sites. Reads only lms.json (a signed-in hint, never the keychain).
 #[tauri::command]
-async fn lms_connections(state: State<'_, AppState>, space: String) -> Result<Vec<lms::service::ConnectionView>, String> {
-    let dir = state.vault.space_dir(&space)?;
-    let vault_name = state.vault.name();
-    off_main(move || lms::service::connections(&vault_name, &space, &dir)).await
+async fn lms_connections(state: State<'_, AppState>) -> Result<Vec<lms::service::ConnectionView>, String> {
+    let vault = state.vault.clone();
+    off_main(move || lms::service::connections(&vault)).await
 }
 
 /// The person's courses on a connected site. `Err("signedOut")` when the session ended.
 #[tauri::command]
-async fn lms_courses(state: State<'_, AppState>, space: String, connection: String) -> Result<Vec<lms::service::CourseView>, String> {
-    let dir = state.vault.space_dir(&space)?;
-    lms::service::courses(&state.vault.name(), &space, &dir, &connection).await
+async fn lms_courses(state: State<'_, AppState>, connection: String) -> Result<Vec<lms::service::CourseView>, String> {
+    lms::service::courses(&state.vault, &connection).await
 }
 
-/// Import (or update) courses into `<space>/courses/`, streaming progress; always ends with `done`.
+/// Import (or update) courses into `<vault>/courses/`, streaming progress; always
+/// ends with `done`. `spaces` may see every part of each course imported for the
+/// first time; courses imported before keep who can see them.
 #[tauri::command]
 async fn lms_import(
     state: State<'_, AppState>,
-    space: String,
     connection: String,
     course_ids: Vec<String>,
+    spaces: Vec<String>,
     on_event: Channel<lms::service::ImportEvent>,
 ) -> Result<(), String> {
     let emit = |e: lms::service::ImportEvent| {
         let _ = on_event.send(e);
     };
-    let dir = match state.vault.space_dir(&space) {
-        Ok(d) => d,
-        Err(message) => {
-            emit(lms::service::ImportEvent::Error { message });
-            emit(lms::service::ImportEvent::Done);
-            return Ok(());
-        }
-    };
-    lms::service::import(&state.vault.name(), &space, &dir, &connection, &course_ids, &emit).await;
+    lms::service::import(&state.vault, &connection, &course_ids, &spaces, &emit).await;
     Ok(())
 }
 
-/// Forget a connection's session and the connection; imported files stay.
+/// Sign out of a course site: its session leaves the keychain; the connection,
+/// its imported courses and who can see them stay.
 #[tauri::command]
-async fn lms_disconnect(state: State<'_, AppState>, space: String, connection: String) -> Result<(), String> {
-    let dir = state.vault.space_dir(&space)?;
-    let vault_name = state.vault.name();
-    off_main(move || lms::service::disconnect(&vault_name, &space, &dir, &connection)).await
+async fn lms_disconnect(state: State<'_, AppState>, connection: String) -> Result<(), String> {
+    let vault = state.vault.clone();
+    off_main(move || lms::service::disconnect(&vault, &connection)).await
 }
 
-/// Every imported course's grades in `space`, from disk (no network).
+/// The grades `space` may see, from disk (no network).
 #[tauri::command]
 fn lms_grades(state: State<'_, AppState>, space: String) -> Result<Vec<lms::store::GradeRec>, String> {
-    let dir = state.vault.space_dir(&space)?;
-    lms::service::grades(&dir)
+    state.vault.space_dir(&space)?;
+    lms::service::grades(&state.vault, &lms::access::visible(&state.vault, &space))
 }
 
-/// Read only the grades again for a connection's imported courses, streaming progress; always ends with `done`.
+/// Read only the grades again for a connection's courses whose grades `space`
+/// may see, streaming progress; always ends with `done`.
 #[tauri::command]
 async fn lms_grades_refresh(state: State<'_, AppState>, space: String, connection: String, on_event: Channel<lms::service::GradesEvent>) -> Result<(), String> {
     let emit = |e: lms::service::GradesEvent| {
         let _ = on_event.send(e);
     };
     match state.vault.space_dir(&space) {
-        Ok(dir) => lms::service::grades_refresh(&state.vault.name(), &space, &dir, &connection, &emit).await,
+        Ok(_) => lms::service::grades_refresh(&state.vault, &lms::access::visible(&state.vault, &space), &connection, &emit).await,
         Err(message) => {
             emit(lms::service::GradesEvent::Error { message });
             emit(lms::service::GradesEvent::Done);
@@ -767,6 +762,23 @@ async fn lms_grades_refresh(state: State<'_, AppState>, space: String, connectio
     }
     Ok(())
 }
+
+/// Which courses each space may see, and which parts: every space and every
+/// imported course, with the access of `space` only when one is named.
+#[tauri::command]
+fn course_access_get(state: State<'_, AppState>, space: Option<String>) -> Result<lms::access::AccessView, String> {
+    lms::access::view(&state.vault, space.as_deref())
+}
+
+/// Let `space` see `parts` of `course` (`[]`: nothing). Only imported courses.
+#[tauri::command]
+fn course_access_set(state: State<'_, AppState>, space: String, course: String, parts: Vec<lms::access::Part>) -> Result<(), String> {
+    if !lms::access::all_courses(&state.vault)?.iter().any(|c| c.key == course) {
+        return Err("That course isn’t imported.".into());
+    }
+    lms::access::set(&state.vault, &space, &course, &parts)
+}
+
 
 /// Stop the turn running in `space`, if any. The stream then ends with `Cancelled`.
 #[tauri::command]
@@ -809,6 +821,16 @@ pub fn run() {
         .setup(|app| {
             let vault = Vault::default_location()?;
             vault.ensure_initialized()?;
+            // Course sites moved from spaces to the vault: move any a space still has (once;
+            // see lms/migrate.rs). Off the main thread, since moving a sign-in reads the
+            // keychain, and macOS may stop to ask for access.
+            let to_move = vault.clone();
+            std::thread::spawn(move || {
+                let moved = lms::migrate::run(&to_move, &lms::migrate::Keychain(to_move.name()));
+                for line in moved.moved.iter().chain(&moved.notes) {
+                    eprintln!("course sites: {line}");
+                }
+            });
             let isolated_config_root = app
                 .path()
                 .app_data_dir()
@@ -880,6 +902,8 @@ pub fn run() {
             lms_disconnect,
             lms_grades,
             lms_grades_refresh,
+            course_access_get,
+            course_access_set,
             study::commands::study_sources,
             study::commands::study_overview,
             study::commands::study_deck,

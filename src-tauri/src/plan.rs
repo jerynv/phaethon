@@ -10,6 +10,7 @@ use std::path::{Component, Path};
 
 use serde::{Deserialize, Serialize};
 
+use crate::lms::access::{Part, Visible};
 use crate::lms::{names, store};
 use crate::tools::STATE_DIR;
 
@@ -85,26 +86,24 @@ pub struct UpcomingView {
     pub items: Vec<Upcoming>,
 }
 
-/// The space's imported courses and everything due from now on in them.
-pub fn upcoming(space_dir: &Path, now_secs: i64) -> Result<UpcomingView, String> {
-    let st = store::load(space_dir)?;
+/// The courses the space may see and everything due from now on in them: only
+/// where it may see due dates (a course's overview or assignments), linked to
+/// assignments.md when it may read that, else the course's README.
+pub fn upcoming(visible: &Visible, now_secs: i64) -> Result<UpcomingView, String> {
     let mut out = vec![];
     let mut courses = vec![];
-    for conn in &st.connections {
-        for c in conn.courses.values() {
-            if !courses.iter().any(|r: &CourseRef| r.folder == c.folder) {
-                courses.push(CourseRef { name: c.name.clone(), folder: c.folder.clone() });
-            }
-            for (t, d) in store::upcoming(&c.due, now_secs) {
-                let anchor = if d.anchor.is_empty() { String::new() } else { format!("#{}", d.anchor) };
-                out.push(Upcoming {
-                    course: c.name.clone(),
-                    folder: c.folder.clone(),
-                    title: d.title.clone(),
-                    due: t * 1000,
-                    link: format!("courses/{}/assignments.md{anchor}", c.folder),
-                });
-            }
+    for seen in &visible.courses {
+        let c = &seen.state;
+        if !courses.iter().any(|r: &CourseRef| r.folder == c.folder) {
+            courses.push(CourseRef { name: c.name.clone(), folder: c.folder.clone() });
+        }
+        if !seen.sees_due() {
+            continue;
+        }
+        for (t, d) in store::upcoming(&c.due, now_secs) {
+            let anchor = if d.anchor.is_empty() { String::new() } else { format!("#{}", d.anchor) };
+            let link = if seen.can(Part::Assignments) { format!("courses/{}/assignments.md{anchor}", c.folder) } else { format!("courses/{}/README.md", c.folder) };
+            out.push(Upcoming { course: c.name.clone(), folder: c.folder.clone(), title: d.title.clone(), due: t * 1000, link });
         }
     }
     out.sort_by(|a, b| a.due.cmp(&b.due).then_with(|| a.course.cmp(&b.course)).then_with(|| a.title.cmp(&b.title)));
@@ -316,6 +315,7 @@ mod tests {
             address: "https://x".into(),
             school_name: None,
             last_sync: None,
+            signed_in: false,
             courses: Default::default(),
         };
         let due = |title: &str, due: &str, anchor: &str| store::Due { title: title.into(), due: due.into(), anchor: anchor.into() };
@@ -338,16 +338,30 @@ mod tests {
             },
         );
         st.connections.push(conn);
+        // `dir` stands for the vault: its lms.json, and a space "s" that sees both courses.
         store::save(&dir, &st).unwrap();
+        fs::create_dir_all(dir.join("spaces/s")).unwrap();
+        let vault = crate::vault::Vault::at(&dir);
+        crate::lms::access::allow_all(&vault, &["s".into()], &["c1/1".into(), "c1/2".into()]).unwrap();
+        let visible = crate::lms::access::visible(&vault, "s");
         let now = store::parse_time("2026-10-10T12:00:00Z").unwrap();
-        let view = upcoming(&dir, now).unwrap();
+        let view = upcoming(&visible, now).unwrap();
         assert_eq!(view.courses.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["CSCI-C 241", "Linear Algebra"]);
         let got = view.items;
         assert_eq!(got.iter().map(|u| u.title.as_str()).collect::<Vec<_>>(), ["Quiz 3", "HW 06"]);
         assert_eq!(got[0].link, "courses/Linear Algebra/assignments.md");
         assert_eq!(got[1].link, "courses/CSCI-C 241/assignments.md#hw-06");
         assert_eq!(got[1].due, store::parse_time("2026-10-15T03:59:59Z").unwrap() * 1000);
-        assert_eq!(upcoming(&space("none"), now).unwrap(), UpcomingView { courses: vec![], items: vec![] }, "no courses, nothing due");
+        assert_eq!(upcoming(&Visible::default(), now).unwrap(), UpcomingView { courses: vec![], items: vec![] }, "no courses, nothing due");
+        // Only what the space may see: no due dates without overview or assignments; the README without assignments.
+        crate::lms::access::set(&vault, "s", "c1/2", &[Part::Syllabus]).unwrap();
+        crate::lms::access::set(&vault, "s", "c1/1", &[Part::Overview]).unwrap();
+        let view = upcoming(&crate::lms::access::visible(&vault, "s"), now).unwrap();
+        assert_eq!(view.courses.len(), 2);
+        assert_eq!(view.items.len(), 1);
+        assert_eq!(view.items[0].link, "courses/CSCI-C 241/README.md");
+        crate::lms::access::set(&vault, "s", "c1/1", &[]).unwrap();
+        assert_eq!(upcoming(&crate::lms::access::visible(&vault, "s"), now).unwrap().courses.len(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -15,6 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::{Value, json};
 
 use crate::grants::{self, Grant};
+use crate::lms::access::{self, Place, Visible};
 use crate::vault::Vault;
 
 /// Largest file `read_file` returns, in bytes.
@@ -253,6 +254,8 @@ pub struct Ctx {
     pub space_id: String,
     pub vault: Vault,
     pub grants: Vec<Grant>,
+    /// The courses this space may see, as `courses/<folder>/...` (see lms/access.rs).
+    pub courses: Visible,
 }
 
 /// Run a tool with `@space/path` support. `Err` is a message for the model.
@@ -268,18 +271,18 @@ pub fn run_in(ctx: &Ctx, call: &Call) -> Result<String, String> {
     match call {
         Call::List { path } => match split(path) {
             (Some(space), rel) => list_at(&resolve_other(ctx, &space, &rel)?.0, path),
-            (None, rel) => list(&ctx.space, &rel),
+            (None, rel) => list_here(ctx, &rel),
         },
         Call::Read { path } => match split(path) {
             (Some(space), rel) => read_at(&resolve_other(ctx, &space, &rel)?.0, path),
-            (None, rel) => read(&ctx.space, &rel),
+            (None, rel) => read_here(ctx, &rel),
         },
         Call::Search { query, path } => match split(path) {
             (Some(space), rel) => {
                 let (start, root) = resolve_other(ctx, &space, &rel)?;
                 search_at(&root, start, query, &format!("@{space}/"))
             }
-            (None, rel) => search(&ctx.space, query, &rel),
+            (None, rel) => search_here(ctx, query, &rel),
         },
         Call::Write { path, contents } => match target(path) {
             Target::Other { .. } => Err("write_file can only write in this space; other spaces can never be written".into()),
@@ -383,11 +386,133 @@ pub fn resolve(space: &Path, rel: &str, must_exist: bool) -> Result<PathBuf, Str
     }
 }
 
-fn list(space: &Path, rel: &str) -> Result<String, String> {
-    list_at(&resolve(space, rel, true)?, rel)
+// ---- Courses ----------------------------------------------------------------
+//
+// `courses/...` in a space is not a folder of the space: it shows the vault's
+// imported courses that this space may see, and only the parts it may see
+// (lms/access.rs decides). It is read-only: courses are the site's copy, and
+// importing again would overwrite any change.
+
+/// `rel` as a clean `courses/...` path, when it names the courses.
+fn course_path(rel: &str) -> Option<PathBuf> {
+    clean_rel(rel).ok().filter(|c| access::is_courses_path(c))
+}
+
+/// Refuse a write the tools may never make: into the courses.
+pub fn check_writable(rel: &str) -> Result<(), String> {
+    if course_path(rel).is_some() {
+        return Err(format!(
+            "\"{rel}\" is in courses/, the course site's copy, which can't be changed here (importing again would overwrite it); write notes elsewhere in this space, e.g. notes/"
+        ));
+    }
+    Ok(())
+}
+
+fn list_here(ctx: &Ctx, rel: &str) -> Result<String, String> {
+    if let Some(clean) = course_path(rel) {
+        let names = match ctx.courses.place(&clean, true)? {
+            Place::Root => ctx.courses.courses.iter().filter(|c| ctx.courses.dir_of(c).is_some()).map(|c| format!("{}/", c.folder())).collect(),
+            Place::Course { seen, sub, real, .. } => {
+                if !real.is_dir() {
+                    return Err(format!("\"{rel}\" is a file, not a folder"));
+                }
+                ctx.courses.list_course(seen, &sub, &real)?
+            }
+        };
+        return Ok(render(names));
+    }
+    let dir = resolve(&ctx.space, rel, true)?;
+    let mut names = names_in(&dir, rel)?;
+    if clean_rel(rel).is_ok_and(|c| c.as_os_str().is_empty()) {
+        // The space's own folder named like the courses is hidden behind them.
+        names.retain(|n| !n.trim_end_matches('/').eq_ignore_ascii_case(crate::lms::store::COURSES_DIR));
+        if !ctx.courses.is_empty() {
+            names.push(format!("{}/", crate::lms::store::COURSES_DIR));
+            names.sort();
+        }
+    }
+    Ok(render(names))
+}
+
+fn read_here(ctx: &Ctx, rel: &str) -> Result<String, String> {
+    let Some(clean) = course_path(rel) else { return read(&ctx.space, rel) };
+    match ctx.courses.place(&clean, true)? {
+        Place::Root => Err(format!("\"{rel}\" is a folder; use list_files")),
+        Place::Course { seen, sub, real, .. } => Ok(access::filter_text(seen, &sub, read_at(&real, rel)?)),
+    }
+}
+
+fn search_here(ctx: &Ctx, query: &str, rel: &str) -> Result<String, String> {
+    if query.is_empty() {
+        return Err("query must not be empty".into());
+    }
+    let mut hits = vec![];
+    if let Some(clean) = course_path(rel) {
+        match ctx.courses.place(&clean, true)? {
+            Place::Root => search_courses(&ctx.courses, None, query, &mut hits),
+            Place::Course { seen, real, .. } => search_courses(&ctx.courses, Some((seen, real)), query, &mut hits),
+        }
+    } else {
+        let root = resolve(&ctx.space, "", true)?;
+        let start = resolve(&ctx.space, rel, true)?;
+        let whole = start == root;
+        walk_search(&root, start, query, "", whole, &mut hits);
+        if whole {
+            search_courses(&ctx.courses, None, query, &mut hits);
+        }
+    }
+    Ok(found(hits, query))
+}
+
+/// Search the courses a space may see (or one course from `start`), only the
+/// parts it may see, README as it may see it.
+fn search_courses(courses: &Visible, only: Option<(&access::Seen, PathBuf)>, query: &str, hits: &mut Vec<String>) {
+    let needle = query.to_lowercase();
+    let list: Vec<(&access::Seen, PathBuf, PathBuf)> = match only {
+        Some((seen, start)) => courses.dir_of(seen).map(|d| vec![(seen, d, start)]).unwrap_or_default(),
+        None => courses.courses.iter().filter_map(|c| courses.dir_of(c).map(|d| (c, d.clone(), d))).collect(),
+    };
+    for (seen, dir, start) in list {
+        for (sub, real) in courses.walk(seen, &dir, &start, 10_000) {
+            if hits.len() >= MAX_HITS {
+                return;
+            }
+            if fs::symlink_metadata(&real).map(|m| m.len()).unwrap_or(u64::MAX) > MAX_SEARCH_FILE {
+                continue;
+            }
+            let Ok(text) = fs::read_to_string(&real) else { continue };
+            let text = access::filter_text(seen, &sub, text);
+            let shown = format!("{}/{}/{}", crate::lms::store::COURSES_DIR, seen.folder(), sub.to_string_lossy());
+            for (i, line) in text.lines().enumerate() {
+                if line.to_lowercase().contains(&needle) {
+                    hits.push(format!("{shown}:{}: {}", i + 1, line.trim()));
+                    if hits.len() >= MAX_HITS {
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn list_at(dir: &Path, rel: &str) -> Result<String, String> {
+    names_in(dir, rel).map(render)
+}
+
+fn render(mut names: Vec<String>) -> String {
+    if names.is_empty() {
+        return "(empty folder)".into();
+    }
+    let total = names.len();
+    names.truncate(MAX_LIST);
+    let mut out = names.join("\n");
+    if total > MAX_LIST {
+        out.push_str(&format!("\n… and {} more", total - MAX_LIST));
+    }
+    out
+}
+
+fn names_in(dir: &Path, rel: &str) -> Result<Vec<String>, String> {
     if !dir.is_dir() {
         return Err(format!("\"{rel}\" is a file, not a folder"));
     }
@@ -401,16 +526,11 @@ fn list_at(dir: &Path, rel: &str) -> Result<String, String> {
         })
         .collect();
     names.sort();
-    if names.is_empty() {
-        return Ok("(empty folder)".into());
-    }
-    let total = names.len();
-    names.truncate(MAX_LIST);
-    let mut out = names.join("\n");
-    if total > MAX_LIST {
-        out.push_str(&format!("\n… and {} more", total - MAX_LIST));
-    }
-    Ok(out)
+    Ok(names)
+}
+
+fn list(space: &Path, rel: &str) -> Result<String, String> {
+    list_at(&resolve(space, rel, true)?, rel)
 }
 
 fn read(space: &Path, rel: &str) -> Result<String, String> {
@@ -441,8 +561,22 @@ fn search_at(root: &Path, start: PathBuf, query: &str, prefix: &str) -> Result<S
     if query.is_empty() {
         return Err("query must not be empty".into());
     }
-    let needle = query.to_lowercase();
     let mut hits = vec![];
+    walk_search(root, start, query, prefix, false, &mut hits);
+    Ok(found(hits, query))
+}
+
+fn found(hits: Vec<String>, query: &str) -> String {
+    if hits.is_empty() {
+        return format!("No lines contain \u{201c}{query}\u{201d}.");
+    }
+    hits.join("\n")
+}
+
+/// The walk behind a search. `hide_courses`: leave out a folder of `root`
+/// named like the courses (in a space they are searched as courses instead).
+fn walk_search(root: &Path, start: PathBuf, query: &str, prefix: &str, hide_courses: bool, hits: &mut Vec<String>) {
+    let needle = query.to_lowercase();
     let mut stack = vec![start];
     while let Some(p) = stack.pop() {
         if hits.len() >= MAX_HITS {
@@ -452,6 +586,9 @@ fn search_at(root: &Path, start: PathBuf, query: &str, prefix: &str) -> Result<S
         let Ok(meta) = p.symlink_metadata() else { continue };
         if meta.is_dir() {
             if p.file_name().is_some_and(|n| n == STATE_DIR) {
+                continue;
+            }
+            if hide_courses && p.parent() == Some(root) && p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(crate::lms::store::COURSES_DIR)) {
                 continue;
             }
             if let Ok(rd) = fs::read_dir(&p) {
@@ -472,13 +609,10 @@ fn search_at(root: &Path, start: PathBuf, query: &str, prefix: &str) -> Result<S
             }
         }
     }
-    if hits.is_empty() {
-        return Ok(format!("No lines contain \u{201c}{query}\u{201d}."));
-    }
-    Ok(hits.join("\n"))
 }
 
 fn write(space: &Path, rel: &str, contents: &str) -> Result<String, String> {
+    check_writable(rel)?;
     if rel.trim().is_empty() {
         return Err("path must name a file".into());
     }
@@ -611,6 +745,7 @@ mod tests {
             space_id: "school".into(),
             vault: Vault::at(&dir),
             grants: vec![grant("calendar")],
+            courses: Visible::default(),
         };
         (dir, ctx)
     }
@@ -678,6 +813,125 @@ mod tests {
         let ctx = Ctx { grants: vec![grant("out")], ..ctx };
         assert!(run_in(&ctx, &Call::List { path: "@work/out".into() }).is_err());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The access fixture's vault (Calculus II and Linear Algebra imported),
+    /// with school allowed `parts` of Calculus II, as school's tool context.
+    fn courses_ctx(tag: &str, parts: &[crate::lms::access::Part]) -> (PathBuf, Ctx) {
+        let (dir, vault) = crate::lms::access::tests::vault(&format!("tools-{tag}"));
+        crate::lms::access::set(&vault, "school", "canvas-x/1", parts).unwrap();
+        fs::write(dir.join("spaces/school/notes.md"), "my own series notes\n").unwrap();
+        let ctx = Ctx {
+            space: dir.join("spaces/school"),
+            space_id: "school".into(),
+            courses: crate::lms::access::visible(&vault, "school"),
+            vault,
+            grants: vec![],
+        };
+        (dir, ctx)
+    }
+
+    #[test]
+    fn courses_are_read_listed_and_searched_only_as_far_as_allowed() {
+        use crate::lms::access::Part;
+        let (dir, ctx) = courses_ctx("parts", &[Part::Overview, Part::Files]);
+        let read = |p: &str| run_in(&ctx, &Call::Read { path: p.into() });
+        let list = |p: &str| run_in(&ctx, &Call::List { path: p.into() });
+        let search = |q: &str, p: &str| run_in(&ctx, &Call::Search { query: q.into(), path: p.into() }).unwrap();
+        // The space's root shows courses/ beside its own files; courses/ lists what it may see.
+        assert_eq!(list("").unwrap(), "courses/\nnotes.md");
+        assert_eq!(list("courses").unwrap(), "Calculus II/");
+        assert_eq!(list("courses/Calculus II").unwrap(), "README.md\nfiles/\nmodules.md\npages/\nreadings/");
+        assert_eq!(list("courses/Calculus II/files/Notes").unwrap(), "series.pdf.md");
+        assert!(read("courses/Calculus II/files/Notes/series.pdf.md").unwrap().contains("Ratio test"));
+        // README without the grade or the links to parts it may not see.
+        let readme = read("courses/Calculus II/README.md").unwrap();
+        assert!(readme.contains("Coming up") && !readme.contains("91%") && !readme.contains("syllabus.md"), "{readme}");
+        for bad in [
+            "courses/Calculus II/grades.md",
+            "courses/Calculus II/GRADES.MD",
+            "Courses/Calculus II/syllabus.md",
+            "courses/Calculus II/assignments.md",
+            "courses/Calculus II/files/../grades.md",
+            "courses/Calculus II/./grades.md",
+            "courses/Linear Algebra/syllabus.md",
+            "courses/Calculus%20II/README.md",
+            "courses/../courses/Calculus II/grades.md",
+            "courses/Calculus II/.phaethon",
+            ".phaethon/course-access.json",
+            "../../.phaethon/course-access.json",
+            "../../courses/Calculus II/grades.md",
+        ] {
+            assert!(read(bad).is_err(), "{bad} should be refused");
+        }
+        assert!(list("courses/Linear Algebra").is_err());
+        assert!(list(".phaethon").is_err());
+        // Search finds allowed parts across the space, never grades or syllabus, never another course.
+        let all = search("series", "");
+        assert!(all.contains("notes.md:1:") && all.contains("courses/Calculus II/files/Notes/series.pdf.md:1:"), "{all}");
+        assert!(search("91%", "").starts_with("No lines contain"), "the README's grade line is hidden");
+        assert!(search("office hours", "").starts_with("No lines contain"), "syllabus isn't allowed");
+        assert!(search("eigenvalues", "courses").starts_with("No lines contain"), "Linear Algebra isn't allowed");
+        assert!(search("week 1", "courses/Calculus II").contains("courses/Calculus II/pages/week 1.md:1:"));
+        assert!(run_in(&ctx, &Call::Search { query: "x".into(), path: "courses/Linear Algebra".into() }).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_space_without_access_sees_no_courses() {
+        let (dir, ctx) = courses_ctx("none", &[]);
+        assert_eq!(run_in(&ctx, &Call::List { path: String::new() }).unwrap(), "notes.md");
+        assert!(run_in(&ctx, &Call::List { path: "courses".into() }).unwrap() == "(empty folder)");
+        assert!(run_in(&ctx, &Call::Read { path: "courses/Calculus II/README.md".into() }).is_err());
+        assert!(run_in(&ctx, &Call::Search { query: "series".into(), path: String::new() }).unwrap().starts_with("notes.md:1:"));
+        // A folder of the space's own called courses is hidden behind them, never mixed in.
+        fs::create_dir_all(dir.join("spaces/school/Courses/Old")).unwrap();
+        fs::write(dir.join("spaces/school/Courses/Old/x.md"), "series old").unwrap();
+        assert_eq!(run_in(&ctx, &Call::List { path: String::new() }).unwrap(), "notes.md");
+        assert!(run_in(&ctx, &Call::Read { path: "Courses/Old/x.md".into() }).is_err());
+        assert!(!run_in(&ctx, &Call::Search { query: "series".into(), path: String::new() }).unwrap().contains("old"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn courses_and_who_sees_them_are_never_written_by_the_agent() {
+        use crate::lms::access::Part;
+        let (dir, ctx) = courses_ctx("write", &Part::ALL);
+        let access_before = fs::read_to_string(dir.join(".phaethon/course-access.json")).unwrap();
+        for p in ["courses/Calculus II/syllabus.md", "courses/Calculus II/new.md", "Courses/x.md", "./courses/x.md", "courses", ".phaethon/course-access.json"] {
+            let r = run_in(&ctx, &Call::Write { path: p.into(), contents: "x".into() });
+            assert!(r.is_err(), "{p}: {r:?}");
+        }
+        assert!(check_writable("courses/a.md").unwrap_err().contains("course site's copy"));
+        assert!(check_writable("notes/courses.md").is_ok());
+        assert_eq!(fs::read_to_string(dir.join("courses/Calculus II/syllabus.md")).unwrap(), "Syllabus: integrals and series. Office hours Tuesday.\n");
+        assert_eq!(fs::read_to_string(dir.join(".phaethon/course-access.json")).unwrap(), access_before);
+        assert!(!dir.join("spaces/school/.phaethon/course-access.json").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_in_a_course_never_lead_to_a_part_or_place_not_allowed() {
+        use crate::lms::access::Part;
+        let (dir, _) = courses_ctx("links", &[Part::Files]);
+        let calc = dir.join("courses/Calculus II");
+        std::os::unix::fs::symlink(calc.join("grades.md"), calc.join("files/g.md")).unwrap();
+        std::os::unix::fs::symlink(dir.join("spaces/work"), calc.join("files/work")).unwrap();
+        fs::write(dir.join("spaces/work/private.md"), "work secret").unwrap();
+        let ctx = Ctx { courses: crate::lms::access::visible(&Vault::at(&dir), "school"), ..courses_ctx_keep(&dir) };
+        for p in ["courses/Calculus II/files/g.md", "courses/Calculus II/files/work/private.md"] {
+            assert!(run_in(&ctx, &Call::Read { path: p.into() }).is_err(), "{p}");
+        }
+        let out = run_in(&ctx, &Call::Search { query: "secret".into(), path: String::new() }).unwrap();
+        assert!(out.starts_with("No lines contain"), "{out}");
+        let out = run_in(&ctx, &Call::Search { query: "91%".into(), path: "courses".into() }).unwrap();
+        assert!(out.starts_with("No lines contain"), "{out}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn courses_ctx_keep(dir: &Path) -> Ctx {
+        Ctx { space: dir.join("spaces/school"), space_id: "school".into(), vault: Vault::at(dir), grants: vec![], courses: Default::default() }
     }
 
     #[test]

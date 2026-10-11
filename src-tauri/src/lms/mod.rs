@@ -39,6 +39,8 @@ pub mod login;
 pub mod names;
 pub mod service;
 pub mod store;
+pub mod access;
+pub mod migrate;
 pub mod textbooks;
 pub mod text;
 #[cfg(test)]

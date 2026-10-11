@@ -4,7 +4,8 @@
 //! Only files inside the space itself can be opened: the path gets the same
 //! checks as the agent's tools (no absolute paths, no `..`, nothing under
 //! `.phaethon/`, no symlink leading out), and `@space/...` paths are refused
-//! outright, grant or not. The path is passed to the opener as one argument,
+//! outright, grant or not; `courses/...` opens a course file only where the
+//! space may see it (lms/access.rs). The path is passed to the opener as one argument,
 //! never through a shell. Files that could run a program are only ever shown,
 //! never opened, because the agent can write files into the space.
 //!
@@ -15,6 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::lms::access::{self, Place, Visible};
 use crate::tools;
 
 /// Extensions whose default action runs something instead of showing it.
@@ -26,13 +28,20 @@ const RUNNABLE: &[&str] = &[
 ];
 
 /// The real path of `path` in the space, after every check.
-pub fn target(space: &Path, path: &str) -> Result<PathBuf, String> {
+pub fn target(space: &Path, courses: &Visible, path: &str) -> Result<PathBuf, String> {
     let path = path.trim();
     if path.is_empty() {
         return Err("No file was named.".into());
     }
     if matches!(tools::target(path), tools::Target::Other { .. }) {
         return Err("Only files in this space can be opened from here.".into());
+    }
+    // `courses/...`: a course this space may see, a part it may see (lms/access.rs).
+    if let Some(clean) = tools::clean_rel(path).ok().filter(|c| access::is_courses_path(c)) {
+        return match courses.place(&clean, true) {
+            Ok(Place::Course { real, .. }) => Ok(real),
+            _ => Err(format!("“{path}” isn’t among the courses this space can see.")),
+        };
     }
     tools::resolve(space, path, true).map_err(|e| {
         if e.ends_with("does not exist") {
@@ -96,8 +105,8 @@ fn opener(p: &Path, reveal: bool) -> Command {
 
 /// Open `path` (relative to `space`) with the default app, or show it in the
 /// file manager when `reveal`.
-pub fn open(space: &Path, path: &str, reveal: bool) -> Result<(), String> {
-    let full = target(space, path)?;
+pub fn open(space: &Path, courses: &Visible, path: &str, reveal: bool) -> Result<(), String> {
+    let full = target(space, courses, path)?;
     if !reveal && is_runnable(&full) {
         return Err("This file can run a program, so Phaethon won’t open it. Use Show in Finder to see where it is instead.".into());
     }
@@ -149,10 +158,10 @@ mod tests {
         fs::write(dir.join("spaces/work/secret.md"), "s").unwrap();
         fs::write(dir.join("MANUAL.md"), "m").unwrap();
 
-        let real = target(&space, "notes/plan.md").unwrap();
+        let real = target(&space, &Visible::default(), "notes/plan.md").unwrap();
         assert!(real.ends_with("notes/plan.md") && real.is_file());
-        assert_eq!(target(&space, " notes/plan.md ").unwrap(), real);
-        assert!(target(&space, "notes").unwrap().is_dir());
+        assert_eq!(target(&space, &Visible::default(), " notes/plan.md ").unwrap(), real);
+        assert!(target(&space, &Visible::default(), "notes").unwrap().is_dir());
         for bad in [
             "",
             "/etc/passwd",
@@ -164,15 +173,15 @@ mod tests {
             ".phaethon/thread.json",
             "missing.md",
         ] {
-            assert!(target(&space, bad).is_err(), "{bad:?} should be refused");
+            assert!(target(&space, &Visible::default(), bad).is_err(), "{bad:?} should be refused");
             // open checks first, so nothing is ever launched for these.
-            assert!(open(&space, bad, false).is_err() && open(&space, bad, true).is_err(), "{bad:?}");
+            assert!(open(&space, &Visible::default(), bad, false).is_err() && open(&space, &Visible::default(), bad, true).is_err(), "{bad:?}");
         }
-        assert!(target(&space, "missing.md").unwrap_err().contains("isn’t in this space"));
+        assert!(target(&space, &Visible::default(), "missing.md").unwrap_err().contains("isn’t in this space"));
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(dir.join("spaces/work/secret.md"), space.join("link.md")).unwrap();
-            assert!(target(&space, "link.md").is_err(), "a symlink out of the space is refused");
+            assert!(target(&space, &Visible::default(), "link.md").is_err(), "a symlink out of the space is refused");
         }
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -220,7 +229,7 @@ mod tests {
             fs::set_permissions(dir.join("notes.md"), fs::Permissions::from_mode(0o755)).unwrap();
             assert!(is_runnable(&dir.join("notes.md")), "an executable file is never opened");
         }
-        let err = open(&dir, "run.command", false).unwrap_err();
+        let err = open(&dir, &Visible::default(), "run.command", false).unwrap_err();
         assert!(err.contains("run a program"), "{err}");
         fs::remove_dir_all(&dir).unwrap();
     }

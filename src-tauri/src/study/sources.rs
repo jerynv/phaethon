@@ -12,6 +12,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::lms::access::{self, Place, Seen, Visible};
 use crate::tools;
 
 /// Characters of material sent with one request (about 15k tokens).
@@ -40,6 +41,8 @@ struct Found {
     /// The file actually read (`x.pdf.md`).
     real: PathBuf,
     weight: f64,
+    /// For a course file: its course and path inside it, to show it as the space may see it.
+    course: Option<(Seen, PathBuf)>,
 }
 
 fn is_text(p: &Path) -> bool {
@@ -128,10 +131,26 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The real path of a source `rel` (relative to the space). Every source path
-/// goes through here, so what a space may read is decided in one place.
-pub fn resolve(space: &Path, rel: &str) -> Result<PathBuf, String> {
-    tools::resolve(space, rel, true).map_err(|_| format!("“{rel}” isn’t in this space."))
+/// Where a source `rel` (relative to the space) leads. Every source path goes
+/// through here, so what a space may read is decided in one place: its own
+/// files, or `courses/...` as far as course-access.json lets it see them.
+pub fn resolve<'a>(space: &Path, courses: &'a Visible, rel: &str) -> Result<Source<'a>, String> {
+    let refused = || format!("“{rel}” isn’t in this space.");
+    match tools::clean_rel(rel).ok().filter(|c| access::is_courses_path(c)) {
+        Some(clean) => match courses.place(&clean, true).map_err(|_| refused())? {
+            Place::Root => Ok(Source::Courses),
+            Place::Course { seen, dir, sub, real } => Ok(Source::Course { seen, dir, sub, real }),
+        },
+        None => tools::resolve(space, rel, true).map(Source::Local).map_err(|_| refused()),
+    }
+}
+
+/// A resolved source.
+pub enum Source<'a> {
+    Local(PathBuf),
+    /// `courses` itself: every course the space may see.
+    Courses,
+    Course { seen: &'a Seen, dir: PathBuf, sub: PathBuf, real: PathBuf },
 }
 
 /// One imported course a space can make cards from, and which of the standard
@@ -149,28 +168,23 @@ pub struct CourseSource {
     pub readings: bool,
 }
 
-/// The course folders under `<space>/courses/` (never through a link), by name.
-pub fn courses(space: &Path) -> Vec<CourseSource> {
-    let Ok(entries) = fs::read_dir(space.join("courses")) else { return vec![] };
-    let mut out: Vec<CourseSource> = entries
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| {
-            let folder = e.file_name().to_str()?.to_string();
-            let dir = e.path();
+/// The courses this space may see, by name, with the parts of each it may
+/// see that the folder has (never through a link).
+pub fn courses(visible: &Visible) -> Vec<CourseSource> {
+    use access::Part;
+    let mut out: Vec<CourseSource> = visible
+        .courses
+        .iter()
+        .filter_map(|seen| {
+            let dir = visible.dir_of(seen)?;
             let plain = |name: &str| fs::symlink_metadata(dir.join(name)).is_ok_and(|m| !m.file_type().is_symlink());
-            let name = fs::read_to_string(dir.join("README.md"))
-                .ok()
-                .and_then(|r| r.lines().next().and_then(|l| l.strip_prefix("# ")).map(|t| t.trim().to_string()))
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| folder.clone());
             Some(CourseSource {
-                name,
-                folder: format!("courses/{folder}"),
-                syllabus: plain("syllabus.md"),
-                assignments: plain("assignments.md"),
-                files: plain("files"),
-                readings: plain("readings"),
+                name: if seen.state.name.trim().is_empty() { seen.folder().to_string() } else { seen.state.name.clone() },
+                folder: format!("courses/{}", seen.folder()),
+                syllabus: seen.can(Part::Syllabus) && plain("syllabus.md"),
+                assignments: seen.can(Part::Assignments) && plain("assignments.md"),
+                files: seen.can(Part::Files) && plain("files"),
+                readings: seen.can(Part::Files) && plain("readings"),
             })
         })
         .collect();
@@ -186,34 +200,75 @@ pub fn folder_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// What a course file is cited as: `courses/<folder>/<path>`, the original
+/// (`x.pdf`) for a text copy (`x.pdf.md`).
+fn course_label(seen: &Seen, sub: &Path, real: &Path) -> String {
+    let rel = sub.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+    let rel = match rel.strip_suffix(".md") {
+        Some(stem) if Path::new(stem).extension().is_some() && real.with_extension("").is_file() => stem.to_string(),
+        _ => rel,
+    };
+    format!("courses/{}/{rel}", seen.folder())
+}
+
 /// The files `inputs` (paths relative to the space) stand for, checked to stay
-/// inside the space.
-fn find(space: &Path, inputs: &[String], focus: &[String]) -> Result<Vec<Found>, String> {
+/// inside what the space may read.
+fn find(space: &Path, visible: &Visible, inputs: &[String], focus: &[String]) -> Result<Vec<Found>, String> {
     let root = space.canonicalize().map_err(|e| format!("This space’s folder can’t be read: {e}"))?;
     let mut found: Vec<Found> = vec![];
+    let in_course = |seen: &Seen, dir: &Path, start: &Path, found: &mut Vec<Found>| {
+        for (sub, f) in visible.walk(seen, dir, start, MAX_FILES) {
+            let label = course_label(seen, &sub, &f);
+            if is_text(&f) && !is_index(&label) {
+                found.push(Found { weight: weight(&label, false, focus), label, real: f, course: Some((seen.clone(), sub)) });
+            }
+        }
+    };
     for input in inputs {
         let shown = input.trim().trim_end_matches('/');
         if shown.is_empty() {
             continue;
         }
-        let real = resolve(&root, shown)?;
-        if real.is_dir() {
-            for f in folder_files(&real) {
-                let rel = rel_of(&root, &f);
-                if !is_index(&rel) {
-                    found.push(Found { label: label_for(&root, &f), weight: weight(&rel, false, focus), real: f });
+        match resolve(&root, visible, shown)? {
+            Source::Courses => {
+                for seen in &visible.courses {
+                    if let Some(dir) = visible.dir_of(seen) {
+                        in_course(seen, &dir, &dir, &mut found);
+                    }
                 }
             }
-        } else if is_text(&real) {
-            found.push(Found { label: label_for(&root, &real), weight: weight(shown, true, focus), real });
-        } else {
-            let copy = PathBuf::from(format!("{}.md", real.display()));
-            let ok = fs::symlink_metadata(&copy).is_ok_and(|m| m.is_file());
-            if !ok {
-                let name = real.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                return Err(format!("“{name}” has no text copy Phaethon can read. Import the course again, or choose its text instead."));
+            Source::Course { seen, dir, real, .. } if real.is_dir() => in_course(seen, &dir, &real, &mut found),
+            Source::Course { seen, dir, sub, real } => {
+                if is_text(&real) {
+                    found.push(Found { label: course_label(seen, &sub, &real), weight: weight(shown, true, focus), real, course: Some((seen.clone(), sub)) });
+                } else {
+                    // The text copy beside it, checked like any other course path.
+                    let copy = visible.place(&tools::clean_rel(&format!("{shown}.md"))?, true).ok().and_then(|p| match p {
+                        Place::Course { real, sub, .. } if fs::symlink_metadata(&real).is_ok_and(|m| m.is_file()) => Some((real, sub)),
+                        _ => None,
+                    });
+                    let Some((copy, copy_sub)) = copy else { return Err(no_copy(&real)) };
+                    let _ = dir;
+                    found.push(Found { label: course_label(seen, &sub, &real), weight: weight(shown, true, focus), real: copy, course: Some((seen.clone(), copy_sub)) });
+                }
             }
-            found.push(Found { label: rel_of(&root, &real), weight: weight(shown, true, focus), real: copy });
+            Source::Local(real) if real.is_dir() => {
+                for f in folder_files(&real) {
+                    let rel = rel_of(&root, &f);
+                    // The space's own folder named like the courses is never read as material.
+                    if !is_index(&rel) && !access::is_courses_path(Path::new(&rel)) {
+                        found.push(Found { label: label_for(&root, &f), weight: weight(&rel, false, focus), real: f, course: None });
+                    }
+                }
+            }
+            Source::Local(real) if is_text(&real) => found.push(Found { label: label_for(&root, &real), weight: weight(shown, true, focus), real, course: None }),
+            Source::Local(real) => {
+                let copy = PathBuf::from(format!("{}.md", real.display()));
+                if !fs::symlink_metadata(&copy).is_ok_and(|m| m.is_file()) {
+                    return Err(no_copy(&real));
+                }
+                found.push(Found { label: rel_of(&root, &real), weight: weight(shown, true, focus), real: copy, course: None });
+            }
         }
     }
     let mut seen = std::collections::HashSet::new();
@@ -222,6 +277,11 @@ fn find(space: &Path, inputs: &[String], focus: &[String]) -> Result<Vec<Found>,
         return Err("There’s nothing to read in what you chose: no notes, syllabus or text copies of files.".into());
     }
     Ok(found)
+}
+
+fn no_copy(real: &Path) -> String {
+    let name = real.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    format!("“{name}” has no text copy Phaethon can read. Import the course again, or choose its text instead.")
 }
 
 /// Text copies of PDFs break lines after every symbol ("x\n∈\nA"): join those
@@ -336,9 +396,9 @@ pub fn sample(text: &str, allot: usize, focus: &[String]) -> String {
 }
 
 /// Read and budget the material behind `inputs` (paths in the space).
-pub fn gather(space: &Path, inputs: &[String], focus: Option<&str>, budget: usize) -> Result<Material, String> {
+pub fn gather(space: &Path, visible: &Visible, inputs: &[String], focus: Option<&str>, budget: usize) -> Result<Material, String> {
     let terms = focus_terms(focus);
-    let mut found = find(space, inputs, &terms)?;
+    let mut found = find(space, visible, inputs, &terms)?;
     found.sort_by(|a, b| b.weight.total_cmp(&a.weight).then(a.label.cmp(&b.label)));
     found.truncate(MAX_SENT);
     let mut texts: Vec<(Found, String)> = vec![];
@@ -346,7 +406,11 @@ pub fn gather(space: &Path, inputs: &[String], focus: Option<&str>, budget: usiz
         let Ok(file) = fs::File::open(&f.real) else { continue };
         let mut bytes = vec![];
         let _ = std::io::Read::read_to_end(&mut std::io::Read::take(file, READ_MAX), &mut bytes);
-        let text = clean(&String::from_utf8_lossy(&bytes));
+        let mut text = String::from_utf8_lossy(&bytes).into_owned();
+        if let Some((seen, sub)) = &f.course {
+            text = access::filter_text(seen, sub, text);
+        }
+        let text = clean(&text);
         if !text.trim().is_empty() {
             texts.push((f, text));
         }
@@ -403,40 +467,43 @@ pub fn match_label(cited: &str, labels: &[String]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn a_spaces_courses_and_their_parts() {
-        let tmp = std::env::temp_dir().join(format!("phaethon-study-sources-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&tmp);
-        let c241 = tmp.join("courses/CSCI-C 241 Fall 2026");
-        fs::create_dir_all(c241.join("files")).unwrap();
-        fs::write(c241.join("README.md"), "# CSCI-C 241 Fall 2026 (All Sections)\n\nmore").unwrap();
-        fs::write(c241.join("syllabus.md"), "x").unwrap();
-        fs::create_dir_all(tmp.join("courses/Bare")).unwrap();
-        fs::write(tmp.join("courses/not-a-folder.md"), "x").unwrap();
-        let got = courses(&tmp);
-        assert_eq!(got.len(), 2);
-        assert_eq!(got[0].name, "Bare");
-        assert!(!got[0].syllabus && !got[0].files);
-        assert_eq!(got[1].name, "CSCI-C 241 Fall 2026 (All Sections)");
-        assert_eq!(got[1].folder, "courses/CSCI-C 241 Fall 2026");
-        assert!(got[1].syllabus && got[1].files && !got[1].assignments && !got[1].readings);
-        assert!(courses(&tmp.join("nowhere")).is_empty());
-        fs::remove_dir_all(&tmp).unwrap();
-    }
-
     use super::*;
+    use crate::lms::access::{Part, fixture};
 
-    fn space(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("phaethon-study-src-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    /// A vault in a temp folder; returns (vault root, the space "s").
+    fn vault(tag: &str) -> (PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("phaethon-study-src-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("spaces/s")).unwrap();
+        let root = root.canonicalize().unwrap();
+        (root.clone(), root.join("spaces/s"))
     }
 
     fn put(dir: &Path, rel: &str, text: &str) {
         let p = dir.join(rel);
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, text).unwrap();
+    }
+
+    #[test]
+    fn the_courses_a_space_sees_and_their_parts() {
+        let (root, _) = vault("courses");
+        put(&root, "courses/CSCI-C 241 Fall 2026/files/x.pdf.md", "x");
+        put(&root, "courses/CSCI-C 241 Fall 2026/readings/r.pdf.md", "x");
+        put(&root, "courses/CSCI-C 241 Fall 2026/syllabus.md", "x");
+        put(&root, "courses/CSCI-C 241 Fall 2026/assignments.md", "x");
+        fs::create_dir_all(root.join("courses/Bare")).unwrap();
+        fs::create_dir_all(root.join("courses/Hidden")).unwrap();
+        let vis = fixture(&root, "s", &[("CSCI-C 241 Fall 2026", &[Part::Syllabus, Part::Files]), ("Bare", &Part::ALL), ("Hidden", &[])]);
+        let got = courses(&vis);
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert_eq!(got[0].name, "Bare");
+        assert!(!got[0].syllabus && !got[0].files);
+        assert_eq!(got[1].folder, "courses/CSCI-C 241 Fall 2026");
+        assert!(got[1].syllabus && got[1].files && got[1].readings, "{got:?}");
+        assert!(!got[1].assignments, "assignments aren't shown to this space");
+        assert!(courses(&Visible::default()).is_empty());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
@@ -451,55 +518,85 @@ mod tests {
 
     #[test]
     fn a_course_folder_gives_its_material_cited_as_the_original_files() {
-        let dir = space("course");
-        let c = "courses/CSCI-C 241 Fall 2026";
-        put(&dir, &format!("{c}/README.md"), "index only");
-        put(&dir, &format!("{c}/syllabus.md"), "# Syllabus\nGrading policy.");
-        put(&dir, &format!("{c}/files/HW/Test 1 Review.pdf"), "%PDF");
-        put(&dir, &format!("{c}/files/HW/Test 1 Review.pdf.md"), "# Text of Test 1 Review.pdf\n\nTranslate into logic.");
-        put(&dir, &format!("{c}/files/HW/HW 01.pdf"), "%PDF");
-        put(&dir, &format!("{c}/.hidden.md"), "secret");
+        let (root, dir) = vault("course");
+        let f = "CSCI-C 241 Fall 2026";
+        let c = format!("courses/{f}");
+        put(&root, &format!("{c}/README.md"), "index only");
+        put(&root, &format!("{c}/syllabus.md"), "# Syllabus\nGrading policy.");
+        put(&root, &format!("{c}/files/HW/Test 1 Review.pdf"), "%PDF");
+        put(&root, &format!("{c}/files/HW/Test 1 Review.pdf.md"), "# Text of Test 1 Review.pdf\n\nTranslate into logic.");
+        put(&root, &format!("{c}/files/HW/HW 01.pdf"), "%PDF");
+        put(&root, &format!("{c}/.hidden.md"), "secret");
         put(&dir, ".phaethon/state.md", "never");
-        let m = gather(&dir, &[c.to_string()], None, BUDGET).unwrap();
-        assert_eq!(m.course.as_deref(), Some("CSCI-C 241 Fall 2026"));
+        let vis = fixture(&root, "s", &[(f, &Part::ALL)]);
+        let m = gather(&dir, &vis, std::slice::from_ref(&c), None, BUDGET).unwrap();
+        assert_eq!(m.course.as_deref(), Some(f));
         assert_eq!(m.labels[0], format!("{c}/files/HW/Test 1 Review.pdf"), "the review sheet first, cited as the PDF");
         assert!(m.labels.contains(&format!("{c}/syllabus.md")));
         assert!(!m.text.contains("index only") && !m.text.contains("secret") && !m.text.contains("never"));
         assert!(m.text.contains("Translate into logic."));
+        // "courses" itself: every course the space sees.
+        assert_eq!(gather(&dir, &vis, &["courses".into()], None, BUDGET).unwrap().labels, m.labels);
         // A PDF chosen on its own is read through its text copy...
-        let m = gather(&dir, &[format!("{c}/files/HW/Test 1 Review.pdf")], None, BUDGET).unwrap();
+        let m = gather(&dir, &vis, &[format!("{c}/files/HW/Test 1 Review.pdf")], None, BUDGET).unwrap();
         assert_eq!(m.labels, [format!("{c}/files/HW/Test 1 Review.pdf")]);
         // ...and one without a copy says so.
-        assert!(gather(&dir, &[format!("{c}/files/HW/HW 01.pdf")], None, BUDGET).unwrap_err().contains("no text copy"));
-        fs::remove_dir_all(dir).unwrap();
+        assert!(gather(&dir, &vis, &[format!("{c}/files/HW/HW 01.pdf")], None, BUDGET).unwrap_err().contains("no text copy"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn only_the_parts_the_space_may_see_are_material() {
+        let (root, dir) = vault("parts");
+        let c = "courses/C";
+        put(&root, &format!("{c}/syllabus.md"), "Syllabus text.");
+        put(&root, &format!("{c}/grades.md"), "Grade 91%.");
+        put(&root, &format!("{c}/files/notes.pdf.md"), "Lecture notes text.");
+        put(&root, &format!("{c}/README.md"), "# C\n\n**Grades**: 91% so far.\n\n## Coming up\n\nPS 4.\n");
+        let vis = fixture(&root, "s", &[("C", &[Part::Syllabus, Part::Overview])]);
+        let m = gather(&dir, &vis, &[c.into()], None, BUDGET).unwrap();
+        assert_eq!(m.labels, [format!("{c}/syllabus.md")]);
+        for bad in ["courses/C/grades.md", "courses/C/files/notes.pdf.md", "courses/C/files", "courses/D", "courses/C/../C/grades.md"] {
+            assert!(gather(&dir, &vis, &[bad.into()], None, BUDGET).is_err(), "{bad}");
+        }
+        // README chosen on its own: as the space may see it, without the grade.
+        let m = gather(&dir, &vis, &[format!("{c}/README.md")], None, BUDGET).unwrap();
+        assert!(m.text.contains("PS 4") && !m.text.contains("91%"), "{}", m.text);
+        // Another space sees nothing of it.
+        fs::create_dir_all(root.join("spaces/t")).unwrap();
+        let other = crate::lms::access::visible(&crate::vault::Vault::at(&root), "t");
+        assert!(gather(&root.join("spaces/t"), &other, &[format!("{c}/syllabus.md")], None, BUDGET).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn paths_outside_the_space_are_refused() {
-        let dir = space("escape");
+        let (root, dir) = vault("escape");
         put(&dir, "notes.md", "fine");
-        let outside = space("escape-outside");
+        let outside = root.join("outside");
         put(&outside, "secret.md", "secret");
-        for bad in ["../x", "/etc/passwd", ".phaethon/progress.json", "nope.md"] {
-            assert!(gather(&dir, &[bad.into()], None, BUDGET).is_err(), "{bad}");
+        // The space's own leftover courses folder is never material.
+        put(&dir, "courses/Old/notes.md", "secret");
+        let vis = Visible::default();
+        for bad in ["../x", "/etc/passwd", ".phaethon/progress.json", "nope.md", "courses/Old/notes.md", "Courses/Old"] {
+            assert!(gather(&dir, &vis, &[bad.into()], None, BUDGET).is_err(), "{bad}");
         }
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
             std::os::unix::fs::symlink(outside.join("secret.md"), dir.join("s.md")).unwrap();
-            assert!(gather(&dir, &["link".into()], None, BUDGET).is_err());
-            assert!(gather(&dir, &["s.md".into()], None, BUDGET).is_err());
+            assert!(gather(&dir, &vis, &["link".into()], None, BUDGET).is_err());
+            assert!(gather(&dir, &vis, &["s.md".into()], None, BUDGET).is_err());
             // A link inside a chosen folder is skipped, not followed.
-            let m = gather(&dir, &["".into(), ".".into()], None, BUDGET).unwrap();
+            let m = gather(&dir, &vis, &["".into(), ".".into()], None, BUDGET).unwrap();
             assert!(!m.text.contains("secret"), "{}", m.text);
         }
-        fs::remove_dir_all(dir).unwrap();
-        fs::remove_dir_all(outside).unwrap();
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn big_notes_are_budgeted_and_sampled() {
-        let dir = space("budget");
+        let (root, dir) = vault("budget");
         // 500 KB of "lecture notes", one section mentioning bipartite graphs.
         let mut notes = String::new();
         for i in 0..200 {
@@ -512,21 +609,23 @@ mod tests {
             notes.push_str("\n\n");
         }
         assert!(notes.len() > 400_000);
-        put(&dir, "courses/C/files/Notes/Lecture Notes.pdf.md", &notes);
-        put(&dir, "courses/C/files/Notes/Lecture Notes.pdf", "%PDF");
-        put(&dir, "courses/C/syllabus.md", "Short syllabus.");
-        let m = gather(&dir, &["courses/C".into()], None, BUDGET).unwrap();
+        put(&root, "courses/C/files/Notes/Lecture Notes.pdf.md", &notes);
+        put(&root, "courses/C/files/Notes/Lecture Notes.pdf", "%PDF");
+        put(&root, "courses/C/syllabus.md", "Short syllabus.");
+        let vis = fixture(&root, "s", &[("C", &Part::ALL)]);
+        let m = gather(&dir, &vis, &["courses/C".into()], None, BUDGET).unwrap();
         assert!(m.text.len() <= BUDGET + 2_000, "{}", m.text.len());
         assert!(m.text.contains("Short syllabus."), "a short file is sent whole");
         assert!(m.text.contains("[…]"));
         let pages: Vec<u32> = m.text.split("## Page ").skip(1).filter_map(|s| s.split_whitespace().next()?.parse().ok()).collect();
         assert!(pages.len() >= 10 && pages.contains(&0) && pages.iter().any(|&p| p >= 170), "spread through the notes: {pages:?}");
         // With a focus, the matching section is in.
-        let m = gather(&dir, &["courses/C".into()], Some("bipartite graphs"), 10_000).unwrap();
+        let m = gather(&dir, &vis, &["courses/C".into()], Some("bipartite graphs"), 10_000).unwrap();
         assert!(m.text.contains("bipartite graph splits"));
         assert!(m.text.len() <= 12_000);
-        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(&root).unwrap();
     }
+
 
     #[test]
     fn sampling_never_splits_a_character() {

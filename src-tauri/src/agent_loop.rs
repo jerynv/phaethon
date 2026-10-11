@@ -138,14 +138,16 @@ Once access is granted, read it with list_files, read_file or search_files using
         s.push_str("\n\n");
         s.push_str(&memory);
     }
-    // This space's imported courses only (its own .phaethon/lms.json). The due
-    // dates shown change only when one passes, so the prompt cache still holds.
-    if let Some(courses) = vault.space_dir(space_id).ok().and_then(|dir| crate::lms::store::prompt_index(&dir, crate::lms::store::now_secs())) {
+    // The courses this space may see, and only the parts it may see (course-access.json).
+    // The due dates shown change only when one passes, so the prompt cache still holds.
+    let visible = crate::lms::access::visible(&vault, space_id);
+    let grades = crate::lms::store::load_grades(vault_root).unwrap_or_default();
+    if let Some(courses) = crate::lms::store::prompt_index(&visible.courses, &grades, crate::lms::store::now_secs()) {
         s.push_str("\n\n");
         s.push_str(&courses);
     }
     // Where decks, quizzes, the plan and exams live, and the deck format (write_file makes decks).
-    if let Some(study) = vault.space_dir(space_id).ok().and_then(|dir| crate::study::prompt_section(&dir, crate::study::now_ms())) {
+    if let Some(study) = vault.space_dir(space_id).ok().and_then(|dir| crate::study::prompt_section(&dir, !visible.is_empty(), crate::study::now_ms())) {
         s.push_str("\n\n");
         s.push_str(&study);
     }
@@ -215,6 +217,7 @@ async fn drive<P: Provider>(
         space_id: req.space_id.to_string(),
         vault: vault.clone(),
         grants: grants::for_space(&vault, req.space_id).into_iter().chain(once.iter().cloned()).collect(),
+        courses: crate::lms::access::visible(&vault, req.space_id),
     };
 
     for _ in 0..MAX_STEPS {
@@ -514,6 +517,7 @@ fn describe_write(space: &Path, call: &tools::Call) -> Result<WritePreview, Stri
     if matches!(tools::target(path), tools::Target::Other { .. }) {
         return Err("write_file can only write in this space; other spaces can never be written".into());
     }
+    tools::check_writable(path)?;
     if path.trim().is_empty() {
         return Err("path must name a file".into());
     }
@@ -1452,13 +1456,19 @@ mod tests {
             address: "https://x".into(),
             school_name: None,
             last_sync: None,
+            signed_in: false,
             courses: Default::default(),
         };
         let course = crate::lms::store::CourseState { name: "Calculus II".into(), folder: "Calculus II".into(), ..Default::default() };
         conn.courses.insert("1".into(), course);
         st.connections.push(conn);
-        crate::lms::store::save(&dir.join("spaces/school"), &st).unwrap();
+        // The vault's courses; school may see the overview and syllabus of Calculus II.
+        crate::lms::store::save(&dir, &st).unwrap();
+        assert!(!system_prompt(&dir, "school").contains("# Courses"), "nothing until allowed");
+        let parts = [crate::lms::access::Part::Overview, crate::lms::access::Part::Syllabus];
+        crate::lms::access::set(&Vault::at(&dir), "school", "canvas-x/1", &parts).unwrap();
         let school = system_prompt(&dir, "school");
+        assert!(school.contains("(this space sees only: overview, syllabus)"), "{school}");
         assert!(school.contains("# Courses") && school.contains("- Calculus II: courses/Calculus II/"), "{school}");
         let work = system_prompt(&dir, "work");
         assert!(!work.contains("Calculus") && !work.contains("# Courses"), "another space's courses never reach this prompt");

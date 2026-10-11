@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1, "name": "Week 1: Arrays", "position": 1, "unlock_at": null, "require_sequential_progress": false,
+    "published": true, "items_count": 6, "items_url": "{BASE}/api/v1/courses/1001/modules/1/items", "state": "unlocked",
+    "items": [
+      { "id": 11, "module_id": 1, "position": 1, "title": "Week 1", "indent": 0, "type": "SubHeader" },
+      { "id": 12, "module_id": 1, "position": 2, "title": "Lecture 1 slides", "indent": 1, "type": "File", "content_id": 5001,
+        "html_url": "{BASE}/courses/1001/modules/items/12", "url": "{BASE}/api/v1/courses/1001/files/5001",
+        "content_details": { "locked_for_user": false } },
+      { "id": 13, "module_id": 1, "position": 3, "title": "Reading guide", "indent": 1, "type": "Page", "page_url": "reading-guide",
+        "html_url": "{BASE}/courses/1001/modules/items/13", "url": "{BASE}/api/v1/courses/1001/pages/reading-guide" },
+      { "id": 14, "module_id": 1, "position": 4, "title": "Homework 1", "indent": 1, "type": "Assignment", "content_id": 7001,
+        "html_url": "{BASE}/courses/1001/modules/items/14", "url": "{BASE}/api/v1/courses/1001/assignments/7001",
+        "content_details": { "points_possible": 10, "due_at": "2026-10-20T03:59:00Z", "locked_for_user": false } },
+      { "id": 15, "module_id": 1, "position": 5, "title": "Visualgo", "indent": 1, "type": "ExternalUrl",
+        "html_url": "{BASE}/courses/1001/modules/items/15", "external_url": "https://visualgo.net/en/list" },
+      { "id": 16, "module_id": 1, "position": 6, "title": "Connect homework", "indent": 1, "type": "ExternalTool", "content_id": 77,
+        "html_url": "{BASE}/courses/1001/modules/items/16", "url": "{BASE}/api/v1/courses/1001/external_tools/sessionless_launch?launch_type=module_item&module_item_id=16",
+        "external_url": "https://connect.mheducation.com/lti", "new_tab": true }
+    ]
+  },
+  {
+    "id": 2, "name": "Week 2: Lists", "position": 2, "published": true, "items_count": 31,
+    "items_url": "{BASE}/api/v1/courses/1001/modules/2/items", "state": "unlocked"
+  }
+]

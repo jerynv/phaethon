@@ -1,0 +1,12 @@
+[
+  {
+    "id": 7001, "name": "Homework 1", "description": "<p>Implement a dynamic array. See <a href=\"/courses/1001/files/5001/preview\">the slides</a>.</p>",
+    "created_at": "2026-08-20T14:00:00Z", "due_at": "2026-10-20T03:59:00Z", "lock_at": null, "unlock_at": null,
+    "points_possible": 10.0, "grading_type": "points", "submission_types": ["online_upload"], "course_id": 1001,
+    "html_url": "{BASE}/courses/1001/assignments/7001", "published": true, "locked_for_user": false
+  },
+  {
+    "id": 7002, "name": "Homework 2", "description": null, "due_at": null, "points_possible": 10,
+    "grading_type": "points", "course_id": 1001, "html_url": "{BASE}/courses/1001/assignments/7002", "published": true
+  }
+]

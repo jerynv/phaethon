@@ -1,0 +1,5 @@
+[
+  { "id": 10, "name": "course files", "full_name": "course files", "context_id": 1001, "context_type": "Course", "parent_folder_id": null, "files_count": 2, "folders_count": 1, "hidden": false, "locked_for_user": false },
+  { "id": 11, "name": "Lectures", "full_name": "course files/Lectures", "context_id": 1001, "context_type": "Course", "parent_folder_id": 10, "files_count": 1, "folders_count": 1, "hidden": false, "locked_for_user": false },
+  { "id": 12, "name": "Week 1", "full_name": "course files/Lectures/Week 1", "context_id": 1001, "context_type": "Course", "parent_folder_id": 11, "files_count": 1, "folders_count": 0, "hidden": false, "locked_for_user": false }
+]

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { goToCard, isJumpKey } from "@/components/chat/card-arrival";
 import { useModelCommands } from "@/components/chat/model-picker";
 import { SpacePane } from "@/components/chat/space-pane";
+import { CourseImport } from "@/components/lms/course-import-dialog";
+import { openCourseImport } from "@/components/lms/import-store";
 import { SettingsDialog } from "@/components/settings/settings-dialog";
 import { announce } from "@/components/shell/announcer";
 import { CommandPalette, ShortcutsSheet, type Command } from "@/components/shell/command-palette";
@@ -17,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
 import { useSpaceActivity } from "@/lib/activity";
+import { requestCompose } from "@/lib/compose";
 import { requestOpenConversation } from "@/lib/open-conversation";
 import { openSettings } from "@/lib/open-settings";
 import { refreshSpaces, setActiveSpaceId, useSpaces, type Space } from "@/lib/spaces";
@@ -352,6 +355,17 @@ export default function App() {
         shortcut: shortcutById("search"),
         run: () => setSearchOpen(true),
       });
+      if (hasSettings) {
+        list.push({
+          id: "import-courses",
+          group: "Actions",
+          label: "Import courses…",
+          hint: `into ${active.name}`,
+          keywords: "canvas brightspace d2l moodle blackboard school class classes course site lms connect sign in syllabus",
+          icon: "book",
+          run: () => openCourseImport({ space: active.id }),
+        });
+      }
     }
     list.push(
       {
@@ -406,6 +420,7 @@ export default function App() {
         ["appearance", "Appearance", "theme dark light colour color text size"],
         ["accessibility", "Accessibility", "reading font dyslexic contrast motion"],
         ["spaces", "Spaces", "grants access rename colour"],
+        ["courses", "Course sites", "canvas brightspace moodle blackboard school sign out import"],
         ["about", "About", "version vault folder"],
       ];
       for (const [id, label, keywords] of sections) {
@@ -519,6 +534,15 @@ export default function App() {
           }}
           onCloseFocus={focusAfterNewSpace}
         />
+        {hasSettings && (
+          <CourseImport
+            spaces={spaces}
+            onAsk={(space, text) => {
+              goToSpace(space);
+              requestCompose(space, text);
+            }}
+          />
+        )}
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
         <ShortcutsSheet open={sheetOpen} onOpenChange={setSheetOpen} />
         <SearchDialog

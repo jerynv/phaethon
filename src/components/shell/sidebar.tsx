@@ -1,6 +1,7 @@
 import { ContextMenu } from "radix-ui";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { openCourseImport } from "@/components/lms/import-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Icon } from "@/icons";
 import { useSpaceActivity, type SpaceActivity } from "@/lib/activity";
@@ -71,7 +72,7 @@ function focusShows(el: Element | null): boolean {
  * or a space's menu is open, so nothing moves under the pointer or the focus;
  * it catches up once they leave.
  *
- * Each space has a menu (Show in Finder, Export…, Edit name and colour…): a
+ * Each space has a menu (Show in Finder, Export…, Import courses…, Edit name and colour…): a
  * right-click anywhere on it, Shift+F10 or the context-menu key on it, or its
  * More button, which shows on the current space and on the one pointed at or
  * focused. From a space, ArrowRight goes to its More button and ArrowLeft back
@@ -450,6 +451,10 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
           </ContextMenu.Item>
           {inTauri() && (
             <>
+              <ContextMenu.Item data-space-action="import-courses" onSelect={() => choose(() => openCourseImport({ space: space.id }))} className={itemClass}>
+                <Icon name="book" className="shrink-0 text-ink-secondary" />
+                Import courses…
+              </ContextMenu.Item>
               <ContextMenu.Separator className="mx-1 my-1 h-px bg-line forced-colors:bg-[CanvasText]" />
               <ContextMenu.Item data-space-action="edit" onSelect={() => choose(() => openSettings("spaces"))} className={itemClass}>
                 <Icon name="edit" className="shrink-0 text-ink-secondary" />

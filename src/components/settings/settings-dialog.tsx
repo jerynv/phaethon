@@ -13,6 +13,7 @@ import { AboutSection } from "./about-section";
 import { AccessibilitySection } from "./accessibility-section";
 import { AgentSection } from "./agent-section";
 import { AppearanceSection } from "./appearance-section";
+import { CoursesSection } from "./courses-section";
 import { SpacesSection } from "./spaces-section";
 import { NavContext, StatusContext, type SectionId, type SettingsNav, type SettingsStatus } from "./status";
 
@@ -28,6 +29,7 @@ const SECTIONS: { id: SectionId; label: string; icon: IconName }[] = [
   { id: "appearance", label: "Appearance", icon: "appearance" },
   { id: "accessibility", label: "Accessibility", icon: "accessibility" },
   { id: "spaces", label: "Spaces", icon: "space" },
+  { id: "courses", label: "Course sites", icon: "book" },
   { id: "about", label: "About", icon: "info" },
 ];
 
@@ -287,6 +289,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
     appearance: <AppearanceSection headingId={ids.appearance} />,
     accessibility: <AccessibilitySection headingId={ids.accessibility} />,
     spaces: <SpacesSection headingId={ids.spaces} />,
+    courses: <CoursesSection headingId={ids.courses} />,
     about: <AboutSection headingId={ids.about} settings={settings} />,
   };
 

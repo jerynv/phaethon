@@ -9,7 +9,7 @@ export const ICON_NAMES = [
   // direction
   "chevron-down", "chevron-up", "chevron-left", "chevron-right", "arrow-down",
   // files and media
-  "file", "file-text", "image", "image-off", "video", "audio", "folder",
+  "file", "file-text", "image", "image-off", "video", "audio", "folder", "book",
   // agent
   "thinking", "tool", "agent", "spinner", "voice", "mic", "phone",
   // feedback and state

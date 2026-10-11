@@ -10,7 +10,7 @@ export const StatusContext = createContext<SettingsStatus>({ say: () => {}, fail
 
 export const useStatus = () => useContext(StatusContext);
 
-export type SectionId = "agent" | "appearance" | "accessibility" | "spaces" | "about";
+export type SectionId = "agent" | "appearance" | "accessibility" | "spaces" | "courses" | "about";
 
 /**
  * Move to another settings section from inside a page ("Text size is in

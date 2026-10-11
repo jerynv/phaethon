@@ -29,9 +29,11 @@ import {
 // Hidden on purpose: branch picker, feedback, dictation, suggestions and export.
 
 import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elements/markdown-text";
+import { CoursesSuggestion } from "@/components/lms/courses-suggestion";
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
+import { useComposeRequests } from "@/lib/compose";
 import { grantLabel, isFileGrant, useGrants } from "@/lib/grants";
 import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
@@ -629,6 +631,7 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
           </>
         )}
       </p>
+      <CoursesSuggestion spaceId={spaceId} />
     </div>
   );
 }
@@ -704,6 +707,17 @@ export function Thread({
   const pane = usePane();
   const logRef = useRef<HTMLDivElement>(null);
   const stopFocused = useRef(false);
+  // Words put in the message box from elsewhere ("Ask about this course"): there to edit, never sent.
+  const aui = useAui();
+  useComposeRequests(spaceId, (text) => {
+    aui.composer().setText(text);
+    requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+  });
   const isRunning = useAuiState((s) => s.thread.isRunning);
   // The empty state (and first-run setup card) reads from the top; only a conversation follows its end.
   const isEmpty = useAuiState((s) => s.thread.isEmpty);

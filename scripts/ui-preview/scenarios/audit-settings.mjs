@@ -605,7 +605,7 @@ export default [
       await press(page, "Change in Accessibility");
       await h.idle();
       const got = await page.evaluate(() => ({
-        tab: document.querySelector('[role="tab"][data-state="active"]')?.textContent,
+        tab: document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent,
         row: document.activeElement?.closest("[data-token]")?.getAttribute("data-token"),
         role: document.activeElement?.getAttribute("role"),
       }));
@@ -777,7 +777,7 @@ export default [
         const offset = parseFloat(cs.outlineOffset);
         const r = panel.getBoundingClientRect();
         const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
-        const nav = document.querySelector('[role="tablist"]').parentElement.getBoundingClientRect();
+        const nav = document.querySelector('[role="dialog"] [role="tablist"]').parentElement.getBoundingClientRect();
         return {
           focused: document.activeElement === panel,
           visible: panel.matches(":focus-visible"),

@@ -11,8 +11,9 @@ import { announce } from "@/components/shell/announcer";
 import { CommandPalette, ShortcutsSheet, type Command } from "@/components/shell/command-palette";
 import { NewSpaceDialog } from "@/components/shell/new-space-dialog";
 import { SearchDialog } from "@/components/shell/search-dialog";
-import { digitOf, isModChord, isModShiftChord, modAria, modCap, shortcutById } from "@/components/shell/shortcuts";
+import { digitOf, isModChord, isModShiftChord, modAria, modCap, shortcutById, viewChord, viewDigitOf } from "@/components/shell/shortcuts";
 import { Sidebar } from "@/components/shell/sidebar";
+import { focusView, getSpaceView, requestStudy, setSpaceView, VIEWS } from "@/components/study/space-view";
 import { TitleBar, useWindowFocused } from "@/components/shell/title-bar";
 import { useSidebar } from "@/components/shell/use-sidebar";
 import { Button } from "@/components/ui/button";
@@ -47,15 +48,24 @@ function paneMessageCount(id: string): number | null {
   return pane.querySelectorAll('[data-role="user"], [data-role="assistant"]').length;
 }
 
-/** Focus the shown space's composer, or the conversation when it has none yet (still loading). */
+/** Focus the shown space's composer (or what its view starts with), or the pane when it has none yet (still loading). */
 function focusShownConversation(id: string) {
+  const view = getSpaceView(id);
+  if (view !== "chat") return focusView(id, view);
   const composer = paneOf(id)?.querySelector<HTMLElement>("[data-composer-input]");
   (composer ?? document.getElementById("main"))?.focus();
 }
 
-/** New conversation in the shown space: its conversations bar's button does the work (and refuses while a reply runs). */
+/**
+ * New conversation in the shown space: its conversations bar's button does the work (and refuses while a
+ * reply runs). From Study, Grades or Plan it goes back to Chat first (the bar shows only there).
+ */
 function newConversationInShown() {
-  document.querySelector<HTMLElement>("[data-space-pane][data-shown] [data-new-conversation]")?.click();
+  const id = document.querySelector<HTMLElement>("[data-space-pane][data-shown]")?.dataset.spacePane;
+  const click = () => document.querySelector<HTMLElement>("[data-space-pane][data-shown] [data-new-conversation]")?.click();
+  if (!id || getSpaceView(id) === "chat") return click();
+  setSpaceView(id, "chat");
+  requestAnimationFrame(() => requestAnimationFrame(click));
 }
 
 /** Focus is nowhere useful: on the page itself, or on something now hidden or inert. */
@@ -220,6 +230,14 @@ export default function App() {
         }
         return;
       }
+      // Cmd+Option+1…4 (Ctrl+Alt elsewhere): Chat, Study, Grades, Plan in the space on screen.
+      const v = viewDigitOf(e);
+      if (v !== null && !e.defaultPrevented) {
+        if ((document.activeElement as HTMLElement | null)?.closest(OPEN_DIALOG)) return;
+        e.preventDefault();
+        if (shownId) setSpaceView(shownId, VIEWS[v - 1].id, true);
+        return;
+      }
       if (!isModChord(e) || e.defaultPrevented) return;
       const inDialog = !!(document.activeElement as HTMLElement | null)?.closest(OPEN_DIALOG);
       if (e.key === "," && hasSettings) {
@@ -257,7 +275,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleSidebarKeepingFocus, hasSettings, spaces, goToSpace, paletteOpen, sheetOpen, searchOpen, toggleWide]);
+  }, [toggleSidebarKeepingFocus, hasSettings, spaces, goToSpace, paletteOpen, sheetOpen, searchOpen, toggleWide, shownId]);
 
   // Option+Return (Alt+Enter) from anywhere in the window goes to the card waiting for an answer in the
   // space on screen. Taken first (capture), so a focused button is never pressed by the Return; with
@@ -345,6 +363,52 @@ export default function App() {
         run: newConversationInShown,
       });
       list.push(...modelCommands);
+      for (const v of VIEWS) {
+        list.push({
+          id: `view:${v.id}`,
+          group: "Actions",
+          label: `Open ${v.label}`,
+          hint: `in ${active.name}`,
+          keywords: {
+            chat: "conversation messages talk",
+            study: "flashcards cards decks quiz quizzes review learn test exam",
+            grades: "marks scores gpa results course",
+            plan: "schedule calendar study plan exams week",
+          }[v.id],
+          icon: v.id === "chat" ? "agent" : "book",
+          shortcut: { keys: viewChord(v.digit).keys, aria: viewChord(v.digit).aria },
+          run: () => setSpaceView(active.id, v.id, true),
+        });
+      }
+      list.push(
+        {
+          id: "study-due",
+          group: "Actions",
+          label: "Study everything due",
+          hint: `in ${active.name}`,
+          keywords: "flashcards cards review today",
+          icon: "play",
+          run: () => requestStudy(active.id, "due"),
+        },
+        {
+          id: "make-flashcards",
+          group: "Actions",
+          label: "Make flashcards…",
+          hint: `from ${active.name}’s courses`,
+          keywords: "cards deck study create",
+          icon: "plus",
+          run: () => requestStudy(active.id, "deck"),
+        },
+        {
+          id: "make-quiz",
+          group: "Actions",
+          label: "Make a quiz…",
+          hint: `from ${active.name}’s courses`,
+          keywords: "test practice questions exam study create",
+          icon: "plus",
+          run: () => requestStudy(active.id, "quiz"),
+        },
+      );
       list.push({
         id: "search-conversations",
         group: "Actions",
@@ -551,6 +615,7 @@ export default function App() {
           spaces={spaces}
           spaceId={shownId}
           onChoose={(c) => {
+            setSpaceView(c.space, "chat");
             goToSpace(c.space);
             requestOpenConversation(c);
           }}

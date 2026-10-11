@@ -866,6 +866,7 @@ pub fn run() {
             lms_disconnect,
             lms_grades,
             lms_grades_refresh,
+            study::commands::study_sources,
             study::commands::study_overview,
             study::commands::study_deck,
             study::commands::study_deck_save,

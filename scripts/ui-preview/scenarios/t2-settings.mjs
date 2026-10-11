@@ -346,7 +346,7 @@ export default [
         const hits = text.split("\n").filter((l) => JARGON.test(l));
         check(hits.length === 0, `${tab}: no jargon (vault, grant, revoke, backend, keychain, model ids)`, hits.join(" | "));
       }
-      const tabs = await page.$$eval('[role="tab"]', (ts) => ts.map((t) => t.textContent));
+      const tabs = await page.$$eval('[role="dialog"] [role="tab"]', (ts) => ts.map((t) => t.textContent));
       check(tabs[0] === "Assistant", "the first section is called Assistant", tabs.join());
     },
   },

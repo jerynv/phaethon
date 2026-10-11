@@ -219,7 +219,7 @@ export async function openSettings(page, h, tab) {
   }
 }
 
-export const PANEL = '[role="tabpanel"]:not([hidden])';
+export const PANEL = '[role="dialog"] [role="tabpanel"]:not([hidden])';
 export const scrollPanel = (page, y) =>
   page.evaluate((y, sel) => {
     const p = document.querySelector(sel);

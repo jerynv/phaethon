@@ -21,6 +21,12 @@ fn model_for(state: &AppState, dir: &std::path::Path) -> Result<AnyModel, String
     model::for_space(&state.vault, dir, state.isolated_config_root.as_deref())
 }
 
+/// The space's imported courses and the parts each has, for choosing what to make cards from.
+#[tauri::command]
+pub(crate) fn study_sources(state: State<'_, AppState>, space: String) -> Result<Vec<super::sources::CourseSource>, String> {
+    Ok(super::sources::courses(&space_dir(&state, &space)?))
+}
+
 #[tauri::command]
 pub(crate) fn study_overview(state: State<'_, AppState>, space: String) -> Result<super::Overview, String> {
     Ok(super::overview(&space_dir(&state, &space)?, super::now_ms()))

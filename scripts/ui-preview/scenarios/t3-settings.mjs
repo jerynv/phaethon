@@ -282,8 +282,8 @@ export default [
       await openSettings(page, h, "agent");
       const m = await page.evaluate(() => {
         const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
-        const panel = document.querySelector('[role="tabpanel"]:not([hidden])').getBoundingClientRect();
-        const tabs = [...document.querySelectorAll('[role="tab"]')].map((t) => t.getBoundingClientRect());
+        const panel = document.querySelector('[role="dialog"] [role="tabpanel"]:not([hidden])').getBoundingClientRect();
+        const tabs = [...document.querySelectorAll('[role="dialog"] [role="tab"]')].map((t) => t.getBoundingClientRect());
         return { dh: d.height, top: panel.top - d.top, tabsIn: tabs.every((t) => t.right <= d.right + 1 && t.left >= d.left - 1 && t.height >= 24), title: document.querySelector('[role="dialog"] h2')?.textContent };
       });
       console.log(`     header ${Math.round(m.top)} of ${Math.round(m.dh)} px`);

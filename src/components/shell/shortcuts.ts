@@ -33,6 +33,23 @@ export function digitOf(e: KeyboardEvent): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** The view shortcut's caps: ⌥⌘1…4 on a Mac, Ctrl+Alt+1…4 elsewhere. */
+export function viewChord(digit: number | "1…4"): { keys: string[]; aria: string } {
+  const n = digit === "1…4" ? 1 : digit;
+  return mac() ? { keys: ["⌥", "⌘", String(digit)], aria: `Alt+Meta+${n}` } : { keys: ["Ctrl", "Alt", String(digit)], aria: `Control+Alt+${n}` };
+}
+
+/**
+ * 1 to 4 for the view shortcuts (Chat, Study, Grades, Plan), or null. By the key's position (Option
+ * changes the character on a Mac). AltGr (Ctrl+Alt where a layout types with it) is never taken.
+ */
+export function viewDigitOf(e: KeyboardEvent): number | null {
+  const mod = mac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+  if (!mod || !e.altKey || e.shiftKey || e.getModifierState?.("AltGraph")) return null;
+  const m = /^Digit([1-4])$/.exec(e.code);
+  return m ? Number(m[1]) : null;
+}
+
 export function shortcutGroups(): ShortcutGroup[] {
   const m = modCap();
   const a = modAria();
@@ -42,6 +59,7 @@ export function shortcutGroups(): ShortcutGroup[] {
       shortcuts: [
         { id: "palette", does: "Find a space or command", keys: [m, "K"], aria: `${a}+K` },
         { id: "spaces", does: "Go to space 1 to 9 (in the sidebar’s order: the most recently used first)", keys: [m, "1…9"], aria: `${a}+1` },
+        { id: "views", does: "Chat, Study, Grades or Plan, in the space on screen", ...viewChord("1…4") },
         { id: "new", does: "New conversation", keys: [m, "N"], aria: `${a}+N` },
         { id: "search", does: "Search conversations", keys: [m, "Shift", "F"], aria: `${a}+Shift+F` },
         { id: "wide", does: "Wide reading on or off", keys: [m, "Shift", "L"], aria: `${a}+Shift+L` },
@@ -60,6 +78,14 @@ export function shortcutGroups(): ShortcutGroup[] {
         { id: "card-allow", does: "On that question: allow", keys: [m, "Enter"], aria: `${a}+Enter` },
         { id: "card-refuse", does: "On that question: don’t allow", keys: [m, mac() ? "⌫" : "Backspace"], aria: `${a}+Backspace` },
         { id: "edit-last", does: "Edit your last message (in an empty message box)", keys: ["↑"] },
+      ],
+    },
+    {
+      title: "Studying cards",
+      shortcuts: [
+        { id: "flip", does: "Show the answer", keys: ["Space"] },
+        { id: "rate", does: "How well you knew it, from 1 (not at all) to 5 (perfectly)", keys: ["1…5"] },
+        { id: "quiz-choice", does: "In a quiz question: move between the answers", keys: ["↑", "↓"] },
       ],
     },
     {

@@ -36,6 +36,8 @@ const SPOKEN: Record<string, string> = {
   "↑": "Up arrow",
   "↓": "Down arrow",
   "1…9": "1 to 9",
+  "1…4": "1 to 4",
+  "1…5": "1 to 5",
 };
 
 /** Key caps as words: ["⌘", "K"] is "Command K". */

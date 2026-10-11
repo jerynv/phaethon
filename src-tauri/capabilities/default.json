@@ -58,6 +58,7 @@
     "allow-lms-disconnect",
     "allow-lms-grades",
     "allow-lms-grades-refresh",
+    "allow-study-sources",
     "allow-study-overview",
     "allow-study-deck",
     "allow-study-deck-save",

@@ -41,7 +41,7 @@ export default [
     mock: { settings },
     async run(page, h) {
       await open(page, h, "appearance");
-      await page.evaluate(() => document.querySelector('[role="tabpanel"]:not([hidden])')?.scrollBy(0, 99999));
+      await page.evaluate(() => document.querySelector('[role="dialog"] [role="tabpanel"]:not([hidden])')?.scrollBy(0, 99999));
       await h.idle();
     },
   },

@@ -1,7 +1,12 @@
 import { AssistantRuntimeProvider, useAuiState, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
+import { GradesView } from "@/components/grades/grades-view";
 import { SetupCard } from "@/components/onboarding/setup-card";
+import { PlanView } from "@/components/plan/plan-view";
+import { panelId, tabId, useSpaceView, type SpaceView } from "@/components/study/space-view";
+import { StudyView } from "@/components/study/study-view";
+import { ViewSwitcher } from "@/components/study/view-switcher";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
@@ -9,6 +14,7 @@ import { setSpaceActivity } from "@/lib/activity";
 import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import { useOpenRequests } from "@/lib/open-conversation";
 import { createAgentAdapter, savedAttachmentId, type AgentMessageCustom } from "@/runtime/agent-adapter";
 import { attachmentAdapter } from "@/runtime/attachments";
@@ -282,13 +288,66 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     );
   }
 
+  // Chat, Study, Grades, Plan. Each view seen stays mounted (out of sight and inert while another
+  // shows), so the conversation keeps its reply, draft and scroll, and a review keeps its place.
+  const view = useSpaceView(space.id);
+  const [seen, setSeen] = useState<readonly SpaceView[]>(["chat"]);
+  if (!seen.includes(view)) setSeen([...seen, view]);
+  const panel = (v: SpaceView, content: ReactNode, ref?: RefObject<HTMLDivElement | null>) =>
+    seen.includes(v) && (
+      <div
+        key={v}
+        ref={ref}
+        role="tabpanel"
+        id={panelId(space.id, v)}
+        aria-labelledby={tabId(space.id, v)}
+        data-space-view={v}
+        data-view-shown={view === v ? "" : undefined}
+        inert={view !== v}
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col",
+          view !== v && "invisible absolute inset-0",
+          v !== "chat" && "overflow-y-auto",
+        )}
+      >
+        {content}
+      </div>
+    );
+
   return (
-    <div ref={rootRef} data-space-pane={space.id} className="flex min-h-0 flex-1 flex-col">
-      <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} shown={shown} />
-      <p role="status" className="sr-only" data-testid="conversation-status">
-        {said}
-      </p>
-      {body}
+    <div data-space-pane={space.id} className="relative flex min-h-0 flex-1 flex-col">
+      {/* The space's header: its views, then (in Chat) which conversation, on one row while there is room. */}
+      <div
+        data-space-header=""
+        className={cn(
+          "relative z-20 flex shrink-0 flex-wrap items-center gap-x-2 bg-bg ps-2",
+          "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:to-transparent",
+          "forced-colors:after:hidden [main:has([role=log]:focus-visible)_&]:after:hidden [&_[data-conversations-bar]]:after:hidden",
+          view !== "chat" && "pe-2",
+        )}
+      >
+        <div className="py-1.5">
+          <ViewSwitcher space={space.id} spaceName={space.name} view={view} />
+        </div>
+        {view === "chat" && (
+          <div className="min-w-0 flex-1 basis-80">
+            <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} shown={shown} />
+          </div>
+        )}
+      </div>
+      {panel(
+        "chat",
+        <>
+          <p role="status" className="sr-only" data-testid="conversation-status">
+            {said}
+          </p>
+          {body}
+        </>,
+        rootRef,
+      )}
+      {panel("study", <StudyView space={space} shown={view === "study"} />)}
+      {panel("grades", <GradesView space={space} />)}
+      {panel("plan", <PlanView space={space} />)}
     </div>
   );
 }

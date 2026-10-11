@@ -6,7 +6,7 @@
 
 const SETTINGS = { backend: "phaethon", hasAnthropicKey: true, model: "claude-opus-5-5", appearance: {}, vaultPath: "/Users/you/Phaethon/default", version: "0.1.0" };
 const DIALOG = "[data-new-space-dialog]";
-const PANEL = '[role="tabpanel"]:not([hidden])';
+const PANEL = '[role="dialog"] [role="tabpanel"]:not([hidden])';
 
 function check(ok, what, detail = "") {
   if (!ok) throw new Error(`${what}${detail ? `: ${detail}` : ""}`);

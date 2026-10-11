@@ -147,6 +147,11 @@ function stream(cmd: string, args: Record<string, unknown>, onEvent: (e: StudyEv
   return invoke<void>(cmd, { ...args, onEvent: channel });
 }
 
+
+/** Mirrors `CourseSource` in src-tauri/src/study/sources.rs: an imported course and the parts its folder has. */
+export type CourseSource = { name: string; folder: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };
+/** The space's imported courses, for choosing what to make cards or a quiz from. */
+export const studySources = (space: string) => invoke<CourseSource[]>("study_sources", { space });
 export const studyOverview = (space: string) => invoke<StudyOverview>("study_overview", { space });
 
 export const studyDeck = (space: string, path: string) => invoke<DeckView>("study_deck", { space, path });

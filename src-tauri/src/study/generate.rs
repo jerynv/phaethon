@@ -78,6 +78,9 @@ pub struct QuizOptions {
     pub kinds: Vec<String>,
     #[serde(default)]
     pub difficulty: Option<String>,
+    /// What to concentrate on ("test 1", "chapter 3"), as for decks.
+    #[serde(default)]
+    pub focus: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
 }
@@ -348,10 +351,11 @@ pub async fn make_quiz<M: Model>(space: &Path, inputs: &[String], opts: &QuizOpt
         return Err("Choose a course or some files to make the quiz from.".into());
     }
     emit(progress("reading", 0, 1));
-    let material = sources::gather(space, inputs, None, sources::BUDGET)?;
+    let material = sources::gather(space, inputs, opts.focus.as_deref(), sources::BUDGET)?;
     emit(progress("reading", 1, 1));
+    let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!(" Focus on: {f}.")).unwrap_or_default();
     let user = format!(
-        "Make a quiz of {count} questions from this material. Kinds: {}. Difficulty: {difficulty}.\n\n{}",
+        "Make a quiz of {count} questions from this material. Kinds: {}. Difficulty: {difficulty}.{focus_line}\n\n{}",
         kinds.join(", "),
         material_block(&material)
     );
@@ -638,7 +642,7 @@ mod tests {
         let wrong_kind = format!(r#"{{"questions": [{{"kind": "essay", "prompt": "x", "answer": "y", "explanation": "z", "source": "{SRC}"}}]}}"#);
         let m = Scripted::new(&[&wrong_kind, &quiz_reply()]);
         let kinds = ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec();
-        let (path, n) = block_on(make_quiz(&dir, &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), title: None }, &m, &emit, 1_791_000_000_000)).unwrap();
+        let (path, n) = block_on(make_quiz(&dir, &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), focus: None, title: None }, &m, &emit, 1_791_000_000_000)).unwrap();
         assert_eq!((path.as_str(), n), ("study/quizzes/Test 1 practice.json", 4));
         assert!(m.asked.lock().unwrap()[1].1.contains("only these kinds"));
         let (_, q) = super::super::load_quiz(&dir, &path).unwrap();

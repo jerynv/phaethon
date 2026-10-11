@@ -406,7 +406,12 @@
         case "lms_grades_refresh": {
           if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
           const G = (M.lmsGrades ??= {});
-          const conn = M.lms?.connections?.[args.space]?.[0]?.id ?? "canvas-iu-instructure-com";
+          const conn = M.lms?.connections?.[args.space]?.[0]?.id;
+          // A space with no course site has no grades (unless a scenario sets them).
+          if (!conn && !G[args.space]) {
+            if (cmd === "lms_grades") return [];
+            throw "That course site isn’t connected in this space any more.";
+          }
           const day = 86400000;
           const at = (d) => new Date(Date.now() + d * day).toISOString();
           const item = (title, group, score, possible, extra = {}) => ({
@@ -469,10 +474,11 @@
           send({ type: "done" });
           return;
         }
-        // study (engine)
-        // As src/lib/study.ts. M.study: { decks: { space: [{ path, title, course?, cards: [{ id, kind, front, back, source?, confidence?, due? }] }] },
-        // quizzes: { space: [{ path, title, course?, sources, created, questions }] }, attempts: [...], days: [ms...],
-        // makeError (study_make_* sends it), step (ms between progress events) }.
+        // study (UI)
+        // Study, as the contract in src/lib/study.ts. M.study: { decks: { path: { title, course?, sources, cards:
+        // [{ front, back }] } }, quizzes: { path: quiz }, progress: { cardId: { confidence, due } }, streakDays,
+        // courses: [{ course, folder }] (what lms_grades gives), makeError (study_make_* sends it as an error),
+        // reviewSummary, step (ms) }. A card is due when it has no progress or its due time has passed.
         case "study_overview":
         case "study_deck":
         case "study_deck_save":
@@ -483,215 +489,196 @@
         case "study_quiz":
         case "study_quiz_submit":
         case "study_review_mistakes":
-        case "study_delete": {
+        case "study_delete":
+        case "study_sources": {
           const S = (M.study ??= {});
-          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
-          const C241 = "CSCI-C 241 Fall 2026 (All Sections)";
-          const SRC = `courses/${C241}/files/HW/Test 1 Review - C241 Fa26.pdf`;
           S.decks ??= {};
           S.quizzes ??= {};
-          S.attempts ??= [];
-          S.days ??= [];
-          S.decks.school ??= [
-            {
-              path: "study/decks/Logic basics.md",
-              title: "Logic basics",
-              course: C241,
-              cards: [
-                { id: "c1", kind: "basic", front: "When is p → q false?", back: "Only when p is true and q is false.", source: SRC },
-                { id: "c2", kind: "basic", front: "“A is necessary for B” in logic", back: "B → A", source: SRC, confidence: 2, due: Date.now() - 1000 },
-                { id: "c3", kind: "cloze", front: "A set with n members has {{2^n}} subsets.", back: "", source: SRC, confidence: 5, due: Date.now() + 5 * 864e5 },
-              ],
-            },
-          ];
-          S.quizzes.school ??= [
-            {
-              path: "study/quizzes/Test 1 practice.json",
-              title: "Test 1 practice",
-              course: C241,
-              sources: [SRC],
-              created: Date.now() - 864e5,
-              questions: [
-                { id: "q1", kind: "choice", prompt: "When is p → q false?", choices: ["p false, q true", "p true, q false", "both false", "both true"], answer: "p true, q false", explanation: "Only a true premise with a false conclusion fails.", source: SRC },
-                { id: "q2", kind: "truefalse", prompt: "A set with 3 members has 6 subsets.", choices: ["true", "false"], answer: "false", explanation: "It has 2^3 = 8.", source: SRC },
-                { id: "q3", kind: "multi", prompt: "Which are tautologies? Select all that apply.", choices: ["p ∨ ¬p", "p → p", "p ∧ ¬p", "p → q"], answer: ["p ∨ ¬p", "p → p"], explanation: "Both are true under every assignment.", source: SRC },
-                { id: "q4", kind: "short", prompt: "Why does a set with n members have 2^n subsets?", answer: "Each member is in or out: two choices, n times.", explanation: "Counting in-or-out choices.", source: SRC },
-                { id: "q5", kind: "cloze", prompt: "The power set of a set with n members has ___ members.", answer: "2^n", accept: ["2ⁿ"], explanation: "One subset per pattern.", source: SRC },
-              ],
-            },
-          ];
-          const decks = (S.decks[args.space] ??= []);
-          const quizzes = (S.quizzes[args.space] ??= []);
+          S.progress ??= {};
+          S.attempts ??= {};
+          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          if (cmd === "study_sources")
+            return (S.courses ?? []).map((c) => ({ name: c.course, folder: c.folder, syllabus: true, assignments: true, files: true, readings: true }));
+          const inSpace = (p) => typeof p === "string" && !p.startsWith("/") && !p.split("/").includes("..");
+          if (args.path != null && !inSpace(args.path)) throw "That isn’t a file in this space.";
+          const hash = (s) => [...s].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36);
+          const cardsOf = (path) =>
+            (S.decks[path]?.cards ?? []).map((c) => {
+              const id = hash(`${path}\n${c.front}`);
+              // A scenario may give a card's starting progress on the card itself ({ confidence, due }).
+              const p = S.progress[id] ?? (c.confidence ? { confidence: c.confidence, due: c.due ?? 0 } : null);
+              return { id, kind: /\{\{.+?\}\}/.test(c.front) ? "cloze" : "basic", front: c.front, back: c.back ?? "", ...(p ? { confidence: p.confidence, due: p.due } : {}) };
+            });
           const now = Date.now();
-          const findDeck = (p) => {
-            const d = decks.find((x) => x.path === p);
-            if (!d) throw "That deck isn’t in this space any more.";
-            return d;
-          };
-          const findQuiz = (p) => {
-            const q = quizzes.find((x) => x.path === p);
-            if (!q) throw "That quiz isn’t in this space any more.";
-            return q;
-          };
-          const free = (folder, title, ext, list) => {
-            const stem = title.replace(/[/\\:*?"<>|]/g, "-").trim() || "Untitled";
-            let name = `${folder}/${stem}${ext}`;
-            for (let n = 2; list.some((x) => x.path.toLowerCase() === name.toLowerCase()); n++) name = `${folder}/${stem} (${n})${ext}`;
-            return name;
-          };
-          const stream = async (events) => {
+          const isDue = (c) => c.due == null || c.due <= now;
+          const stream = () => {
             const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
             let index = 0;
-            for (const e of events) {
-              await sleep(S.step ?? 80);
-              callbacks[id]?.({ index: index++, message: e });
-            }
+            return (message) => callbacks[id]?.({ index: index++, message });
           };
-          const progress = (steps) => steps.flatMap((s) => [{ type: "progress", step: s, done: 0, total: 1 }, { type: "progress", step: s, done: 1, total: 1 }]);
-          if (cmd === "study_overview") {
-            const day = (t) => Math.floor((t - new Date(t).getTimezoneOffset() * 6e4) / 864e5);
-            const days = new Set(S.days.map(day));
-            let streak = 0;
-            for (let d = days.has(day(now)) ? day(now) : day(now) - 1; days.has(d); d--) streak++;
-            const summaries = decks.map((d) => ({
-              path: d.path,
-              title: d.title,
-              ...(d.course ? { course: d.course } : {}),
-              cards: d.cards.length,
-              due: d.cards.filter((c) => c.due != null && c.due <= now).length,
-              new: d.cards.filter((c) => c.due == null).length,
-              mastery: d.cards.length ? d.cards.filter((c) => (c.confidence ?? 0) >= 4).length / d.cards.length : 0,
-              updated: d.updated ?? now - 36e5,
-            }));
-            return {
-              decks: summaries,
-              quizzes: quizzes.map((q) => {
-                const last = S.attempts.filter((a) => a.quiz === q.path).sort((a, b) => b.taken - a.taken)[0];
-                return { path: q.path, title: q.title, ...(q.course ? { course: q.course } : {}), questions: q.questions.length, ...(last ? { lastScore: last.score, lastTaken: last.taken } : {}) };
-              }),
-              due: summaries.reduce((n, d) => n + d.due, 0),
-              streakDays: streak,
-            };
-          }
-          if (cmd === "study_deck") {
-            const d = findDeck(args.path);
-            return { path: d.path, title: d.title, ...(d.course ? { course: d.course } : {}), sources: d.course ? [SRC] : [], cards: d.cards.map((c) => ({ ...c })) };
-          }
-          if (cmd === "study_deck_save") {
-            if (!String(args.title ?? "").trim()) throw "The deck needs a title.";
-            if (!args.cards.length) throw "The deck has no cards yet.";
-            args.cards.forEach((c, i) => {
-              if (!c.front.trim()) throw `Card ${i + 1} has no question.`;
-              if (!c.front.includes("{{") && !c.back.trim()) throw `Card ${i + 1} has no answer.`;
-            });
-            const d = args.path ? findDeck(args.path) : { path: free("study/decks", args.title, ".md", decks), cards: [] };
-            const old = d.cards;
-            d.title = args.title.trim();
-            d.cards = args.cards.map((c, i) => {
-              const prev = old.find((o) => o.front === c.front.trim());
-              return { ...(prev ?? {}), id: prev?.id ?? `n${now}-${i}`, kind: c.front.includes("{{") ? "cloze" : "basic", front: c.front.trim(), back: c.back.trim(), ...(c.source ? { source: c.source } : {}) };
-            });
-            d.updated = now;
-            if (!args.path) decks.push(d);
-            return d.path;
-          }
-          if (cmd === "study_session") {
-            const chosen = args.paths ? args.paths.map(findDeck) : decks;
-            const all = chosen.flatMap((d) => d.cards.map((c) => ({ ...c, deck: d.path })));
-            const due = all.filter((c) => c.due != null && c.due <= now).sort((a, b) => a.due - b.due);
-            const fresh = all.filter((c) => c.due == null);
-            const ahead = args.paths ? all.filter((c) => c.due != null && c.due > now).sort((a, b) => a.due - b.due) : [];
-            return [...due, ...fresh, ...ahead].slice(0, args.limit ?? 20);
-          }
-          if (cmd === "study_rate") {
-            if (!(args.confidence >= 1 && args.confidence <= 5)) throw "Rate how well you knew it from 1 to 5.";
-            const c = findDeck(args.deck).cards.find((x) => x.id === args.card);
-            if (!c) throw "That card isn’t in the deck any more; it may have been edited.";
-            const wait = [0, 10 * 6e4, 864e5, 864e5, 3 * 864e5, 5 * 864e5][args.confidence];
-            c.confidence = args.confidence;
-            c.due = now + wait;
-            S.days.push(now);
-            return { due: c.due, again: args.confidence <= 2 };
-          }
-          if (cmd === "study_quiz") return JSON.parse(JSON.stringify(findQuiz(args.path)));
-          if (cmd === "study_delete") {
-            const di = decks.findIndex((x) => x.path === args.path);
-            const qi = quizzes.findIndex((x) => x.path === args.path);
-            if (di >= 0) decks.splice(di, 1);
-            else if (qi >= 0) {
-              quizzes.splice(qi, 1);
-              S.attempts = S.attempts.filter((a) => a.quiz !== args.path);
-            } else throw "That isn’t a deck or quiz in this space.";
-            return;
-          }
-          if (cmd === "study_make_deck" || cmd === "study_make_quiz") {
-            if (S.makeError) return stream([{ type: "progress", step: "reading", done: 0, total: 1 }, { type: "error", message: S.makeError }]);
-            const count = Math.max(1, Math.min(args.options.count || 8, 30));
-            if (cmd === "study_make_deck") {
-              const title = args.options.title || (args.options.fromAttempt ? "Mistakes from Test 1 practice" : "Test 1 review");
-              const d = {
-                path: free("study/decks", title, ".md", decks),
-                title,
-                course: C241,
-                cards: Array.from({ length: count }, (_, i) => ({ id: `g${now}-${i}`, kind: i % 3 === 2 ? "cloze" : "basic", front: i % 3 === 2 ? `Generated fill-in {{term ${i + 1}}}.` : `Generated question ${i + 1}?`, back: i % 3 === 2 ? "" : `Answer ${i + 1}.`, source: SRC })),
-                updated: now,
-              };
-              decks.push(d);
-              return stream([...progress(["reading", "making", "saving"]), { type: "done", path: d.path, cards: count }]);
+          const titleFile = (dir, title, ext) => `study/${dir}/${title.replace(/[\\/:*?"<>|]/g, "-")}.${ext}`;
+          switch (cmd) {
+            case "study_overview": {
+              const decks = Object.entries(S.decks).map(([path, d]) => {
+                const cards = cardsOf(path);
+                const recent = cards.filter((c) => c.confidence != null);
+                return {
+                  path,
+                  title: d.title,
+                  course: d.course,
+                  cards: cards.length,
+                  due: cards.filter((c) => c.confidence != null && isDue(c)).length + cards.filter((c) => c.confidence == null).length,
+                  new: cards.filter((c) => c.confidence == null).length,
+                  mastery: cards.length ? recent.filter((c) => c.confidence >= 4).length / cards.length : 0,
+                  updated: d.updated ?? now,
+                };
+              });
+              const quizzes = Object.entries(S.quizzes).map(([path, q]) => ({ path, title: q.title, course: q.course, questions: q.questions.length, lastScore: q.lastScore, lastTaken: q.lastTaken }));
+              return { decks, quizzes, due: decks.reduce((n, d) => n + d.due, 0), streakDays: S.streakDays ?? 0 };
             }
-            const title = args.options.title || "Test 1 practice";
-            const kinds = args.options.kinds?.length ? args.options.kinds : ["choice", "truefalse", "short"];
-            const q = {
-              path: free("study/quizzes", title, ".json", quizzes),
-              title,
-              course: C241,
-              sources: [SRC],
-              created: now,
-              questions: Array.from({ length: count }, (_, i) => {
-                const kind = kinds[i % kinds.length];
-                const base = { id: `q${i + 1}`, kind, explanation: "Because the review sheet says so.", source: SRC };
-                if (kind === "choice") return { ...base, prompt: `Question ${i + 1}?`, choices: ["A", "B", "C", "D"], answer: "B" };
-                if (kind === "multi") return { ...base, prompt: `Question ${i + 1}? Select all that apply.`, choices: ["A", "B", "C", "D"], answer: ["A", "C"] };
-                if (kind === "truefalse") return { ...base, prompt: `Statement ${i + 1}.`, choices: ["true", "false"], answer: "true" };
-                if (kind === "cloze") return { ...base, prompt: `Fill in ___ ${i + 1}.`, answer: "blank" };
-                return { ...base, prompt: `Explain idea ${i + 1}.`, answer: "A model answer." };
-              }),
-            };
-            quizzes.push(q);
-            return stream([...progress(["reading", "making", "saving"]), { type: "done", path: q.path, questions: count }]);
-          }
-          if (cmd === "study_quiz_submit") {
-            const q = findQuiz(args.path);
-            const norm = (s) => String(s ?? "").trim().toLowerCase();
-            const results = q.questions.map((x) => {
-              const given = args.answers[x.id] ?? "";
-              const from = x.source ? ` (From ${x.source.split("/").pop()}.)` : "";
-              if (x.kind === "short") {
-                if (!norm(given)) return { id: x.id, correct: false, given, expected: x.answer, feedback: `No answer given. A good answer: ${x.answer}` };
-                return { id: x.id, correct: false, partial: 0.5, given, expected: x.answer, feedback: `Right idea, but say why it holds for every member.${from}` };
+            case "study_deck": {
+              const d = S.decks[args.path];
+              if (!d) throw "That deck isn’t in this space any more.";
+              return { path: args.path, title: d.title, course: d.course, sources: d.sources ?? [], cards: cardsOf(args.path) };
+            }
+            case "study_deck_save": {
+              const title = String(args.title ?? "").trim();
+              if (!title) throw "A deck needs a name.";
+              for (const c of args.cards) if (!c.front.trim() || (!c.back.trim() && !/\{\{.+?\}\}/.test(c.front))) throw "Every card needs a front and a back.";
+              const path = args.path || titleFile("decks", title, "md");
+              const d = (S.decks[path] ??= { title, sources: [] });
+              d.title = title;
+              // Progress follows the front (the card's id), as in the core.
+              const old = d.cards ?? [];
+              d.cards = args.cards.map((c) => ({ ...old.find((o) => o.front === c.front), front: c.front, back: c.back }));
+              d.updated = now;
+              return path;
+            }
+            case "study_session": {
+              const paths = args.paths ?? Object.keys(S.decks);
+              const cards = paths.flatMap((p) => cardsOf(p).filter(isDue).map((c) => ({ ...c, deck: p })));
+              return cards.slice(0, args.limit ?? 40);
+            }
+            case "study_rate": {
+              if (M.fail?.study_rate_once) {
+                const m = M.fail.study_rate_once;
+                delete M.fail.study_rate_once;
+                throw m;
               }
-              if (x.kind === "multi") {
-                const right = new Set(x.answer.map(norm));
-                const picked = (Array.isArray(given) ? given : [given]).map(norm).filter(Boolean);
-                const ok = picked.length === right.size && picked.every((p) => right.has(p));
-                return { id: x.id, correct: ok, given, expected: x.answer, feedback: `${ok ? "Right: you picked every one." : `Partly: the right ones are ${x.answer.join(", ")}.`} ${x.explanation}${from}` };
+              const conf = Number(args.confidence);
+              if (!(conf >= 1 && conf <= 5)) throw "A rating is from 1 to 5.";
+              const days = [0, 0, 1, 3, 7][conf - 1];
+              const due = now + (days ? days * 86400000 : 60000);
+              S.progress[args.card] = { confidence: conf, due };
+              (S.rated ??= []).push([args.card, conf]);
+              return { due, again: conf <= 2 };
+            }
+            case "study_make_deck":
+            case "study_make_quiz": {
+              const send = stream();
+              const quiz = cmd === "study_make_quiz";
+              if (!args.sources?.length) throw "Choose what to make them from.";
+              if (!args.sources.every(inSpace)) throw "That isn’t a file in this space.";
+              const steps = [["reading your course files", 1, 3], ["reading your course files", 2, 3], ["reading your course files", 3, 3], [quiz ? "writing the questions" : "writing the cards", 0, 1]];
+              for (const [step, done, total] of steps) {
+                await sleep(S.step ?? 60);
+                send({ type: "progress", step, done, total });
+                if (S.makeError && done === 2) break;
               }
-              const ok = [x.answer, ...(x.accept ?? [])].some((a) => norm(a) === norm(given));
-              return { id: x.id, correct: ok, given, expected: x.answer, feedback: `${ok ? "Right." : norm(given) ? `Not quite: the answer is ${x.answer}.` : `No answer given. The answer is ${x.answer}.`} ${x.explanation}${from}` };
-            });
-            const score = results.reduce((n, r) => n + (r.correct ? 1 : r.partial ?? 0), 0) / results.length;
-            const attempt = { path: `.phaethon/study/attempts/${q.title}-${now}.json`, quiz: q.path, taken: now, score, results };
-            S.attempts.push(attempt);
-            const shorts = q.questions.filter((x) => x.kind === "short").length;
-            return stream([...(shorts ? [{ type: "progress", step: "grading", done: 0, total: shorts }, { type: "progress", step: "grading", done: shorts, total: shorts }] : []), { type: "done", attempt }]);
+              await sleep(S.step ?? 60);
+              if (S.makeError) {
+                send({ type: "error", message: S.makeError });
+                return;
+              }
+              const count = Number(args.options.count) || 10;
+              const title = args.options.title || (args.options.fromAttempt ? "Mistakes to review" : args.options.focus ? `Cards on ${args.options.focus}` : quiz ? "Practice quiz" : "New cards");
+              if (quiz) {
+                const kinds = args.options.kinds?.length ? args.options.kinds : ["choice"];
+                const path = titleFile("quizzes", title, "json");
+                const questions = Array.from({ length: count }, (_, i) => {
+                  const kind = kinds[i % kinds.length];
+                  return kind === "truefalse"
+                    ? { id: `q${i + 1}`, kind, prompt: `Statement ${i + 1} is true.`, choices: ["True", "False"], answer: "True", explanation: "It is." }
+                    : { id: `q${i + 1}`, kind: "choice", prompt: `Question ${i + 1}?`, choices: ["A", "B", "C"], answer: "A", explanation: "A is right." };
+                });
+                S.quizzes[path] = { title, sources: args.sources, created: now, questions };
+                send({ type: "done", path, questions: count });
+              } else {
+                const path = titleFile("decks", title, "md");
+                S.decks[path] = { title, sources: args.sources, updated: now, cards: Array.from({ length: count }, (_, i) => ({ front: `New card ${i + 1}?`, back: `Answer ${i + 1}.` })) };
+                send({ type: "done", path, cards: count });
+              }
+              return;
+            }
+            case "study_quiz": {
+              const q = S.quizzes[args.path];
+              if (!q) throw "That quiz isn’t in this space any more.";
+              return q;
+            }
+            case "study_quiz_submit": {
+              const q = S.quizzes[args.path];
+              if (!q) throw "That quiz isn’t in this space any more.";
+              const send = stream();
+              const norm = (s) => String(s ?? "").trim().toLowerCase();
+              const shorts = q.questions.filter((x) => x.kind === "short").length;
+              for (let i = 0; i < shorts; i++) {
+                await sleep(S.step ?? 60);
+                send({ type: "progress", step: "checking short answers", done: i + 1, total: shorts });
+              }
+              if (S.gradeError) {
+                send({ type: "error", message: S.gradeError });
+                return;
+              }
+              const results = q.questions.map((x) => {
+                const given = args.answers[x.id] ?? (x.kind === "multi" ? [] : "");
+                let correct = false;
+                let partial;
+                if (x.kind === "multi") {
+                  const want = new Set(x.answer);
+                  const got = new Set(given);
+                  const hits = [...got].filter((g) => want.has(g)).length;
+                  const wrong = [...got].filter((g) => !want.has(g)).length;
+                  correct = hits === want.size && wrong === 0;
+                  if (!correct && hits > wrong) partial = (hits - wrong) / want.size;
+                } else if (x.kind === "short") {
+                  const words = norm(x.answer).split(/\W+/).filter((w) => w.length > 3);
+                  const found = words.filter((w) => norm(given).includes(w)).length;
+                  correct = words.length > 0 && found === words.length;
+                  if (!correct && found > 0) partial = found / words.length;
+                } else correct = norm(given) === norm(x.answer);
+                const feedback = correct ? x.explanation : `${x.explanation}${x.source ? ` See ${x.source.split("/").pop()}.` : ""}`;
+                return { id: x.id, correct, ...(partial ? { partial } : {}), given, expected: x.answer, feedback };
+              });
+              const score = results.reduce((n, r) => n + (r.correct ? 1 : r.partial ?? 0), 0) / results.length;
+              const taken = now;
+              const attempt = { path: `.phaethon/study/attempts/${args.path.split("/").pop().replace(/\.json$/, "")}-${taken}.json`, quiz: args.path, taken, score, results };
+              S.attempts[attempt.path] = attempt;
+              q.lastScore = score;
+              q.lastTaken = taken;
+              send({ type: "done", attempt });
+              return;
+            }
+            case "study_review_mistakes": {
+              const send = stream();
+              if (!S.attempts[args.attemptPath]) throw "That attempt isn’t saved any more.";
+              await sleep(S.step ?? 60);
+              send({ type: "progress", step: "reading what you missed", done: 1, total: 1 });
+              await sleep(S.step ?? 60);
+              if (S.makeError) {
+                send({ type: "error", message: S.makeError });
+                return;
+              }
+              send({ type: "done", summary: S.reviewSummary ?? "## Graph colouring\n\nYou mixed up the **chromatic number** with the degree. Reread *Notes, week 6*.\n\n- Redo exercises 6.2 and 6.4\n- Then make cards from these mistakes" });
+              return;
+            }
+            case "study_delete": {
+              if (!S.decks[args.path] && !S.quizzes[args.path]) throw "That isn’t in this space any more.";
+              delete S.decks[args.path];
+              delete S.quizzes[args.path];
+              return;
+            }
           }
-          // study_review_mistakes
-          const a = S.attempts.find((x) => x.path === args.attemptPath);
-          if (!a) throw "That quiz attempt isn’t in this space any more.";
-          const summary = a.results.every((r) => r.correct)
-            ? "You got everything right on this quiz. Nothing to review: try a harder quiz, or keep up your flashcards."
-            : "## Conditionals\n\nYou mixed up which side of p → q must be true. Reread the truth table in Test 1 Review - C241 Fa26.pdf.\n\n## Before the exam\n\n- Redo problem 1 of the review sheet.";
-          return stream([{ type: "progress", step: "reviewing", done: 0, total: 1 }, { type: "progress", step: "reviewing", done: 1, total: 1 }, { type: "done", summary }]);
+          return;
         }
         case "agent_send": {
           M.currentSpace = args.space;

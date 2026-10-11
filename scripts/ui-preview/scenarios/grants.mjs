@@ -188,7 +188,7 @@ export default [
     },
     async run(page, h) {
       await openSettings(page, h);
-      await page.evaluate(() => document.querySelector('[role="tabpanel"]:not([hidden])')?.scrollBy(0, 99999));
+      await page.evaluate(() => document.querySelector('[role="dialog"] [role="tabpanel"]:not([hidden])')?.scrollBy(0, 99999));
       await h.idle();
     },
   },
@@ -197,9 +197,9 @@ export default [
     mock: { threads: { school: thread }, settings, grants: { school: [grants().school[0]] } },
     async run(page, h) {
       await openSettings(page, h);
-      await h.click('[role="tabpanel"]:not([hidden]) [data-revoke]');
+      await h.click('[role="dialog"] [role="tabpanel"]:not([hidden]) [data-revoke]');
       // Removed at once; the row keeps an Undo (focused) until Settings closes (t3-undo has the rest).
-      await page.waitForSelector('[role="tabpanel"]:not([hidden]) [data-undo="g-cal"]', { timeout: 5000 });
+      await page.waitForSelector('[role="dialog"] [role="tabpanel"]:not([hidden]) [data-undo="g-cal"]', { timeout: 5000 });
       await h.idle();
       const calls = await revokeCalls(page);
       const focus = await page.evaluate(() => document.activeElement?.textContent ?? "");

@@ -134,6 +134,50 @@ pub fn resolve(space: &Path, rel: &str) -> Result<PathBuf, String> {
     tools::resolve(space, rel, true).map_err(|_| format!("“{rel}” isn’t in this space."))
 }
 
+/// One imported course a space can make cards from, and which of the standard
+/// parts its folder has (what the source picker offers).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseSource {
+    /// The course's name, from its README's title (else the folder's name).
+    pub name: String,
+    /// "courses/<folder>", as study sources name it.
+    pub folder: String,
+    pub syllabus: bool,
+    pub assignments: bool,
+    pub files: bool,
+    pub readings: bool,
+}
+
+/// The course folders under `<space>/courses/` (never through a link), by name.
+pub fn courses(space: &Path) -> Vec<CourseSource> {
+    let Ok(entries) = fs::read_dir(space.join("courses")) else { return vec![] };
+    let mut out: Vec<CourseSource> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter_map(|e| {
+            let folder = e.file_name().to_str()?.to_string();
+            let dir = e.path();
+            let plain = |name: &str| fs::symlink_metadata(dir.join(name)).is_ok_and(|m| !m.file_type().is_symlink());
+            let name = fs::read_to_string(dir.join("README.md"))
+                .ok()
+                .and_then(|r| r.lines().next().and_then(|l| l.strip_prefix("# ")).map(|t| t.trim().to_string()))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| folder.clone());
+            Some(CourseSource {
+                name,
+                folder: format!("courses/{folder}"),
+                syllabus: plain("syllabus.md"),
+                assignments: plain("assignments.md"),
+                files: plain("files"),
+                readings: plain("readings"),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out
+}
+
 /// The text files of a chosen folder (a course folder, or any folder): the one
 /// place a folder's material is listed.
 pub fn folder_files(dir: &Path) -> Vec<PathBuf> {
@@ -359,6 +403,27 @@ pub fn match_label(cited: &str, labels: &[String]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_spaces_courses_and_their_parts() {
+        let tmp = std::env::temp_dir().join(format!("phaethon-study-sources-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let c241 = tmp.join("courses/CSCI-C 241 Fall 2026");
+        fs::create_dir_all(c241.join("files")).unwrap();
+        fs::write(c241.join("README.md"), "# CSCI-C 241 Fall 2026 (All Sections)\n\nmore").unwrap();
+        fs::write(c241.join("syllabus.md"), "x").unwrap();
+        fs::create_dir_all(tmp.join("courses/Bare")).unwrap();
+        fs::write(tmp.join("courses/not-a-folder.md"), "x").unwrap();
+        let got = courses(&tmp);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].name, "Bare");
+        assert!(!got[0].syllabus && !got[0].files);
+        assert_eq!(got[1].name, "CSCI-C 241 Fall 2026 (All Sections)");
+        assert_eq!(got[1].folder, "courses/CSCI-C 241 Fall 2026");
+        assert!(got[1].syllabus && got[1].files && !got[1].assignments && !got[1].readings);
+        assert!(courses(&tmp.join("nowhere")).is_empty());
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
     use super::*;
 
     fn space(tag: &str) -> PathBuf {

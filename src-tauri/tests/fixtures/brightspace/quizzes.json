@@ -1,0 +1,9 @@
+{
+  "Objects": [
+    { "QuizId": 7, "Name": "Quiz 1: Integration by parts", "IsActive": true, "SortOrder": 1, "AutoExportToGradebook": true, "GradeItemId": 910, "IsAutoSetGraded": true,
+      "Instructions": { "Text": { "Text": "", "Html": "" }, "IsDisplayed": false },
+      "Description": { "Text": { "Text": "Covers 3.1", "Html": "<p>Covers 3.1</p>" }, "IsDisplayed": true },
+      "StartDate": null, "EndDate": null, "DueDate": "2026-09-12T03:59:00.000Z", "DisplayInCalendar": true, "AttemptsAllowed": { "IsUnlimited": false, "NumberOfAttemptsAllowed": 1 } }
+  ],
+  "Next": "QB-8"
+}

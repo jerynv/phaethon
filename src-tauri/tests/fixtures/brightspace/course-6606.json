@@ -1,0 +1,9 @@
+{
+  "Identifier": "6606", "Name": "Calculus II", "Code": "M301-F26-12345", "IsActive": true, "CanSelfRegister": false,
+  "Description": { "Text": "", "Html": "" },
+  "Path": "/content/enforced/6606-M301-F26-12345/",
+  "StartDate": "2020-08-24T04:00:00.000Z", "EndDate": "2099-12-20T04:59:00.000Z",
+  "CourseTemplate": { "Identifier": "6600", "Name": "Calculus II", "Code": "M301" },
+  "Semester": { "Identifier": "6001", "Name": "Fall 2026", "Code": "4268" },
+  "Department": { "Identifier": "5001", "Name": "Mathematics", "Code": "MATH" }
+}

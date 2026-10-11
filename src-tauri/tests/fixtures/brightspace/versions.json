@@ -1,0 +1,6 @@
+[
+  { "ProductCode": "lp", "LatestVersion": "1.49", "SupportedVersions": ["1.0", "1.30", "1.46", "1.47", "1.48", "1.49"] },
+  { "ProductCode": "le", "LatestVersion": "1.82", "SupportedVersions": ["1.0", "1.50", "1.79", "1.80", "1.81", "1.82"] },
+  { "ProductCode": "ep", "LatestVersion": "2.5", "SupportedVersions": ["2.1", "2.5"] },
+  { "ProductCode": "bas", "LatestVersion": "1.4", "SupportedVersions": ["1.0", "1.4"] }
+]

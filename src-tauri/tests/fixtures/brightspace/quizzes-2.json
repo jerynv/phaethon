@@ -1,0 +1,11 @@
+{
+  "Objects": [
+    { "QuizId": 8, "Name": "Quiz 2: Series", "IsActive": true, "SortOrder": 2, "AutoExportToGradebook": true, "GradeItemId": 911, "IsAutoSetGraded": true,
+      "Instructions": { "Text": { "Text": "", "Html": "" }, "IsDisplayed": false },
+      "Description": { "Text": { "Text": "Covers chapter 5", "Html": "" }, "IsDisplayed": true },
+      "StartDate": null, "EndDate": null, "DueDate": "2026-10-03T03:59:00.000Z", "DisplayInCalendar": true, "AttemptsAllowed": { "IsUnlimited": false, "NumberOfAttemptsAllowed": 1 } },
+    { "QuizId": 9, "Name": "Practice quiz (off)", "IsActive": false, "SortOrder": 3,
+      "Description": { "Text": { "Text": "", "Html": "" }, "IsDisplayed": false }, "DueDate": null }
+  ],
+  "Next": null
+}

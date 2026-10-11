@@ -1,0 +1,10 @@
+{
+  "PagingInfo": { "Bookmark": "6606", "HasMoreItems": true },
+  "Items": [
+    {
+      "OrgUnit": { "Id": 6606, "Type": { "Id": 3, "Code": "Course Offering", "Name": "Course Offering" }, "Name": "Calculus II", "Code": "M301-F26-12345", "HomeUrl": "/d2l/home/6606", "ImageUrl": null },
+      "Access": { "IsActive": true, "StartDate": "2020-08-24T04:00:00.000Z", "EndDate": "2099-12-20T04:59:00.000Z", "CanAccess": true, "ClasslistRoleName": "Student", "LISRoles": ["urn:lti:role:ims/lis/Learner"], "LastAccessed": "2026-10-09T18:22:41.817Z" },
+      "PinDate": null
+    }
+  ]
+}

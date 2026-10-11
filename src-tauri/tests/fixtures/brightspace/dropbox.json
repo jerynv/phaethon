@@ -1,0 +1,19 @@
+[
+  { "Id": 41, "CategoryId": null, "Name": "Homework 1",
+    "CustomInstructions": { "Text": "Problems 3.1: 1-15 odd.", "Html": "<p>Problems 3.1: 1&ndash;15 odd.</p>" },
+    "Attachments": [ { "FileId": 9001, "FileName": "hw1.pdf", "Size": 48213 } ],
+    "TotalFiles": 0, "UnreadFiles": 0, "FlaggedFiles": 0, "TotalUsers": 0, "TotalUsersWithSubmissions": 0, "TotalUsersWithFeedback": 0,
+    "Availability": { "StartDate": null, "EndDate": null, "StartDateAvailabilityType": null, "EndDateAvailabilityType": null },
+    "GroupTypeId": null, "DueDate": "2026-09-05T03:59:00.000Z", "DisplayInCalendar": true,
+    "Assessment": { "ScoreDenominator": 20.0, "Rubrics": [] }, "NotificationEmail": null, "IsHidden": false,
+    "LinkAttachments": [], "ActivityId": "https://ids.brightspace.com/activities/dropbox/A1B2-41", "IsAnonymous": false,
+    "DropboxType": 2, "SubmissionType": 0, "CompletionType": 0, "GradeItemId": 900, "AllowOnlyUsersWithSpecialAccess": false },
+  { "Id": 42, "CategoryId": null, "Name": "Final project draft",
+    "CustomInstructions": { "Text": "", "Html": "" }, "Attachments": [],
+    "Availability": null, "GroupTypeId": null, "DueDate": null, "DisplayInCalendar": false,
+    "Assessment": { "ScoreDenominator": null, "Rubrics": [] }, "IsHidden": false, "SubmissionType": 0 },
+  { "Id": 43, "CategoryId": null, "Name": "Instructor test folder",
+    "CustomInstructions": { "Text": "", "Html": "" }, "Attachments": [],
+    "Availability": null, "GroupTypeId": null, "DueDate": "2026-12-01T04:59:00.000Z", "DisplayInCalendar": false,
+    "Assessment": null, "IsHidden": true, "SubmissionType": 0 }
+]

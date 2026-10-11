@@ -50,6 +50,9 @@ impl Kind {
     }
 }
 
+/// The first part of a Moodle address that names one of its pages, not the folder it's in.
+const MOODLE_PAGES: &[&str] = &["my", "login", "course", "mod", "admin", "user", "auth", "lib", "pluginfile.php", "calendar", "grade", "message", "blocks", "theme", "local"];
+
 /// A school's course site: `base` is its https origin (e.g. `https://iu.instructure.com`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Site {
@@ -66,7 +69,21 @@ impl Site {
         if u.scheme() != "https" || u.host_str().is_none() || !u.username().is_empty() || u.password().is_some() {
             return Err(LmsError::Other("Use the https address you see when you open your course site.".into()));
         }
-        let base = Url::parse(&u.origin().ascii_serialization()).map_err(|e| LmsError::Other(e.to_string()))?;
+        let mut base = Url::parse(&u.origin().ascii_serialization()).map_err(|e| LmsError::Other(e.to_string()))?;
+        // Moodle is often installed under a folder (https://x.edu/moodle/), and its
+        // module joins relative paths onto the base: keep the folder, cut at the first
+        // part of the address that is a Moodle page rather than where it lives.
+        if kind == Kind::Moodle {
+            let mut dir = String::from("/");
+            for seg in u.path_segments().into_iter().flatten().filter(|s| !s.is_empty()) {
+                if MOODLE_PAGES.contains(&seg) || seg.ends_with(".php") {
+                    break;
+                }
+                dir.push_str(seg);
+                dir.push('/');
+            }
+            base.set_path(&dir);
+        }
         Ok(Site { kind, base })
     }
 
@@ -379,5 +396,31 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
         Kind::Brightspace => brightspace::content(s, course_id).await,
         Kind::Moodle => moodle::content(s, course_id).await,
         Kind::Blackboard => blackboard::content(s, course_id).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_site_is_its_https_origin_and_moodle_keeps_its_folder() {
+        let c = Site::new(Kind::Canvas, "iu.instructure.com/courses/12?x=1#y").unwrap();
+        assert_eq!(c.base.as_str(), "https://iu.instructure.com/");
+        assert!(Site::new(Kind::Canvas, "http://iu.instructure.com").is_err());
+        assert!(Site::new(Kind::Canvas, "https://me:pw@iu.instructure.com").is_err());
+        for (typed, base) in [
+            ("https://x.edu/moodle/my/", "https://x.edu/moodle/"),
+            ("x.edu/moodle/login/index.php", "https://x.edu/moodle/"),
+            ("https://x.edu/campus/moodle/course/view.php?id=3", "https://x.edu/campus/moodle/"),
+            ("https://moodle.x.edu/my/courses.php", "https://moodle.x.edu/"),
+            ("https://moodle.x.edu", "https://moodle.x.edu/"),
+            ("https://x.edu/moodle", "https://x.edu/moodle/"),
+        ] {
+            assert_eq!(Site::new(Kind::Moodle, typed).unwrap().base.as_str(), base, "{typed}");
+        }
+        let m = Site::new(Kind::Moodle, "https://x.edu/moodle/").unwrap();
+        assert_eq!(m.base.join("lib/ajax/service.php").unwrap().as_str(), "https://x.edu/moodle/lib/ajax/service.php");
+        assert!(m.owns(&Url::parse("https://x.edu/other").unwrap()));
     }
 }

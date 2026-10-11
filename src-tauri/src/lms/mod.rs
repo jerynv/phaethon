@@ -14,6 +14,8 @@
 //! - `courses(session) -> Result<Vec<Course>, LmsError>`
 //! - `content(session, course_id) -> Result<CourseContent, LmsError>`
 //!
+//! Signing in is the person's own, in the school's own page; Phaethon keeps the
+//! session it leaves (cookies, plus the CSRF token), never an API token.
 //! Credentials stay in Rust and the keychain: never in the vault (it syncs),
 //! never sent to the webview, and only ever sent to the site's own origin
 //! ([`Session::get`]). Links out of a course are fetched without them
@@ -87,14 +89,18 @@ pub struct Cookie {
     pub value: String,
 }
 
-/// What signing in produced. Serialized only into the keychain.
+/// What signing in produced: the site's session, exactly as the person's own
+/// sign-in left it (whatever SSO, Duo or consent pages the school puts in the
+/// way), plus the site's CSRF token where it has one. No API tokens: many
+/// schools turn those off or make them hard to get. Serialized only into the
+/// keychain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum Credential {
-    /// The site's session cookies (Canvas, Brightspace, Blackboard).
-    Cookies { cookies: Vec<Cookie> },
-    /// A web service token (Moodle's mobile-app launch flow).
-    Token { token: String },
+#[serde(rename_all = "camelCase")]
+pub struct Credential {
+    pub cookies: Vec<Cookie>,
+    /// Canvas: the `_csrf_token` cookie, decoded. Moodle: the page's `sesskey`.
+    /// Brightspace and Blackboard: their XSRF token, when a request needs one.
+    pub csrf: Option<String>,
 }
 
 /// Where the login window is now, as `login_result` sees it.
@@ -196,7 +202,7 @@ pub enum LmsError {
     NotFound(String),
     /// Couldn't reach the site.
     Network(String),
-    /// The site doesn't offer what's needed (e.g. Moodle with mobile services turned off).
+    /// The site doesn't offer what's needed.
     Unsupported(String),
     Other(String),
 }
@@ -238,6 +244,39 @@ impl Session {
         &self.credential
     }
 
+    fn cookie_header(&self) -> String {
+        self.credential.cookies.iter().map(|c| format!("{}={}", c.name, c.value)).collect::<Vec<_>>().join("; ")
+    }
+
+    /// POST a JSON body to a path on the site with the session and the CSRF token
+    /// (sent as `csrf_header`, e.g. `X-CSRF-Token`; Moodle puts its sesskey in the
+    /// path instead and passes `None`). For read-only calls that a site only offers
+    /// as POST (Moodle's AJAX service); never used to change anything on the site.
+    pub async fn post_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path_and_query: &str,
+        body: &serde_json::Value,
+        csrf_header: Option<&str>,
+    ) -> Result<T, LmsError> {
+        let url = self.site.base.join(path_and_query).map_err(|e| LmsError::Other(e.to_string()))?;
+        if !self.site.owns(&url) {
+            return Err(LmsError::Other("Refused to send your sign-in to another site.".into()));
+        }
+        let mut req = self.http.post(url).header(reqwest::header::COOKIE, self.cookie_header()).json(body);
+        if let (Some(h), Some(t)) = (csrf_header, self.credential.csrf.as_deref()) {
+            req = req.header(h, t);
+        }
+        let res = req.send().await.map_err(|e| LmsError::Network(e.to_string()))?;
+        match res.status().as_u16() {
+            200..=299 => {}
+            300..=399 | 401 => return Err(LmsError::SignedOut),
+            403 => return Err(LmsError::Forbidden("Your course site didn’t allow this.".into())),
+            404 => return Err(LmsError::NotFound("Your course site couldn’t find this.".into())),
+            s => return Err(LmsError::Other(format!("Your course site answered with an error ({s})."))),
+        }
+        res.json::<T>().await.map_err(|e| LmsError::Other(format!("Your course site sent something unexpected: {e}")))
+    }
+
     /// GET `url` with the credential. Refuses any address off the site's origin; follows up
     /// to 5 redirects, dropping the credential the moment one leaves the origin (a file
     /// served from a storage host). 401 → SignedOut, 403 → Forbidden, 404 → NotFound.
@@ -249,14 +288,7 @@ impl Session {
         for _ in 0..6 {
             let mut req = self.http.get(at.clone());
             if self.site.owns(&at) {
-                req = match &self.credential {
-                    Credential::Cookies { cookies } => {
-                        let header = cookies.iter().map(|c| format!("{}={}", c.name, c.value)).collect::<Vec<_>>().join("; ");
-                        req.header(reqwest::header::COOKIE, header)
-                    }
-                    // Moodle's token travels as a query parameter its module adds itself.
-                    Credential::Token { .. } => req,
-                };
+                req = req.header(reqwest::header::COOKIE, self.cookie_header());
             }
             let res = req.send().await.map_err(|e| LmsError::Network(e.to_string()))?;
             let status = res.status();

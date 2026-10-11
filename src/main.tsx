@@ -27,4 +27,4 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 
 // Dev only: confirm the UI actually rendered under the CSP.
-setTimeout(() => void devLog(`ui mounted: ${document.querySelectorAll("button").length} buttons`), 1500);
+setTimeout(() => void devLog(`ui mounted: ${document.querySelectorAll("button").length} buttons, prototype frozen: ${Object.isFrozen(Object.prototype)}`), 1500);

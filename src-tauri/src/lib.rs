@@ -36,6 +36,9 @@ fn dev_log(message: String) {
     }
 }
 
+/// What tauri's freezePrototype does, for the app's own window only (see `run`).
+const FREEZE_PROTOTYPE: &str = "Object.freeze(Object.prototype);";
+
 struct AppState {
     vault: Vault,
     runs: Runs,
@@ -730,6 +733,14 @@ pub fn run() {
                 isolated_config_root,
                 last_export: Default::default(),
             });
+            // The app's window, from tauri.conf.json, with Object.prototype frozen before
+            // any of its scripts run. Done here rather than with freezePrototype, which
+            // Tauri puts in every window: a course site's sign-in window too, where it
+            // breaks pages that add to their own objects (Duo's prompt drew nothing).
+            let main = app.config().app.windows.first().cloned().ok_or("no window in tauri.conf.json")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?
+                .initialization_script(FREEZE_PROTOTYPE)
+                .build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -786,4 +797,28 @@ pub fn run() {
             state.runs.kill_all();
         }
     });
+}
+
+#[cfg(test)]
+mod window_tests {
+    /// The prototype freeze is the app window's alone: tauri's switch for it stays off (it
+    /// would reach the sign-in window), and the window is built in `run` with it.
+    #[test]
+    fn only_the_app_window_freezes_its_prototype() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["app"]["security"]["freezePrototype"], false);
+        // Each platform's file replaces the window list, so each must say it too.
+        for (name, text) in [
+            ("tauri.conf.json", include_str!("../tauri.conf.json")),
+            ("tauri.macos.conf.json", include_str!("../tauri.macos.conf.json")),
+            ("tauri.windows.conf.json", include_str!("../tauri.windows.conf.json")),
+            ("tauri.linux.conf.json", include_str!("../tauri.linux.conf.json")),
+        ] {
+            let c: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert_eq!(c["app"]["windows"][0]["create"], false, "{name}: the app builds its window itself");
+        }
+        let src = include_str!("lib.rs");
+        assert!(src.contains(".initialization_script(FREEZE_PROTOTYPE)"));
+        assert!(!include_str!("lms/login.rs").contains("FREEZE_PROTOTYPE"));
+    }
 }

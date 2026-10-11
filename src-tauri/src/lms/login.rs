@@ -45,7 +45,7 @@ const PAGE_PROBE: &str = r#"(() => {
   document.addEventListener("securitypolicyviolation", (e) => say("blocked by the page's policy: " + e.violatedDirective + " " + e.blockedURI));
   const ce = console.error;
   console.error = function (...a) { say("console.error: " + a.map(String).join(" ")); return ce.apply(this, a); };
-  const report = (when) => say(when + ": " + (document.body ? document.body.innerText.trim().length : -1) + " characters of text, " + document.querySelectorAll("*").length + " elements, " + document.querySelectorAll("iframe").length + " frames, agent " + navigator.userAgent);
+  const report = (when) => say(when + ": " + (document.body ? document.body.innerText.trim().length : -1) + " characters of text, " + document.querySelectorAll("*").length + " elements, " + document.querySelectorAll("iframe").length + " frames, prototype frozen " + Object.isFrozen(Object.prototype) + ", agent " + navigator.userAgent);
   window.addEventListener("load", () => { setTimeout(() => report("1s after load"), 1000); setTimeout(() => report("5s after load"), 5000); });
 })();"#;
 

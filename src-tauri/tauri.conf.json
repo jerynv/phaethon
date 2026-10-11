@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Phaethon",
+        "create": false,
         "width": 1100,
         "height": 720,
         "minWidth": 640,
@@ -44,7 +45,7 @@
         "form-action": "'none'",
         "frame-ancestors": "'none'"
       },
-      "freezePrototype": true,
+      "freezePrototype": false,
       "dangerousDisableAssetCspModification": [
         "style-src"
       ]

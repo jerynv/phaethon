@@ -42,6 +42,14 @@ fn dev_log(message: String) {
 /// What tauri's freezePrototype does, for the app's own window only (see `run`).
 const FREEZE_PROTOTYPE: &str = "Object.freeze(Object.prototype);";
 
+/// Run `f` on a blocking worker. Every keychain call goes through here (or an async
+/// command's own worker): macOS may stop to ask the person for keychain access, and a
+/// synchronous command runs on the main thread, so the whole window would freeze
+/// until they answered a dialog they might not even see.
+async fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| format!("That stopped unexpectedly: {e}"))?
+}
+
 struct AppState {
     vault: Vault,
     runs: Runs,
@@ -484,11 +492,13 @@ struct SettingsView {
 }
 
 #[tauri::command]
-fn settings_get(state: State<'_, AppState>) -> Result<SettingsView, String> {
+async fn settings_get(state: State<'_, AppState>) -> Result<SettingsView, String> {
     let s = state.vault.settings();
+    let vault_name = state.vault.name();
+    let has_key = off_main(move || secrets::get(&vault_name, "anthropic")).await?.is_some();
     Ok(SettingsView {
         backend: s.backend,
-        has_anthropic_key: secrets::get(&state.vault.name(), "anthropic")?.is_some(),
+        has_anthropic_key: has_key,
         model: s.model.unwrap_or_else(|| anthropic::DEFAULT_MODEL.into()),
         appearance: s
             .appearance
@@ -521,13 +531,15 @@ fn settings_set_backend(state: State<'_, AppState>, backend: Backend) -> Result<
 
 /// Store a provider key in the keychain. Write-only: no command reads it back.
 #[tauri::command]
-fn api_key_set(state: State<'_, AppState>, provider: String, key: String) -> Result<(), String> {
-    secrets::set(&state.vault.name(), &provider, &key)
+async fn api_key_set(state: State<'_, AppState>, provider: String, key: String) -> Result<(), String> {
+    let vault_name = state.vault.name();
+    off_main(move || secrets::set(&vault_name, &provider, &key)).await
 }
 
 #[tauri::command]
-fn api_key_clear(state: State<'_, AppState>, provider: String) -> Result<(), String> {
-    secrets::clear(&state.vault.name(), &provider)
+async fn api_key_clear(state: State<'_, AppState>, provider: String) -> Result<(), String> {
+    let vault_name = state.vault.name();
+    off_main(move || secrets::clear(&vault_name, &provider)).await
 }
 
 /// Check an Anthropic key without saving it: its format, then one cheap
@@ -688,9 +700,10 @@ async fn lms_connect(
 
 /// The course sites `space` is connected to.
 #[tauri::command]
-fn lms_connections(state: State<'_, AppState>, space: String) -> Result<Vec<lms::service::ConnectionView>, String> {
+async fn lms_connections(state: State<'_, AppState>, space: String) -> Result<Vec<lms::service::ConnectionView>, String> {
     let dir = state.vault.space_dir(&space)?;
-    lms::service::connections(&state.vault.name(), &space, &dir)
+    let vault_name = state.vault.name();
+    off_main(move || lms::service::connections(&vault_name, &space, &dir)).await
 }
 
 /// The person's courses on a connected site. `Err("signedOut")` when the session ended.
@@ -726,9 +739,10 @@ async fn lms_import(
 
 /// Forget a connection's session and the connection; imported files stay.
 #[tauri::command]
-fn lms_disconnect(state: State<'_, AppState>, space: String, connection: String) -> Result<(), String> {
+async fn lms_disconnect(state: State<'_, AppState>, space: String, connection: String) -> Result<(), String> {
     let dir = state.vault.space_dir(&space)?;
-    lms::service::disconnect(&state.vault.name(), &space, &dir, &connection)
+    let vault_name = state.vault.name();
+    off_main(move || lms::service::disconnect(&vault_name, &space, &dir, &connection)).await
 }
 
 /// Every imported course's grades in `space`, from disk (no network).
@@ -921,3 +935,24 @@ mod window_tests {
         assert!(!include_str!("lms/login.rs").contains("FREEZE_PROTOTYPE"));
     }
 }
+
+#[cfg(test)]
+mod keychain_tests {
+    /// A command that can reach the keychain is async: macOS may stop to ask for
+    /// keychain access, and a synchronous command would freeze the window on the
+    /// main thread meanwhile (it did: lms_connections, after a rebuild).
+    #[test]
+    fn keychain_commands_never_run_on_the_main_thread() {
+        let src = include_str!("lib.rs");
+        let reaches = ["secrets::", "lms::service::connections", "lms::service::disconnect", "lms::service::courses", "lms::service::session"];
+        for chunk in src.split("#[tauri::command]").skip(1) {
+            let sig = chunk.lines().find(|l| l.contains("fn ")).unwrap_or("");
+            let body_end = chunk.find("\n}\n").unwrap_or(chunk.len());
+            let body = &chunk[..body_end];
+            if reaches.iter().any(|r| body.contains(r)) {
+                assert!(sig.trim_start().starts_with("async fn") || sig.contains("pub(crate) async fn"), "{sig} reaches the keychain but isn't async");
+            }
+        }
+    }
+}
+

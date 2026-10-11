@@ -27,6 +27,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 futures-util = "0.3"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 base64 = "0.22"
+# Course site addresses (already in the tree through Tauri and reqwest).
+url = "2"
 # Inflate for reading .docx attachments; already in the tree through Tauri.
 miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
 # The save dialog for Export, driven from Rust only: the webview never picks a path.

@@ -5,6 +5,7 @@ pub mod attachments;
 pub mod continuation;
 pub mod export;
 pub mod grants;
+pub mod lms;
 pub mod memory;
 pub mod open;
 pub mod provider;

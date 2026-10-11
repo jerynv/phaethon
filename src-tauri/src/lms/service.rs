@@ -295,19 +295,59 @@ pub async fn canvas_schools(endpoint: &Url, query: &str) -> Result<Vec<School>, 
     }
     let accounts: Vec<CanvasAccount> = res.json().await.map_err(|e| format!("Couldn’t search for schools: {e}"))?;
     let mut seen = HashSet::new();
-    Ok(accounts
+    let found = accounts
         .into_iter()
         .filter_map(|a| {
-            let name = a.name?.trim().to_string();
+            // Canvas's list has stray double spaces ("Indiana Online  - Parents").
+            let name = a.name?.split_whitespace().collect::<Vec<_>>().join(" ");
             let site = Site::new(Kind::Canvas, a.domain?.trim()).ok()?;
             let address = site.base.as_str().trim_end_matches('/').to_string();
             (!name.is_empty() && seen.insert((name.clone(), address.clone()))).then_some(School { name, address })
         })
-        .collect())
+        .collect();
+    Ok(rank_schools(found, &q))
+}
+
+/// Best match first: the name as typed, then names starting with it, then a word
+/// starting with it, then the rest; shorter names first within each (so "Indiana
+/// University" comes before "Indiana University Health, Inc.").
+pub fn rank_schools(mut found: Vec<School>, query: &str) -> Vec<School> {
+    let q = query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let score = |s: &School| {
+        let n = s.name.to_lowercase();
+        if n == q {
+            0
+        } else if n.starts_with(&q) {
+            1
+        } else if n.split(|c: char| !c.is_alphanumeric()).any(|w| !w.is_empty() && q.split(' ').next().is_some_and(|first| w.starts_with(first))) {
+            2
+        } else {
+            3
+        }
+    };
+    found.sort_by(|a, b| score(a).cmp(&score(b)).then(a.name.len().cmp(&b.name.len())).then(a.name.cmp(&b.name)));
+    found
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn schools_best_match_first() {
+        let names = [
+            "Indiana Online - Parents",
+            "Bethel University (Indiana)",
+            "Indiana University Health, Inc.",
+            "Lebanon Community School Corporation (Parent/Guardian Indiana)",
+            "Indiana University",
+            "Indiana State University",
+        ];
+        let found = names.iter().map(|n| super::School { name: n.to_string(), address: "https://x.instructure.com".into() }).collect();
+        let got: Vec<String> = super::rank_schools(found, "Indiana  university").into_iter().map(|s| s.name).collect();
+        assert_eq!(got[0], "Indiana University");
+        assert_eq!(got[1], "Indiana University Health, Inc.");
+        assert_eq!(got.last().unwrap(), "Lebanon Community School Corporation (Parent/Guardian Indiana)");
+    }
+
     use super::*;
 
     #[test]

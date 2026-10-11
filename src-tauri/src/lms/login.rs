@@ -50,9 +50,16 @@ pub fn site_cookies<'a>(site: &Site, all: impl IntoIterator<Item = (&'a str, &'a
     picked.into_iter().map(|(_, c)| c).collect()
 }
 
-/// Where the sign-in window may go: web pages only (no files, no app links, never the app itself).
+/// Where the sign-in window may go: web pages, and the in-page documents sign-in
+/// pages build their frames from (about:, blob:, data:). Never files, app links or
+/// the app itself. Refusing a frame's about:srcdoc or blob: leaves SSO pages blank.
 pub fn allowed_navigation(u: &Url) -> bool {
-    matches!(u.scheme(), "https" | "http") || u.as_str() == "about:blank"
+    matches!(u.scheme(), "https" | "http" | "about" | "blob" | "data")
+}
+
+/// Where the window is, for the dev log: no query or fragment (they can carry tokens).
+fn where_(u: &Url) -> String {
+    format!("{}://{}{}", u.scheme(), u.host_str().unwrap_or(""), u.path())
 }
 
 /// The sign-in window's website data store for a vault and space: 16 stable bytes.
@@ -79,6 +86,8 @@ impl Drop for OpenGuard {
 enum Msg {
     Check,
     Closed,
+    /// A page asked for a new window (window.open, target=_blank): opened here instead.
+    Open(Url),
 }
 
 /// Open the sign-in window for `site` and wait until the site module sees the
@@ -94,6 +103,11 @@ pub async fn sign_in(app: &AppHandle, site: &Site, title: &str, store_id: [u8; 1
     let _guard = OpenGuard;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Msg>();
     let on_load = tx.clone();
+    let on_new = tx.clone();
+    // Where the window is, from its own load events. Never asked of the webview:
+    // wry panics (taking the app down) when asked mid-navigation.
+    let at: std::sync::Arc<std::sync::Mutex<Option<Url>>> = Default::default();
+    let at_load = at.clone();
     let start = super::login_url(site);
     let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(start))
         .title(title)
@@ -101,9 +115,26 @@ pub async fn sign_in(app: &AppHandle, site: &Site, title: &str, store_id: [u8; 1
         .min_inner_size(480.0, 480.0)
         .center()
         .focused(true)
-        .on_navigation(allowed_navigation)
+        .on_navigation(|u| {
+            let ok = allowed_navigation(u);
+            if cfg!(debug_assertions) && !ok {
+                eprintln!("[lms-login] refused {}", where_(u));
+            }
+            ok
+        })
+        .on_new_window(move |u, _| {
+            let _ = on_new.send(Msg::Open(u));
+            tauri::webview::NewWindowResponse::Deny
+        })
         .on_page_load(move |_, payload| {
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+            let finished = payload.event() == tauri::webview::PageLoadEvent::Finished;
+            if cfg!(debug_assertions) {
+                eprintln!("[lms-login] {} {}", if finished { "loaded" } else { "loading" }, where_(payload.url()));
+            }
+            if let Ok(mut a) = at_load.lock() {
+                *a = Some(payload.url().clone());
+            }
+            if finished {
                 let _ = on_load.send(Msg::Check);
             }
         });
@@ -130,10 +161,21 @@ pub async fn sign_in(app: &AppHandle, site: &Site, title: &str, store_id: [u8; 1
     let mut tick = tokio::time::interval(Duration::from_millis(1500));
     let outcome = loop {
         let msg = tokio::select! {
+            biased;
             m = rx.recv() => m.unwrap_or(Msg::Closed),
             _ = tick.tick() => Msg::Check,
         };
-        if matches!(msg, Msg::Closed) {
+        match msg {
+            Msg::Closed => break Err("cancelled".to_string()),
+            Msg::Open(u) => {
+                if matches!(u.scheme(), "https" | "http") {
+                    let _ = window.navigate(u);
+                }
+                continue;
+            }
+            Msg::Check => {}
+        }
+        if app.get_webview_window(LABEL).is_none() {
             break Err("cancelled".to_string());
         }
         if started.elapsed() > LIMIT {
@@ -141,8 +183,10 @@ pub async fn sign_in(app: &AppHandle, site: &Site, title: &str, store_id: [u8; 1
         }
         let w = window.clone();
         // Reading cookies waits on the window's own thread: never block this one.
-        let read = tauri::async_runtime::spawn_blocking(move || (w.url().ok(), w.cookies().unwrap_or_default())).await;
-        let Ok((Some(at), jar)) = read else { continue };
+        let Some(here) = at.lock().ok().and_then(|a| a.clone()) else { continue };
+        let read = tauri::async_runtime::spawn_blocking(move || w.cookies().unwrap_or_default()).await;
+        let Ok(jar) = read else { continue };
+        let at = here;
         let all = jar.iter().map(|c| (c.name(), c.value(), c.domain(), c.secure().unwrap_or(false)));
         let cookies = site_cookies(site, all);
         if let Some(credential) = super::login_result(site, &LoginNav { url: &at, cookies: &cookies }) {
@@ -182,7 +226,7 @@ mod tests {
 
     #[test]
     fn the_window_goes_to_web_pages_only() {
-        for ok in ["https://idp.iu.edu/login", "http://old.example.edu/", "about:blank"] {
+        for ok in ["https://idp.iu.edu/login", "http://old.example.edu/", "about:blank", "about:srcdoc", "blob:https://idp.iu.edu/1f2e", "data:text/html,x"] {
             assert!(allowed_navigation(&Url::parse(ok).unwrap()), "{ok}");
         }
         for no in ["file:///etc/passwd", "tauri://localhost/", "ipc://localhost/x", "zoommtg://x", "javascript:alert(1)"] {

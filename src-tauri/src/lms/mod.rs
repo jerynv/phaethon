@@ -29,6 +29,7 @@ pub mod blackboard;
 pub mod brightspace;
 pub mod canvas;
 pub mod moodle;
+pub mod probe;
 
 // Core (not site specific): turning a course into files, signing in, the space's record.
 pub mod csrf;

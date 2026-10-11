@@ -776,7 +776,7 @@ function SchoolSearch({
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <label htmlFor={id} className="text-base font-medium text-ink">
-          LmsSchool
+          School
         </label>
         <div className="relative">
           <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-ink-secondary" />
@@ -825,7 +825,7 @@ function SchoolSearch({
                 onMouseMove={() => i !== current && setActive(i)}
                 onClick={() => pick(s)}
                 className={cn(
-                  "flex min-h-(--ph-control-height-lg) cursor-default flex-col justify-center rounded-sm px-2.5 py-1 text-base text-ink",
+                  "flex min-h-(--ph-control-height-lg) shrink-0 cursor-default flex-col justify-center rounded-sm px-2.5 py-1.5 text-base text-ink",
                   "aria-selected:bg-selected forced-colors:aria-selected:outline-2 forced-colors:aria-selected:outline-[Highlight]",
                 )}
               >

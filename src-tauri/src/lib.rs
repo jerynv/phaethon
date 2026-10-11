@@ -615,6 +615,8 @@ async fn lms_connect(
         .map_err(|e| e.to_string())?
         .join("lms-login")
         .join(store_id.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    // A made-up or mistyped address says so, instead of opening a blank window.
+    lms::probe::check(&site).await?;
     let credential = lms::login::sign_in(&app, &site, &format!("Sign in to {school}"), store_id, data_dir).await?;
     let view = lms::service::save_sign_in(&vault, &space, &dir, &site, &credential)?;
     if let Some(name) = school_name {

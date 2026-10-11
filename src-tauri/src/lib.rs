@@ -13,6 +13,7 @@ pub mod search;
 pub mod secrets;
 pub mod space_model;
 pub mod spaces;
+pub mod study;
 pub mod thread;
 pub mod tools;
 pub mod vault;
@@ -811,7 +812,18 @@ pub fn run() {
             lms_import,
             lms_disconnect,
             lms_grades,
-            lms_grades_refresh
+            lms_grades_refresh,
+            study::commands::study_overview,
+            study::commands::study_deck,
+            study::commands::study_deck_save,
+            study::commands::study_session,
+            study::commands::study_rate,
+            study::commands::study_make_deck,
+            study::commands::study_make_quiz,
+            study::commands::study_quiz,
+            study::commands::study_quiz_submit,
+            study::commands::study_review_mistakes,
+            study::commands::study_delete
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

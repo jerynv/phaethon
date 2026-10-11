@@ -57,6 +57,17 @@
     "allow-lms-import",
     "allow-lms-disconnect",
     "allow-lms-grades",
-    "allow-lms-grades-refresh"
+    "allow-lms-grades-refresh",
+    "allow-study-overview",
+    "allow-study-deck",
+    "allow-study-deck-save",
+    "allow-study-session",
+    "allow-study-rate",
+    "allow-study-make-deck",
+    "allow-study-make-quiz",
+    "allow-study-quiz",
+    "allow-study-quiz-submit",
+    "allow-study-review-mistakes",
+    "allow-study-delete"
   ]
 }

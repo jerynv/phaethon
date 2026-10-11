@@ -29,12 +29,12 @@ pub const ALLOWED_TOOLS: &str = "Read,Grep,Glob";
 /// Shown when the binary cannot be found or started.
 pub const MISSING_CLI_MESSAGE: &str = "Claude Code was not found. Install Claude Code, then run `claude` once in a terminal to log in.";
 
-const NOT_LOGGED_IN_MESSAGE: &str =
+pub(crate) const NOT_LOGGED_IN_MESSAGE: &str =
     "Claude Code is not logged in. Run `claude` once in a terminal to log in, then try again.";
 
 /// Variables a parent Claude Code session sets for its own children. If Phaethon
 /// was launched from inside one, they would make our child think it is nested.
-const INHERITED_SESSION_VARS: &[&str] = &[
+pub(crate) const INHERITED_SESSION_VARS: &[&str] = &[
     "CLAUDECODE",
     "CLAUDE_CODE_ENTRYPOINT",
     "CLAUDE_CODE_SESSION_ID",

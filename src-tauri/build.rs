@@ -14,6 +14,8 @@ fn main() {
             "conversations_search",
             "lms_schools", "lms_connect", "lms_connections", "lms_courses", "lms_import", "lms_disconnect",
             "lms_grades", "lms_grades_refresh",
+            "study_overview", "study_deck", "study_deck_save", "study_session", "study_rate", "study_make_deck", "study_make_quiz",
+            "study_quiz", "study_quiz_submit", "study_review_mistakes", "study_delete",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -144,6 +144,11 @@ Once access is granted, read it with list_files, read_file or search_files using
         s.push_str("\n\n");
         s.push_str(&courses);
     }
+    // Where decks, quizzes, the plan and exams live, and the deck format (write_file makes decks).
+    if let Some(study) = vault.space_dir(space_id).ok().and_then(|dir| crate::study::prompt_section(&dir, crate::study::now_ms())) {
+        s.push_str("\n\n");
+        s.push_str(&study);
+    }
     s
 }
 

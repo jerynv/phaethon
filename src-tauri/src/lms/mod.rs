@@ -41,6 +41,8 @@ pub mod service;
 pub mod store;
 pub mod textbooks;
 pub mod text;
+#[cfg(test)]
+pub mod fake;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -220,6 +222,114 @@ pub struct RemoteFile {
 pub struct Link {
     pub title: String,
     pub url: Url,
+}
+
+// ---- Grades (each site module's `grades(session, course_id)`) ----
+
+/// The person's own grades in one course, as far as the site shows them to
+/// them. Grades the teacher hasn't released are simply absent (no score), not
+/// errors. A grade book the site refuses to show is an empty one with a `note`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseGrades {
+    /// The grade so far (only what's been graded counts).
+    #[serde(default)]
+    pub current: GradeSummary,
+    /// The grade with ungraded work counted as zero, where the site gives it.
+    #[serde(default, rename = "final", skip_serializing_if = "Option::is_none")]
+    pub final_grade: Option<GradeSummary>,
+    /// Assignment groups (categories); `weight` is set only when the course weights them.
+    #[serde(default)]
+    pub groups: Vec<GradeGroup>,
+    #[serde(default)]
+    pub items: Vec<GradeItem>,
+    /// Why there's nothing to show, in plain words (the course hides its grade book).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeSummary {
+    /// 0–100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub points: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub possible: Option<f64>,
+}
+
+impl GradeSummary {
+    pub fn is_empty(&self) -> bool {
+        self.percent.is_none() && self.letter.is_none() && self.points.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeGroup {
+    pub name: String,
+    /// Share of the course grade, 0–100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeItem {
+    pub title: String,
+    /// The name of its group in `CourseGrades::groups`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub possible: Option<f64>,
+    /// 0–100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<f64>,
+    /// The grade as the site shows it when that isn't just the score ("A-", "complete").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grade: Option<String>,
+    /// RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+    #[serde(default)]
+    pub submitted: bool,
+    #[serde(default)]
+    pub graded: bool,
+    #[serde(default)]
+    pub late: bool,
+    #[serde(default)]
+    pub missing: bool,
+    #[serde(default)]
+    pub excused: bool,
+    /// The teacher's comments, as plain text.
+    #[serde(default)]
+    pub comments: Vec<String>,
+}
+
+/// `score / possible` as 0–100, when both are there and `possible` isn't zero.
+pub fn percent_of(score: Option<f64>, possible: Option<f64>) -> Option<f64> {
+    match (score, possible) {
+        (Some(s), Some(p)) if p > 0.0 => Some((s / p * 10_000.0).round() / 100.0),
+        _ => None,
+    }
+}
+
+/// The note on a grade book the site refused to show.
+pub const GRADES_HIDDEN: &str = "Your course site doesn’t show you grades for this course.";
+
+/// A refused grade book (403, or no grade book at all) as an empty one with a note;
+/// an ended session or an unreachable site stays an error.
+pub fn grades_refused(e: LmsError) -> Result<CourseGrades, LmsError> {
+    match e {
+        LmsError::Forbidden(_) | LmsError::NotFound(_) | LmsError::Unsupported(_) => Ok(CourseGrades { note: Some(GRADES_HIDDEN.into()), ..Default::default() }),
+        e => Err(e),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -471,6 +581,16 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
         Kind::Brightspace => brightspace::content(s, course_id).await,
         Kind::Moodle => moodle::content(s, course_id).await,
         Kind::Blackboard => blackboard::content(s, course_id).await,
+    }
+}
+
+/// The person's grades in one course (read-only, with their own session).
+pub async fn grades(s: &Session, course_id: &str) -> Result<CourseGrades, LmsError> {
+    match s.site.kind {
+        Kind::Canvas => canvas::grades(s, course_id).await,
+        Kind::Brightspace => brightspace::grades(s, course_id).await,
+        Kind::Moodle => moodle::grades(s, course_id).await,
+        Kind::Blackboard => blackboard::grades(s, course_id).await,
     }
 }
 

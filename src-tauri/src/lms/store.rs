@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Kind, names};
+use super::{CourseGrades, GradeSummary, Kind, names};
 
 pub const FILE: &str = "lms.json";
 /// Largest lms.json read.
@@ -138,6 +138,99 @@ impl Store {
     }
 }
 
+// ---- Grades -----------------------------------------------------------------
+//
+// `<space>/.phaethon/grades.json`: the numbers behind each course's grades.md,
+// keyed by connection and course, so the grades view opens without asking the
+// site. Written by an import and by a grades refresh.
+
+pub const GRADES_FILE: &str = "grades.json";
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct GradeBook {
+    /// `<connection>/<course id>` → that course's grades.
+    #[serde(default)]
+    pub courses: BTreeMap<String, GradeRec>,
+}
+
+/// One course's grades as `lms_grades` gives them to the UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeRec {
+    pub connection: String,
+    pub course_id: String,
+    /// The course's name.
+    pub course: String,
+    /// The course's folder, relative to the space ("courses/Calculus II").
+    pub folder: String,
+    /// When they were read from the site, ms since the epoch.
+    pub updated: u64,
+    #[serde(flatten)]
+    pub grades: CourseGrades,
+}
+
+/// Where imported courses live, relative to the space.
+pub const COURSES_DIR: &str = "courses";
+
+/// An imported course's folder on disk, when it's still there as a plain folder (never
+/// through a symlink). Every lookup of a course folder outside the import goes through here.
+pub fn course_dir(space_dir: &Path, folder: &str) -> Option<std::path::PathBuf> {
+    let root = space_dir.join(COURSES_DIR);
+    let dir = root.join(folder);
+    let plain = names::segment(folder) == folder;
+    (plain && std::fs::symlink_metadata(&root).is_ok_and(|m| m.is_dir()) && std::fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir())).then_some(dir)
+}
+
+pub fn grade_key(connection: &str, course_id: &str) -> String {
+    format!("{connection}/{course_id}")
+}
+
+pub fn load_grades(space_dir: &Path) -> Result<GradeBook, String> {
+    let path = space_dir.join(crate::tools::STATE_DIR).join(GRADES_FILE);
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(GradeBook::default()),
+        Err(e) => return Err(format!("This space’s grades couldn’t be read: {e}")),
+    };
+    if !meta.is_file() || meta.len() > MAX_BYTES {
+        return Err("This space’s grades file isn’t a plain file Phaethon can read.".into());
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("This space’s grades couldn’t be read: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("This space’s grades file is damaged ({e}). Remove .phaethon/grades.json and refresh grades."))
+}
+
+pub fn save_grades(space_dir: &Path, book: &GradeBook) -> Result<(), String> {
+    let json = serde_json::to_vec_pretty(book).map_err(|e| e.to_string())?;
+    names::write(space_dir, &Path::new(crate::tools::STATE_DIR).join(GRADES_FILE), &json).map_err(|e| format!("This space’s grades couldn’t be saved: {e}"))
+}
+
+/// Keep one course's grades (read, replace, write).
+pub fn put_grades(space_dir: &Path, rec: GradeRec) -> Result<(), String> {
+    let mut book = load_grades(space_dir)?;
+    book.courses.insert(grade_key(&rec.connection, &rec.course_id), rec);
+    save_grades(space_dir, &book)
+}
+
+/// A number as a person writes it: at most two decimals, no trailing zeros.
+pub fn num(x: f64) -> String {
+    let s = format!("{:.2}", (x * 100.0).round() / 100.0);
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// "86.4% (B+)", "B+", "432 of 500 points": a grade in a few words, or none.
+pub fn grade_words(g: &GradeSummary) -> Option<String> {
+    let points = match (g.points, g.possible) {
+        (Some(p), Some(of)) => Some(format!("{} of {} points", num(p), num(of))),
+        _ => None,
+    };
+    match (g.percent, &g.letter) {
+        (Some(p), Some(l)) => Some(format!("{}% ({l})", num(p))),
+        (Some(p), None) => Some(format!("{}%", num(p))),
+        (None, Some(l)) => Some(l.clone()),
+        (None, None) => points,
+    }
+}
+
 // ---- Dates ------------------------------------------------------------------
 
 /// Seconds since the epoch for an RFC 3339 time ("2026-10-14T23:59:00Z",
@@ -260,9 +353,10 @@ const INDEX_MAX: usize = 4000;
 /// `None` when there are none. Only this space's lms.json is read.
 pub fn prompt_index(space_dir: &Path, now: i64) -> Option<String> {
     let store = load(space_dir).ok()?;
+    let grades = load_grades(space_dir).unwrap_or_default();
     let mut lines = vec![];
     for conn in &store.connections {
-        for c in conn.courses.values() {
+        for (cid, c) in &conn.courses {
             if lines.len() >= INDEX_COURSES {
                 break;
             }
@@ -275,6 +369,9 @@ pub fn prompt_index(space_dir: &Path, now: i64) -> Option<String> {
             if !next.is_empty() {
                 line.push_str(&format!(" Next due: {}.", next.join("; ")));
             }
+            if let Some(g) = grades.courses.get(&grade_key(&conn.id, cid)).and_then(|r| grade_words(&r.grades.current)) {
+                line.push_str(&format!(" Current grade: {g} (grades.md)."));
+            }
             lines.push(line);
         }
     }
@@ -284,7 +381,7 @@ pub fn prompt_index(space_dir: &Path, now: i64) -> Option<String> {
     let mut s = String::from(
         "# Courses\n\nThese courses were imported from the user's course site into this space, one folder each under courses/. \
 Before answering anything about a course, read its folder with your file tools: README.md (what's coming up, the textbooks and readings), \
-syllabus.md, assignments.md, modules.md, and the files and readings the question touches. PDFs and Office files have a text copy beside them \
+syllabus.md, assignments.md, grades.md (their grades so far), modules.md, and the files and readings the question touches. PDFs and Office files have a text copy beside them \
 (the same name ending in .md); read that. Answer from the course's own material and say which file it came from.\n\n",
     );
     for l in lines {

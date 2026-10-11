@@ -399,6 +399,76 @@
           send({ type: "done" });
           return;
         }
+        // lms grades (Grades core). As src/lib/lms.ts (CourseGradeView, LmsGradesEvent). M.lmsGrades: { [space]: CourseGradeView[] }
+        // (default: three courses of the space's first connection), M.lmsGradesSignedOut (refresh ends "signedOut"),
+        // M.lmsGradesFail (a course id whose refresh fails), M.lmsGradesStep (ms).
+        case "lms_grades":
+        case "lms_grades_refresh": {
+          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          const G = (M.lmsGrades ??= {});
+          const conn = M.lms?.connections?.[args.space]?.[0]?.id ?? "canvas-iu-instructure-com";
+          const day = 86400000;
+          const at = (d) => new Date(Date.now() + d * day).toISOString();
+          const item = (title, group, score, possible, extra = {}) => ({
+            title, group, score, possible, percent: score != null && possible ? Math.round((score / possible) * 10000) / 100 : undefined,
+            submitted: score != null, graded: score != null, late: false, missing: false, excused: false, comments: [], ...extra,
+          });
+          G[args.space] ??= [
+            {
+              connection: conn, courseId: "102", course: "Calculus II", folder: "courses/Calculus II", updated: Date.now() - 2 * 3600000,
+              current: { percent: 78.6, letter: "C+" },
+              groups: [{ name: "Homework", weight: 30 }, { name: "Quizzes", weight: 20 }, { name: "Exams", weight: 50 }],
+              items: [
+                item("Homework 1", "Homework", 18, 20, { due: at(-30) }),
+                item("Homework 2", "Homework", 0, 20, { due: at(-16), missing: true, submitted: false }),
+                item("Quiz 1", "Quizzes", 8, 10, { due: at(-12) }),
+                item("Midterm 1", "Exams", 81, 100, { due: at(-6), comments: ["Review integration by parts before the next exam."] }),
+                item("Homework 3", "Homework", undefined, 20, { due: at(3) }),
+              ],
+            },
+            {
+              connection: conn, courseId: "101", course: "Discrete Structures for Computer Science", folder: "courses/Discrete Structures for Computer Science",
+              updated: Date.now() - 2 * 3600000,
+              current: { percent: 91.25, letter: "A-", points: 146, possible: 160 }, final: { percent: 42.1, letter: "F" },
+              groups: [{ name: "Problem sets" }, { name: "Labs" }],
+              items: [
+                item("Problem set 1", "Problem sets", 47, 50, { due: at(-28), comments: ["Clean proofs.", "Watch the base case in 3b."] }),
+                item("Problem set 2", "Problem sets", 41, 50, { due: at(-14), late: true }),
+                item("Lab 1", "Labs", 30, 30, { due: at(-21) }),
+                item("Lab 2", "Labs", 28, 30, { due: at(-7) }),
+                item("Problem set 3", "Problem sets", undefined, 50, { due: at(-1), submitted: true }),
+                item("Lab 3", "Labs", undefined, 30, { due: at(-2), excused: true, graded: true }),
+              ],
+            },
+            {
+              connection: conn, courseId: "103", course: "Introduction to Psychology", folder: "courses/Introduction to Psychology",
+              updated: Date.now() - 2 * 3600000, current: {}, groups: [], items: [],
+              note: "Your course site doesn’t show you grades for this course.",
+            },
+          ];
+          if (cmd === "lms_grades") return G[args.space].map((g) => structuredClone(g));
+          const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
+          let index = 0;
+          const send = (message) => callbacks[id]?.({ index: index++, message });
+          const mine = G[args.space].filter((g) => g.connection === args.connection);
+          for (let n = 0; n < mine.length; n++) {
+            const g = mine[n];
+            await sleep(M.lmsGradesStep ?? 60);
+            send({ type: "progress", course: g.courseId, step: "grades", done: n, total: mine.length });
+            if (M.lmsGradesSignedOut) {
+              send({ type: "error", message: "signedOut" });
+              break;
+            }
+            if (g.courseId === M.lmsGradesFail) {
+              send({ type: "error", message: `${g.course}: Your course site answered with an error (500).` });
+              continue;
+            }
+            g.updated = Date.now();
+            send({ type: "course", course: g.courseId, grades: structuredClone(g) });
+          }
+          send({ type: "done" });
+          return;
+        }
         case "agent_send": {
           M.currentSpace = args.space;
           const usedSpace = M.spaces.find((s) => s.id === args.space);

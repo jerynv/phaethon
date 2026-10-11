@@ -14,7 +14,8 @@
 //! that change something, so it is kept in `Credential::csrf` but never needed.
 
 use super::{
-    Announcement, Assignment, Course, CourseContent, Credential, LmsError, Link, LoginNav, Module, Page, RemoteFile, Session,
+    Announcement, Assignment, Course, CourseContent, CourseGrades, Credential, GradeGroup, GradeItem, GradeSummary, LmsError, Link, LoginNav, Module, Page,
+    RemoteFile, Session,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -517,6 +518,106 @@ fn rfc3339(secs: i64) -> String {
     let y = yoe + era * 400 + i64::from(m <= 2);
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
+
+// ---- Grades ----------------------------------------------------------------
+//
+// The grade book's columns (`/v2/courses/{id}/gradebook/columns`: name, points
+// possible, due date, category; the "external grade" column is the course's
+// overall grade) and the person's own grades (`/v2/courses/{id}/gradebook/users/{me}`,
+// or one column at a time where that list is refused). Letters come as the
+// grade's `displayGrade.text` under the column's grade schema. A column hidden
+// from students, or a grade not released, isn't there: simply absent.
+
+pub async fn grades(s: &Session, course_id: &str) -> Result<CourseGrades, LmsError> {
+    let me = whoami(s).await?;
+    let cid = enc(course_id);
+    let columns = match paged(s, &format!("{API}/v2/courses/{cid}/gradebook/columns?limit=100")).await {
+        Ok(c) => c,
+        Err(e) => return super::grades_refused(e),
+    };
+    let mut mine: HashMap<String, Value> = HashMap::new();
+    match paged(s, &format!("{API}/v2/courses/{cid}/gradebook/users/{}?limit=100", enc(&me))).await {
+        Ok(list) => {
+            for g in list {
+                if let Some(c) = text(&g, "columnId") {
+                    mine.insert(c, g);
+                }
+            }
+        }
+        Err(LmsError::SignedOut) => return Err(LmsError::SignedOut),
+        Err(e @ LmsError::Network(_)) => return Err(e),
+        // Some sites refuse the list but let a student read each of their own grades.
+        Err(_) => {
+            for c in &columns {
+                let Some(col) = text(c, "id") else { continue };
+                match s.get_json::<Value>(&format!("{API}/v2/courses/{cid}/gradebook/columns/{}/users/{}", enc(&col), enc(&me))).await {
+                    Ok(g) => {
+                        mine.insert(col, g);
+                    }
+                    Err(e @ (LmsError::SignedOut | LmsError::Network(_))) => return Err(e),
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    let categories: HashMap<String, String> = match paged(s, &format!("{API}/v1/courses/{cid}/gradebook/categories")).await {
+        Ok(list) => list.iter().filter_map(|c| Some((text(c, "id")?, text(c, "title")?))).collect(),
+        Err(LmsError::SignedOut) => return Err(LmsError::SignedOut),
+        Err(_) => HashMap::new(),
+    };
+
+    let mut out = CourseGrades::default();
+    let mut groups: Vec<String> = Vec::new();
+    for c in &columns {
+        let Some(col) = text(c, "id") else { continue };
+        if text_at(c, &["availability", "available"]).is_some_and(|a| a == "No") {
+            continue;
+        }
+        let name = text(c, "displayName").or_else(|| text(c, "name")).unwrap_or_default().trim().to_string();
+        let possible = c.get("score").and_then(|v| v.get("possible")).and_then(Value::as_f64);
+        let g = mine.get(&col);
+        let score = g.and_then(|g| g.get("score").and_then(Value::as_f64).or_else(|| g.get("displayGrade").and_then(|d| d.get("score")).and_then(Value::as_f64)));
+        let shown = g.and_then(|g| text_at(g, &["displayGrade", "text"]).or_else(|| text(g, "text"))).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        let shown = shown.filter(|t| t.trim_end_matches('%').trim().parse::<f64>().is_err());
+        let status = g.and_then(|g| text(g, "status")).unwrap_or_default();
+        let excused = g.and_then(|g| g.get("exempt")).and_then(Value::as_bool) == Some(true);
+        if c.get("externalGrade").and_then(Value::as_bool) == Some(true) {
+            let scale = g.and_then(|g| text_at(g, &["displayGrade", "scaleType"])).unwrap_or_default();
+            let percent = if scale == "Percent" { g.and_then(|g| g.get("displayGrade")).and_then(|d| d.get("score")).and_then(Value::as_f64) } else { None };
+            out.current = GradeSummary { percent: percent.or_else(|| super::percent_of(score, possible)), letter: shown, points: score, possible: possible.filter(|_| score.is_some()) };
+            continue;
+        }
+        if name.is_empty() {
+            continue;
+        }
+        let group = text(c, "gradebookCategoryId").and_then(|id| categories.get(&id).cloned());
+        if let Some(gr) = &group
+            && !groups.contains(gr)
+        {
+            groups.push(gr.clone());
+        }
+        let feedback = g.and_then(|g| text(g, "feedback")).map(|f| super::html::scan(&f, None).text.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|f| !f.is_empty());
+        out.items.push(GradeItem {
+            title: name,
+            group,
+            score,
+            possible,
+            percent: super::percent_of(score, possible),
+            grade: shown,
+            due: text_at(c, &["grading", "due"]),
+            submitted: matches!(status.as_str(), "NeedsGrading" | "Graded"),
+            graded: (status == "Graded" && score.is_some()) || excused,
+            excused,
+            comments: feedback.into_iter().collect(),
+            ..Default::default()
+        });
+    }
+    out.groups = groups.into_iter().map(|name| GradeGroup { name, weight: None }).collect();
+    Ok(out)
+}
+
+#[cfg(test)]
+mod grade_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "id": "_801_1", "externalId": "total", "name": "Overall Grade", "displayName": "Overall Grade", "externalGrade": true,
+      "created": "2026-08-20T12:00:00.000Z", "score": { "possible": 500.0 }, "availability": { "available": "Yes" },
+      "grading": { "type": "Calculated", "schemaId": "_5_1" }
+    },
+    {
+      "id": "_802_1", "name": "Lab 1", "displayName": "Lab 1", "externalGrade": false, "contentId": "_7_1",
+      "score": { "possible": 20.0 }, "availability": { "available": "Yes" },
+      "grading": { "type": "Attempts", "due": "2026-09-12T03:59:00.000Z", "attemptsAllowed": 1, "scoringModel": "Last", "schemaId": "_1_1" },
+      "gradebookCategoryId": "_31_1"
+    },
+    {
+      "id": "_803_1", "name": "Lab 2", "displayName": "Lab 2", "externalGrade": false,
+      "score": { "possible": 20.0 }, "availability": { "available": "Yes" },
+      "grading": { "type": "Attempts", "due": "2026-09-19T03:59:00.000Z", "schemaId": "_1_1" },
+      "gradebookCategoryId": "_31_1"
+    },
+    {
+      "id": "_804_1", "name": "Exam 1", "displayName": "Exam 1", "externalGrade": false,
+      "score": { "possible": 100.0 }, "availability": { "available": "Yes" },
+      "grading": { "type": "Manual", "due": "2026-10-01T15:00:00.000Z", "schemaId": "_2_1" },
+      "gradebookCategoryId": "_32_1"
+    },
+    {
+      "id": "_805_1", "name": "Hidden practice", "displayName": "Hidden practice", "externalGrade": false,
+      "score": { "possible": 5.0 }, "availability": { "available": "No" }, "grading": { "type": "Manual" }
+    }
+  ],
+  "paging": {}
+}

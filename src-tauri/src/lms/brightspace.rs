@@ -21,7 +21,8 @@
 //! or 403 from `whoami`: all of them are [`LmsError::SignedOut`].
 
 use super::{
-    Announcement, Assignment, Course, CourseContent, Credential, Html, LmsError, LoginNav, Module, Page, RemoteFile, Session,
+    Announcement, Assignment, Course, CourseContent, CourseGrades, Credential, GradeGroup, GradeItem, GradeSummary, Html, LmsError, LoginNav, Module, Page,
+    RemoteFile, Session,
 };
 use futures_util::{StreamExt, stream};
 use serde::Deserialize;
@@ -747,6 +748,158 @@ fn now_iso() -> String {
     let year = yoe + era * 400 + i64::from(month <= 2);
     format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
+
+// ---- Grades ----------------------------------------------------------------
+//
+// Valence grade routes (docs.valence.desire2learn.com/res/grade.html), the ones
+// brightspace-mcp-server's grade tool reads: the person's own released grade
+// values, the final grade value, and the grade objects and categories for
+// names, maximum points and weights. Grades not released to the person aren't
+// in `myGradeValues` at all, so they're simply absent.
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "PascalCase", default)]
+struct GradeValue {
+    displayed_grade: Option<String>,
+    grade_object_identifier: Option<String>,
+    grade_object_name: String,
+    grade_object_type: Option<i64>,
+    points_numerator: Option<f64>,
+    points_denominator: Option<f64>,
+    comments: Option<RichText>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "PascalCase", default)]
+struct GradeObject {
+    id: u64,
+    name: String,
+    max_points: Option<f64>,
+    category_id: Option<u64>,
+    is_hidden: bool,
+    /// Numeric, PassFail, SelectBox, Text, Calculated, Formula, Category…
+    grade_type: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "PascalCase", default)]
+struct GradeCategory {
+    id: u64,
+    name: String,
+    weight: Option<f64>,
+    grades: Vec<GradeObject>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "PascalCase", default)]
+struct GradeSetup {
+    grading_system: Option<String>,
+}
+
+/// GradeObjectType: 7 final calculated, 8 final adjusted, 9 category (a subtotal, not an item).
+const NOT_ITEMS: [i64; 3] = [7, 8, 9];
+
+pub async fn grades(s: &Session, course_id: &str) -> Result<CourseGrades, LmsError> {
+    if course_id.is_empty() || !course_id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(LmsError::NotFound("Your course site couldn’t find this course.".into()));
+    }
+    let ou = course_id;
+    let api = Api::discover(s).await?;
+    whoami(s, &api).await?;
+    let values: Vec<GradeValue> = match s.get_json(&api.le(ou, "/grades/values/myGradeValues/")).await {
+        Ok(v) => v,
+        Err(e) => return super::grades_refused(e),
+    };
+    // The rest only adds names, maximums and weights: a refusal there isn't a failure.
+    let fin: Option<GradeValue> = soft(s.get_json(&api.le(ou, "/grades/final/values/myGradeValue")).await)?;
+    let objects: Vec<GradeObject> = soft(s.get_json(&api.le(ou, "/grades/")).await)?.unwrap_or_default();
+    let cats: Vec<GradeCategory> = soft(s.get_json(&api.le(ou, "/grades/categories/")).await)?.unwrap_or_default();
+    let setup: Option<GradeSetup> = soft(s.get_json(&api.le(ou, "/grades/setup/")).await)?;
+    let weighted = match setup.and_then(|x| x.grading_system) {
+        Some(sys) => sys.eq_ignore_ascii_case("Weighted"),
+        None => cats.iter().any(|c| c.weight.is_some_and(|w| w > 0.0)),
+    };
+
+    let mut out = CourseGrades::default();
+    let mut cat_of: std::collections::HashMap<u64, String> = Default::default();
+    for c in cats.iter().filter(|c| !c.name.trim().is_empty()) {
+        out.groups.push(GradeGroup { name: c.name.trim().to_string(), weight: if weighted { c.weight } else { None } });
+        cat_of.insert(c.id, c.name.trim().to_string());
+    }
+    let mut all: Vec<&GradeObject> = objects.iter().collect();
+    for c in &cats {
+        for g in &c.grades {
+            if !all.iter().any(|o| o.id == g.id) {
+                all.push(g);
+            }
+        }
+    }
+    let group_of = |o: &GradeObject| o.category_id.and_then(|c| cat_of.get(&c).cloned()).or_else(|| cats.iter().find(|c| c.grades.iter().any(|g| g.id == o.id)).map(|c| c.name.trim().to_string()));
+
+    let mut placed = HashSet::new();
+    for v in &values {
+        if v.grade_object_type.is_some_and(|t| NOT_ITEMS.contains(&t)) || v.grade_object_name.trim().is_empty() {
+            continue;
+        }
+        let obj = v.grade_object_identifier.as_deref().and_then(|i| i.parse::<u64>().ok()).and_then(|id| all.iter().find(|o| o.id == id).copied());
+        if let Some(o) = obj {
+            placed.insert(o.id);
+        }
+        let score = v.points_numerator;
+        let possible = v.points_denominator.or(obj.and_then(|o| o.max_points));
+        let comment = v.comments.as_ref().and_then(RichText::plain);
+        out.items.push(GradeItem {
+            title: v.grade_object_name.trim().to_string(),
+            group: obj.and_then(group_of),
+            score,
+            possible,
+            percent: super::percent_of(score, possible),
+            grade: v.displayed_grade.as_deref().map(str::trim).filter(|d| !d.is_empty() && !looks_numeric(d)).map(str::to_string),
+            graded: score.is_some() || v.displayed_grade.as_deref().is_some_and(|d| !d.trim().is_empty()),
+            comments: comment.into_iter().collect(),
+            ..Default::default()
+        });
+    }
+    // Grade items with nothing released yet: listed, ungraded.
+    for o in all {
+        let kind = o.grade_type.as_deref().unwrap_or("");
+        if placed.contains(&o.id) || o.is_hidden || o.name.trim().is_empty() || matches!(kind, "Category" | "Formula" | "Calculated") {
+            continue;
+        }
+        out.items.push(GradeItem { title: o.name.trim().to_string(), group: group_of(o), possible: o.max_points, ..Default::default() });
+    }
+
+    if let Some(f) = fin {
+        let percent = super::percent_of(f.points_numerator, f.points_denominator);
+        let letter = f.displayed_grade.as_deref().map(str::trim).filter(|d| !d.is_empty() && !looks_numeric(d)).map(str::to_string);
+        let percent = percent.or_else(|| f.displayed_grade.as_deref().and_then(|d| d.trim().trim_end_matches('%').trim().parse().ok()));
+        out.current = GradeSummary { percent, letter, points: f.points_numerator, possible: f.points_denominator };
+    }
+    Ok(out)
+}
+
+fn soft<T>(r: Result<T, LmsError>) -> Result<Option<T>, LmsError> {
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(e) => fatal(&e).map(|_| None),
+    }
+}
+
+impl RichText {
+    fn plain(&self) -> Option<String> {
+        let t = if self.text.trim().is_empty() { super::html::scan(&self.html, None).text } else { self.text.clone() };
+        let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+        (!t.is_empty()).then_some(t)
+    }
+}
+
+/// "87 %", "8.5 / 10": a number as Brightspace shows it, not a letter or scheme symbol.
+fn looks_numeric(d: &str) -> bool {
+    d.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '%' | '/' | ' ' | '-'))
+}
+
+#[cfg(test)]
+mod grade_tests;
 
 #[cfg(test)]
 mod tests {

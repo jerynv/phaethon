@@ -55,6 +55,8 @@
     "allow-lms-connections",
     "allow-lms-courses",
     "allow-lms-import",
-    "allow-lms-disconnect"
+    "allow-lms-disconnect",
+    "allow-lms-grades",
+    "allow-lms-grades-refresh"
   ]
 }

@@ -178,7 +178,7 @@ fn read(p: &Path) -> String {
 async fn a_course_is_imported_and_reimported_with_only_what_changed() {
     let f = fixture("e2e").await;
     serve(&f, "Derivatives lecture", "\"v1\"");
-    let opts = Options { max_download: 2000, max_links: 80 };
+    let opts = Options { max_download: 2000, max_links: 80, grades: None };
     let courses = f.root.join("courses");
     let mut steps = vec![];
     let out = import_course(&f.session, &courses, &course(), content(&f), None, &[], &opts, &mut |s, d, t| steps.push((s, d, t))).await.unwrap();
@@ -303,4 +303,53 @@ fn documents_are_told_by_their_bytes() {
     assert_eq!(sniff(b"PK\x03\x04", "application/epub+zip", ""), Some("epub"));
     assert_eq!(sniff(b"PK\x03\x04", "application/zip", "zip"), None);
     assert_eq!(sniff(&[0xD0, 0xCF, 0x11, 0xE0], "application/msword", ""), Some("doc"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn grades_go_into_grades_md_and_the_readme_and_a_skipped_line_is_said_once() {
+    use crate::lms::{GradeGroup, GradeItem, GradeSummary};
+    let f = fixture("grades").await;
+    let courses = f.root.join("courses");
+    let grades = CourseGrades {
+        current: GradeSummary { percent: Some(91.25), letter: Some("A-".into()), points: Some(73.0), possible: Some(80.0) },
+        final_grade: None,
+        groups: vec![GradeGroup { name: "Problem sets".into(), weight: None }],
+        items: vec![
+            GradeItem {
+                title: "PS 1".into(),
+                group: Some("Problem sets".into()),
+                score: Some(9.5),
+                possible: Some(10.0),
+                percent: Some(95.0),
+                graded: true,
+                submitted: true,
+                comments: vec!["Tidy.".into()],
+                ..Default::default()
+            },
+            GradeItem { title: "Attendance".into(), score: Some(63.5), possible: Some(70.0), percent: Some(90.71), graded: true, ..Default::default() },
+        ],
+        note: None,
+    };
+    // Seen in real data: a course with two outside tools of the same name.
+    let tool = "Campus Course Policies: an outside tool, open it on the course site".to_string();
+    let content = CourseContent { skipped: vec![tool.clone(), tool.clone()], ..Default::default() };
+    let opts = Options { grades: Some(grades), ..Options::default() };
+    let out = import_course(&f.session, &courses, &course(), content, None, &[], &opts, &mut |_, _, _| {}).await.unwrap();
+    let c = courses.join("Calculus I");
+    let md = read(&c.join("grades.md"));
+    let readme = read(&c.join("README.md"));
+    eprintln!("--- grades.md\n{md}\n--- README.md\n{readme}");
+    assert!(md.contains("**Current grade: 91.25% (A-)**, 73 of 80 points"), "{md}");
+    assert!(md.contains("## Problem sets\n\n- **PS 1**: 9.5 / 10 (95%)\n  - Teacher’s comment: Tidy."), "{md}");
+    assert!(md.contains("## Other\n\n- **Attendance**: 63.5 / 70 (90.71%)"), "{md}");
+    assert!(readme.contains("**Grades**: 91.25% (A-) so far. Every grade, by group: [grades.md](grades.md)."), "{readme}");
+    assert!(readme.contains("- [grades.md](grades.md): your grades, by group"), "{readme}");
+    assert_eq!(readme.matches("Campus Course Policies").count(), 1, "said once: {readme}");
+    assert_eq!(out.skipped, vec![tool]);
+
+    // Imported again when the grades couldn't be read: the last grades.md stays and the README still points at it.
+    import_course(&f.session, &courses, &course(), CourseContent::default(), Some(&out.state), &[], &Options::default(), &mut |_, _, _| {}).await.unwrap();
+    assert!(read(&c.join("grades.md")).contains("91.25%"));
+    assert!(read(&c.join("README.md")).contains("**Grades**: [grades.md](grades.md) (from the last time they could be read)."));
+    std::fs::remove_dir_all(&f.root).unwrap();
 }

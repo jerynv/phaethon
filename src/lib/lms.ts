@@ -100,3 +100,80 @@ export function lmsImport(
 /** Forget the session and the connection; imported files stay in the space. */
 export const lmsDisconnect = (space: string, connection: string) =>
   invoke<void>("lms_disconnect", { space, connection });
+
+// ---- Grades ----------------------------------------------------------------
+
+/** A grade in a few numbers; any of them may be missing (a course without letters, a grade not released). */
+export type GradeSummary = {
+  /** 0–100. */
+  percent?: number;
+  letter?: string;
+  points?: number;
+  possible?: number;
+};
+
+/** An assignment group (category). `weight` (0–100, share of the course grade) only when the course weights its groups. */
+export type GradeGroup = { name: string; weight?: number };
+
+/** One graded thing. A grade the course hasn't released has no `score` and `graded: false`; that isn't an error. */
+export type GradeItem = {
+  title: string;
+  /** The `name` of its group in `CourseGradeView.groups`, if any. */
+  group?: string;
+  score?: number;
+  possible?: number;
+  /** 0–100. */
+  percent?: number;
+  /** The grade as the site shows it when it isn't just the score ("A-", "complete", "Satisfactory"). */
+  grade?: string;
+  /** RFC 3339. */
+  due?: string;
+  submitted: boolean;
+  graded: boolean;
+  late: boolean;
+  missing: boolean;
+  excused: boolean;
+  /** The teacher's comments, plain text. */
+  comments: string[];
+};
+
+/** One imported course's grades, as kept in `<space>/.phaethon/grades.json` (also written as `<folder>/grades.md`). */
+export type CourseGradeView = {
+  connection: string;
+  courseId: string;
+  /** The course's name. */
+  course: string;
+  /** Relative to the space, e.g. "courses/Calculus II". */
+  folder: string;
+  /** When they were read from the site, ms since the epoch. */
+  updated: number;
+  /** The grade so far (only graded work counts). */
+  current: GradeSummary;
+  /** With ungraded work counted as zero, when the site gives it and it differs. */
+  final?: GradeSummary;
+  groups: GradeGroup[];
+  items: GradeItem[];
+  /** Why there's nothing to show, in plain words (the course hides its grade book). */
+  note?: string;
+};
+
+/**
+ * Streamed by `lmsGradesRefresh`, ending with exactly one `done`. `course` is a course id.
+ * An `error` with `message === LMS_SIGNED_OUT` means the session ended (the refresh stops there);
+ * any other `error` is about one course, in plain words, and the refresh goes on.
+ */
+export type LmsGradesEvent =
+  | { type: "progress"; course: string; step: "grades"; done: number; total: number }
+  | { type: "course"; course: string; grades: CourseGradeView }
+  | { type: "done" }
+  | { type: "error"; message: string };
+
+/** Every imported course's grades in `space`, from disk (fast, no network), by course name. */
+export const lmsGrades = (space: string) => invoke<CourseGradeView[]>("lms_grades", { space });
+
+/** Read only the grades again from the site, for each course imported from `connection`. */
+export function lmsGradesRefresh(space: string, connection: string, onEvent: (e: LmsGradesEvent) => void): Promise<void> {
+  const channel = new Channel<LmsGradesEvent>();
+  channel.onmessage = onEvent;
+  return invoke<void>("lms_grades_refresh", { space, connection, onEvent: channel });
+}

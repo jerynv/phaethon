@@ -9,8 +9,14 @@
 //!   Copyright (c) 2025 Vishal Sachdev
 //! - canvas-mcp, https://github.com/r-huijts/canvas-mcp, MIT License,
 //!   Copyright (c) 2024 R.Huijts
+//!
+//! Grades (`grades`) follow the Canvas REST API docs (enrollments, submissions,
+//! assignment groups) and the grade tools of vishalsachdev/canvas-mcp above.
 
-use super::{Announcement, Assignment, Course, CourseContent, Credential, Link, LmsError, LoginNav, Module, Page, RemoteFile, Session};
+use super::{
+    Announcement, Assignment, Course, CourseContent, CourseGrades, Credential, GradeGroup, GradeItem, GradeSummary, Link, LmsError, LoginNav, Module, Page,
+    RemoteFile, Session,
+};
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -632,6 +638,115 @@ fn unix(s: &str) -> Option<i64> {
     let days = era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468;
     Some(days * 86_400 + h * 3600 + mi * 60 + se - offset)
 }
+
+// ---- Grades ----------------------------------------------------------------
+
+/// The person's grades in a course: the course grade from their own enrollment
+/// (`grades.current_score` / `final_score`, as Canvas computes them), every
+/// assignment's submission with its score, flags and comments, and the
+/// assignment groups with their weights when the course weights them. Scores
+/// Canvas hasn't posted come back empty and stay empty.
+pub async fn grades(s: &Session, course_id: &str) -> Result<CourseGrades, LmsError> {
+    if course_id.is_empty() || !course_id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(LmsError::NotFound("Your course site couldn’t find this course.".into()));
+    }
+    let cid = course_id;
+    let enrollments =
+        api(s, &["courses", cid, "enrollments"], &[("user_id", "self"), ("type[]", "StudentEnrollment"), ("include[]", "current_points"), ("per_page", "100")]);
+    let Some(enrollments) = grade_part(s, get_all(s, &enrollments).await).await? else {
+        return Ok(CourseGrades { note: Some(super::GRADES_HIDDEN.into()), ..Default::default() });
+    };
+    let course = grade_part(s, get_one(s, &api(s, &["courses", cid], &[])).await).await?;
+    let weighted = course.as_ref().and_then(|c| c["apply_assignment_group_weights"].as_bool()) == Some(true);
+    let groups = grade_part(s, get_all(s, &api(s, &["courses", cid, "assignment_groups"], &[("per_page", "100")])).await).await?.unwrap_or_default();
+    let subs = api(
+        s,
+        &["courses", cid, "students", "submissions"],
+        &[("student_ids[]", "self"), ("include[]", "assignment"), ("include[]", "submission_comments"), ("per_page", "100")],
+    );
+    let subs = grade_part(s, get_all(s, &subs).await).await?.unwrap_or_default();
+
+    let mut out = CourseGrades::default();
+    let mut group_names: HashMap<String, String> = HashMap::new();
+    for g in &groups {
+        let (Some(id), Some(name)) = (id_str(&g["id"]), g["name"].as_str().map(str::trim).filter(|n| !n.is_empty())) else { continue };
+        group_names.insert(id, name.to_string());
+        out.groups.push(GradeGroup { name: name.to_string(), weight: if weighted { g["group_weight"].as_f64() } else { None } });
+    }
+    out.items = subs.iter().filter_map(|v| grade_item_from(v, &group_names)).collect();
+    out.items.sort_by_key(|i| {
+        let t = i.due.as_deref().and_then(unix);
+        (t.is_none(), t)
+    });
+
+    if let Some(e) = enrollments.iter().find(|e| e["type"].as_str().is_none_or(|t| t == "StudentEnrollment")) {
+        let g = &e["grades"];
+        let num = |k: &str| g[k].as_f64().or_else(|| e[format!("computed_{k}").as_str()].as_f64());
+        let letter = |k: &str| g[k].as_str().or_else(|| e[format!("computed_{k}").as_str()].as_str()).map(str::trim).filter(|l| !l.is_empty()).map(str::to_string);
+        out.current = GradeSummary { percent: num("current_score"), letter: letter("current_grade"), points: g["current_points"].as_f64(), possible: None };
+        // Points out of what's been graded, when the course grade is plain points (unweighted).
+        if out.current.points.is_some() && !weighted {
+            let possible: f64 = out.items.iter().filter(|i| i.score.is_some() && !i.excused).filter_map(|i| i.possible).sum();
+            out.current.possible = (possible > 0.0).then_some(possible);
+        }
+        let fin = GradeSummary { percent: num("final_score"), letter: letter("final_grade"), points: None, possible: None };
+        // Only worth saying when it differs from the grade so far (work still ungraded counts as zero).
+        if !fin.is_empty() && (fin.percent != out.current.percent || fin.letter != out.current.letter) {
+            out.final_grade = Some(fin);
+        }
+    }
+    Ok(out)
+}
+
+/// A grade read where Canvas may refuse: `None` when the person may not see it
+/// (Canvas answers 401 for that too, so a 401 is checked against their profile).
+async fn grade_part<T>(s: &Session, r: Result<T, LmsError>) -> Result<Option<T>, LmsError> {
+    let mut why = Vec::new();
+    match part(s, r, "-", &mut why).await? {
+        Some(v) => Ok(Some(v)),
+        None if why.iter().all(|w| w.ends_with("not open to you in this course")) => Ok(None),
+        None => Err(LmsError::Other(why.pop().unwrap_or_default().trim_start_matches("-: ").to_string())),
+    }
+}
+
+fn grade_item_from(v: &Value, groups: &HashMap<String, String>) -> Option<GradeItem> {
+    let a = &v["assignment"];
+    let title = a["name"].as_str()?.trim().to_string();
+    if title.is_empty() || a["published"].as_bool() == Some(false) {
+        return None;
+    }
+    let state = v["workflow_state"].as_str().unwrap_or("");
+    let score = v["score"].as_f64();
+    let possible = a["points_possible"].as_f64();
+    let excused = v["excused"].as_bool() == Some(true);
+    // "A-", "complete": the grade as shown, when it isn't just the score.
+    let grade = v["grade"].as_str().map(str::trim).filter(|g| !g.is_empty() && g.parse::<f64>().is_err()).map(str::to_string);
+    let comments = v["submission_comments"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c["comment"].as_str().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|t| !t.is_empty()))
+        .collect();
+    Some(GradeItem {
+        title,
+        group: id_str(&a["assignment_group_id"]).and_then(|g| groups.get(&g).cloned()),
+        score,
+        possible,
+        percent: super::percent_of(score, possible),
+        grade: if excused { None } else { grade },
+        due: a["due_at"].as_str().map(str::to_string),
+        submitted: v["submitted_at"].as_str().is_some() || matches!(state, "submitted" | "pending_review"),
+        // Graded but not posted: Canvas leaves the score out, so it doesn't count as graded here.
+        graded: (state == "graded" && (score.is_some() || v["grade"].as_str().is_some())) || excused,
+        late: v["late"].as_bool() == Some(true),
+        missing: v["missing"].as_bool() == Some(true),
+        excused,
+        comments,
+    })
+}
+
+#[cfg(test)]
+mod grade_tests;
 
 #[cfg(test)]
 mod tests {

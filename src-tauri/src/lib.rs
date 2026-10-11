@@ -677,6 +677,29 @@ fn lms_disconnect(state: State<'_, AppState>, space: String, connection: String)
     lms::service::disconnect(&state.vault.name(), &space, &dir, &connection)
 }
 
+/// Every imported course's grades in `space`, from disk (no network).
+#[tauri::command]
+fn lms_grades(state: State<'_, AppState>, space: String) -> Result<Vec<lms::store::GradeRec>, String> {
+    let dir = state.vault.space_dir(&space)?;
+    lms::service::grades(&dir)
+}
+
+/// Read only the grades again for a connection's imported courses, streaming progress; always ends with `done`.
+#[tauri::command]
+async fn lms_grades_refresh(state: State<'_, AppState>, space: String, connection: String, on_event: Channel<lms::service::GradesEvent>) -> Result<(), String> {
+    let emit = |e: lms::service::GradesEvent| {
+        let _ = on_event.send(e);
+    };
+    match state.vault.space_dir(&space) {
+        Ok(dir) => lms::service::grades_refresh(&state.vault.name(), &space, &dir, &connection, &emit).await,
+        Err(message) => {
+            emit(lms::service::GradesEvent::Error { message });
+            emit(lms::service::GradesEvent::Done);
+        }
+    }
+    Ok(())
+}
+
 /// Stop the turn running in `space`, if any. The stream then ends with `Cancelled`.
 #[tauri::command]
 fn agent_cancel(state: State<'_, AppState>, space: String) -> bool {
@@ -786,7 +809,9 @@ pub fn run() {
             lms_connections,
             lms_courses,
             lms_import,
-            lms_disconnect
+            lms_disconnect,
+            lms_grades,
+            lms_grades_refresh
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

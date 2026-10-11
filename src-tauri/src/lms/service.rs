@@ -11,8 +11,8 @@ use serde::Serialize;
 use url::Url;
 
 use super::import::{self, Options};
-use super::store::{self, Conn};
-use super::{Credential, Kind, LmsError, Session, Site, names};
+use super::store::{self, Conn, GradeRec};
+use super::{CourseGrades, Credential, Kind, LmsError, Session, Site, names};
 use crate::secrets;
 
 /// The error text the UI acts on (Sign in again).
@@ -56,6 +56,16 @@ pub struct School {
 pub enum ImportEvent {
     Progress { course: String, step: &'static str, done: usize, total: usize },
     Course { course: String, folder: String, files: usize, readings: usize, links: usize, skipped: Vec<String> },
+    Done,
+    Error { message: String },
+}
+
+/// Streamed by `lms_grades_refresh`, ending with exactly one `Done`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum GradesEvent {
+    Progress { course: String, step: &'static str, done: usize, total: usize },
+    Course { course: String, grades: Box<GradeRec> },
     Done,
     Error { message: String },
 }
@@ -198,15 +208,23 @@ async fn import_inner(vault: &str, space: &str, space_dir: &Path, id: &str, cour
     if chosen.len() < wanted.len() {
         emit(ImportEvent::Error { message: "Some of the chosen courses aren’t on the course site any more.".into() });
     }
-    let courses_root = names::dir_in(space_dir, Path::new("courses")).map_err(|e| format!("The courses folder couldn’t be made: {e}"))?;
+    let courses_root = names::dir_in(space_dir, Path::new(store::COURSES_DIR)).map_err(|e| format!("The courses folder couldn’t be made: {e}"))?;
     for course in chosen {
         emit(ImportEvent::Progress { course: course.id.clone(), step: "reading", done: 0, total: 1 });
-        let content = match super::content(&session, &course.id).await {
+        let mut content = match super::content(&session, &course.id).await {
             Ok(c) => c,
             Err(LmsError::SignedOut) => return Err(SIGNED_OUT.into()),
             Err(e) => {
                 emit(ImportEvent::Error { message: format!("{}: {e}", course.name) });
                 continue;
+            }
+        };
+        // Grades are a bonus: one that can't be read is a line in "Not imported", never a failed import.
+        let grades = match super::grades(&session, &course.id).await {
+            Ok(g) => Some(g),
+            Err(e) => {
+                content.skipped.push(grades_skipped(&e));
+                None
             }
         };
         emit(ImportEvent::Progress { course: course.id.clone(), step: "reading", done: 1, total: 1 });
@@ -220,7 +238,8 @@ async fn import_inner(vault: &str, space: &str, space_dir: &Path, id: &str, cour
             .collect();
         let cid = course.id.clone();
         let mut progress = |step: &'static str, done: usize, total: usize| emit(ImportEvent::Progress { course: cid.clone(), step, done, total });
-        let out = match import::import_course(&session, &courses_root, &course, content, prev.as_ref(), &others, &Options::default(), &mut progress).await {
+        let opts = Options { grades: grades.clone(), ..Options::default() };
+        let out = match import::import_course(&session, &courses_root, &course, content, prev.as_ref(), &others, &opts, &mut progress).await {
             Ok(o) => o,
             Err(e) => {
                 emit(ImportEvent::Error { message: format!("{}: {e}", course.name) });
@@ -235,14 +254,80 @@ async fn import_inner(vault: &str, space: &str, space_dir: &Path, id: &str, cour
         conn.courses.insert(course.id.clone(), out.state);
         conn.last_sync = Some(store::now_ms());
         store::save(space_dir, &st)?;
-        emit(ImportEvent::Course {
-            course: course.id.clone(),
-            folder: format!("courses/{folder}"),
-            files: out.files,
-            readings: out.readings,
-            links: out.links,
-            skipped: out.skipped,
-        });
+        let mut skipped = out.skipped;
+        if let Some(g) = grades
+            && let Err(e) = store::put_grades(space_dir, grade_rec(id, &course.id, &course.name, &folder, g))
+        {
+            skipped.push(format!("Grades: {e}"));
+        }
+        emit(ImportEvent::Course { course: course.id.clone(), folder: format!("courses/{folder}"), files: out.files, readings: out.readings, links: out.links, skipped });
+    }
+    Ok(())
+}
+
+fn grades_skipped(e: &LmsError) -> String {
+    match e {
+        LmsError::SignedOut => "Grades: couldn’t be read (sign in again if this keeps happening)".into(),
+        e => format!("Grades: couldn’t be read ({e})"),
+    }
+}
+
+fn grade_rec(connection: &str, course_id: &str, course: &str, folder: &str, grades: CourseGrades) -> GradeRec {
+    GradeRec {
+        connection: connection.to_string(),
+        course_id: course_id.to_string(),
+        course: course.to_string(),
+        folder: format!("{}/{folder}", store::COURSES_DIR),
+        updated: store::now_ms(),
+        grades,
+    }
+}
+
+/// Every imported course's grades in this space, from `.phaethon/grades.json` (no network), by course name.
+pub fn grades(space_dir: &Path) -> Result<Vec<GradeRec>, String> {
+    let mut list: Vec<GradeRec> = store::load_grades(space_dir)?.courses.into_values().collect();
+    list.sort_by(|a, b| a.course.to_lowercase().cmp(&b.course.to_lowercase()).then(a.connection.cmp(&b.connection)));
+    Ok(list)
+}
+
+/// Read the grades again (only grades) for each course imported from connection `id`:
+/// grades.md in the course's folder, the numbers in grades.json. Ends with `Done`;
+/// an ended session is one `Error { "signedOut" }` and stops there.
+pub async fn grades_refresh(vault: &str, space: &str, space_dir: &Path, id: &str, emit: &(dyn Fn(GradesEvent) + Send + Sync)) {
+    if let Err(message) = grades_refresh_inner(vault, space, space_dir, id, emit).await {
+        emit(GradesEvent::Error { message });
+    }
+    emit(GradesEvent::Done);
+}
+
+async fn grades_refresh_inner(vault: &str, space: &str, space_dir: &Path, id: &str, emit: &(dyn Fn(GradesEvent) + Send + Sync)) -> Result<(), String> {
+    let session = session(vault, space, space_dir, id)?;
+    refresh_grades_with(&session, space_dir, id, emit).await
+}
+
+async fn refresh_grades_with(session: &Session, space_dir: &Path, id: &str, emit: &(dyn Fn(GradesEvent) + Send + Sync)) -> Result<(), String> {
+    let st = store::load(space_dir)?;
+    let courses: Vec<(String, store::CourseState)> = st.get(id).map(|c| c.courses.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default();
+    let total = courses.len();
+    for (n, (cid, cs)) in courses.into_iter().enumerate() {
+        emit(GradesEvent::Progress { course: cid.clone(), step: "grades", done: n, total });
+        let g = match super::grades(session, &cid).await {
+            Ok(g) => g,
+            Err(LmsError::SignedOut) => return Err(SIGNED_OUT.into()),
+            Err(e) => {
+                emit(GradesEvent::Error { message: format!("{}: {e}", cs.name) });
+                continue;
+            }
+        };
+        // The folder as the import left it; one removed since isn't made again just for grades.md.
+        if let Some(dir) = store::course_dir(space_dir, &cs.folder)
+            && let Err(e) = import::write_grades(&dir, &cs.name, &g)
+        {
+            emit(GradesEvent::Error { message: format!("{}: {e}", cs.name) });
+        }
+        let rec = grade_rec(id, &cid, &cs.name, &cs.folder, g);
+        store::put_grades(space_dir, rec.clone())?;
+        emit(GradesEvent::Course { course: cid, grades: Box::new(rec) });
     }
     Ok(())
 }
@@ -377,5 +462,114 @@ mod tests {
         assert_eq!(serde_json::to_value(ImportEvent::Done).unwrap(), serde_json::json!({"type": "done"}));
         let c = ConnectionView { id: "a".into(), kind: Kind::Canvas, address: "https://x".into(), school_name: None, signed_in: true, last_sync: None, courses: vec![] };
         assert_eq!(serde_json::to_value(c).unwrap(), serde_json::json!({"id": "a", "kind": "canvas", "address": "https://x", "signedIn": true, "courses": []}));
+    }
+
+    /// A space with one Canvas connection (at `base`) and course 1001 imported into courses/Discrete/.
+    fn grades_space(tag: &str, base: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("phaethon-grades-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("courses/Discrete")).unwrap();
+        std::fs::write(dir.join("courses/Discrete/README.md"), "# Discrete\n\nImported from x on today.\n\n## Coming up\n\nNothing.\n").unwrap();
+        let mut conn = Conn { id: "canvas-x".into(), kind: Kind::Canvas, address: base.into(), school_name: None, last_sync: None, courses: Default::default() };
+        conn.courses.insert("1001".into(), store::CourseState { name: "Discrete Structures".into(), folder: "Discrete".into(), ..Default::default() });
+        store::save(&dir, &store::Store { connections: vec![conn] }).unwrap();
+        dir
+    }
+
+    fn canvas_session(base: &str) -> Session {
+        let cookies = vec![super::super::Cookie { name: "_normandy_session".into(), value: "s".into() }];
+        Session::new(Site::for_test(Kind::Canvas, base), Credential { cookies, csrf: None })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_grades_refresh_writes_grades_md_and_grades_json_and_lms_grades_reads_them_back() {
+        use crate::lms::fake::{self, json, status};
+        let (base, _) = fake::serve(std::sync::Arc::new(|t: &str| match t.split('?').next().unwrap() {
+            "/api/v1/courses/1001/enrollments" => json(include_str!("../../tests/fixtures/canvas/grades_enrollments.json")),
+            "/api/v1/courses/1001" => json(r#"{"id":1001,"apply_assignment_group_weights":true}"#),
+            "/api/v1/courses/1001/assignment_groups" => json(include_str!("../../tests/fixtures/canvas/grades_groups.json")),
+            "/api/v1/courses/1001/students/submissions" => json(include_str!("../../tests/fixtures/canvas/grades_submissions.json")),
+            _ => status(404),
+        }))
+        .await;
+        let dir = grades_space("refresh", &base);
+        let events = Mutex::new(vec![]);
+        refresh_grades_with(&canvas_session(&base), &dir, "canvas-x", &|e| events.lock().unwrap().push(e)).await.unwrap();
+        let events = events.into_inner().unwrap();
+        assert_eq!(events[0], GradesEvent::Progress { course: "1001".into(), step: "grades", done: 0, total: 1 });
+        let GradesEvent::Course { course, grades: rec } = &events[1] else { panic!("{events:?}") };
+        let rec = &**rec;
+        assert_eq!((course.as_str(), rec.folder.as_str(), rec.course.as_str()), ("1001", "courses/Discrete", "Discrete Structures"));
+
+        // grades.md, read back as the person (and the agent) would.
+        let md = std::fs::read_to_string(dir.join("courses/Discrete/grades.md")).unwrap();
+        assert!(md.starts_with("# Grades: Discrete Structures\n"), "{md}");
+        assert!(md.contains("**Current grade: 88.42% (B+)**"), "{md}");
+        assert!(md.contains("Final grade if nothing more is graded (work not graded counts as zero): 74.1% (C)."), "{md}");
+        assert!(md.contains("## Homework (40% of the grade)") && md.contains("## Exams (60% of the grade)"), "{md}");
+        assert!(md.contains("- **Homework 1**: 9 / 10 (90%) · due "), "{md}");
+        assert!(md.contains("  - Teacher’s comment: Nice proof. Watch the base case."), "{md}");
+        assert!(md.lines().any(|l| l.starts_with("- **Homework 2**: 7 / 10 (70%)") && l.ends_with(" · late")), "{md}");
+        assert!(md.lines().any(|l| l.starts_with("- **Homework 3**: 0 / 10 (0%)") && l.ends_with(" · missing")), "{md}");
+        assert!(md.contains("- **Homework 4**: excused (doesn’t count)"), "{md}");
+        assert!(md.lines().any(|l| l.starts_with("- **Midterm**: not graded yet (out of 150)") && l.ends_with("handed in, not graded yet")), "{md}");
+        assert!(md.contains("- **Quiz week 3 (paper)**: 152 / 160 (95%), A-"), "{md}");
+        assert!(md.find("## Homework").unwrap() < md.find("**Homework 1**").unwrap() && md.find("## Exams").unwrap() < md.find("**Midterm**").unwrap());
+        let readme = std::fs::read_to_string(dir.join("courses/Discrete/README.md")).unwrap();
+        assert!(readme.contains("Imported from x on today.\n\n**Grades**: 88.42% (B+) so far. Every grade, by group: [grades.md](grades.md).\n\n## Coming up"), "{readme}");
+
+        // lms_grades: the same numbers from disk, in the contract's shape.
+        let list = grades(&dir).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(&list[0], rec);
+        let v = serde_json::to_value(&list[0]).unwrap();
+        for k in ["connection", "courseId", "course", "folder", "updated", "current", "final", "groups", "items"] {
+            assert!(v.get(k).is_some(), "{k} in {v}");
+        }
+        assert_eq!(v["current"], serde_json::json!({"percent": 88.42, "letter": "B+", "points": 168.0}));
+        assert_eq!(v["items"][2]["missing"], true);
+
+        // Again: the README keeps one grades line.
+        refresh_grades_with(&canvas_session(&base), &dir, "canvas-x", &|_| {}).await.unwrap();
+        let readme = std::fs::read_to_string(dir.join("courses/Discrete/README.md")).unwrap();
+        assert_eq!(readme.matches("**Grades**").count(), 1, "{readme}");
+        // The agent's course index carries the grade.
+        let idx = store::prompt_index(&dir, 0).unwrap();
+        assert!(idx.contains("- Discrete Structures: courses/Discrete/ Current grade: 88.42% (B+) (grades.md)."), "{idx}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_grades_refresh_stops_signed_out_and_a_hidden_course_is_noted() {
+        use crate::lms::fake::{self, json, status};
+        let (base, _) = fake::serve(std::sync::Arc::new(|_: &str| status(401))).await;
+        let dir = grades_space("signedout", &base);
+        let err = refresh_grades_with(&canvas_session(&base), &dir, "canvas-x", &|_| {}).await.unwrap_err();
+        assert_eq!(err, SIGNED_OUT);
+        assert!(!dir.join("courses/Discrete/grades.md").exists());
+        assert!(grades(&dir).unwrap().is_empty());
+
+        let (base, _) = fake::serve(std::sync::Arc::new(|t: &str| if t.starts_with("/api/v1/users/self") { json(r#"{"id":1}"#) } else { status(403) })).await;
+        let dir = grades_space("hidden", &base);
+        refresh_grades_with(&canvas_session(&base), &dir, "canvas-x", &|_| {}).await.unwrap();
+        let md = std::fs::read_to_string(dir.join("courses/Discrete/grades.md")).unwrap();
+        assert!(md.contains(crate::lms::GRADES_HIDDEN), "{md}");
+        let readme = std::fs::read_to_string(dir.join("courses/Discrete/README.md")).unwrap();
+        assert!(readme.contains("**Grades**: Your course site doesn’t show you grades for this course. See [grades.md](grades.md)."), "{readme}");
+        assert_eq!(grades(&dir).unwrap()[0].grades.note.as_deref(), Some(crate::lms::GRADES_HIDDEN));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn grades_events_have_the_contracts_shape() {
+        assert_eq!(serde_json::to_value(GradesEvent::Done).unwrap(), serde_json::json!({"type": "done"}));
+        let e = serde_json::to_value(GradesEvent::Progress { course: "1".into(), step: "grades", done: 0, total: 3 }).unwrap();
+        assert_eq!(e, serde_json::json!({"type": "progress", "course": "1", "step": "grades", "done": 0, "total": 3}));
+        let rec = grade_rec("c", "1", "Calc", "Calc", CourseGrades::default());
+        let e = serde_json::to_value(GradesEvent::Course { course: "1".into(), grades: Box::new(rec) }).unwrap();
+        assert_eq!(e["type"], "course");
+        assert_eq!(e["grades"]["folder"], "courses/Calc");
+        assert_eq!(e["grades"]["items"], serde_json::json!([]));
+        assert_eq!(serde_json::to_value(GradesEvent::Error { message: SIGNED_OUT.into() }).unwrap(), serde_json::json!({"type": "error", "message": "signedOut"}));
     }
 }

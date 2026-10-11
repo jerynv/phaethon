@@ -17,9 +17,13 @@
 //! `core_calendar_get_action_events_by_course` (due dates) and
 //! `mod_forum_get_discussion_posts` (announcements). Everything else is read
 //! from the course's own pages: the course page when the state call isn't there,
-//! and each activity's view page. Read-only throughout.
+//! and each activity's view page. Read-only throughout. Grades come from the
+//! person's own user report page (see `grades`).
 
-use super::{Announcement, Assignment, Course, CourseContent, Credential, Link, LmsError, LoginNav, Module, Page, RemoteFile, Session};
+use super::{
+    Announcement, Assignment, Course, CourseContent, CourseGrades, Credential, GradeGroup, GradeItem, GradeSummary, Link, LmsError, LoginNav, Module, Page,
+    RemoteFile, Session,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -719,6 +723,8 @@ fn decode_entities(s: &str) -> String {
                 "quot" => Some('"'),
                 "apos" => Some('\''),
                 "nbsp" => Some('\u{a0}'),
+                "ndash" => Some('–'),
+                "mdash" => Some('—'),
                 _ => ent
                     .strip_prefix("#x")
                     .or_else(|| ent.strip_prefix("#X"))
@@ -794,5 +800,158 @@ fn rfc3339(t: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", secs / 3600, secs % 3600 / 60, secs % 60)
 }
 
+// ---------------------------------------------------------------------------
+// Grades
+//
+// Moodle's grade functions (`gradereport_user_get_grade_items`,
+// `gradereport_user_get_grades_table`) are open to the mobile app's token only,
+// not to AJAX (Moodle 4.5's grade/report/user/db/services.php has no `ajax`
+// flag), so the person's own user report page is read instead:
+// `grade/report/user/index.php?id=<course>`, the table Moodle draws for them.
+// Each cell carries `column-<name>` (itemname, weight, grade, range,
+// percentage, lettergrade, feedback) and `headers` naming its category; a
+// category's header cell has the id `cat_<id>_<user>`. Grades hidden from the
+// person show as "-" (or aren't there at all) and stay absent.
+
+pub async fn grades(s: &Session, course_id: &str) -> Result<CourseGrades, LmsError> {
+    let id: u64 = course_id.parse().map_err(|_| LmsError::NotFound("That course isn’t on your course site.".into()))?;
+    let html = match page(s, &join(&s.site.base, &format!("grade/report/user/index.php?id={id}"))?).await {
+        Ok(h) => h,
+        Err(e) => return super::grades_refused(e),
+    };
+    Ok(parse_user_report(&html))
+}
+
+/// One cell of the report: its classes, `id`, `headers` and inner HTML.
+struct Cell<'a> {
+    class: String,
+    id: String,
+    headers: String,
+    html: &'a str,
+}
+
+impl Cell<'_> {
+    fn is(&self, column: &str) -> bool {
+        has_word(&self.class, &format!("column-{column}"))
+    }
+}
+
+fn parse_user_report(html: &str) -> CourseGrades {
+    let Some(table) = open_tags(html, "table")
+        .into_iter()
+        .find(|&(a, b)| attr(&html[a..b], "class").is_some_and(|c| has_word(&c, "user-grade")))
+        .and_then(|(a, b)| inner(html, a, b, "table"))
+        .map(|(a, b)| &html[a..b])
+    else {
+        return CourseGrades { note: Some(super::GRADES_HIDDEN.into()), ..Default::default() };
+    };
+    let mut out = CourseGrades::default();
+    // Category id → name (the course's own top category isn't a group).
+    let mut cats: Vec<(String, String)> = Vec::new();
+    let mut top: Option<String> = None;
+    let mut weights: HashMap<String, f64> = HashMap::new();
+    for (a, b) in open_tags(table, "tr") {
+        let Some((ra, rb)) = inner(table, a, b, "tr") else { continue };
+        let row = &table[ra..rb];
+        let mut cells: Vec<(usize, Cell)> = Vec::new();
+        for name in ["th", "td"] {
+            for (ca, cb) in open_tags(row, name) {
+                let tag = &row[ca..cb];
+                let Some((ia, ib)) = inner(row, ca, cb, name) else { continue };
+                cells.push((ca, Cell { class: attr(tag, "class").unwrap_or_default(), id: attr(tag, "id").unwrap_or_default(), headers: attr(tag, "headers").unwrap_or_default(), html: &row[ia..ib] }));
+            }
+        }
+        cells.sort_by_key(|(at, _)| *at);
+        let cells: Vec<Cell> = cells.into_iter().map(|(_, c)| c).collect();
+        // (The column headings' row has `header` cells.)
+        let Some(name) = cells.iter().find(|c| c.is("itemname") && !has_word(&c.class, "header")) else { continue };
+        let cat_of = |c: &Cell| c.headers.split_whitespace().find(|h| h.starts_with("cat_")).map(|h| h.split('_').nth(1).unwrap_or("").to_string());
+        let col = |n: &str| cells.iter().find(|c| c.is(n)).map(|c| text(c.html)).filter(|t| !t.is_empty() && t != "-");
+
+        if has_word(&name.class, "category") {
+            let cid = name.id.split('_').nth(1).unwrap_or("").to_string();
+            let title = text(name.html);
+            if top.is_none() {
+                top = Some(cid);
+            } else if !title.is_empty() {
+                cats.push((cid, title));
+            }
+            continue;
+        }
+        let kind = if name.html.contains("courseitem") {
+            "course"
+        } else if name.html.contains("categoryitem") || ["baggt", "baggb"].iter().any(|w| has_word(&name.class, w)) {
+            "category"
+        } else {
+            "item"
+        };
+        let header_cat = cells.iter().find_map(cat_of);
+        let grade_text = col("grade");
+        let score = grade_text.as_deref().and_then(number);
+        let possible = col("range").as_deref().and_then(|r| r.split(['–', '-', '—']).filter_map(number).next_back());
+        let percent = col("percentage").as_deref().and_then(number).or_else(|| super::percent_of(score, possible));
+        let letter = col("lettergrade");
+        match kind {
+            "course" => {
+                out.current = GradeSummary { percent, letter, points: score, possible: possible.filter(|_| score.is_some()) };
+            }
+            "category" => {
+                // A category's total row: its weight in the course is the group's weight.
+                if let (Some(c), Some(w)) = (header_cat, col("weight").as_deref().and_then(number)) {
+                    weights.insert(c, w);
+                }
+            }
+            _ => {
+                let title = row_title(name.html);
+                if title.is_empty() {
+                    continue;
+                }
+                let submitted_only = grade_text.as_deref().is_some_and(|g| score.is_none() && g.to_lowercase().starts_with("submitted"));
+                let shown = grade_text.filter(|g| score.is_none() && !submitted_only && !g.eq_ignore_ascii_case("error"));
+                let feedback = cells.iter().find(|c| c.is("feedback")).map(|c| text(c.html)).filter(|t| !t.is_empty());
+                out.items.push(GradeItem {
+                    title,
+                    group: header_cat.filter(|c| Some(c) != top.as_ref()).and_then(|c| cats.iter().find(|(id, _)| *id == c).map(|(_, n)| n.clone())),
+                    score,
+                    possible,
+                    percent: if score.is_some() { percent } else { None },
+                    grade: shown.clone(),
+                    submitted: submitted_only,
+                    graded: score.is_some() || shown.is_some(),
+                    comments: feedback.into_iter().collect(),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+    out.groups = cats.into_iter().map(|(id, name)| GradeGroup { weight: weights.get(&id).copied(), name }).collect();
+    out
+}
+
+/// The item's name: Moodle 4's `rowtitle`, else the grade item link (3.x), else the cell's text.
+fn row_title(cell: &str) -> String {
+    let by_class = |tag: &str, class: &str| {
+        open_tags(cell, tag)
+            .into_iter()
+            .find(|&(a, b)| attr(&cell[a..b], "class").is_some_and(|c| has_word(&c, class)))
+            .and_then(|(a, b)| inner(cell, a, b, tag))
+            .map(|(a, b)| text(&cell[a..b]))
+    };
+    by_class("div", "rowtitle").or_else(|| by_class("a", "gradeitemheader")).or_else(|| by_class("span", "gradeitemheader")).unwrap_or_else(|| text(cell))
+}
+
+/// A number as Moodle prints it ("85.00", "85,00 %", "1,234.5"), or none.
+fn number(s: &str) -> Option<f64> {
+    let t: String = s.trim().trim_end_matches('%').trim().chars().filter(|c| !c.is_whitespace()).collect();
+    if t.is_empty() || !t.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '-')) {
+        return None;
+    }
+    let t = if t.contains('.') { t.replace(',', "") } else { t.replace(',', ".") };
+    t.parse().ok()
+}
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod grade_tests;

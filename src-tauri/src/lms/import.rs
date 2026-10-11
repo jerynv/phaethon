@@ -19,18 +19,20 @@ use url::Url;
 use super::html::{self, FoundLink};
 use super::store::{self, CourseState, Due, FileRec, LinkRec};
 use super::textbooks::{self, Isbn};
-use super::{Course, CourseContent, LmsError, MAX_DOWNLOAD, Session, names, text};
+use super::{Course, CourseContent, CourseGrades, GradeItem, LmsError, MAX_DOWNLOAD, Session, names, text};
 
 pub struct Options {
     /// Largest single download.
     pub max_download: u64,
     /// Most links out of one course that are fetched (the rest are listed).
     pub max_links: usize,
+    /// The course's grades, read just before (written as grades.md); `None` keeps any grades.md already there.
+    pub grades: Option<CourseGrades>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { max_download: MAX_DOWNLOAD, max_links: 80 }
+        Options { max_download: MAX_DOWNLOAD, max_links: 80, grades: None }
     }
 }
 
@@ -53,7 +55,8 @@ pub const STEP_READINGS: &str = "readings";
 pub const STEP_WRITING: &str = "writing";
 
 const README: &str = "README.md";
-const FIXED: &[&str] = &[README, "syllabus.md", "assignments.md", "announcements.md", "modules.md", "links.md", "pages", "files", "readings"];
+const GRADES_MD: &str = "grades.md";
+const FIXED: &[&str] = &[README, GRADES_MD, "syllabus.md", "assignments.md", "announcements.md", "modules.md", "links.md", "pages", "files", "readings"];
 /// Most of an HTML page read for its title or a book's PDF link.
 const MAX_PAGE: usize = 2 * 1024 * 1024;
 const INDEX_LIST_MAX: usize = 200;
@@ -776,14 +779,21 @@ pub async fn import_course(
         write("links.md", &s)?;
     }
 
+    if let Some(g) = &opts.grades {
+        write(GRADES_MD, &grades_markdown(&course.name, g))?;
+    }
+
     // ---- README. ----
+    // The same thing can be skipped twice (two outside tools with one name): say it once.
+    let mut said = HashSet::new();
+    skipped.retain(|k| said.insert(k.clone()));
     let isbns: Vec<Isbn> = texts.iter().flat_map(|t| textbooks::isbns(t)).fold(vec![], |mut acc: Vec<Isbn>, i| {
         if !acc.iter().any(|a| a.isbn == i.isbn) {
             acc.push(i);
         }
         acc
     });
-    let readme = readme(course, session, &content, &assignments, &seen, &links_state, &isbns, &files_state, &planned, &page_paths, &skipped, &root);
+    let readme = readme(course, session, &content, &assignments, &seen, &links_state, &isbns, &files_state, &planned, &page_paths, &skipped, &root, opts.grades.as_ref());
     write(README, &readme)?;
     progress(STEP_WRITING, 1, 1);
 
@@ -816,6 +826,7 @@ fn readme(
     pages: &[PathBuf],
     skipped: &[String],
     root: &Path,
+    grades: Option<&CourseGrades>,
 ) -> String {
     let mut s = format!("# {}\n\n", one_line(&course.name));
     let facts: Vec<String> = [course.code.clone(), course.term.clone()].into_iter().flatten().collect();
@@ -827,6 +838,10 @@ fn readme(
         session.site.base.as_str().trim_end_matches('/'),
         store::display_time(store::now_secs())
     ));
+    if let Some(line) = readme_grades_line(grades, root.join(GRADES_MD).is_file()) {
+        s.push_str(&line);
+        s.push_str("\n\n");
+    }
 
     s.push_str("## Coming up\n\n");
     let now = store::now_secs();
@@ -929,6 +944,9 @@ fn readme(
     if !assignments.is_empty() {
         s.push_str(&format!("- [assignments.md](assignments.md): {} by due date\n", count(assignments.len(), "assignment", "assignments")));
     }
+    if grades.is_some() || root.join(GRADES_MD).is_file() {
+        s.push_str("- [grades.md](grades.md): your grades, by group\n");
+    }
     if !content.announcements.is_empty() {
         s.push_str(&format!("- [announcements.md](announcements.md): {}, newest first\n", count(content.announcements.len(), "announcement", "announcements")));
     }
@@ -966,6 +984,135 @@ fn readme(
         }
     }
     s
+}
+
+// ---- Grades -----------------------------------------------------------------
+
+/// README's line about grades: the grade so far and a link to grades.md.
+fn readme_grades_line(grades: Option<&CourseGrades>, file_there: bool) -> Option<String> {
+    match grades {
+        Some(g) => Some(match (store::grade_words(&g.current), &g.note) {
+            (Some(w), _) => format!("**Grades**: {w} so far. Every grade, by group: [grades.md](grades.md)."),
+            (None, Some(note)) => format!("**Grades**: {note} See [grades.md](grades.md)."),
+            (None, None) => "**Grades**: no course grade yet. What’s been graded: [grades.md](grades.md).".into(),
+        }),
+        None if file_there => Some("**Grades**: [grades.md](grades.md) (from the last time they could be read).".into()),
+        None => None,
+    }
+}
+
+/// grades.md: the course grade, then each group (with its weight) and its items.
+pub fn grades_markdown(course: &str, g: &CourseGrades) -> String {
+    let mut s = format!("# Grades: {}\n\n", one_line(course));
+    s.push_str(&format!(
+        "Read from the course site on {}. Only grades the course has released to you are here; the rest show as not graded yet.\n\n",
+        store::display_time(store::now_secs())
+    ));
+    if let Some(note) = &g.note {
+        s.push_str(&format!("{note}\n\n"));
+    }
+    if let Some(w) = store::grade_words(&g.current) {
+        let pts = match (g.current.points, g.current.possible) {
+            (Some(p), Some(of)) if g.current.percent.is_some() || g.current.letter.is_some() => format!(", {} of {} points", store::num(p), store::num(of)),
+            _ => String::new(),
+        };
+        s.push_str(&format!("**Current grade: {w}**{pts} (counting only what’s been graded).\n\n"));
+    }
+    if let Some(w) = g.final_grade.as_ref().and_then(store::grade_words) {
+        s.push_str(&format!("Final grade if nothing more is graded (work not graded counts as zero): {w}.\n\n"));
+    }
+    let mut sections: Vec<(String, Option<f64>, Vec<&GradeItem>)> = g.groups.iter().map(|gr| (gr.name.clone(), gr.weight, vec![])).collect();
+    let mut other: Vec<&GradeItem> = vec![];
+    for it in &g.items {
+        match it.group.as_ref().and_then(|n| sections.iter_mut().find(|(name, _, _)| name == n)) {
+            Some((_, _, list)) => list.push(it),
+            None => other.push(it),
+        }
+    }
+    if !other.is_empty() {
+        sections.push((if sections.is_empty() { "Graded work".into() } else { "Other".into() }, None, other));
+    }
+    for (name, weight, items) in sections {
+        match weight {
+            Some(w) => s.push_str(&format!("## {} ({}% of the grade)\n\n", one_line(&name), store::num(w))),
+            None => s.push_str(&format!("## {}\n\n", one_line(&name))),
+        }
+        if items.is_empty() {
+            s.push_str("Nothing here yet.\n\n");
+            continue;
+        }
+        for it in items {
+            s.push_str(&format!("- **{}**: {}\n", one_line(&it.title).replace('*', "\\*"), item_words(it)));
+            for c in &it.comments {
+                s.push_str(&format!("  - Teacher’s comment: {}\n", one_line(c)));
+            }
+        }
+        s.push('\n');
+    }
+    s.trim_end().to_string() + "\n"
+}
+
+fn item_words(it: &GradeItem) -> String {
+    let mut parts = vec![];
+    if it.excused {
+        parts.push("excused (doesn’t count)".to_string());
+    } else if let Some(sc) = it.score {
+        let mut w = match it.possible {
+            Some(p) => format!("{} / {}", store::num(sc), store::num(p)),
+            None => format!("{} points", store::num(sc)),
+        };
+        if let Some(pc) = it.percent {
+            w.push_str(&format!(" ({}%)", store::num(pc)));
+        }
+        if let Some(gr) = &it.grade {
+            w.push_str(&format!(", {gr}"));
+        }
+        parts.push(w);
+    } else if let Some(gr) = &it.grade {
+        parts.push(gr.clone());
+    } else {
+        parts.push(match it.possible {
+            Some(p) => format!("not graded yet (out of {})", store::num(p)),
+            None => "not graded yet".into(),
+        });
+    }
+    if let Some(t) = it.due.as_deref().and_then(store::parse_time) {
+        parts.push(format!("due {}", store::display_time(t)));
+    }
+    if it.missing {
+        parts.push("missing".into());
+    }
+    if it.late {
+        parts.push("late".into());
+    }
+    if it.submitted && !it.graded {
+        parts.push("handed in, not graded yet".into());
+    }
+    parts.join(" · ")
+}
+
+/// Write grades.md into a course folder that's already there (a grades refresh),
+/// and put the grades line in its README (replacing the old one).
+pub fn write_grades(course_dir: &Path, course: &str, g: &CourseGrades) -> Result<(), String> {
+    names::write(course_dir, Path::new(GRADES_MD), grades_markdown(course, g).as_bytes()).map_err(|e| format!("grades.md couldn’t be written: {e}"))?;
+    let readme_path = course_dir.join(README);
+    if std::fs::symlink_metadata(&readme_path).is_ok_and(|m| m.is_file())
+        && let Ok(text) = std::fs::read_to_string(&readme_path)
+    {
+        let line = readme_grades_line(Some(g), true).unwrap_or_default();
+        let updated = match text.lines().position(|l| l.starts_with("**Grades**:")) {
+            Some(n) => text.lines().enumerate().map(|(i, l)| if i == n { line.as_str() } else { l }).collect::<Vec<_>>().join("\n") + "\n",
+            // Before the first section ("## Coming up").
+            None => match text.find("\n\n## ") {
+                Some(at) => format!("{}\n\n{line}{}", &text[..at], &text[at..]),
+                None => format!("{text}\n{line}\n"),
+            },
+        };
+        if updated != text {
+            names::write(course_dir, Path::new(README), updated.as_bytes()).map_err(|e| format!("README.md couldn’t be updated: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 fn looks_like_document(u: &Url) -> bool {

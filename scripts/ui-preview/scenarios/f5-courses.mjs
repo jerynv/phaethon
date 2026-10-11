@@ -151,7 +151,7 @@ export default [
         said: document.querySelector("[data-import-status]")?.textContent,
       }));
       check(done.courses.map((c) => c[1]).join() === "done,failed,done", "two imported, one failed", JSON.stringify(done.courses));
-      check(done.courses[1][2].startsWith("Not imported. Calculus II couldn’t be read"), "the failed course says why", done.courses[1][2]);
+      check(done.courses[1][2] === "Not imported. The site said you don’t have access to it any more.", "the failed course says why, without repeating its name", done.courses[1][2]);
       check(done.said?.endsWith("2 of 3 courses imported into School."), "the end is said politely", done.said);
       await h.shot("summary");
     },
@@ -309,6 +309,29 @@ export default [
     },
   },
   {
+    // The core says "signedOut" when the session ends mid-import: plain words, not the code.
+    name: "f5-signed-out-midway",
+    sizes: [[1100, 720]],
+    mock: { ...connected({ signedOutAt: "103", failCourse: undefined }) },
+    async run(page, h) {
+      await openFromPalette(page);
+      await page.click('[data-existing-site="c1"]');
+      await waitStep(page, "choose");
+      await page.waitForSelector("[data-course-list]", { timeout: 3000 });
+      await page.click('[data-course="103"]');
+      await page.click("[data-import-start]");
+      await waitStep(page, "progress");
+      await waitFor(page, () => !!document.querySelector('[data-import-course="103"][data-state="failed"]'), undefined, 6000);
+      const shown = await page.evaluate(() => document.querySelector("[role=dialog]").textContent);
+      check(!/signedOut/.test(shown), "the code never reaches the screen", shown);
+      check(/signed out of your course site partway through\. Sign in again, then import again/.test(shown), "it says what happened and what to do", shown);
+      const course = await page.$eval('[data-import-course="103"] [data-course-status]', (e) => e.textContent);
+      check(course === "Not imported. You were signed out before this one.", "the course it stopped on says so, briefly (the alert says what to do)", course);
+      await h.idle();
+      await h.shot("stopped");
+    },
+  },
+  {
     name: "f5-progress",
     sizes: [[1100, 720], [640, 480]],
     mock: { ...connected({ step: 350 }) },
@@ -327,7 +350,7 @@ export default [
         const b = document.querySelector('[data-import-course="101"] [role="progressbar"]');
         return { now: b.getAttribute("aria-valuenow"), max: b.getAttribute("aria-valuemax"), text: b.getAttribute("aria-valuetext"), name: document.getElementById(b.getAttribute("aria-labelledby"))?.textContent };
       });
-      check(bar.max === "4" && bar.text === "Downloading files, step 3 of 4" && bar.name === "Discrete Structures for Computer Science", "a determinate bar per course, named by it", JSON.stringify(bar));
+      check(bar.max === "4" && bar.text === "Downloading files: 2 of 4" && bar.name === "Discrete Structures for Computer Science", "a determinate bar per course, named by it", JSON.stringify(bar));
       const quiet = await page.evaluate(() => document.querySelector("[data-import-status]").textContent);
       check(quiet === "", "steps are not announced", quiet);
       await h.shot("running");

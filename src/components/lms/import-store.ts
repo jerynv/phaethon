@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 
-import { importCourses, type ImportEvent, type LmsCourse } from "@/lib/lms";
+import { lmsImport, type LmsImportEvent, type LmsCourse } from "@/lib/lms";
+
+import { isSignedOut } from "./sites";
 
 // ---- Opening the dialog ----
 
@@ -55,7 +57,13 @@ export type Run = {
   status: "running" | "done" | "failed";
   /** Why the whole import stopped (status "failed"). */
   error?: string;
+  /** Things the core said that aren't about one course ("some courses aren't on the site any more"). */
+  notes?: string[];
 };
+
+/** Said when the session ends partway: the rest waits for a new sign-in. */
+export const SIGNED_OUT_DURING_IMPORT =
+  "You were signed out of your course site partway through. Sign in again, then import again: what’s already here stays, and only what changed is downloaded.";
 
 let run: Run | null = null;
 let runKey = 1;
@@ -103,17 +111,17 @@ export function startImport(
   setRun({ key, space, connection, school, status: "running", courses: courses.map((c) => ({ id: c.id, name: c.name, done: 0, total: 0 })) });
   const mine = () => (run?.key === key ? run : null);
 
-  function finish(status: Run["status"], error?: string) {
+  function finish(status: Run["status"], error?: string, courseWhy?: string) {
     const r = mine();
     if (!r || r.status !== "running") return;
     // A course that never reported back wasn't imported.
-    const courses = r.courses.map((c) => (c.result || c.failed ? c : { ...c, step: undefined, failed: error ?? "It wasn’t imported." }));
+    const courses = r.courses.map((c) => (c.result || c.failed ? c : { ...c, step: undefined, failed: courseWhy ?? error ?? "It wasn’t imported." }));
     const next = { ...r, courses, status, error };
     setRun(next);
     hooks.onEnd?.(next);
   }
 
-  function onEvent(e: ImportEvent) {
+  function onEvent(e: LmsImportEvent) {
     const r = mine();
     if (!r || r.status !== "running") return;
     if (e.type === "progress") {
@@ -130,10 +138,18 @@ export function startImport(
       const c = next.courses.find((x) => x.id === e.course);
       if (c) hooks.onCourse?.(c);
     } else if (e.type === "error") {
-      // About the course being worked on: it failed, the rest go on. Otherwise the whole import stopped.
+      // The session ended: the import stopped there.
+      if (isSignedOut(e.message)) return finish("failed", SIGNED_OUT_DURING_IMPORT, "You were signed out before this one.");
+      // About the course being worked on: it failed, the rest go on. Otherwise a note
+      // about the whole import, which goes on (the core always ends with done).
       const at = working(r);
-      if (!at) return finish("failed", e.message);
-      const next = patchCourse(r, at.id, (c) => ({ ...c, step: undefined, failed: e.message }));
+      if (!at) return setRun({ ...r, notes: [...(r.notes ?? []), e.message] });
+      // The core names the course first ("Calculus II: …"); its row already does.
+      const why = (name: string) => {
+        const rest = e.message.startsWith(`${name}: `) ? e.message.slice(name.length + 2) : e.message;
+        return rest.charAt(0).toUpperCase() + rest.slice(1);
+      };
+      const next = patchCourse(r, at.id, (c) => ({ ...c, step: undefined, failed: why(c.name) }));
       setRun(next);
       const c = next.courses.find((x) => x.id === at.id);
       if (c) hooks.onCourse?.(c);
@@ -142,7 +158,7 @@ export function startImport(
     }
   }
 
-  importCourses(
+  lmsImport(
     space,
     connection,
     courses.map((c) => c.id),

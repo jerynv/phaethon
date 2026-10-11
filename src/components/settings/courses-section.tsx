@@ -5,7 +5,7 @@ import { connectionName, hostOf, kindLabel, plural, whenText } from "@/component
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { disconnectLms, listConnections, type Connection } from "@/lib/lms";
+import { lmsDisconnect, lmsConnections, type LmsConnection } from "@/lib/lms";
 import { useSpaces, type Space } from "@/lib/spaces";
 
 import { SectionHeader, SettingGroup } from "./controls";
@@ -35,7 +35,7 @@ export function CoursesSection({ headingId }: { headingId: string }) {
 }
 
 function SpaceSites({ space }: { space: Space }) {
-  const [list, setList] = useState<Connection[] | null>(null);
+  const [list, setList] = useState<LmsConnection[] | null>(null);
   const [error, setError] = useState("");
   const importRef = useRef<HTMLButtonElement>(null);
   const run = useRun();
@@ -43,7 +43,7 @@ function SpaceSites({ space }: { space: Space }) {
   const changed = useSitesVersion();
 
   const load = useCallback(() => {
-    listConnections(space.id).then(
+    lmsConnections(space.id).then(
       (cs) => {
         setList(cs);
         setError("");
@@ -92,7 +92,7 @@ function SpaceSites({ space }: { space: Space }) {
   );
 }
 
-function SiteRow({ space, connection: c, onGone }: { space: Space; connection: Connection; onGone: () => void }) {
+function SiteRow({ space, connection: c, onGone }: { space: Space; connection: LmsConnection; onGone: () => void }) {
   const { say, fail } = useStatus();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -110,7 +110,7 @@ function SiteRow({ space, connection: c, onGone }: { space: Space; connection: C
   async function signOut() {
     setBusy(true);
     try {
-      await disconnectLms(space.id, c.id);
+      await lmsDisconnect(space.id, c.id);
       say(`Signed out of ${name}. ${n ? `The ${plural(n, "course", "courses")} already imported stay in ${space.name}.` : ""}`.trim());
       onGone();
     } catch (e) {

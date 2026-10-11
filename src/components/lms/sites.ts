@@ -1,4 +1,4 @@
-import type { Connection, LmsKind } from "@/lib/lms";
+import type { LmsConnection, LmsKind } from "@/lib/lms";
 
 /** The four course sites, in the order they are offered, with where people usually find theirs. */
 export const KINDS: { kind: LmsKind; label: string; hint: string; example: string }[] = [
@@ -20,7 +20,7 @@ export function hostOf(address: string): string {
 }
 
 /** What a connection is called: its school's name when known, its address otherwise. */
-export const connectionName = (c: Pick<Connection, "schoolName" | "address">) => c.schoolName || hostOf(c.address);
+export const connectionName = (c: Pick<LmsConnection, "schoolName" | "address">) => c.schoolName || hostOf(c.address);
 
 /**
  * Check an address typed by hand, as the core will (an https origin): the

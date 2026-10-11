@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { listConnections } from "@/lib/lms";
+import { lmsConnections } from "@/lib/lms";
 import { inTauri } from "@/lib/tauri";
 
 import { openCourseImport, useRun, useSitesVersion } from "./import-store";
@@ -19,7 +19,7 @@ export function CoursesSuggestion({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     if (!inTauri()) return;
     let live = true;
-    listConnections(spaceId).then(
+    lmsConnections(spaceId).then(
       (cs) => live && setNone(cs.length === 0),
       () => {},
     );

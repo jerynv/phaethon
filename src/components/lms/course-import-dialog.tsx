@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { fieldClasses, Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
-import { connectLms, listConnections, listCourses, listSchools, type Connection, type LmsCourse, type LmsKind, type School } from "@/lib/lms";
+import { lmsConnect, lmsConnections, lmsCourses, lmsSchools, type LmsConnection, type LmsCourse, type LmsKind, type LmsSchool } from "@/lib/lms";
 import type { Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import { openSpaceFile } from "@/runtime/records";
@@ -133,9 +133,9 @@ function Flow({
   const [step, setStep] = useState<Step>(showRun ? "progress" : req.connection ? (req.at === "signin" ? "signin" : req.at === "sync" ? "loading" : "choose") : "kind");
   const numbered = useRef(step === "kind");
   const [space] = useState(req.space);
-  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [connections, setConnections] = useState<LmsConnection[] | null>(null);
   const [site, setSite] = useState<Site | null>(null);
-  const [connection, setConnection] = useState<Connection | null>(null);
+  const [connection, setConnection] = useState<LmsConnection | null>(null);
   /** Why the sign-in step shows: the session expired, or another space needs its own. */
   const [signinReason, setSigninReason] = useState<"signedOut" | { space: string } | null>(req.at === "signin" ? "signedOut" : null);
   /** Courses waiting on a sign-in for another space before they import. */
@@ -160,7 +160,7 @@ function Flow({
   // The space's course sites: offered first, and the one asked for by id.
   useEffect(() => {
     let live = true;
-    listConnections(space).then(
+    lmsConnections(space).then(
       (cs) => {
         if (!live) return;
         setConnections(cs);
@@ -182,9 +182,9 @@ function Flow({
   }, []);
 
   /** Import again: the courses imported before, as they are on the site now. */
-  async function sync(c: Connection) {
+  async function sync(c: LmsConnection) {
     try {
-      const all = await listCourses(space, c.id);
+      const all = await lmsCourses(space, c.id);
       const chosen = all.filter((x) => c.courses.includes(x.id));
       if (!chosen.length) {
         setStep("choose");
@@ -222,7 +222,7 @@ function Flow({
     else if (step === "choose") go("kind");
   }
 
-  function begin(target: string, c: Connection, courses: Pick<LmsCourse, "id" | "name">[]) {
+  function begin(target: string, c: LmsConnection, courses: Pick<LmsCourse, "id" | "name">[]) {
     const ok = startImport(target, c.id, connectionName(c), courses);
     if (!ok) {
       say("Another import is still running. It shows here.");
@@ -230,7 +230,7 @@ function Flow({
     go("progress");
   }
 
-  function onSignedIn(c: Connection) {
+  function onSignedIn(c: LmsConnection) {
     sitesChanged();
     setConnection(c);
     setSite({ kind: c.kind, address: c.address, schoolName: c.schoolName });
@@ -318,7 +318,7 @@ function Flow({
         onImport={async (target, courses) => {
           if (target === space) return begin(space, connection, courses);
           // Each space keeps its own sign-in: use the target's own connection to this site, or sign in for it.
-          const theirs = await listConnections(target).catch(() => [] as Connection[]);
+          const theirs = await lmsConnections(target).catch(() => [] as LmsConnection[]);
           const same = theirs.find((c) => c.kind === connection.kind && hostOf(c.address) === hostOf(connection.address));
           if (same?.signedIn) return begin(target, same, courses);
           pendingImport.current = { space: target, courses };
@@ -445,9 +445,9 @@ function KindStep({
   ...frame
 }: FrameProps & {
   spaceName: string;
-  connections: Connection[] | null;
+  connections: LmsConnection[] | null;
   initial: LmsKind | null;
-  onExisting: (c: Connection) => void;
+  onExisting: (c: LmsConnection) => void;
   onNext: (kind: LmsKind) => void;
 }) {
   const [kind, setKind] = useState<LmsKind | null>(initial);
@@ -685,8 +685,8 @@ function SchoolSearch({
   children?: ReactNode;
 }) {
   const [query, setQuery] = useState(site.schoolName ?? "");
-  const [picked, setPicked] = useState<School | null>(site.schoolName ? { name: site.schoolName, address: site.address } : null);
-  const [state, setState] = useState<{ status: "idle" | "searching" } | { status: "ready"; results: School[]; query: string } | { status: "error"; message: string }>({ status: "idle" });
+  const [picked, setPicked] = useState<LmsSchool | null>(site.schoolName ? { name: site.schoolName, address: site.address } : null);
+  const [state, setState] = useState<{ status: "idle" | "searching" } | { status: "ready"; results: LmsSchool[]; query: string } | { status: "error"; message: string }>({ status: "idle" });
   const [active, setActive] = useState(0);
   const [error, setError] = useState("");
   const id = useId();
@@ -706,7 +706,7 @@ function SchoolSearch({
     const mine = ++seq.current;
     setState((s) => (s.status === "ready" ? s : { status: "searching" }));
     const t = setTimeout(() => {
-      listSchools(site.kind, q).then(
+      lmsSchools(site.kind, q).then(
         (results) => {
           if (seq.current !== mine) return;
           setState({ status: "ready", results, query: q });
@@ -728,7 +728,7 @@ function SchoolSearch({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, listed]);
 
-  function pick(s: School | undefined) {
+  function pick(s: LmsSchool | undefined) {
     if (!s) return;
     setPicked(s);
     setQuery(s.name);
@@ -776,7 +776,7 @@ function SchoolSearch({
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <label htmlFor={id} className="text-base font-medium text-ink">
-          School
+          LmsSchool
         </label>
         <div className="relative">
           <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-ink-secondary" />
@@ -878,7 +878,7 @@ function SignInStep({
   spaceName: string;
   reason: "signedOut" | { space: string } | null;
   onBack: () => void;
-  onSignedIn: (c: Connection) => void;
+  onSignedIn: (c: LmsConnection) => void;
 }) {
   const [waiting, setWaiting] = useState(false);
   const [problem, setProblem] = useState<{ tone: "danger" | "warning"; text: string } | null>(null);
@@ -895,7 +895,7 @@ function SignInStep({
     setWaiting(true);
     requestAnimationFrame(() => cancelRef.current?.focus());
     try {
-      const c = await connectLms(space, site.kind, site.address);
+      const c = await lmsConnect(space, site.kind, site.address, site.schoolName);
       if (attempt.current !== mine) return;
       setWaiting(false);
       onSignedIn(c);
@@ -981,7 +981,7 @@ function ChooseStep({
 }: FrameProps & {
   space: string;
   spaces: readonly Space[];
-  connection: Connection;
+  connection: LmsConnection;
   error: string;
   onBack: () => void;
   onSignedOut: () => void;
@@ -1001,7 +1001,7 @@ function ChooseStep({
   const load = useCallback(() => {
     setLoadError("");
     setCourses(null);
-    listCourses(space, connection.id).then(
+    lmsCourses(space, connection.id).then(
       (cs) => {
         setCourses(cs);
         // Current courses not imported yet start checked; past ones and ones already here don't.
@@ -1282,6 +1282,11 @@ function ProgressStep({
         </p>
       </StepHead>
       {run.status === "failed" && run.error && <Alert>{run.error}</Alert>}
+      {run.notes?.map((n) => (
+        <p key={n} data-import-note="">
+          {n}
+        </p>
+      ))}
       {showError && <Alert>{showError}</Alert>}
       <ul className="flex flex-col gap-2" aria-label="Courses" data-import-list="">
         {run.courses.map((c) => (
@@ -1298,6 +1303,18 @@ function ProgressStep({
       </Footer>
     </div>
   );
+}
+
+/** What the core is doing for a course, in words ("Downloading files: 3 of 12"). */
+const STEP_WORDS: Record<string, string> = {
+  reading: "Reading the course",
+  files: "Downloading files",
+  readings: "Downloading readings",
+  writing: "Writing the course folder",
+};
+function stepText(c: CourseRun): string {
+  const words = STEP_WORDS[c.step ?? ""] ?? c.step ?? "";
+  return c.total > 1 ? `${words}: ${Math.min(c.done, c.total)} of ${c.total}` : words;
 }
 
 const askText = (c: CourseRun) => `What’s coming up in ${c.name}, and what should I read first?`;
@@ -1327,7 +1344,7 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
               : state === "failed"
                 ? `Not imported. ${c.failed}`
                 : state === "working"
-                  ? c.step
+                  ? stepText(c)
                   : running
                     ? "Waiting"
                     : "Not imported."}
@@ -1341,7 +1358,7 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
           aria-valuemin={0}
           aria-valuemax={total}
           aria-valuenow={Math.min(c.done, total)}
-          aria-valuetext={state === "waiting" ? "Waiting" : `${c.step ?? ""}, step ${Math.min(c.done + 1, total)} of ${total}`}
+          aria-valuetext={state === "waiting" ? "Waiting" : stepText(c)}
           className="h-1.5 overflow-hidden rounded-full bg-surface-sunken forced-colors:border forced-colors:border-[CanvasText]"
         >
           <div

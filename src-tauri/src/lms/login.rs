@@ -24,6 +24,31 @@ const LIMIT: Duration = Duration::from_secs(30 * 60);
 
 static OPEN: AtomicBool = AtomicBool::new(false);
 
+/// Dev builds: report a page's errors and what it drew through its title (see `sign_in`).
+const PAGE_PROBE: &str = r#"(() => {
+  if (window.top !== window) return;
+  const q = [];
+  let busy = false;
+  const pump = () => {
+    if (busy || !q.length) return;
+    busy = true;
+    document.title = "[phaethon-probe] " + q.shift();
+    setTimeout(() => { busy = false; pump(); }, 60);
+  };
+  const say = (m) => { q.push(String(m).replace(/\?[^\s]*/g, "").slice(0, 400)); pump(); };
+  window.addEventListener("error", (e) => {
+    const t = e.target;
+    if (t && t !== window && (t.src || t.href)) say("failed to load " + t.tagName + " " + (t.src || t.href));
+    else say("error: " + e.message + " at " + (e.filename || "") + ":" + e.lineno);
+  }, true);
+  window.addEventListener("unhandledrejection", (e) => say("rejection: " + ((e.reason && e.reason.message) || e.reason)));
+  document.addEventListener("securitypolicyviolation", (e) => say("blocked by the page's policy: " + e.violatedDirective + " " + e.blockedURI));
+  const ce = console.error;
+  console.error = function (...a) { say("console.error: " + a.map(String).join(" ")); return ce.apply(this, a); };
+  const report = (when) => say(when + ": " + (document.body ? document.body.innerText.trim().length : -1) + " characters of text, " + document.querySelectorAll("*").length + " elements, " + document.querySelectorAll("iframe").length + " frames, agent " + navigator.userAgent);
+  window.addEventListener("load", () => { setTimeout(() => report("1s after load"), 1000); setTimeout(() => report("5s after load"), 5000); });
+})();"#;
+
 #[cfg(target_os = "macos")]
 const SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 
@@ -141,6 +166,18 @@ pub async fn sign_in(app: &AppHandle, site: &Site, title: &str, store_id: [u8; 1
                 let _ = on_load.send(Msg::Check);
             }
         });
+    // Dev builds only: what goes wrong inside a sign-in page (script errors, blocked
+    // loads, an empty page) reaches the dev log through the page title, the one thing
+    // a window with no capabilities can say. Nothing like this ships.
+    let builder = if cfg!(debug_assertions) {
+        builder.initialization_script(PAGE_PROBE).on_document_title_changed(|_, t| {
+            if let Some(m) = t.strip_prefix("[phaethon-probe] ") {
+                eprintln!("[lms-login] page: {m}");
+            }
+        })
+    } else {
+        builder
+    };
     #[cfg(target_os = "macos")]
     let builder = {
         let _ = &data_dir;

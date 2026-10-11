@@ -1,0 +1,49 @@
+{
+ "results": [
+  {
+   "id": "_6_1",
+   "parentId": "_1_1",
+   "title": "Readings",
+   "body": "",
+   "position": 0,
+   "hasChildren": true,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-lesson"
+   }
+  },
+  {
+   "id": "_7_1",
+   "parentId": "_1_1",
+   "title": "Welcome",
+   "body": "<p>See <a href=\"/bbcswebdav/pid-7-dt-content-rid-77_1/xid-77_1\">Week 1 slides.pdf</a> and <img src=\"@X@EmbeddedFile.requestUrlStub@X@bbcswebdav/xid-78_1\"> and <a href=\"https://elsewhere.example.org/bbcswebdav/x.pdf\">mirror</a>.</p>",
+   "position": 1,
+   "hasChildren": false,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-document"
+   }
+  },
+  {
+   "id": "_8_1",
+   "parentId": "_1_1",
+   "title": "Quiz 1",
+   "body": "",
+   "position": 2,
+   "hasChildren": false,
+   "hasGradebookColumns": true,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-asmt-test-link",
+    "assessmentId": "_55_1",
+    "gradeColumnId": "_302_1"
+   }
+  }
+ ]
+}

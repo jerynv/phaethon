@@ -275,6 +275,22 @@ fn read_small(root: &Path, rel: &Path) -> io::Result<Option<String>> {
 
 #[cfg(test)]
 mod tests {
+    /// What the planner writes is what the flashcard scheduler reads (study::schedule).
+    #[test]
+    fn the_planners_exams_cap_the_cards_schedule() {
+        let written = serde_json::to_string(&vec![Exam {
+            id: "e1".into(),
+            course: Some("CSCI-C 241 Fall 2026 (All Sections)".into()),
+            title: "Test 1".into(),
+            date: "2026-10-15".into(),
+        }])
+        .unwrap();
+        let read: Vec<crate::study::schedule::Exam> = serde_json::from_str(&written).unwrap();
+        assert_eq!(read[0].date, "2026-10-15");
+        assert!(crate::study::schedule::same_course(read[0].course.as_deref().unwrap(), "CSCI-C 241 Fall 2026 (All Sections)"));
+        assert!(crate::study::schedule::exam_start(&read[0].date, 0).is_some());
+    }
+
     use super::*;
     use std::fs;
     use std::path::PathBuf;

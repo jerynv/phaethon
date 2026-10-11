@@ -80,7 +80,16 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
     if (!req || req.space !== space.id || handled.current === req.key) return;
     handled.current = req.key;
     if (req.what === "due") setScreen({ at: "session", paths: null, title: "Everything due" });
-    else {
+    else if (req.what === "review") {
+      // A deck by its title: its path from the overview; unknown → the hub, where the decks are.
+      void studyOverview(space.id).then(
+        (o) => {
+          const d = o.decks.find((x) => x.title === req.deck);
+          setScreen(d ? { at: "session", paths: [d.path], title: d.title } : { at: "hub" });
+        },
+        () => setScreen({ at: "hub" }),
+      );
+    } else {
       setScreen({ at: "hub" });
       openMake(req.what);
     }

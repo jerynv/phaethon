@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { goToCard, isJumpKey } from "@/components/chat/card-arrival";
 import { useModelCommands } from "@/components/chat/model-picker";
+import { useTutorModeCommands } from "@/components/chat/tutor-mode";
 import { SpacePane } from "@/components/chat/space-pane";
 import { CourseImport } from "@/components/lms/course-import-dialog";
 import { openCourseImport } from "@/components/lms/import-store";
@@ -92,6 +93,7 @@ export default function App() {
   const focused = useWindowFocused();
   const hasSettings = inTauri();
   const modelCommands = useModelCommands(active);
+  const tutorCommands = useTutorModeCommands(active);
 
   // Every space visited stays mounted (hidden while another is shown), so a
   // reply keeps running, a card keeps waiting and a draft keeps its words.
@@ -409,6 +411,7 @@ export default function App() {
           run: () => requestStudy(active.id, "quiz"),
         },
       );
+      list.push(...tutorCommands);
       list.push({
         id: "search-conversations",
         group: "Actions",
@@ -499,7 +502,7 @@ export default function App() {
       }
     }
     return list;
-  }, [spaces, shownId, active, goToSpace, openNewSpace, sidebarOpen, toggleSidebar, hasSettings, modelCommands, wide, toggleWide]);
+  }, [spaces, shownId, active, goToSpace, openNewSpace, sidebarOpen, toggleSidebar, hasSettings, modelCommands, tutorCommands, wide, toggleWide]);
 
   return (
     <TooltipProvider>

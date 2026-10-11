@@ -60,14 +60,15 @@ export function focusView(space: string, view: SpaceView): void {
 
 // ---- Requests into the Study view (from the palette) ----
 
-export type StudyRequest = { space: string; what: "deck" | "quiz" | "due"; key: number };
+/** "review" studies one deck, named by its title (the planner knows decks by title). */
+export type StudyRequest = { space: string; what: "deck" | "quiz" | "due" | "review"; deck?: string; key: number };
 let request: StudyRequest | null = null;
 let nextKey = 1;
 const requestListeners = new Set<() => void>();
 
 /** Open Study in `space` and start making a deck or a quiz, or a review of everything due. */
-export function requestStudy(space: string, what: StudyRequest["what"]): void {
-  request = { space, what, key: nextKey++ };
+export function requestStudy(space: string, what: StudyRequest["what"], deck?: string): void {
+  request = { space, what, deck, key: nextKey++ };
   setSpaceView(space, "study");
   requestListeners.forEach((l) => l());
 }

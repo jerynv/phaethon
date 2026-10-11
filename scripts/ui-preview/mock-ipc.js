@@ -401,7 +401,7 @@
         }
         // lms grades (Grades core). As src/lib/lms.ts (CourseGradeView, LmsGradesEvent). M.lmsGrades: { [space]: CourseGradeView[] }
         // (default: three courses of the space's first connection), M.lmsGradesSignedOut (refresh ends "signedOut"),
-        // M.lmsGradesFail (a course id whose refresh fails), M.lmsGradesStep (ms).
+        // M.lmsGradesFail (a course id whose refresh fails), M.lmsGradesStep (ms), M.lmsGradesNewlyGraded (see the refresh).
         case "lms_grades":
         case "lms_grades_refresh": {
           if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
@@ -469,6 +469,10 @@
               continue;
             }
             g.updated = Date.now();
+            // M.lmsGradesNewlyGraded: { course, title, score, comments? } is graded by a refresh.
+            const ng = M.lmsGradesNewlyGraded;
+            const it = ng && ng.course === g.courseId && g.items.find((x) => x.title === ng.title && !x.graded);
+            if (it) Object.assign(it, { score: ng.score, percent: it.possible ? Math.round((ng.score / it.possible) * 10000) / 100 : undefined, graded: true, comments: ng.comments ?? [] });
             send({ type: "course", course: g.courseId, grades: structuredClone(g) });
           }
           send({ type: "done" });
@@ -679,6 +683,61 @@
             }
           }
           return;
+        }
+        // plan and tutor modes (UI)
+        // As src-tauri/src/plan.rs and tutor_mode.rs. M.upcoming: { space: [{ course, folder, title, dueIn (days), link }] }
+        // (dates relative to now); M.exams: { space: [...] }; M.planState: { space: {...} }; M.planSaved: { space: markdown };
+        // M.tutorModes: { space: mode }.
+        case "space_tutor_mode_set": {
+          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          if (!["normal", "quiz", "explain", "socratic", "cram"].includes(args.mode)) throw "That isn’t a tutor mode Phaethon knows.";
+          M.tutorModes ??= {};
+          if (args.mode === "normal") delete M.tutorModes[args.space];
+          else M.tutorModes[args.space] = args.mode;
+          return;
+        }
+        case "space_tutor_modes_list": return { ...(M.tutorModes ?? {}) };
+        case "plan_upcoming":
+        case "plan_exams_get":
+        case "plan_exams_set":
+        case "plan_save":
+        case "plan_state_get":
+        case "plan_state_set": {
+          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          if (cmd === "plan_upcoming") {
+            const at = (n) => { const d = new Date(); d.setHours(23, 59, 0, 0); return d.getTime() + n * 86400000; };
+            const up = M.upcoming?.[args.space] ?? (args.space === "school" ? [
+              { course: "Discrete Structures for Computer Science", folder: "Discrete Structures for Computer Science", title: "HW 5", dueIn: 4, link: "courses/Discrete Structures for Computer Science/assignments.md#hw-5" },
+              { course: "Calculus II", folder: "Calculus II", title: "Problem set 2", dueIn: 2, link: "courses/Calculus II/assignments.md#problem-set-2" },
+              { course: "Calculus II", folder: "Calculus II", title: "Reading: series", dueIn: 0, link: "courses/Calculus II/assignments.md#reading-series" },
+            ] : []);
+            const courses = M.planCourses?.[args.space] ?? [...new Map(up.map((u) => [u.folder, { name: u.course, folder: u.folder }])).values()];
+            return { courses, items: up.map(({ dueIn, ...u }) => ({ ...u, due: at(dueIn) })).sort((a, b) => a.due - b.due) };
+          }
+          M.exams ??= {};
+          if (cmd === "plan_exams_get") return [...(M.exams[args.space] ?? [])];
+          if (cmd === "plan_exams_set") {
+            const clean = args.exams.map((e) => {
+              const title = String(e.title ?? "").split(/\s+/).filter(Boolean).join(" ");
+              if (!title) throw "An exam needs a name, like “Test 1”.";
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date ?? "") || Number.isNaN(Date.parse(e.date))) throw "An exam needs a real date.";
+              const course = e.course?.trim() || undefined;
+              return { id: e.id, title, date: e.date, ...(course ? { course } : {}) };
+            });
+            clean.sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title));
+            M.exams[args.space] = clean;
+            return clean;
+          }
+          if (cmd === "plan_save") {
+            (M.planSaved ??= {})[args.space] = args.markdown;
+            return "study/plan.md";
+          }
+          M.planState ??= {};
+          if (cmd === "plan_state_get") return M.planState[args.space] ?? { studyDays: [0, 1, 2, 3, 4, 5], sessionsPerDay: 3, sessionMinutes: 25, done: [] };
+          const st = args.planState;
+          if (!st.studyDays.length) throw "Choose at least one day of the week to study on.";
+          M.planState[args.space] = { ...st, studyDays: [...new Set(st.studyDays)].sort() };
+          return M.planState[args.space];
         }
         case "agent_send": {
           M.currentSpace = args.space;

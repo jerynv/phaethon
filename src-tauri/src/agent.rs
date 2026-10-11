@@ -371,6 +371,8 @@ async fn drive(
     let mut cmd = Command::new(&bin);
     let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
     cmd.args(cli_args(resume.as_deref(), &dirs))
+        // The space's tutor mode, if any, appended to Claude Code's own system prompt.
+        .args(crate::tutor_mode::cli_args(req.space_dir))
         .current_dir(req.space_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

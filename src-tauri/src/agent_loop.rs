@@ -149,6 +149,11 @@ Once access is granted, read it with list_files, read_file or search_files using
         s.push_str("\n\n");
         s.push_str(&study);
     }
+    // The space's tutor mode (space.json), last: it shapes every answer.
+    if let Some(mode) = vault.space_dir(space_id).ok().and_then(|dir| crate::tutor_mode::prompt_section(&dir)) {
+        s.push_str("\n\n");
+        s.push_str(&mode);
+    }
     s
 }
 
@@ -1457,6 +1462,31 @@ mod tests {
         assert!(school.contains("# Courses") && school.contains("- Calculus II: courses/Calculus II/"), "{school}");
         let work = system_prompt(&dir, "work");
         assert!(!work.contains("Calculus") && !work.contains("# Courses"), "another space's courses never reach this prompt");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_prompt_carries_this_spaces_tutor_mode_only() {
+        let dir = std::env::temp_dir().join(format!("phaethon-loop-tutor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for s in ["school", "work"] {
+            std::fs::create_dir_all(dir.join("spaces").join(s)).unwrap();
+        }
+        let vault = Vault::at(&dir);
+        assert!(!system_prompt(&dir, "school").contains("# Tutor mode"), "normal adds nothing");
+        crate::tutor_mode::set(&vault, "school", crate::tutor_mode::Mode::Quiz).unwrap();
+        let school = system_prompt(&dir, "school");
+        assert!(school.contains("# Tutor mode: Quiz me") && school.contains("one question per message"), "{school}");
+        assert!(!system_prompt(&dir, "work").contains("# Tutor mode"), "another space's mode never reaches this prompt");
+
+        // Read for every model call, so a change applies from the next message.
+        let p = Scripted::new(vec![says("Question 1?"), says("What do you already know?")]);
+        run(&dir, &p, &Approvals::default(), "quiz me", |_| {});
+        crate::tutor_mode::set(&vault, "school", crate::tutor_mode::Mode::Socratic).unwrap();
+        run(&dir, &p, &Approvals::default(), "and now?", |_| {});
+        let systems = p.systems.lock().unwrap().clone();
+        assert!(systems[0].contains("# Tutor mode: Quiz me"));
+        assert!(systems[1].contains("# Tutor mode: Socratic") && !systems[1].contains("Quiz me"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

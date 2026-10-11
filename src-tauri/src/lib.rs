@@ -8,6 +8,7 @@ pub mod grants;
 pub mod lms;
 pub mod memory;
 pub mod open;
+pub mod plan;
 pub mod provider;
 pub mod search;
 pub mod secrets;
@@ -16,6 +17,7 @@ pub mod spaces;
 pub mod study;
 pub mod thread;
 pub mod tools;
+pub mod tutor_mode;
 pub mod vault;
 
 use tauri::ipc::Channel;
@@ -576,6 +578,57 @@ fn space_models_list(state: State<'_, AppState>) -> Result<std::collections::BTr
     space_model::list(&state.vault)
 }
 
+// ---- Tutor modes and the study planner (tutor_mode.rs, plan.rs) -------------
+
+/// Choose how the agent tutors in `space` (`normal`, `quiz`, `explain`,
+/// `socratic`, `cram`). Applies from the next message in that space.
+#[tauri::command]
+fn space_tutor_mode_set(state: State<'_, AppState>, space: String, mode: String) -> Result<(), String> {
+    let mode = tutor_mode::Mode::parse(&mode).ok_or("That isn’t a tutor mode Phaethon knows.")?;
+    tutor_mode::set(&state.vault, &space, mode)
+}
+
+/// Every space with a tutor mode other than normal, by space id.
+#[tauri::command]
+fn space_tutor_modes_list(state: State<'_, AppState>) -> Result<std::collections::BTreeMap<String, tutor_mode::Mode>, String> {
+    tutor_mode::list(&state.vault)
+}
+
+/// The space's imported courses and what's due from now on in them.
+#[tauri::command]
+fn plan_upcoming(state: State<'_, AppState>, space: String) -> Result<plan::UpcomingView, String> {
+    plan::upcoming(&state.vault.space_dir(&space)?, lms::store::now_secs())
+}
+
+/// The exams added in `space` (`study/exams.json`).
+#[tauri::command]
+fn plan_exams_get(state: State<'_, AppState>, space: String) -> Result<Vec<plan::Exam>, String> {
+    plan::exams_get(&state.vault.space_dir(&space)?)
+}
+
+/// Replace the exams in `space`; returns them as saved.
+#[tauri::command]
+fn plan_exams_set(state: State<'_, AppState>, space: String, exams: Vec<plan::Exam>) -> Result<Vec<plan::Exam>, String> {
+    plan::exams_set(&state.vault.space_dir(&space)?, exams)
+}
+
+/// Write the study schedule to `study/plan.md` in `space`; returns that path.
+#[tauri::command]
+fn plan_save(state: State<'_, AppState>, space: String, markdown: String) -> Result<String, String> {
+    plan::save_plan(&state.vault.space_dir(&space)?, &markdown)
+}
+
+/// The planner's settings and check-offs in `space`.
+#[tauri::command]
+fn plan_state_get(state: State<'_, AppState>, space: String) -> Result<plan::PlanState, String> {
+    Ok(plan::state_get(&state.vault.space_dir(&space)?))
+}
+
+#[tauri::command]
+fn plan_state_set(state: State<'_, AppState>, space: String, plan_state: plan::PlanState) -> Result<plan::PlanState, String> {
+    plan::state_set(&state.vault.space_dir(&space)?, plan_state)
+}
+
 /// Open a file in `space` with its default app, or show it in Finder when
 /// `reveal`. Only files inside the space itself; see open.rs.
 #[tauri::command]
@@ -823,7 +876,15 @@ pub fn run() {
             study::commands::study_quiz,
             study::commands::study_quiz_submit,
             study::commands::study_review_mistakes,
-            study::commands::study_delete
+            study::commands::study_delete,
+            space_tutor_mode_set,
+            space_tutor_modes_list,
+            plan_upcoming,
+            plan_exams_get,
+            plan_exams_set,
+            plan_save,
+            plan_state_get,
+            plan_state_set
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

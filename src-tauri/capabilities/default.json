@@ -68,6 +68,14 @@
     "allow-study-quiz",
     "allow-study-quiz-submit",
     "allow-study-review-mistakes",
-    "allow-study-delete"
+    "allow-study-delete",
+    "allow-space-tutor-mode-set",
+    "allow-space-tutor-modes-list",
+    "allow-plan-upcoming",
+    "allow-plan-exams-get",
+    "allow-plan-exams-set",
+    "allow-plan-save",
+    "allow-plan-state-get",
+    "allow-plan-state-set"
   ]
 }

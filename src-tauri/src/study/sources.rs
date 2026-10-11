@@ -174,7 +174,7 @@ pub fn courses(space: &Path) -> Vec<CourseSource> {
             })
         })
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|c| c.name.to_lowercase());
     out
 }
 

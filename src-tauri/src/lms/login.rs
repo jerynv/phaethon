@@ -24,6 +24,9 @@ const LIMIT: Duration = Duration::from_secs(30 * 60);
 
 static OPEN: AtomicBool = AtomicBool::new(false);
 
+#[cfg(target_os = "macos")]
+const SAFARI_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+
 /// The cookies a browser would send to `site`: the domain is the site's host
 /// or a parent of it, and secure ones only over https. One per name, the most
 /// specific domain winning.
@@ -141,7 +144,10 @@ pub async fn sign_in(app: &AppHandle, site: &Site, title: &str, store_id: [u8; 1
     #[cfg(target_os = "macos")]
     let builder = {
         let _ = &data_dir;
-        builder.data_store_identifier(store_id)
+        // WKWebView's own user agent names no browser, and Duo and some school sign-in
+        // pages refuse or quietly stall in a browser they don't recognise: say Safari,
+        // which is the engine this window is.
+        builder.data_store_identifier(store_id).user_agent(SAFARI_UA)
     };
     #[cfg(not(target_os = "macos"))]
     let builder = {

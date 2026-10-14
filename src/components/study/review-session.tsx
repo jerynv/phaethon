@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 import { mathAsText } from "@/lib/study-math";
 
+import { SourceLine } from "@/components/rich/citation";
+
 import { CardText, MathText } from "./card-text";
 import { baseName, clozeAnswer, CONFIDENCE, durationText, percent, plainError, plural, spokenFront } from "./words";
 
@@ -261,6 +263,7 @@ export function ReviewSession({
               <p className="text-2xl leading-normal wrap-break-word text-ink">
                 <MathText text={cloze ? clozeAnswer(card) : card.back} />
               </p>
+              {card.source && card.quote && <SourceLine space={space} cites={[{ source: card.source, quote: card.quote }]} className="mt-2" />}
             </div>
           )}
         </section>

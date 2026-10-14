@@ -34,6 +34,7 @@ import { type TextMessagePartProps, useAuiState } from "@assistant-ui/react";
 
 import { SpaceIdContext } from "@/components/chat/approval-card";
 import { useAnnounce } from "@/components/chat/announce";
+import { CitationChip } from "@/components/rich/citation";
 import { LatexDocumentCard, TikzFigure } from "@/components/rich/latex-block";
 import { MATH_REHYPE, MATH_REMARK, prepareMath } from "@/components/rich/math";
 import { MermaidDiagram } from "@/components/rich/mermaid-diagram";
@@ -44,6 +45,7 @@ import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
 import { spacePathOf } from "@/lib/files";
 import { isLatexDocument } from "@/lib/latex";
+import { citationOf, markCitations } from "@/lib/study-cite";
 import { cn } from "@/lib/utils";
 
 import { SyntaxHighlighter } from "./syntax-highlighter";
@@ -158,11 +160,12 @@ const MarkdownTextImpl: FC<MarkdownTextProps & { user?: boolean }> = ({ componen
   const [source] = useState(() => ({ current: "" }));
   const preprocess = useCallback(
     (text: string) => {
-      const out = prepareMath(text, streaming);
+      // A reply's [source: … "…"] citations become chips checked against the files (not in the person's own words).
+      const out = prepareMath(user ? text : markCitations(text), streaming);
       source.current = out;
       return out;
     },
-    [streaming, source],
+    [streaming, source, user],
   );
 
   return (
@@ -198,7 +201,7 @@ export function RichMarkdown({ text, className }: { text: string; className?: st
   return (
     <div className={cn("aui-md text-md text-ink", className)} data-rich="">
       <ReactMarkdown remarkPlugins={ASSISTANT_PLUGINS} rehypePlugins={MATH_REHYPE} components={staticComponents}>
-        {prepareMath(text)}
+        {prepareMath(markCitations(text))}
       </ReactMarkdown>
     </div>
   );
@@ -416,6 +419,8 @@ function TaskBox({ checked }: { checked: boolean }) {
 function Anchor({ className, href, children, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
   const space = useContext(SpaceIdContext);
   const base = useLinkBase();
+  const cite = citationOf(href);
+  if (cite) return <CitationChip path={cite.path} quote={cite.quote} />;
   const path = space ? spacePathOf(href, base) : null;
   if (path) {
     return (

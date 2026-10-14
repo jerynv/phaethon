@@ -2,13 +2,16 @@ import { useAuiState } from "@assistant-ui/react";
 import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { announce } from "@/components/shell/announcer";
+import { ScopeEvidence } from "@/components/study/grounding";
 import { requestStudy } from "@/components/study/space-view";
 import { needsModel, plainError } from "@/components/study/words";
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
+import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
-import { studyChatCancel, studyChatMake, studyChatPlan, type StudyEvent } from "@/lib/study";
-import { STUDY_FENCE, makeLabel, openLabel, planSentence, planTitle, questionBefore, readBlock, type StudyPlan } from "@/lib/study-chat";
+import { studyChatCancel, studyChatMake, studyChatPlan, studyScopeState, type Grounding, type StudyEvent, type UnknownScope } from "@/lib/study";
+import { STUDY_FENCE, makeLabel, openLabel, planSentence, planTitle, questionBefore, readBlock, type PlanScope, type StudyPlan } from "@/lib/study-chat";
 import { mathAsText } from "@/lib/study-math";
 
 import { SpaceIdContext } from "./approval-card";
@@ -17,9 +20,9 @@ import { SpaceIdContext } from "./approval-card";
 // its quiz is being made picks the run up again, and one plan runs once. ----
 
 type Run =
-  | { at: "running"; step: string; done: number; total: number }
-  | { at: "done"; path: string }
-  | { at: "error"; message: string }
+  | { at: "running"; step: string; done: number; total: number; kept?: number; dropped?: number }
+  | { at: "done"; path: string; grounding?: Grounding }
+  | { at: "error"; message: string; needs?: UnknownScope }
   | { at: "cancelled" };
 
 const runs = new Map<string, Run>();
@@ -40,10 +43,12 @@ function start(space: string, plan: StudyPlan, block: string, question: string, 
   if (runs.get(key)?.at === "running") return;
   setRun(key, { at: "running", step: "", done: 0, total: 0 });
   let end: Run | null = null;
+  let needs: UnknownScope | undefined;
   const onEvent = (e: StudyEvent) => {
-    if (e.type === "progress") setRun(key, { at: "running", step: e.step, done: e.done, total: e.total });
-    else if (e.type === "done" && e.path) end = { at: "done", path: e.path };
-    else if (e.type === "error") end = { at: "error", message: plainError(e.message) };
+    if (e.type === "progress") setRun(key, { at: "running", step: e.step, done: e.done, total: e.total, kept: e.kept, dropped: e.dropped });
+    else if (e.type === "done" && e.path) end = { at: "done", path: e.path, grounding: e.grounding };
+    else if (e.type === "needsScope") needs = { course: e.course, courseName: e.courseName, exam: e.exam };
+    else if (e.type === "error") end = { at: "error", message: plainError(e.message), needs };
     else if (e.type === "cancelled") end = { at: "cancelled" };
   };
   studyChatMake(space, block, question, reply, onEvent).then(
@@ -53,15 +58,24 @@ function start(space: string, plan: StudyPlan, block: string, question: string, 
   function finish(r: Run) {
     setRun(key, r);
     if (r.at === "done") {
-      announce(plan.kind === "quiz" ? "Your quiz is made. Opening it in Study." : "Your flashcards are made. Opening them in Study.");
+      const short = r.grounding && r.grounding.kept < r.grounding.asked ? ` Only ${r.grounding.kept} of ${r.grounding.asked} passed the check against your notes.` : "";
+      announce(plan.kind === "quiz" ? `Your quiz is made.${short} Opening it in Study.` : `Your flashcards are made.${short} Opening them in Study.`);
       requestStudy(space, plan.kind === "quiz" ? "take" : "cards", undefined, r.path);
     } else if (r.at === "cancelled") announce("Stopped. Nothing was made.");
   }
 }
 
-const STEP_WORDS: Record<string, (p: StudyPlan) => string> = {
-  reading: () => "Reading your course material…",
-  making: (p) => (p.kind === "quiz" ? "Writing the questions and checking the answers. This can take a minute…" : "Writing the cards. This can take a minute…"),
+type Running = Extract<Run, { at: "running" }>;
+const noun = (p: StudyPlan) => (p.kind === "quiz" ? "questions" : "cards");
+const courseOf = (p: StudyPlan) => p.scope?.courseName ?? (p.sources.length === 1 ? p.sources[0].name : "your course");
+/** Each step in plain words; a careful run takes minutes, so each says what it is doing. */
+const STEP_WORDS: Record<string, (p: StudyPlan, r: Running) => string> = {
+  mapping: (p, r) =>
+    `Mapping what ${courseOf(p)} teaches${p.exam ? ` and what ${p.exam} covers` : ""}, from its own materials${r.total > 1 ? ` (part ${Math.min(r.done + 1, r.total)} of ${r.total})` : ""}. This takes a few minutes the first time…`,
+  reading: (p) => `Finding the passages that teach each topic${p.exam ? ` in ${p.exam}` : ""}…`,
+  making: (p, r) => (r.done === 0 ? `Writing the ${noun(p)} from those passages…` : `Writing replacements for the ${noun(p)} that didn’t pass…`),
+  checking: (_p, r) =>
+    `Checking each one against your notes${r.total ? ` (${Math.min(r.done, r.total)} of ${r.total})` : ""}: ${r.kept ?? 0} kept, ${r.dropped ?? 0} dropped so far…`,
   saving: (p) => (p.kind === "quiz" ? "Saving the quiz…" : "Saving the cards…"),
 };
 
@@ -170,7 +184,7 @@ export function StudyAction({ code }: { code: string }) {
   let status = "";
   if (read.state === "writing") status = "Still writing the plan…";
   else if (!plan) status = "Checking the plan…";
-  else if (run?.at === "running") status = (STEP_WORDS[run.step] ?? (() => "Starting…"))(plan);
+  else if (run?.at === "running") status = (STEP_WORDS[run.step] ?? (() => "Starting…"))(plan, run);
   else if (busy) status = "Being made. It opens in Study when it’s ready.";
   else if (made) status = kind === "quiz" ? "Made. It’s in Study with your quizzes." : "Made. They’re in Study with your decks.";
   else if (run?.at === "cancelled") status = "Stopped. Nothing was made.";
@@ -205,6 +219,14 @@ export function StudyAction({ code }: { code: string }) {
               {n}
             </p>
           ))}
+          {plan?.scope && <PlanScopeLine space={space} scope={plan.scope} />}
+          {run?.at === "done" &&
+            run.grounding?.notes?.map((n) => (
+              <p key={n} className="flex items-start gap-2 text-sm wrap-break-word text-ink" data-study-action-note="">
+                <Icon name="info" className="mt-0.5 shrink-0 text-warning-ink" />
+                <span className="min-w-0">{n}</span>
+              </p>
+            ))}
         </div>
       </div>
 
@@ -238,6 +260,16 @@ export function StudyAction({ code }: { code: string }) {
           </div>
         </div>
       )}
+      {run?.at === "error" && run.needs && (
+        <ScopeForm
+          space={space}
+          needs={run.needs}
+          onSaved={() => {
+            setChecked((n) => n + 1);
+            press();
+          }}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         {made ? (
@@ -255,7 +287,8 @@ export function StudyAction({ code }: { code: string }) {
             <Icon name="stop" />
             Stop
           </Button>
-        ) : (
+        ) : run?.at === "error" && run.needs ? null : (
+          // Waiting on the exam's scope: the form above is the way on, not trying the same again.
           <Button
             ref={actionRef}
             type="button"
@@ -270,6 +303,94 @@ export function StudyAction({ code }: { code: string }) {
         )}
       </div>
     </section>
+  );
+}
+
+/** What the card knows of the exam's scope before anything is made: found (with its evidence), said by the person, not found, or not looked at yet. */
+function PlanScopeLine({ space, scope }: { space: string; scope: PlanScope }) {
+  return (
+    <div className="flex flex-col gap-1" data-study-action-scope={scope.state}>
+      <p className="flex items-start gap-2 text-sm wrap-break-word text-ink">
+        <Icon name={scope.state === "unknown" ? "warning" : "book"} className={scope.state === "unknown" ? "mt-0.5 shrink-0 text-warning-ink" : "mt-0.5 shrink-0 text-ink-secondary"} />
+        <span className="min-w-0">
+          {scope.state === "known" ? (
+            <>
+              <span className="font-semibold">{scope.exam}:</span> {scope.words}
+              {scope.fromUser ? " (as you said)" : ""}. Only that is used, and every question is checked against your notes.
+            </>
+          ) : scope.state === "unknown" ? (
+            <>I couldn’t find what {scope.exam} covers in your {scope.courseName} materials. You’ll be asked what it covers before anything is made.</>
+          ) : (
+            <>Phaethon will first check what {scope.exam} covers in your {scope.courseName} materials, then check every question against your notes.</>
+          )}
+        </span>
+      </p>
+      {scope.state === "known" && scope.evidence.length > 0 && (
+        <Details summary={scope.fromUser ? "What you said" : "Where this comes from"}>
+          <ScopeEvidence space={space} evidence={scope.evidence} />
+        </Details>
+      )}
+    </div>
+  );
+}
+
+/** The exam's scope wasn't found: say it, and the quiz is made from that. */
+function ScopeForm({ space, needs, onSaved }: { space: string; needs: UnknownScope; onSaved: () => void }) {
+  const id = useId();
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => ref.current?.focus(), []);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) {
+      setProblem(`Say what ${needs.exam} covers, in a few words.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await studyScopeState(space, needs.course, needs.exam, text.trim());
+      announce(`Saved what ${needs.exam} covers. Making it now.`);
+      onSaved();
+    } catch (err) {
+      setProblem(plainError(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <form onSubmit={save} noValidate className="flex flex-col gap-1.5" data-scope-form="">
+      <label htmlFor={`${id}-scope`} className="text-base font-medium text-ink">
+        What does {needs.exam} cover?
+      </label>
+      <p id={`${id}-hint`} className="text-sm text-ink-secondary">
+        As your instructor said it, for example “through HW 6, not graphs or combinatorics”. It’s kept for {needs.courseName} and shown as yours.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          ref={ref}
+          id={`${id}-scope`}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setProblem("");
+          }}
+          aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ""}`}
+          aria-invalid={!!problem || undefined}
+          className="max-w-md min-w-0 flex-1"
+        />
+        <Button type="submit" disabled={saving} data-scope-save="">
+          {saving ? <Icon name="spinner" className="animate-spin" /> : <Icon name="check" />}
+          Save and make it
+        </Button>
+      </div>
+      {problem && (
+        <p id={`${id}-problem`} className="text-sm text-danger-ink">
+          {problem}
+        </p>
+      )}
+    </form>
   );
 }
 

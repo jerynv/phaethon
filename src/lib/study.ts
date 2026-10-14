@@ -49,6 +49,8 @@ export type Card = {
   back: string;
   /** The file it came from, relative to the space. */
   source?: string;
+  /** The passage in that file it was made from, word for word (checked when it was made). */
+  quote?: string;
   /** The last rating, 1..5. */
   confidence?: number;
   /** When it's due next, ms. */
@@ -73,9 +75,40 @@ export type Question = {
   accept?: string[];
   explanation: string;
   source?: string;
+  /** The course topic it tests, as the course names it ("Injective functions (5.3)"). */
+  topic?: string;
+  /** The passages it is built on, each found word for word in its file when it was made. */
+  citations?: Evidence[];
 };
 
-export type Quiz = { title: string; course?: string; sources: string[]; created: number; questions: Question[] };
+/** Mirrors `Evidence` in src-tauri/src/study/scope.rs: a passage, checked to be in its file. */
+export type Evidence = {
+  /** `courses/<folder>/<path>` (the PDF's own name for its text copy), or "from you". */
+  source: string;
+  quote: string;
+  /** Where in the file: "§5.3", "#3". */
+  at?: string;
+};
+
+/** Mirrors `Grounding` in src-tauri/src/study/grounded.rs: what a quiz or deck was made against, and how the check went. */
+export type Grounding = {
+  /** The exam it is for ("Test 1"). */
+  exam?: string;
+  /** That exam's scope in words ("through HW 6; not graphs or combinatorics"). */
+  scope?: string;
+  /** The scope is the person's word, not found in the materials. */
+  fromUser: boolean;
+  evidence: Evidence[];
+  asked: number;
+  kept: number;
+  dropped: { text: string; why: string }[];
+  /** Each topic in scope, how many it got, and why none when none. */
+  coverage: { topic: string; sections?: string; count: number; why?: string }[];
+  /** Said when fewer were kept than asked for, or a focus didn't match. */
+  notes?: string[];
+};
+
+export type Quiz = { title: string; course?: string; sources: string[]; created: number; questions: Question[]; grounding?: Grounding };
 
 export type QuestionResult = {
   id: string;
@@ -93,18 +126,28 @@ export type QuestionResult = {
 /** `path` is the attempt's own (".phaethon/study/attempts/…"), `quiz` the quiz's. */
 export type Attempt = { path: string; quiz: string; taken: number; score: number; results: QuestionResult[] };
 
-/** What a step is doing. */
-export type StudyStep = "reading" | "making" | "saving" | "grading" | "reviewing";
+/**
+ * What a step is doing: "mapping" (what the course teaches and each exam
+ * covers), "reading", "making" (`done` is the writing round), "checking"
+ * (each one against the notes, with `kept` and `dropped` so far), "saving",
+ * "grading", "reviewing".
+ */
+export type StudyStep = "mapping" | "reading" | "making" | "checking" | "saving" | "grading" | "reviewing";
+
+/** An exam whose scope couldn't be found: the person can say what it covers (`studyScopeState`). */
+export type UnknownScope = { course: string; courseName: string; exam: string };
 
 /** Streamed by the make, submit and review calls; ends with exactly one `done` or `error`. */
 export type StudyEvent =
-  | { type: "progress"; step: StudyStep; done: number; total: number }
+  | { type: "progress"; step: StudyStep; done: number; total: number; kept?: number; dropped?: number }
   | {
       type: "done";
       /** make: the new deck's or quiz's path. */
       path?: string;
       cards?: number;
       questions?: number;
+      /** make: what it was made against and how the check went. */
+      grounding?: Grounding;
       /** submit */
       attempt?: Attempt;
       /** review: markdown, what to study next by topic. */
@@ -113,7 +156,9 @@ export type StudyEvent =
     }
   | { type: "error"; message: string }
   /** study_chat_make only: stopped with studyChatCancel; nothing was saved. */
-  | { type: "cancelled" };
+  | { type: "cancelled" }
+  /** make: the exam's scope wasn't found, so nothing was made; comes just before the `error`. */
+  | ({ type: "needsScope" } & UnknownScope);
 
 /** Confidence after seeing the answer: 1 "Not at all" … 5 "Perfectly". */
 export type Confidence = 1 | 2 | 3 | 4 | 5;
@@ -172,8 +217,9 @@ export const studySession = (space: string, paths: string[] | null, limit = 20) 
 export const studyRate = (space: string, deck: string, card: string, confidence: Confidence) =>
   invoke<{ due: number; again: boolean }>("study_rate", { space, deck, card, confidence });
 
-export type DeckOptions = { count: number; focus?: string; title?: string; fromAttempt?: string };
-export type QuizOptions = { count: number; kinds: QuestionKind[]; difficulty: "easier" | "exam" | "harder"; title?: string };
+/** `exam` ("Test 1"): only that exam's scope is used; unknown scope ends in `needsScope` then `error`. */
+export type DeckOptions = { count: number; focus?: string; title?: string; fromAttempt?: string; exam?: string };
+export type QuizOptions = { count: number; kinds: QuestionKind[]; difficulty: "easier" | "exam" | "harder"; title?: string; exam?: string };
 
 /** `sources`: course folders or files in the space (may be empty with `fromAttempt`). */
 export const studyMakeDeck = (space: string, sources: string[], options: DeckOptions, onEvent: (e: StudyEvent) => void) =>
@@ -214,3 +260,70 @@ export const studyChatMake = (space: string, block: string, question: string, re
 
 /** Stop making a plan, by its origin. */
 export const studyChatCancel = (space: string, origin: string) => invoke<boolean>("study_chat_cancel", { space, origin });
+
+// ---- What a course teaches and its exams cover (src-tauri/src/study/scope.rs) ----
+
+/** Mirrors `ExamScope` in scope.rs. */
+export type ExamScope = {
+  title: string;
+  date?: string;
+  /** Whether what it covers was found (or said by the person). */
+  known: boolean;
+  summary: string;
+  includes: string[];
+  excludes: string[];
+  excludedWords: string[];
+  homework: string[];
+  evidence: Evidence[];
+  fromUser: boolean;
+};
+
+/** Mirrors `ScopeMap` in scope.rs. */
+export type ScopeMap = {
+  course: string;
+  name: string;
+  built: number;
+  topics: { id: string; title: string; sections?: string; terms: string[]; weight: number; homework: string[]; evidence: Evidence[] }[];
+  notation: { symbol: string; meaning: string; evidence: Evidence[] }[];
+  exams: ExamScope[];
+  /** Quotes the model gave that weren't in the files, so were dropped. */
+  dropped: number;
+};
+
+/** Mirrors `ScopeView` in study/commands.rs. */
+export type ScopeView = {
+  /** "courses/<folder>" */
+  course: string;
+  name: string;
+  state: "none" | "fresh" | "stale";
+  map?: ScopeMap;
+  stated: { exam: string; text: string; at: number }[];
+};
+
+/** A course's scope map as this space sees it (only what is kept; nothing is built here). */
+export const studyScope = (space: string, course: string) => invoke<ScopeView>("study_scope", { space, course });
+
+/** Map the course again: `mapping` progress, then `done` or `error`. */
+export const studyScopeBuild = (space: string, course: string, onEvent: (e: StudyEvent) => void) => stream("study_scope_build", { space, course }, onEvent);
+
+/** Say what an exam covers (shown as "from you"); an empty `text` forgets it. */
+export const studyScopeState = (space: string, course: string, exam: string, text: string) =>
+  invoke<void>("study_scope_state", { space, course, exam, text });
+
+/** Mirrors `Checked` in src-tauri/src/study/citations.rs. */
+export type CitationCheck = {
+  found: boolean;
+  /** The file as the space names it, or the path as written. */
+  path: string;
+  name: string;
+  at?: string;
+  before?: string;
+  passage?: string;
+  after?: string;
+  /** Why it wasn't found, in plain words. */
+  why?: string;
+};
+
+/** Whether each `[source: … "…"]` in a reply is really in that file, as this space may read it. */
+export const studyCitationsCheck = (space: string, citations: { path: string; quote: string }[]) =>
+  invoke<CitationCheck[]>("study_citations_check", { space, citations });

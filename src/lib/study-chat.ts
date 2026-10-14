@@ -23,6 +23,24 @@ export type StudyPlan = {
   /** What was already made from it. */
   made?: string;
   running: boolean;
+  /** The exam it is for, as the block names it. */
+  exam?: string;
+  /** What is known so far about that exam's scope (from the kept map; nothing is built for the plan). */
+  scope?: PlanScope;
+};
+
+/** Mirrors `PlanScope` in chat.rs. */
+export type PlanScope = {
+  exam: string;
+  /** "known" (found or said), "unknown" (looked, not found), "unmapped" (not looked yet). */
+  state: "known" | "unknown" | "unmapped";
+  /** "through HW 6; not graphs or combinatorics" */
+  words?: string;
+  fromUser: boolean;
+  evidence: { source: string; quote: string; at?: string }[];
+  /** "courses/<folder>" */
+  course: string;
+  courseName: string;
 };
 
 /** Largest block read (as the core). */

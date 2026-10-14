@@ -14,7 +14,10 @@ import { openSpaceFile } from "@/runtime/records";
 import { announce } from "@/components/shell/announcer";
 import { mathAsText } from "@/lib/study-math";
 
+import { SourceLine } from "@/components/rich/citation";
+
 import { CardText, MathText } from "./card-text";
+import { GroundingSummary } from "./grounding";
 import { attemptOf, baseName, doneField, needsModel, percent, plainError, plural } from "./words";
 
 type Answers = Record<string, string | string[]>;
@@ -178,11 +181,12 @@ export function QuizView({
           {quiz.course ? ` · ${quiz.course}` : ""} · Answer them in any order, then check your answers at the end.
         </p>
       </div>
+      {quiz.grounding && <GroundingSummary space={space} g={quiz.grounding} />}
       <form ref={formRef} key={round} onSubmit={submit} noValidate className="flex flex-col gap-4" data-quiz-form="">
         <ol className="flex flex-col gap-4">
           {quiz.questions.map((q, i) => (
             <li key={q.id}>
-              <QuestionField index={i} total={quiz.questions.length} q={q} value={answers[q.id]} onChange={(v) => set(q.id, v)} />
+              <QuestionField space={space} index={i} total={quiz.questions.length} q={q} value={answers[q.id]} onChange={(v) => set(q.id, v)} />
             </li>
           ))}
         </ol>
@@ -235,12 +239,14 @@ export function QuizView({
 }
 
 function QuestionField({
+  space,
   index,
   total,
   q,
   value,
   onChange,
 }: {
+  space: string;
   index: number;
   total: number;
   q: Question;
@@ -315,6 +321,7 @@ function QuestionField({
           <Textarea id={`${id}-a`} value={asText(value)} onChange={(e) => onChange(e.target.value)} aria-describedby={`${id}-prompt`} />
         </div>
       )}
+      {q.citations?.length ? <SourceLine space={space} cites={q.citations} className="border-t border-line pt-2" /> : null}
     </fieldset>
   );
 }
@@ -492,7 +499,9 @@ function Results({
                   <MathText text={r.feedback} />
                 </p>
               )}
-              {q?.source && (
+              {q?.citations?.length ? (
+                <SourceLine space={space} cites={q.citations} />
+              ) : q?.source && (
                 <div>
                   <Button
                     type="button"

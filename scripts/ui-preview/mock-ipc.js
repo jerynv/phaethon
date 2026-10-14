@@ -684,7 +684,7 @@
               const id = hash(`${path}\n${c.front}`);
               // A scenario may give a card's starting progress on the card itself ({ confidence, due }).
               const p = S.progress[id] ?? (c.confidence ? { confidence: c.confidence, due: c.due ?? 0 } : null);
-              return { id, kind: /\{\{.+?\}\}/.test(c.front) ? "cloze" : "basic", front: c.front, back: c.back ?? "", ...(p ? { confidence: p.confidence, due: p.due } : {}) };
+              return { id, kind: /\{\{.+?\}\}/.test(c.front) ? "cloze" : "basic", front: c.front, back: c.back ?? "", ...(c.source ? { source: c.source } : {}), ...(c.quote ? { quote: c.quote } : {}), ...(p ? { confidence: p.confidence, due: p.due } : {}) };
             });
           const now = Date.now();
           const isDue = (c) => c.due == null || c.due <= now;
@@ -999,6 +999,13 @@
             notes,
             ...(madePath ? { made: madePath } : {}),
             running: !!runsNow[origin],
+            // f15: the exam and what is known of its scope (S.planScopes { exam: PlanScope }, S.statedScopes { exam: text }).
+            ...(b.exam ? { exam: b.exam } : {}),
+            ...(b.exam && S.statedScopes?.[b.exam]
+              ? { scope: { exam: b.exam, state: "known", words: S.statedScopes[b.exam], fromUser: true, evidence: [{ source: "from you", quote: S.statedScopes[b.exam] }], course: sources[0].path, courseName: sources[0].name } }
+              : b.exam && S.planScopes?.[b.exam]
+                ? { scope: S.planScopes[b.exam] }
+                : {}),
           };
           if (cmd === "study_chat_plan") return plan;
           // study_chat_make
@@ -1016,13 +1023,26 @@
           }
           const run = (runsNow[origin] = { cancel: false });
           try {
-            for (const [step, done, total] of [["reading", 0, 1], ["reading", 1, 1], ["making", 0, 1], ["making", 1, 1], ["saving", 0, 1]]) {
+            // f15: an exam whose scope is unknown (S.chatNeedsScope) stops and asks, until it is stated.
+            const needs = S.chatNeedsScope;
+            if (needs && !S.statedScopes?.[needs.exam]) {
+              await sleep(S.step ?? 80);
+              send({ type: "progress", step: "mapping", done: 0, total: 1 });
+              await sleep(S.step ?? 80);
+              send({ type: "needsScope", ...needs });
+              send({ type: "error", message: `I couldn’t find what ${needs.exam} covers in your ${needs.courseName} materials, so I haven’t made anything: I won’t guess. Tell me what it covers (for example “through HW 6, not graphs”) and I’ll make it from that.` });
+              return;
+            }
+            // f15: the grounded steps (S.chatSteps: [[step, done, total, kept?, dropped?]]).
+            const steps = S.chatSteps ?? [["reading", 0, 1], ["reading", 1, 1], ["making", 0, 1], ["making", 1, 1], ["saving", 0, 1]];
+            for (const [step, done, total, kept, dropped] of steps) {
               await sleep(S.step ?? 80);
               if (run.cancel) {
                 send({ type: "cancelled" });
                 return;
               }
-              send({ type: "progress", step, done, total });
+              send({ type: "progress", step, done, total, ...(kept != null ? { kept, dropped } : {}) });
+              if (S.chatHoldAt === step) await new Promise((r) => (window.__releaseChat = r));
               if (S.chatError && step === "making") {
                 const message = S.chatError;
                 if (S.chatErrorOnce) delete S.chatError;
@@ -1034,19 +1054,68 @@
             const path = `study/${kind === "quiz" ? "quizzes" : "decks"}/${title.replace(/[\\/:*?"<>|]/g, "-")}.${kind === "quiz" ? "json" : "md"}`;
             if (kind === "quiz") {
               const questions = S.chatQuiz ?? Array.from({ length: count }, (_, i) => ({ id: `q${i + 1}`, kind: "choice", prompt: `Question ${i + 1}?`, choices: ["A", "B", "C", "D"], answer: "A", explanation: "A is right." }));
-              S.quizzes[path] = { title, course: sources[0].name, sources: sources.map((s) => s.path), created: Date.now(), questions };
+              S.quizzes[path] = { title, course: sources[0].name, sources: sources.map((s) => s.path), created: Date.now(), questions, ...(S.chatGrounding ? { grounding: S.chatGrounding } : {}) };
             } else {
               S.decks[path] = { title, sources: sources.map((s) => s.path), updated: Date.now(), cards: S.chatCards ?? Array.from({ length: count }, (_, i) => ({ front: `New card ${i + 1}?`, back: `Answer ${i + 1}.` })) };
             }
             S.chatMade[origin] = path;
             keep();
-            send({ type: "done", path, ...(kind === "quiz" ? { questions: count } : { cards: count }) });
+            send({ type: "done", path, ...(kind === "quiz" ? { questions: count } : { cards: count }), ...(S.chatGrounding ? { grounding: S.chatGrounding } : {}) });
           } finally {
             delete runsNow[origin];
           }
           return;
         }
         // ---- end study from chat (f13) ----
+        // ---- course scope and citations (f15) ----
+        // As src-tauri/src/study/scope.rs and citations.rs. M.study.scopeViews { course: ScopeView },
+        // M.study.statedScopes { exam: text } (study_scope_state writes it; the f13 plan reads it), and
+        // M.study.citeFiles { path: text }: a citation is found when its quote (spaces squeezed) is in that text.
+        case "study_scope":
+        case "study_scope_build":
+        case "study_scope_state":
+        case "study_citations_check": {
+          const S = (M.study ??= {});
+          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          const squeeze = (s) => String(s).replace(/[“”]/g, '"').replace(/\*/g, "").replace(/\s+/g, " ").trim();
+          if (cmd === "study_citations_check") {
+            (S.citationChecks ??= []).push(args.citations.length);
+            return args.citations.map(({ path, quote }) => {
+              const name = path.split("/").pop();
+              const text = S.citeFiles?.[path];
+              const q = squeeze(quote);
+              if (text == null) return { found: false, path, name, why: "That isn’t a file in your materials that this space can read." };
+              const t = squeeze(text);
+              const at = t.indexOf(q);
+              if (at < 0) return { found: false, path, name, why: "Those words aren’t in that file." };
+              return { found: true, path, name, at: S.citeAt?.[path], before: t.slice(Math.max(0, at - 80), at), passage: q, after: t.slice(at + q.length, at + q.length + 80) };
+            });
+          }
+          if (cmd === "study_scope_state") {
+            if (!String(args.exam ?? "").trim()) throw "Name the exam in a few words.";
+            S.statedScopes ??= {};
+            if (String(args.text ?? "").trim()) S.statedScopes[args.exam] = String(args.text).trim();
+            else delete S.statedScopes[args.exam];
+            (S.scopeStates ??= []).push({ course: args.course, exam: args.exam, text: args.text });
+            return;
+          }
+          const view = S.scopeViews?.[args.course];
+          if (cmd === "study_scope") {
+            if (!view) throw "That course isn’t one this space can see.";
+            return view;
+          }
+          const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
+          let index = 0;
+          const send = (message) => callbacks[id]?.({ index: index++, message });
+          for (const [done, total] of [[0, 2], [1, 2], [2, 2]]) {
+            await sleep(S.step ?? 60);
+            send({ type: "progress", step: "mapping", done, total });
+          }
+          if (view) view.state = "fresh";
+          send({ type: "done" });
+          return;
+        }
+        // ---- end course scope and citations (f15) ----
         // ---- Rich output: LaTeX (src-tauri/src/latex.rs) and the file viewer (viewer.rs) ----
         // M.latex: { noEngine: true } | { fail: { message, line, log } } | {} (compiles);
         // M.pdfs: { doc: base64, fig: base64 } served by latex_pdf (ids "doc" and "fig");

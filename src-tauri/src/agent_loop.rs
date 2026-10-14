@@ -276,7 +276,7 @@ async fn drive<P: Provider>(
         };
         if turn.stop_reason == "refusal" {
             // A decline can cut a reply off mid-way: discard it rather than save half an answer.
-            return fail(emit, ErrorCode::Declined, "Claude declined to answer this. Try rephrasing your message.".into());
+            return fail(emit, ErrorCode::Declined, "The model declined to answer this. Try rephrasing your message.".into());
         }
         let uses: Vec<Value> = turn
             .content

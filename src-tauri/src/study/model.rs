@@ -2,8 +2,9 @@
 //! needs one (making cards and quizzes, grading short answers, reviewing
 //! mistakes). It goes through whatever the vault uses:
 //!
-//! - Phaethon's own provider (anthropic.rs) when Phaethon's agent is chosen
-//!   and an API key is saved; the key stays in Rust.
+//! - Phaethon's own provider (providers.rs: the space's model, else the
+//!   vault's) when Phaethon's agent is chosen and that provider can answer
+//!   (a key saved where one is needed); the key stays in Rust.
 //! - Otherwise the official Claude Code CLI the person installed and logged
 //!   into, as a one-shot print call with no tools at all, no session saved,
 //!   and none of their own setup loaded. Phaethon never reads or passes its
@@ -18,7 +19,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::agent;
-use crate::anthropic::Anthropic;
+use crate::providers::AnyProvider;
 use crate::provider::{Delta, ModelRequest, Provider};
 use crate::vault::{Backend, Vault};
 
@@ -43,7 +44,7 @@ impl<P: Provider> Model for ProviderModel<P> {
         let mut ignore = |_: Delta<'_>| {};
         let turn = self.0.turn(ModelRequest { system, messages: &messages, tools: &no_tools }, &mut ignore).await.map_err(|e| e.message)?;
         if turn.stop_reason == "refusal" {
-            return Err("Claude declined to do this with this material.".into());
+            return Err("The model declined to do this with this material.".into());
         }
         let text: String = turn.content.iter().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect();
         if turn.stop_reason == "max_tokens" && text.trim().is_empty() {
@@ -189,7 +190,7 @@ impl Model for CliModel {
 
 /// Whichever model the vault uses.
 pub enum AnyModel {
-    Api(ProviderModel<Anthropic>),
+    Api(ProviderModel<AnyProvider>),
     Cli(CliModel),
 }
 
@@ -203,8 +204,8 @@ impl Model for AnyModel {
 }
 
 /// The model for `space_dir`: Claude Code when the vault uses it; Phaethon's
-/// provider when it uses Phaethon's own agent and a key is saved; else Claude
-/// Code if it is installed; else [`NO_MODEL`].
+/// provider when it uses Phaethon's own agent and that provider can answer;
+/// else Claude Code if it is installed; else why the provider can't answer.
 pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&Path>) -> Result<AnyModel, String> {
     let settings = vault.settings();
     let cli = |settings: &crate::vault::VaultSettings| {
@@ -217,12 +218,9 @@ pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&
     if settings.backend == Backend::ClaudeCli {
         return cli(&settings).map(AnyModel::Cli).ok_or_else(|| agent::MISSING_CLI_MESSAGE.to_string());
     }
-    match crate::secrets::get(&vault.name(), "anthropic") {
-        Ok(Some(key)) => {
-            let model = crate::space_model::resolve(space_dir, settings.model.clone());
-            Ok(AnyModel::Api(ProviderModel(Anthropic::new(key, model, settings.effort.clone()))))
-        }
-        _ => cli(&settings).map(AnyModel::Cli).ok_or_else(|| NO_MODEL.to_string()),
+    match crate::providers::for_space(vault, space_dir) {
+        Ok(p) => Ok(AnyModel::Api(ProviderModel(p))),
+        Err(why) => cli(&settings).map(AnyModel::Cli).ok_or(why),
     }
 }
 

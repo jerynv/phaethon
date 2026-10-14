@@ -1,21 +1,26 @@
 //! A space's own model: `"model"` in `<space>/.phaethon/space.json`, beside
 //! its name and colour, so the choice travels with the space when it syncs.
 //! Phaethon's own agent answers in that space with it instead of the default
-//! model setting. The file is user-editable, so a value that isn't a model id
-//! (see [`is_valid_model_id`]) is ignored and the default is used.
+//! model setting. The value is a model reference (providers.rs): a plain id is
+//! an Anthropic model, `provider:model` any other provider's. The file is
+//! user-editable, so a value that isn't one is ignored and the default is used.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::anthropic::is_valid_model_id;
+use crate::providers::{self, ModelRef};
 use crate::spaces::{self, meta_file, read_meta_raw, write_meta};
 use crate::vault::Vault;
 
 /// The model saved for the space in `dir`, if it has a valid one.
-pub fn get(dir: &Path) -> Option<String> {
+pub fn get_ref(dir: &Path) -> Option<ModelRef> {
     let meta = read_meta_raw(dir).ok().flatten()?;
-    let model = meta.get("model")?.as_str()?.trim();
-    is_valid_model_id(model).then(|| model.to_string())
+    providers::parse_ref(meta.get("model")?.as_str()?)
+}
+
+/// [`get_ref`] as saved: a plain id for Anthropic, `provider:model` otherwise.
+pub fn get(dir: &Path) -> Option<String> {
+    get_ref(dir).map(|r| r.saved())
 }
 
 /// The model a turn in the space at `dir` uses: its own, else `default`
@@ -31,8 +36,10 @@ pub fn set(vault: &Vault, id: &str, model: Option<&str>) -> Result<(), String> {
     let dir = vault.space_dir(id)?;
     let model = match model.map(str::trim) {
         None => None,
-        Some(m) if is_valid_model_id(m) => Some(m.to_string()),
-        Some(_) => return Err("That isn’t a model Phaethon knows how to use.".into()),
+        Some(m) => match providers::parse_ref(m) {
+            Some(r) => Some(r.saved()),
+            None => return Err("That isn’t a model Phaethon knows how to use.".into()),
+        },
     };
     let mut meta = match read_meta_raw(&dir) {
         Ok(Some(serde_json::Value::Object(o))) => o,
@@ -104,6 +111,19 @@ mod tests {
     }
 
     #[test]
+    fn a_space_can_use_another_providers_model() {
+        let (root, vault) = temp_vault("other");
+        set(&vault, "school", Some("openrouter:openai/gpt-5:free")).unwrap();
+        set(&vault, "work", Some("anthropic:claude-haiku-5-5")).unwrap();
+        assert_eq!(saved(&root, "school")["model"], "openrouter:openai/gpt-5:free");
+        assert_eq!(saved(&root, "work")["model"], "claude-haiku-5-5", "Anthropic models are saved plain");
+        let r = get_ref(&vault.space_dir("school").unwrap()).unwrap();
+        assert_eq!((r.provider.id, r.model.as_str()), ("openrouter", "openai/gpt-5:free"));
+        assert_eq!(list(&vault).unwrap()["school"], "openrouter:openai/gpt-5:free");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn other_fields_are_kept() {
         let (root, vault) = temp_vault("keep");
         let state = root.join("spaces/school/.phaethon");
@@ -122,7 +142,7 @@ mod tests {
     #[test]
     fn bad_models_spaces_and_files_are_refused() {
         let (root, vault) = temp_vault("bad");
-        for bad in ["", "gpt-5", "claude-", "Claude-Opus", "claude-opus 5", "claude-../x"] {
+        for bad in ["", "gpt-5", "claude-", "Claude-Opus", "claude-opus 5", "claude-../x", "openai:", "openai:a b", "nope:gpt-5"] {
             assert!(set(&vault, "school", Some(bad)).is_err(), "{bad:?}");
         }
         for id in ["nope", "../memory", "", "School", "work/../school"] {

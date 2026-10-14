@@ -18,6 +18,7 @@ fn main() {
             "study_quiz", "study_quiz_submit", "study_review_mistakes", "study_delete",
             "space_tutor_mode_set", "space_tutor_modes_list",
             "plan_upcoming", "plan_exams_get", "plan_exams_set", "plan_save", "plan_state_get", "plan_state_set",
+            "settings_set_provider", "settings_set_provider_model", "settings_set_provider_url", "provider_status",
         ]),
     ))
     .expect("failed to run tauri-build");

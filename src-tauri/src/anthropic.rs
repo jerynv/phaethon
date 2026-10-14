@@ -19,10 +19,10 @@ const API_VERSION: &str = "2023-06-01";
 const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 const MAX_TOKENS: u32 = 64_000;
 /// Longest silence allowed between two chunks of a streaming reply.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(180);
-const RETRIES: u32 = 3;
+pub(crate) const IDLE_TIMEOUT: Duration = Duration::from_secs(180);
+pub(crate) const RETRIES: u32 = 3;
 /// Longest `retry-after` (seconds) Phaethon waits out itself before retrying.
-const MAX_RETRY_WAIT: u64 = 30;
+pub(crate) const MAX_RETRY_WAIT: u64 = 30;
 
 pub struct Anthropic {
     http: reqwest::Client,
@@ -42,7 +42,7 @@ pub fn base_url() -> String {
     "https://api.anthropic.com".to_string()
 }
 
-fn client() -> reqwest::Client {
+pub(crate) fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(20))
         .build()
@@ -161,7 +161,7 @@ impl Provider for Anthropic {
     }
 }
 
-fn backoff(attempt: u32, retry_after: Option<u64>) -> Duration {
+pub(crate) fn backoff(attempt: u32, retry_after: Option<u64>) -> Duration {
     match retry_after {
         Some(s) => Duration::from_secs(s.min(MAX_RETRY_WAIT)),
         None => Duration::from_millis(1000 * 2u64.pow(attempt - 1)),
@@ -170,7 +170,7 @@ fn backoff(attempt: u32, retry_after: Option<u64>) -> Duration {
 
 /// `retry-after` in whole seconds, when the server sent one we can read
 /// (HTTP dates are rare from Anthropic and are ignored).
-fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+pub(crate) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
     headers
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
@@ -244,11 +244,11 @@ pub enum KeyProblem {
 }
 
 impl KeyCheck {
-    fn works() -> Self {
+    pub(crate) fn works() -> Self {
         Self { ok: true, problem: None, message: "This key works.".into() }
     }
 
-    fn problem(problem: KeyProblem, message: &str) -> Self {
+    pub(crate) fn problem(problem: KeyProblem, message: &str) -> Self {
         Self { ok: false, problem: Some(problem), message: message.into() }
     }
 }
@@ -368,7 +368,7 @@ pub async fn models_or_fallback(key: Option<&str>) -> Vec<ModelInfo> {
 
 /// Take one complete SSE event (ended by a blank line) off the front of `buf`.
 /// The separator is ASCII, so the event is always whole UTF-8.
-fn split_event(buf: &mut Vec<u8>) -> Option<String> {
+pub(crate) fn split_event(buf: &mut Vec<u8>) -> Option<String> {
     let find = |pat: &[u8]| buf.windows(pat.len()).position(|w| w == pat).map(|i| (i, pat.len()));
     let (i, n) = match (find(b"\n\n"), find(b"\r\n\r\n")) {
         (Some(a), Some(b)) => if a.0 < b.0 { a } else { b },

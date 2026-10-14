@@ -6,7 +6,8 @@ use keyring::Entry;
 
 const SERVICE: &str = "phaethon";
 
-pub const PROVIDERS: &[&str] = &["anthropic"];
+/// Every provider that takes a key (providers.rs); local servers take none.
+pub const PROVIDERS: &[&str] = &["anthropic", "openai", "openrouter", "groq", "together", "mistral", "deepseek", "xai", "custom"];
 
 fn entry(vault: &str, provider: &str) -> Result<Entry, String> {
     if !PROVIDERS.contains(&provider) {

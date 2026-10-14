@@ -33,6 +33,13 @@ pub struct VaultSettings {
     pub model: Option<String>,
     /// Effort for Phaethon's own loop; the provider's default when unset.
     pub effort: Option<String>,
+    /// The model provider for Phaethon's own loop (providers.rs); Anthropic when unset.
+    pub provider: Option<String>,
+    /// Provider id → the model chosen for it (not Anthropic: that is `model`).
+    /// Raw JSON, checked where it is read, so a bad hand edit can't void the rest.
+    pub provider_models: Option<serde_json::Value>,
+    /// Provider id → its address, for servers on this computer and one's own.
+    pub provider_urls: Option<serde_json::Value>,
     /// The user's appearance and accessibility choices (theme, token overrides).
     /// Kept as raw JSON: the webview owns its meaning, the core only checks its
     /// shape with [`validate_appearance`] on the way in and out.

@@ -65,7 +65,7 @@ export const attemptOf = (e: Done) => doneField<Attempt>(e, "attempt");
  * The model isn't set up (no API key, Claude Code not installed or not signed
  * in): the error says what to do, and the screen offers Settings.
  */
-export const needsModel = (message: string) => /no model|api key|claude code|not logged in|sign(ed)? in to claude/i.test(message);
+export const needsModel = (message: string) => /no model|api key|claude code|not logged in|sign(ed)? in to claude|in settings/i.test(message);
 
 /** Make a raw core error readable: no "Error:" prefix, no trailing whitespace. */
 export const plainError = (e: unknown) => String(e instanceof Error ? e.message : e).replace(/^error:\s*/i, "").trim();

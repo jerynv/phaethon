@@ -8,8 +8,10 @@ pub mod grants;
 pub mod lms;
 pub mod memory;
 pub mod open;
+pub mod openai;
 pub mod plan;
 pub mod provider;
+pub mod providers;
 pub mod search;
 pub mod secrets;
 pub mod space_model;
@@ -128,21 +130,15 @@ async fn agent_send(
     refs.extend(new_refs);
     match settings.backend {
         Backend::Phaethon => {
-            let key = match secrets::get(&state.vault.name(), "anthropic") {
-                Ok(Some(k)) => k,
-                Ok(None) => {
-                    fail(ErrorCode::NoApiKey, "Add your Anthropic API key in Settings to start.".into());
-                    return Ok(());
-                }
+            // The space's own model (and its provider) if it has one, else the default; read
+            // once per turn, so a change applies from the next message, never mid-reply.
+            let provider = match providers::for_space(&state.vault, &space_dir) {
+                Ok(p) => continuation::Wire(p),
                 Err(e) => {
                     fail(ErrorCode::NoApiKey, e);
                     return Ok(());
                 }
             };
-            // The space's own model if it has one, else the default; read once per
-            // turn, so a change applies from the next message, never mid-reply.
-            let model = space_model::resolve(&space_dir, settings.model);
-            let provider = continuation::Wire(anthropic::Anthropic::new(key, model, settings.effort));
             if let Some(from) = continue_from {
                 let req = continuation::ContinueRequest {
                     space_id: &space,
@@ -445,7 +441,17 @@ struct SettingsView {
     backend: Backend,
     /// Whether a key is stored. The key itself never leaves the Rust core.
     has_anthropic_key: bool,
+    /// The Anthropic model chosen in Settings.
     model: String,
+    /// The provider chosen for Phaethon's own agent (providers.rs).
+    provider: &'static str,
+    /// The default model as a reference (`provider:model`, plain for Anthropic);
+    /// absent while the chosen provider has no model picked.
+    default_model: Option<String>,
+    /// Whether the chosen provider can answer (a key where one is needed).
+    provider_ready: bool,
+    /// Every provider, with whether a key is saved, never the key.
+    providers: Vec<providers::ProviderView>,
     /// The saved appearance, or `{}` when none is saved or the file holds one
     /// that does not pass [`vault::validate_appearance`].
     appearance: serde_json::Value,
@@ -459,11 +465,27 @@ struct SettingsView {
 async fn settings_get(state: State<'_, AppState>) -> Result<SettingsView, String> {
     let s = state.vault.settings();
     let vault_name = state.vault.name();
-    let has_key = off_main(move || secrets::get(&vault_name, "anthropic")).await?.is_some();
+    // One worker for every provider's keychain entry (a missing one never asks the person anything).
+    let keys = off_main(move || {
+        let mut saved = std::collections::BTreeSet::new();
+        for id in providers::keyed_ids() {
+            if secrets::get(&vault_name, id)?.is_some() {
+                saved.insert(id);
+            }
+        }
+        Ok(saved)
+    })
+    .await?;
+    let views = providers::views(&s, |id| keys.contains(id));
+    let chosen = providers::chosen(&s);
     Ok(SettingsView {
         backend: s.backend,
-        has_anthropic_key: has_key,
-        model: s.model.unwrap_or_else(|| anthropic::DEFAULT_MODEL.into()),
+        has_anthropic_key: keys.contains(providers::ANTHROPIC),
+        model: providers::chosen_model(&s, providers::preset(providers::ANTHROPIC).expect("anthropic")).unwrap_or_default(),
+        provider: chosen.id,
+        default_model: providers::default_ref(&s).map(|r| r.saved()),
+        provider_ready: views.iter().any(|v| v.id == chosen.id && v.ready) && providers::default_ref(&s).is_some(),
+        providers: views,
         appearance: s
             .appearance
             .filter(|a| vault::validate_appearance(a).is_ok())
@@ -494,10 +516,23 @@ fn settings_set_backend(state: State<'_, AppState>, backend: Backend) -> Result<
 }
 
 /// Store a provider key in the keychain. Write-only: no command reads it back.
+/// A key that plainly belongs to another provider is refused; the key for a
+/// server of one's own is saved with that server's origin and goes nowhere else.
 #[tauri::command]
 async fn api_key_set(state: State<'_, AppState>, provider: String, key: String) -> Result<(), String> {
     let vault_name = state.vault.name();
-    off_main(move || secrets::set(&vault_name, &provider, &key)).await
+    let p = providers::preset(&provider).filter(|p| p.key != providers::KeyNeed::None).ok_or("That provider doesn’t take a key.")?;
+    let settings = state.vault.settings();
+    let value = if p.id == providers::ANTHROPIC {
+        key
+    } else {
+        let base = providers::base_url(&settings, p)?;
+        if let Some(problem) = providers::key_problem(p, &base, &key) {
+            return Err(problem);
+        }
+        if p.id == providers::CUSTOM { providers::bind_custom_key(&base, &key)? } else { key }
+    };
+    off_main(move || secrets::set(&vault_name, p.id, &value)).await
 }
 
 #[tauri::command]
@@ -506,19 +541,94 @@ async fn api_key_clear(state: State<'_, AppState>, provider: String) -> Result<(
     off_main(move || secrets::clear(&vault_name, &provider)).await
 }
 
-/// Check an Anthropic key without saving it: its format, then one cheap
-/// request with it. The key is never logged or returned.
+/// Check a key without saving it: its format, then one cheap request with it,
+/// to `provider` (Anthropic when absent) and nowhere else. The key is never
+/// logged or returned.
 #[tauri::command]
-async fn api_key_check(key: String) -> anthropic::KeyCheck {
-    anthropic::check_key(&key).await
+async fn api_key_check(state: State<'_, AppState>, key: String, provider: Option<String>) -> Result<anthropic::KeyCheck, String> {
+    let p = providers::preset(provider.as_deref().unwrap_or(providers::ANTHROPIC)).ok_or("That isn’t a provider Phaethon knows.")?;
+    if p.id == providers::ANTHROPIC {
+        return Ok(anthropic::check_key(&key).await);
+    }
+    let base = providers::base_url(&state.vault.settings(), p)?;
+    Ok(openai::check_key(p, &base, &key).await)
 }
 
-/// The models the saved key can use, from Anthropic; a fixed list when there
-/// is no key or the list can't be fetched.
+/// The models `provider` offers (Anthropic when absent: the saved key's list,
+/// or a fixed one when there is no key or it can't be fetched). For the
+/// others, `Err` says in words why there is no list.
 #[tauri::command]
-async fn models_list(state: State<'_, AppState>) -> Result<Vec<anthropic::ModelInfo>, String> {
-    let key = secrets::get(&state.vault.name(), "anthropic").ok().flatten();
-    Ok(anthropic::models_or_fallback(key.as_deref()).await)
+async fn models_list(state: State<'_, AppState>, provider: Option<String>) -> Result<Vec<anthropic::ModelInfo>, String> {
+    let p = providers::preset(provider.as_deref().unwrap_or(providers::ANTHROPIC)).ok_or("That isn’t a provider Phaethon knows.")?;
+    let vault_name = state.vault.name();
+    if p.id == providers::ANTHROPIC {
+        let key = off_main(move || secrets::get(&vault_name, providers::ANTHROPIC)).await.ok().flatten();
+        return Ok(anthropic::models_or_fallback(key.as_deref()).await);
+    }
+    let base = providers::base_url(&state.vault.settings(), p)?;
+    let b = base.clone();
+    // Whatever key may go there; none is fine (OpenRouter and local servers list without one).
+    let key = off_main(move || Ok(providers::key_for(p, &b, |id| secrets::get(&vault_name, id)).ok().flatten())).await?;
+    openai::list_models(p, &base, key.as_deref()).await
+}
+
+/// Whether a server on this computer (or one's own) answers, in words, with its models.
+#[tauri::command]
+async fn provider_status(state: State<'_, AppState>, provider: String) -> Result<openai::ServerStatus, String> {
+    let p = providers::preset(&provider).filter(|p| p.editable_base).ok_or("Only a server on this computer or your own can be checked.")?;
+    let base = providers::base_url(&state.vault.settings(), p)?;
+    let vault_name = state.vault.name();
+    let b = base.clone();
+    let key = off_main(move || Ok(providers::key_for(p, &b, |id| secrets::get(&vault_name, id)).ok().flatten())).await?;
+    Ok(openai::status(p, &base, key.as_deref()).await)
+}
+
+/// Choose the provider for Phaethon's own agent.
+#[tauri::command]
+fn settings_set_provider(state: State<'_, AppState>, provider: String) -> Result<(), String> {
+    let p = providers::preset(&provider).ok_or("That isn’t a provider Phaethon knows.")?;
+    state
+        .vault
+        .set_setting("provider", p.id.into())
+        .map_err(|e| format!("Could not save the setting: {e}"))
+}
+
+/// Change one entry of a provider-keyed map in settings.json, keeping the rest.
+fn set_provider_entry(state: &AppState, setting: &str, current: Option<serde_json::Value>, provider: &str, value: Option<String>) -> Result<(), String> {
+    let mut map = current.and_then(|v| v.as_object().cloned()).unwrap_or_default();
+    match value {
+        Some(v) => map.insert(provider.to_string(), v.into()),
+        None => map.remove(provider),
+    };
+    state
+        .vault
+        .set_setting(setting, serde_json::Value::Object(map))
+        .map_err(|e| format!("Could not save the setting: {e}"))
+}
+
+/// Choose the model `provider` answers with by default (not Anthropic: see
+/// `settings_set_model`); `None` clears it.
+#[tauri::command]
+fn settings_set_provider_model(state: State<'_, AppState>, provider: String, model: Option<String>) -> Result<(), String> {
+    let p = providers::preset(&provider).filter(|p| p.id != providers::ANTHROPIC).ok_or("That isn’t a provider Phaethon knows.")?;
+    let model = match model.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(m) if providers::is_valid_compat_model(m) => Some(m.to_string()),
+        Some(_) => return Err("That isn’t a model name Phaethon can use. It’s one word, like gpt-5 or llama3.2:3b.".into()),
+    };
+    set_provider_entry(&state, "providerModels", state.vault.settings().provider_models, p.id, model)
+}
+
+/// The address of a server on this computer or one's own; `None` goes back to
+/// the usual one. The services' own addresses can't be changed.
+#[tauri::command]
+fn settings_set_provider_url(state: State<'_, AppState>, provider: String, url: Option<String>) -> Result<(), String> {
+    let p = providers::preset(&provider).filter(|p| p.editable_base).ok_or("That provider’s address can’t be changed.")?;
+    let url = match url.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(u) => Some(providers::check_base(u)?),
+    };
+    set_provider_entry(&state, "providerUrls", state.vault.settings().provider_urls, p.id, url)
 }
 
 /// Choose the model for Phaethon's own agent; `None` goes back to the default.
@@ -844,6 +954,10 @@ pub fn run() {
             api_key_check,
             models_list,
             settings_set_model,
+            settings_set_provider,
+            settings_set_provider_model,
+            settings_set_provider_url,
+            provider_status,
             file_open,
             appearance_set,
             spaces_list,

@@ -5,6 +5,7 @@ pub mod attachments;
 pub mod continuation;
 pub mod export;
 pub mod grants;
+pub mod latex;
 pub mod lms;
 pub mod memory;
 pub mod open;
@@ -12,6 +13,7 @@ pub mod openai;
 pub mod plan;
 pub mod provider;
 pub mod providers;
+pub mod rich_output;
 pub mod search;
 pub mod secrets;
 pub mod space_model;
@@ -21,6 +23,7 @@ pub mod thread;
 pub mod tools;
 pub mod tutor_mode;
 pub mod vault;
+pub mod viewer;
 
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent, State};
@@ -1027,7 +1030,13 @@ pub fn run() {
             plan_exams_set,
             plan_save,
             plan_state_get,
-            plan_state_set
+            plan_state_set,
+            latex::latex_status,
+            latex::latex_compile,
+            latex::latex_pdf,
+            latex::latex_save,
+            viewer::file_view,
+            viewer::file_bytes
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

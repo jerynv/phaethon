@@ -107,6 +107,7 @@ pub struct LoopRequest<'a> {
 /// working until they change.
 pub fn system_prompt(vault_root: &Path, space_id: &str) -> String {
     let mut s = format!("{BASE_PROMPT}\n\nThis space is called \"{space_id}\".");
+    s.push_str(&format!("\n\n{}", crate::rich_output::PROMPT)); // what the chat can show (rich_output.rs)
     let vault = Vault::at(vault_root);
     let others = grants::other_spaces(&vault, space_id);
     if !others.is_empty() {

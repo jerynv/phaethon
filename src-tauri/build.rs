@@ -19,6 +19,7 @@ fn main() {
             "space_tutor_mode_set", "space_tutor_modes_list",
             "plan_upcoming", "plan_exams_get", "plan_exams_set", "plan_save", "plan_state_get", "plan_state_set",
             "settings_set_provider", "settings_set_provider_model", "settings_set_provider_url", "provider_status",
+            "latex_status", "latex_compile", "latex_pdf", "latex_save", "file_view", "file_bytes",
         ]),
     ))
     .expect("failed to run tauri-build");

@@ -87,6 +87,12 @@
     "allow-plan-exams-set",
     "allow-plan-save",
     "allow-plan-state-get",
-    "allow-plan-state-set"
+    "allow-plan-state-set",
+    "allow-latex-status",
+    "allow-latex-compile",
+    "allow-latex-pdf",
+    "allow-latex-save",
+    "allow-file-view",
+    "allow-file-bytes"
   ]
 }

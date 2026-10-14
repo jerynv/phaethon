@@ -9,7 +9,9 @@ import { studyDeck, studyDeckSave, studyDelete, type Card } from "@/lib/study";
 import { cn } from "@/lib/utils";
 import { openSpaceFile } from "@/runtime/records";
 
-import { CardText } from "./card-text";
+import { mathAsText } from "@/lib/study-math";
+
+import { CardText, MathText } from "./card-text";
 import { baseName, confidenceWord, dayText, plainError, plural, spokenFront } from "./words";
 
 type Deck = Awaited<ReturnType<typeof studyDeck>>;
@@ -326,12 +328,14 @@ export function DeckEditor({
                 <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-3.5 py-3">
                   <div className="flex min-w-0 flex-1 basis-64 flex-col gap-1">
                     <p className="text-base font-medium wrap-break-word text-ink">
-                      <span className="sr-only">{spokenFront(c)}</span>
+                      <span className="sr-only">
+                        <MathText text={spokenFront(c)} />
+                      </span>
                       <span aria-hidden="true">
                         <CardText text={c.front} />
                       </span>
                     </p>
-                    <p className="text-base wrap-break-word text-ink-secondary">{c.kind === "cloze" ? <CardText text={c.front} reveal /> : c.back}</p>
+                    <p className="text-base wrap-break-word text-ink-secondary">{c.kind === "cloze" ? <CardText text={c.front} reveal /> : <MathText text={c.back} />}</p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <Mastery card={c} />
@@ -341,7 +345,7 @@ export function DeckEditor({
                         variant="ghost"
                         size="xs"
                         disabled={!!editing}
-                        aria-label={`Edit “${spokenFront(c)}”`}
+                        aria-label={`Edit “${mathAsText(spokenFront(c))}”`}
                         onClick={() => {
                           setProblem("");
                           setEditing({ id: c.id, front: c.front, back: c.back });
@@ -356,7 +360,7 @@ export function DeckEditor({
                         variant="ghost"
                         size="xs"
                         disabled={!!editing}
-                        aria-label={`Delete “${spokenFront(c)}”`}
+                        aria-label={`Delete “${mathAsText(spokenFront(c))}”`}
                         onClick={() => {
                           setConfirming(c.id);
                           focusNext.current = `[data-delete-cancel="${CSS.escape(c.id)}"]`;

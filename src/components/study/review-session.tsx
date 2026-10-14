@@ -6,7 +6,9 @@ import { Icon } from "@/icons";
 import { studyOverview, studyRate, studySession, type Confidence, type DeckSummary } from "@/lib/study";
 import { cn } from "@/lib/utils";
 
-import { CardText } from "./card-text";
+import { mathAsText } from "@/lib/study-math";
+
+import { CardText, MathText } from "./card-text";
 import { baseName, clozeAnswer, CONFIDENCE, durationText, percent, plainError, plural, spokenFront } from "./words";
 
 type SessionCard = Awaited<ReturnType<typeof studySession>>[number];
@@ -94,7 +96,7 @@ export function ReviewSession({
   const flip = useCallback(() => {
     if (!card || flipped) return;
     setFlipped(true);
-    say(`Answer: ${card.kind === "cloze" ? clozeAnswer(card) : card.back}`);
+    say(`Answer: ${mathAsText(card.kind === "cloze" ? clozeAnswer(card) : card.back)}`);
   }, [card, flipped, say]);
 
   // Focus follows the card: the ratings once it is turned, the next Show answer after a rating.
@@ -242,7 +244,9 @@ export function ReviewSession({
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium tracking-wide text-ink-secondary uppercase">{cloze ? "Fill in the blank" : "Question"}</p>
             <p id={frontId} className="text-2xl leading-normal wrap-break-word text-ink" data-card-front="">
-              <span className="sr-only">{spokenFront(card)}</span>
+              <span className="sr-only">
+                <MathText text={spokenFront(card)} />
+              </span>
               <span aria-hidden="true">
                 <CardText text={card.front} reveal={flipped} />
               </span>
@@ -254,7 +258,9 @@ export function ReviewSession({
               data-card-back=""
             >
               <p className="text-sm font-medium tracking-wide text-ink-secondary uppercase">Answer</p>
-              <p className="text-2xl leading-normal wrap-break-word text-ink">{cloze ? clozeAnswer(card) : card.back}</p>
+              <p className="text-2xl leading-normal wrap-break-word text-ink">
+                <MathText text={cloze ? clozeAnswer(card) : card.back} />
+              </p>
             </div>
           )}
         </section>
@@ -399,8 +405,12 @@ function Summary({
           <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised" data-revisit="">
             {ended.revisit.map((c) => (
               <li key={c.id} className="flex flex-col gap-0.5 px-3.5 py-2.5">
-                <span className="text-base font-medium wrap-break-word text-ink">{spokenFront(c)}</span>
-                <span className="text-sm wrap-break-word text-ink-secondary">{c.kind === "cloze" ? clozeAnswer(c) : c.back}</span>
+                <span className="text-base font-medium wrap-break-word text-ink">
+                  <MathText text={spokenFront(c)} />
+                </span>
+                <span className="text-sm wrap-break-word text-ink-secondary">
+                  <MathText text={c.kind === "cloze" ? clozeAnswer(c) : c.back} />
+                </span>
               </li>
             ))}
           </ul>

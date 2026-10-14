@@ -52,10 +52,13 @@ import { MessageError, SetupBelowContext } from "./message-error";
 import { MessageTime } from "./message-time";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
 import { RecordPart, announcesRecord, recordText } from "./receipts";
+import { STUDY_ACTION_LANGUAGES } from "./study-action";
 
 const Nothing = () => null;
+// A reply's ```phaethon-study block is drawn as a card with Generate (study-action.tsx).
+const AssistantText = (p: Parameters<typeof MarkdownText>[0]) => <MarkdownText {...p} componentsByLanguage={STUDY_ACTION_LANGUAGES} />;
 const ASSISTANT_PARTS = {
-  Text: MarkdownText,
+  Text: AssistantText,
   data: { by_name: { [RECORD_PART]: RecordPart as DataMessagePartComponent } },
 };
 const USER_PARTS = { Text: UserMarkdownText, File: Nothing, Image: Nothing };

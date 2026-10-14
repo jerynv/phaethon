@@ -912,6 +912,141 @@
           M.planState[args.space] = { ...st, studyDays: [...new Set(st.studyDays)].sort() };
           return M.planState[args.space];
         }
+        // ---- study from chat (f13) ----
+        // A reply's phaethon-study block, as src-tauri/src/study/chat.rs checks and makes it. Uses
+        // M.study (courses, quizzes, decks, step) like the study block above, plus: chatError (make
+        // sends it as an error; chatErrorOnce: only the first time), chatQuiz (the questions made),
+        // chatMade { origin: path } (what each block made). What was made outlives a reload in this tab.
+        case "study_chat_plan":
+        case "study_chat_make":
+        case "study_chat_cancel": {
+          const S = (M.study ??= {});
+          S.quizzes ??= {};
+          S.decks ??= {};
+          if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          const KEEP = "__mockStudyChat";
+          if (!S.chatLoaded) {
+            S.chatLoaded = true;
+            try {
+              const kept = JSON.parse(sessionStorage.getItem(KEEP) ?? "null");
+              if (kept) {
+                S.chatMade = { ...kept.chatMade, ...S.chatMade };
+                Object.assign(S.quizzes, kept.quizzes);
+                Object.assign(S.decks, kept.decks);
+              }
+            } catch {}
+          }
+          S.chatMade ??= {};
+          const runsNow = (window.__studyChatRuns ??= {});
+          const keep = () => {
+            try {
+              const quizzes = Object.fromEntries(Object.values(S.chatMade).filter((p) => S.quizzes[p]).map((p) => [p, S.quizzes[p]]));
+              const decks = Object.fromEntries(Object.values(S.chatMade).filter((p) => S.decks[p]).map((p) => [p, S.decks[p]]));
+              sessionStorage.setItem(KEEP, JSON.stringify({ chatMade: S.chatMade, quizzes, decks }));
+            } catch {}
+          };
+          if (cmd === "study_chat_cancel") {
+            const r = runsNow[args.origin];
+            if (r) r.cancel = true;
+            return !!r;
+          }
+          const squash = (x) => String(x).split(/\s+/).filter(Boolean).join(" ");
+          const fnv = (str) => [...str].reduce((h, ch) => Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0, 2166136261).toString(16).padStart(8, "0");
+          const origin = fnv(`${squash(args.question)}\u0000${squash(args.block)}`);
+          let b;
+          try {
+            b = JSON.parse(args.block);
+          } catch {
+            throw "The plan isn’t written in a form Phaethon can read.";
+          }
+          if (!b || typeof b !== "object" || Array.isArray(b)) throw "The plan isn’t written in a form Phaethon can read.";
+          const kind = b.kind === "quiz" ? "quiz" : ["deck", "flashcards", "cards"].includes(b.kind) ? "deck" : null;
+          if (!kind) throw `The plan can’t be used: “${b.kind}” isn’t a quiz or flashcards.`;
+          const max = kind === "quiz" ? 50 : 100;
+          const notes = [];
+          let count = b.count ?? (kind === "quiz" ? 10 : 20);
+          if (typeof count !== "number" || count < 1 || !Number.isInteger(count)) throw "The plan can’t be used: its count must be a whole number, at least 1.";
+          if (count > max) {
+            notes.push(`At most ${max} ${kind === "quiz" ? "questions" : "cards"} are made at once, so this makes ${max}.`);
+            count = max;
+          }
+          const KINDS = ["choice", "multi", "truefalse", "short", "cloze"];
+          const kinds = (b.kinds ?? []).filter((k) => KINDS.includes(k));
+          for (const k of b.kinds ?? []) if (!KINDS.includes(k)) notes.push(`“${k}” isn’t a kind of question Phaethon makes, so it’s left out.`);
+          const courses = (S.courses ?? []).map((c) => ({ name: c.course, folder: c.folder }));
+          const sources = [];
+          const unknown = [];
+          for (const raw of b.sources ?? []) {
+            const want = String(raw).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const c = courses.find((x) => x.folder === raw || x.name.toLowerCase().replace(/[^a-z0-9]/g, "").includes(want) || x.folder.toLowerCase().replace(/[^a-z0-9]/g, "").includes(want));
+            if (c && !sources.some((s) => s.path === c.folder)) sources.push({ path: c.folder, name: c.name });
+            else if (!c) unknown.push(raw);
+          }
+          if (!sources.length && !unknown.length && courses.length === 1) sources.push({ path: courses[0].folder, name: courses[0].name });
+          else if (!sources.length && !unknown.length && courses.length) sources.push({ path: "courses", name: "all your courses" });
+          if (!sources.length) throw unknown.length ? `None of what it names is in this space or its courses: ${unknown.join(", ")}.` : "There’s no course material in this space to make it from. Import a course first, or ask about files in this space.";
+          const madePath = S.chatMade[origin] && (S.quizzes[S.chatMade[origin]] || S.decks[S.chatMade[origin]]) ? S.chatMade[origin] : undefined;
+          const plan = {
+            origin,
+            kind,
+            ...(b.title ? { title: b.title } : {}),
+            ...(b.focus ? { focus: b.focus } : {}),
+            count,
+            kinds: kind === "quiz" ? (kinds.length ? kinds : ["choice", "truefalse", "short"]) : [],
+            difficulty: ["easier", "exam", "harder"].includes(b.difficulty) ? b.difficulty : "exam",
+            sources,
+            unknown,
+            notes,
+            ...(madePath ? { made: madePath } : {}),
+            running: !!runsNow[origin],
+          };
+          if (cmd === "study_chat_plan") return plan;
+          // study_chat_make
+          const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
+          let index = 0;
+          const send = (message) => callbacks[id]?.({ index: index++, message });
+          (S.chatMakes ??= []).push({ origin, question: args.question, reply: args.reply });
+          if (madePath) {
+            send({ type: "done", path: madePath });
+            return;
+          }
+          if (runsNow[origin]) {
+            send({ type: "error", message: "This is already being made. It opens in Study when it’s ready." });
+            return;
+          }
+          const run = (runsNow[origin] = { cancel: false });
+          try {
+            for (const [step, done, total] of [["reading", 0, 1], ["reading", 1, 1], ["making", 0, 1], ["making", 1, 1], ["saving", 0, 1]]) {
+              await sleep(S.step ?? 80);
+              if (run.cancel) {
+                send({ type: "cancelled" });
+                return;
+              }
+              send({ type: "progress", step, done, total });
+              if (S.chatError && step === "making") {
+                const message = S.chatError;
+                if (S.chatErrorOnce) delete S.chatError;
+                send({ type: "error", message });
+                return;
+              }
+            }
+            const title = b.title || (kind === "quiz" ? "Practice quiz" : "New cards");
+            const path = `study/${kind === "quiz" ? "quizzes" : "decks"}/${title.replace(/[\\/:*?"<>|]/g, "-")}.${kind === "quiz" ? "json" : "md"}`;
+            if (kind === "quiz") {
+              const questions = S.chatQuiz ?? Array.from({ length: count }, (_, i) => ({ id: `q${i + 1}`, kind: "choice", prompt: `Question ${i + 1}?`, choices: ["A", "B", "C", "D"], answer: "A", explanation: "A is right." }));
+              S.quizzes[path] = { title, course: sources[0].name, sources: sources.map((s) => s.path), created: Date.now(), questions };
+            } else {
+              S.decks[path] = { title, sources: sources.map((s) => s.path), updated: Date.now(), cards: S.chatCards ?? Array.from({ length: count }, (_, i) => ({ front: `New card ${i + 1}?`, back: `Answer ${i + 1}.` })) };
+            }
+            S.chatMade[origin] = path;
+            keep();
+            send({ type: "done", path, ...(kind === "quiz" ? { questions: count } : { cards: count }) });
+          } finally {
+            delete runsNow[origin];
+          }
+          return;
+        }
+        // ---- end study from chat (f13) ----
         case "agent_send": {
           M.currentSpace = args.space;
           const usedSpace = M.spaces.find((s) => s.id === args.space);

@@ -11,7 +11,10 @@ import { studyQuiz, studyQuizSubmit, studyReviewMistakes, type Attempt, type Que
 import { cn } from "@/lib/utils";
 import { openSpaceFile } from "@/runtime/records";
 
-import { CardText } from "./card-text";
+import { announce } from "@/components/shell/announcer";
+import { mathAsText } from "@/lib/study-math";
+
+import { CardText, MathText } from "./card-text";
 import { attemptOf, baseName, doneField, needsModel, percent, plainError, plural } from "./words";
 
 type Answers = Record<string, string | string[]>;
@@ -39,12 +42,15 @@ const asText = (a: string | string[] | undefined) => (Array.isArray(a) ? a.join(
 export function QuizView({
   space,
   path,
+  arrived = false,
   onBack,
   onMakeFromMistakes,
   onStudyDeck,
 }: {
   space: string;
   path: string;
+  /** Just made from the chat: focus goes to the first question, and it is announced. */
+  arrived?: boolean;
   onBack: () => void;
   onMakeFromMistakes: (attempt: Attempt, quiz: Quiz) => void;
   onStudyDeck: (path: string) => void;
@@ -70,9 +76,22 @@ export function QuizView({
       live = false;
     };
   }, [space, path]);
+  const formRef = useRef<HTMLFormElement>(null);
+  const greeted = useRef(false);
   useLayoutEffect(() => {
-    if (quiz || loadError) headingRef.current?.focus();
-  }, [quiz, loadError, attempt, round]);
+    if (!quiz && !loadError) return;
+    if (arrived && quiz && !attempt && !greeted.current) {
+      greeted.current = true;
+      // The first question's first control: a radio button or the answer box.
+      const first = formRef.current?.querySelector<HTMLElement>("[data-question] input, [data-question] textarea");
+      if (first) {
+        first.focus();
+        announce(`Your quiz is ready: ${mathAsText(quiz.title)}, ${plural(quiz.questions.length, "question")}. Question 1.`);
+        return;
+      }
+    }
+    headingRef.current?.focus();
+  }, [quiz, loadError, attempt, round, arrived]);
 
   const title = quiz?.title ?? baseName(path);
   if (loadError || !quiz) {
@@ -152,14 +171,14 @@ export function QuizView({
     <Shell onBack={onBack}>
       <div className="flex flex-col gap-0.5">
         <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold wrap-break-word text-ink" data-view-focus="" data-quiz-title="">
-          {quiz.title}
+          <MathText text={quiz.title} />
         </h2>
         <p className="text-sm text-ink-secondary">
           {plural(quiz.questions.length, "question")}
           {quiz.course ? ` · ${quiz.course}` : ""} · Answer them in any order, then check your answers at the end.
         </p>
       </div>
-      <form key={round} onSubmit={submit} noValidate className="flex flex-col gap-4" data-quiz-form="">
+      <form ref={formRef} key={round} onSubmit={submit} noValidate className="flex flex-col gap-4" data-quiz-form="">
         <ol className="flex flex-col gap-4">
           {quiz.questions.map((q, i) => (
             <li key={q.id}>
@@ -241,7 +260,7 @@ function QuestionField({
           Question {index + 1} <span className="font-normal">· {KIND_HINT[q.kind]}</span>
         </p>
         <p id={`${id}-prompt`} className="text-lg leading-normal wrap-break-word text-ink">
-          {hasBlank ? <CardText text={q.prompt.replace(/_{3,}/g, "{{ }}")} /> : q.prompt}
+          {hasBlank ? <CardText text={q.prompt.replace(/_{3,}/g, "{{ }}")} /> : <MathText text={q.prompt} />}
         </p>
       </div>
       {q.kind === "choice" || q.kind === "truefalse" ? (
@@ -256,7 +275,9 @@ function QuestionField({
                 onChange={() => onChange(c)}
                 className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
               />
-              <span className="min-w-0 wrap-break-word">{c}</span>
+              <span className="min-w-0 wrap-break-word">
+                <MathText text={c} />
+              </span>
             </label>
           ))}
         </div>
@@ -272,7 +293,9 @@ function QuestionField({
                   onChange={(e) => onChange(e.target.checked ? [...list, c] : list.filter((x) => x !== c))}
                   className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
                 />
-                <span className="min-w-0 wrap-break-word">{c}</span>
+                <span className="min-w-0 wrap-break-word">
+                  <MathText text={c} />
+                </span>
               </label>
             );
           })}
@@ -355,7 +378,7 @@ function Results({
     <Shell onBack={onBack}>
       <div className="flex flex-col gap-1" data-quiz-results="">
         <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold wrap-break-word text-ink" data-view-focus="">
-          {quiz.title}: {scoreWords} ({percent(attempt.score)})
+          <MathText text={quiz.title} />: {scoreWords} ({percent(attempt.score)})
         </h2>
         <p className="text-base text-ink-secondary">
           {mistakes === 0 ? "Every answer was right." : `${plural(mistakes, "question")} to look at again.`}
@@ -447,18 +470,28 @@ function Results({
                   {v.word}
                 </span>
               </h3>
-              {q && <p className="text-md wrap-break-word text-ink">{q.prompt.replace(/\{\{.+?\}\}/g, "___")}</p>}
+              {q && (
+                <p className="text-md wrap-break-word text-ink">
+                  <MathText text={q.prompt.replace(/\{\{.+?\}\}/g, "___")} />
+                </p>
+              )}
               <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-base">
                 <dt className="text-ink-secondary">Your answer</dt>
-                <dd className="wrap-break-word text-ink">{asText(r.given) || <span className="text-ink-secondary">No answer</span>}</dd>
+                <dd className="wrap-break-word text-ink">{asText(r.given) ? <MathText text={asText(r.given)} /> : <span className="text-ink-secondary">No answer</span>}</dd>
                 {!r.correct && (
                   <>
                     <dt className="text-ink-secondary">Right answer</dt>
-                    <dd className="wrap-break-word text-ink">{asText(r.expected)}</dd>
+                    <dd className="wrap-break-word text-ink">
+                      <MathText text={asText(r.expected)} />
+                    </dd>
                   </>
                 )}
               </dl>
-              {r.feedback && <p className="text-base wrap-break-word text-ink-secondary">{r.feedback}</p>}
+              {r.feedback && (
+                <p className="text-base wrap-break-word text-ink-secondary">
+                  <MathText text={r.feedback} />
+                </p>
+              )}
               {q?.source && (
                 <div>
                   <Button

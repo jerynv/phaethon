@@ -1,5 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+import type { StudyPlan } from "./study-chat";
+
 /**
  * Study: flashcard decks, quizzes and making both from course material.
  * Mirrors the `study_*` commands in src-tauri/src/study/commands.rs. Decks and
@@ -109,7 +111,9 @@ export type StudyEvent =
       summary?: string;
       deckPath?: string;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  /** study_chat_make only: stopped with studyChatCancel; nothing was saved. */
+  | { type: "cancelled" };
 
 /** Confidence after seeing the answer: 1 "Not at all" … 5 "Perfectly". */
 export type Confidence = 1 | 2 | 3 | 4 | 5;
@@ -194,3 +198,19 @@ export const studyReviewMistakes = (space: string, attemptPath: string, onEvent:
 
 /** Delete a deck (and its progress) or a quiz (and its attempts). */
 export const studyDelete = (space: string, path: string) => invoke<void>("study_delete", { space, path });
+
+// ---- A quiz or deck offered in a chat reply (src-tauri/src/study/chat.rs) ----
+
+/** What a reply's phaethon-study block will make, checked by the core. Rejects with why it can't be used. */
+export const studyChatPlan = (space: string, block: string, question: string) =>
+  invoke<StudyPlan>("study_chat_plan", { space, block, question });
+
+/**
+ * Make it, with the conversation (`question`, `reply`) as context. Ends with
+ * `done` (its path; also when it was made before), `error` or `cancelled`.
+ */
+export const studyChatMake = (space: string, block: string, question: string, reply: string, onEvent: (e: StudyEvent) => void) =>
+  stream("study_chat_make", { space, block, question, reply }, onEvent);
+
+/** Stop making a plan, by its origin. */
+export const studyChatCancel = (space: string, origin: string) => invoke<boolean>("study_chat_cancel", { space, origin });

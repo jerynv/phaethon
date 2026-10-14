@@ -60,15 +60,20 @@ export function focusView(space: string, view: SpaceView): void {
 
 // ---- Requests into the Study view (from the palette) ----
 
-/** "review" studies one deck, named by its title (the planner knows decks by title). */
-export type StudyRequest = { space: string; what: "deck" | "quiz" | "due" | "review"; deck?: string; key: number };
+/**
+ * "review" studies one deck, named by its title (the planner knows decks by
+ * title). "take" opens the quiz at `path` ready to answer, and "cards" studies
+ * the deck at `path` (a quiz or deck just made from the chat), with focus on
+ * the first question or card.
+ */
+export type StudyRequest = { space: string; what: "deck" | "quiz" | "due" | "review" | "take" | "cards"; deck?: string; path?: string; key: number };
 let request: StudyRequest | null = null;
 let nextKey = 1;
 const requestListeners = new Set<() => void>();
 
-/** Open Study in `space` and start making a deck or a quiz, or a review of everything due. */
-export function requestStudy(space: string, what: StudyRequest["what"], deck?: string): void {
-  request = { space, what, deck, key: nextKey++ };
+/** Open Study in `space` and start making a deck or a quiz, a review of everything due, or open one by its path. */
+export function requestStudy(space: string, what: StudyRequest["what"], deck?: string, path?: string): void {
+  request = { space, what, deck, path, key: nextKey++ };
   setSpaceView(space, "study");
   requestListeners.forEach((l) => l());
 }

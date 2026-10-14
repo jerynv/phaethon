@@ -23,7 +23,8 @@ type Screen =
   | { at: "hub" }
   | { at: "session"; paths: string[] | null; title: string }
   | { at: "deck"; path: string }
-  | { at: "quiz"; path: string };
+  /** `arrived`: opened from the chat, just made; focus goes to its first question. */
+  | { at: "quiz"; path: string; arrived?: number };
 
 /**
  * A space's Study view. The hub: what's due today and the streak, the decks
@@ -80,7 +81,9 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   useEffect(() => {
     if (!req || req.space !== space.id || handled.current === req.key) return;
     handled.current = req.key;
-    if (req.what === "due") setScreen({ at: "session", paths: null, title: "Everything due" });
+    if (req.what === "take" && req.path) setScreen({ at: "quiz", path: req.path, arrived: req.key });
+    else if (req.what === "cards" && req.path) setScreen({ at: "session", paths: [req.path], title: "New cards" });
+    else if (req.what === "due") setScreen({ at: "session", paths: null, title: "Everything due" });
     else if (req.what === "review") {
       // A deck by its title: its path from the overview; unknown → the hub, where the decks are.
       void studyOverview(space.id).then(
@@ -90,7 +93,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
         },
         () => setScreen({ at: "hub" }),
       );
-    } else {
+    } else if (req.what === "deck" || req.what === "quiz") {
       setScreen({ at: "hub" });
       openMake(req.what);
     }
@@ -155,8 +158,10 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
     return (
       <>
         <QuizView
+          key={`${screen.path}\n${screen.arrived ?? ""}`}
           space={space.id}
           path={screen.path}
+          arrived={screen.arrived != null}
           onBack={() => goHub(`[data-take-quiz="${CSS.escape(screen.path)}"]`)}
           onMakeFromMistakes={fromMistakes}
           onStudyDeck={(path) => setScreen({ at: "session", paths: [path], title: "Cards from your mistakes" })}

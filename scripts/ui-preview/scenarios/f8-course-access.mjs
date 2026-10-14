@@ -161,6 +161,9 @@ export default [
       await page.waitForSelector('[data-existing-site="c1"]', { timeout: 3000 });
       await page.click('[data-existing-site="c1"]');
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
+      // Who can see them is its own step, after the courses.
+      await page.click("[data-step-next]");
+      await page.waitForSelector('[data-course-import][data-step="viewers"] [data-import-viewers]', { timeout: 3000 });
       const v = await page.evaluate(() => {
         const f = document.querySelector("[data-import-viewers]");
         return {
@@ -172,13 +175,17 @@ export default [
       check(v.legend === "Who can see these courses" && v.checked.join() === "school" && v.described, "the current space can see them by default", JSON.stringify(v));
       // None chosen: said, and focus goes to the choices.
       await page.click('[data-import-viewer="school"] input');
-      await page.click("[data-import-start]");
+      await page.click("[data-step-next]");
       const err = await page.evaluate(() => ({ text: document.querySelector("[data-import-viewers] [data-field-error]")?.textContent, focus: document.activeElement?.closest("[data-import-viewer]")?.dataset.importViewer }));
       check(err.text === "Choose at least one space that can see these courses." && err.focus === "school", "no space chosen: said, focus on the choices", JSON.stringify(err));
       check((await calls(page, "lms_import")).length === 0, "nothing is imported");
       await page.click('[data-import-viewer="school"] input');
       await page.click('[data-import-viewer="work"] input');
       await h.shot("viewers");
+      await page.click("[data-step-next]");
+      await page.waitForSelector('[data-course-import][data-step="review"] [data-import-start]', { timeout: 3000 });
+      const review = await page.$eval("[data-wizard-review]", (e) => e.innerText.replace(/\s+/g, " "));
+      check(/Who can see them School, Work/.test(review), "the review says who will see them", review);
       await page.click("[data-import-start]");
       await page.waitForSelector('[data-course-import][data-step="progress"]', { timeout: 3000 });
       const imp = (await calls(page, "lms_import")).at(-1);

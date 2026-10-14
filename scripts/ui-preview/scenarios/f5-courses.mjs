@@ -42,6 +42,14 @@ const tabTo = async (page, sel, max = 40) => {
   }
   throw new Error(`Tab never reached ${sel} (at ${JSON.stringify(await active(page))})`);
 };
+/** From the courses step: Next to who can see them, Next to the review, then Import. */
+const toImport = async (page) => {
+  await page.click("[data-step-next]");
+  await waitStep(page, "viewers");
+  await page.click("[data-step-next]");
+  await waitStep(page, "review");
+  await page.click("[data-import-start]");
+};
 const openFromPalette = async (page) => {
   await page.waitForSelector(COMPOSER, { timeout: 5000 });
   await page.focus(COMPOSER);
@@ -81,7 +89,7 @@ export default [
     async run(page, h) {
       await openFromPalette(page);
       let s = await waitStep(page, "kind");
-      check(s.focused && s.title === "Which course site does your school use?" && s.label === "Step 1 of 4", "step 1: its heading has focus", JSON.stringify(s));
+      check(s.focused && s.title === "Which course site does your school use?" && s.label === "Step 1 of 6", "step 1: its heading has focus", JSON.stringify(s));
       // Enter on Continue with nothing chosen: a plain error, tied to the group.
       await tabTo(page, "[data-step-next]");
       await page.keyboard.press("Enter");
@@ -99,7 +107,7 @@ export default [
       await tabTo(page, "[data-step-next]");
       await page.keyboard.press("Enter");
       s = await waitStep(page, "school");
-      check(s.focused && s.title === "Find your school" && s.label === "Step 2 of 4", "step 2: its heading has focus", JSON.stringify(s));
+      check(s.focused && s.title === "Find your school" && s.label === "Step 2 of 6", "step 2: its heading has focus", JSON.stringify(s));
       await tabTo(page, "[data-school-input]");
       await page.keyboard.type("indiana");
       const found = await waitFor(page, () => document.querySelectorAll("[data-school-option]").length === 3);
@@ -121,11 +129,11 @@ export default [
       check(picked === "Indiana University Bloomington, at iu.instructure.com", "Enter picks the school and says which", picked);
       await page.keyboard.press("Enter");
       s = await waitStep(page, "signin");
-      check(s.focused && s.title === "Sign in to Indiana University Bloomington" && s.label === "Step 3 of 4", "step 3: sign in, heading focused", JSON.stringify(s));
+      check(s.focused && s.title === "Sign in to Indiana University Bloomington" && s.label === "Step 3 of 6", "step 3: sign in, heading focused", JSON.stringify(s));
       await tabTo(page, "[data-signin-open]");
       await page.keyboard.press("Enter");
       s = await waitStep(page, "choose");
-      check(s.focused && s.title === "Choose courses to import", "signed in: step 4, heading focused", JSON.stringify(s));
+      check(s.focused && s.title === "Choose courses to import" && s.label === "Step 4 of 6", "signed in: step 4, heading focused", JSON.stringify(s));
       const sent = (await calls(page, "lms_connect")).at(-1);
       check(sent.space === undefined && sent.kind === "canvas" && sent.address === "https://iu.instructure.com", "the core is asked to sign in to that school’s site (for the whole vault)", JSON.stringify(sent));
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
@@ -134,11 +142,25 @@ export default [
       );
       check(list.filter((c) => c.on).map((c) => c.id).join() === "101,102,103", "the three current courses are checked", JSON.stringify(list));
       check(list[0].text.includes("CSCI-C 241") && list[0].text.includes("Fall 2026"), "each shows its code and term", list[0].text);
+      await h.shot("choose");
+      // Step 5: who can see them, its own step.
+      await tabTo(page, "[data-step-next]");
+      await page.keyboard.press("Enter");
+      s = await waitStep(page, "viewers");
+      check(s.focused && s.label === "Step 5 of 6", "step 5: who can see them, heading focused", JSON.stringify(s));
       const what = await page.evaluate(() => document.querySelector("[data-import-what]")?.textContent);
       check(what.startsWith("Each course gets a folder with its syllabus, assignments, files and the readings it links to."), "it says what will happen", what);
       const viewers = await page.evaluate(() => [...document.querySelectorAll("[data-import-viewer]")].filter((l) => l.querySelector("input").checked).map((l) => l.dataset.importViewer));
       check(viewers.join() === "school", "the current space can see them, unless chosen otherwise", viewers.join());
-      await h.shot("choose");
+      await h.shot("viewers");
+      // Step 6: a look at all of it before anything is imported.
+      await page.keyboard.press("Enter");
+      s = await waitStep(page, "review");
+      check(s.focused && s.label === "Step 6 of 6", "step 6: the review, heading focused", JSON.stringify(s));
+      const review = await page.$eval("[data-wizard-review]", (e) => e.innerText.replace(/\s+/g, " "));
+      check(/Indiana University Bloomington/.test(review) && /Discrete Structures for Computer Science/.test(review) && /Who can see them School/.test(review), "the review names the site, the courses and who sees them", review);
+      check((await calls(page, "lms_import")).length === 0, "nothing is imported before the last step");
+      await h.shot("review");
       await tabTo(page, "[data-import-start]");
       const btn = (await active(page)).text;
       check(btn === "Import 3 courses", "the button counts the courses", btn);
@@ -236,7 +258,7 @@ export default [
         "while waiting it says what to do and what is kept",
         JSON.stringify(w),
       );
-      check(w.focus === "Cancel", "focus moves to Cancel", w.focus);
+      check(w.focus === "Stop waiting", "focus moves to Stop waiting (the one way out while it waits)", w.focus);
       await h.shot("waiting");
       // The window is closed without signing in.
       await page.evaluate(() => window.__lmsSignIn("cancelled"));
@@ -256,7 +278,7 @@ export default [
       await page.evaluate(() => window.__lmsSignIn("ok"));
       await sleep(300);
       const after = await page.evaluate(() => ({ step: document.querySelector("[data-course-import]").dataset.step, focus: document.activeElement?.textContent }));
-      check(after.step === "signin" && after.focus === "Open sign-in window again", "Cancel stops waiting and stays on sign-in", JSON.stringify(after));
+      check(after.step === "signin" && after.focus === "Open sign-in window again", "Stop waiting stays on sign-in", JSON.stringify(after));
       // An error from the core is shown as an alert.
       await page.evaluate(() => (window.__MOCK__.lms.connectHold = false, window.__MOCK__.lms.connect = "Couldn’t reach your course site: the connection timed out."));
       await page.click("[data-signin-open]");
@@ -284,7 +306,6 @@ export default [
           checked: [...document.querySelectorAll("[data-course] input:checked")].map((i) => i.closest("[data-course]").dataset.course).join(),
           open: document.querySelector("[data-past-courses]").open,
           imported: [...document.querySelectorAll("[data-course-imported]")].length,
-          button: document.querySelector("[data-import-start]").textContent,
         }));
       let s = await st();
       check(s.checked === "102" && !s.open && s.imported === 2, "only the current course not imported yet is checked; past courses are folded away", JSON.stringify(s));
@@ -295,13 +316,13 @@ export default [
       check(s.open, "Enter opens Past courses");
       await page.click('[data-course-group="past courses"] [data-select="all"]');
       s = await st();
-      check(s.checked === "102,90,91" && s.button === "Import 3 courses", "Select all picks every past course", JSON.stringify(s));
+      check(s.checked === "102,90,91", "Select all picks every past course", JSON.stringify(s));
       await page.click('[data-course-group="current courses"] [data-select="all"]');
       await page.click('[data-course-group="past courses"] [data-select="none"]');
       s = await st();
       check(s.checked === "101,102,103", "Select none clears only the past ones", JSON.stringify(s));
       await page.click('[data-course-group="current courses"] [data-select="none"]');
-      await page.click("[data-import-start]");
+      await page.click("[data-step-next]");
       const e = await page.evaluate(() => ({ err: document.querySelector("[data-field-error]")?.textContent, focus: document.activeElement?.type }));
       check(e.err === "Choose at least one course to import." && e.focus === "checkbox", "none chosen: said, and focus goes to the first course", JSON.stringify(e));
       check((await calls(page, "lms_import")).length === 0, "nothing is imported");
@@ -358,7 +379,7 @@ export default [
       await waitStep(page, "choose");
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
       await page.click('[data-course="103"]');
-      await page.click("[data-import-start]");
+      await toImport(page);
       await waitStep(page, "progress");
       await waitFor(page, () => !!document.querySelector('[data-import-course="103"][data-state="failed"]'), undefined, 6000);
       const shown = await page.evaluate(() => document.querySelector("[role=dialog]").textContent);
@@ -381,7 +402,7 @@ export default [
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
       await page.click('[data-course="101"]');
       await page.click('[data-course="103"]');
-      await page.click("[data-import-start]");
+      await toImport(page);
       await waitStep(page, "progress");
       // Mid-import: one bar per course, valued, named by its course.
       await waitFor(page, () => document.querySelector('[data-import-course="101"] [role="progressbar"]')?.getAttribute("aria-valuenow") === "2", undefined, 5000);
@@ -428,7 +449,7 @@ export default [
       await waitStep(page, "choose");
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
       await page.click('[data-course="101"]');
-      await page.click("[data-import-start]");
+      await toImport(page);
       await waitFor(page, () => document.querySelector("[data-step-title]")?.textContent === "Import finished", undefined, 6000);
       const sk = await page.$eval('[data-import-course="101"] [data-course-skipped]', (e) => e.textContent);
       check(sk.includes("Some parts couldn’t be imported:") && sk.includes("Announcements: turned off for this course."), "skipped parts are listed in plain words", sk);

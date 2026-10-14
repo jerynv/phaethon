@@ -6,8 +6,19 @@ import { radioArrowKeys } from "@/components/settings/controls";
 import { announce } from "@/components/shell/announcer";
 import { showInLabel } from "@/components/shell/space-actions";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogTitle } from "@/components/ui/dialog";
 import { fieldClasses, Input } from "@/components/ui/input";
+import {
+  enterAdvances,
+  ReviewList,
+  StepError,
+  WIZARD_FORM,
+  WizardBody,
+  WizardDialogContent,
+  WizardFooter,
+  WizardHeader,
+  type WizardStep,
+} from "@/components/ui/stepper";
 import { Icon } from "@/icons";
 import { lmsConnect, lmsConnections, lmsCourses, lmsSchools, type LmsConnection, type LmsCourse, type LmsKind, type LmsSchool } from "@/lib/lms";
 import type { Space } from "@/lib/spaces";
@@ -21,9 +32,16 @@ import { checkAddress, connectionName, hostOf, isCancelled, isSignedOut, KINDS, 
 const SEARCH_DEBOUNCE_MS = 250;
 const SEARCH_MIN = 2;
 
-type Step = "kind" | "school" | "signin" | "choose" | "progress" | "loading";
-/** The four steps that lead to an import, numbered when the flow starts at the first. */
-const NUMBERED: Step[] = ["kind", "school", "signin", "choose"];
+type Step = "kind" | "school" | "signin" | "choose" | "viewers" | "review" | "progress" | "loading";
+/** The steps that lead to an import, one decision each, in order (the ones a flow skips are left out of its list). */
+const NUMBERED: WizardStep[] = [
+  { id: "kind", label: "Course site" },
+  { id: "school", label: "Your school" },
+  { id: "signin", label: "Sign in" },
+  { id: "choose", label: "Courses" },
+  { id: "viewers", label: "Who can see them" },
+  { id: "review", label: "Check and import" },
+];
 
 /** The course site being set up: chosen in the first steps, or an existing connection. */
 type Site = { kind: LmsKind; address: string; schoolName?: string };
@@ -61,8 +79,9 @@ const viewerOf = (r: Run): string | null => (r.spaces.includes(r.space) ? r.spac
  * Opened with openCourseImport() from the palette, a space's menu, the empty
  * conversation and Settings › Course sites.
  *
- * A stepped modal dialog: which site, which school, sign in (in the school's
- * own window), which courses, then the import. Each step's heading is the
+ * A stepped modal dialog (the shared wizard, ui/stepper): which site, which
+ * school, sign in (in the school's own window), which courses, who can see
+ * them, a look at all of it, then the import. Each step's heading is the
  * dialog's title and takes focus when the step shows, so a screen reader
  * hears where it is; Back goes one step back. An import keeps going when the
  * dialog closes: a notice at the foot of the window says how far it is, and
@@ -134,7 +153,13 @@ function Flow({
   // Opened while an import runs (or to see one that finished in the background): straight to it.
   const showRun = !!run && (run.status === "running" || req.at === "run");
   const [step, setStep] = useState<Step>(showRun ? "progress" : req.connection ? (req.at === "signin" ? "signin" : req.at === "sync" ? "loading" : "choose") : "kind");
-  const numbered = useRef(step === "kind");
+  // The step the flow started at: the list of steps starts there.
+  const start = useRef(step);
+  // Steps this flow doesn't need: a site already connected needs no school, a signed-in one no sign-in.
+  const [skip, setSkip] = useState<ReadonlySet<Step>>(new Set());
+  // What was chosen, kept here so Back and Change keep it: the courses on the site and the ones checked, and who can see them.
+  const [pick, setPick] = useState<Pick_ | null>(null);
+  const [viewers, setViewers] = useState<ReadonlySet<string>>(() => new Set([req.space]));
   const [space] = useState(req.space);
   const [connections, setConnections] = useState<LmsConnection[] | null>(null);
   const [site, setSite] = useState<Site | null>(null);
@@ -222,6 +247,8 @@ function Flow({
     if (step === "school") go("kind");
     else if (step === "signin") go(connection || !site ? "kind" : "school");
     else if (step === "choose") go("kind");
+    else if (step === "viewers") go("choose");
+    else if (step === "review") go("viewers");
   }
 
   function begin(c: LmsConnection, courses: Pick<LmsCourse, "id" | "name">[], viewers: string[]) {
@@ -241,10 +268,9 @@ function Flow({
     go("choose");
   }
 
-  const n = NUMBERED.indexOf(step);
-  const stepLabel = numbered.current && n >= 0 ? `Step ${n + 1} of ${NUMBERED.length}` : null;
-
-  const frame = { titleRef, stepLabel };
+  const from = Math.max(0, NUMBERED.findIndex((s) => s.id === start.current));
+  const steps = NUMBERED.slice(from).filter((s) => !skip.has(s.id as Step));
+  const frame = { titleRef, steps, current: step };
   let body: ReactNode;
   if (step === "kind") {
     body = (
@@ -253,6 +279,7 @@ function Flow({
         connections={connections}
         initial={site?.kind ?? null}
         onExisting={(c) => {
+          setSkip(new Set<Step>(c.signedIn ? ["school", "signin"] : ["school"]));
           setConnection(c);
           setSite({ kind: c.kind, address: c.address, schoolName: c.schoolName });
           if (c.signedIn) go("choose");
@@ -262,6 +289,7 @@ function Flow({
           }
         }}
         onNext={(kind) => {
+          setSkip(new Set());
           if (site?.kind !== kind) setSite({ kind, address: "" });
           setConnection(null);
           go("school");
@@ -278,6 +306,7 @@ function Flow({
           setSite(s);
           const known = connections?.find((c) => c.kind === s.kind && hostOf(c.address) === hostOf(s.address));
           setConnection(known ?? null);
+          setSkip(new Set<Step>(known?.signedIn ? ["signin"] : []));
           if (known?.signedIn) go("choose");
           else {
             setSigninReason(known ? "signedOut" : null);
@@ -300,20 +329,35 @@ function Flow({
     body = (
       <ChooseStep
         {...frame}
-        space={space}
-        spaces={spaces}
         connection={connection}
         error={syncError}
         onBack={back}
+        pick={pick?.connection === connection.id ? pick : null}
+        onPick={setPick}
         onSignedOut={() => {
           setSigninReason("signedOut");
           go("signin");
         }}
-        onImport={(viewers, courses) => begin(connection, courses, viewers)}
+        onNext={() => go("viewers")}
+      />
+    );
+  } else if (step === "viewers" && connection) {
+    body = <ViewersStep {...frame} space={space} spaces={spaces} viewers={viewers} onViewers={setViewers} onBack={back} onNext={() => go("review")} />;
+  } else if (step === "review" && connection && pick) {
+    const courses = pick.courses.filter((c) => pick.chosen.has(c.id));
+    body = (
+      <ReviewStep
+        {...frame}
+        school={connectionName(connection)}
+        courses={courses}
+        seenBy={spaces.filter((s) => viewers.has(s.id))}
+        onChange={go}
+        onBack={back}
+        onImport={() => begin(connection, courses, spaces.filter((s) => viewers.has(s.id)).map((s) => s.id))}
       />
     );
   } else if (step === "progress") {
-    body = <ProgressStep {...frame} spaces={spaces} onSeen={onSeen} onClose={onClose} onAsk={(s, t) => ((asked.current = true), onAsk(s, t))} />;
+    body = <ProgressStep {...frame} steps={[]} spaces={spaces} onSeen={onSeen} onClose={onClose} onAsk={(s, t) => ((asked.current = true), onAsk(s, t))} />;
   } else {
     body = (
       <>
@@ -329,10 +373,13 @@ function Flow({
   }
 
   return (
-    <DialogContent
+    <WizardDialogContent
       data-course-import=""
       data-step={step}
       aria-describedby={undefined}
+      dirty={["school", "signin", "choose", "viewers", "review"].includes(step)}
+      onClose={onClose}
+      discard={{ title: "Stop importing courses?", body: "Nothing has been imported yet. What you chose here isn’t kept; a site you signed in to stays signed in." }}
       onOpenAutoFocus={(e) => {
         e.preventDefault();
         titleRef.current?.focus();
@@ -348,60 +395,35 @@ function Flow({
       onEscapeKeyDown={(e) => {
         if (document.activeElement?.matches('[data-school-input][aria-expanded="true"]')) e.preventDefault();
       }}
-      // Only Escape and Close close it: a slip outside never loses a half-done step.
-      onPointerDownOutside={(e) => e.preventDefault()}
-      onInteractOutside={(e) => e.preventDefault()}
-      className="flex flex-col gap-4"
     >
       {body}
       <p role="status" className="sr-only" data-import-said="">
         {said}
       </p>
-    </DialogContent>
+    </WizardDialogContent>
   );
 }
 
-type FrameProps = { titleRef: React.RefObject<HTMLHeadingElement | null>; stepLabel: string | null };
+type FrameProps = { titleRef: React.RefObject<HTMLHeadingElement | null>; steps: readonly WizardStep[]; current: string };
+/** What was chosen on the courses step: the site's courses and the ones checked. */
+type Pick_ = { connection: string; courses: LmsCourse[]; chosen: ReadonlySet<string> };
 
-/** A step's heading (the dialog's title, focused when the step shows) and its lead text. */
-function StepHead({ titleRef, stepLabel, title, children }: FrameProps & { title: string; children?: ReactNode }) {
+/** A step's heading (the dialog's title, focused when the step shows), where it is in the steps, and its lead text. */
+function StepHead({ titleRef, steps, current, title, children }: FrameProps & { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 pe-[calc(var(--ph-control-height)+var(--ph-space)*2)]">
-      {stepLabel && (
-        <p className="text-sm text-ink-secondary" data-step-label="">
-          {stepLabel}
-        </p>
-      )}
-      <DialogTitle ref={titleRef} tabIndex={-1} data-step-title="" className="self-start rounded-xs">
-        {title}
-      </DialogTitle>
-      {children && <div className="flex flex-col gap-1.5 text-base text-ink-secondary">{children}</div>}
-    </div>
+    <WizardHeader steps={steps} current={current} title={title} titleRef={titleRef} task="Import courses" titleProps={{ "data-step-title": "" }}>
+      {children}
+    </WizardHeader>
   );
 }
 
-function Footer({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap items-center justify-end gap-2 pt-1">{children}</div>;
-}
-
-function BackButton({ onBack }: { onBack: () => void }) {
-  return (
-    <Button type="button" variant="ghost" onClick={onBack} data-step-back="" className="me-auto">
-      <Icon name="chevron-left" />
-      Back
-    </Button>
-  );
+/** Back (when there is a step before), Cancel, and the step's own next button. */
+function Footer({ onBack, next, cancel }: { onBack?: () => void; next?: ReactNode; cancel?: boolean }) {
+  return <WizardFooter onBack={onBack} next={next} cancel={cancel} />;
 }
 
 /** A problem with what was typed or chosen, tied to its field by id. */
-function FieldError({ id, children }: { id: string; children: ReactNode }) {
-  return (
-    <p id={id} className="flex items-start gap-1.5 text-sm text-danger-ink" data-field-error="">
-      <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-      <span className="min-w-0">{children}</span>
-    </p>
-  );
-}
+const FieldError = StepError;
 
 function Alert({ children, tone = "danger" }: { children: ReactNode; tone?: "danger" | "warning" }) {
   return (
@@ -450,10 +472,11 @@ function KindStep({
   }
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+    <form onSubmit={submit} onKeyDown={enterAdvances} noValidate className={WIZARD_FORM}>
       <StepHead {...frame} title="Which course site does your school use?">
         <p>Phaethon reads your courses from it and keeps them as files you can open, for the spaces you choose.</p>
       </StepHead>
+      <WizardBody>
       {connections && connections.length > 0 && (
         <div className="flex flex-col gap-2" data-existing-sites="">
           <h3 className="text-md font-semibold text-ink">Already connected</h3>
@@ -523,11 +546,14 @@ function KindStep({
         ))}
       </RadioGroup.Root>
       {error && <FieldError id={errId}>{error}</FieldError>}
-      <Footer>
-        <Button type="submit" data-step-next="">
-          Continue
-        </Button>
-      </Footer>
+      </WizardBody>
+      <Footer
+        next={
+          <Button type="submit" data-step-next="">
+            Continue
+          </Button>
+        }
+      />
     </form>
   );
 }
@@ -550,7 +576,7 @@ function SchoolStep({ site, onBack, onNext, ...frame }: FrameProps & { site: Sit
   }, [typing]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={WIZARD_FORM}>
       <StepHead {...frame} title="Find your school">
         <p>
           {typing
@@ -610,7 +636,8 @@ function AddressForm({
   }
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+    <form onSubmit={submit} noValidate className={WIZARD_FORM}>
+      <WizardBody>
       <div className="flex flex-col gap-1.5">
         <label htmlFor={id} className="text-base font-medium text-ink">
           Course site address
@@ -638,12 +665,15 @@ function AddressForm({
         {error && <FieldError id={errId}>{error}</FieldError>}
       </div>
       {children}
-      <Footer>
-        <BackButton onBack={onBack} />
-        <Button type="submit" data-step-next="">
-          Continue
-        </Button>
-      </Footer>
+      </WizardBody>
+      <Footer
+        onBack={onBack}
+        next={
+          <Button type="submit" data-step-next="">
+            Continue
+          </Button>
+        }
+      />
     </form>
   );
 }
@@ -756,7 +786,8 @@ function SchoolSearch({
           : "";
 
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+    <form onSubmit={submit} noValidate className={WIZARD_FORM}>
+      <WizardBody>
       <div className="flex flex-col gap-1.5">
         <label htmlFor={id} className="text-base font-medium text-ink">
           School
@@ -835,12 +866,15 @@ function SchoolSearch({
         {error && <FieldError id={errId}>{error}</FieldError>}
       </div>
       {children}
-      <Footer>
-        <BackButton onBack={onBack} />
-        <Button type="submit" data-step-next="">
-          Continue
-        </Button>
-      </Footer>
+      </WizardBody>
+      <Footer
+        onBack={onBack}
+        next={
+          <Button type="submit" data-step-next="">
+            Continue
+          </Button>
+        }
+      />
     </form>
   );
 }
@@ -898,7 +932,7 @@ function SignInStep({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={WIZARD_FORM}>
       <StepHead {...frame} title={reason === "signedOut" ? `Sign in to ${school} again` : `Sign in to ${school}`}>
         {reason === "signedOut" ? (
           <p>You’ve been signed out of {school}, so Phaethon can’t see your courses. Sign in again to carry on.</p>
@@ -908,6 +942,7 @@ function SignInStep({
           extra check your school asks for.
         </p>
       </StepHead>
+      <WizardBody>
       {waiting ? (
         <div role="status" className="flex items-start gap-2.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-base text-ink" data-signin-waiting="">
           <Icon name="spinner" className="mt-0.5 shrink-0 text-ink-secondary motion-safe:animate-spin" />
@@ -927,19 +962,24 @@ function SignInStep({
           <Alert tone={problem.tone}>{problem.text}</Alert>
         </div>
       )}
-      <Footer>
-        {!waiting && <BackButton onBack={onBack} />}
-        {waiting ? (
-          <Button ref={cancelRef} type="button" variant="outline" data-signin-cancel="" onClick={cancel}>
-            Cancel
-          </Button>
-        ) : (
-          <Button ref={openRef} type="button" data-signin-open="" aria-describedby={problem ? problemId : undefined} onClick={() => void signIn()}>
-            <Icon name="lock" />
-            {problem ? "Open sign-in window again" : "Open sign-in window"}
-          </Button>
-        )}
-      </Footer>
+      </WizardBody>
+      {/* While it waits, the one way out is to stop waiting (Cancel would read as the same thing). */}
+      <Footer
+        onBack={waiting ? undefined : onBack}
+        cancel={!waiting}
+        next={
+          waiting ? (
+            <Button ref={cancelRef} type="button" variant="outline" data-signin-cancel="" onClick={cancel}>
+              Stop waiting
+            </Button>
+          ) : (
+            <Button ref={openRef} type="button" data-signin-open="" aria-describedby={problem ? problemId : undefined} onClick={() => void signIn()}>
+              <Icon name="lock" />
+              {problem ? "Open sign-in window again" : "Open sign-in window"}
+            </Button>
+          )
+        }
+      />
     </div>
   );
 }
@@ -947,191 +987,289 @@ function SignInStep({
 // ---- Step 4: choose courses ----
 
 function ChooseStep({
-  space,
-  spaces,
   connection,
   error: syncError,
+  pick,
+  onPick,
   onBack,
   onSignedOut,
-  onImport,
+  onNext,
   ...frame
 }: FrameProps & {
-  space: string;
-  spaces: readonly Space[];
   connection: LmsConnection;
   error: string;
+  /** What was chosen before (Back, Change), kept by the flow. */
+  pick: Pick_ | null;
+  onPick: (p: Pick_) => void;
   onBack: () => void;
   onSignedOut: () => void;
-  onImport: (viewers: string[], courses: LmsCourse[]) => void | Promise<void>;
+  onNext: () => void;
 }) {
-  const [courses, setCourses] = useState<LmsCourse[] | null>(null);
+  const courses = pick?.courses ?? null;
+  const chosen = pick?.chosen ?? new Set<string>();
   const [loadError, setLoadError] = useState(syncError);
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
-  // Who can see the courses: the space asking, unless the person chooses otherwise.
-  const [viewers, setViewers] = useState<Set<string>>(() => new Set([space]));
-  const [viewerError, setViewerError] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   const errId = useId();
-  const spaceId = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const school = connectionName(connection);
 
   const load = useCallback(() => {
     setLoadError("");
-    setCourses(null);
     lmsCourses(connection.id).then(
-      (cs) => {
-        setCourses(cs);
-        // Current courses not imported yet start checked; past ones and ones already here don't.
-        setChosen(new Set(cs.filter((c) => c.current && !c.imported).map((c) => c.id)));
-      },
+      // Current courses not imported yet start checked; past ones and ones already here don't.
+      (cs) => onPick({ connection: connection.id, courses: cs, chosen: new Set(cs.filter((c) => c.current && !c.imported).map((c) => c.id)) }),
       (e: unknown) => {
         if (isSignedOut(e)) onSignedOut();
         else setLoadError(String(e));
       },
     );
-  }, [connection.id, onSignedOut]);
+  }, [connection.id, onSignedOut, onPick]);
   useEffect(() => {
-    if (!syncError) load();
+    // Listed once: coming back to this step keeps what was checked.
+    if (!syncError && !pick) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const current = courses?.filter((c) => c.current) ?? [];
   const past = courses?.filter((c) => !c.current) ?? [];
 
-  function toggle(id: string, on: boolean) {
-    setChosen((s) => {
-      const next = new Set(s);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  function setChosen(f: (s: Set<string>) => void) {
+    if (!courses) return;
+    const next = new Set(chosen);
+    f(next);
+    onPick({ connection: connection.id, courses, chosen: next });
     setError("");
   }
-  function setAll(list: LmsCourse[], on: boolean) {
-    setChosen((s) => {
-      const next = new Set(s);
-      for (const c of list) {
-        if (on) next.add(c.id);
-        else next.delete(c.id);
-      }
-      return next;
-    });
-    setError("");
-  }
+  const toggle = (id: string, on: boolean) => setChosen((s) => (on ? s.add(id) : s.delete(id)));
+  const setAll = (list: LmsCourse[], on: boolean) => setChosen((s) => list.forEach((c) => (on ? s.add(c.id) : s.delete(c.id))));
 
-  async function submit(e: FormEvent) {
+  function submit(e: FormEvent) {
     e.preventDefault();
-    if (!courses || busy) return;
-    const picked = courses.filter((c) => chosen.has(c.id));
-    if (!picked.length) {
+    if (!courses) return;
+    if (!courses.some((c) => chosen.has(c.id))) {
       setError("Choose at least one course to import.");
       listRef.current?.querySelector<HTMLElement>('input[type="checkbox"]')?.focus();
       return;
     }
-    if (!viewers.size) {
-      setViewerError("Choose at least one space that can see these courses.");
-      document.querySelector<HTMLElement>("[data-import-viewer] input")?.focus();
-      return;
-    }
-    setBusy(true);
-    try {
-      await onImport(
-        spaces.filter((s) => viewers.has(s.id)).map((s) => s.id),
-        picked,
-      );
-    } finally {
-      setBusy(false);
-    }
+    onNext();
   }
 
-  const count = chosen.size;
   return (
-    <form onSubmit={(e) => void submit(e)} noValidate className="flex flex-col gap-4">
+    <form onSubmit={submit} onKeyDown={enterAdvances} noValidate className={WIZARD_FORM}>
       <StepHead {...frame} title="Choose courses to import">
         <p>
           From {school}. Courses you imported before are updated: only new or changed files are downloaded.
         </p>
       </StepHead>
-      {loadError ? (
-        <Alert>
-          <p>Your courses couldn’t be listed. {loadError}</p>
-          <Button type="button" variant="outline" size="sm" className="mt-2" onClick={load}>
-            <Icon name="retry" />
-            Try again
+      <WizardBody>
+        {loadError ? (
+          <Alert>
+            <p>Your courses couldn’t be listed. {loadError}</p>
+            <Button type="button" variant="outline" size="sm" className="mt-2" onClick={load}>
+              <Icon name="retry" />
+              Try again
+            </Button>
+          </Alert>
+        ) : !courses ? (
+          <p role="status" className="flex items-center gap-2 text-base text-ink-secondary" data-courses-loading="">
+            <Icon name="spinner" className="motion-safe:animate-spin" />
+            Getting your courses from {school}…
+          </p>
+        ) : (
+          <div ref={listRef} className="flex flex-col gap-3" data-course-list="">
+            <CourseGroup
+              title="Current courses"
+              courses={current}
+              chosen={chosen}
+              onToggle={toggle}
+              onAll={(on) => setAll(current, on)}
+              empty="No current courses. Your past courses are below."
+              describedBy={error ? errId : undefined}
+            />
+            {past.length > 0 && (
+              <details
+                className="group/past flex flex-col"
+                data-past-courses=""
+                // Open from the start when coming back with a past course checked; after that it is the person's to fold.
+                ref={(el) => {
+                  if (!el || el.dataset.ready) return;
+                  el.dataset.ready = "";
+                  if (past.some((c) => chosen.has(c.id))) el.open = true;
+                }}
+              >
+                <summary className="inline-flex min-h-(--ph-target-min) cursor-default items-center gap-1.5 self-start rounded-sm pe-1 text-base font-medium text-ink select-none [&::-webkit-details-marker]:hidden">
+                  <Icon name="chevron-right" className="size-(--ph-icon-size-sm) transition-transform duration-(--ph-duration-fast) group-open/past:rotate-90" />
+                  Past courses ({past.length})
+                </summary>
+                <div className="pt-2">
+                  <CourseGroup title="Past courses" courses={past} chosen={chosen} onToggle={toggle} onAll={(on) => setAll(past, on)} empty="" hideTitle />
+                </div>
+              </details>
+            )}
+            {error && <FieldError id={errId}>{error}</FieldError>}
+          </div>
+        )}
+      </WizardBody>
+      <Footer
+        onBack={onBack}
+        next={
+          <Button type="submit" disabled={!courses} data-step-next="">
+            Next
+            <Icon name="chevron-right" />
           </Button>
-        </Alert>
-      ) : !courses ? (
-        <p role="status" className="flex items-center gap-2 text-base text-ink-secondary" data-courses-loading="">
-          <Icon name="spinner" className="motion-safe:animate-spin" />
-          Getting your courses from {school}…
-        </p>
-      ) : (
-        <div ref={listRef} className="flex flex-col gap-3" data-course-list="">
-          <CourseGroup
-            title="Current courses"
-            courses={current}
-            chosen={chosen}
-            onToggle={toggle}
-            onAll={(on) => setAll(current, on)}
-            empty="No current courses. Your past courses are below."
-            describedBy={error ? errId : undefined}
-          />
-          {past.length > 0 && (
-            <details className="group/past flex flex-col" data-past-courses="">
-              <summary className="inline-flex min-h-(--ph-target-min) cursor-default items-center gap-1.5 self-start rounded-sm pe-1 text-base font-medium text-ink select-none [&::-webkit-details-marker]:hidden">
-                <Icon name="chevron-right" className="size-(--ph-icon-size-sm) transition-transform duration-(--ph-duration-fast) group-open/past:rotate-90" />
-                Past courses ({past.length})
-              </summary>
-              <div className="pt-2">
-                <CourseGroup title="Past courses" courses={past} chosen={chosen} onToggle={toggle} onAll={(on) => setAll(past, on)} empty="" hideTitle />
-              </div>
-            </details>
-          )}
-          {error && <FieldError id={errId}>{error}</FieldError>}
-        </div>
-      )}
-      <fieldset className="flex min-w-0 flex-col gap-1.5" aria-describedby={`${spaceId}-what${viewerError ? ` ${spaceId}-err` : ""}`} data-import-viewers="">
-        <legend className="float-start text-base font-medium text-ink">Who can see these courses</legend>
-        <p id={`${spaceId}-what`} className="clear-both text-sm text-ink-secondary" data-import-what="">
-          Each course gets a folder with its syllabus, assignments, files and the readings it links to. The spaces you check can see all of each new course;
-          choose part by part later in Settings › Course sites. Courses imported before keep who can see them.
-        </p>
-        <ul className="flex flex-wrap gap-x-4 gap-y-1">
-          {spaces.map((s) => (
-            <li key={s.id}>
-              <label className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink" data-import-viewer={s.id}>
-                <input
-                  type="checkbox"
-                  checked={viewers.has(s.id)}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setViewers((v) => {
-                      const next = new Set(v);
-                      if (on) next.add(s.id);
+        }
+      />
+    </form>
+  );
+}
+
+// ---- Step 5: who can see them ----
+
+function ViewersStep({
+  space,
+  spaces,
+  viewers,
+  onViewers,
+  onBack,
+  onNext,
+  ...frame
+}: FrameProps & {
+  space: string;
+  spaces: readonly Space[];
+  viewers: ReadonlySet<string>;
+  onViewers: (v: ReadonlySet<string>) => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const [error, setError] = useState("");
+  const spaceId = useId();
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!spaces.some((s) => viewers.has(s.id))) {
+      setError("Choose at least one space that can see these courses.");
+      document.querySelector<HTMLElement>("[data-import-viewer] input")?.focus();
+      return;
+    }
+    onNext();
+  }
+
+  return (
+    <form onSubmit={submit} onKeyDown={enterAdvances} noValidate className={WIZARD_FORM}>
+      <StepHead {...frame} title="Which spaces can see these courses?">
+        <p>Phaethon in a space can only read the courses that space can see.</p>
+      </StepHead>
+      <WizardBody>
+        <fieldset className="flex min-w-0 flex-col gap-1.5" aria-describedby={`${spaceId}-what${error ? ` ${spaceId}-err` : ""}`} data-import-viewers="">
+          <legend className="sr-only">Who can see these courses</legend>
+          <ul className="flex flex-col gap-1">
+            {spaces.map((s) => (
+              <li key={s.id}>
+                <label className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink" data-import-viewer={s.id}>
+                  <input
+                    type="checkbox"
+                    checked={viewers.has(s.id)}
+                    onChange={(e) => {
+                      const next = new Set(viewers);
+                      if (e.target.checked) next.add(s.id);
                       else next.delete(s.id);
-                      return next;
-                    });
-                    setViewerError("");
-                  }}
-                  className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
-                />
-                {s.name}
-                {s.id === space && <span className="text-sm text-ink-secondary">(this space)</span>}
-              </label>
-            </li>
-          ))}
-        </ul>
-        {viewerError && <FieldError id={`${spaceId}-err`}>{viewerError}</FieldError>}
-      </fieldset>
-      <Footer>
-        <BackButton onBack={onBack} />
-        <Button type="submit" disabled={!courses || busy} data-step-next="" data-import-start="">
-          <Icon name="download" />
-          {count ? `Import ${plural(count, "course", "courses")}` : "Import"}
-        </Button>
-      </Footer>
+                      onViewers(next);
+                      setError("");
+                    }}
+                    className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
+                  />
+                  {s.name}
+                  {s.id === space && <span className="text-sm text-ink-secondary">(this space)</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+          {error && <FieldError id={`${spaceId}-err`}>{error}</FieldError>}
+          <p id={`${spaceId}-what`} className="text-sm text-ink-secondary" data-import-what="">
+            Each course gets a folder with its syllabus, assignments, files and the readings it links to. The spaces you check can see all of each new course;
+            choose part by part later in Settings › Course sites. Courses imported before keep who can see them.
+          </p>
+        </fieldset>
+      </WizardBody>
+      <Footer
+        onBack={onBack}
+        next={
+          <Button type="submit" data-step-next="">
+            Next
+            <Icon name="chevron-right" />
+          </Button>
+        }
+      />
+    </form>
+  );
+}
+
+// ---- Step 6: a look at all of it, then the import ----
+
+function ReviewStep({
+  school,
+  courses,
+  seenBy,
+  onChange,
+  onBack,
+  onImport,
+  ...frame
+}: FrameProps & {
+  school: string;
+  courses: LmsCourse[];
+  seenBy: readonly Space[];
+  onChange: (step: Step) => void;
+  onBack: () => void;
+  onImport: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (busy) return;
+        setBusy(true);
+        onImport();
+      }}
+      onKeyDown={enterAdvances}
+      noValidate
+      className={WIZARD_FORM}
+    >
+      <StepHead {...frame} title={`Import ${plural(courses.length, "course", "courses")}?`} />
+      <WizardBody>
+        <ReviewList
+          items={[
+            { id: "site", label: "From", value: school },
+            {
+              id: "courses",
+              label: "Courses",
+              value: (
+                <ul className="flex flex-col" data-review-courses="">
+                  {courses.map((c) => (
+                    <li key={c.id} className="wrap-break-word">
+                      {c.name}
+                    </li>
+                  ))}
+                </ul>
+              ),
+              onChange: () => onChange("choose"),
+            },
+            { id: "viewers", label: "Who can see them", value: seenBy.map((s) => s.name).join(", "), onChange: () => onChange("viewers") },
+          ]}
+        />
+        <p className="text-sm text-ink-secondary">
+          Phaethon downloads them into your vault as plain files. It only reads from {school}: nothing changes there. You can close this window while it works.
+        </p>
+      </WizardBody>
+      <Footer
+        onBack={onBack}
+        next={
+          <Button type="submit" disabled={busy} data-step-next="" data-import-start="">
+            <Icon name="download" />
+            {`Import ${plural(courses.length, "course", "courses")}`}
+          </Button>
+        }
+      />
     </form>
   );
 }
@@ -1148,7 +1286,7 @@ function CourseGroup({
 }: {
   title: string;
   courses: LmsCourse[];
-  chosen: Set<string>;
+  chosen: ReadonlySet<string>;
   onToggle: (id: string, on: boolean) => void;
   onAll: (on: boolean) => void;
   empty: string;
@@ -1271,8 +1409,8 @@ function ProgressStep({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <StepHead {...frame} stepLabel={null} title={running ? "Importing courses" : run.status === "failed" && !done ? "The import stopped" : "Import finished"}>
+    <div className={WIZARD_FORM}>
+      <StepHead {...frame} title={running ? "Importing courses" : run.status === "failed" && !done ? "The import stopped" : "Import finished"}>
         <p>
           {running
             ? "You can close this window: the import keeps going, and Phaethon says when it’s done."
@@ -1282,6 +1420,7 @@ function ProgressStep({
           {seenBy.length ? `New courses can be seen in ${seenBy.join(", ")}.` : "No space can see the new courses yet: choose in Settings › Course sites."}
         </p>
       </StepHead>
+      <WizardBody>
       {run.status === "failed" && run.error && <Alert>{run.error}</Alert>}
       {run.notes?.map((n) => (
         <p key={n} data-import-note="">
@@ -1297,11 +1436,15 @@ function ProgressStep({
       <p role="status" className="sr-only" data-import-status="">
         {said}
       </p>
-      <Footer>
-        <Button type="button" variant={running ? "outline" : "default"} onClick={onClose} data-import-close="">
-          {running ? "Close" : "Done"}
-        </Button>
-      </Footer>
+      </WizardBody>
+      <Footer
+        cancel={false}
+        next={
+          <Button type="button" variant={running ? "outline" : "default"} onClick={onClose} data-import-close="">
+            {running ? "Close" : "Done"}
+          </Button>
+        }
+      />
     </div>
   );
 }

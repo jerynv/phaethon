@@ -86,9 +86,8 @@ const LONG_TITLE =
 // ---- f14-load-*: a view's first load (a spinner, then its content) doesn't move what was already on screen ----
 const SLOW = 700;
 const LOADS = {
-  // Study's heading row grows by its Make buttons once decks load (about 2 px): study-view.tsx is being changed
-  // elsewhere, so that one is reported, not checked, until its heading row keeps a button's height from the start.
-  study: { cmds: ["study_overview", "study_sources"], heading: "[data-study-hub] h2", known: true },
+  // Study's heading row keeps a button's height from the start, so its Make buttons arriving move nothing.
+  study: { cmds: ["study_overview", "study_sources"], heading: "[data-study-hub] h2" },
   grades: { cmds: ["lms_grades", "lms_connections"], heading: "[data-grades-view] h2" },
   plan: { cmds: ["plan_upcoming", "plan_exams_get", "plan_state_get"], heading: "[data-plan-view] h2" },
 };
@@ -150,8 +149,19 @@ const loadScenario = (v) => ({
     await new Promise((r) => setTimeout(r, SLOW + 900));
     const loaded = await loadBoxes(page, v);
     console.log(`     f14 load ${v}: heading ${fmt(loading.heading)} -> ${fmt(loaded.heading)}; scroller widths ${loading.widths} -> ${loaded.widths}`);
-    if (LOADS[v].known && !same(loading.heading, loaded.heading)) console.log(`     KNOWN: ${v}: its heading moves once it has loaded (${fmt(loading.heading)} -> ${fmt(loaded.heading)})`);
-    else check(same(loading.heading, loaded.heading), `${v}: its heading doesn't move once it has loaded`, `${fmt(loading.heading)} -> ${fmt(loaded.heading)}`);
+    check(same(loading.heading, loaded.heading), `${v}: its heading doesn't move once it has loaded`, `${fmt(loading.heading)} -> ${fmt(loaded.heading)}`);
+    // Every view's heading sits at the same height, so switching between them moves nothing.
+    const top = await page.evaluate((shown) => {
+      const t = (sel) => {
+        const p = document.querySelector(`${shown} [role=tabpanel]:not([hidden]) ${sel}`);
+        const panel = p?.closest("[role=tabpanel]");
+        return p && panel ? Math.round(p.getBoundingClientRect().top * 100) / 100 : null;
+      };
+      return t("h2");
+    }, shown);
+    (globalThis.__f14HeadingTops ??= {})[`${v}@${page.viewport().width}`] = top;
+    const others = Object.entries(globalThis.__f14HeadingTops).filter(([k]) => k.endsWith(`@${page.viewport().width}`) && !k.startsWith(`${v}@`));
+    for (const [k, t] of others) check(t === top, `${v}'s heading sits where ${k.split("@")[0]}'s does`, `${top} vs ${t}`);
     check(loading.widths === loaded.widths, `${v}: no scrollbar appears that narrows it`, `${loading.widths} -> ${loaded.widths}`);
     // Headless Chromium's scrollbars overlay the page (as macOS's do by default), so a scrollbar that takes room
     // ("Show scroll bars: Always") is guarded by its room being kept from the start.

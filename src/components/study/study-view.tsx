@@ -260,8 +260,8 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 py-5" data-study-hub={space.id}>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+    <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 pt-6 pb-5" data-study-hub={space.id}>
+      <div className="flex min-h-(--ph-control-height) flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold text-ink" data-view-focus="">
           Study
         </h2>

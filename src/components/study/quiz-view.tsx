@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { openSpaceFile } from "@/runtime/records";
 
 import { announce } from "@/components/shell/announcer";
-import { mathAsText } from "@/lib/study-math";
+import { mathAsText, mathPieces } from "@/lib/study-math";
 
 import { SourceLine } from "@/components/rich/citation";
 
@@ -29,6 +29,9 @@ const KIND_HINT: Record<string, string> = {
   short: "Answer in a sentence or two.",
   cloze: "Fill in the blank.",
 };
+
+/** A choice that is a formula and nothing else. */
+const mathOnly = (s: string) => mathPieces(s).every((p) => p.math || !p.text.trim());
 
 const isAnswered = (a: string | string[] | undefined) => (Array.isArray(a) ? a.length > 0 : !!a?.trim());
 const asText = (a: string | string[] | undefined) => (Array.isArray(a) ? a.join(", ") : a ?? "");
@@ -275,6 +278,8 @@ function QuestionField({
             <label key={i} className="flex min-h-(--ph-control-height) cursor-default items-start gap-2.5 rounded-md px-2 py-1 text-base text-ink hover:bg-hover has-checked:bg-selected">
               <input
                 type="radio"
+                // A choice that is only math has its words as its name (the drawn formula alone may give none).
+                aria-label={mathOnly(c) ? mathAsText(c) : undefined}
                 name={`${id}-q`}
                 value={c}
                 checked={value === c}
@@ -295,6 +300,7 @@ function QuestionField({
               <label key={i} className="flex min-h-(--ph-control-height) cursor-default items-start gap-2.5 rounded-md px-2 py-1 text-base text-ink hover:bg-hover has-checked:bg-selected">
                 <input
                   type="checkbox"
+                  aria-label={mathOnly(c) ? mathAsText(c) : undefined}
                   checked={list.includes(c)}
                   onChange={(e) => onChange(e.target.checked ? [...list, c] : list.filter((x) => x !== c))}
                   className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"

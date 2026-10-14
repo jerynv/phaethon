@@ -705,6 +705,43 @@ mod tests {
         assert!(Run::claim(&dir, "abc").is_some(), "free again once it ended");
     }
 
+    /// One real quiz through the installed, logged-in `claude` CLI (study::model's
+    /// one-shot path), in a temporary vault. Real calls on the person's account:
+    /// `cargo test --lib real_cli_makes_a_quiz -- --ignored --nocapture`, rarely.
+    #[test]
+    #[ignore]
+    fn real_cli_makes_a_quiz() {
+        let dir = space("real");
+        let notes = dir.parent().unwrap().parent().unwrap().join("courses/MATH-M 301 Fall 2026/files/Eigen notes.pdf.md");
+        fs::write(
+            &notes,
+            "# Text of Eigen notes.pdf\n\n## 5.1 Eigenvectors and eigenvalues\n\nAn eigenvector of an n×n matrix A is a nonzero vector x such that Ax = λx for some scalar λ. A scalar λ is an eigenvalue of A if there is a nontrivial solution x of Ax = λx; such an x is an eigenvector corresponding to λ. \
+λ is an eigenvalue of A if and only if the equation (A − λI)x = 0 has a nontrivial solution. The set of all solutions is the null space of A − λI, a subspace called the eigenspace of A corresponding to λ.\n\nTheorem 1: The eigenvalues of a triangular matrix are the entries on its main diagonal.\n\
+Theorem 2: If v1, ..., vr are eigenvectors that correspond to distinct eigenvalues λ1, ..., λr of an n×n matrix A, then {v1, ..., vr} is linearly independent.\n\nExample: Let A = [[2, 3], [3, -6]]. Then det(A − λI) = (2 − λ)(−6 − λ) − 9 = λ² + 4λ − 21 = (λ − 3)(λ + 7), so the eigenvalues are 3 and −7.\n\n\
+## 5.2 The characteristic equation\n\nA scalar λ is an eigenvalue of an n×n matrix A if and only if λ satisfies the characteristic equation det(A − λI) = 0. The characteristic polynomial of A has degree n. The multiplicity of an eigenvalue as a root of it is its algebraic multiplicity.\n\
+The Invertible Matrix Theorem (continued): A is invertible if and only if 0 is not an eigenvalue of A.\n\nSimilarity: A is similar to B if B = P⁻¹AP for some invertible P. Similar matrices have the same characteristic polynomial and hence the same eigenvalues.\n\n\
+## 5.3 Diagonalization\n\nThe Diagonalization Theorem: An n×n matrix A is diagonalizable if and only if A has n linearly independent eigenvectors. In fact A = PDP⁻¹ with D diagonal exactly when the columns of P are n linearly independent eigenvectors of A, and the diagonal entries of D are the corresponding eigenvalues.\n\
+An n×n matrix with n distinct eigenvalues is diagonalizable. Then A^k = PD^kP⁻¹.",
+        )
+        .unwrap();
+        let v = vis(&dir);
+        let bin = crate::agent::find_claude().expect("claude is installed");
+        let m = super::super::model::CliModel { bin, cwd: dir.clone(), config_dir: None };
+        let block = r#"{"kind":"quiz","title":"Eigenvalues practice","focus":"eigenvalues, the characteristic equation and diagonalization","count":6,"kinds":["choice","truefalse","short","cloze"],"difficulty":"exam","sources":["M301"]}"#;
+        let question = "Can you quiz me on eigenvalues for my M301 exam? Mostly computing them, plus when a matrix is diagonalizable.";
+        let reply = format!("I'll make 6 questions from your Chapter 5 notes: finding eigenvalues from the characteristic equation, triangular matrices, and when a matrix is diagonalizable. A mix of multiple choice, true or false, fill in the blank and a short answer, at exam level.\n\n```phaethon-study\n{block}\n```");
+        let p = plan(&dir, &v, block, question).unwrap();
+        let emit = |e: StudyEvent| eprintln!("{e:?}");
+        let (path, n) = block_on(make(&dir, &v, &p, question, &reply, &m, &emit, super::super::now_ms())).unwrap();
+        let text = fs::read_to_string(dir.join(&path)).unwrap();
+        eprintln!("{path} ({n} questions)\n{text}");
+        let (_, q) = super::super::load_quiz(&dir, &path).unwrap();
+        assert!(q.questions.len() >= 3);
+        let out = std::env::temp_dir().join("phaethon-real-quiz.json");
+        fs::write(&out, &text).unwrap();
+        eprintln!("kept a copy at {}", out.display());
+    }
+
     #[test]
     fn context_is_the_question_and_the_prose() {
         let c = context("quiz me", "Here is the plan.\n```phaethon-study\n{}\n```\n").unwrap();

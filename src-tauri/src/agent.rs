@@ -613,11 +613,13 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
     let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
     let model = req.model.as_deref().filter(|m| is_valid_cli_model(m));
     let mode = crate::tutor_mode::prompt_section(req.space_dir);
+    // How to offer a quiz or flashcards from the chat, before the tutor mode (which shapes every answer).
+    let mode = Some(crate::study::chat::with_prompt(mode.as_deref()));
     Ok(match cli {
         Cli::Claude => {
             let mut args = cli_args(resume, &dirs);
             // The space's tutor mode, if any, appended to Claude Code's own system prompt.
-            args.extend(crate::tutor_mode::cli_args(req.space_dir));
+            args.extend(mode.iter().flat_map(|m| ["--append-system-prompt".to_string(), m.clone()]));
             (args, prompt.to_string())
         }
         Cli::Codex => (codex::cli_args(req.space_dir, bin, &dirs, model, mode.as_deref(), resume), prompt.to_string()),

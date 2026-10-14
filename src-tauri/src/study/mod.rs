@@ -11,6 +11,7 @@
 //! The webview names decks and quizzes by these paths relative to the space;
 //! each is checked to be exactly one of them (no other folder, no links).
 
+pub mod chat;
 pub(crate) mod commands;
 pub mod deck;
 pub mod generate;
@@ -568,7 +569,8 @@ pub fn prompt_section(space: &Path, has_courses: bool, now: u64) -> Option<Strin
 the study plan in study/plan.md and exam dates in study/exams.json ([{\"course\", \"title\", \"date\": \"YYYY-MM-DD\"}]). \
 A deck is Markdown: front matter between --- lines (title:, optional course: the course folder name, optional sources: a list of files), \
 then the cards, each \"Q: <question>\" on one line, \"A: <answer>\" on the next, optionally \"From: <file it came from>\", with a blank line between cards. \
-Writing {{a term}} in a question makes a fill-in card that hides it. To make flashcards for the user, write a new deck with write_file in this format: \
+Writing {{a term}} in a question makes a fill-in card that hides it. To make flashcards or a quiz for the user, offer it with a phaethon-study block \
+(see \"A quiz or flashcards from the chat\"). Write a deck file with write_file only when the user asks you to write or edit the cards themselves: \
 one idea per card, from the course's own material.",
     );
     let off = schedule::local_offset_secs(now);

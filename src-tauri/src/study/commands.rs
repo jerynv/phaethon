@@ -137,3 +137,60 @@ pub(crate) async fn study_review_mistakes(state: State<'_, AppState>, space: Str
     });
     Ok(())
 }
+
+// ---- A quiz or deck offered in a chat reply (chat.rs) ----
+
+/// What a reply's phaethon-study block will make, checked; `Err` in plain words.
+#[tauri::command]
+pub(crate) fn study_chat_plan(state: State<'_, AppState>, space: String, block: String, question: String) -> Result<super::chat::Plan, String> {
+    let dir = space_dir(&state, &space)?;
+    super::chat::plan(&dir, &crate::lms::access::visible(&state.vault, &space), &block, &question)
+}
+
+/// Make what the block describes, with the conversation as context. Made
+/// already: `done` with what was made, no model call. Being made: an error
+/// that says so. Stopped with `study_chat_cancel`: `cancelled`.
+#[tauri::command]
+pub(crate) async fn study_chat_make(
+    state: State<'_, AppState>,
+    space: String,
+    block: String,
+    question: String,
+    reply: String,
+    on_event: Channel<StudyEvent>,
+) -> Result<(), String> {
+    let emit = sender(&on_event);
+    let run = async {
+        let dir = space_dir(&state, &space)?;
+        let visible = crate::lms::access::visible(&state.vault, &space);
+        let plan = super::chat::plan(&dir, &visible, &block, &question)?;
+        let done = |path: String, n: usize| match plan.kind {
+            super::chat::Kind::Quiz => Finished { path: Some(path), questions: Some(n), ..Default::default() },
+            super::chat::Kind::Deck => Finished { path: Some(path), cards: Some(n), ..Default::default() },
+        };
+        if let Some(path) = plan.made.clone() {
+            return Ok(Some(done(path, 0)));
+        }
+        let Some(mut run) = super::chat::Run::claim(&dir, &plan.origin) else {
+            return Err("This is already being made. It opens in Study when it’s ready.".to_string());
+        };
+        let m = model_for(&state, &dir)?;
+        tokio::select! {
+            made = super::chat::make(&dir, &visible, &plan, &question, &reply, &m, &emit, super::now_ms()) => made.map(|(path, n)| Some(done(path, n))),
+            // Dropping the model call stops it (a CLI child is killed with it).
+            _ = run.cancelled() => Ok(None),
+        }
+    };
+    emit(match run.await {
+        Ok(Some(f)) => StudyEvent::Done(f),
+        Ok(None) => StudyEvent::Cancelled,
+        Err(message) => StudyEvent::Error { message },
+    });
+    Ok(())
+}
+
+/// Stop making a block's quiz or deck (by the plan's origin). False when it wasn't being made.
+#[tauri::command]
+pub(crate) fn study_chat_cancel(state: State<'_, AppState>, space: String, origin: String) -> Result<bool, String> {
+    Ok(super::chat::cancel(&space_dir(&state, &space)?, &origin))
+}

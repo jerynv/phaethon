@@ -177,7 +177,9 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
     let texts: Vec<&AgentEvent> = events.iter().filter(|e| matches!(e, AgentEvent::Text { .. } | AgentEvent::Tool { .. })).collect();
     let label = if cli == Cli::Codex { "Running cat notes.md" } else { "Reading file notes.md" };
     assert_eq!(texts, [&AgentEvent::Tool { label: label.into() }, &AgentEvent::Text { delta: "Reply 1.".into() }]);
-    assert_eq!(f.stdin(1), "When is Test 1?", "the message goes over stdin, never argv");
+    // Gemini CLI has no system prompt: Phaethon's instructions (how to offer a quiz from the chat) go before each message.
+    let message = |n: usize| f.stdin(n).rsplit("</phaethon_tutor_mode>\n\n").next().unwrap_or_default().to_string();
+    assert_eq!(message(1), "When is Test 1?", "the message goes over stdin, never argv");
     assert!(!f.args(1).iter().any(|a| a.contains("When is Test 1?")));
     assert_eq!(f.resumed(1), None);
     assert_eq!(f.shown(), vec![says("user", "When is Test 1?"), says("assistant", "Reply 1.")]);
@@ -188,7 +190,7 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
     // The next turn resumes it and gets only the new message.
     f.send("And Test 2?");
     assert_eq!(f.resumed(2).as_deref(), Some(s1.as_str()));
-    assert_eq!(f.stdin(2), "And Test 2?");
+    assert_eq!(message(2), "And Test 2?");
 
     // Read-only and walled, whatever else is passed.
     let course = f.root.join("courses/C241");
@@ -206,7 +208,7 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
             let profile = a.iter().find(|x| x.starts_with("permissions.phaethon.filesystem=")).unwrap();
             assert!(profile.contains(&format!("\"{}\"=\"read\"", course.display())) && !profile.contains("write"), "{profile}");
             let dev = a.iter().find(|x| x.starts_with("developer_instructions=")).expect("the mode is Codex's developer instructions");
-            assert!(dev.contains("Tutor mode: Quiz me"));
+            assert!(dev.contains("A quiz or flashcards from the chat") && dev.contains("Tutor mode: Quiz me"));
             assert_eq!(f.stdin(3), "Quiz me");
         }
         Cli::Gemini => {
@@ -215,7 +217,11 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
             let policy = f.after(3, "--admin-policy").unwrap();
             assert_eq!(f.after(3, "--policy").as_deref(), Some(policy.as_str()));
             assert!(fs::read_to_string(&policy).unwrap().contains("toolName = \"*\"\ndecision = \"deny\""));
-            assert!(f.stdin(3).starts_with("<phaethon_tutor_mode>\n# Tutor mode: Quiz me") && f.stdin(3).ends_with("\n\nQuiz me"), "{}", f.stdin(3));
+            assert!(
+                f.stdin(3).starts_with("<phaethon_tutor_mode>\n# A quiz or flashcards from the chat") && f.stdin(3).contains("\n\n# Tutor mode: Quiz me") && f.stdin(3).ends_with("\n\nQuiz me"),
+                "{}",
+                f.stdin(3)
+            );
             assert_eq!(fs::read_to_string(f.root.join("env-3")).unwrap(), "true unset", "trusted for the run; no replaced system prompt");
         }
         Cli::Claude => unreachable!(),

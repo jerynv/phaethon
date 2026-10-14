@@ -1,5 +1,6 @@
 //! With Claude Code answering, a space's tutor mode reaches the CLI through
-//! `--append-system-prompt`, and normal mode adds nothing. Uses a fake CLI
+//! `--append-system-prompt` (after how to offer a quiz from the chat), and
+//! normal mode adds no mode. Uses a fake CLI
 //! that records its arguments; never the real one.
 #![cfg(unix)]
 
@@ -44,19 +45,22 @@ fn the_spaces_mode_is_appended_to_claude_codes_system_prompt() {
         text.split("\n--next--\n").filter(|a| !a.is_empty()).map(str::to_string).collect()
     };
 
+    // Normal mode: only how to offer a quiz from the chat, no tutor mode.
     let normal = turn("school");
-    assert!(!normal.iter().any(|a| a == "--append-system-prompt"), "{normal:?}");
+    let at = normal.iter().position(|a| a == "--append-system-prompt").expect("the study block passed");
+    assert!(normal[at + 1].starts_with("# A quiz or flashcards from the chat") && !normal[at + 1].contains("# Tutor mode"), "{normal:?}");
 
     tutor_mode::set(&vault, "school", Mode::Quiz).unwrap();
     let quiz = turn("school");
     let at = quiz.iter().position(|a| a == "--append-system-prompt").expect("mode passed");
-    assert!(quiz[at + 1].starts_with("# Tutor mode: Quiz me") && quiz[at + 1].contains("one question per message"));
+    assert!(quiz[at + 1].contains("\n\n# Tutor mode: Quiz me") && quiz[at + 1].contains("one question per message"), "the mode comes last");
+    assert_eq!(quiz.iter().filter(|a| *a == "--append-system-prompt").count(), 1);
     assert!(!quiz.iter().any(|a| a.contains("quiz me on graphs")), "the prompt still goes over stdin");
     for flag in ["--restricted", "--safe-mode", "--disable-slash-commands", "--strict-mcp-config"] {
         assert!(quiz.iter().any(|a| a == flag), "missing {flag}");
     }
 
     let work = turn("work");
-    assert!(!work.iter().any(|a| a == "--append-system-prompt"), "another space keeps its own (normal) mode");
+    assert!(!work.iter().any(|a| a.contains("# Tutor mode")), "another space keeps its own (normal) mode");
     fs::remove_dir_all(&root).unwrap();
 }

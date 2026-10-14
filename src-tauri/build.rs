@@ -15,7 +15,7 @@ fn main() {
             "lms_schools", "lms_connect", "lms_connections", "lms_courses", "lms_import", "lms_disconnect",
             "lms_grades", "lms_grades_refresh", "course_access_get", "course_access_set",
             "study_sources", "study_overview", "study_deck", "study_deck_save", "study_session", "study_rate", "study_make_deck", "study_make_quiz",
-            "study_quiz", "study_quiz_submit", "study_review_mistakes", "study_delete",
+            "study_quiz", "study_quiz_submit", "study_review_mistakes", "study_delete", "study_chat_plan", "study_chat_make", "study_chat_cancel",
             "space_tutor_mode_set", "space_tutor_modes_list",
             "plan_upcoming", "plan_exams_get", "plan_exams_set", "plan_save", "plan_state_get", "plan_state_set",
             "settings_set_provider", "settings_set_provider_model", "settings_set_provider_url", "provider_status",

@@ -151,6 +151,8 @@ Once access is granted, read it with list_files, read_file or search_files using
         s.push_str("\n\n");
         s.push_str(&study);
     }
+    // How to offer a quiz or flashcards from the chat (a phaethon-study block the reply shows as a card).
+    s.push_str(&format!("\n\n{}", crate::study::chat::PROMPT));
     // The space's tutor mode (space.json), last: it shapes every answer.
     if let Some(mode) = vault.space_dir(space_id).ok().and_then(|dir| crate::tutor_mode::prompt_section(&dir)) {
         s.push_str("\n\n");

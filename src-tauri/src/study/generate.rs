@@ -30,6 +30,8 @@ pub enum StudyEvent {
     Progress { step: &'static str, done: usize, total: usize },
     Done(Finished),
     Error { message: String },
+    /// Stopped by the person (study_chat_cancel); nothing was saved.
+    Cancelled,
 }
 
 /// What a `done` event carries: whichever fields the command fills.
@@ -68,6 +70,9 @@ pub struct DeckOptions {
     /// A quiz attempt's path: make cards from what it got wrong.
     #[serde(default)]
     pub from_attempt: Option<String>,
+    /// The conversation that asked for it (chat.rs), so it matches what was discussed.
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -84,6 +89,9 @@ pub struct QuizOptions {
     pub focus: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+    /// The conversation that asked for it (chat.rs), so it matches what was discussed.
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
 // ---- Shared ------------------------------------------------------------------------
@@ -132,6 +140,59 @@ fn file_name(p: &str) -> &str {
     p.rsplit('/').next().unwrap_or(p)
 }
 
+/// The conversation that asked for this, as the model sees it: what was
+/// promised, never a source of facts.
+fn discussion_block(context: Option<&str>, what: &str) -> String {
+    match context.map(str::trim).filter(|c| !c.is_empty()) {
+        None => String::new(),
+        Some(c) => format!(
+            "\n\n<discussion>\n{c}\n</discussion>\n\nThe student asked for these {what} in that conversation. Make what was promised there: the topics, how many, the kinds. \
+The discussion is not course material: ground every one of them in the <material> above, and leave out any topic the material doesn't cover."
+        ),
+    }
+}
+
+/// Math written `$...$` with "}}" or "{{" in it (`\frac{1}{x^{2}}`) would read
+/// as a fill-in blank; a space between the braces means the same to KaTeX.
+pub fn space_math_braces(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_math = false;
+    let mut prev = '\0';
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '$' && prev != '\\' {
+            in_math = !in_math;
+        }
+        out.push(c);
+        if in_math && (c == '}' || c == '{') && chars.peek() == Some(&c) {
+            out.push(' ');
+        }
+        prev = c;
+    }
+    out
+}
+
+/// Why a question or card is about the material's files rather than its
+/// ideas, or about course logistics, if it is.
+fn about_files(text: &str, m: &Material) -> Option<String> {
+    let lower = text.to_lowercase();
+    for label in &m.labels {
+        let name = file_name(label).to_lowercase();
+        let stem = name.rsplit_once('.').map_or(name.as_str(), |(s, _)| s);
+        if stem.chars().count() >= 6 && lower.contains(stem) {
+            return Some(format!("asks about the file “{}”; ask about the ideas in it instead", file_name(label)));
+        }
+    }
+    const LOGISTICS: [&str; 8] = ["due date", "office hours", "late policy", "late penalty", "grading policy", "which file", "which lecture", "file name"];
+    if let Some(w) = LOGISTICS.iter().find(|w| lower.contains(*w)) {
+        return Some(format!("is about course logistics (“{w}”), not the material"));
+    }
+    if [".pdf", ".docx", ".pptx"].iter().any(|ext| lower.contains(ext)) {
+        return Some("names a file; ask about the ideas instead".into());
+    }
+    None
+}
+
 /// What an attempt got wrong: (question, result), graded ones only.
 fn mistakes(quiz: &Quiz, attempt: &Attempt) -> Vec<(Question, QuestionResult)> {
     attempt
@@ -166,8 +227,9 @@ Rules:
 - One idea per card: a definition, a fact, a step of a method, a distinction, or how to apply a rule to a small example. Prefer cards that make the student recall or apply, not just recognise.
 - Be accurate to the material. Never add facts it doesn't support. When the material is a problem set or review sheet, make cards on the concepts and techniques its problems test (a tiny worked example on the back helps), not on its instructions.
 - Never make cards about course logistics: due dates, grading, submission rules, office hours, policies.
-- The front stands on its own: no "in this problem", "the above" or "as shown". Fronts under 200 characters, backs under 300. Plain text; write math with Unicode symbols (→ ↔ ¬ ∧ ∨ ∀ ∃ ∈ ∉ ⊆ ⊂ ∩ ∪ ∅ ℕ ℤ ℝ ≤ ≥ ≠), never LaTeX.
-- A card may instead be fill-in (cloze): a sentence in "front" with the key term in {{double braces}}, and "back" empty or a short note. Use it for terms and formulas, for at most a third of the cards.
+- The front stands on its own: no "in this problem", "the above" or "as shown". Fronts under 200 characters, backs under 300. Plain words; write math as LaTeX between $...$ (for example $A\mathbf{x} = \mathbf{b}$, $\det(A - \lambda I) = 0$, $\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$); simple symbols may stay Unicode (→ ∈ ⊆ ≤).
+- A card may instead be fill-in (cloze): a sentence in "front" with the key term in {{double braces}}, and "back" empty or a short note. The blank holds a word or a short expression a student could type, never LaTeX. Use it for terms and formulas, for at most a third of the cards.
+- Never ask about the material's files themselves (their names, which lecture or page says what).
 - "source" is the path of the <source> the card came from, copied exactly.
 - Don't repeat the cards the student already has (listed in <existing_cards>), even in other words.
 
@@ -179,7 +241,7 @@ pub fn check_cards(v: &Value, m: &Material, existing: &[String], count: usize) -
     let mut out: Vec<Note> = vec![];
     for (i, c) in items(v, "cards")?.iter().enumerate() {
         let n = i + 1;
-        let note = Note { front: str_field(c, "front"), back: str_field(c, "back"), source: Some(cited(c, m, &format!("card {n}"))?) };
+        let note = Note { front: space_math_braces(&str_field(c, "front")), back: space_math_braces(&str_field(c, "back")), source: Some(cited(c, m, &format!("card {n}"))?) };
         if note.front.is_empty() {
             return Err(format!("card {n} has no front"));
         }
@@ -193,6 +255,9 @@ pub fn check_cards(v: &Value, m: &Material, existing: &[String], count: usize) -
             deck::Kind::Basic if note.back.is_empty() => return Err(format!("card {n} has no back")),
             deck::Kind::Basic if note.front.contains("}}") => return Err(format!("card {n} has a stray }}}}")),
             deck::Kind::Basic => {}
+        }
+        if let Some(why) = about_files(&note.front, m) {
+            return Err(format!("card {n} {why}"));
         }
         if existing.iter().chain(out.iter().map(|o| &o.front)).any(|e| similar(e, &note.front)) {
             continue;
@@ -244,9 +309,10 @@ pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[Stri
     let shown: Vec<&str> = existing.iter().rev().take(EXISTING_MAX).map(String::as_str).collect();
     let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!(" Focus on: {f}.")).unwrap_or_default();
     let user = format!(
-        "Make {count} flashcards from this material.{focus_line}\n\n{}\n\n<existing_cards>\n{}\n</existing_cards>{extra}",
+        "Make {count} flashcards from this material.{focus_line}\n\n{}\n\n<existing_cards>\n{}\n</existing_cards>{extra}{}",
         material_block(&material),
         if shown.is_empty() { "(none)".to_string() } else { shown.join("\n") },
+        discussion_block(opts.context.as_deref(), "cards"),
     );
     emit(progress("making", 0, 1));
     let (title, notes) = ask_json(model, DECK_SYSTEM, &user, |v| check_cards(v, &material, &existing, count)).await?;
@@ -266,15 +332,17 @@ pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[Stri
 pub const QUIZ_SYSTEM: &str = r#"You write a practice quiz for a student from their own course material.
 
 Kinds of question (use only the kinds asked for, mixed):
-- "choice": one right answer among 4 "choices". Distractors must be plausible: the mistakes students really make with this material, near-misses, the same length and style as the right answer. Never "all/none of the above". "answer" is the right choice's text, copied exactly.
-- "multi": 2 or 3 right among 4 or 5 "choices"; the prompt ends "Select all that apply." "answer" is the list of right choices' texts.
-- "truefalse": a statement; "answer" is "true" or "false". False statements are plausible misconceptions, never silly.
+- "choice": one right answer among 4 "choices", all different. Distractors must be plausible: the mistakes students really make with this material, near-misses, the same length and style as the right answer. Never "all/none of the above". "answer" is the right choice's text, copied exactly.
+- "multi": 2 or 3 right among 4 or 5 "choices", at least one wrong; the prompt ends "Select all that apply." "answer" is the list of right choices' texts, copied exactly.
+- "truefalse": a statement; "answer" is "true" or "false". False statements are plausible misconceptions, never silly. Mix true and false.
 - "short": an open question answered in one to three sentences; "answer" is a model answer a grader can compare with.
-- "cloze": a sentence with one blank written ___; "answer" is the missing word or symbol; "accept" lists other correct forms.
+- "cloze": a sentence with exactly one blank written ___ that doesn't give the answer away; "answer" is the missing word or short expression as a student would type it (plain text such as 2^n or det(A) = 0, never LaTeX); "accept" lists other correct forms.
 
-Difficulty: "easier" = recall of definitions and facts; "exam" = like the course's own exams and review sheets, applying ideas to new small examples; "harder" = several steps, combining ideas, edge cases.
+Difficulty: "easier" = recall of definitions and facts; "exam" = like the course's own exams and review sheets, applying ideas to new small examples, with a few warm-ups and a few that take several steps; "harder" = several steps, combining ideas, edge cases. Order the questions from easier to harder.
 
-Every question has "explanation" (one or two sentences: why the answer is right; for choice questions, why the tempting wrong one is wrong) and "source" (the path of the <source> it came from, copied exactly). Be accurate to the material; never test course logistics (dates, grading, policies). Plain text; math in Unicode symbols, never LaTeX.
+Work each question out before you write it: the answer must follow from the material, and a computed answer (a determinant, an eigenvalue, a count) must be checked step by step. Each question tests a different idea or skill; no two ask the same thing.
+
+Every question has "explanation" (one or two sentences: why the answer is right; for choice questions, why the tempting wrong one is wrong) and "source" (the path of the <source> it came from, copied exactly). Be accurate to the material; never test course logistics (dates, grading, policies) or the files themselves (their names, which lecture or page says what). Plain words; write math as LaTeX between $...$ (for example $A\mathbf{x} = \mathbf{b}$, $\lambda = 3$, $\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$) in prompts, choices and explanations; simple symbols may stay Unicode (→ ∈ ⊆ ≤).
 
 Reply with only JSON, no prose: {"title": "a short quiz title", "questions": [{"kind": "...", "prompt": "...", "choices": ["..."], "answer": "...", "accept": ["..."], "explanation": "...", "source": "..."}]}"#;
 
@@ -288,8 +356,52 @@ fn shuffle<T>(v: &mut [T], seed: &mut u64) {
     }
 }
 
+/// What makes a generated question unfair or broken beyond its shape
+/// (quiz::check_question): trick choices, an answer key that lists a right
+/// answer twice or every choice, a blank that gives its answer away.
+fn check_quality(q: &Question) -> Result<(), String> {
+    let choices = q.choices.clone().unwrap_or_default();
+    match q.kind.as_str() {
+        "choice" | "multi" => {
+            if choices.len() < 3 {
+                return Err("needs at least 3 choices".into());
+            }
+            if choices.iter().any(|c| {
+                let c = c.to_lowercase();
+                c.contains("all of the above") || c.contains("none of the above") || c.contains("both a and b")
+            }) {
+                return Err("uses “all/none of the above”; give real choices".into());
+            }
+            if q.kind == "multi" {
+                let right = q.answer.many();
+                let mut uniq: Vec<String> = right.iter().map(|a| a.trim().to_lowercase()).collect();
+                uniq.sort();
+                uniq.dedup();
+                if uniq.len() != right.len() {
+                    return Err("lists the same right answer twice".into());
+                }
+                if right.len() >= choices.len() {
+                    return Err("has every choice right; at least one must be wrong".into());
+                }
+            }
+        }
+        "cloze" => {
+            let blanks = q.prompt.matches("___").count().max(q.prompt.matches("{{").count());
+            if blanks != 1 {
+                return Err("needs exactly one blank (___)".into());
+            }
+            let a = quiz::norm(&q.answer.text());
+            if a.chars().count() >= 4 && quiz::norm(&q.prompt.replace("___", " ")).contains(&a) {
+                return Err("gives its answer away in the sentence".into());
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn check_questions(v: &Value, m: &Material, kinds: &[String], count: usize, seed: u64) -> Result<(Option<String>, Vec<Question>), String> {
-    let mut out = vec![];
+    let mut out: Vec<Question> = vec![];
     let mut seed = seed | 1;
     for (i, raw) in items(v, "questions")?.iter().enumerate() {
         let n = i + 1;
@@ -320,6 +432,15 @@ pub fn check_questions(v: &Value, m: &Material, kinds: &[String], count: usize, 
         if q.explanation.is_empty() {
             return Err(format!("question {n} has no explanation"));
         }
+        check_quality(&q).map_err(|e| format!("question {n} {e}"))?;
+        let all = format!("{} {}", q.prompt, q.choices.as_deref().unwrap_or_default().join(" "));
+        if let Some(why) = about_files(&all, m) {
+            return Err(format!("question {n} {why}"));
+        }
+        // The same question twice (in other words) is dropped, not an error.
+        if out.iter().any(|o| similar(&o.prompt, &q.prompt)) {
+            continue;
+        }
         if matches!(q.kind.as_str(), "choice" | "multi")
             && let Some(c) = q.choices.as_mut()
         {
@@ -331,6 +452,16 @@ pub fn check_questions(v: &Value, m: &Material, kinds: &[String], count: usize, 
         return Err("there were no questions".into());
     }
     out.truncate(count);
+    // A mix was asked for: every kind shows up when there's room for each.
+    if kinds.len() > 1
+        && out.len() >= 2 * kinds.len()
+        && let Some(missing) = kinds.iter().find(|k| !out.iter().any(|q| &q.kind == *k))
+    {
+        return Err(format!("there are no \"{missing}\" questions; mix the kinds asked for: {}", kinds.join(", ")));
+    }
+    for (i, q) in out.iter_mut().enumerate() {
+        q.id = format!("q{}", i + 1);
+    }
     Ok((Some(str_field(v, "title")).filter(|t| !t.is_empty()), out))
 }
 
@@ -356,9 +487,10 @@ pub async fn make_quiz<M: Model>(space: &Path, courses: &Visible, inputs: &[Stri
     emit(progress("reading", 1, 1));
     let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!(" Focus on: {f}.")).unwrap_or_default();
     let user = format!(
-        "Make a quiz of {count} questions from this material. Kinds: {}. Difficulty: {difficulty}.{focus_line}\n\n{}",
+        "Make a quiz of {count} questions from this material. Kinds: {}. Difficulty: {difficulty}.{focus_line}\n\n{}{}",
         kinds.join(", "),
-        material_block(&material)
+        material_block(&material),
+        discussion_block(opts.context.as_deref(), "questions"),
     );
     emit(progress("making", 0, 1));
     let (title, questions) = ask_json(model, QUIZ_SYSTEM, &user, |v| check_questions(v, &material, &kinds, count, now)).await?;
@@ -649,7 +781,7 @@ mod tests {
         let wrong_kind = format!(r#"{{"questions": [{{"kind": "essay", "prompt": "x", "answer": "y", "explanation": "z", "source": "{SRC}"}}]}}"#);
         let m = Scripted::new(&[&wrong_kind, &quiz_reply()]);
         let kinds = ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec();
-        let (path, n) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), focus: None, title: None }, &m, &emit, 1_791_000_000_000)).unwrap();
+        let (path, n) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), focus: None, title: None, context: None }, &m, &emit, 1_791_000_000_000)).unwrap();
         assert_eq!((path.as_str(), n), ("study/quizzes/Test 1 practice.json", 4));
         assert!(m.asked.lock().unwrap()[1].1.contains("only these kinds"));
         let (_, q) = super::super::load_quiz(&dir, &path).unwrap();
@@ -696,6 +828,86 @@ mod tests {
         // Deleting the quiz takes its attempts with it.
         super::super::delete(&dir, &path).unwrap();
         assert!(super::super::load_attempt(&dir, &a.path).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn material() -> Material {
+        Material { text: String::new(), labels: vec![SRC.into()], course: None }
+    }
+
+    fn one(q: &str) -> Result<Vec<Question>, String> {
+        let kinds = quiz::KINDS.map(String::from).to_vec();
+        let v: Value = serde_json::from_str(&format!(r#"{{"questions": [{q}]}}"#)).unwrap();
+        check_questions(&v, &material(), &kinds, 10, 7).map(|(_, qs)| qs)
+    }
+
+    #[test]
+    fn answer_keys_and_fairness_are_checked() {
+        let ok = format!(r#"{{"kind":"choice","prompt":"What is $\\det\\begin{{bmatrix}} 1 & 2 \\\\ 3 & 4 \\end{{bmatrix}}$?","choices":["$-2$","$2$","$10$","$-10$"],"answer":"$-2$","explanation":"1·4 − 2·3 = −2.","source":"{SRC}"}}"#);
+        let q = one(&ok).unwrap();
+        assert!(q[0].prompt.contains("\\begin{bmatrix}") && q[0].choices.as_ref().unwrap().contains(&"$-2$".to_string()), "LaTeX is kept as written");
+        let bad = |body: &str| format!(r#"{{{body},"explanation":"why","source":"{SRC}"}}"#);
+        let cases = [
+            (bad(r#""kind":"choice","prompt":"Pick","choices":["a","b","c","d"],"answer":"e""#), "isn't one of its choices"),
+            (bad(r#""kind":"choice","prompt":"Pick","choices":["a","A","c","d"],"answer":"a""#), "two choices are the same"),
+            (bad(r#""kind":"choice","prompt":"Pick","choices":["a","b"],"answer":"a""#), "at least 3 choices"),
+            (bad(r#""kind":"choice","prompt":"Pick","choices":["a","b","All of the above"],"answer":"a""#), "all/none of the above"),
+            (bad(r#""kind":"multi","prompt":"Pick all","choices":["a","b","c"],"answer":["a","b","c"]"#), "every choice right"),
+            (bad(r#""kind":"multi","prompt":"Pick all","choices":["a","b","c","d"],"answer":["a","a"]"#), "same right answer twice"),
+            (bad(r#""kind":"cloze","prompt":"A ___ has ___ edges.","answer":"tree""#), "exactly one blank"),
+            (bad(r#""kind":"cloze","prompt":"The eigenvalue ___ is an eigenvalue.","answer":"eigenvalue""#), "gives its answer away"),
+            (bad(r#""kind":"short","prompt":"What does Test 1 Review cover?","answer":"logic""#), "asks about the file"),
+            (bad(r#""kind":"short","prompt":"When is the due date for HW 3?","answer":"Friday""#), "logistics"),
+            (bad(r#""kind":"truefalse","prompt":"The notes.pdf says sets are lists.","answer":"false""#), "names a file"),
+            (format!(r#"{{"kind":"short","prompt":"Why?","answer":"because","source":"{SRC}"}}"#), "no explanation"),
+        ];
+        for (q, want) in cases {
+            let err = one(&q).unwrap_err();
+            assert!(err.contains(want), "{q}\n→ {err}");
+        }
+        // The same question twice is dropped, not refused.
+        let tf = |p: &str| format!(r#"{{"kind":"truefalse","prompt":"{p}","answer":"true","explanation":"x","source":"{SRC}"}}"#);
+        let qs = one(&format!("{},{}", tf("Every square matrix with a zero row is singular."), tf("Every square matrix with a zero row is singular!"))).unwrap();
+        assert_eq!(qs.len(), 1);
+        // A mix asked for, with room for each, gets each.
+        let kinds = ["choice", "truefalse"].map(String::from).to_vec();
+        let five: Vec<String> = (0..5).map(|i| tf(&format!("Statement number {i} about matrices holds"))).collect();
+        let v: Value = serde_json::from_str(&format!(r#"{{"questions": [{}]}}"#, five.join(","))).unwrap();
+        let err = check_questions(&v, &material(), &kinds, 5, 1).unwrap_err();
+        assert!(err.contains("no \"choice\" questions"), "{err}");
+    }
+
+    #[test]
+    fn math_braces_never_make_a_blank() {
+        assert_eq!(space_math_braces("$\\frac{1}{x^{2}}$ and {{term}}"), "$\\frac{1}{x^{2} }$ and {{term}}");
+        assert_eq!(space_math_braces("costs \\$5 {{x}}"), "costs \\$5 {{x}}");
+        let v: Value = serde_json::from_str(&format!(r#"{{"cards": [{{"front": "What is $\\frac{{1}}{{x^{{2}}}}$ integrated?", "back": "$-\\frac{{1}}{{x}} + C$", "source": "{SRC}"}}]}}"#)).unwrap();
+        let (_, notes) = check_cards(&v, &material(), &[], 5).unwrap();
+        assert_eq!(notes[0].kind(), deck::Kind::Basic, "{}", notes[0].front);
+        let d = Deck { title: "M".into(), notes, ..Default::default() };
+        deck::validate(&d).unwrap();
+    }
+
+    #[test]
+    fn the_discussion_rides_along_as_what_was_promised() {
+        let dir = space("ctx");
+        let emit = |_: StudyEvent| {};
+        let m = Scripted::new(&[&quiz_reply()]);
+        let opts = QuizOptions {
+            count: 4,
+            kinds: ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec(),
+            focus: Some("conditionals".into()),
+            context: Some("The student asked:\nquiz me on conditionals\n\nTheir assistant answered, promising this:\n4 questions on p → q".into()),
+            ..Default::default()
+        };
+        block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &opts, &m, &emit, 1)).unwrap();
+        let asked = m.asked.lock().unwrap()[0].1.clone();
+        let (material_at, discussion_at) = (asked.find("<material>").unwrap(), asked.find("<discussion>").unwrap());
+        assert!(material_at < discussion_at && asked.contains("4 questions on p → q") && asked.contains("not course material"), "{asked}");
+        // Without it, nothing is added.
+        let m = Scripted::new(&[&quiz_reply()]);
+        block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { count: 4, ..Default::default() }, &m, &emit, 2)).unwrap_err();
+        assert!(!m.asked.lock().unwrap()[0].1.contains("<discussion>"));
         fs::remove_dir_all(dir).unwrap();
     }
 

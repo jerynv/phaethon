@@ -160,6 +160,10 @@ pub enum Backend {
     Phaethon,
     /// The official `claude` CLI the user installed and logged into.
     ClaudeCli,
+    /// The official `codex` CLI (OpenAI's Codex) the user installed and logged into.
+    CodexCli,
+    /// The official `gemini` CLI (Google's Gemini CLI) the user installed and logged into.
+    GeminiCli,
 }
 
 impl Vault {
@@ -298,22 +302,42 @@ fn rename_state_dir(dir: &Path) {
     }
 }
 
-/// The CLI session this space resumes, if one was saved and is well-formed.
+/// The Claude Code session this space resumes, if one was saved and is well-formed.
 /// The file is user-editable and may be synced, so anything that is not a
 /// plain UUID is ignored rather than passed to the CLI as an argument.
 pub fn read_session(space_dir: &Path) -> Option<String> {
-    let raw = fs::read_to_string(session_file(space_dir)).ok()?;
-    let id = raw.trim();
-    is_uuid(id).then(|| id.to_string())
+    read_cli_session(space_dir, None)
 }
 
 pub fn write_session(space_dir: &Path, session_id: &str) -> io::Result<()> {
+    write_cli_session(space_dir, None, session_id)
+}
+
+/// The session of the CLI tagged `tag`: `None` for Claude Code, whose
+/// sessions are saved as a plain UUID; `codex` or `gemini` for the others,
+/// saved as `tag:uuid`. A session another CLI made is not this one's, so this
+/// one starts afresh, given the conversation so far as text.
+pub fn read_cli_session(space_dir: &Path, tag: Option<&str>) -> Option<String> {
+    let raw = fs::read_to_string(session_file(space_dir)).ok()?;
+    let saved = raw.trim();
+    let id = match tag {
+        None => saved,
+        Some(t) => saved.strip_prefix(t)?.strip_prefix(':')?,
+    };
+    is_uuid(id).then(|| id.to_string())
+}
+
+pub fn write_cli_session(space_dir: &Path, tag: Option<&str>, session_id: &str) -> io::Result<()> {
     if !is_uuid(session_id) {
         return Err(io::Error::other("refusing to save a malformed session id"));
     }
     let file = session_file(space_dir);
     fs::create_dir_all(file.parent().expect("session file has a parent"))?;
-    fs::write(file, format!("{session_id}\n"))
+    let line = match tag {
+        None => session_id.to_string(),
+        Some(t) => format!("{t}:{session_id}"),
+    };
+    fs::write(file, format!("{line}\n"))
 }
 
 pub fn clear_session(space_dir: &Path) {
@@ -371,6 +395,24 @@ mod tests {
         assert!(is_uuid("e06355fe-8387-4cb5-9fda-517b0d2b996a"));
         assert!(!is_uuid("--dangerously-skip-permissions"));
         assert!(!is_uuid("e06355fe-8387-4cb5-9fda-517b0d2b996a\n--x"));
+    }
+
+    #[test]
+    fn each_cli_reads_only_its_own_session() {
+        let dir = std::env::temp_dir().join(format!("phaethon-cli-session-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let id = "e06355fe-8387-4cb5-9fda-517b0d2b996a";
+        write_cli_session(&dir, Some("codex"), id).unwrap();
+        assert_eq!(read_cli_session(&dir, Some("codex")).as_deref(), Some(id));
+        assert_eq!(read_session(&dir), None, "Claude Code never resumes another CLI's session");
+        assert_eq!(read_cli_session(&dir, Some("gemini")), None);
+        write_session(&dir, id).unwrap();
+        assert_eq!(read_session(&dir).as_deref(), Some(id));
+        assert_eq!(read_cli_session(&dir, Some("codex")), None);
+        assert!(write_cli_session(&dir, Some("codex"), "--last").is_err());
+        fs::write(session_file(&dir), "codex:--dangerously-bypass-approvals-and-sandbox\n").unwrap();
+        assert_eq!(read_cli_session(&dir, Some("codex")), None);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

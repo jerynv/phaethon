@@ -20,6 +20,7 @@ fn missing_binary_reports_install_hint() {
             replace_from: None,
             config_dir: None,
             add_dirs: vec![],
+            model: None,
         },
         |e| events.push(e),
     ));
@@ -30,4 +31,25 @@ fn missing_binary_reports_install_hint() {
             AgentEvent::End { session_id: None },
         ]
     );
+}
+
+#[test]
+fn missing_codex_or_gemini_names_that_cli() {
+    use phaethon_lib::agent::Cli;
+    for (cli, var) in [(Cli::Codex, "PHAETHON_CODEX_BIN"), (Cli::Gemini, "PHAETHON_GEMINI_BIN")] {
+        unsafe { std::env::set_var(var, "/nonexistent/cli") };
+        let dir = std::env::temp_dir().join(format!("phaethon-missing-{}-{}", cli.id(), std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut events = vec![];
+        tauri::async_runtime::block_on(agent::run_cli_turn(
+            &Runs::default(),
+            "school",
+            cli,
+            TurnRequest { space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir: None, add_dirs: vec![], model: None },
+            |e| events.push(e),
+        ));
+        assert_eq!(events, vec![AgentEvent::error(ErrorCode::MissingCli, cli.missing_message()), AgentEvent::End { session_id: None }]);
+        assert!(cli.missing_message().starts_with(cli.name()));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

@@ -12,7 +12,6 @@
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -118,60 +117,52 @@ pub fn parse_cli_output(stdout: &str) -> Result<String, String> {
     Ok(text)
 }
 
+/// Run `cmd` with `input` on stdin; its stdout, stderr and exit status. `Err`
+/// is a message for the person (not found, couldn't start, too slow).
+async fn run_once(cli: agent::Cli, mut cmd: tokio::process::Command, input: &str) -> Result<(String, String, Option<std::process::ExitStatus>), String> {
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(cli.missing_message().into()),
+        Err(e) => return Err(format!("Could not start {}: {e}", cli.name())),
+    };
+    let mut stdin = child.stdin.take();
+    let mut out = child.stdout.take().expect("stdout is piped");
+    let mut err = child.stderr.take().expect("stderr is piped");
+    let input = input.to_string();
+    let run = async move {
+        let feed = async move {
+            if let Some(s) = stdin.as_mut() {
+                // A write error means the CLI already exited; its output says why.
+                let _ = s.write_all(input.as_bytes()).await;
+                let _ = s.shutdown().await;
+            }
+            drop(stdin);
+        };
+        let (mut o, mut e) = (Vec::new(), Vec::new());
+        let read_out = async {
+            let _ = (&mut out).take(CLI_OUTPUT_MAX).read_to_end(&mut o).await;
+            let _ = tokio::io::copy(&mut out, &mut tokio::io::sink()).await;
+        };
+        let read_err = async {
+            let _ = (&mut err).take(64 * 1024).read_to_end(&mut e).await;
+            let _ = tokio::io::copy(&mut err, &mut tokio::io::sink()).await;
+        };
+        tokio::join!(feed, read_out, read_err);
+        (o, e)
+    };
+    let Ok((stdout, stderr)) = tokio::time::timeout(CLI_TIMEOUT, run).await else {
+        let _ = child.kill().await;
+        return Err(format!("{} took too long to answer, so it was stopped. Try fewer cards or questions.", cli.name()));
+    };
+    let status = child.wait().await.ok();
+    Ok((String::from_utf8_lossy(&stdout).into_owned(), String::from_utf8_lossy(&stderr).into_owned(), status))
+}
+
 impl Model for CliModel {
     async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
-        let mut cmd = tokio::process::Command::new(&self.bin);
-        cmd.args(cli_args(system))
-            .current_dir(&self.cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        for var in agent::INHERITED_SESSION_VARS {
-            cmd.env_remove(var);
-        }
-        if let Some(dir) = &self.config_dir {
-            cmd.env("CLAUDE_CONFIG_DIR", dir);
-        }
-        #[cfg(unix)]
-        cmd.process_group(0);
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(agent::MISSING_CLI_MESSAGE.into()),
-            Err(e) => return Err(format!("Could not start Claude Code: {e}")),
-        };
-        let mut stdin = child.stdin.take();
-        let mut out = child.stdout.take().expect("stdout is piped");
-        let mut err = child.stderr.take().expect("stderr is piped");
-        let user = user.to_string();
-        let run = async move {
-            let feed = async move {
-                if let Some(s) = stdin.as_mut() {
-                    // A write error means the CLI already exited; its output says why.
-                    let _ = s.write_all(user.as_bytes()).await;
-                    let _ = s.shutdown().await;
-                }
-                drop(stdin);
-            };
-            let (mut o, mut e) = (Vec::new(), Vec::new());
-            let read_out = async {
-                let _ = (&mut out).take(CLI_OUTPUT_MAX).read_to_end(&mut o).await;
-                let _ = tokio::io::copy(&mut out, &mut tokio::io::sink()).await;
-            };
-            let read_err = async {
-                let _ = (&mut err).take(64 * 1024).read_to_end(&mut e).await;
-                let _ = tokio::io::copy(&mut err, &mut tokio::io::sink()).await;
-            };
-            tokio::join!(feed, read_out, read_err);
-            (o, e)
-        };
-        let Ok((stdout, stderr)) = tokio::time::timeout(CLI_TIMEOUT, run).await else {
-            let _ = child.kill().await;
-            return Err("Claude Code took too long to answer, so it was stopped. Try fewer cards or questions.".into());
-        };
-        let status = child.wait().await.ok();
-        let stdout = String::from_utf8_lossy(&stdout);
-        let stderr = String::from_utf8_lossy(&stderr);
+        let mut cmd = agent::command(agent::Cli::Claude, &self.bin, &self.cwd, self.config_dir.as_deref());
+        cmd.args(cli_args(system));
+        let (stdout, stderr, status) = run_once(agent::Cli::Claude, cmd, user).await?;
         match parse_cli_output(&stdout) {
             Ok(text) => Ok(text),
             Err(_) if stderr.contains("Not logged in") || stderr.contains("/login") => Err(agent::NOT_LOGGED_IN_MESSAGE.into()),
@@ -188,10 +179,114 @@ impl Model for CliModel {
     }
 }
 
+/// Codex or Gemini CLI, one call per question: no tools that run anything, no
+/// files to read, nothing of the person's own setup that can be switched off,
+/// and (Codex) no session kept. Gemini CLI keeps every run in its own history;
+/// it has no way not to.
+pub struct OtherCliModel {
+    pub cli: agent::Cli,
+    pub bin: PathBuf,
+    pub cwd: PathBuf,
+    pub config_dir: Option<PathBuf>,
+    /// The space's own model for this CLI; its default when `None`.
+    pub model: Option<String>,
+}
+
+impl OtherCliModel {
+    /// The arguments for one question and what goes on stdin.
+    pub fn invocation(&self, system: &str, user: &str) -> Result<(Vec<String>, String), String> {
+        let model = self.model.as_deref().filter(|m| agent::is_valid_cli_model(m));
+        Ok(match self.cli {
+            agent::Cli::Codex => {
+                // Nothing readable but what Codex itself needs, and no shell at all.
+                let mut a = agent::codex::base_args(&self.cwd, &agent::codex::own_dirs(&self.bin), model);
+                a.splice(1..1, ["--ephemeral".to_string()]);
+                for f in ["shell_tool", "unified_exec"] {
+                    a.push("--disable".into());
+                    a.push(f.into());
+                }
+                a.push("-c".into());
+                a.push(format!("developer_instructions={}", agent::codex::toml_str(system)));
+                a.push("-".into());
+                (a, user.to_string())
+            }
+            agent::Cli::Gemini => {
+                let policy = agent::gemini::policy_file(true).map_err(|e| format!("Phaethon couldn’t prepare Gemini CLI’s rules: {e}"))?;
+                // No system prompt flag: the instructions come first in the message.
+                (agent::gemini::base_args(&policy, "json", model), format!("<instructions>\n{system}\n</instructions>\n\n{}", agent::gemini::prompt(None, user)))
+            }
+            agent::Cli::Claude => return Err("Claude Code is asked through CliModel.".into()),
+        })
+    }
+}
+
+/// The answer text from `codex exec --json` (its messages) or `gemini
+/// --output-format json` (`response`); `Err` says what went wrong.
+pub fn parse_other_output(cli: agent::Cli, stdout: &str) -> Result<String, String> {
+    let name = cli.name();
+    match cli {
+        agent::Cli::Codex => {
+            let mut text = vec![];
+            for v in stdout.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()) {
+                match v["type"].as_str() {
+                    Some("item.completed") if v["item"]["type"] == "agent_message" => text.push(v["item"]["text"].as_str().unwrap_or("").to_string()),
+                    Some("turn.failed") => return Err(format!("{name} said: {}", v["error"]["message"].as_str().unwrap_or("it stopped"))),
+                    _ => {}
+                }
+            }
+            let text = text.join("\n\n");
+            if text.trim().is_empty() { Err(format!("{name} didn’t answer.")) } else { Ok(text) }
+        }
+        _ => {
+            let v = stdout.lines().rev().chain([stdout]).find_map(|l| serde_json::from_str::<Value>(l.trim()).ok().filter(|v| v.get("response").is_some() || v.get("error").is_some()));
+            let Some(v) = v else { return Err(format!("{name} didn’t answer.")) };
+            if let Some(e) = v.get("error").filter(|e| !e.is_null()) {
+                return Err(format!("{name} said: {}", e["message"].as_str().unwrap_or("it stopped")));
+            }
+            Ok(v["response"].as_str().unwrap_or("").to_string())
+        }
+    }
+}
+
+impl Model for OtherCliModel {
+    async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+        let (args, input) = self.invocation(system, user)?;
+        // Gemini CLI describes its folder to the model; an empty one says nothing about the space.
+        let cwd = if self.cli == agent::Cli::Gemini {
+            let empty = std::env::temp_dir().join("phaethon-gemini").join("one-shot");
+            std::fs::create_dir_all(&empty).map_err(|e| format!("Phaethon couldn’t prepare a folder for Gemini CLI: {e}"))?;
+            empty
+        } else {
+            self.cwd.clone()
+        };
+        let mut cmd = agent::command(self.cli, &self.bin, &cwd, self.config_dir.as_deref());
+        cmd.args(args);
+        if self.cli == agent::Cli::Gemini {
+            cmd.env("GEMINI_CLI_TRUST_WORKSPACE", "true");
+        }
+        let (stdout, stderr, status) = run_once(self.cli, cmd, &input).await?;
+        let logged_out = || self.cli.not_logged_in_message(self.config_dir.as_deref());
+        match parse_other_output(self.cli, &stdout) {
+            Ok(text) => Ok(text),
+            Err(e) if self.cli.not_logged_in(&e) || self.cli.not_logged_in(&stderr) => Err(logged_out()),
+            Err(e) if stdout.trim().is_empty() => {
+                let said = agent::stderr_summary(&stderr);
+                Err(match (said.is_empty(), status.and_then(|s| s.code())) {
+                    (false, _) => format!("{} stopped: {said}", self.cli.name()),
+                    (true, Some(code)) if code != 0 => format!("{} exited with status {code}.", self.cli.name()),
+                    _ => e,
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
 /// Whichever model the vault uses.
 pub enum AnyModel {
     Api(ProviderModel<AnyProvider>),
     Cli(CliModel),
+    OtherCli(OtherCliModel),
 }
 
 impl Model for AnyModel {
@@ -199,24 +294,49 @@ impl Model for AnyModel {
         match self {
             AnyModel::Api(m) => m.complete(system, user).await,
             AnyModel::Cli(m) => m.complete(system, user).await,
+            AnyModel::OtherCli(m) => m.complete(system, user).await,
         }
     }
 }
 
-/// The model for `space_dir`: Claude Code when the vault uses it; Phaethon's
+/// The setup folder `cli` uses in `vault` when the vault keeps its CLIs'
+/// setups apart (`isolateClaudeConfig`), under `root`; `None` otherwise.
+pub fn cli_config_dir(vault: &Vault, root: Option<&Path>, cli: agent::Cli) -> Option<PathBuf> {
+    if !vault.settings().isolate_claude_config {
+        return None;
+    }
+    let root = root?;
+    Some(match cli {
+        // Claude Code's predates the others and keeps its place.
+        agent::Cli::Claude => root.join(vault.name()),
+        other => root.join(format!("{}-{}", vault.name(), other.id())),
+    })
+}
+
+/// The model for `space_dir`: the vault's CLI when it uses one; Phaethon's
 /// provider when it uses Phaethon's own agent and that provider can answer;
 /// else Claude Code if it is installed; else why the provider can't answer.
 pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&Path>) -> Result<AnyModel, String> {
     let settings = vault.settings();
-    let cli = |settings: &crate::vault::VaultSettings| {
+    let cli = |_: &crate::vault::VaultSettings| {
         agent::find_claude().map(|bin| CliModel {
             bin,
             cwd: space_dir.to_path_buf(),
-            config_dir: settings.isolate_claude_config.then(|| isolated_config_root.map(|r| r.join(vault.name()))).flatten(),
+            config_dir: cli_config_dir(vault, isolated_config_root, agent::Cli::Claude),
         })
     };
     if settings.backend == Backend::ClaudeCli {
         return cli(&settings).map(AnyModel::Cli).ok_or_else(|| agent::MISSING_CLI_MESSAGE.to_string());
+    }
+    if let Some(other) = agent::Cli::of(settings.backend) {
+        let bin = other.find().ok_or_else(|| other.missing_message().to_string())?;
+        return Ok(AnyModel::OtherCli(OtherCliModel {
+            cli: other,
+            bin,
+            cwd: space_dir.to_path_buf(),
+            config_dir: cli_config_dir(vault, isolated_config_root, other),
+            model: crate::space_model::get_cli(space_dir, other.id()),
+        }));
     }
     match crate::providers::for_space(vault, space_dir) {
         Ok(p) => Ok(AnyModel::Api(ProviderModel(p))),

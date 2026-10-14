@@ -159,26 +159,19 @@ async fn agent_send(
             };
             agent_loop::run_turn(&state.runs, &state.approvals, &provider, req, emit).await;
         }
-        Backend::ClaudeCli => {
-            let config_dir = settings
-                .isolate_claude_config
-                .then(|| {
-                    state
-                        .isolated_config_root
-                        .as_ref()
-                        .map(|r| r.join(state.vault.name()))
-                })
-                .flatten();
+        Backend::ClaudeCli | Backend::CodexCli | Backend::GeminiCli => {
+            let cli = agent::Cli::of(settings.backend).expect("a CLI backend");
             let req = TurnRequest {
                 space_dir: &space_dir,
                 prompt: &prompt,
                 attachments: refs,
                 replace_from,
-                config_dir,
+                config_dir: study::model::cli_config_dir(&state.vault, state.isolated_config_root.as_deref(), cli),
                 // Granted folders of other spaces, and the courses this space sees in full.
                 add_dirs: grants::cli_dirs(&state.vault, &space).into_iter().chain(lms::access::visible(&state.vault, &space).cli_dirs()).collect(),
+                model: space_model::get_cli(&space_dir, cli.id()),
             };
-            agent::run_turn(&state.runs, &space, req, emit).await;
+            agent::run_cli_turn(&state.runs, &space, cli, req, emit).await;
         }
     }
     let _ = spaces::touch(&state.vault, &space);
@@ -435,6 +428,15 @@ fn claude_cli_status() -> agent::CliStatus {
     agent::cli_status()
 }
 
+/// Each agent CLI: installed or not, signed in when the CLI itself can say
+/// (Codex's own `codex login status`; never by reading its files), how to
+/// sign in, and whether Phaethon can answer through it.
+#[tauri::command]
+async fn agent_clis_status(state: State<'_, AppState>) -> Result<Vec<agent::CliInfo>, ()> {
+    let (vault, root) = (state.vault.clone(), state.isolated_config_root.clone());
+    Ok(agent::clis_info(|cli| study::model::cli_config_dir(&vault, root.as_deref(), cli)).await)
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsView {
@@ -648,20 +650,41 @@ fn settings_set_model(state: State<'_, AppState>, model: Option<String>) -> Resu
 /// The model `space` has chosen for itself, or `None` when it uses the default.
 #[tauri::command]
 fn space_model_get(state: State<'_, AppState>, space: String) -> Result<Option<String>, String> {
-    Ok(space_model::get(&state.vault.space_dir(&space)?))
+    let dir = state.vault.space_dir(&space)?;
+    Ok(match cli_with_models(&state.vault) {
+        Some(cli) => space_model::get_cli(&dir, cli.id()).map(|m| format!("{}:{m}", cli.id())),
+        None => space_model::get(&dir),
+    })
 }
 
-/// Choose the model Phaethon's own agent answers with in `space`; `None` goes
-/// back to the default. Applies from the next message in that space.
+/// The CLI whose per-space models are in use: Codex or Gemini CLI when one
+/// answers (Claude Code picks its own); `None` for Phaethon's own agent.
+fn cli_with_models(vault: &Vault) -> Option<agent::Cli> {
+    agent::Cli::of(vault.settings().backend).filter(|c| *c != agent::Cli::Claude)
+}
+
+/// Choose the model that answers in `space`: Phaethon's own agent's (a model
+/// reference), or with `codex:` / `gemini:` that CLI's; `None` goes back to
+/// the default of whichever answers now. Applies from the next message there.
 #[tauri::command]
 fn space_model_set(state: State<'_, AppState>, space: String, model: Option<String>) -> Result<(), String> {
-    space_model::set(&state.vault, &space, model.as_deref())
+    if let Some((cli, m)) = model.as_deref().and_then(space_model::split_cli_ref) {
+        return space_model::set_cli(&state.vault, &space, cli, Some(m));
+    }
+    match (&model, cli_with_models(&state.vault)) {
+        (None, Some(cli)) => space_model::set_cli(&state.vault, &space, cli.id(), None),
+        _ => space_model::set(&state.vault, &space, model.as_deref()),
+    }
 }
 
-/// Every space that has its own model, by space id.
+/// Every space that has its own model, by space id: for the CLI that answers
+/// now if it takes one (as `cli:model`), else Phaethon's own agent's.
 #[tauri::command]
 fn space_models_list(state: State<'_, AppState>) -> Result<std::collections::BTreeMap<String, String>, String> {
-    space_model::list(&state.vault)
+    match cli_with_models(&state.vault) {
+        Some(cli) => space_model::list_cli(&state.vault, cli.id()),
+        None => space_model::list(&state.vault),
+    }
 }
 
 // ---- Tutor modes and the study planner (tutor_mode.rs, plan.rs) -------------
@@ -947,6 +970,7 @@ pub fn run() {
             thread_forget,
             thread_forget_preview,
             claude_cli_status,
+            agent_clis_status,
             settings_get,
             settings_set_backend,
             api_key_set,

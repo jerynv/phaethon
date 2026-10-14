@@ -36,7 +36,7 @@ fn the_spaces_mode_is_appended_to_claude_codes_system_prompt() {
         tauri::async_runtime::block_on(agent::run_turn(
             &Runs::default(),
             space,
-            TurnRequest { space_dir: &dir, prompt: "quiz me on graphs", attachments: vec![], replace_from: None, config_dir: None, add_dirs: vec![] },
+            TurnRequest { space_dir: &dir, prompt: "quiz me on graphs", attachments: vec![], replace_from: None, config_dir: None, add_dirs: vec![], model: None },
             |e| events.push(e),
         ));
         assert!(matches!(events.last(), Some(AgentEvent::End { .. })), "{events:?}");

@@ -28,6 +28,7 @@ fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
             replace_from: None,
             config_dir: None,
             add_dirs: vec![],
+            model: None,
         },
         |e| {
             eprintln!("event: {e:?}");
@@ -115,6 +116,7 @@ fn cancel_kills_the_child_and_its_group() {
             replace_from: None,
             config_dir: None,
             add_dirs: vec![],
+            model: None,
         },
         |e| events.push(e),
     ));

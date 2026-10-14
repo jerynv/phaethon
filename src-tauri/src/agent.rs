@@ -1,17 +1,24 @@
-//! Agent supervisor for the `claude` CLI backend.
+//! Agent supervisor for the CLI backends: Claude Code, Codex and Gemini CLI.
 //!
-//! Phaethon never touches the CLI's credentials: it only locates the binary the
+//! Phaethon never touches a CLI's credentials: it only locates the binary the
 //! user installed and logged into, and spawns it. One child process per turn,
-//! with its working directory set to the space folder and `--resume` pointing
-//! at the session of the space's current conversation.
+//! with its working directory set to the space folder, read-only tools, and
+//! the session of the space's current conversation resumed. What differs per
+//! CLI (arguments, its JSON events, how it says "not logged in") is in
+//! `claude.rs`, `codex.rs` and `gemini.rs`; the rest is shared here.
 //!
 //! Each turn is recorded in the space's conversation (thread.rs) as Phaethon's
 //! own loop records it: the user's message with its files, then the reply's
 //! text (and a stopped record when the user stopped it), as plain text blocks,
 //! so the conversation can be listed, searched, reopened, and carried on by
-//! either backend.
+//! any backend.
+
+pub mod claude;
+pub mod codex;
+pub mod gemini;
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -25,34 +32,11 @@ use tokio::sync::oneshot;
 
 use crate::grants::AccessAnswer;
 use crate::thread::{self, Record, WriteAction};
+use crate::vault::Backend;
 use crate::{agent_loop, attachments, memory, vault};
 
-/// Tools the agent may use. Read-only for now: the agent can look at files in
-/// its space but cannot change them, run commands, or reach the network. Write
-/// tools come later, together with an in-app confirmation flow.
-pub const ALLOWED_TOOLS: &str = "Read,Grep,Glob";
-
-/// Shown when the binary cannot be found or started.
-pub const MISSING_CLI_MESSAGE: &str = "Claude Code was not found. Install Claude Code, then run `claude` once in a terminal to log in.";
-
-pub(crate) const NOT_LOGGED_IN_MESSAGE: &str =
-    "Claude Code is not logged in. Run `claude` once in a terminal to log in, then try again.";
-
-/// Variables a parent Claude Code session sets for its own children. If Phaethon
-/// was launched from inside one, they would make our child think it is nested.
-pub(crate) const INHERITED_SESSION_VARS: &[&str] = &[
-    "CLAUDECODE",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_CODE_CHILD_SESSION",
-    "CLAUDE_CODE_SESSION_ATTENDED",
-    "CLAUDE_CODE_SSE_PORT",
-    "CLAUDE_CODE_BRIDGE_SESSION_ID",
-    "CLAUDE_CODE_MESSAGING_SOCKET",
-    "CLAUDE_CODE_MESSAGING_TOKEN",
-    "CLAUDE_CODE_EXECPATH",
-    "CLAUDE_PID",
-];
+pub use claude::{ALLOWED_TOOLS, MISSING_CLI_MESSAGE, cli_args, find_claude};
+pub(crate) use claude::{INHERITED_SESSION_VARS, NOT_LOGGED_IN_MESSAGE};
 
 /// Events streamed to the UI for one turn. The stream always ends with `End`.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -147,6 +131,135 @@ pub enum ErrorCode {
     Attachment,
 }
 
+/// Which official CLI answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Cli {
+    Claude,
+    Codex,
+    Gemini,
+}
+
+impl Cli {
+    pub const ALL: [Cli; 3] = [Cli::Claude, Cli::Codex, Cli::Gemini];
+
+    /// The CLI a backend runs; `None` for Phaethon's own loop.
+    pub fn of(backend: Backend) -> Option<Cli> {
+        match backend {
+            Backend::Phaethon => None,
+            Backend::ClaudeCli => Some(Cli::Claude),
+            Backend::CodexCli => Some(Cli::Codex),
+            Backend::GeminiCli => Some(Cli::Gemini),
+        }
+    }
+
+    /// Short id, as in `codex:<model>` and `codex:<session>`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Cli::Claude => "claude",
+            Cli::Codex => "codex",
+            Cli::Gemini => "gemini",
+        }
+    }
+
+    /// Its name for people.
+    pub fn name(self) -> &'static str {
+        match self {
+            Cli::Claude => "Claude Code",
+            Cli::Codex => "Codex",
+            Cli::Gemini => "Gemini CLI",
+        }
+    }
+
+    pub fn find(self) -> Option<PathBuf> {
+        match self {
+            Cli::Claude => find_claude(),
+            Cli::Codex => codex::find_codex(),
+            Cli::Gemini => gemini::find_gemini(),
+        }
+    }
+
+    pub fn missing_message(self) -> &'static str {
+        match self {
+            Cli::Claude => MISSING_CLI_MESSAGE,
+            Cli::Codex => codex::MISSING_CLI_MESSAGE,
+            Cli::Gemini => gemini::MISSING_CLI_MESSAGE,
+        }
+    }
+
+    /// The command that signs the person in, for them to run themselves.
+    /// With an isolated setup it names that setup's folder.
+    pub fn login_command(self, config_dir: Option<&Path>) -> String {
+        let (var, cmd) = match self {
+            Cli::Claude => ("CLAUDE_CONFIG_DIR", "claude"),
+            Cli::Codex => ("CODEX_HOME", "codex login"),
+            Cli::Gemini => ("GEMINI_CLI_HOME", "gemini"),
+        };
+        match config_dir {
+            Some(d) => format!("{var}=\"{}\" {cmd}", d.display()),
+            None => cmd.into(),
+        }
+    }
+
+    pub fn not_logged_in_message(self, config_dir: Option<&Path>) -> String {
+        match (self, config_dir) {
+            (Cli::Claude, None) => NOT_LOGGED_IN_MESSAGE.into(),
+            _ => format!(
+                "{} is not logged in. Run `{}` once in a terminal to sign in, then try again.",
+                self.name(),
+                self.login_command(config_dir)
+            ),
+        }
+    }
+
+    /// How its sessions are tagged in `.phaethon/session` (see vault.rs).
+    fn session_tag(self) -> Option<&'static str> {
+        match self {
+            Cli::Claude => None,
+            other => Some(other.id()),
+        }
+    }
+
+    fn inherited_vars(self) -> &'static [&'static str] {
+        match self {
+            Cli::Claude => INHERITED_SESSION_VARS,
+            Cli::Codex => codex::INHERITED_SESSION_VARS,
+            Cli::Gemini => gemini::INHERITED_SESSION_VARS,
+        }
+    }
+
+    /// The variable that points the CLI at its own setup folder.
+    pub(crate) fn config_var(self) -> &'static str {
+        match self {
+            Cli::Claude => "CLAUDE_CONFIG_DIR",
+            Cli::Codex => "CODEX_HOME",
+            Cli::Gemini => "GEMINI_CLI_HOME",
+        }
+    }
+
+    pub(crate) fn not_logged_in(self, s: &str) -> bool {
+        match self {
+            Cli::Claude => claude::not_logged_in(s),
+            Cli::Codex => codex::not_logged_in(s),
+            Cli::Gemini => gemini::not_logged_in(s),
+        }
+    }
+
+    fn is_stale(self, s: &str) -> bool {
+        match self {
+            Cli::Claude => claude::is_stale(s),
+            Cli::Codex => codex::is_stale(s),
+            Cli::Gemini => gemini::is_stale(s),
+        }
+    }
+}
+
+/// Is `name` a model id a CLI may be given with `-m`? One line of plain
+/// characters that can't be read as a flag.
+pub fn is_valid_cli_model(name: &str) -> bool {
+    crate::providers::is_valid_compat_model(name) && name.len() <= 100
+}
+
 /// Options for one turn.
 pub struct TurnRequest<'a> {
     pub space_dir: &'a Path,
@@ -161,40 +274,19 @@ pub struct TurnRequest<'a> {
     pub replace_from: Option<usize>,
     /// Set only when the vault opts into an isolated CLI config (see `VaultSettings`).
     pub config_dir: Option<PathBuf>,
-    /// Folders of other spaces this space has an "always" grant for, as
-    /// (label like "work/calendar", real path); see `grants::cli_dirs`. Passed
-    /// as `--add-dir`, so the CLI's read-only tools may read them. Asking for
-    /// access mid-conversation is not available on this backend.
+    /// Folders the CLI may read besides the space, as (label like
+    /// "work/calendar", real path): other spaces' folders this space has an
+    /// "always" grant for (`grants::cli_dirs`) and the courses it sees in full.
+    /// Asking for access mid-conversation is not available on these backends.
     pub add_dirs: Vec<(String, PathBuf)>,
+    /// The space's own model for this CLI (`-m`); its default when `None`.
+    /// Claude Code always uses its own.
+    pub model: Option<String>,
 }
 
-/// Find the `claude` binary: `PATH` first, then `~/.local/bin` (the installer's
-/// default, and not on `PATH` when a macOS app is launched from Finder).
-pub fn find_claude() -> Option<PathBuf> {
-    #[cfg(debug_assertions)]
-    if let Some(p) = std::env::var_os("PHAETHON_CLAUDE_BIN") {
-        // Debug builds only: lets tests point at a scripted fake CLI.
-        return Some(PathBuf::from(p));
-    }
-    let exe = if cfg!(windows) {
-        "claude.exe"
-    } else {
-        "claude"
-    };
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
-    if let Some(home) = vault::home_dir() {
-        dirs.push(home.join(".local").join("bin"));
-    }
-    dirs.into_iter()
-        .map(|d| d.join(exe))
-        .find(|p| is_executable(p))
-}
-
-/// Whether Claude Code is installed, for Settings and the setup card to check
+/// Whether a CLI is installed, for Settings and the setup card to check
 /// before offering it. Only looks for the program: nothing about the user's
-/// login is read or reported (Anthropic's terms; see CLAUDE.md).
+/// login is read (Anthropic's terms; see CLAUDE.md).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CliStatus {
     pub installed: bool,
@@ -208,7 +300,7 @@ pub fn cli_status() -> CliStatus {
 
 /// A found path counts only if it is an executable file (the debug-build
 /// override may name one that isn't there).
-fn status_of(found: Option<PathBuf>) -> CliStatus {
+pub(crate) fn status_of(found: Option<PathBuf>) -> CliStatus {
     match found.filter(|p| is_executable(p)) {
         Some(p) => CliStatus { installed: true, path: Some(p.to_string_lossy().into_owned()) },
         None => CliStatus { installed: false, path: None },
@@ -229,54 +321,68 @@ fn is_executable(p: &Path) -> bool {
     }
 }
 
-/// The CLI arguments for one turn. The prompt goes over stdin, never argv, so
-/// it cannot be read as a flag and does not show up in `ps`.
-pub fn cli_args(resume: Option<&str>, add_dirs: &[PathBuf]) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "-p",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--include-partial-messages",
-        // Only these tools exist for the model at all...
-        "--tools",
-        ALLOWED_TOOLS,
-        // ...they run without asking...
-        "--allowedTools",
-        ALLOWED_TOOLS,
-        // ...and anything else that would need permission is denied, not prompted.
-        "--permission-mode",
-        "dontAsk",
-        "--permission-prompts",
-        "none",
-        // File tools confined to the working directory (the space); user, project
-        // and local settings (including hooks) are ignored.
-        "--restricted",
-        // No MCP servers from the user's own configuration.
-        "--strict-mcp-config",
-        "--no-chrome",
-        // No CLAUDE.md auto-discovery (the user's global one leaked into every
-        // space without this), plugins, hooks or custom agents. Login still works.
-        "--safe-mode",
-        // No skills or slash commands, built-in ones included.
-        "--disable-slash-commands",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    // Granted folders of other spaces. The tools stay read-only, and
-    // `--restricted` confines them to the working directory plus these.
-    // `--add-dir` is variadic, so each one is followed by another flag or the
-    // end of argv, never a stray positional.
-    for dir in add_dirs {
-        args.push("--add-dir".into());
-        args.push(dir.to_string_lossy().into_owned());
+/// The first executable `name` on `PATH`, then in `extra`.
+pub(crate) fn find_on_path(name: &str, extra: &[PathBuf]) -> Option<PathBuf> {
+    let exe = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    dirs.extend(extra.iter().cloned());
+    dirs.into_iter().map(|d| d.join(&exe)).find(|p| is_executable(p))
+}
+
+/// Where installers put command-line tools, none of which is on `PATH` when a
+/// macOS app is opened from Finder.
+pub(crate) fn common_bin_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = vec![];
+    if let Some(home) = vault::home_dir() {
+        for d in [".local/bin", ".bun/bin", ".npm-global/bin", ".volta/bin"] {
+            dirs.push(home.join(d));
+        }
     }
-    if let Some(id) = resume {
-        args.push("--resume".into());
-        args.push(id.into());
+    dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+    dirs
+}
+
+/// `PATH` for a CLI's child: the usual one, then the CLI's own folder and the
+/// installers' folders, so a CLI written in JavaScript finds `node`.
+fn child_path(bin: &Path) -> OsString {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    for d in bin.parent().map(Path::to_path_buf).into_iter().chain(common_bin_dirs()) {
+        if !dirs.contains(&d) {
+            dirs.push(d);
+        }
     }
-    args
+    std::env::join_paths(dirs).unwrap_or_default()
+}
+
+/// The command for a run of `cli` at `bin`: its own process group, piped
+/// stdio, the inherited variables that would confuse it removed, and its
+/// isolated setup folder when the vault has one.
+pub fn command(cli: Cli, bin: &Path, cwd: &Path, config_dir: Option<&Path>) -> Command {
+    let mut cmd = Command::new(bin);
+    cmd.current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    for var in cli.inherited_vars() {
+        cmd.env_remove(var);
+    }
+    if cli != Cli::Claude {
+        cmd.env("PATH", child_path(bin));
+    }
+    if let Some(dir) = config_dir {
+        if cli != Cli::Claude {
+            // Codex refuses a CODEX_HOME that isn't there.
+            let _ = std::fs::create_dir_all(dir);
+        }
+        cmd.env(cli.config_var(), dir);
+    }
+    // Own process group, so cancel also reaches anything the CLI spawned (ripgrep etc.).
+    #[cfg(unix)]
+    cmd.process_group(0);
+    cmd
 }
 
 /// Running turns, keyed by space id. At most one turn per space.
@@ -344,14 +450,14 @@ impl Runs {
     }
 }
 
-/// Run one turn in `space_id`, streaming events to `emit`. Always finishes with
-/// exactly one `AgentEvent::End`, whatever happens.
-pub async fn run_turn(
-    runs: &Runs,
-    space_id: &str,
-    req: TurnRequest<'_>,
-    mut emit: impl FnMut(AgentEvent),
-) {
+/// Run one Claude Code turn in `space_id` (see [`run_cli_turn`]).
+pub async fn run_turn(runs: &Runs, space_id: &str, req: TurnRequest<'_>, emit: impl FnMut(AgentEvent)) {
+    run_cli_turn(runs, space_id, Cli::Claude, req, emit).await
+}
+
+/// Run one turn of `cli` in `space_id`, streaming events to `emit`. Always
+/// finishes with exactly one `AgentEvent::End`, whatever happens.
+pub async fn run_cli_turn(runs: &Runs, space_id: &str, cli: Cli, req: TurnRequest<'_>, mut emit: impl FnMut(AgentEvent)) {
     let Some(cancel_rx) = runs.claim(space_id) else {
         emit(AgentEvent::error(
             ErrorCode::Busy,
@@ -360,7 +466,7 @@ pub async fn run_turn(
         emit(AgentEvent::End { session_id: None });
         return;
     };
-    let session_id = turn(runs, space_id, &req, cancel_rx, &mut emit).await;
+    let session_id = turn(runs, space_id, cli, &req, cancel_rx, &mut emit).await;
     runs.release(space_id);
     emit(AgentEvent::End { session_id });
 }
@@ -371,7 +477,7 @@ Here it is so far, as plain text (\"Phaethon\" is you). Carry on from it.";
 
 /// What the CLI is asked: the user's message, and before it the conversation
 /// so far when the session starts fresh on one that already has messages (had
-/// with Phaethon's own agent, edited, or its session is gone).
+/// with Phaethon's own agent or another CLI, edited, or its session is gone).
 fn cli_prompt(ask: &str, msgs: &[Value], fresh: bool) -> String {
     if !fresh || thread::to_ui(msgs).is_empty() {
         return ask.to_string();
@@ -385,11 +491,16 @@ fn cli_prompt(ask: &str, msgs: &[Value], fresh: bool) -> String {
 async fn turn(
     runs: &Runs,
     space_id: &str,
+    cli: Cli,
     req: &TurnRequest<'_>,
     mut cancel_rx: oneshot::Receiver<()>,
     emit: &mut impl FnMut(AgentEvent),
 ) -> Option<String> {
     let storage = |emit: &mut dyn FnMut(AgentEvent), message: String| emit(AgentEvent::error(ErrorCode::Storage, message));
+    if cli == Cli::Gemini && gemini::has_own_settings(req.space_dir) {
+        emit(AgentEvent::error(ErrorCode::Cli, gemini::OWN_SETTINGS_MESSAGE));
+        return None;
+    }
     let mut msgs = match thread::load(req.space_dir) {
         Ok(m) => m,
         Err(e) => {
@@ -409,11 +520,11 @@ async fn turn(
     }
     let user = thread::stamped(thread::user_message(req.prompt, &req.attachments));
     let ask = format!("{}{}", req.prompt, attachments::cli_note(&req.attachments));
-    let mut resume = vault::read_session(req.space_dir);
+    let mut resume = vault::read_cli_session(req.space_dir, cli.session_tag());
     let mut text = String::new();
     let (stopped, session_id) = loop {
         let prompt = cli_prompt(&ask, &msgs, resume.is_none());
-        match drive(runs, space_id, req, resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text).await {
+        match drive(runs, space_id, cli, req, resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text).await {
             // The session is gone (deleted, or made on another machine or in another folder):
             // start afresh, with the conversation so far.
             Attempt::StaleSession => {
@@ -452,10 +563,76 @@ enum Attempt {
     StaleSession,
 }
 
+/// One CLI's event stream, whichever CLI it is.
+enum Parser {
+    Claude(claude::StreamParser),
+    Codex(codex::Parser),
+    Gemini(gemini::Parser),
+}
+
+impl Parser {
+    fn new(cli: Cli, space_dir: &Path, granted: Vec<(String, PathBuf)>) -> Self {
+        match cli {
+            Cli::Claude => {
+                let mut p = claude::StreamParser::new(space_dir);
+                p.granted = granted;
+                Parser::Claude(p)
+            }
+            Cli::Codex => {
+                let mut p = codex::Parser::new(space_dir);
+                p.granted = granted;
+                Parser::Codex(p)
+            }
+            Cli::Gemini => {
+                let mut p = gemini::Parser::new(space_dir);
+                p.granted = granted;
+                Parser::Gemini(p)
+            }
+        }
+    }
+
+    fn feed(&mut self, line: &str) -> Vec<AgentEvent> {
+        match self {
+            Parser::Claude(p) => p.feed(line),
+            Parser::Codex(p) => p.feed(line),
+            Parser::Gemini(p) => p.feed(line),
+        }
+    }
+
+    fn finish(self) -> Outcome {
+        match self {
+            Parser::Claude(p) => p.finish(),
+            Parser::Codex(p) => p.finish(),
+            Parser::Gemini(p) => p.finish(),
+        }
+    }
+}
+
+/// The arguments and stdin for one run of `cli`, or why it can't run.
+fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>, prompt: &str) -> Result<(Vec<String>, String), String> {
+    let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
+    let model = req.model.as_deref().filter(|m| is_valid_cli_model(m));
+    let mode = crate::tutor_mode::prompt_section(req.space_dir);
+    Ok(match cli {
+        Cli::Claude => {
+            let mut args = cli_args(resume, &dirs);
+            // The space's tutor mode, if any, appended to Claude Code's own system prompt.
+            args.extend(crate::tutor_mode::cli_args(req.space_dir));
+            (args, prompt.to_string())
+        }
+        Cli::Codex => (codex::cli_args(req.space_dir, bin, &dirs, model, mode.as_deref(), resume), prompt.to_string()),
+        Cli::Gemini => {
+            let policy = gemini::policy_file(false).map_err(|e| format!("Phaethon couldn’t prepare Gemini CLI’s read-only rules: {e}"))?;
+            (gemini::cli_args(&policy, &dirs, model, resume), gemini::prompt(mode.as_deref(), prompt))
+        }
+    })
+}
+
 #[allow(clippy::too_many_arguments)] // one run's inputs, each needed
 async fn drive(
     runs: &Runs,
     space_id: &str,
+    cli: Cli,
     req: &TurnRequest<'_>,
     resume: Option<&str>,
     prompt: &str,
@@ -467,43 +644,32 @@ async fn drive(
         emit(AgentEvent::error(code, message));
     };
 
-    let Some(bin) = find_claude() else {
-        fail(emit, ErrorCode::MissingCli, MISSING_CLI_MESSAGE.into());
+    let Some(bin) = cli.find() else {
+        fail(emit, ErrorCode::MissingCli, cli.missing_message().into());
         return Attempt::NotStarted;
     };
-
-    let mut cmd = Command::new(&bin);
-    let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
-    cmd.args(cli_args(resume, &dirs))
-        // The space's tutor mode, if any, appended to Claude Code's own system prompt.
-        .args(crate::tutor_mode::cli_args(req.space_dir))
-        .current_dir(req.space_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    for var in INHERITED_SESSION_VARS {
-        cmd.env_remove(var);
+    let (args, stdin_text) = match invocation(cli, &bin, req, resume, prompt) {
+        Ok(i) => i,
+        Err(message) => {
+            fail(emit, ErrorCode::Cli, message);
+            return Attempt::NotStarted;
+        }
+    };
+    let mut cmd = command(cli, &bin, req.space_dir, req.config_dir.as_deref());
+    cmd.args(args);
+    if cli == Cli::Gemini {
+        // Headless runs need a trusted folder; see gemini.rs for what keeps the space walled.
+        cmd.env("GEMINI_CLI_TRUST_WORKSPACE", "true");
     }
-    if let Some(dir) = &req.config_dir {
-        cmd.env("CLAUDE_CONFIG_DIR", dir);
-    }
-    // Own process group, so cancel also reaches anything the CLI spawned (ripgrep etc.).
-    #[cfg(unix)]
-    cmd.process_group(0);
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            fail(emit, ErrorCode::MissingCli, MISSING_CLI_MESSAGE.into());
+            fail(emit, ErrorCode::MissingCli, cli.missing_message().into());
             return Attempt::NotStarted;
         }
         Err(e) => {
-            fail(
-                emit,
-                ErrorCode::Cli,
-                format!("Could not start Claude Code: {e}"),
-            );
+            fail(emit, ErrorCode::Cli, format!("Could not start {}: {e}", cli.name()));
             return Attempt::NotStarted;
         }
     };
@@ -512,7 +678,7 @@ async fn drive(
 
     if let Some(mut stdin) = child.stdin.take() {
         // A write error here means the CLI already exited; its exit status says why.
-        let _ = stdin.write_all(prompt.as_bytes()).await;
+        let _ = stdin.write_all(stdin_text.as_bytes()).await;
         let _ = stdin.shutdown().await;
     }
 
@@ -527,8 +693,7 @@ async fn drive(
         })
     });
 
-    let mut parser = StreamParser::new(req.space_dir);
-    parser.granted = req.add_dirs.clone();
+    let mut parser = Parser::new(cli, req.space_dir, req.add_dirs.clone());
     let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
     let mut cancelled = false;
     loop {
@@ -579,12 +744,12 @@ async fn drive(
     }
 
     let outcome = parser.finish();
-    let not_logged_in = |s: &str| s.contains("Not logged in") || s.contains("/login");
+    let logged_out = || fail_not_logged_in(cli, req.config_dir.as_deref());
     match outcome {
         Outcome::Success { session_id } => {
             if let Some(Err(e)) = session_id
                 .as_deref()
-                .map(|id| vault::write_session(req.space_dir, id))
+                .map(|id| vault::write_cli_session(req.space_dir, cli.session_tag(), id))
             {
                 fail(
                     emit,
@@ -594,28 +759,31 @@ async fn drive(
             }
             Attempt::Done { session_id }
         }
-        Outcome::Failed { message } if not_logged_in(&message) || not_logged_in(&stderr) => {
-            fail(emit, ErrorCode::NotLoggedIn, NOT_LOGGED_IN_MESSAGE.into());
+        Outcome::Failed { message } if cli.not_logged_in(&message) || cli.not_logged_in(&stderr) => {
+            emit(logged_out());
             Attempt::Failed
         }
         Outcome::Failed { message } | Outcome::Incomplete { message } => {
-            let detail = [message.trim(), last_line(&stderr)]
+            let said = if cli == Cli::Claude { last_line(&stderr) } else { stderr_summary(&stderr) };
+            let detail = [message.trim(), said]
                 .into_iter()
                 .find(|s| !s.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| match status.and_then(|s| s.code()) {
-                    Some(code) => format!("Claude Code exited with status {code}."),
-                    None => "Claude Code stopped unexpectedly.".into(),
+                    Some(code) => format!("{} exited with status {code}.", cli.name()),
+                    None => format!("{} stopped unexpectedly.", cli.name()),
                 });
-            if resume.is_some() && detail.contains("No conversation found") {
+            if resume.is_some() && (cli.is_stale(&detail) || cli.is_stale(&stderr)) {
                 if text.is_empty() {
                     return Attempt::StaleSession;
                 }
                 // Gone after it had begun answering (unlikely): start afresh next time.
                 vault::clear_session(req.space_dir);
-                fail(emit, ErrorCode::Cli, "Claude Code lost this conversation’s earlier session. Send your message again to carry on in a new one.".into());
-            } else if not_logged_in(&detail) {
-                fail(emit, ErrorCode::NotLoggedIn, NOT_LOGGED_IN_MESSAGE.into());
+                fail(emit, ErrorCode::Cli, format!("{} lost this conversation’s earlier session. Send your message again to carry on in a new one.", cli.name()));
+            } else if cli.not_logged_in(&detail) || cli.not_logged_in(&stderr) {
+                emit(logged_out());
+            } else if cli == Cli::Gemini && detail.contains("IneligibleTierError") {
+                fail(emit, ErrorCode::Cli, gemini::INELIGIBLE_MESSAGE.into());
             } else {
                 fail(emit, ErrorCode::Cli, detail);
             }
@@ -624,11 +792,28 @@ async fn drive(
     }
 }
 
+fn fail_not_logged_in(cli: Cli, config_dir: Option<&Path>) -> AgentEvent {
+    AgentEvent::error(ErrorCode::NotLoggedIn, cli.not_logged_in_message(config_dir))
+}
+
 fn last_line(s: &str) -> &str {
     s.lines()
         .rev()
         .map(str::trim)
         .find(|l| !l.is_empty())
+        .unwrap_or("")
+}
+
+/// The line of a CLI's stderr that says what went wrong: the last one naming
+/// an error, else the last line at all. Stack frames (`at …`) never are.
+pub(crate) fn stderr_summary(s: &str) -> &str {
+    let lines: Vec<&str> = s.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("at ")).collect();
+    lines
+        .iter()
+        .rev()
+        .find(|l| l.contains("Error") || l.contains("error"))
+        .or(lines.last())
+        .copied()
         .unwrap_or("")
 }
 
@@ -657,168 +842,112 @@ fn signal_group(pid: u32, sig: Signal) {
     }
 }
 
-/// How the CLI's `stream-json` output ended.
+/// How a CLI's output ended.
 #[derive(Debug, PartialEq)]
-enum Outcome {
+pub(crate) enum Outcome {
     Success {
         session_id: Option<String>,
     },
     Failed {
         message: String,
     },
-    /// Output ended without a `result` line.
+    /// Output ended without a result.
     Incomplete {
         message: String,
     },
 }
 
-/// Turns `stream-json` lines into `AgentEvent`s. Unknown lines are ignored, so
-/// new CLI event types do not break the app.
-struct StreamParser {
-    space_dir: PathBuf,
-    /// Granted folders of other spaces, so reads there are labelled with the space.
-    granted: Vec<(String, PathBuf)>,
-    session_id: Option<String>,
-    emitted_text: bool,
-    result: Option<Outcome>,
+/// `p` as shown in a tool's label: relative to the space, or named by the
+/// granted folder of another space it is in ("work/calendar/oct.md"), and
+/// whether it is in one.
+pub(crate) fn shown_path(p: &str, space_dir: &Path, granted: &[(String, PathBuf)]) -> (String, bool) {
+    let path = Path::new(p);
+    if let Some(o) = granted.iter().find_map(|(label, dir)| {
+        path.strip_prefix(dir).ok().map(|r| if r.as_os_str().is_empty() { label.clone() } else { format!("{label}/{}", r.display()) })
+    }) {
+        return (o, true);
+    }
+    let rel = path.strip_prefix(space_dir).map(|r| r.display().to_string()).unwrap_or_else(|_| p.to_string());
+    (if rel.is_empty() { ".".into() } else { rel }, false)
 }
 
-impl StreamParser {
-    fn new(space_dir: &Path) -> Self {
-        Self {
-            space_dir: space_dir.to_path_buf(),
-            granted: vec![],
-            session_id: None,
-            emitted_text: false,
-            result: None,
-        }
+/// "Reading file notes.md", or "Reading work/calendar/oct.md" in another space's granted folder.
+pub(crate) fn place(verb: &str, p: &str, space_dir: &Path, granted: &[(String, PathBuf)]) -> String {
+    match shown_path(p, space_dir, granted) {
+        (o, true) => format!("{verb} {o}"),
+        (rel, false) => format!("{verb} file {rel}"),
     }
+}
 
-    fn feed(&mut self, line: &str) -> Vec<AgentEvent> {
-        let Ok(v) = serde_json::from_str::<Value>(line) else {
-            return vec![];
+/// What each CLI is, here: whether it's installed, whether it's signed in
+/// (when the CLI can say so without Phaethon reading its files), and how to
+/// install it or sign in. OpenCode is only looked for.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CliInfo {
+    /// `claude`, `codex`, `gemini` or `opencode`.
+    pub id: &'static str,
+    pub name: &'static str,
+    pub installed: bool,
+    /// `None` when the CLI has no way to say without being asked a question.
+    pub logged_in: Option<bool>,
+    /// The command that signs in, for the person to run in a terminal.
+    pub login_command: String,
+    /// Whether Phaethon can answer through it.
+    pub supported: bool,
+}
+
+/// [`CliInfo`] for every CLI. Codex says whether it is signed in through its
+/// own `codex login status`, which Phaethon runs and reads the words of;
+/// Phaethon itself never opens a CLI's credential files. Claude Code's
+/// sign-in is never asked (Anthropic's terms), and Gemini CLI has no way to
+/// say short of a real question.
+pub async fn clis_info(config_dir: impl Fn(Cli) -> Option<PathBuf>) -> Vec<CliInfo> {
+    let mut out = vec![];
+    for cli in Cli::ALL {
+        let bin = cli.find().filter(|p| is_executable(p));
+        let dir = config_dir(cli);
+        let logged_in = match (cli, &bin) {
+            (Cli::Codex, Some(bin)) => codex_logged_in(bin, dir.as_deref()).await,
+            _ => None,
         };
-        if let Some(id) = v.get("session_id").and_then(Value::as_str) {
-            self.session_id = Some(id.to_string());
-        }
-        match v.get("type").and_then(Value::as_str) {
-            Some("stream_event") => self.stream_event(&v["event"]),
-            Some("assistant") => v["message"]["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|b| b["type"] == "tool_use")
-                .map(|b| AgentEvent::Tool {
-                    label: tool_label(b, &self.space_dir, &self.granted),
-                })
-                .collect(),
-            Some("result") => {
-                let text = v
-                    .get("result")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string();
-                let is_error = v.get("is_error").and_then(Value::as_bool).unwrap_or(false)
-                    || v.get("subtype")
-                        .and_then(Value::as_str)
-                        .is_some_and(|s| s != "success");
-                let mut out = vec![];
-                if is_error {
-                    let message = if text.is_empty() {
-                        let sub = v.get("subtype").and_then(Value::as_str).unwrap_or("error");
-                        format!("Claude Code stopped: {sub}.")
-                    } else {
-                        text
-                    };
-                    self.result = Some(Outcome::Failed { message });
-                } else {
-                    // Fallback if no partial messages arrived: show the final text.
-                    if !self.emitted_text && !text.is_empty() {
-                        self.emitted_text = true;
-                        out.push(AgentEvent::Text { delta: text });
-                    }
-                    self.result = Some(Outcome::Success {
-                        session_id: self.session_id.clone(),
-                    });
-                }
-                out
-            }
-            _ => vec![],
-        }
+        out.push(CliInfo {
+            id: cli.id(),
+            name: cli.name(),
+            installed: bin.is_some(),
+            logged_in,
+            login_command: cli.login_command(dir.as_deref()),
+            supported: true,
+        });
     }
-
-    fn stream_event(&mut self, ev: &Value) -> Vec<AgentEvent> {
-        match ev.get("type").and_then(Value::as_str) {
-            // Separate text blocks (e.g. before and after a tool call) with a blank line.
-            Some("content_block_start")
-                if ev["content_block"]["type"] == "text" && self.emitted_text =>
-            {
-                vec![AgentEvent::Text {
-                    delta: "\n\n".into(),
-                }]
-            }
-            Some("content_block_delta") if ev["delta"]["type"] == "text_delta" => {
-                match ev["delta"]["text"].as_str() {
-                    Some(t) if !t.is_empty() => {
-                        self.emitted_text = true;
-                        vec![AgentEvent::Text {
-                            delta: t.to_string(),
-                        }]
-                    }
-                    _ => vec![],
-                }
-            }
-            _ => vec![],
-        }
-    }
-
-    fn finish(self) -> Outcome {
-        self.result.unwrap_or(Outcome::Incomplete {
-            message: String::new(),
-        })
-    }
+    let opencode = find_on_path("opencode", &[common_bin_dirs(), vault::home_dir().map(|h| vec![h.join(".opencode/bin")]).unwrap_or_default()].concat());
+    out.push(CliInfo { id: "opencode", name: "OpenCode", installed: opencode.is_some(), logged_in: None, login_command: "opencode auth login".into(), supported: false });
+    out
 }
 
-/// "Reading file notes.md" etc. Paths are shown relative to the space; a read
-/// in a granted folder of another space names that space ("Reading
-/// work/calendar/oct.md").
-fn tool_label(block: &Value, space_dir: &Path, granted: &[(String, PathBuf)]) -> String {
-    let input = &block["input"];
-    let s = |k: &str| input.get(k).and_then(Value::as_str).unwrap_or("");
-    let rel = |p: &str| {
-        let path = Path::new(p);
-        path.strip_prefix(space_dir)
-            .map(|r| r.display().to_string())
-            .unwrap_or_else(|_| p.to_string())
-    };
-    let other = |p: &str| {
-        granted.iter().find_map(|(label, dir)| {
-            Path::new(p).strip_prefix(dir).ok().map(|r| {
-                if r.as_os_str().is_empty() { label.clone() } else { format!("{label}/{}", r.display()) }
-            })
-        })
-    };
-    match block["name"].as_str().unwrap_or("") {
-        "Read" => match other(s("file_path")) {
-            Some(o) => format!("Reading {o}"),
-            None => format!("Reading file {}", rel(s("file_path"))),
-        },
-        "Grep" => format!("Searching files for \u{201c}{}\u{201d}", s("pattern")),
-        "Glob" => format!("Finding files matching {}", s("pattern")),
-        "" => "Using a tool".into(),
-        other => format!("Using tool {other}"),
+/// `codex login status`: "Logged in using …" or "Not logged in"; anything
+/// else (or no answer within a few seconds) is unknown.
+async fn codex_logged_in(bin: &Path, config_dir: Option<&Path>) -> Option<bool> {
+    let mut cmd = command(Cli::Codex, bin, &std::env::temp_dir(), config_dir);
+    cmd.args(["login", "status"]).stdin(Stdio::null());
+    let out = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await.ok()?.ok()?;
+    let said = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    parse_codex_login(&said)
+}
+
+pub(crate) fn parse_codex_login(said: &str) -> Option<bool> {
+    if said.contains("Not logged in") {
+        Some(false)
+    } else if said.contains("Logged in") {
+        Some(true)
+    } else {
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn feed_all(lines: &[&str]) -> (Vec<AgentEvent>, Outcome) {
-        let mut p = StreamParser::new(Path::new("/vault/spaces/school"));
-        let evs = lines.iter().flat_map(|l| p.feed(l)).collect();
-        (evs, p.finish())
-    }
 
     #[test]
     fn cli_status_reports_only_an_executable_and_its_path() {
@@ -846,131 +975,43 @@ mod tests {
     }
 
     #[test]
-    fn streams_text_and_session() {
-        let (evs, out) = feed_all(&[
-            r#"{"type":"system","subtype":"init","session_id":"11111111-2222-3333-4444-555555555555"}"#,
-            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#,
-            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"po"}}}"#,
-            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ng"}}}"#,
-            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"pong"}]}}"#,
-            r#"{"type":"result","subtype":"success","is_error":false,"result":"pong","session_id":"11111111-2222-3333-4444-555555555555"}"#,
-        ]);
-        assert_eq!(
-            evs,
-            vec![
-                AgentEvent::Text { delta: "po".into() },
-                AgentEvent::Text { delta: "ng".into() }
-            ]
-        );
-        assert_eq!(
-            out,
-            Outcome::Success {
-                session_id: Some("11111111-2222-3333-4444-555555555555".into())
-            }
-        );
+    fn each_cli_says_how_to_sign_in_in_its_own_words() {
+        assert_eq!(Cli::Claude.not_logged_in_message(None), NOT_LOGGED_IN_MESSAGE);
+        assert!(Cli::Codex.not_logged_in_message(None).contains("Run `codex login`"));
+        assert!(Cli::Gemini.not_logged_in_message(None).starts_with("Gemini CLI is not logged in. Run `gemini`"));
+        let iso = Cli::Codex.not_logged_in_message(Some(Path::new("/x/default-codex")));
+        assert!(iso.contains("CODEX_HOME=\"/x/default-codex\" codex login"), "{iso}");
+        assert_eq!(Cli::of(Backend::Phaethon), None);
+        assert_eq!(Cli::of(Backend::GeminiCli), Some(Cli::Gemini));
+        assert_eq!(parse_codex_login("Logged in using ChatGPT\n"), Some(true));
+        assert_eq!(parse_codex_login("Not logged in\n"), Some(false));
+        assert_eq!(parse_codex_login("Error loading configuration"), None);
     }
 
     #[test]
-    fn tool_use_and_second_text_block() {
-        let (evs, _) = feed_all(&[
-            r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Let me look."}}}"#,
-            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/vault/spaces/school/notes.md"}}]}}"#,
-            r#"{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"text"}}}"#,
-            r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Done."}}}"#,
-        ]);
-        assert_eq!(
-            evs,
-            vec![
-                AgentEvent::Text {
-                    delta: "Let me look.".into()
-                },
-                AgentEvent::Tool {
-                    label: "Reading file notes.md".into()
-                },
-                AgentEvent::Text {
-                    delta: "\n\n".into()
-                },
-                AgentEvent::Text {
-                    delta: "Done.".into()
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn granted_folders_become_add_dirs_and_labels() {
-        let dirs = [PathBuf::from("/vault/spaces/work/calendar"), PathBuf::from("/vault/spaces/home/bills")];
-        let args = cli_args(Some("11111111-2222-3333-4444-555555555555"), &dirs);
-        let pairs: Vec<&str> = args
-            .windows(2)
-            .filter(|w| w[0] == "--add-dir")
-            .map(|w| w[1].as_str())
-            .collect();
-        assert_eq!(pairs, ["/vault/spaces/work/calendar", "/vault/spaces/home/bills"]);
-        // Still read-only and restricted with grants.
-        assert!(args.windows(2).any(|w| w[0] == "--tools" && w[1] == ALLOWED_TOOLS));
-        assert!(args.iter().any(|a| a == "--restricted"));
-        // Each --add-dir value is followed by a flag, so the variadic option
-        // never swallows anything else.
-        for (i, a) in args.iter().enumerate() {
-            if a == "--add-dir" {
-                assert!(args.get(i + 2).is_none_or(|n| n.starts_with("--")));
-            }
+    fn models_for_a_cli_are_plain_and_never_flags() {
+        for ok in ["gpt-5.5", "gemini-2.5-pro", "o3", "gpt-5-codex"] {
+            assert!(is_valid_cli_model(ok), "{ok}");
         }
-
-        let mut p = StreamParser::new(Path::new("/vault/spaces/school"));
-        p.granted = vec![("work/calendar".into(), dirs[0].clone())];
-        let evs = p.feed(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/vault/spaces/work/calendar/oct.md"}}]}}"#);
-        assert_eq!(evs, vec![AgentEvent::Tool { label: "Reading work/calendar/oct.md".into() }]);
-    }
-
-    #[test]
-    fn result_without_partials_falls_back_to_final_text() {
-        let (evs, _) =
-            feed_all(&[r#"{"type":"result","subtype":"success","is_error":false,"result":"hi"}"#]);
-        assert_eq!(evs, vec![AgentEvent::Text { delta: "hi".into() }]);
-    }
-
-    #[test]
-    fn error_result_and_garbage() {
-        let (evs, out) = feed_all(&[
-            "not json",
-            r#"{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}"#,
-        ]);
-        assert!(evs.is_empty());
-        assert_eq!(
-            out,
-            Outcome::Failed {
-                message: "Not logged in · Please run /login".into()
-            }
-        );
-        assert_eq!(
-            feed_all(&[]).1,
-            Outcome::Incomplete {
-                message: String::new()
-            }
-        );
-    }
-
-    #[test]
-    fn args_never_bypass_permissions() {
-        let args = cli_args(Some("11111111-2222-3333-4444-555555555555"), &[]);
-        assert!(!args.iter().any(|a| a == "--add-dir"), "nothing crosses by default");
-        assert!(
-            !args
-                .iter()
-                .any(|a| a.contains("dangerously") || a == "bypassPermissions")
-        );
-        assert!(args.windows(2).any(|w| w[0] == "--resume"));
-        // The user's own CLI setup must not load inside a space.
-        for flag in ["--restricted", "--strict-mcp-config", "--safe-mode", "--disable-slash-commands"] {
-            assert!(args.iter().any(|a| a == flag), "missing {flag}");
+        for bad in ["", "-m", "--yolo", "a b", "x;rm", "../x", &"a".repeat(101)] {
+            assert!(!is_valid_cli_model(bad), "{bad}");
         }
-        // --bare would refuse OAuth and break the user's own CLI login.
-        assert!(!args.iter().any(|a| a == "--bare"));
-        assert!(
-            args.windows(2)
-                .any(|w| w[0] == "--permission-mode" && w[1] == "dontAsk")
-        );
+    }
+
+    #[test]
+    fn stderr_summary_finds_the_error_not_the_stack() {
+        let gemini = "Error authenticating: IneligibleTierError: This client is no longer supported.\n    at throwIneligible (file:///x.js:1:1)\n  ineligibleTiers: [\n  ]\n}\nAn unexpected critical error occurred:IneligibleTierError: This client is no longer supported.\n    at _doSetupUser (file:///x.js:2:2)\n";
+        assert_eq!(stderr_summary(gemini), "An unexpected critical error occurred:IneligibleTierError: This client is no longer supported.");
+        assert_eq!(stderr_summary("boom\n\n"), "boom");
+        assert_eq!(stderr_summary(""), "");
+    }
+
+    #[test]
+    fn paths_in_labels_are_the_spaces_own_or_name_the_other_space() {
+        let space = Path::new("/vault/spaces/school");
+        let granted = vec![("work/calendar".to_string(), PathBuf::from("/vault/spaces/work/calendar"))];
+        assert_eq!(place("Reading", "/vault/spaces/school/a/b.md", space, &granted), "Reading file a/b.md");
+        assert_eq!(place("Reading", "/vault/spaces/work/calendar/oct.md", space, &granted), "Reading work/calendar/oct.md");
+        assert_eq!(shown_path("/vault/spaces/school", space, &granted).0, ".");
     }
 }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { DropdownMenu } from "radix-ui";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { announce } from "@/components/shell/announcer";
 import { Keys, spokenKeys } from "@/components/shell/command-palette";
@@ -135,6 +136,7 @@ export function ConversationsBar({
   running,
   onSwitched,
   shown = () => true,
+  notes,
 }: {
   space: Space;
   /** Whether this space's pane is the one on screen (other visited spaces stay mounted, hidden). */
@@ -143,7 +145,10 @@ export function ConversationsBar({
   running: boolean;
   /** The conversation changed on disk: remount it, focus the composer, say `message`. */
   onSwitched: (message: string) => void;
+  /** Where the notes under the bar go (a refused switch, what a Clear kept), so they never change the header's height. */
+  notes?: HTMLElement | null;
 }) {
+  const inNotes = (children: ReactNode) => (notes ? createPortal(children, notes) : children);
   const [problem, setProblem] = useState("");
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [open, setOpen] = useState(false);
@@ -452,7 +457,7 @@ export function ConversationsBar({
       <div className="flex items-center justify-end gap-1 px-2 py-1.5">
         {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used.
             Nothing while it is empty: "New conversation" here read as a second button beside the real one. */}
-        {current && current.messages > 0 && (
+        {current && current.messages > 0 ? (
           // Title over date, each cut to fit on its own line: a long date (large text, a wide reading font)
           // can never run into the Conversations button.
           <p data-conversation-current="" className="flex min-w-0 flex-1 flex-col ps-2 text-sm leading-snug text-ink-secondary">
@@ -463,6 +468,13 @@ export function ConversationsBar({
               <span className="sr-only">, </span>
               {relativeDate(current.updated)}
             </span>
+          </p>
+        ) : (
+          // The same two lines, empty and unseen: the bar is as tall with a title as without one, so the
+          // first message (or a new conversation) never moves the conversation below.
+          <p aria-hidden="true" className="invisible flex min-w-0 flex-1 flex-col ps-2 text-sm leading-snug">
+            <span>{" "}</span>
+            <span className="text-xs">{" "}</span>
           </p>
         )}
         <DropdownMenu.Root open={open} onOpenChange={(o) => (o || stage.stage !== "clearing") && setOpen(o)} modal={false}>
@@ -748,6 +760,9 @@ export function ConversationsBar({
           </TooltipContent>
         </Tooltip>
       </div>
+      {/* Under the header, at the top of the conversation, when the pane gives them a place (in the bar otherwise). */}
+      {inNotes(
+        <>
       {problem && (
         <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-2">
           <div
@@ -831,6 +846,8 @@ export function ConversationsBar({
             )}
           </div>
         </div>
+      )}
+        </>,
       )}
     </div>
   );

@@ -119,7 +119,7 @@ export function GradesView({ space }: { space: Space }) {
   const outIds = connIds.filter((id) => signedOut.has(id));
 
   return (
-    <section aria-labelledby={headingId} data-grades-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <section aria-labelledby={headingId} data-grades-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 pt-6 pb-10">
         <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 flex-col gap-0.5">

@@ -173,7 +173,9 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   // What the last switch did, said once ("New conversation started.").
   const [said, setSaid] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
-  const shown = useCallback(() => paneShown({ rootRef } as Pane), []);
+  // Where the conversations bar puts its notes: the top of the conversation.
+  const [notes, setNotes] = useState<HTMLDivElement | null>(null);
+  const shown =useCallback(() => paneShown({ rootRef } as Pane), []);
   // After a switch, the composer takes focus once the new conversation is mounted.
   const focusNext = useRef(false);
   const onMounted = useCallback(() => {
@@ -308,7 +310,9 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
         className={cn(
           "flex min-h-0 min-w-0 flex-1 flex-col",
           view !== v && "invisible absolute inset-0",
-          v !== "chat" && "overflow-y-auto",
+          // Study scrolls here; Grades and Plan scroll in their own section. Either way the scrollbar's
+          // room is kept from the start, so content arriving never narrows the view.
+          v === "study" && "overflow-y-auto [scrollbar-gutter:stable]",
         )}
       >
         {content}
@@ -317,24 +321,23 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
 
   return (
     <div data-space-pane={space.id} className="relative flex min-h-0 flex-1 flex-col">
-      {/* The space's header: its views, then (in Chat) which conversation, on one row while there is room. */}
+      {/* The space's header: its views, then which conversation, on one row while there is room. It has one
+          geometry in every view: outside Chat the conversations bar keeps its place (and its state), out of
+          sight and inert, so switching views never moves the switcher or the view below it. */}
       <div
         data-space-header=""
         className={cn(
           "relative z-20 flex shrink-0 flex-wrap items-center gap-x-2 bg-bg ps-2",
           "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:to-transparent",
           "forced-colors:after:hidden [main:has([role=log]:focus-visible)_&]:after:hidden [&_[data-conversations-bar]]:after:hidden",
-          view !== "chat" && "pe-2",
         )}
       >
         <div className="py-1.5">
           <ViewSwitcher space={space.id} spaceName={space.name} view={view} />
         </div>
-        {view === "chat" && (
-          <div className="min-w-0 flex-1 basis-80">
-            <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} shown={shown} />
-          </div>
-        )}
+        <div className={cn("min-w-0 flex-1 basis-80", view !== "chat" && "invisible")} inert={view !== "chat"} data-conversations-slot="">
+          <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} shown={shown} notes={notes} />
+        </div>
       </div>
       {panel(
         "chat",
@@ -342,6 +345,9 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
           <p role="status" className="sr-only" data-testid="conversation-status">
             {said}
           </p>
+          {/* The bar's notes (a refused switch, what a Clear kept) show here, at the top of the conversation,
+              not in the header, so they never change the height of the header. */}
+          <div ref={setNotes} data-conversations-notes="" className="relative z-20 shrink-0 bg-bg" />
           {body}
         </>,
         rootRef,

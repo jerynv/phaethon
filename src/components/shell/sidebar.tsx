@@ -36,10 +36,15 @@ type Props = {
   loading?: boolean;
 };
 
+const NEEDS_YOU = { shown: "Needs you", spoken: "needs your answer", urgent: true };
+const ANSWERING = { shown: "Answering…", spoken: "answering", urgent: false };
+/** Every state a space's activity can show, so its place is as wide as the widest. */
+const ACTIVITY_SHOWN = [NEEDS_YOU, ANSWERING];
+
 /** What a space is doing, as shown beside its name and as spoken after it. */
 function activityWords(a: SpaceActivity | undefined): { shown: string; spoken: string; urgent: boolean } | null {
-  if (a?.needsYou) return { shown: "Needs you", spoken: "needs your answer", urgent: true };
-  if (a?.running) return { shown: "Answering…", spoken: "answering", urgent: false };
+  if (a?.needsYou) return NEEDS_YOU;
+  if (a?.running) return ANSWERING;
   return null;
 }
 
@@ -359,32 +364,40 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
             <span className="flex h-[1lh] items-center text-base">
               <SpaceMark hue={space.hue} />
             </span>
-            {/* The name and what the space is doing share a line while both fit; otherwise the state wraps below. */}
+            {/* The name and what the space is doing share a line while both fit; otherwise the state wraps below.
+                Its place is always laid out, as wide as its widest state and unseen while idle, so a reply
+                starting or a card waiting never rewraps the row and the spaces below never move. */}
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
               <span data-space-name="" className={cn("max-w-full min-w-0 truncate text-base text-ink", active ? "font-semibold" : "font-medium")}>
                 {/* Spoken as one piece of text, so no stray space lands before a comma. */}
                 <span aria-hidden="true">{space.name}</span>
                 <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : ""}${space.description ? "," : ""}`}</span>
               </span>
-              {doing && (
-                <span
-                  aria-hidden="true"
-                  data-space-activity=""
-                  className={cn(
-                    "flex shrink-0 items-center gap-1 text-xs",
-                    doing.urgent
-                      ? "rounded-full bg-warning-soft px-1.5 font-semibold text-warning-ink forced-colors:border forced-colors:border-[CanvasText]"
-                      : "text-ink-secondary",
-                  )}
-                >
-                  {doing.urgent ? (
-                    <Icon name="warning" className="size-(--ph-icon-size-sm)" />
-                  ) : (
-                    <Icon name="spinner" className="size-(--ph-icon-size-sm) motion-safe:animate-spin" />
-                  )}
-                  {doing.shown}
-                </span>
-              )}
+              <span aria-hidden="true" className="grid shrink-0 text-xs" data-space-activity-slot="">
+                {ACTIVITY_SHOWN.map((s) => {
+                  const on = doing?.shown === s.shown;
+                  return (
+                    <span
+                      key={s.shown}
+                      data-space-activity={on ? "" : undefined}
+                      className={cn(
+                        "col-start-1 row-start-1 flex items-center gap-1",
+                        !on && "invisible",
+                        s.urgent
+                          ? "rounded-full bg-warning-soft px-1.5 font-semibold text-warning-ink forced-colors:border forced-colors:border-[CanvasText]"
+                          : "text-ink-secondary",
+                      )}
+                    >
+                      {s.urgent ? (
+                        <Icon name="warning" className="size-(--ph-icon-size-sm)" />
+                      ) : (
+                        <Icon name="spinner" className={cn("size-(--ph-icon-size-sm)", on && "motion-safe:animate-spin")} />
+                      )}
+                      {s.shown}
+                    </span>
+                  );
+                })}
+              </span>
             </span>
             {space.description && <span className="col-start-2 truncate text-xs text-ink-secondary">{space.description}</span>}
           </button>

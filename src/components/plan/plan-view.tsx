@@ -109,7 +109,7 @@ export function PlanView({ space }: { space: Space }) {
   const dueToday = (upcoming ?? []).filter((u) => localDay(u.due) === today);
 
   return (
-    <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 pt-6 pb-10">
         <header className="flex flex-col gap-0.5">
           <h2 id={headingId} className="text-xl font-semibold text-ink">

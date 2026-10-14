@@ -93,7 +93,7 @@ export default [
     async run(page, h) {
       await page.waitForSelector(picker, { timeout: 5000 });
       let label = await page.$eval(picker, (b) => [b.getAttribute("aria-label"), b.textContent.trim()]);
-      check(label[0] === "Model in School: Codex’s own default" && label[1] === "Codex default", "the button says Codex picks its own model", JSON.stringify(label));
+      check(label[0] === "Model in School: Codex default, the model Codex chooses" && label[1] === "Codex default", "the button says Codex picks its own model", JSON.stringify(label));
       await page.click(picker);
       await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
       await h.idle();

@@ -222,7 +222,7 @@ function CliModelPicker({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const own = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
   const name = own ? own.model : `${cli.name} default`;
-  const label = `Model in ${spaceName}: ${own ? `${cli.name} · ${own.model}` : `${cli.name}’s own default`}`;
+  const label = `Model in ${spaceName}: ${own ? `${cli.name} · ${own.model}` : `${cli.name} default, the model ${cli.name} chooses`}`;
 
   /** `atField`: the dialog shows (and says) a refusal at its own field, so the menu doesn't too. */
   async function choose(model: string | null, atField = false): Promise<string> {

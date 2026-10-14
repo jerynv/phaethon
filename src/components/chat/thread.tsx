@@ -372,7 +372,9 @@ function ReplyActions() {
 /**
  * Continue, beside Send again on a stopped reply: the model carries on from
  * where it stopped and the words join this reply. Only where the backend knows
- * the reply's saved position (Phaethon's own agent), and only with text to go on.
+ * the reply's saved position, only with text to go on, and only with
+ * Phaethon's own agent (Claude Code can't carry on a stopped reply; Send
+ * again is beside it there).
  */
 function ContinueAction() {
   const pane = usePane();
@@ -380,7 +382,7 @@ function ContinueAction() {
   const id = useAuiState((s) => s.message.id);
   const known = useKnownIndex(pane?.threadIndex ?? null, id);
   const hasText = useAuiState((s) => s.message.content.some((p) => p.type === "text" && p.text.trim() !== ""));
-  if (!known || !hasText) return null;
+  if (!known || !hasText || pane?.cli) return null;
   const go = () => {
     const from = pane?.threadIndex?.indexOf(id);
     if (from === undefined) return;

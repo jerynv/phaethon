@@ -16,6 +16,8 @@ fn missing_binary_reports_install_hint() {
         TurnRequest {
             space_dir: &dir,
             prompt: "hi",
+            attachments: vec![],
+            replace_from: None,
             config_dir: None,
             add_dirs: vec![],
         },

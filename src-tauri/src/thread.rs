@@ -10,6 +10,11 @@
 //! one; the others are kept whole in `<space>/.phaethon/threads/<id>.json`
 //! (see [`start_new`] and [`open`]).
 //!
+//! With Claude Code answering, each conversation also has the CLI session it
+//! resumes: the current one's in `<space>/.phaethon/session`, a past one's
+//! beside it in the archive as `threads/<id>.session`. It moves with its
+//! conversation, so reopening one resumes its own session.
+//!
 //! The thread also holds the conversation's record: what the user allowed or
 //! refused, what was read in other spaces, and replies the user stopped. Each
 //! is a `{"type": "phaethon_record", "kind": ...}` block appended to the
@@ -28,6 +33,7 @@ use crate::agent::Runs;
 use crate::attachments::is_attachment_ref;
 use crate::grants::{self, AccessAnswer};
 use crate::tools::STATE_DIR;
+use crate::vault::session_file;
 
 // ---- The conversation record ----------------------------------------------
 
@@ -345,6 +351,38 @@ fn archived(space: &Path, id: &str) -> PathBuf {
     archive_dir(space).join(format!("{id}.json"))
 }
 
+/// The CLI session kept with the archived conversation `id`.
+fn archived_session(space: &Path, id: &str) -> PathBuf {
+    archive_dir(space).join(format!("{id}.session"))
+}
+
+/// Move the current CLI session (if any) to the archived conversation `id`.
+fn session_to_archive(space: &Path, id: &str) -> io::Result<()> {
+    let cur = session_file(space);
+    if !is_regular_file(&cur) {
+        return Ok(());
+    }
+    fs::rename(cur, archived_session(space, id))
+}
+
+/// Make the archived conversation `id`'s CLI session the current one, or
+/// leave none when it has none (it was had with Phaethon's own agent).
+fn session_from_archive(space: &Path, id: &str) -> io::Result<()> {
+    let kept = archived_session(space, id);
+    if is_regular_file(&kept) {
+        fs::rename(kept, session_file(space))
+    } else {
+        remove_if_there(&session_file(space))
+    }
+}
+
+fn remove_if_there(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 fn is_regular_file(path: &Path) -> bool {
     // symlink_metadata: a link is never followed, so nothing outside the space is read or moved.
     fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file())
@@ -460,17 +498,18 @@ fn current_has_content(space: &Path) -> bool {
 }
 
 /// Move the current conversation into the archive, if it has messages, and
-/// return the id it was given. An empty current file (`[]`) is removed.
+/// return the id it was given; its CLI session goes with it. An empty current
+/// file (`[]`) is removed, and a session left without a conversation stays for
+/// the caller to replace or remove.
 fn archive_current(space: &Path) -> io::Result<Option<String>> {
     let cur = file(space);
     if !current_has_content(space) {
-        return match fs::remove_file(&cur) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
-            _ => Ok(None),
-        };
+        return remove_if_there(&cur).map(|_| None);
     }
     let id = free_id(space)?;
     fs::rename(&cur, archived(space, &id))?;
+    // Losing the session only means the CLI starts afresh; the messages are kept either way.
+    let _ = session_to_archive(space, &id);
     Ok(Some(id))
 }
 
@@ -519,7 +558,8 @@ pub const STALE_EDIT: &str =
 /// Edit or regenerate: drop the user message at `index` and everything after
 /// it, so a new message can take its place. The conversation as it was is
 /// first saved whole into the archive (a copy, under a new id), so nothing
-/// is lost. The caller saves the shortened thread.
+/// is lost; the CLI session, if any, goes with that copy. The caller saves
+/// the shortened thread.
 ///
 /// Refusals of access in the dropped part still hold: they are added at the
 /// end as one record-only assistant message ([`Record::DeniedEarlier`]),
@@ -528,14 +568,17 @@ pub fn cut_at(space: &Path, msgs: &mut Vec<Value>, index: usize) -> Result<(), S
     if !is_user_boundary(msgs, index) {
         return Err(STALE_EDIT.into());
     }
-    let keep = || -> io::Result<()> {
+    let keep = || -> io::Result<String> {
         let id = free_id(space)?;
         let path = archived(space, &id);
         let tmp = path.with_extension("json.tmp");
         fs::write(&tmp, serde_json::to_vec_pretty(&*msgs)?)?;
-        fs::rename(&tmp, &path)
+        fs::rename(&tmp, &path)?;
+        Ok(id)
     };
-    keep().map_err(|e| format!("The earlier version of this conversation couldn’t be kept, so nothing was changed: {e}"))?;
+    let id = keep().map_err(|e| format!("The earlier version of this conversation couldn’t be kept, so nothing was changed: {e}"))?;
+    // The CLI session holds the whole earlier version, so it stays with that; the new version starts a fresh one.
+    let _ = session_to_archive(space, &id);
     let dropped = msgs.split_off(index);
     let mut carried: Vec<Value> = vec![];
     for r in records(&dropped) {
@@ -552,8 +595,10 @@ pub fn cut_at(space: &Path, msgs: &mut Vec<Value>, index: usize) -> Result<(), S
 }
 
 /// Start a new, empty conversation, keeping the current one in the archive.
+/// The CLI starts a fresh session too.
 pub fn start_new(space: &Path) -> io::Result<()> {
-    archive_current(space).map(|_| ())
+    archive_current(space)?;
+    remove_if_there(&session_file(space))
 }
 
 /// Make the archived conversation `id` current, archiving the current one
@@ -574,25 +619,25 @@ pub fn open(space: &Path, id: &str) -> io::Result<()> {
         // Put the current one back, so a failed open leaves everything where it was.
         if let Some(back) = moved {
             let _ = fs::rename(archived(space, &back), file(space));
+            let _ = session_from_archive(space, &back);
         }
         return Err(e);
     }
-    Ok(())
+    // Claude Code resumes this conversation's own session from now on.
+    session_from_archive(space, id)
 }
 
-/// Delete a conversation for good. `"current"` empties the current one (its
-/// file is removed; the caller also clears the CLI session); any other id
-/// must be an archive id ([`is_valid_id`]) naming a regular file in the
-/// archive, and is never turned into a path otherwise. Files the user
+/// Delete a conversation for good, with its CLI session. `"current"` empties
+/// the current one (its file is removed); any other id must be an archive id
+/// ([`is_valid_id`]) naming a regular file in the archive, and is never
+/// turned into a path otherwise. Files the user
 /// attached stay in the space: they are the user's files and other versions
 /// of the conversation may still show them.
 pub fn delete(space: &Path, id: &str) -> io::Result<()> {
     if id == CURRENT_ID {
         let _ = fs::remove_file(file(space).with_extension("json.tmp"));
-        return match fs::remove_file(file(space)) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
-            _ => Ok(()),
-        };
+        remove_if_there(&file(space))?;
+        return remove_if_there(&session_file(space));
     }
     if !is_valid_id(id) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a conversation id"));
@@ -601,7 +646,8 @@ pub fn delete(space: &Path, id: &str) -> io::Result<()> {
     if !is_regular_file(&chosen) {
         return Err(io::Error::new(io::ErrorKind::NotFound, "that conversation is no longer there"));
     }
-    fs::remove_file(chosen)
+    fs::remove_file(chosen)?;
+    remove_if_there(&archived_session(space, id))
 }
 
 /// The saved messages of conversation `id`: `"current"`, or an archive id
@@ -1161,6 +1207,56 @@ mod tests {
         assert!(archived(&dir, &keep_id).exists());
         // Already empty: still fine.
         delete(&dir, CURRENT_ID).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    const S1: &str = "11111111-1111-1111-1111-111111111111";
+    const S2: &str = "22222222-2222-2222-2222-222222222222";
+
+    #[test]
+    fn each_conversation_keeps_its_own_cli_session() {
+        let dir = temp_space("sessions");
+        let session = || crate::vault::read_session(&dir);
+        // A space that had one CLI session before conversations kept theirs: it is the current one's.
+        crate::vault::write_session(&dir, S1).unwrap();
+        save(&dir, &chat("first", "one")).unwrap();
+        start_new(&dir).unwrap();
+        assert_eq!(session(), None, "a new conversation starts a fresh session");
+        let first = list(&dir).unwrap()[1].id.clone();
+        assert_eq!(fs::read_to_string(archived_session(&dir, &first)).unwrap().trim(), S1);
+        crate::vault::write_session(&dir, S2).unwrap();
+        save(&dir, &chat("second", "two")).unwrap();
+        // Opening the first resumes its session; the second keeps its own in the archive.
+        open(&dir, &first).unwrap();
+        assert_eq!(session().as_deref(), Some(S1));
+        let second = list(&dir).unwrap()[1].id.clone();
+        assert_eq!(fs::read_to_string(archived_session(&dir, &second)).unwrap().trim(), S2);
+        assert!(!archived_session(&dir, &first).exists());
+        // Session files are never listed as conversations.
+        assert_eq!(list(&dir).unwrap().len(), 2);
+        open(&dir, &second).unwrap();
+        assert_eq!(session().as_deref(), Some(S2));
+        // A conversation without a session (Phaethon's own agent) opens with none.
+        let first = list(&dir).unwrap().iter().find(|t| t.title == "first").unwrap().id.clone();
+        fs::remove_file(archived_session(&dir, &first)).unwrap();
+        open(&dir, &first).unwrap();
+        assert_eq!(session(), None);
+        // Deleting a past conversation deletes its session; deleting the current one, the current session.
+        let second = list(&dir).unwrap()[1].id.clone();
+        assert!(archived_session(&dir, &second).exists());
+        delete(&dir, &second).unwrap();
+        assert!(!archived_session(&dir, &second).exists());
+        crate::vault::write_session(&dir, S1).unwrap();
+        delete(&dir, CURRENT_ID).unwrap();
+        assert_eq!(session(), None);
+        // An edit keeps the session with the earlier version, and the new version starts afresh.
+        let mut msgs = chat("q", "a");
+        save(&dir, &msgs).unwrap();
+        crate::vault::write_session(&dir, S2).unwrap();
+        cut_at(&dir, &mut msgs, 0).unwrap();
+        assert_eq!(session(), None);
+        let copy = list(&dir).unwrap()[1].id.clone();
+        assert_eq!(fs::read_to_string(archived_session(&dir, &copy)).unwrap().trim(), S2);
         fs::remove_dir_all(&dir).unwrap();
     }
 

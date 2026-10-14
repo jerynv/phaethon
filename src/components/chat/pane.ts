@@ -20,6 +20,8 @@ export type Pane = {
   editFromComposer: RefObject<boolean>;
   /** Saved positions of the shown messages (Edit / Regenerate), when the backend keeps them. */
   threadIndex: ThreadIndex | null;
+  /** Claude Code answers here: it can't carry on a stopped reply, so Continue isn't offered. */
+  cli?: boolean;
 };
 
 export const PaneContext = createContext<Pane | null>(null);

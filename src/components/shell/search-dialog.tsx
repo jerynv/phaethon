@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/icons";
-import { getSettings, searchConversations, type SearchConversation, type SearchResults, type SearchSnippet } from "@/lib/backend";
+import { searchConversations, type SearchConversation, type SearchResults, type SearchSnippet } from "@/lib/backend";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { Space } from "@/lib/spaces";
@@ -22,8 +22,7 @@ type State =
   | { status: "idle" }
   | { status: "searching"; query: string }
   | { status: "ready"; query: string; results: SearchResults }
-  | { status: "error"; message: string }
-  | { status: "cli" };
+  | { status: "error"; message: string };
 
 /** A conversation's date, as the conversations menu shows it: the year only when it isn't this one. */
 function dateOf(ms: number): string {
@@ -82,33 +81,19 @@ export function SearchDialog({
   const chosen = useRef<SearchChoice | null>(null);
   const returnTo = useRef<HTMLElement | null>(null);
   const seq = useRef(0);
-  const [cli, setCli] = useState(false);
   const space = spaces.find((s) => s.id === spaceId);
 
-  // The last search stays for the next time (select all to replace it); Claude Code is checked each time.
+  // The last search stays for the next time (select all to replace it).
   useEffect(() => {
     if (!open) return;
     chosen.current = null;
     returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setActive(0);
-    if (!inTauri()) return;
-    let live = true;
-    getSettings().then(
-      (s) => live && setCli(s.backend !== "phaethon"),
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
   }, [open]);
 
   // Debounced: a search runs once typing pauses; an answer to an older search is dropped.
   useEffect(() => {
     if (!open) return;
-    if (cli) {
-      setState({ status: "cli" });
-      return;
-    }
     const q = query.trim();
     if (q.length < MIN_CHARS || !spaceId || !inTauri()) {
       seq.current++;
@@ -128,7 +113,7 @@ export function SearchDialog({
       );
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [open, query, allSpaces, spaceId, cli]);
+  }, [open, query, allSpaces, spaceId]);
 
   const results = state.status === "ready" ? state.results.conversations : [];
   const options = useMemo(
@@ -175,9 +160,7 @@ export function SearchDialog({
       ? countText(state.results)
       : state.status === "error"
         ? "The search didn’t work."
-        : state.status === "cli"
-          ? "Claude Code’s history can’t be searched here."
-          : "";
+        : "";
   let index = 0;
 
   return (
@@ -245,7 +228,6 @@ export function SearchDialog({
                 setAllSpaces(on);
                 setActive(0);
               }}
-              disabled={state.status === "cli"}
               className={cn(
                 "inline-flex h-(--ph-switch-height) w-(--ph-switch-width) shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 transition-colors duration-(--ph-duration-fast)",
                 "bg-ink-tertiary data-[state=checked]:bg-accent-fill disabled:cursor-default disabled:opacity-60",
@@ -321,9 +303,7 @@ export function SearchDialog({
         </div>
         {state.status !== "ready" || results.length === 0 ? (
           <div className="px-4 py-6 text-center text-base text-ink-secondary" data-search-empty="">
-            {state.status === "cli" ? (
-              <p>Claude Code keeps its own history, which Phaethon can’t search. Only conversations with Phaethon’s own agent can be searched.</p>
-            ) : state.status === "error" ? (
+            {state.status === "error" ? (
               <p role="alert" className="wrap-anywhere text-danger-ink">
                 {state.message}
               </p>

@@ -3,7 +3,13 @@
 //! Phaethon never touches the CLI's credentials: it only locates the binary the
 //! user installed and logged into, and spawns it. One child process per turn,
 //! with its working directory set to the space folder and `--resume` pointing
-//! at that space's saved session.
+//! at the session of the space's current conversation.
+//!
+//! Each turn is recorded in the space's conversation (thread.rs) as Phaethon's
+//! own loop records it: the user's message with its files, then the reply's
+//! text (and a stopped record when the user stopped it), as plain text blocks,
+//! so the conversation can be listed, searched, reopened, and carried on by
+//! either backend.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,8 +24,8 @@ use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use crate::grants::AccessAnswer;
-use crate::thread::{Record, WriteAction};
-use crate::vault;
+use crate::thread::{self, Record, WriteAction};
+use crate::{agent_loop, attachments, memory, vault};
 
 /// Tools the agent may use. Read-only for now: the agent can look at files in
 /// its space but cannot change them, run commands, or reach the network. Write
@@ -144,7 +150,15 @@ pub enum ErrorCode {
 /// Options for one turn.
 pub struct TurnRequest<'a> {
     pub space_dir: &'a Path,
+    /// What the user wrote, saved in the conversation as written.
     pub prompt: &'a str,
+    /// Reference blocks for files saved with this message (see attachments.rs).
+    pub attachments: Vec<Value>,
+    /// Edit or regenerate: the thread index of a user message that this one
+    /// replaces, with everything after it (see [`thread::cut_at`]). The CLI
+    /// can't forget part of a session, so the new version starts a fresh one,
+    /// given the conversation before that message as text.
+    pub replace_from: Option<usize>,
     /// Set only when the vault opts into an isolated CLI config (see `VaultSettings`).
     pub config_dir: Option<PathBuf>,
     /// Folders of other spaces this space has an "always" grant for, as
@@ -346,31 +360,121 @@ pub async fn run_turn(
         emit(AgentEvent::End { session_id: None });
         return;
     };
-    let session_id = drive(runs, space_id, req, cancel_rx, &mut emit).await;
+    let session_id = turn(runs, space_id, &req, cancel_rx, &mut emit).await;
     runs.release(space_id);
     emit(AgentEvent::End { session_id });
 }
 
-async fn drive(
+/// Said to a fresh session before a conversation it never saw.
+const HISTORY_INTRO: &str = "This conversation began before this session, so you haven't seen it. \
+Here it is so far, as plain text (\"Phaethon\" is you). Carry on from it.";
+
+/// What the CLI is asked: the user's message, and before it the conversation
+/// so far when the session starts fresh on one that already has messages (had
+/// with Phaethon's own agent, edited, or its session is gone).
+fn cli_prompt(ask: &str, msgs: &[Value], fresh: bool) -> String {
+    if !fresh || thread::to_ui(msgs).is_empty() {
+        return ask.to_string();
+    }
+    format!("{HISTORY_INTRO}\n\n<conversation>\n{}</conversation>\n\nThe user's new message:\n\n{ask}", memory::transcript(msgs))
+}
+
+/// One turn: run the CLI (once more, afresh, if the session it was to resume
+/// is gone), then record the turn in the conversation. Returns the session
+/// the conversation resumes next.
+async fn turn(
     runs: &Runs,
     space_id: &str,
-    req: TurnRequest<'_>,
+    req: &TurnRequest<'_>,
     mut cancel_rx: oneshot::Receiver<()>,
     emit: &mut impl FnMut(AgentEvent),
 ) -> Option<String> {
+    let storage = |emit: &mut dyn FnMut(AgentEvent), message: String| emit(AgentEvent::error(ErrorCode::Storage, message));
+    let mut msgs = match thread::load(req.space_dir) {
+        Ok(m) => m,
+        Err(e) => {
+            storage(emit, format!("This space’s conversation file couldn’t be read, so nothing was sent: {e}"));
+            return None;
+        }
+    };
+    if let Some(index) = req.replace_from {
+        if let Err(e) = thread::cut_at(req.space_dir, &mut msgs, index) {
+            storage(emit, e);
+            return None;
+        }
+        if let Err(e) = thread::save(req.space_dir, &msgs) {
+            storage(emit, format!("The conversation could not be saved, so nothing was sent: {e}"));
+            return None;
+        }
+    }
+    let user = thread::stamped(thread::user_message(req.prompt, &req.attachments));
+    let ask = format!("{}{}", req.prompt, attachments::cli_note(&req.attachments));
+    let mut resume = vault::read_session(req.space_dir);
+    let mut text = String::new();
+    let (stopped, session_id) = loop {
+        let prompt = cli_prompt(&ask, &msgs, resume.is_none());
+        match drive(runs, space_id, req, resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text).await {
+            // The session is gone (deleted, or made on another machine or in another folder):
+            // start afresh, with the conversation so far.
+            Attempt::StaleSession => {
+                vault::clear_session(req.space_dir);
+                resume = None;
+            }
+            Attempt::Done { session_id } => break (false, session_id),
+            Attempt::Stopped => break (true, resume),
+            Attempt::Failed => break (false, None),
+            Attempt::NotStarted => return None,
+        }
+    };
+    // Recorded as Phaethon's own loop does: the question, then what came back
+    // (a failed or stopped reply keeps what streamed).
+    msgs.push(user);
+    msgs.extend(agent_loop::partial_reply(&[text], stopped).map(thread::stamped));
+    if let Err(e) = thread::save(req.space_dir, &msgs) {
+        storage(emit, format!("The reply couldn’t be saved in this space’s conversation: {e}"));
+    }
+    if stopped {
+        emit(AgentEvent::Record { record: Record::Stopped });
+        emit(AgentEvent::Cancelled);
+    }
+    session_id
+}
+
+/// How one run of the CLI ended. Errors are already emitted.
+#[derive(Debug, PartialEq)]
+enum Attempt {
+    /// The CLI wasn't found or couldn't start.
+    NotStarted,
+    Done { session_id: Option<String> },
+    Failed,
+    Stopped,
+    /// The session to resume is unknown to the CLI, and nothing was said yet.
+    StaleSession,
+}
+
+#[allow(clippy::too_many_arguments)] // one run's inputs, each needed
+async fn drive(
+    runs: &Runs,
+    space_id: &str,
+    req: &TurnRequest<'_>,
+    resume: Option<&str>,
+    prompt: &str,
+    cancel_rx: &mut oneshot::Receiver<()>,
+    emit: &mut impl FnMut(AgentEvent),
+    text: &mut String,
+) -> Attempt {
     let fail = |emit: &mut dyn FnMut(AgentEvent), code, message: String| {
         emit(AgentEvent::error(code, message));
     };
 
     let Some(bin) = find_claude() else {
         fail(emit, ErrorCode::MissingCli, MISSING_CLI_MESSAGE.into());
-        return None;
+        return Attempt::NotStarted;
     };
-    let resume = vault::read_session(req.space_dir);
 
     let mut cmd = Command::new(&bin);
     let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
-    cmd.args(cli_args(resume.as_deref(), &dirs))
+    cmd.args(cli_args(resume, &dirs))
         // The space's tutor mode, if any, appended to Claude Code's own system prompt.
         .args(crate::tutor_mode::cli_args(req.space_dir))
         .current_dir(req.space_dir)
@@ -392,7 +496,7 @@ async fn drive(
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             fail(emit, ErrorCode::MissingCli, MISSING_CLI_MESSAGE.into());
-            return None;
+            return Attempt::NotStarted;
         }
         Err(e) => {
             fail(
@@ -400,7 +504,7 @@ async fn drive(
                 ErrorCode::Cli,
                 format!("Could not start Claude Code: {e}"),
             );
-            return None;
+            return Attempt::NotStarted;
         }
     };
     let pid = child.id();
@@ -408,7 +512,7 @@ async fn drive(
 
     if let Some(mut stdin) = child.stdin.take() {
         // A write error here means the CLI already exited; its exit status says why.
-        let _ = stdin.write_all(req.prompt.as_bytes()).await;
+        let _ = stdin.write_all(prompt.as_bytes()).await;
         let _ = stdin.shutdown().await;
     }
 
@@ -432,12 +536,15 @@ async fn drive(
             line = lines.next_line() => match line {
                 Ok(Some(line)) => {
                     for ev in parser.feed(&line) {
+                        if let AgentEvent::Text { delta } = &ev {
+                            text.push_str(delta);
+                        }
                         emit(ev);
                     }
                 }
                 _ => break,
             },
-            _ = &mut cancel_rx => {
+            _ = &mut *cancel_rx => {
                 cancelled = true;
                 break;
             }
@@ -467,9 +574,8 @@ async fn drive(
     };
 
     if cancelled {
-        emit(AgentEvent::Cancelled);
-        // The CLI may not have saved the turn; keep the previous session.
-        return resume;
+        // The CLI may not have saved the turn; the caller keeps the previous session.
+        return Attempt::Stopped;
     }
 
     let outcome = parser.finish();
@@ -486,11 +592,11 @@ async fn drive(
                     format!("Reply received, but the conversation could not be saved: {e}"),
                 );
             }
-            session_id
+            Attempt::Done { session_id }
         }
         Outcome::Failed { message } if not_logged_in(&message) || not_logged_in(&stderr) => {
             fail(emit, ErrorCode::NotLoggedIn, NOT_LOGGED_IN_MESSAGE.into());
-            None
+            Attempt::Failed
         }
         Outcome::Failed { message } | Outcome::Incomplete { message } => {
             let detail = [message.trim(), last_line(&stderr)]
@@ -502,15 +608,18 @@ async fn drive(
                     None => "Claude Code stopped unexpectedly.".into(),
                 });
             if resume.is_some() && detail.contains("No conversation found") {
-                // The saved session is gone (deleted or from another machine): start fresh next time.
+                if text.is_empty() {
+                    return Attempt::StaleSession;
+                }
+                // Gone after it had begun answering (unlikely): start afresh next time.
                 vault::clear_session(req.space_dir);
-                fail(emit, ErrorCode::Cli, "The previous conversation for this space could not be found. Send your message again to start a new one.".into());
+                fail(emit, ErrorCode::Cli, "Claude Code lost this conversation’s earlier session. Send your message again to carry on in a new one.".into());
             } else if not_logged_in(&detail) {
                 fail(emit, ErrorCode::NotLoggedIn, NOT_LOGGED_IN_MESSAGE.into());
             } else {
                 fail(emit, ErrorCode::Cli, detail);
             }
-            None
+            Attempt::Failed
         }
     }
 }

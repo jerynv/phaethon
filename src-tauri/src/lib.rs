@@ -65,10 +65,11 @@ struct AppState {
 /// Send one message to the agent in `space` and stream the reply over `on_event`.
 /// All outcomes, including errors, arrive as events ending with `End`.
 ///
-/// `replace_from` (edit / regenerate, Phaethon's own agent only) is the
-/// `index` of a user message from `thread_load`: that message and everything
-/// after it are replaced by this one, after the whole conversation as it was
-/// is copied into the space's archive. `keep_attachments` lists the saved
+/// `replace_from` (edit / regenerate) is the `index` of a user message from
+/// `thread_load`: that message and everything after it are replaced by this
+/// one, after the whole conversation as it was is copied into the space's
+/// archive. With Claude Code the new version starts a fresh session, given
+/// the conversation before that message as text. `keep_attachments` lists the saved
 /// paths of that message's files to carry over to the new one (only its own
 /// files can be named); new `attachments` are added after them.
 ///
@@ -105,10 +106,6 @@ async fn agent_send(
     // Sending counts as using the space (the sidebar lists the most recent first); so does the reply ending.
     let _ = spaces::touch(&state.vault, &space);
     let settings = state.vault.settings();
-    if replace_from.is_some() && settings.backend != Backend::Phaethon {
-        fail(ErrorCode::Cli, "Editing or regenerating a message works only with Phaethon’s own agent.".into());
-        return Ok(());
-    }
     if continue_from.is_some() && settings.backend != Backend::Phaethon {
         fail(ErrorCode::Cli, "Continuing a stopped reply works only with Phaethon’s own agent.".into());
         return Ok(());
@@ -176,10 +173,11 @@ async fn agent_send(
                         .map(|r| r.join(state.vault.name()))
                 })
                 .flatten();
-            let prompt = format!("{prompt}{}", attachments::cli_note(&refs));
             let req = TurnRequest {
                 space_dir: &space_dir,
                 prompt: &prompt,
+                attachments: refs,
+                replace_from,
                 config_dir,
                 // Granted folders of other spaces, and the courses this space sees in full.
                 add_dirs: grants::cli_dirs(&state.vault, &space).into_iter().chain(lms::access::visible(&state.vault, &space).cli_dirs()).collect(),
@@ -229,12 +227,9 @@ fn grant_revoke(state: State<'_, AppState>, id: String) -> Result<bool, String> 
 }
 
 /// The saved conversation in `space`, for showing after a restart or a space
-/// switch. Empty for the CLI backend, which keeps its own history.
+/// switch. Both backends record theirs.
 #[tauri::command]
 fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::UiMessage>, String> {
-    if state.vault.settings().backend != Backend::Phaethon {
-        return Ok(vec![]);
-    }
     let dir = state.vault.space_dir(&space)?;
     thread::load(&dir)
         .map(|m| thread::to_ui(&m))
@@ -242,8 +237,7 @@ fn thread_load(state: State<'_, AppState>, space: String) -> Result<Vec<thread::
 }
 
 /// Search the text of the saved conversations in `space`, or in every space
-/// with `all_spaces`: the user's own view, never sent to the model. Phaethon's
-/// own agent only (Claude Code keeps its own history).
+/// with `all_spaces`: the user's own view, never sent to the model.
 #[tauri::command]
 async fn conversations_search(
     state: State<'_, AppState>,
@@ -251,9 +245,6 @@ async fn conversations_search(
     query: String,
     all_spaces: bool,
 ) -> Result<search::Results, String> {
-    if state.vault.settings().backend != Backend::Phaethon {
-        return Err(search::CLI.into());
-    }
     let targets = if all_spaces {
         spaces::list(&state.vault)?
             .into_iter()
@@ -365,84 +356,62 @@ fn export_show(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 /// Start a new conversation in `space`: the current one (if it has messages)
-/// is kept in the space's archive, and the CLI's session is cleared so the CLI
-/// starts fresh too. Refused while a reply is running there.
+/// is kept in the space's archive with its CLI session, and Claude Code starts
+/// a fresh session. Refused while a reply is running there.
 #[tauri::command]
 fn thread_new(state: State<'_, AppState>, space: String) -> Result<(), String> {
     let dir = state.vault.space_dir(&space)?;
     thread::while_idle(&state.runs, &space, || {
-        thread::start_new(&dir).map_err(|e| format!("A new conversation couldn’t be started: {e}"))?;
-        vault::clear_session(&dir);
-        Ok(())
+        thread::start_new(&dir).map_err(|e| format!("A new conversation couldn’t be started: {e}"))
     })
 }
 
-/// The conversations in `space`, the current one first. Empty for the CLI
-/// backend, whose history the CLI keeps and Phaethon can't reopen.
+/// The conversations in `space`, the current one first.
 #[tauri::command]
 fn threads_list(state: State<'_, AppState>, space: String) -> Result<Vec<thread::ThreadSummary>, String> {
     let dir = state.vault.space_dir(&space)?;
-    if state.vault.settings().backend != Backend::Phaethon {
-        return Ok(vec![]);
-    }
     thread::list(&dir).map_err(|e| format!("This space’s conversations couldn’t be listed: {e}"))
 }
 
-/// Make the saved conversation `id` the current one in `space` (Phaethon's own
-/// agent only). Refused while a reply is running there.
+/// Make the saved conversation `id` the current one in `space`; Claude Code
+/// then resumes that conversation's own session. Refused while a reply is
+/// running there.
 #[tauri::command]
 fn thread_open(state: State<'_, AppState>, space: String, id: String) -> Result<(), String> {
     let dir = state.vault.space_dir(&space)?;
-    if state.vault.settings().backend != Backend::Phaethon {
-        return Err("Past conversations can be reopened only with Phaethon’s own agent.".into());
-    }
     thread::while_idle(&state.runs, &space, || {
         thread::open(&dir, &id).map_err(|e| format!("That conversation couldn’t be opened: {e}"))
     })
 }
 
-/// Delete the conversation `id` in `space` for good: a saved past one by its
-/// archive id, or `"current"` to empty the current one (its file and the CLI's
-/// session). Refused while a reply is running there; an id that isn't one is
-/// refused, never turned into a path.
+/// Delete the conversation `id` in `space` for good, with its CLI session: a
+/// saved past one by its archive id, or `"current"` to empty the current one.
+/// Refused while a reply is running there; an id that isn't one is refused,
+/// never turned into a path.
 #[tauri::command]
 fn thread_delete(state: State<'_, AppState>, space: String, id: String) -> Result<(), String> {
     let dir = state.vault.space_dir(&space)?;
     thread::while_idle(&state.runs, &space, || {
-        thread::delete(&dir, &id).map_err(|e| format!("That conversation couldn’t be deleted: {e}"))?;
-        if id == thread::CURRENT_ID {
-            vault::clear_session(&dir);
-        }
-        Ok(())
+        thread::delete(&dir, &id).map_err(|e| format!("That conversation couldn’t be deleted: {e}"))
     })
 }
 
-/// Clear the conversation `id` in `space` (Phaethon's own agent): the model
-/// picks out its key details in one call, they are added to the space's
-/// MEMORY.md, then the conversation is removed (for `"current"`, the CLI
-/// session too). `notKept` (no key, Claude Code, offline, ...) changes nothing.
-/// Refused while a reply is running there.
+/// Clear the conversation `id` in `space`: the vault's model (Phaethon's
+/// provider or Claude Code, as Study asks it) picks out its key details in
+/// one call, they are added to the space's MEMORY.md, then the conversation
+/// and its CLI session are removed. `notKept` (no model, offline, ...)
+/// changes nothing. Refused while a reply is running there.
 #[tauri::command]
 async fn thread_clear(state: State<'_, AppState>, space: String, id: String) -> Result<memory::ClearOutcome, String> {
     let dir = state.vault.space_dir(&space)?;
-    let settings = state.vault.settings();
-    let provider = if settings.backend != Backend::Phaethon {
-        Err("Claude Code is answering in this vault, and Phaethon can’t ask it to pick out details.".to_string())
-    } else {
-        match secrets::get(&state.vault.name(), "anthropic") {
-            Ok(Some(key)) => Ok(anthropic::Anthropic::new(key, settings.model, settings.effort)),
-            Ok(None) => Err("There’s no Anthropic key in Settings, so Phaethon can’t pick out details to keep.".to_string()),
-            Err(e) => Err(e),
-        }
-    };
+    let (vault, at, root) = (state.vault.clone(), dir.clone(), state.isolated_config_root.clone());
+    // Off the main thread: with Phaethon's own agent this reads the key from the keychain.
+    let model = off_main(move || Ok(study::model::for_space(&vault, &at, root.as_deref()))).await?;
     if state.runs.claim(&space).is_none() {
         return Err(thread::BUSY.into());
     }
-    let out = memory::clear(&dir, &id, provider.as_ref().map_err(Clone::clone)).await;
+    let out = memory::clear(&dir, &id, model.as_ref().map_err(Clone::clone)).await;
     state.runs.release(&space);
-    if matches!(out, Ok(memory::ClearOutcome::Cleared { .. })) && id == thread::CURRENT_ID {
-        vault::clear_session(&dir);
-    }
     out
 }
 
@@ -460,13 +429,7 @@ fn thread_forget_preview(state: State<'_, AppState>, space: String, id: String) 
 #[tauri::command]
 fn thread_forget(state: State<'_, AppState>, space: String, id: String) -> Result<memory::Forgotten, String> {
     let dir = state.vault.space_dir(&space)?;
-    thread::while_idle(&state.runs, &space, || {
-        let done = memory::forget(&dir, &id)?;
-        if id == thread::CURRENT_ID {
-            vault::clear_session(&dir);
-        }
-        Ok(done)
-    })
+    thread::while_idle(&state.runs, &space, || memory::forget(&dir, &id))
 }
 
 /// Whether Claude Code is installed (and where), so the UI can say how to

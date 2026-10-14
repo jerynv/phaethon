@@ -459,7 +459,7 @@ fn record(msgs: &mut [Value], at: usize, rec: Record, emit: &mut (dyn FnMut(Agen
 /// the stopped record when the user stopped it. `None` when there is nothing
 /// to keep. Text only (no thinking or half-made tool calls), so it is always
 /// valid to send back.
-fn partial_reply(partial: &[String], stopped: bool) -> Option<Value> {
+pub(crate) fn partial_reply(partial: &[String], stopped: bool) -> Option<Value> {
     let mut content: Vec<Value> = partial
         .iter()
         .map(|t| t.trim_end())

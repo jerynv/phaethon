@@ -43,6 +43,18 @@
   let pendingAccess = null;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   M.threadArchive ??= {};
+  // { recordTurns: true }: conversations also outlive a page reload (as files do), in this tab only.
+  const persist = () => {
+    if (!M.recordTurns) return;
+    try {
+      sessionStorage.setItem("__mockConversations", JSON.stringify({ threads: M.threads, threadArchive: M.threadArchive, currentUpdated: M.currentUpdated }));
+    } catch {}
+  };
+  if (M.recordTurns) {
+    try {
+      Object.assign(M, JSON.parse(sessionStorage.getItem("__mockConversations") ?? "{}"));
+    } catch {}
+  }
   const BUSY = "Phaethon is still replying in this space. Stop the reply or wait for it to finish, then try again.";
   // As thread.rs titles a conversation: the first user text, whitespace collapsed, at most 60 characters.
   const titleOf = (msgs) => {
@@ -147,7 +159,6 @@
         case "thread_new":
         case "thread_open": {
           if (window.__liveTurn && M.currentSpace === args.space) throw BUSY;
-          if (cmd === "thread_open" && M.settings.backend !== "phaethon") throw "Past conversations can be reopened only with Phaethon’s own agent.";
           const archive = (M.threadArchive[args.space] ??= []);
           const chosen = cmd === "thread_open" ? archive.find((t) => t.id === args.id) : null;
           if (cmd === "thread_open" && args.id === "current") return;
@@ -157,6 +168,7 @@
           M.threads[args.space] = chosen ? chosen.messages : [];
           (M.currentUpdated ??= {})[args.space] = chosen ? chosen.updated : Date.now();
           if (chosen) archive.splice(archive.indexOf(chosen), 1);
+          persist();
           return;
         }
         case "thread_delete": {
@@ -183,10 +195,7 @@
           if (!msgs) throw "That conversation couldn’t be read: that conversation is no longer there";
           const files = msgs.reduce((n, m) => n + (m.attachments?.length ?? 0), 0);
           if (cmd === "thread_forget_preview") return M.preview ?? { files, sharedFiles: 0, facts: 0 };
-          if (cmd === "thread_clear") {
-            if (M.settings.backend !== "phaethon") return { status: "notKept", reason: "Claude Code is answering in this vault, and Phaethon can’t ask it to pick out details." };
-            if (M.clearFails) return { status: "notKept", reason: M.clearFails };
-          }
+          if (cmd === "thread_clear" && M.clearFails) return { status: "notKept", reason: M.clearFails };
           if (args.id === "current") M.threads[args.space] = [];
           else M.threadArchive[args.space] = archive.filter((t) => t.id !== args.id);
           if (cmd === "thread_forget") return M.forgotten ?? { files, filesLeft: 0, facts: 0 };
@@ -198,7 +207,6 @@
           // Contract: whether the claude command is installed (and where). Never says anything about the login.
           return M.claudeCli ?? { installed: true, path: "/Users/you/.local/bin/claude" };
         case "threads_list": {
-          if (M.settings.backend !== "phaethon") return [];
           const summary = (id, messages, updated, current) => ({ id, title: titleOf(messages), updated, messages: messages.length, current });
           const rest = (M.threadArchive[args.space] ?? [])
             .map((t) => summary(t.id, t.messages, t.updated, false))
@@ -251,7 +259,6 @@
         // As src-tauri/src/search.rs: case- and accent-insensitive, in the shown text of every
         // conversation of the space (or every space), newest first, 3 snippets each.
         case "conversations_search": {
-          if (M.settings.backend !== "phaethon") throw "Claude Code keeps its own history, which Phaethon can’t search. Only conversations with Phaethon’s own agent can be searched.";
           const fold = (text) => {
             let out = "";
             const at = [];
@@ -854,6 +861,15 @@
             }
             if (!M.holdOpen && window.__liveTurn) {
               window.__liveTurn = null;
+              // { recordTurns: true }: the turn is saved in the space's conversation, as both backends do.
+              if (M.recordTurns && args.continueFrom == null) {
+                const text = M.turn.filter((e) => e.kind === "text").map((e) => e.delta).join("");
+                const msgs = (M.threads[args.space] ??= []);
+                msgs.push({ role: "user", text: args.prompt, at: Date.now() });
+                if (text) msgs.push({ role: "assistant", text, at: Date.now() });
+                (M.currentUpdated ??= {})[args.space] = Date.now();
+                persist();
+              }
               send({ kind: "end", sessionId: null });
             }
           })();

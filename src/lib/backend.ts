@@ -89,7 +89,7 @@ export type ThreadSummary = { id: string; title: string; updated: number; messag
 
 /** Keep the current conversation in the space's archive and start an empty one. Refused while a reply runs. */
 export const newThread = (space: string) => invoke<void>("thread_new", { space });
-/** The space's conversations, the current one first. Empty with the Claude Code backend. */
+/** The space's conversations, the current one first (with either backend). */
 export const listThreads = (space: string) => invoke<ThreadSummary[]>("threads_list", { space });
 /** Make a saved conversation the current one. Refused while a reply runs. */
 export const openThread = (space: string, id: string) => invoke<void>("thread_open", { space, id });
@@ -124,6 +124,6 @@ export type SearchConversation = {
   snippets: SearchSnippet[];
 };
 export type SearchResults = { conversations: SearchConversation[]; truncated: boolean };
-/** Search the saved conversations in `space`, or in every space. Refused with the Claude Code backend. */
+/** Search the saved conversations in `space`, or in every space. */
 export const searchConversations = (space: string, query: string, allSpaces: boolean) =>
   invoke<SearchResults>("conversations_search", { space, query, allSpaces });

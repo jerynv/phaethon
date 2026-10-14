@@ -1,14 +1,20 @@
 //! End-to-end checks against the real `claude` CLI and the user's own login.
 //! Ignored by default (they cost real requests); run with:
 //!   cargo test --test claude_cli -- --ignored --test-threads=1 --nocapture
+//! They use a vault in the temp folder, never the user's own.
 
 use std::time::{Duration, Instant};
 
 use phaethon_lib::agent::{self, AgentEvent, Runs, TurnRequest};
+use phaethon_lib::thread;
 use phaethon_lib::vault::{self, Vault};
 
+fn test_vault() -> Vault {
+    Vault::at(std::env::temp_dir().join("phaethon-real-cli"))
+}
+
 fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
-    let vault = Vault::default_location().unwrap();
+    let vault = test_vault();
     vault.ensure_initialized().unwrap();
     let dir = vault.space_dir(space).unwrap();
     let mut events = vec![];
@@ -18,6 +24,8 @@ fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
         TurnRequest {
             space_dir: &dir,
             prompt,
+            attachments: vec![],
+            replace_from: None,
             config_dir: None,
             add_dirs: vec![],
         },
@@ -40,10 +48,9 @@ fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
 #[ignore = "uses the real claude CLI and login"]
 fn pong_then_resume_in_school() {
     let runs = Runs::default();
-    let dir = Vault::default_location()
-        .unwrap()
-        .root()
-        .join("spaces/school");
+    let vault = test_vault();
+    vault.ensure_initialized().unwrap();
+    let dir = vault.space_dir("school").unwrap();
     vault::clear_session(&dir);
 
     let (text, events) = turn(&runs, "school", "Reply with exactly: pong");
@@ -75,7 +82,7 @@ fn pong_then_resume_in_school() {
 #[ignore = "uses the real claude CLI and login"]
 fn cancel_kills_the_child_and_its_group() {
     let runs = Runs::default();
-    let vault = Vault::default_location().unwrap();
+    let vault = test_vault();
     vault.ensure_initialized().unwrap();
     let dir = vault.space_dir("work").unwrap();
     let canceller = runs.clone();
@@ -104,6 +111,8 @@ fn cancel_kills_the_child_and_its_group() {
         TurnRequest {
             space_dir: &dir,
             prompt: "Count from 1 to 300, one number per line, nothing else.",
+            attachments: vec![],
+            replace_from: None,
             config_dir: None,
             add_dirs: vec![],
         },
@@ -161,7 +170,7 @@ fn global_claude_md_does_not_leak() {
         .trim_start_matches('#')
         .trim();
     assert!(!heading.is_empty(), "global CLAUDE.md has no heading to probe with");
-    let vault = Vault::default_location().unwrap();
+    let vault = test_vault();
     vault.ensure_initialized().unwrap();
     let dir = vault.space_dir("work").unwrap();
     vault::clear_session(&dir);
@@ -180,7 +189,7 @@ fn global_claude_md_does_not_leak() {
 #[ignore = "uses the real claude CLI and login"]
 fn work_cannot_read_school() {
     let runs = Runs::default();
-    let vault = Vault::default_location().unwrap();
+    let vault = test_vault();
     vault.ensure_initialized().unwrap();
     let probe = vault
         .space_dir("school")
@@ -200,4 +209,35 @@ fn work_cannot_read_school() {
         !text.contains("marmalade-7731"),
         "space isolation leaked: {text}\n{events:?}"
     );
+}
+
+/// A Claude Code conversation is recorded, and reopening it from the archive
+/// resumes its own session: two real requests.
+#[test]
+#[ignore = "uses the real claude CLI and login"]
+fn history_is_recorded_and_a_reopened_conversation_resumes() {
+    let vault = test_vault();
+    vault.ensure_initialized().unwrap();
+    let dir = vault.space_dir("school").unwrap();
+    let _ = std::fs::remove_dir_all(dir.join(".phaethon"));
+    let runs = Runs::default();
+    let (text, events) = turn(&runs, "school", "Remember this code word: heliotrope-42. Reply with exactly: noted");
+    assert!(text.to_lowercase().contains("noted"), "{events:?}");
+    let first = vault::read_session(&dir).expect("session saved");
+    let ui = thread::to_ui(&thread::load(&dir).unwrap());
+    eprintln!("recorded: {ui:?}");
+    assert_eq!(ui.len(), 2);
+    assert!(ui[0].text.contains("heliotrope-42") && ui[1].text.to_lowercase().contains("noted"));
+
+    thread::start_new(&dir).unwrap();
+    assert_eq!(vault::read_session(&dir), None);
+    let id = thread::list(&dir).unwrap()[1].id.clone();
+    thread::open(&dir, &id).unwrap();
+    assert_eq!(vault::read_session(&dir).as_deref(), Some(first.as_str()));
+    let (text, events) = turn(&runs, "school", "What was the code word? Reply with only the word.");
+    eprintln!("session after the second turn: {:?}", vault::read_session(&dir));
+    assert!(text.contains("heliotrope-42"), "{events:?}");
+    let ui = thread::to_ui(&thread::load(&dir).unwrap());
+    eprintln!("recorded: {ui:?}");
+    assert_eq!(ui.len(), 4);
 }

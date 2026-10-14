@@ -114,7 +114,7 @@ type ListState =
  * space's MEMORY.md (the model picks them out) and removes its messages;
  * Delete everything (red) removes its messages, the files only it uses and
  * the details kept from it. Cancel goes back to where Delete was asked from.
- * If the details can't be picked out (no key, offline, Claude Code) nothing
+ * If the details can't be picked out (no model set up, offline) nothing
  * changes and the confirm offers Clear without keeping anything. A Clear
  * closes the menu and leaves a note under the bar that can show what was
  * kept and open the memory file; Delete everything on a saved conversation
@@ -125,9 +125,9 @@ type ListState =
  * switch or delete asked for while a reply runs is refused with an alert
  * here, which clears itself once the reply ends.
  *
- * With the Claude Code backend there is no list: the CLI keeps its own history
- * and Phaethon can't reopen it, which the menu says. New conversation still
- * works there, and makes the CLI start a fresh session.
+ * Claude Code's conversations are kept here the same way: each one resumes its
+ * own Claude Code session when opened, and New conversation starts a fresh one.
+ * Its confirm adds that Claude Code's own copy stays in Claude Code's folder.
  */
 export function ConversationsBar({
   space,
@@ -519,16 +519,6 @@ export function ConversationsBar({
                   <span className="min-w-0 wrap-anywhere">{list.message}</span>
                 </p>
               )}
-              {list.status === "ready" && list.cli && (
-                <p className="flex items-start gap-2 px-2.5 py-2 text-base text-ink-secondary" data-conversations-cli="">
-                  <Icon name="info" className="mt-0.5 shrink-0" />
-                  <span className="min-w-0">
-                    Claude Code keeps its own history, so past conversations can’t be reopened here. Only
-                    Phaethon’s own agent keeps them. A new conversation starts Claude Code afresh. Phaethon doesn’t
-                    delete Claude Code’s history; that stays in Claude Code’s own folder.
-                  </span>
-                </p>
-              )}
               {threads.length > 0 && (
                 <DropdownMenu.RadioGroup value="current" className="flex flex-col">
                   {threads.map((t, i) => {
@@ -587,7 +577,9 @@ export function ConversationsBar({
                             </>
                           )}
                           <p data-delete-stays="" className="text-sm text-ink-secondary">
-                            What was already sent to Anthropic isn’t affected.
+                            {list.status === "ready" && list.cli
+                              ? "What was already sent to Anthropic isn’t affected, and Claude Code’s own copy stays in its folder."
+                              : "What was already sent to Anthropic isn’t affected."}
                           </p>
                           {/* Every choice at least a whole target from the next, across and down: a slip off
                               Cancel must not remove anything. */}
@@ -709,12 +701,12 @@ export function ConversationsBar({
                   })}
                 </DropdownMenu.RadioGroup>
               )}
-              {list.status === "ready" && !list.cli && threads.length <= 1 && (
+              {list.status === "ready" && threads.length <= 1 && (
                 <p className="px-2.5 pt-1 pb-2 text-sm text-ink-secondary">
                   Conversations you leave with New conversation are kept here.
                 </p>
               )}
-              {/* Always present, so the menu has an item in every state (loading, Claude Code, an error). */}
+              {/* Always present, so the menu has an item in every state (loading, an error). */}
               <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
               <DropdownMenu.Item
                 data-menu-new-conversation=""

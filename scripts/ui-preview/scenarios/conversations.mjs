@@ -1,6 +1,6 @@
 // Conversations: New conversation (button and Cmd+N), the list of past
-// conversations, reopening one, refusal while a reply runs, the Claude Code
-// backend's note, keyboard-only use, and fit in a small window. A check that
+// conversations, reopening one, refusal while a reply runs, the same with
+// Claude Code answering, keyboard-only use, and fit in a small window. A check that
 // fails throws, so shoot.mjs reports the scenario FAILED.
 
 const DAY = 86400000;
@@ -256,23 +256,27 @@ export default [
     name: "conv-cli",
     mock: { ...mock(), settings: { backend: "claude-cli", hasAnthropicKey: false, model: "claude-opus-5-5" } },
     async run(page, h) {
-      await h.click("[data-conversations-trigger]");
-      await page.waitForSelector("[data-conversations-cli]", { timeout: 5000 });
-      expect((await items(page)).length === 0, "CLI backend lists conversations");
-      await page.keyboard.press("Escape");
+      // Claude Code's conversations are kept and listed like Phaethon's own, and reopen the same way.
+      await h.waitText("Problem set 4");
+      await openMenu(page, h);
+      expect((await items(page)).length === 3, "Claude Code's conversations are not all listed");
+      expect(!(await page.$("[data-conversations-cli]")), "the old note that Claude Code keeps its own history is still shown");
+      await page.keyboard.press("ArrowDown");
+      await focusOn(page, String(now - DAY), "ArrowDown");
+      await page.keyboard.press("Enter");
+      await h.waitText("characteristic polynomial");
+      expect((await calls(page, "thread_open")).length === 1, "thread_open not called for the CLI backend");
+      await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       await menuGone(page);
       await h.click("[data-new-conversation]");
-      await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
+      await h.waitText("Start a conversation in School");
       expect((await calls(page, "thread_new")).length === 1, "thread_new not called for the CLI backend");
-      // The menu's own New conversation works too, and focus still lands in the composer.
-      await h.click("[data-conversations-trigger]");
-      await page.waitForSelector("[data-conversations-cli]", { timeout: 5000 });
-      await h.click("[data-menu-new-conversation]");
-      await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
-      expect((await calls(page, "thread_new")).length === 2, "menu New conversation did not call thread_new");
-      await menuGone(page);
-      await h.click("[data-conversations-trigger]");
-      await page.waitForSelector("[data-conversations-cli]", { timeout: 5000 });
+      // Its delete confirm says Claude Code's own copy stays.
+      await openMenu(page, h);
+      await h.click(`[data-delete-thread="${String(now - 9 * DAY)}"]`);
+      await page.waitForSelector("[data-delete-stays]", { timeout: 3000 });
+      const stays = await page.$eval("[data-delete-stays]", (e) => e.textContent);
+      expect(stays.includes("Claude Code’s own copy stays in its folder"), `the confirm doesn't say Claude Code keeps its copy: ${stays}`);
       await h.idle();
     },
   },

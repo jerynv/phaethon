@@ -98,8 +98,8 @@ function SpaceChat({
   const typedAt = useRef(0);
   const editFromComposer = useRef(false);
   const pane = useMemo<Pane>(
-    () => ({ spaceId: space.id, inputRef, rootRef, typedAt, editFromComposer, threadIndex: tauri ? initial.index : null }),
-    [space.id, rootRef, tauri, initial.index],
+    () => ({ spaceId: space.id, inputRef, rootRef, typedAt, editFromComposer, threadIndex: tauri ? initial.index : null, cli }),
+    [space.id, rootRef, tauri, initial.index, cli],
   );
   useEffect(onMounted, [onMounted]);
   return (

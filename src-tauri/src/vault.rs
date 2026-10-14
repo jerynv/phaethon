@@ -313,7 +313,9 @@ pub fn clear_session(space_dir: &Path) {
     let _ = fs::remove_file(session_file(space_dir));
 }
 
-fn session_file(space_dir: &Path) -> PathBuf {
+/// The current conversation's CLI session. Past conversations keep theirs
+/// beside them in the archive (see thread.rs).
+pub(crate) fn session_file(space_dir: &Path) -> PathBuf {
     space_dir.join(".phaethon").join("session")
 }
 

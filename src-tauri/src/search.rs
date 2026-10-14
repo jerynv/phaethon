@@ -22,8 +22,6 @@ pub const MAX_QUERY_CHARS: usize = 200;
 const BEFORE: usize = 48;
 const AFTER: usize = 96;
 
-pub const CLI: &str = "Claude Code keeps its own history, which Phaethon can’t search. Only conversations with Phaethon’s own agent can be searched.";
-
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Results {

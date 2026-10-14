@@ -181,16 +181,14 @@ export default [
     themes: ["light"],
     mock: { ...searchMock, settings: { ...SETTINGS, backend: "claude-cli" } },
     async run(page) {
+      // Claude Code's conversations are kept by Phaethon too, so they are searched the same way.
       await openSearch(page);
-      await waitFor(page, () => document.querySelector("[data-search-empty]")?.textContent.includes("Claude Code"));
-      const s = await page.evaluate(() => ({
-        text: document.querySelector("[data-search-empty]")?.textContent,
-        status: document.querySelector("[data-search-status]")?.textContent,
-      }));
-      check(s.text?.includes("can’t search") && s.status === "Claude Code’s history can’t be searched here.", "with Claude Code it says (and announces) its history can’t be searched here", JSON.stringify(s));
+      const empty = await page.evaluate(() => document.querySelector("[data-search-empty]")?.textContent ?? "");
+      check(!empty.includes("Claude Code"), "no note that Claude Code's history can't be searched", empty);
       await page.keyboard.type("budget");
-      await sleep(400);
-      check((await calls(page, "conversations_search")).length === 0, "and searches nothing");
+      check(await waitFor(page, () => document.querySelectorAll("[data-search-result]").length > 0), "with Claude Code, typing finds its conversations");
+      check((await calls(page, "conversations_search")).length >= 1, "and the core is asked");
+      check(!(await page.$eval("[data-search-all]", (e) => e.disabled)), "All spaces can be switched on");
     },
   },
   {

@@ -613,6 +613,11 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
     let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
     let model = req.model.as_deref().filter(|m| is_valid_cli_model(m));
     let mode = crate::tutor_mode::prompt_section(req.space_dir);
+    // What each course teaches and its exams cover, and how to cite them, before the tutor mode.
+    let mode = match (crate::study::scope::prompt_for(req.space_dir), mode) {
+        (Some(s), Some(m)) => Some(format!("{s}\n\n{m}")),
+        (s, m) => s.or(m),
+    };
     let mode = crate::rich_output::with_instructions(mode); // what the chat can show, before the tutor mode
     // How to offer a quiz or flashcards from the chat, before the tutor mode (which shapes every answer).
     let mode = Some(crate::study::chat::with_prompt(mode.as_deref()));

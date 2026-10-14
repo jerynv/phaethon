@@ -53,6 +53,8 @@ pub struct Note {
     pub back: String,
     /// The file the card came from, relative to the space.
     pub source: Option<String>,
+    /// The passage in that file it was made from, word for word (checked when it was made).
+    pub quote: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -146,7 +148,7 @@ fn marker<'a>(line: &'a str, m: &str) -> Option<&'a str> {
     head.eq_ignore_ascii_case(m).then(|| t[m.len()..].strip_prefix(' ').unwrap_or(&t[m.len()..]))
 }
 
-const MARKERS: [&str; 3] = ["Q:", "A:", "From:"];
+const MARKERS: [&str; 4] = ["Q:", "A:", "From:", "Quote:"];
 
 fn unescape(line: &str) -> String {
     let t = line.trim_start();
@@ -287,17 +289,27 @@ pub fn parse(text: &str, fallback_title: &str) -> Deck {
     deck
 }
 
-/// Trim a parsed note, take a `From:` last line as its source, unescape lines.
+/// Trim a parsed note, take a `From:` last line as its source (and a
+/// `Quote:` line after it as the passage), unescape lines.
 fn finish_note(mut n: Note) -> Note {
     let has_back = !n.back.trim().is_empty();
-    let take_source = |s: &mut String| -> Option<String> {
+    let take = |s: &mut String, m: &str| -> Option<String> {
         let t = trim_lines(s);
         let (head, last) = t.rsplit_once('\n').unwrap_or(("", t.as_str()));
-        let src = marker(last, "From:").map(|r| r.trim().to_string()).filter(|r| !r.is_empty())?;
+        let got = marker(last, m).map(|r| r.trim().to_string()).filter(|r| !r.is_empty())?;
         *s = head.to_string();
-        Some(src)
+        Some(got)
     };
-    n.source = if has_back { take_source(&mut n.back) } else { take_source(&mut n.front) };
+    let text = if has_back { &mut n.back } else { &mut n.front };
+    let before = text.clone();
+    let quote = take(text, "Quote:");
+    n.source = take(text, "From:");
+    // A passage belongs to its source: without one, the line stays part of the card.
+    match (&n.source, quote) {
+        (Some(_), q) => n.quote = q.map(|q| unquote(&q)).filter(|q| !q.is_empty()),
+        (None, Some(_)) => *text = before,
+        (None, None) => {}
+    }
     // The first line follows its marker, so only the lines after it can be escaped.
     let clean = |s: &str| {
         let lines: Vec<String> = s.lines().enumerate().map(|(i, l)| if i == 0 { l.to_string() } else { unescape(l) }).collect();
@@ -348,6 +360,9 @@ pub fn write(deck: &Deck) -> String {
         }
         if let Some(src) = n.source.as_deref().filter(|s| !s.trim().is_empty()) {
             s.push_str(&format!("From: {}\n", src.trim()));
+            if let Some(q) = n.quote.as_deref().map(|q| q.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|q| !q.is_empty()) {
+                s.push_str(&format!("Quote: \"{q}\"\n"));
+            }
         }
     }
     s
@@ -475,12 +490,26 @@ A: The number of members X and Y have in common.
     fn marker_lines_inside_text_are_escaped() {
         let d = Deck {
             title: "t".into(),
-            notes: vec![Note { front: "Line one\nQ: not a new card".into(), back: "A: still the answer\nFrom: not a source".into(), source: Some("x.md".into()) }],
+            notes: vec![Note { front: "Line one\nQ: not a new card".into(), back: "A: still the answer\nFrom: not a source".into(), source: Some("x.md".into()), quote: None }],
             ..Default::default()
         };
         let w = write(&d);
         assert!(w.contains("\\Q: not a new card") && w.contains("\\From: not a source"), "{w}");
         assert_eq!(parse(&w, "t"), d);
+    }
+
+    #[test]
+    fn a_cards_passage_is_kept_after_its_source() {
+        let n = Note { front: "What is an injective function?".into(), back: "No two inputs share an output.".into(), source: Some("courses/C/notes.pdf".into()), quote: Some("A function f is  injective if\nno two inputs give the same output.".into()) };
+        let d = Deck { title: "t".into(), notes: vec![n.clone(), Note { front: "{{x}} y".into(), source: Some("s.md".into()), quote: Some("a quoted bit of text".into()), ..Default::default() }], ..Default::default() };
+        let w = write(&d);
+        assert!(w.contains("From: courses/C/notes.pdf\nQuote: \"A function f is injective if no two inputs give the same output.\"\n"), "{w}");
+        let back = parse(&w, "t");
+        assert_eq!(back.notes[0].quote.as_deref(), Some("A function f is injective if no two inputs give the same output."));
+        assert_eq!((back.notes[1].source.as_deref(), back.notes[1].quote.as_deref(), back.notes[1].front.as_str()), (Some("s.md"), Some("a quoted bit of text"), "{{x}} y"));
+        // A Quote: line with no source is part of the card, as written.
+        let d = parse("Q: a\nA: b\nQuote: c\n", "t");
+        assert_eq!((d.notes[0].back.as_str(), d.notes[0].quote.as_deref()), ("b\nQuote: c", None));
     }
 
     #[test]

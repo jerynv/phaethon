@@ -147,6 +147,11 @@ Once access is granted, read it with list_files, read_file or search_files using
         s.push_str("\n\n");
         s.push_str(&courses);
     }
+    // What each course teaches and each exam covers (kept scope maps), and how to cite them.
+    if let Some(scope) = crate::study::scope::prompt_section(&visible) {
+        s.push_str("\n\n");
+        s.push_str(&scope);
+    }
     // Where decks, quizzes, the plan and exams live, and the deck format (write_file makes decks).
     if let Some(study) = vault.space_dir(space_id).ok().and_then(|dir| crate::study::prompt_section(&dir, !visible.is_empty(), crate::study::now_ms())) {
         s.push_str("\n\n");
@@ -1473,8 +1478,9 @@ mod tests {
         let school = system_prompt(&dir, "school");
         assert!(school.contains("(this space sees only: overview, syllabus)"), "{school}");
         assert!(school.contains("# Courses") && school.contains("- Calculus II: courses/Calculus II/"), "{school}");
+        assert!(school.contains("## Calculus II\n\nNot mapped yet") && school.contains("[source: courses/<folder>/<file>"), "the scope section, and how to cite: {school}");
         let work = system_prompt(&dir, "work");
-        assert!(!work.contains("Calculus") && !work.contains("# Courses"), "another space's courses never reach this prompt");
+        assert!(!work.contains("Calculus") && !work.contains("# Courses") && !work.contains("# What each course teaches"), "another space's courses never reach this prompt");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

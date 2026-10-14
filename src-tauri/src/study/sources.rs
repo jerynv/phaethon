@@ -452,6 +452,123 @@ pub fn gather(space: &Path, visible: &Visible, inputs: &[String], focus: Option<
     Ok(Material { text: text.trim_end().to_string(), labels, course })
 }
 
+// ---- Files read for checking: a cited file, a whole course --------------------------
+
+/// A file's text as the space may read it, by what it is cited as.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cited {
+    /// What it is cited as: `courses/<folder>/<path>`, the original for a text copy.
+    pub label: String,
+    /// Its text (the text copy for a PDF), filtered to what the space may see, not cleaned.
+    pub text: String,
+}
+
+fn read_text(path: &Path) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|e| format!("it couldn’t be read: {e}"))?;
+    let mut bytes = vec![];
+    std::io::Read::read_to_end(&mut std::io::Read::take(file, READ_MAX), &mut bytes).map_err(|e| format!("it couldn’t be read: {e}"))?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// The file a citation names, read through the same walls as the material:
+/// the space's own files or the courses it may see, the parts it may see,
+/// never through a link, a PDF through its text copy. `Err` when it isn't a
+/// file this space can read (whatever the reason: the same words).
+pub fn read_cited(space: &Path, visible: &Visible, cited: &str) -> Result<Cited, String> {
+    let shown = cited.trim().trim_start_matches("./").trim_end_matches('/');
+    let refused = || format!("“{shown}” isn’t a file this space can read");
+    if shown.is_empty() {
+        return Err(refused());
+    }
+    let root = space.canonicalize().map_err(|_| refused())?;
+    match resolve(&root, visible, shown).map_err(|_| refused())? {
+        Source::Course { seen, sub, real, .. } if fs::symlink_metadata(&real).is_ok_and(|m| m.is_file()) => {
+            let (copy, copy_sub) = if is_text(&real) {
+                (real.clone(), sub.clone())
+            } else {
+                match visible.place(&tools::clean_rel(&format!("{shown}.md")).map_err(|_| refused())?, true) {
+                    Ok(Place::Course { real: c, sub: s, .. }) if fs::symlink_metadata(&c).is_ok_and(|m| m.is_file()) => (c, s),
+                    _ => return Err(refused()),
+                }
+            };
+            let text = access::filter_text(seen, &copy_sub, read_text(&copy)?);
+            Ok(Cited { label: course_label(seen, &sub, &real), text })
+        }
+        Source::Local(real) if fs::symlink_metadata(&real).is_ok_and(|m| m.is_file()) => {
+            if is_text(&real) {
+                Ok(Cited { label: label_for(&root, &real), text: read_text(&real)? })
+            } else {
+                let copy = PathBuf::from(format!("{}.md", real.display()));
+                if !fs::symlink_metadata(&copy).is_ok_and(|m| m.is_file()) {
+                    return Err(refused());
+                }
+                Ok(Cited { label: rel_of(&root, &real), text: read_text(&copy)? })
+            }
+        }
+        _ => Err(refused()),
+    }
+}
+
+/// One text file of a course, as the space may see it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CourseFile {
+    /// `courses/<folder>/<path>` (the original for a text copy).
+    pub label: String,
+    /// Its path inside the course folder (the text copy's).
+    pub sub: PathBuf,
+    pub text: String,
+    pub size: u64,
+    pub modified: u64,
+}
+
+/// Every text file of `seen` the space may see (index files left out), in
+/// path order. At most [`MAX_FILES`].
+pub fn course_files(visible: &Visible, seen: &Seen) -> Vec<CourseFile> {
+    let Some(dir) = visible.dir_of(seen) else { return vec![] };
+    let mut out = vec![];
+    for (sub, real) in visible.walk(seen, &dir, &dir, MAX_FILES) {
+        let label = course_label(seen, &sub, &real);
+        if !is_text(&real) || is_index(&label) {
+            continue;
+        }
+        let Ok(meta) = fs::metadata(&real) else { continue };
+        let Ok(text) = read_text(&real) else { continue };
+        let modified = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
+        out.push(CourseFile { text: access::filter_text(seen, &sub, text), label, sub, size: meta.len(), modified });
+    }
+    out.sort_by(|a, b| a.label.cmp(&b.label));
+    out
+}
+
+/// The course `inputs` all come from, when they name exactly one course the
+/// space sees (a course folder or files in it).
+pub fn course_of<'a>(space: &Path, visible: &'a Visible, inputs: &[String]) -> Option<&'a Seen> {
+    let root = space.canonicalize().ok()?;
+    let mut found: Option<&Seen> = None;
+    for input in inputs.iter().map(|i| i.trim().trim_end_matches('/')).filter(|i| !i.is_empty()) {
+        let seen = match resolve(&root, visible, input).ok()? {
+            Source::Course { seen, .. } => seen,
+            Source::Courses if visible.courses.len() == 1 => &visible.courses[0],
+            _ => return None,
+        };
+        if found.is_some_and(|f| f.key != seen.key) {
+            return None;
+        }
+        found = Some(seen);
+    }
+    found
+}
+
+/// Lower-case words of `text` (letters only, at least two), for "does the
+/// course ever use this word".
+pub fn words_of(text: &str, into: &mut std::collections::HashSet<String>) {
+    for w in text.split(|c: char| !c.is_alphabetic()) {
+        if w.chars().count() >= 2 {
+            into.insert(w.to_lowercase());
+        }
+    }
+}
+
 /// The label among `labels` a model's citation means: exact, or the one whose
 /// file name matches (models shorten paths).
 pub fn match_label(cited: &str, labels: &[String]) -> Option<String> {

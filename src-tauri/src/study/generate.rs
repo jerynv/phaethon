@@ -1,7 +1,8 @@
-//! Making decks and quizzes from course material, grading short answers and
-//! reviewing a quiz's mistakes, all through one model call each (model.rs).
-//! The model is asked for strict JSON, which is checked before anything is
-//! written; a bad answer is retried once and then refused whole.
+//! Making decks and quizzes from course material (grounded.rs writes and
+//! checks them against the course's notes and the exam's scope), grading
+//! short answers and reviewing a quiz's mistakes (one model call each,
+//! model.rs). The model is asked for strict JSON, which is checked before
+//! anything is written.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::deck::{self, Deck, Note};
+use super::grounded::{self, Grounding};
 use super::model::{Model, ask_json};
 use super::quiz::{self, Answer, Attempt, Question, QuestionResult, Quiz};
 use super::sources::{self, Material};
@@ -25,13 +27,35 @@ const EXISTING_MAX: usize = 150;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum StudyEvent {
-    /// `step`: "reading" (the material), "making" (the model writes),
-    /// "saving", "grading" or "reviewing".
-    Progress { step: &'static str, done: usize, total: usize },
+    /// `step`: "mapping" (what the course teaches and each exam covers),
+    /// "reading" (the material), "making" (the model writes; `done` is the
+    /// round), "checking" (each one against the notes, with how many were
+    /// kept and dropped so far), "saving", "grading" or "reviewing".
+    Progress {
+        step: &'static str,
+        done: usize,
+        total: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kept: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dropped: Option<usize>,
+    },
     Done(Finished),
     Error { message: String },
     /// Stopped by the person (study_chat_cancel); nothing was saved.
     Cancelled,
+    /// What the exam covers wasn't found, so nothing was made; the person can
+    /// say (study_scope_state). Comes just before the `error`.
+    NeedsScope(super::grounded::UnknownScope),
+}
+
+impl StudyEvent {
+    pub fn progress(step: &'static str, done: usize, total: usize) -> StudyEvent {
+        StudyEvent::Progress { step, done, total, kept: None, dropped: None }
+    }
+    pub fn checking(done: usize, total: usize, kept: usize, dropped: usize) -> StudyEvent {
+        StudyEvent::Progress { step: "checking", done, total, kept: Some(kept), dropped: Some(dropped) }
+    }
 }
 
 /// What a `done` event carries: whichever fields the command fills.
@@ -50,10 +74,13 @@ pub struct Finished {
     pub summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deck_path: Option<String>,
+    /// make: what it was made against, what was kept and dropped, and coverage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<Box<super::grounded::Grounding>>,
 }
 
 fn progress(step: &'static str, done: usize, total: usize) -> StudyEvent {
-    StudyEvent::Progress { step, done, total }
+    StudyEvent::progress(step, done, total)
 }
 
 pub type Emit<'a> = &'a (dyn Fn(StudyEvent) + Send + Sync);
@@ -73,6 +100,9 @@ pub struct DeckOptions {
     /// The conversation that asked for it (chat.rs), so it matches what was discussed.
     #[serde(default)]
     pub context: Option<String>,
+    /// The exam it is for ("Test 1"): only that exam's scope is used.
+    #[serde(default)]
+    pub exam: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -92,6 +122,9 @@ pub struct QuizOptions {
     /// The conversation that asked for it (chat.rs), so it matches what was discussed.
     #[serde(default)]
     pub context: Option<String>,
+    /// The exam it is for ("Test 1"): only that exam's scope is used.
+    #[serde(default)]
+    pub exam: Option<String>,
 }
 
 // ---- Shared ------------------------------------------------------------------------
@@ -132,24 +165,8 @@ fn items<'a>(v: &'a Value, key: &str) -> Result<&'a Vec<Value>, String> {
     v.get(key).and_then(Value::as_array).or_else(|| v.as_array()).ok_or_else(|| format!("expected an object with a \"{key}\" array"))
 }
 
-fn material_block(m: &Material) -> String {
-    format!("<material>\n{}\n</material>", m.text)
-}
-
 fn file_name(p: &str) -> &str {
     p.rsplit('/').next().unwrap_or(p)
-}
-
-/// The conversation that asked for this, as the model sees it: what was
-/// promised, never a source of facts.
-fn discussion_block(context: Option<&str>, what: &str) -> String {
-    match context.map(str::trim).filter(|c| !c.is_empty()) {
-        None => String::new(),
-        Some(c) => format!(
-            "\n\n<discussion>\n{c}\n</discussion>\n\nThe student asked for these {what} in that conversation. Make what was promised there: the topics, how many, the kinds. \
-The discussion is not course material: ground every one of them in the <material> above, and leave out any topic the material doesn't cover."
-        ),
-    }
 }
 
 /// Math written `$...$` with "}}" or "{{" in it (`\frac{1}{x^{2}}`) would read
@@ -221,7 +238,8 @@ fn mistakes_block(list: &[(Question, QuestionResult)]) -> String {
 
 // ---- Decks -------------------------------------------------------------------------
 
-pub const DECK_SYSTEM: &str = r#"You write flashcards for a student from their own course material.
+/// How flashcards are written (grounded.rs adds where they must come from and the reply's form).
+pub const DECK_RULES: &str = r#"You write flashcards for a student from their own course material.
 
 Rules:
 - One idea per card: a definition, a fact, a step of a method, a distinction, or how to apply a rule to a small example. Prefer cards that make the student recall or apply, not just recognise.
@@ -230,35 +248,38 @@ Rules:
 - The front stands on its own: no "in this problem", "the above" or "as shown". Fronts under 200 characters, backs under 300. Plain words; write math as LaTeX between $...$ (for example $A\mathbf{x} = \mathbf{b}$, $\det(A - \lambda I) = 0$, $\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$); simple symbols may stay Unicode (→ ∈ ⊆ ≤).
 - A card may instead be fill-in (cloze): a sentence in "front" with the key term in {{double braces}}, and "back" empty or a short note. The blank holds a word or a short expression a student could type, never LaTeX. Use it for terms and formulas, for at most a third of the cards.
 - Never ask about the material's files themselves (their names, which lecture or page says what).
-- "source" is the path of the <source> the card came from, copied exactly.
-- Don't repeat the cards the student already has (listed in <existing_cards>), even in other words.
-
-Reply with only JSON, no prose: {"title": "a short deck title", "cards": [{"front": "...", "back": "...", "source": "..."}]}"#;
+- Don't repeat the cards the student already has (listed as already written), even in other words."#;
 
 /// Check the model's cards: structure, sources, and no repeats of `existing`
 /// or of each other (repeats are dropped, not errors).
+/// One card from the model's JSON, checked (its source given by the caller).
+pub fn card_from(c: &Value, n: usize, m: &Material, source: Option<String>) -> Result<Note, String> {
+    let note = Note { front: space_math_braces(&str_field(c, "front")), back: space_math_braces(&str_field(c, "back")), source, quote: None };
+    if note.front.is_empty() {
+        return Err(format!("card {n} has no front"));
+    }
+    if note.front.chars().count() > deck::FRONT_MAX || note.back.chars().count() > deck::BACK_MAX {
+        return Err(format!("card {n} is too long"));
+    }
+    match note.kind() {
+        deck::Kind::Cloze => {
+            deck::cloze_answers(&note.front).map_err(|e| format!("card {n}: {e}"))?;
+        }
+        deck::Kind::Basic if note.back.is_empty() => return Err(format!("card {n} has no back")),
+        deck::Kind::Basic if note.front.contains("}}") => return Err(format!("card {n} has a stray }}}}")),
+        deck::Kind::Basic => {}
+    }
+    if let Some(why) = about_files(&note.front, m) {
+        return Err(format!("card {n} {why}"));
+    }
+    Ok(note)
+}
+
 pub fn check_cards(v: &Value, m: &Material, existing: &[String], count: usize) -> Result<(Option<String>, Vec<Note>), String> {
     let mut out: Vec<Note> = vec![];
     for (i, c) in items(v, "cards")?.iter().enumerate() {
         let n = i + 1;
-        let note = Note { front: space_math_braces(&str_field(c, "front")), back: space_math_braces(&str_field(c, "back")), source: Some(cited(c, m, &format!("card {n}"))?) };
-        if note.front.is_empty() {
-            return Err(format!("card {n} has no front"));
-        }
-        if note.front.chars().count() > deck::FRONT_MAX || note.back.chars().count() > deck::BACK_MAX {
-            return Err(format!("card {n} is too long"));
-        }
-        match note.kind() {
-            deck::Kind::Cloze => {
-                deck::cloze_answers(&note.front).map_err(|e| format!("card {n}: {e}"))?;
-            }
-            deck::Kind::Basic if note.back.is_empty() => return Err(format!("card {n} has no back")),
-            deck::Kind::Basic if note.front.contains("}}") => return Err(format!("card {n} has a stray }}}}")),
-            deck::Kind::Basic => {}
-        }
-        if let Some(why) = about_files(&note.front, m) {
-            return Err(format!("card {n} {why}"));
-        }
+        let note = card_from(c, n, m, Some(cited(c, m, &format!("card {n}"))?))?;
         if existing.iter().chain(out.iter().map(|o| &o.front)).any(|e| similar(e, &note.front)) {
             continue;
         }
@@ -272,8 +293,9 @@ pub fn check_cards(v: &Value, m: &Material, existing: &[String], count: usize) -
     Ok((title, out))
 }
 
-/// Make a deck and save it. Returns its path and how many cards it has.
-pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[String], opts: &DeckOptions, model: &M, emit: Emit<'_>) -> Result<(String, usize), String> {
+/// Make a deck and save it. Returns its path, how many cards it has, and
+/// what it was made against (grounded.rs: every card checked against the notes).
+pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[String], opts: &DeckOptions, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize, Grounding), String> {
     let count = if opts.count == 0 { 20 } else { opts.count.min(CARDS_MAX) };
     let mut inputs = inputs.to_vec();
     let mut focus = opts.focus.clone().filter(|f| !f.trim().is_empty());
@@ -289,8 +311,11 @@ pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[Stri
         let cited: Vec<String> = missed.iter().filter_map(|(q, _)| q.source.clone()).collect();
         inputs.extend(if cited.is_empty() { quiz.sources.clone() } else { cited });
         inputs.dedup();
-        if focus.is_none() {
-            focus = Some(missed.iter().map(|(q, _)| q.prompt.as_str()).collect::<Vec<_>>().join(" "));
+        // The topics it missed, as the course names them (the scope narrows to those).
+        let mut topics: Vec<&str> = missed.iter().filter_map(|(q, _)| q.topic.as_deref()).map(|t| t.split(" (").next().unwrap_or(t)).collect();
+        topics.dedup();
+        if focus.is_none() && !topics.is_empty() {
+            focus = Some(topics.join(", "));
         }
         extra = format!(
             "\n\nThe student got these quiz questions wrong. Make the cards about the ideas behind them (what they misunderstood), not copies of the questions.\n{}",
@@ -301,35 +326,35 @@ pub async fn make_deck<M: Model>(space: &Path, courses: &Visible, inputs: &[Stri
     if inputs.is_empty() {
         return Err("Choose a course or some files to make cards from.".into());
     }
-    emit(progress("reading", 0, 1));
-    let material = sources::gather(space, courses, &inputs, focus.as_deref(), sources::BUDGET)?;
-    let existing = super::existing_fronts(space, material.course.as_deref());
-    emit(progress("reading", 1, 1));
-
-    let shown: Vec<&str> = existing.iter().rev().take(EXISTING_MAX).map(String::as_str).collect();
-    let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!(" Focus on: {f}.")).unwrap_or_default();
-    let user = format!(
-        "Make {count} flashcards from this material.{focus_line}\n\n{}\n\n<existing_cards>\n{}\n</existing_cards>{extra}{}",
-        material_block(&material),
-        if shown.is_empty() { "(none)".to_string() } else { shown.join("\n") },
-        discussion_block(opts.context.as_deref(), "cards"),
-    );
-    emit(progress("making", 0, 1));
-    let (title, notes) = ask_json(model, DECK_SYSTEM, &user, |v| check_cards(v, &material, &existing, count)).await?;
-    emit(progress("making", 1, 1));
+    let course = sources::course_of(space, courses, &inputs).map(|s| s.folder().to_string());
+    let existing = super::existing_fronts(space, course.as_deref());
+    let shown: Vec<String> = existing.iter().rev().take(EXISTING_MAX).cloned().collect();
+    let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!("\n\nFocus on: {f}.")).unwrap_or_default();
+    let extra = format!("{focus_line}{extra}");
+    let ask = grounded::Ask { count, exam: opts.exam.as_deref(), focus: focus.as_deref(), context: opts.context.as_deref(), extra: &extra };
+    let made = grounded::make(space, courses, &inputs, grounded::Want::Deck { existing: &shown }, &ask, model, emit, now).await?;
     emit(progress("saving", 0, 1));
-    let title = opts.title.clone().filter(|t| !t.trim().is_empty()).or(default_title).or(title).unwrap_or_else(|| "New deck".into());
-    let used: Vec<String> = material.labels.iter().filter(|l| notes.iter().any(|n| n.source.as_deref() == Some(l.as_str()))).cloned().collect();
-    let d = Deck { title: title.trim().chars().take(deck::TITLE_MAX).collect(), course: material.course.clone(), sources: used, notes, ..Default::default() };
+    let notes: Vec<Note> = made.items.into_iter().filter_map(|i| if let grounded::Item::N(n) = i { Some(n) } else { None }).collect();
+    let title = opts.title.clone().filter(|t| !t.trim().is_empty()).or(default_title).or(made.title).unwrap_or_else(|| "New deck".into());
+    let mut used: Vec<String> = vec![];
+    for n in &notes {
+        if let Some(s) = &n.source
+            && !used.contains(s)
+        {
+            used.push(s.clone());
+        }
+    }
+    let d = Deck { title: title.trim().chars().take(deck::TITLE_MAX).collect(), course: made.material.course.clone().or(course), sources: used, notes, ..Default::default() };
     let n = d.notes.len();
     let path = super::deck_create(space, &d)?;
     emit(progress("saving", 1, 1));
-    Ok((path, n))
+    Ok((path, n, made.grounding))
 }
 
 // ---- Quizzes ------------------------------------------------------------------------
 
-pub const QUIZ_SYSTEM: &str = r#"You write a practice quiz for a student from their own course material.
+/// How quiz questions are written (grounded.rs adds where they must come from and the reply's form).
+pub const QUIZ_RULES: &str = r#"You write a practice quiz for a student from their own course material.
 
 Kinds of question (use only the kinds asked for, mixed):
 - "choice": one right answer among 4 "choices", all different. Distractors must be plausible: the mistakes students really make with this material, near-misses, the same length and style as the right answer. Never "all/none of the above". "answer" is the right choice's text, copied exactly.
@@ -342,9 +367,7 @@ Difficulty: "easier" = recall of definitions and facts; "exam" = like the course
 
 Work each question out before you write it: the answer must follow from the material, and a computed answer (a determinant, an eigenvalue, a count) must be checked step by step. Each question tests a different idea or skill; no two ask the same thing.
 
-Every question has "explanation" (one or two sentences: why the answer is right; for choice questions, why the tempting wrong one is wrong) and "source" (the path of the <source> it came from, copied exactly). Be accurate to the material; never test course logistics (dates, grading, policies) or the files themselves (their names, which lecture or page says what). Plain words; write math as LaTeX between $...$ (for example $A\mathbf{x} = \mathbf{b}$, $\lambda = 3$, $\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$) in prompts, choices and explanations; simple symbols may stay Unicode (→ ∈ ⊆ ≤).
-
-Reply with only JSON, no prose: {"title": "a short quiz title", "questions": [{"kind": "...", "prompt": "...", "choices": ["..."], "answer": "...", "accept": ["..."], "explanation": "...", "source": "..."}]}"#;
+Every question has "explanation" (one or two sentences: why the answer is right; for choice questions, why the tempting wrong one is wrong). Be accurate to the material; never test course logistics (dates, grading, policies) or the files themselves (their names, which lecture or page says what). Plain words; write math as LaTeX between $...$ (for example $A\mathbf{x} = \mathbf{b}$, $\lambda = 3$, $\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$) in prompts, choices and explanations; simple symbols may stay Unicode (→ ∈ ⊆ ≤)."#;
 
 /// A small deterministic shuffle (the model tends to put the answer first).
 fn shuffle<T>(v: &mut [T], seed: &mut u64) {
@@ -400,52 +423,66 @@ fn check_quality(q: &Question) -> Result<(), String> {
     Ok(())
 }
 
+/// One question from the model's JSON, checked: its shape, kind, quality, and
+/// that it is about the ideas, not the files (its source given by the caller).
+pub fn question_from(raw: &Value, n: usize, m: &Material, kinds: &[String], source: Option<String>) -> Result<Question, String> {
+    let answer = match &raw["answer"] {
+        Value::Array(a) => Answer::Many(a.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect()),
+        Value::Bool(b) => Answer::One(b.to_string()),
+        Value::Null => return Err(format!("question {n} has no answer")),
+        other => Answer::One(other.as_str().map(String::from).unwrap_or_else(|| other.to_string())),
+    };
+    let list = |k: &str| raw[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.trim().to_string())).collect::<Vec<_>>());
+    let mut q = Question {
+        id: format!("q{n}"),
+        kind: str_field(raw, "kind"),
+        prompt: str_field(raw, "prompt"),
+        choices: list("choices"),
+        answer,
+        accept: list("accept").filter(|a| !a.is_empty()),
+        explanation: str_field(raw, "explanation"),
+        source,
+        topic: None,
+        citations: vec![],
+    };
+    if !kinds.contains(&q.kind) {
+        return Err(format!("question {n} is a \"{}\" question, but only these kinds were asked for: {}", q.kind, kinds.join(", ")));
+    }
+    quiz::check_question(&mut q).map_err(|e| format!("question {n}: {e}"))?;
+    if q.kind != "cloze" {
+        q.accept = None;
+    }
+    if q.explanation.is_empty() {
+        return Err(format!("question {n} has no explanation"));
+    }
+    check_quality(&q).map_err(|e| format!("question {n} {e}"))?;
+    let all = format!("{} {}", q.prompt, q.choices.as_deref().unwrap_or_default().join(" "));
+    if let Some(why) = about_files(&all, m) {
+        return Err(format!("question {n} {why}"));
+    }
+    Ok(q)
+}
+
+/// Choices in a fixed shuffled order (the model tends to put the answer first).
+pub fn shuffle_choices(q: &mut Question, seed: &mut u64) {
+    if matches!(q.kind.as_str(), "choice" | "multi")
+        && let Some(c) = q.choices.as_mut()
+    {
+        shuffle(c, seed);
+    }
+}
+
 pub fn check_questions(v: &Value, m: &Material, kinds: &[String], count: usize, seed: u64) -> Result<(Option<String>, Vec<Question>), String> {
     let mut out: Vec<Question> = vec![];
     let mut seed = seed | 1;
     for (i, raw) in items(v, "questions")?.iter().enumerate() {
         let n = i + 1;
-        let answer = match &raw["answer"] {
-            Value::Array(a) => Answer::Many(a.iter().map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).collect()),
-            Value::Bool(b) => Answer::One(b.to_string()),
-            Value::Null => return Err(format!("question {n} has no answer")),
-            other => Answer::One(other.as_str().map(String::from).unwrap_or_else(|| other.to_string())),
-        };
-        let list = |k: &str| raw[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.trim().to_string())).collect::<Vec<_>>());
-        let mut q = Question {
-            id: format!("q{}", out.len() + 1),
-            kind: str_field(raw, "kind"),
-            prompt: str_field(raw, "prompt"),
-            choices: list("choices"),
-            answer,
-            accept: list("accept").filter(|a| !a.is_empty()),
-            explanation: str_field(raw, "explanation"),
-            source: Some(cited(raw, m, &format!("question {n}"))?),
-        };
-        if !kinds.contains(&q.kind) {
-            return Err(format!("question {n} is a \"{}\" question, but only these kinds were asked for: {}", q.kind, kinds.join(", ")));
-        }
-        quiz::check_question(&mut q).map_err(|e| format!("question {n}: {e}"))?;
-        if q.kind != "cloze" {
-            q.accept = None;
-        }
-        if q.explanation.is_empty() {
-            return Err(format!("question {n} has no explanation"));
-        }
-        check_quality(&q).map_err(|e| format!("question {n} {e}"))?;
-        let all = format!("{} {}", q.prompt, q.choices.as_deref().unwrap_or_default().join(" "));
-        if let Some(why) = about_files(&all, m) {
-            return Err(format!("question {n} {why}"));
-        }
+        let mut q = question_from(raw, n, m, kinds, Some(cited(raw, m, &format!("question {n}"))?))?;
         // The same question twice (in other words) is dropped, not an error.
         if out.iter().any(|o| similar(&o.prompt, &q.prompt)) {
             continue;
         }
-        if matches!(q.kind.as_str(), "choice" | "multi")
-            && let Some(c) = q.choices.as_mut()
-        {
-            shuffle(c, &mut seed);
-        }
+        shuffle_choices(&mut q, &mut seed);
         out.push(q);
     }
     if out.is_empty() {
@@ -465,7 +502,10 @@ pub fn check_questions(v: &Value, m: &Material, kinds: &[String], count: usize, 
     Ok((Some(str_field(v, "title")).filter(|t| !t.is_empty()), out))
 }
 
-pub async fn make_quiz<M: Model>(space: &Path, courses: &Visible, inputs: &[String], opts: &QuizOptions, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize), String> {
+/// Make a quiz and save it (grounded.rs: every question checked against the
+/// notes and the exam's scope). Returns its path, how many questions it has,
+/// and what it was made against.
+pub async fn make_quiz<M: Model>(space: &Path, courses: &Visible, inputs: &[String], opts: &QuizOptions, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize, Grounding), String> {
     let count = if opts.count == 0 { 10 } else { opts.count.min(QUESTIONS_MAX) };
     let mut kinds: Vec<String> = opts.kinds.iter().filter(|k| quiz::KINDS.contains(&k.as_str())).cloned().collect();
     kinds.dedup();
@@ -482,26 +522,24 @@ pub async fn make_quiz<M: Model>(space: &Path, courses: &Visible, inputs: &[Stri
     if inputs.is_empty() {
         return Err("Choose a course or some files to make the quiz from.".into());
     }
-    emit(progress("reading", 0, 1));
-    let material = sources::gather(space, courses, inputs, opts.focus.as_deref(), sources::BUDGET)?;
-    emit(progress("reading", 1, 1));
-    let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!(" Focus on: {f}.")).unwrap_or_default();
-    let user = format!(
-        "Make a quiz of {count} questions from this material. Kinds: {}. Difficulty: {difficulty}.{focus_line}\n\n{}{}",
-        kinds.join(", "),
-        material_block(&material),
-        discussion_block(opts.context.as_deref(), "questions"),
-    );
-    emit(progress("making", 0, 1));
-    let (title, questions) = ask_json(model, QUIZ_SYSTEM, &user, |v| check_questions(v, &material, &kinds, count, now)).await?;
-    emit(progress("making", 1, 1));
+    let focus_line = opts.focus.as_deref().filter(|f| !f.trim().is_empty()).map(|f| format!("\n\nFocus on: {f}.")).unwrap_or_default();
+    let ask = grounded::Ask { count, exam: opts.exam.as_deref(), focus: opts.focus.as_deref(), context: opts.context.as_deref(), extra: &focus_line };
+    let made = grounded::make(space, courses, inputs, grounded::Want::Quiz { kinds: &kinds, difficulty }, &ask, model, emit, now).await?;
     emit(progress("saving", 0, 1));
-    let title = opts.title.clone().filter(|t| !t.trim().is_empty()).or(title).unwrap_or_else(|| "New quiz".into());
-    let q = Quiz { title: title.trim().chars().take(deck::TITLE_MAX).collect(), course: material.course.clone(), sources: material.labels.clone(), created: now, questions };
+    let questions: Vec<Question> = made.items.into_iter().filter_map(|i| if let grounded::Item::Q(q) = i { Some(q) } else { None }).collect();
+    let title = opts.title.clone().filter(|t| !t.trim().is_empty()).or(made.title).unwrap_or_else(|| "New quiz".into());
+    let mut used: Vec<String> = vec![];
+    for c in questions.iter().flat_map(|q| &q.citations) {
+        if !used.contains(&c.source) {
+            used.push(c.source.clone());
+        }
+    }
+    let course = sources::course_of(space, courses, inputs).map(|s| s.folder().to_string()).or(made.material.course.clone());
+    let q = Quiz { title: title.trim().chars().take(deck::TITLE_MAX).collect(), course, sources: used, created: now, questions, grounding: Some(made.grounding.clone()) };
     let n = q.questions.len();
     let path = super::quiz_create(space, &q)?;
     emit(progress("saving", 1, 1));
-    Ok((path, n))
+    Ok((path, n, made.grounding))
 }
 
 // ---- Grading ----------------------------------------------------------------------
@@ -683,13 +721,15 @@ mod tests {
     use std::fs;
     use std::sync::Mutex;
 
-    fn space(tag: &str) -> std::path::PathBuf {
+    /// A course with a review sheet (two Test 1 topics and one after it) and an announcement of Test 1's scope.
+    pub fn space(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("phaethon-study-gen-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let c = dir.join("courses/CSCI-C 241/files/HW");
         fs::create_dir_all(&c).unwrap();
         fs::write(c.join("Test 1 Review.pdf"), "%PDF").unwrap();
-        fs::write(c.join("Test 1 Review.pdf.md"), "# Text of Test 1 Review.pdf\n\nA conditional p → q is false only when p is true and q is false.\nThe power set of a set with n members has 2^n members.").unwrap();
+        fs::write(c.join("Test 1 Review.pdf.md"), format!("# Text of Test 1 Review.pdf\n\n{Q1}\n{Q2}\n{Q3}")).unwrap();
+        fs::write(dir.join("courses/CSCI-C 241/announcements.md"), format!("# Announcements\n\n## Test 1\n\n{QA}\n")).unwrap();
         crate::lms::access::fixture(&dir, "s", &[("CSCI-C 241", &crate::lms::access::Part::ALL)]);
         dir.join("spaces/s").canonicalize().unwrap()
     }
@@ -700,135 +740,237 @@ mod tests {
     }
 
     const SRC: &str = "courses/CSCI-C 241/files/HW/Test 1 Review.pdf";
+    const Q1: &str = "A conditional p → q is false only when p is true and q is false.";
+    const Q2: &str = "The power set of a set with n members has 2^n members.";
+    const Q3: &str = "After Test 1, a graph is a set of vertices joined by edges.";
+    const QA: &str = "Test 1 covers conditionals and power sets. It will not cover graphs.";
+
+    /// The scope map the "model" gives for that course: Test 1 is t1 and t2, not t3.
+    pub fn map_reply() -> String {
+        format!(
+            r#"{{"topics": [
+  {{"id": "t1", "title": "Conditionals", "terms": ["conditional"], "weight": 3, "evidence": [{{"source": "{SRC}", "quote": "{Q1}"}}]}},
+  {{"id": "t2", "title": "Power sets", "terms": ["power set"], "weight": 2, "evidence": [{{"source": "Test 1 Review.pdf", "quote": "{Q2}"}}]}},
+  {{"id": "t3", "title": "Graphs", "terms": ["graph"], "weight": 2, "evidence": [{{"source": "Test 1 Review.pdf", "quote": "{Q3}"}}]}}],
+ "exams": [{{"title": "Test 1", "includes": ["t1", "t2"], "excludes": ["t3"], "excludedWords": ["graphs"], "summary": "conditionals and power sets", "evidence": [{{"source": "courses/CSCI-C 241/announcements.md", "quote": "{QA}"}}]}}]}}"#
+        )
+    }
+
+    fn cite(q: &str) -> String {
+        format!(r#"[{{"source": "{SRC}", "quote": "{q}"}}]"#)
+    }
+
+    /// The checker's answer: one verdict per item, in order.
+    pub fn verdicts(v: &[&str]) -> String {
+        let list: Vec<String> = v.iter().enumerate().map(|(i, x)| format!(r#"{{"id": "i{}", "verdict": "{x}", "missing": "{}", "answerOk": true}}"#, i + 1, if *x == "yes" { "" } else { "preimages aren't taught" })).collect();
+        format!(r#"{{"verdicts": [{}]}}"#, list.join(","))
+    }
 
     fn block_on<F: std::future::Future>(f: F) -> F::Output {
         tauri::async_runtime::block_on(f)
     }
 
-    fn collect() -> (Mutex<Vec<StudyEvent>>,) {
-        (Mutex::new(vec![]),)
+    fn steps(events: &Mutex<Vec<StudyEvent>>) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = vec![];
+        for e in events.lock().unwrap().iter() {
+            if let StudyEvent::Progress { step, .. } = e
+                && out.last() != Some(step)
+            {
+                out.push(step);
+            }
+        }
+        out
     }
 
     #[test]
-    fn bad_json_then_good_makes_a_deck_that_reads_back() {
+    fn a_deck_is_mapped_written_checked_and_reads_back_with_its_passages() {
         let dir = space("deck");
         let good = format!(
             r#"Here are your cards:
 ```json
 {{"title": "Logic basics", "cards": [
-  {{"front": "When is p → q false?", "back": "Only when p is true and q is false.", "source": "{SRC}"}},
-  {{"front": "A set with n members has {{{{2^n}}}} subsets.", "back": "", "source": "Test 1 Review.pdf"}}
+  {{"topic": "t1", "front": "When is p → q false?", "back": "Only when p is true and q is false.", "citations": {}}},
+  {{"topic": "t2", "front": "A set with n members has {{{{2^n}}}} subsets.", "back": "", "citations": [{{"source": "Test 1 Review.pdf", "quote": "{Q2}"}}]}}
 ]}}
-```"#
+```"#,
+            cite(Q1)
         );
-        let m = Scripted::new(&[r#"{"cards": [{"front": "Q", "back": "A", "source": "made-up.pdf"}]}"#, &good]);
-        let (events,) = collect();
+        let m = Scripted::new(&[&map_reply(), "Sorry, no JSON here.", &good, &verdicts(&["yes", "yes"])]);
+        let events = Mutex::new(vec![]);
         let emit = |e: StudyEvent| events.lock().unwrap().push(e);
-        let (path, n) = block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions { count: 8, ..Default::default() }, &m, &emit)).unwrap();
+        let (path, n, g) = block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions { count: 2, ..Default::default() }, &m, &emit, 5)).unwrap();
         assert_eq!((path.as_str(), n), ("study/decks/Logic basics.md", 2));
-        assert_eq!(m.calls(), 2);
+        assert_eq!(m.calls(), 4, "map, a reply with nothing usable, the cards, the check");
         let asked = m.asked.lock().unwrap();
-        assert!(asked[0].1.contains("Make 8 flashcards") && asked[0].1.contains("p → q is false"));
-        assert!(asked[1].1.contains("isn't one of the sources"), "the retry says what was wrong");
+        assert!(asked[1].1.contains("Write 3 flashcards") && asked[1].1.contains("- t1: Conditionals") && asked[1].1.contains("p → q is false"), "a little over, to absorb drops: {}", asked[1].1);
+        assert!(!asked[1].1.contains("t3: Graphs"), "no exam: every topic, but…");
+        assert!(asked[3].0.contains("You check practice questions") && asked[3].1.contains("«A conditional p → q is false only when p is true and q is false.»"), "the checker sees the cited passage");
         drop(asked);
         let v = super::super::deck_view(&dir, &path).unwrap();
         assert_eq!(v.course.as_deref(), Some("CSCI-C 241"));
         assert_eq!(v.sources, [SRC]);
-        assert!(v.cards.iter().all(|c| c.source.as_deref() == Some(SRC)), "a shortened citation is mapped to the file");
+        assert_eq!(v.cards[0].quote.as_deref(), Some(Q1), "each card keeps its passage");
         assert_eq!(v.cards[1].kind, deck::Kind::Cloze);
-        let steps: Vec<&str> = events.lock().unwrap().iter().filter_map(|e| if let StudyEvent::Progress { step, .. } = e { Some(*step) } else { None }).collect();
-        assert_eq!(steps, ["reading", "reading", "making", "making", "saving", "saving"]);
+        assert_eq!(steps(&events), ["mapping", "reading", "making", "checking", "saving"]);
+        assert_eq!((g.asked, g.kept, g.exam.as_deref()), (2, 2, None));
+        assert!(dir.parent().unwrap().parent().unwrap().join(".phaethon/scope/CSCI-C 241.json").is_file(), "the map is kept");
 
-        // Again for the same course: the existing cards are shown, and repeats are dropped.
-        let again = format!(r#"{{"cards": [{{"front": "When is p → q false?", "back": "x", "source": "{SRC}"}}, {{"front": "What is ¬(p ∧ q) equivalent to?", "back": "¬p ∨ ¬q", "source": "{SRC}"}}]}}"#);
-        let m = Scripted::new(&[&again]);
-        let (path2, n) = block_on(make_deck(&dir, &vis(&dir), &[SRC.into()], &DeckOptions { count: 5, title: Some("More logic".into()), ..Default::default() }, &m, &emit)).unwrap();
+        // Again: the map is reused, the cards the deck has are shown, and a repeat is dropped before the check.
+        let again = format!(r#"{{"cards": [{{"topic": "t1", "front": "When is p → q false?", "back": "x", "citations": {c}}}, {{"topic": "t1", "front": "What makes a conditional false?", "back": "A true p and a false q.", "citations": {c}}}]}}"#, c = cite(Q1));
+        let m = Scripted::new(&[&again, &verdicts(&["yes"])]);
+        let (path2, n, _) = block_on(make_deck(&dir, &vis(&dir), &[SRC.into()], &DeckOptions { count: 1, title: Some("More logic".into()), ..Default::default() }, &m, &emit, 6)).unwrap();
         assert_eq!((path2.as_str(), n), ("study/decks/More logic.md", 1));
-        assert!(m.asked.lock().unwrap()[0].1.contains("<existing_cards>\nA set with n members"));
-        fs::remove_dir_all(dir).unwrap();
+        assert!(m.asked.lock().unwrap()[0].1.contains("Already written (don't repeat these):\n- A set with n members"));
+        assert!(m.asked.lock().unwrap()[1].1.contains("What makes a conditional false?") && !m.asked.lock().unwrap()[1].1.contains("When is p → q false?"));
+        fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn two_bad_answers_write_nothing() {
+    fn nothing_usable_writes_nothing() {
         let dir = space("bad");
-        let m = Scripted::new(&["Sorry, I can't.", r#"{"cards": [{"front": "", "back": "x", "source": "x"}]}"#]);
         let emit = |_: StudyEvent| {};
-        let err = block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit)).unwrap_err();
+        let m = Scripted::new(&[&map_reply(), "Sorry, I can't.", "Still no.", "No."]);
+        let err = block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit, 1)).unwrap_err();
         assert!(err.contains("nothing was saved"), "{err}");
+        assert_eq!(m.calls(), 4, "bounded: the map and three rounds");
         assert!(!dir.join("study/decks").exists());
         // No model at all: its message, and nothing written.
         let m = Scripted::failing(super::super::model::NO_MODEL);
-        assert_eq!(block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit)).unwrap_err(), super::super::model::NO_MODEL);
-        assert!(block_on(make_deck(&dir, &vis(&dir), &["../elsewhere".into()], &DeckOptions::default(), &m, &emit)).is_err());
-        fs::remove_dir_all(dir).unwrap();
+        assert_eq!(block_on(make_deck(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &DeckOptions::default(), &m, &emit, 1)).unwrap_err(), super::super::model::NO_MODEL);
+        assert!(block_on(make_deck(&dir, &vis(&dir), &["../elsewhere".into()], &DeckOptions::default(), &m, &emit, 1)).is_err());
+        fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
+    /// Four good questions on Test 1's topics, one on graphs (out of scope), one
+    /// quoting words the file doesn't have, and one on preimages (cited, but not taught).
     fn quiz_reply() -> String {
         format!(
             r#"{{"title": "Test 1 practice", "questions": [
-  {{"kind": "choice", "prompt": "When is p → q false?", "choices": ["p true, q false", "p false, q true", "both false", "both true"], "answer": "p true, q false", "explanation": "A conditional only fails when a true premise leads to a false conclusion.", "source": "{SRC}"}},
-  {{"kind": "truefalse", "prompt": "A set with 3 members has 6 subsets.", "answer": false, "explanation": "It has 2^3 = 8.", "source": "{SRC}"}},
-  {{"kind": "short", "prompt": "Why does a set with n members have 2^n subsets?", "answer": "Each member is either in or out of a subset: two choices, n times.", "explanation": "Counting in-or-out choices.", "source": "{SRC}"}},
-  {{"kind": "cloze", "prompt": "The power set of a set with n members has ___ members.", "answer": "2^n", "accept": ["2ⁿ"], "explanation": "One subset per in-or-out pattern.", "source": "{SRC}"}}
-]}}"#
+  {{"topic": "t1", "kind": "choice", "prompt": "When is p → q false?", "choices": ["p true, q false", "p false, q true", "both false", "both true"], "answer": "p true, q false", "explanation": "A conditional only fails when a true premise leads to a false conclusion.", "citations": {c1}}},
+  {{"topic": "t2", "kind": "truefalse", "prompt": "A set with 3 members has 6 subsets.", "answer": false, "explanation": "It has 2^3 = 8.", "citations": {c2}}},
+  {{"topic": "t2", "kind": "short", "prompt": "Why does a set with n members have 2^n subsets?", "answer": "Each member is either in or out of a subset: two choices, n times.", "explanation": "Counting in-or-out choices.", "citations": {c2}}},
+  {{"topic": "t3", "kind": "truefalse", "prompt": "Every graph has at least one edge.", "answer": "false", "explanation": "A graph may have no edges.", "citations": {c3}}},
+  {{"topic": "t1", "kind": "truefalse", "prompt": "If q is true then p → q is true.", "answer": "true", "explanation": "The only false case has q false.", "citations": [{{"source": "{SRC}", "quote": "A conditional is true whenever its conclusion is true."}}]}},
+  {{"topic": "t2", "kind": "short", "prompt": "What is the preimage of a set under a function?", "answer": "Every input mapped into it.", "explanation": "By definition of preimage.", "citations": {c2}}},
+  {{"topic": "t2", "kind": "cloze", "prompt": "The power set of a set with n members has ___ members.", "answer": "2^n", "accept": ["2ⁿ"], "explanation": "One subset per in-or-out pattern.", "citations": {c2}}}
+]}}"#,
+            c1 = cite(Q1),
+            c2 = cite(Q2),
+            c3 = cite(Q3)
         )
     }
 
-    #[test]
-    fn a_quiz_is_made_taken_graded_and_reviewed() {
-        let dir = space("quiz");
-        let emit = |_: StudyEvent| {};
-        let wrong_kind = format!(r#"{{"questions": [{{"kind": "essay", "prompt": "x", "answer": "y", "explanation": "z", "source": "{SRC}"}}]}}"#);
-        let m = Scripted::new(&[&wrong_kind, &quiz_reply()]);
-        let kinds = ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec();
-        let (path, n) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { count: 10, kinds, difficulty: Some("exam".into()), focus: None, title: None, context: None }, &m, &emit, 1_791_000_000_000)).unwrap();
-        assert_eq!((path.as_str(), n), ("study/quizzes/Test 1 practice.json", 4));
-        assert!(m.asked.lock().unwrap()[1].1.contains("only these kinds"));
-        let (_, q) = super::super::load_quiz(&dir, &path).unwrap();
-        assert_eq!(q.questions[1].answer, Answer::One("false".into()));
-        assert_eq!(q.questions[0].choices.as_ref().unwrap().len(), 4);
-        assert!(q.questions[0].choices.as_ref().unwrap().contains(&"p true, q false".to_string()));
+    fn quiz_opts(count: usize) -> QuizOptions {
+        QuizOptions { count, kinds: ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec(), difficulty: Some("exam".into()), exam: Some("Test 1".into()), ..Default::default() }
+    }
 
+    #[test]
+    fn a_quiz_for_an_exam_keeps_only_what_is_taught_and_in_scope() {
+        let dir = space("quiz");
+        let events = Mutex::new(vec![]);
+        let emit = |e: StudyEvent| events.lock().unwrap().push(e);
+        // The checker passes four and refuses the preimage question; conditionals (2 of 4 by weight)
+        // came up one short, so a second round writes one more.
+        let more = format!(r#"{{"questions": [{{"topic": "t1", "kind": "truefalse", "prompt": "If p is false, p → q is true.", "answer": "true", "explanation": "Only true p and false q fail.", "citations": {}}}]}}"#, cite(Q1));
+        let m = Scripted::new(&[&map_reply(), &quiz_reply(), &verdicts(&["yes", "yes", "yes", "no", "yes"]), &more, &verdicts(&["yes"])]);
+        let (path, n, g) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &quiz_opts(4), &m, &emit, 1_791_000_000_000)).unwrap();
+        assert_eq!((path.as_str(), n), ("study/quizzes/Test 1 practice.json", 4));
+        assert_eq!(m.calls(), 5, "map, write, check, then one more round for the topic that fell short");
+        let asked = m.asked.lock().unwrap();
+        assert!(asked[1].1.contains("- t1: Conditionals — 3 questions") && asked[1].1.contains("- t2: Power sets — 2 questions"), "spread by weight, a little over: {}", asked[1].1);
+        assert!(asked[1].1.contains("<not_in_scope>\nGraphs\ngraphs\n</not_in_scope>"), "{}", asked[1].1);
+        assert!(asked[2].1.contains("Exam: Test 1: conditionals and power sets; not graphs") && asked[2].1.contains("Words in it that appear nowhere in the course's materials: preimage"), "{}", asked[2].1);
+        assert!(!asked[2].1.contains("Every graph has") && !asked[2].1.contains("whenever its conclusion"), "the mechanical gate drops those before the checker");
+        assert!(asked[3].1.contains("- t1: Conditionals — 1 questions") && !asked[3].1.contains("- t2:") && asked[3].1.contains("thrown away by the check"), "{}", asked[3].1);
+        drop(asked);
+        let (_, q) = super::super::load_quiz(&dir, &path).unwrap();
+        assert!(q.questions.iter().all(|q| !q.prompt.contains("preimage") && !q.prompt.contains("graph")));
+        assert_eq!(q.questions.iter().map(|q| q.topic.as_deref().unwrap()).collect::<Vec<_>>(), ["Conditionals", "Conditionals", "Power sets", "Power sets"], "in the course's order");
+        assert_eq!(q.questions[0].citations[0].quote, Q1);
+        assert_eq!(q.questions[0].source.as_deref(), Some(SRC));
+        let gq = q.grounding.as_ref().unwrap();
+        assert_eq!(gq, &g);
+        assert_eq!((g.exam.as_deref(), g.scope.as_deref(), g.asked, g.kept), (Some("Test 1"), Some("conditionals and power sets; not graphs"), 4, 4));
+        assert_eq!(g.evidence[0].quote, QA);
+        let whys: Vec<&str> = g.dropped.iter().map(|d| d.why.as_str()).collect();
+        assert!(whys.iter().any(|w| w.contains("Graphs, isn’t in scope")) && whys.iter().any(|w| w.contains("quote isn’t in Test 1 Review.pdf")) && whys.iter().any(|w| w.contains("preimages aren't taught")), "{whys:?}");
+        assert_eq!(g.coverage.iter().map(|c| (c.topic.as_str(), c.count)).collect::<Vec<_>>(), [("Conditionals", 2), ("Power sets", 2)]);
+        assert!(g.notes.is_empty(), "{:?}", g.notes);
+        let checking: Vec<(usize, usize)> = events.lock().unwrap().iter().filter_map(|e| if let StudyEvent::Progress { step: "checking", kept: Some(k), dropped: Some(d), .. } = e { Some((*k, *d)) } else { None }).collect();
+        assert_eq!(checking.last(), Some(&(5, 3)), "kept and dropped are said as it checks");
+
+        // Taken, graded and reviewed as before.
         let mut answers = std::collections::HashMap::new();
         answers.insert("q1".to_string(), Answer::One("p false, q true".into()));
-        answers.insert("q2".to_string(), Answer::One("false".into()));
-        answers.insert("q3".to_string(), Answer::One("because each element can be in or out".into()));
-        answers.insert("q4".to_string(), Answer::One("2ⁿ".into()));
-        let grader = Scripted::new(&[r#"{"grades": [{"id": "q3", "score": 0.75, "feedback": "Right idea; say it's two choices for each of the n members."}]}"#]);
+        answers.insert("q2".to_string(), Answer::One("true".into()));
+        answers.insert("q3".to_string(), Answer::One("false".into()));
+        answers.insert("q4".to_string(), Answer::One("because each element can be in or out".into()));
+        let grader = Scripted::new(&[r#"{"grades": [{"id": "q4", "score": 0.75, "feedback": "Right idea; say it's two choices for each of the n members."}]}"#]);
         let a = block_on(submit(&dir, &path, &answers, || Ok(grader), &emit, 1_791_000_100_000)).unwrap();
         let r: Vec<(bool, Option<f64>)> = a.results.iter().map(|r| (r.correct, r.partial)).collect();
-        assert_eq!(r, [(false, None), (true, None), (false, Some(0.75)), (true, None)]);
-        assert!((a.score - 2.75 / 4.0).abs() < 1e-9);
-        assert!(a.results[2].feedback.ends_with("(From Test 1 Review.pdf.)"));
-        assert!(a.path.starts_with(".phaethon/study/attempts/Test 1 practice-"));
+        assert_eq!(r, [(false, None), (true, None), (true, None), (false, Some(0.75))]);
+        assert!(a.results[3].feedback.ends_with("(From Test 1 Review.pdf.)"));
         let o = super::super::overview(&dir, 1_791_000_200_000);
         assert_eq!(o.quizzes[0].last_score, Some(a.score));
-
-        // No model: short answers are left ungraded and out of the score.
         let none = || -> Result<Scripted, String> { Err(super::super::model::NO_MODEL.into()) };
         let b = block_on(submit(&dir, &path, &answers, none, &emit, 1_791_000_300_000)).unwrap();
-        assert!(b.results[2].ungraded && b.results[2].feedback.contains("couldn’t be graded"));
-        assert!((b.score - 2.0 / 3.0).abs() < 1e-9);
-
-        // Review: by topic from the model, or plainly without one.
+        assert!(b.results[3].ungraded && b.results[3].feedback.contains("couldn’t be graded"));
         let reviewer = Scripted::new(&["```markdown\n## Conditionals\nYou mixed up which side must be true.\n```"]);
-        let s = block_on(review(&dir, &a.path, || Ok(reviewer), &emit)).unwrap();
-        assert_eq!(s, "## Conditionals\nYou mixed up which side must be true.");
-        let none = || -> Result<Scripted, String> { Err("offline".into()) };
-        let s = block_on(review(&dir, &a.path, none, &emit)).unwrap();
-        assert!(s.starts_with("## Test 1 Review.pdf") && s.contains("When is p → q false?") && s.contains("offline"), "{s}");
+        assert_eq!(block_on(review(&dir, &a.path, || Ok(reviewer), &emit)).unwrap(), "## Conditionals\nYou mixed up which side must be true.");
 
-        // A deck from the mistakes.
-        let cards = format!(r#"{{"cards": [{{"front": "If p is false, what is p → q?", "back": "True, whatever q is.", "source": "{SRC}"}}]}}"#);
-        let m = Scripted::new(&[&cards]);
-        let (deck, _) = block_on(make_deck(&dir, &vis(&dir), &[], &DeckOptions { from_attempt: Some(a.path.clone()), ..Default::default() }, &m, &emit)).unwrap();
+        // A deck from the mistakes: its material, the mistakes said after it.
+        let cards = format!(r#"{{"cards": [{{"topic": "t1", "front": "If p is false, what is p → q?", "back": "True, whatever q is.", "citations": {}}}]}}"#, cite(Q1));
+        let m = Scripted::new(&[&cards, &verdicts(&["yes"])]);
+        let (deck, _, _) = block_on(make_deck(&dir, &vis(&dir), &[], &DeckOptions { from_attempt: Some(a.path.clone()), count: 1, ..Default::default() }, &m, &emit, 2)).unwrap();
         assert_eq!(deck, "study/decks/Mistakes from Test 1 practice.md");
         assert!(m.asked.lock().unwrap()[0].1.contains("<mistakes>") && m.asked.lock().unwrap()[0].1.contains("Their answer: p false, q true"));
-
-        // Deleting the quiz takes its attempts with it.
         super::super::delete(&dir, &path).unwrap();
         assert!(super::super::load_attempt(&dir, &a.path).is_err());
-        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn short_after_the_rounds_is_delivered_short_with_why_never_padded() {
+        let dir = space("short");
+        let emit = |_: StudyEvent| {};
+        let one_ok = format!(r#"{{"questions": [{{"topic": "t1", "kind": "truefalse", "prompt": "If p is false, p → q is true.", "answer": "true", "explanation": "Only true p and false q fail.", "citations": {}}}]}}"#, cite(Q1));
+        let one_bad = format!(r#"{{"questions": [{{"topic": "t2", "kind": "short", "prompt": "What is the preimage of a set?", "answer": "Inputs mapped into it.", "explanation": "Definition.", "citations": {}}}]}}"#, cite(Q2));
+        let m = Scripted::new(&[&map_reply(), &one_ok, &verdicts(&["yes"]), &one_bad, &verdicts(&["no"]), &one_bad.replace("preimage of a set?", "preimage of a subset?"), &verdicts(&["unsure"])]);
+        let (path, n, g) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &quiz_opts(3), &m, &emit, 9)).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(m.calls(), 7, "three rounds of writing at most: {:?}", g.dropped);
+        assert!(m.asked.lock().unwrap()[3].1.contains("thrown away by the check") || m.asked.lock().unwrap()[3].1.contains("Already written"), "a later round knows what passed");
+        assert!(g.notes.iter().any(|n| n.starts_with("Only 1 of the 3 questions you asked for passed the check")), "{:?}", g.notes);
+        assert_eq!(g.coverage.iter().map(|c| (c.count, c.why.is_some())).collect::<Vec<_>>(), [(1, false), (0, true)]);
+        assert!(super::super::load_quiz(&dir, &path).unwrap().1.questions.len() == 1);
+        // Nothing passing at all: an error, nothing saved.
+        let m = Scripted::new(&[&one_bad, &verdicts(&["no"]), &one_bad, &verdicts(&["no"]), &one_bad, &verdicts(&["no"])]);
+        let err = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &quiz_opts(2), &m, &emit, 10)).unwrap_err();
+        assert!(err.starts_with("Nothing passed the check against your notes, so nothing was saved"), "{err}");
+        fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_exam_whose_scope_is_unknown_stops_and_asks() {
+        let dir = space("unknown");
+        let events = Mutex::new(vec![]);
+        let emit = |e: StudyEvent| events.lock().unwrap().push(e);
+        let m = Scripted::new(&[&map_reply()]);
+        let err = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { exam: Some("Final".into()), ..quiz_opts(5) }, &m, &emit, 1)).unwrap_err();
+        assert!(err.contains("I couldn’t find what Final covers") && err.contains("I won’t guess"), "{err}");
+        assert_eq!(m.calls(), 1, "nothing is written");
+        let asked = events.lock().unwrap().iter().find_map(|e| if let StudyEvent::NeedsScope(u) = e { Some(u.clone()) } else { None }).unwrap();
+        assert_eq!((asked.course.as_str(), asked.exam.as_str()), ("courses/CSCI-C 241", "Final"));
+        // Said by the person: read against the topics, then used, shown as theirs.
+        let v = vis(&dir);
+        super::super::scope::state(&v, &v.courses[0], "Final", "Only conditionals", 2).unwrap();
+        let q = format!(r#"{{"questions": [{{"topic": "t1", "kind": "truefalse", "prompt": "If p is false, p → q is true.", "answer": "true", "explanation": "Only true p and false q fail.", "citations": {}}}]}}"#, cite(Q1));
+        let m = Scripted::new(&[r#"{"includes": ["t1"], "excludes": []}"#, &q, &verdicts(&["yes"])]);
+        let (_, n, g) = block_on(make_quiz(&dir, &v, &["courses/CSCI-C 241".into()], &QuizOptions { exam: Some("final".into()), ..quiz_opts(1) }, &m, &emit, 3)).unwrap();
+        assert_eq!(n, 1);
+        assert!(g.from_user && g.evidence[0].source == "from you" && g.scope.as_deref() == Some("Only conditionals"), "{g:?}");
+        assert!(m.asked.lock().unwrap()[1].1.contains("<not_in_scope>\nPower sets\nGraphs"), "{}", m.asked.lock().unwrap()[1].1);
+        fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
     fn material() -> Material {
@@ -889,26 +1031,28 @@ mod tests {
     }
 
     #[test]
-    fn the_discussion_rides_along_as_what_was_promised() {
+    fn the_discussion_and_focus_ride_along_inside_the_scope() {
         let dir = space("ctx");
         let emit = |_: StudyEvent| {};
-        let m = Scripted::new(&[&quiz_reply()]);
+        let m = Scripted::new(&[&map_reply(), &quiz_reply(), &verdicts(&["yes", "yes", "yes", "no", "yes"])]);
         let opts = QuizOptions {
-            count: 4,
-            kinds: ["choice", "truefalse", "short", "cloze"].map(String::from).to_vec(),
             focus: Some("conditionals".into()),
             context: Some("The student asked:\nquiz me on conditionals\n\nTheir assistant answered, promising this:\n4 questions on p → q".into()),
-            ..Default::default()
+            exam: None,
+            ..quiz_opts(2)
         };
-        block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &opts, &m, &emit, 1)).unwrap();
-        let asked = m.asked.lock().unwrap()[0].1.clone();
+        let (_, _, g) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &opts, &m, &emit, 1)).unwrap();
+        let asked = m.asked.lock().unwrap()[1].1.clone();
         let (material_at, discussion_at) = (asked.find("<material>").unwrap(), asked.find("<discussion>").unwrap());
         assert!(material_at < discussion_at && asked.contains("4 questions on p → q") && asked.contains("not course material"), "{asked}");
-        // Without it, nothing is added.
-        let m = Scripted::new(&[&quiz_reply()]);
-        block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { count: 4, ..Default::default() }, &m, &emit, 2)).unwrap_err();
-        assert!(!m.asked.lock().unwrap()[0].1.contains("<discussion>"));
-        fs::remove_dir_all(dir).unwrap();
+        assert!(asked.contains("- t1: Conditionals") && !asked.contains("- t2:"), "the focus narrows the topics: {asked}");
+        assert_eq!(g.coverage.len(), 1);
+        // A focus the course doesn't teach is said, not stretched to.
+        let m = Scripted::new(&[&quiz_reply(), &verdicts(&["yes", "yes", "yes", "no", "yes"])]);
+        let (_, _, g) = block_on(make_quiz(&dir, &vis(&dir), &["courses/CSCI-C 241".into()], &QuizOptions { focus: Some("eigenvalues".into()), ..quiz_opts(4) }, &m, &emit, 2)).unwrap();
+        assert!(g.notes.iter().any(|n| n.contains("I couldn’t find “eigenvalues” among the topics")), "{:?}", g.notes);
+        assert!(!m.asked.lock().unwrap()[0].1.contains("<discussion>"), "without a conversation, nothing is added");
+        fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
     #[test]

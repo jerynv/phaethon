@@ -12,12 +12,16 @@
 //! each is checked to be exactly one of them (no other folder, no links).
 
 pub mod chat;
+pub mod citations;
 pub(crate) mod commands;
 pub mod deck;
 pub mod generate;
+pub mod grounded;
 pub mod model;
 pub mod quiz;
+pub mod quote;
 pub mod schedule;
+pub mod scope;
 pub mod sources;
 
 use std::collections::BTreeMap;
@@ -275,6 +279,9 @@ pub struct Card {
     pub back: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The passage in its source it was made from, word for word.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
     /// The last rating, 1..5.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<u8>,
@@ -319,6 +326,7 @@ fn cards_of(path: &str, d: &Deck, states: Option<&BTreeMap<String, schedule::Car
                 front: n.front.clone(),
                 back: n.back.clone(),
                 source: n.source.clone(),
+                quote: n.quote.clone(),
                 confidence: st.and_then(|s| s.last_confidence()),
                 due: st.map(|s| s.due),
                 id,
@@ -396,14 +404,17 @@ pub fn deck_save(space: &Path, path: Option<&str>, title: &str, cards: &[CardInp
     };
     let key = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut d = existing.as_ref().map(|(_, d)| d.clone()).unwrap_or_default();
-    let old_sources: BTreeMap<String, Option<String>> = d.notes.iter().map(|n| (key(&n.front), n.source.clone())).collect();
+    let old_sources: BTreeMap<String, (Option<String>, Option<String>)> = d.notes.iter().map(|n| (key(&n.front), (n.source.clone(), n.quote.clone()))).collect();
     d.title = title.trim().to_string();
     d.notes = cards
         .iter()
         .map(|c| {
             let front = c.front.replace("\r\n", "\n").trim().to_string();
-            let source = c.source.clone().filter(|s| !s.trim().is_empty()).or_else(|| old_sources.get(&key(&front)).cloned().flatten());
-            Note { back: c.back.replace("\r\n", "\n").trim().to_string(), source, front }
+            let (old_source, old_quote) = old_sources.get(&key(&front)).cloned().unwrap_or_default();
+            let source = c.source.clone().filter(|s| !s.trim().is_empty()).or(old_source.clone());
+            // The passage stays with the source it was found in.
+            let quote = old_quote.filter(|_| source == old_source);
+            Note { back: c.back.replace("\r\n", "\n").trim().to_string(), source, quote, front }
         })
         .collect();
     deck::validate(&d)?;

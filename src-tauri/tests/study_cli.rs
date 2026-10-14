@@ -35,7 +35,8 @@ fn makes_cards_from_a_course_file_with_the_real_cli() {
     let emit = |e: StudyEvent| eprintln!("{e:?}");
     let opts = DeckOptions { count: 8, ..Default::default() };
     let started = std::time::Instant::now();
-    let (path, n) = tauri::async_runtime::block_on(generate::make_deck(&space, &visible, &[rel], &opts, &model, &emit)).unwrap();
+    let (path, n, grounding) = tauri::async_runtime::block_on(generate::make_deck(&space, &visible, &[rel], &opts, &model, &emit, phaethon_lib::study::now_ms())).unwrap();
+    eprintln!("{grounding:#?}");
     eprintln!("made {n} cards in {:?} at {}", started.elapsed(), space.join(&path).display());
     println!("{}", std::fs::read_to_string(space.join(&path)).unwrap());
     assert!((1..=8).contains(&n));

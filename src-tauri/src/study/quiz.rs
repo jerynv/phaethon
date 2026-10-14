@@ -20,6 +20,10 @@ pub struct Quiz {
     #[serde(default)]
     pub created: u64,
     pub questions: Vec<Question>,
+    /// What it was made against (the exam's scope and its evidence) and how
+    /// the check went: kept, dropped and why, which topics it covers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grounding: Option<super::grounded::Grounding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -42,6 +46,12 @@ pub struct Question {
     pub explanation: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The course topic it tests, as the course names it ("Injective functions (5.3)").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    /// The passages it is built on, each found word for word in its file when it was made.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub citations: Vec<super::scope::Evidence>,
 }
 
 /// An answer: one string or several. A hand-written `true`/`false` reads as text.
@@ -347,6 +357,8 @@ mod tests {
             accept: None,
             explanation: "Because the notes say so.".into(),
             source: Some("courses/C241/files/Notes/notes.pdf".into()),
+            topic: None,
+            citations: vec![],
         }
     }
     fn one(s: &str) -> Answer {
@@ -398,7 +410,7 @@ mod tests {
 
     #[test]
     fn validation_says_what_is_wrong() {
-        let mut bad = Quiz { title: "t".into(), course: None, sources: vec![], created: 0, questions: vec![q("choice", Some(&["a", "b"]), one("c"))] };
+        let mut bad = Quiz { title: "t".into(), course: None, sources: vec![], created: 0, questions: vec![q("choice", Some(&["a", "b"]), one("c"))], grounding: None };
         assert!(normalize(&mut bad).unwrap_err().contains("isn't one of its choices"));
         bad.questions[0] = q("essay", None, one("x"));
         assert!(normalize(&mut bad).unwrap_err().contains("isn't a kind"));

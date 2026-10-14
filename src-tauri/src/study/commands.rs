@@ -78,10 +78,10 @@ pub(crate) async fn study_make_deck(state: State<'_, AppState>, space: String, s
     let run = async {
         let dir = space_dir(&state, &space)?;
         let m = model_for(&state, &dir)?;
-        generate::make_deck(&dir, &crate::lms::access::visible(&state.vault, &space), &sources, &options, &m, &emit).await
+        generate::make_deck(&dir, &crate::lms::access::visible(&state.vault, &space), &sources, &options, &m, &emit, super::now_ms()).await
     };
     emit(match run.await {
-        Ok((path, cards)) => StudyEvent::Done(Finished { path: Some(path), cards: Some(cards), ..Default::default() }),
+        Ok((path, cards, grounding)) => StudyEvent::Done(Finished { path: Some(path), cards: Some(cards), grounding: Some(Box::new(grounding)), ..Default::default() }),
         Err(message) => StudyEvent::Error { message },
     });
     Ok(())
@@ -96,7 +96,7 @@ pub(crate) async fn study_make_quiz(state: State<'_, AppState>, space: String, s
         generate::make_quiz(&dir, &crate::lms::access::visible(&state.vault, &space), &sources, &options, &m, &emit, super::now_ms()).await
     };
     emit(match run.await {
-        Ok((path, questions)) => StudyEvent::Done(Finished { path: Some(path), questions: Some(questions), ..Default::default() }),
+        Ok((path, questions, grounding)) => StudyEvent::Done(Finished { path: Some(path), questions: Some(questions), grounding: Some(Box::new(grounding)), ..Default::default() }),
         Err(message) => StudyEvent::Error { message },
     });
     Ok(())
@@ -164,19 +164,19 @@ pub(crate) async fn study_chat_make(
         let dir = space_dir(&state, &space)?;
         let visible = crate::lms::access::visible(&state.vault, &space);
         let plan = super::chat::plan(&dir, &visible, &block, &question)?;
-        let done = |path: String, n: usize| match plan.kind {
-            super::chat::Kind::Quiz => Finished { path: Some(path), questions: Some(n), ..Default::default() },
-            super::chat::Kind::Deck => Finished { path: Some(path), cards: Some(n), ..Default::default() },
+        let done = |path: String, n: usize, grounding: Option<super::grounded::Grounding>| match plan.kind {
+            super::chat::Kind::Quiz => Finished { path: Some(path), questions: Some(n), grounding: grounding.map(Box::new), ..Default::default() },
+            super::chat::Kind::Deck => Finished { path: Some(path), cards: Some(n), grounding: grounding.map(Box::new), ..Default::default() },
         };
         if let Some(path) = plan.made.clone() {
-            return Ok(Some(done(path, 0)));
+            return Ok(Some(done(path, 0, None)));
         }
         let Some(mut run) = super::chat::Run::claim(&dir, &plan.origin) else {
             return Err("This is already being made. It opens in Study when it’s ready.".to_string());
         };
         let m = model_for(&state, &dir)?;
         tokio::select! {
-            made = super::chat::make(&dir, &visible, &plan, &question, &reply, &m, &emit, super::now_ms()) => made.map(|(path, n)| Some(done(path, n))),
+            made = super::chat::make(&dir, &visible, &plan, &question, &reply, &m, &emit, super::now_ms()) => made.map(|(path, n, g)| Some(done(path, n, g))),
             // Dropping the model call stops it (a CLI child is killed with it).
             _ = run.cancelled() => Ok(None),
         }
@@ -193,4 +193,81 @@ pub(crate) async fn study_chat_make(
 #[tauri::command]
 pub(crate) fn study_chat_cancel(state: State<'_, AppState>, space: String, origin: String) -> Result<bool, String> {
     Ok(super::chat::cancel(&space_dir(&state, &space)?, &origin))
+}
+
+// ---- What a course teaches and its exams cover (scope.rs) ----
+
+/// A course's scope map as this space sees it.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ScopeView {
+    /// "courses/<folder>"
+    pub course: String,
+    pub name: String,
+    /// "none" (never mapped), "fresh", or "stale" (the course changed since).
+    pub state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub map: Option<super::scope::ScopeMap>,
+    /// What the person said exams cover.
+    pub stated: Vec<super::scope::Stated>,
+}
+
+/// The course `course` names ("courses/<folder>" or the folder) among those the space sees.
+fn seen_course<'a>(visible: &'a crate::lms::access::Visible, course: &str) -> Result<&'a crate::lms::access::Seen, String> {
+    let folder = course.trim().trim_end_matches('/').trim_start_matches("courses/");
+    visible.get(folder).ok_or_else(|| "That course isn’t one this space can see.".to_string())
+}
+
+#[tauri::command]
+pub(crate) fn study_scope(state: State<'_, AppState>, space: String, course: String) -> Result<ScopeView, String> {
+    space_dir(&state, &space)?;
+    let visible = crate::lms::access::visible(&state.vault, &space);
+    let seen = seen_course(&visible, &course)?;
+    let kept = super::scope::cached(&visible, seen, None);
+    Ok(ScopeView {
+        course: format!("courses/{}", seen.folder()),
+        name: seen.state.name.clone(),
+        state: match &kept {
+            None => "none",
+            Some((_, true)) => "fresh",
+            Some((_, false)) => "stale",
+        },
+        map: kept.map(|(m, _)| m),
+        stated: super::scope::stated(&visible, seen),
+    })
+}
+
+/// Map the course again (model calls: `mapping` progress, then `done` or `error`).
+#[tauri::command]
+pub(crate) async fn study_scope_build(state: State<'_, AppState>, space: String, course: String, on_event: Channel<StudyEvent>) -> Result<(), String> {
+    let emit = sender(&on_event);
+    let run = async {
+        let dir = space_dir(&state, &space)?;
+        let visible = crate::lms::access::visible(&state.vault, &space);
+        let seen = seen_course(&visible, &course)?;
+        let m = model_for(&state, &dir)?;
+        emit(StudyEvent::progress("mapping", 0, 1));
+        let progress = |d: usize, t: usize| emit(StudyEvent::progress("mapping", d, t));
+        super::scope::build(&visible, seen, &super::load_exams(&dir), &m, super::now_ms(), &progress).await
+    };
+    emit(match run.await {
+        Ok(_) => StudyEvent::Done(Finished::default()),
+        Err(message) => StudyEvent::Error { message },
+    });
+    Ok(())
+}
+
+/// Say what an exam covers (kept for the course, shown as "from you"); empty `text` forgets it.
+#[tauri::command]
+pub(crate) fn study_scope_state(state: State<'_, AppState>, space: String, course: String, exam: String, text: String) -> Result<(), String> {
+    space_dir(&state, &space)?;
+    let visible = crate::lms::access::visible(&state.vault, &space);
+    super::scope::state(&visible, seen_course(&visible, &course)?, &exam, &text, super::now_ms())
+}
+
+/// Whether each `[source: … "…"]` in a reply is really in that file, as this space may read it.
+#[tauri::command]
+pub(crate) fn study_citations_check(state: State<'_, AppState>, space: String, citations: Vec<super::citations::Asked>) -> Result<Vec<super::citations::Checked>, String> {
+    let dir = space_dir(&state, &space)?;
+    Ok(super::citations::check(&dir, &crate::lms::access::visible(&state.vault, &space), &citations))
 }

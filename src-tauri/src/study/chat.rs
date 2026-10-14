@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::generate::{self, CARDS_MAX, DeckOptions, Emit, QUESTIONS_MAX, QuizOptions};
+use super::grounded::Grounding;
 use super::model::Model;
 use super::quiz;
 use super::sources;
@@ -40,13 +41,13 @@ const MADE_KEEP: usize = 500;
 /// What the assistant is taught, for every backend's prompt.
 pub const PROMPT: &str = r#"# A quiz or flashcards from the chat
 
-When the user asks you to make a quiz, practice questions or a practice test, or flashcards, don't write the questions or cards in the chat. Phaethon makes them. Reply in a few short sentences of prose: what it will cover, which course material it draws on (by name), how many questions or cards, and which kinds of question. Then end the reply with exactly one block like this, with nothing after it:
+Never write practice questions, a practice test, quiz questions or flashcards in the chat yourself, not even one or two as examples: Phaethon makes them, checking every one against the course's own notes and the exam's scope, and you can't. When the user asks for any of these, reply in a few short sentences of prose: what it will cover, which course material it draws on (by name), how many questions or cards, and which kinds of question. Don't promise topics the course hasn't covered or an exam's coverage you haven't seen in its materials. Then end the reply with exactly one block like this, with nothing after it:
 
 ```phaethon-study
-{"kind": "quiz", "title": "Eigenvalues practice", "focus": "eigenvalues, eigenvectors and diagonalization", "count": 10, "kinds": ["choice", "truefalse", "short"], "difficulty": "exam", "sources": ["courses/<course folder>"]}
+{"kind": "quiz", "title": "Test 1 practice", "exam": "Test 1", "focus": "", "count": 10, "kinds": ["choice", "truefalse", "short"], "difficulty": "exam", "sources": ["courses/<course folder>"]}
 ```
 
-The user sees it as a button; pressing it makes the quiz from that material and opens it in Study. "kind" is "quiz" or "deck" (flashcards). "count" is 1 to 50 questions, or 1 to 100 cards. For a quiz, "kinds" are some of choice, multi, truefalse, short, cloze, and "difficulty" is easier, exam or harder. "focus" names the topics in a few words. "sources" are the course folders (courses/<folder>) or files to draw on, as paths in this space; leave it empty for all of the user's courses. Use the block only when the user wants a quiz or flashcards made. To change one, reply with a new block."#;
+The user sees it as a button; pressing it makes the quiz from that material and opens it in Study. "kind" is "quiz" or "deck" (flashcards). "exam" names the exam it is for, as the course names it ("Test 1", "Midterm 2", "Final"), when it is for one: only that exam's scope is used, and if Phaethon can't find what the exam covers it asks the user. "count" is 1 to 50 questions, or 1 to 100 cards. For a quiz, "kinds" are some of choice, multi, truefalse, short, cloze, and "difficulty" is easier, exam or harder. "focus" names topics to narrow to, in a few words, or is empty. "sources" are the course folders (courses/<folder>) or files to draw on, as paths in this space; leave it empty for all of the user's courses. Use the block only when the user wants a quiz or flashcards made. To change one, reply with a new block."#;
 
 /// [`PROMPT`], then the space's tutor mode if it has one (last: it shapes every answer).
 pub fn with_prompt(mode: Option<&str>) -> String {
@@ -73,6 +74,8 @@ pub struct Action {
     pub kinds: Vec<String>,
     pub difficulty: String,
     pub sources: Vec<String>,
+    /// The exam it is for, as the course names it.
+    pub exam: Option<String>,
     /// What was changed to fit (in plain words).
     pub notes: Vec<String>,
 }
@@ -194,7 +197,8 @@ pub fn parse(block: &str) -> Result<Action, String> {
             }
         }
     }
-    Ok(Action { kind, title, focus, count, kinds, difficulty, sources, notes })
+    let exam = text_field(&v, &["exam", "test"], 80, "exam")?;
+    Ok(Action { kind, title, focus, count, kinds, difficulty, sources, exam, notes })
 }
 
 /// A short, stable name for a block in its conversation: the question it
@@ -239,6 +243,50 @@ pub struct Plan {
     pub made: Option<String>,
     /// Being made right now.
     pub running: bool,
+    /// The exam it is for, as the block names it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exam: Option<String>,
+    /// What is known so far about that exam's scope (from the kept map; nothing is built here).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<PlanScope>,
+}
+
+/// An exam's scope as the card shows it before anything is made.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanScope {
+    /// The exam as the course names it.
+    pub exam: String,
+    /// "known" (found or said), "unknown" (looked, not found), "unmapped" (not looked yet).
+    pub state: &'static str,
+    /// "through HW 6; not graphs or combinatorics"
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub words: String,
+    pub from_user: bool,
+    pub evidence: Vec<super::scope::Evidence>,
+    /// "courses/<folder>", to say what it covers.
+    pub course: String,
+    pub course_name: String,
+}
+
+/// What the kept map (and the person's word) say about `exam` in the plan's course.
+fn plan_scope(space: &Path, visible: &Visible, sources: &[PlanSource], exam: &str) -> Option<PlanScope> {
+    let inputs: Vec<String> = sources.iter().map(|s| s.path.clone()).collect();
+    let seen = sources::course_of(space, visible, &inputs)?;
+    let base = |state, words: String, from_user, evidence, exam: String| PlanScope { exam, state, words, from_user, evidence, course: format!("courses/{}", seen.folder()), course_name: seen.state.name.clone() };
+    let said = super::scope::stated(visible, seen);
+    let probe = |e: &str| super::scope::find_exam(std::slice::from_ref(&super::scope::ExamScope { title: e.to_string(), date: None, known: false, summary: String::new(), includes: vec![], excludes: vec![], excluded_words: vec![], homework: vec![], evidence: vec![], from_user: false }), exam).is_some();
+    if let Some(s) = said.iter().find(|s| probe(&s.exam)) {
+        return Some(base("known", s.text.clone(), true, vec![super::scope::Evidence { source: super::scope::FROM_YOU.into(), quote: s.text.clone(), at: None }], s.exam.clone()));
+    }
+    let Some((map, _)) = super::scope::cached(visible, seen, None) else {
+        return Some(base("unmapped", String::new(), false, vec![], exam.to_string()));
+    };
+    Some(match super::scope::find_exam(&map.exams, exam) {
+        Some(e) if e.known => base("known", super::scope::scope_words(e).split_once(": ").map_or(String::new(), |(_, w)| w.to_string()), false, e.evidence.clone(), e.title.clone()),
+        Some(e) => base("unknown", String::new(), false, vec![], e.title.clone()),
+        None => base("unknown", String::new(), false, vec![], exam.to_string()),
+    })
 }
 
 /// The course a name points to: its folder, its name or its code, ignoring
@@ -447,6 +495,7 @@ pub fn plan(space: &Path, visible: &Visible, block: &str, question: &str) -> Res
             format!("None of what it names is in this space or its courses: {}.", unknown.join(", "))
         });
     }
+    let scope = a.exam.as_deref().and_then(|e| plan_scope(space, visible, &sources, e));
     Ok(Plan {
         made: made(space, &origin),
         running: running(space, &origin),
@@ -460,6 +509,8 @@ pub fn plan(space: &Path, visible: &Visible, block: &str, question: &str) -> Res
         sources,
         unknown,
         notes: a.notes,
+        exam: a.exam,
+        scope,
     })
 }
 
@@ -502,13 +553,13 @@ pub fn context(question: &str, reply: &str) -> Option<String> {
 /// Make what `plan` describes, and record it by its origin. A plan already
 /// made gives back what was made, without asking the model again.
 #[allow(clippy::too_many_arguments)] // one plan's inputs, each needed
-pub async fn make<M: Model>(space: &Path, visible: &Visible, plan: &Plan, question: &str, reply: &str, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize), String> {
+pub async fn make<M: Model>(space: &Path, visible: &Visible, plan: &Plan, question: &str, reply: &str, model: &M, emit: Emit<'_>, now: u64) -> Result<(String, usize, Option<Grounding>), String> {
     if let Some(path) = made(space, &plan.origin) {
-        return Ok((path, 0));
+        return Ok((path, 0, None));
     }
     let inputs: Vec<String> = plan.sources.iter().map(|s| s.path.clone()).collect();
     let ctx = context(question, reply);
-    let (path, n) = match plan.kind {
+    let (path, n, grounding) = match plan.kind {
         Kind::Quiz => {
             let opts = QuizOptions {
                 count: plan.count,
@@ -517,16 +568,17 @@ pub async fn make<M: Model>(space: &Path, visible: &Visible, plan: &Plan, questi
                 focus: plan.focus.clone(),
                 title: plan.title.clone(),
                 context: ctx,
+                exam: plan.exam.clone(),
             };
             generate::make_quiz(space, visible, &inputs, &opts, model, emit, now).await?
         }
         Kind::Deck => {
-            let opts = DeckOptions { count: plan.count, focus: plan.focus.clone(), title: plan.title.clone(), from_attempt: None, context: ctx };
-            generate::make_deck(space, visible, &inputs, &opts, model, emit).await?
+            let opts = DeckOptions { count: plan.count, focus: plan.focus.clone(), title: plan.title.clone(), from_attempt: None, context: ctx, exam: plan.exam.clone() };
+            generate::make_deck(space, visible, &inputs, &opts, model, emit, now).await?
         }
     };
     record(space, &plan.origin, &path, now)?;
-    Ok((path, n))
+    Ok((path, n, Some(grounding)))
 }
 
 /// Where the space's record of chat-made items is (for tests).
@@ -650,14 +702,23 @@ mod tests {
 
     const BLOCK: &str = r#"{"kind":"quiz","title":"Eigen practice","focus":"eigenvalues","count":2,"kinds":["choice","truefalse"],"sources":["M301"]}"#;
 
+    const EV: &str = "An eigenvector of A is a nonzero vector v with Av = λv; λ is its eigenvalue.";
+    const ROOTS: &str = "The eigenvalues are the roots of det(A − λI) = 0.";
+
+    fn map_reply(src: &str) -> String {
+        format!(r#"{{"topics": [{{"id": "t1", "title": "Eigenvalues and eigenvectors", "terms": ["eigenvalue", "eigenvector"], "weight": 3, "evidence": [{{"source": "{src}", "quote": "{EV}"}}]}}, {{"id": "t2", "title": "Diagonalization", "terms": ["diagonalizable"], "evidence": [{{"source": "{src}", "quote": "A 2×2 matrix with two distinct eigenvalues is diagonalizable."}}]}}], "exams": []}}"#)
+    }
+
     fn reply(src: &str) -> String {
         format!(
             r#"{{"title":"x","questions":[
-{{"kind":"choice","prompt":"Which $\\lambda$ are eigenvalues of $A$?","choices":["Roots of $\\det(A-\\lambda I)=0$","Entries on any row","Columns of $A$","Pivots of $A^T$"],"answer":"Roots of $\\det(A-\\lambda I)=0$","explanation":"Av = λv with v ≠ 0 needs A − λI singular.","source":"{src}"}},
-{{"kind":"truefalse","prompt":"An eigenvector may be the zero vector.","answer":"false","explanation":"Eigenvectors are nonzero by definition.","source":"{src}"}}
+{{"topic":"t1","kind":"choice","prompt":"Which $\\lambda$ are eigenvalues of $A$?","choices":["Roots of $\\det(A-\\lambda I)=0$","Entries on any row","Columns of $A$","Pivots of $A^T$"],"answer":"Roots of $\\det(A-\\lambda I)=0$","explanation":"Av = λv with v ≠ 0 needs A − λI singular.","citations":[{{"source":"{src}","quote":"{ROOTS}"}}]}},
+{{"topic":"t1","kind":"truefalse","prompt":"An eigenvector may be the zero vector.","answer":"false","explanation":"Eigenvectors are nonzero by definition.","citations":[{{"source":"{src}","quote":"{EV}"}}]}}
 ]}}"#
         )
     }
+
+    const YES2: &str = r#"{"verdicts": [{"id": "i1", "verdict": "yes", "answerOk": true}, {"id": "i2", "verdict": "yes", "answerOk": true}]}"#;
 
     #[test]
     fn a_plan_is_made_once_with_the_conversation_and_opened_again_after() {
@@ -667,15 +728,22 @@ mod tests {
         let answer = format!("I'll make 2 questions on eigenvalues from your M301 notes.\n\n```phaethon-study\n{BLOCK}\n```");
         let p = plan(&dir, &v, BLOCK, question).unwrap();
         assert_eq!((p.made.as_deref(), p.running, p.sources[0].name.as_str()), (None, false, "MATH-M 301 Fall 2026"));
+        assert_eq!((p.exam.as_deref(), p.scope.as_ref()), (None, None));
+        let with_exam = plan(&dir, &v, &BLOCK.replace("\"count\":2", "\"count\":2,\"exam\":\"Midterm\""), question).unwrap();
+        assert_eq!((with_exam.exam.as_deref(), with_exam.scope.as_ref().map(|s| s.state)), (Some("Midterm"), Some("unmapped")), "nothing looked at yet: said so, not guessed");
         let src = "courses/MATH-M 301 Fall 2026/files/Eigen notes.pdf";
-        let m = Scripted::new(&[&reply(src)]);
+        let m = Scripted::new(&[&map_reply(src), &reply(src), YES2]);
         let emit = |_: StudyEvent| {};
-        let (path, n) = block_on(make(&dir, &v, &p, question, &answer, &m, &emit, 1_791_000_000_000)).unwrap();
+        let (path, n, g) = block_on(make(&dir, &v, &p, question, &answer, &m, &emit, 1_791_000_000_000)).unwrap();
         assert_eq!((path.as_str(), n), ("study/quizzes/Eigen practice.json", 2));
-        let asked = m.asked.lock().unwrap()[0].1.clone();
+        assert_eq!(g.unwrap().coverage.iter().map(|c| c.topic.as_str()).collect::<Vec<_>>(), ["Eigenvalues and eigenvectors"], "the focus narrowed it to one topic");
+        let asked = m.asked.lock().unwrap()[1].1.clone();
         assert!(asked.contains("<discussion>") && asked.contains("quiz me on eigenvalues") && asked.contains("from your M301 notes"), "{asked}");
         assert!(!asked.contains("phaethon-study"), "the block itself isn't context");
         assert!(asked.contains("Focus on: eigenvalues.") && asked.contains("Av = λv"), "{asked}");
+        // The map is kept now: an exam it doesn't know is "unknown".
+        let with_exam = plan(&dir, &v, &BLOCK.replace("\"count\":2", "\"count\":2,\"exam\":\"Midterm\""), question).unwrap();
+        assert_eq!(with_exam.scope.map(|s| s.state), Some("unknown"));
         // Again (a second click, or the card after a reload): what was made, and no model call.
         let p = plan(&dir, &v, BLOCK, question).unwrap();
         assert_eq!(p.made.as_deref(), Some(path.as_str()));
@@ -705,41 +773,68 @@ mod tests {
         assert!(Run::claim(&dir, "abc").is_some(), "free again once it ended");
     }
 
-    /// One real quiz through the installed, logged-in `claude` CLI (study::model's
-    /// one-shot path), in a temporary vault. Real calls on the person's account:
-    /// `cargo test --lib real_cli_makes_a_quiz -- --ignored --nocapture`, rarely.
+    /// A real practice test for a real course's exam, through the installed,
+    /// logged-in `claude` CLI (study::model's one-shot path): the course's text
+    /// copies (never the original folder, which is only read) in a temporary
+    /// vault, its scope map built, then the quiz written and checked. Real calls
+    /// on the person's account (about six), so run it rarely:
+    /// `PHAETHON_REAL_COURSE=<course folder> PHAETHON_REAL_EXAM="Test 1" cargo test --lib real_cli_practice_test -- --ignored --nocapture`.
     #[test]
     #[ignore]
-    fn real_cli_makes_a_quiz() {
-        let dir = space("real");
-        let notes = dir.parent().unwrap().parent().unwrap().join("courses/MATH-M 301 Fall 2026/files/Eigen notes.pdf.md");
-        fs::write(
-            &notes,
-            "# Text of Eigen notes.pdf\n\n## 5.1 Eigenvectors and eigenvalues\n\nAn eigenvector of an n×n matrix A is a nonzero vector x such that Ax = λx for some scalar λ. A scalar λ is an eigenvalue of A if there is a nontrivial solution x of Ax = λx; such an x is an eigenvector corresponding to λ. \
-λ is an eigenvalue of A if and only if the equation (A − λI)x = 0 has a nontrivial solution. The set of all solutions is the null space of A − λI, a subspace called the eigenspace of A corresponding to λ.\n\nTheorem 1: The eigenvalues of a triangular matrix are the entries on its main diagonal.\n\
-Theorem 2: If v1, ..., vr are eigenvectors that correspond to distinct eigenvalues λ1, ..., λr of an n×n matrix A, then {v1, ..., vr} is linearly independent.\n\nExample: Let A = [[2, 3], [3, -6]]. Then det(A − λI) = (2 − λ)(−6 − λ) − 9 = λ² + 4λ − 21 = (λ − 3)(λ + 7), so the eigenvalues are 3 and −7.\n\n\
-## 5.2 The characteristic equation\n\nA scalar λ is an eigenvalue of an n×n matrix A if and only if λ satisfies the characteristic equation det(A − λI) = 0. The characteristic polynomial of A has degree n. The multiplicity of an eigenvalue as a root of it is its algebraic multiplicity.\n\
-The Invertible Matrix Theorem (continued): A is invertible if and only if 0 is not an eigenvalue of A.\n\nSimilarity: A is similar to B if B = P⁻¹AP for some invertible P. Similar matrices have the same characteristic polynomial and hence the same eigenvalues.\n\n\
-## 5.3 Diagonalization\n\nThe Diagonalization Theorem: An n×n matrix A is diagonalizable if and only if A has n linearly independent eigenvectors. In fact A = PDP⁻¹ with D diagonal exactly when the columns of P are n linearly independent eigenvectors of A, and the diagonal entries of D are the corresponding eigenvalues.\n\
-An n×n matrix with n distinct eigenvalues is diagonalizable. Then A^k = PD^kP⁻¹.",
-        )
-        .unwrap();
+    fn real_cli_practice_test() {
+        let from = PathBuf::from(std::env::var("PHAETHON_REAL_COURSE").expect("PHAETHON_REAL_COURSE names a course folder"));
+        let exam = std::env::var("PHAETHON_REAL_EXAM").unwrap_or_else(|_| "Test 1".into());
+        let count: usize = std::env::var("PHAETHON_REAL_COUNT").ok().and_then(|c| c.parse().ok()).unwrap_or(10);
+        let folder = from.file_name().unwrap().to_string_lossy().into_owned();
+        // Kept after the run for reading; PHAETHON_REAL_REUSE=1 runs again on it (its map reused while the copy is unchanged).
+        let root = std::env::temp_dir().join("phaethon-real-course");
+        let reuse = std::env::var("PHAETHON_REAL_REUSE").is_ok() && root.join("spaces/s").is_dir();
+        // Copy the text: every .md, and an empty stand-in for each original it is a copy of.
+        fn copy(from: &Path, to: &Path) {
+            fs::create_dir_all(to).unwrap();
+            for e in fs::read_dir(from).unwrap().flatten() {
+                let name = e.file_name();
+                let (src, dst) = (e.path(), to.join(&name));
+                let meta = fs::symlink_metadata(&src).unwrap();
+                if meta.is_dir() {
+                    copy(&src, &dst);
+                } else if meta.is_file() && name.to_string_lossy().ends_with(".md") {
+                    fs::copy(&src, &dst).unwrap();
+                } else if meta.is_file() {
+                    fs::write(&dst, b"").unwrap();
+                }
+            }
+        }
+        if !reuse {
+            let _ = fs::remove_dir_all(&root);
+            copy(&from, &root.join("courses").join(&folder));
+            crate::lms::access::fixture(&root, "s", &[(&folder, &crate::lms::access::Part::ALL)]);
+        }
+        let _ = fs::remove_dir_all(root.join("spaces/s/study"));
+        let _ = fs::remove_dir_all(root.join("spaces/s/.phaethon/study"));
+        let dir = root.join("spaces/s").canonicalize().unwrap();
         let v = vis(&dir);
         let bin = crate::agent::find_claude().expect("claude is installed");
         let m = super::super::model::CliModel { bin, cwd: dir.clone(), config_dir: None };
-        let block = r#"{"kind":"quiz","title":"Eigenvalues practice","focus":"eigenvalues, the characteristic equation and diagonalization","count":6,"kinds":["choice","truefalse","short","cloze"],"difficulty":"exam","sources":["M301"]}"#;
-        let question = "Can you quiz me on eigenvalues for my M301 exam? Mostly computing them, plus when a matrix is diagonalizable.";
-        let reply = format!("I'll make 6 questions from your Chapter 5 notes: finding eigenvalues from the characteristic equation, triangular matrices, and when a matrix is diagonalizable. A mix of multiple choice, true or false, fill in the blank and a short answer, at exam level.\n\n```phaethon-study\n{block}\n```");
-        let p = plan(&dir, &v, block, question).unwrap();
-        let emit = |e: StudyEvent| eprintln!("{e:?}");
-        let (path, n) = block_on(make(&dir, &v, &p, question, &reply, &m, &emit, super::super::now_ms())).unwrap();
+        let block = format!(r#"{{"kind":"quiz","title":"{exam} practice test","exam":"{exam}","count":{count},"kinds":["choice","multi","truefalse","short","cloze"],"difficulty":"exam","sources":["courses/{folder}"]}}"#);
+        let question = format!("Can you make me a practice test for {exam}?");
+        let reply = format!("I'll make a {count}-question practice test for {exam} from your course materials.\n\n```phaethon-study\n{block}\n```");
+        let p = plan(&dir, &v, &block, &question).unwrap();
+        let started = std::time::Instant::now();
+        let emit = |e: StudyEvent| eprintln!("[{:>4}s] {e:?}", started.elapsed().as_secs());
+        let made = block_on(make(&dir, &v, &p, &question, &reply, &m, &emit, super::super::now_ms()));
+        let out = std::env::temp_dir().join("phaethon-real-practice");
+        fs::create_dir_all(&out).unwrap();
+        let (map, _) = super::super::scope::cached(&v, &v.courses[0], None).expect("the map was kept");
+        fs::write(out.join("scope.json"), serde_json::to_string_pretty(&map).unwrap()).unwrap();
+        eprintln!("scope map: {} topics, {} exams, {} quotes dropped; kept at {}", map.topics.len(), map.exams.len(), map.dropped, out.join("scope.json").display());
+        for e in &map.exams {
+            eprintln!("  {} (known: {}): {}", e.title, e.known, super::super::scope::scope_words(e));
+        }
+        let (path, n, _) = made.expect("the practice test was made");
         let text = fs::read_to_string(dir.join(&path)).unwrap();
-        eprintln!("{path} ({n} questions)\n{text}");
-        let (_, q) = super::super::load_quiz(&dir, &path).unwrap();
-        assert!(q.questions.len() >= 3);
-        let out = std::env::temp_dir().join("phaethon-real-quiz.json");
-        fs::write(&out, &text).unwrap();
-        eprintln!("kept a copy at {}", out.display());
+        fs::write(out.join("quiz.json"), &text).unwrap();
+        eprintln!("{path}: {n} questions in {}s; kept at {}", started.elapsed().as_secs(), out.join("quiz.json").display());
     }
 
     #[test]

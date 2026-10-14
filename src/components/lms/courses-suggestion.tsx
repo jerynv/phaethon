@@ -7,9 +7,9 @@ import { inTauri } from "@/lib/tauri";
 import { openCourseImport, useRun, useSitesVersion } from "./import-store";
 
 /**
- * Under an empty conversation, in a space with no course site yet: one quiet
- * line offering to bring courses in. Nothing while the space's sites load, or
- * once one is connected.
+ * Under an empty conversation, while no course site is connected yet (they
+ * belong to the whole vault): one quiet line offering to bring courses in.
+ * Nothing while the sites load, or once one is connected.
  */
 export function CoursesSuggestion({ spaceId }: { spaceId: string }) {
   const [none, setNone] = useState(false);
@@ -19,7 +19,7 @@ export function CoursesSuggestion({ spaceId }: { spaceId: string }) {
   useEffect(() => {
     if (!inTauri()) return;
     let live = true;
-    lmsConnections(spaceId).then(
+    lmsConnections().then(
       (cs) => live && setNone(cs.length === 0),
       () => {},
     );

@@ -455,6 +455,10 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
                 <Icon name="book" className="shrink-0 text-ink-secondary" />
                 Import courses…
               </ContextMenu.Item>
+              <ContextMenu.Item data-space-action="course-access" onSelect={() => choose(() => openSettings("courses"))} className={itemClass}>
+                <Icon name="lock" className="shrink-0 text-ink-secondary" />
+                Course access…
+              </ContextMenu.Item>
               <ContextMenu.Separator className="mx-1 my-1 h-px bg-line forced-colors:bg-[CanvasText]" />
               <ContextMenu.Item data-space-action="edit" onSelect={() => choose(() => openSettings("spaces"))} className={itemClass}>
                 <Icon name="edit" className="shrink-0 text-ink-secondary" />

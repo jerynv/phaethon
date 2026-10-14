@@ -44,16 +44,20 @@ function resultText(r: NonNullable<CourseRun["result"]>): string {
 
 const importedCount = (r: Run) => r.courses.filter((c) => c.result).length;
 
-function endText(r: Run, spaceName: string): string {
+function endText(r: Run): string {
   const n = importedCount(r);
-  if (r.status === "failed" && n === 0) return `The import into ${spaceName} stopped. ${r.error ?? ""}`.trim();
-  if (n === r.courses.length) return `${plural(n, "course", "courses")} imported into ${spaceName}.`;
-  return `${n} of ${r.courses.length} courses imported into ${spaceName}.`;
+  if (r.status === "failed" && n === 0) return `The import stopped. ${r.error ?? ""}`.trim();
+  if (n === r.courses.length) return `${plural(n, "course", "courses")} imported.`;
+  return `${n} of ${r.courses.length} courses imported.`;
 }
+
+/** The space that shows a run's courses (Show in Finder, Ask): the one that asked, if it may see them. */
+const viewerOf = (r: Run): string | null => (r.spaces.includes(r.space) ? r.space : (r.spaces[0] ?? null));
 
 /**
  * "Import courses": connect a school's course site (Canvas, Brightspace,
- * Moodle, Blackboard) and bring chosen courses into a space as plain files.
+ * Moodle, Blackboard) and bring chosen courses in as plain files, for the
+ * spaces the person chooses (course sites belong to the whole vault).
  * Opened with openCourseImport() from the palette, a space's menu, the empty
  * conversation and Settings › Course sites.
  *
@@ -73,7 +77,6 @@ export function CourseImport({ spaces, onAsk }: { spaces: readonly Space[]; onAs
   useLayoutEffect(() => {
     if (req) setOpen(true);
   }, [req]);
-  const spaceName = (id: string) => spaces.find((s) => s.id === id)?.name ?? id;
   const close = useCallback(() => {
     setOpen(false);
     // A site may have been connected or signed in again.
@@ -85,7 +88,7 @@ export function CourseImport({ spaces, onAsk }: { spaces: readonly Space[]; onAs
   useEffect(() => {
     if (!run || run.status === "running" || open || seen === run.key || said.current === run.key) return;
     said.current = run.key;
-    announce(endText(run, spaceName(run.space)));
+    announce(endText(run));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run, open, seen]);
 
@@ -107,7 +110,7 @@ export function CourseImport({ spaces, onAsk }: { spaces: readonly Space[]; onAs
         )}
       </Dialog>
       {!open && run && (run.status === "running" || seen !== run.key) && (
-        <ImportNotice run={run} spaceName={spaceName(run.space)} onShow={() => openCourseImport({ space: run.space, at: "run" })} onDismiss={() => setSeen(run.key)} />
+        <ImportNotice run={run} onShow={() => openCourseImport({ space: run.space, at: "run" })} onDismiss={() => setSeen(run.key)} />
       )}
     </>
   );
@@ -136,10 +139,8 @@ function Flow({
   const [connections, setConnections] = useState<LmsConnection[] | null>(null);
   const [site, setSite] = useState<Site | null>(null);
   const [connection, setConnection] = useState<LmsConnection | null>(null);
-  /** Why the sign-in step shows: the session expired, or another space needs its own. */
-  const [signinReason, setSigninReason] = useState<"signedOut" | { space: string } | null>(req.at === "signin" ? "signedOut" : null);
-  /** Courses waiting on a sign-in for another space before they import. */
-  const pendingImport = useRef<{ space: string; courses: LmsCourse[] } | null>(null);
+  /** Why the sign-in step shows: the session expired. */
+  const [signinReason, setSigninReason] = useState<"signedOut" | null>(req.at === "signin" ? "signedOut" : null);
   const [syncError, setSyncError] = useState("");
   const titleRef = useRef<HTMLHeadingElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
@@ -157,10 +158,10 @@ function Flow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The space's course sites: offered first, and the one asked for by id.
+  // The vault's course sites: offered first, and the one asked for by id.
   useEffect(() => {
     let live = true;
-    lmsConnections(space).then(
+    lmsConnections().then(
       (cs) => {
         if (!live) return;
         setConnections(cs);
@@ -184,13 +185,14 @@ function Flow({
   /** Import again: the courses imported before, as they are on the site now. */
   async function sync(c: LmsConnection) {
     try {
-      const all = await lmsCourses(space, c.id);
+      const all = await lmsCourses(c.id);
       const chosen = all.filter((x) => c.courses.includes(x.id));
       if (!chosen.length) {
         setStep("choose");
         return;
       }
-      begin(space, c, chosen);
+      // Courses imported before keep who can see them.
+      begin(c, chosen, [space]);
     } catch (e) {
       if (isSignedOut(e)) {
         setSigninReason("signedOut");
@@ -222,8 +224,8 @@ function Flow({
     else if (step === "choose") go("kind");
   }
 
-  function begin(target: string, c: LmsConnection, courses: Pick<LmsCourse, "id" | "name">[]) {
-    const ok = startImport(target, c.id, connectionName(c), courses);
+  function begin(c: LmsConnection, courses: Pick<LmsCourse, "id" | "name">[], viewers: string[]) {
+    const ok = startImport(space, viewers, c.id, connectionName(c), courses);
     if (!ok) {
       say("Another import is still running. It shows here.");
     }
@@ -236,16 +238,11 @@ function Flow({
     setSite({ kind: c.kind, address: c.address, schoolName: c.schoolName });
     setSigninReason(null);
     say(`Signed in to ${connectionName(c)}.`);
-    const waiting = pendingImport.current;
-    pendingImport.current = null;
-    if (waiting) begin(waiting.space, c, waiting.courses);
-    else go("choose");
+    go("choose");
   }
 
-  const nameOf = (id: string) => spaces.find((s) => s.id === id)?.name ?? id;
   const n = NUMBERED.indexOf(step);
   const stepLabel = numbered.current && n >= 0 ? `Step ${n + 1} of ${NUMBERED.length}` : null;
-  const signinSpace = signinReason && typeof signinReason === "object" ? signinReason.space : space;
 
   const frame = { titleRef, stepLabel };
   let body: ReactNode;
@@ -253,7 +250,6 @@ function Flow({
     body = (
       <KindStep
         {...frame}
-        spaceName={nameOf(space)}
         connections={connections}
         initial={site?.kind ?? null}
         onExisting={(c) => {
@@ -295,8 +291,6 @@ function Flow({
       <SignInStep
         {...frame}
         site={site}
-        space={signinSpace}
-        spaceName={nameOf(signinSpace)}
         reason={signinReason}
         onBack={back}
         onSignedIn={onSignedIn}
@@ -315,16 +309,7 @@ function Flow({
           setSigninReason("signedOut");
           go("signin");
         }}
-        onImport={async (target, courses) => {
-          if (target === space) return begin(space, connection, courses);
-          // Each space keeps its own sign-in: use the target's own connection to this site, or sign in for it.
-          const theirs = await lmsConnections(target).catch(() => [] as LmsConnection[]);
-          const same = theirs.find((c) => c.kind === connection.kind && hostOf(c.address) === hostOf(connection.address));
-          if (same?.signedIn) return begin(target, same, courses);
-          pendingImport.current = { space: target, courses };
-          setSigninReason({ space: target });
-          go("signin");
-        }}
+        onImport={(viewers, courses) => begin(connection, courses, viewers)}
       />
     );
   } else if (step === "progress") {
@@ -437,14 +422,12 @@ function Alert({ children, tone = "danger" }: { children: ReactNode; tone?: "dan
 // ---- Step 1: which course site ----
 
 function KindStep({
-  spaceName,
   connections,
   initial,
   onExisting,
   onNext,
   ...frame
 }: FrameProps & {
-  spaceName: string;
   connections: LmsConnection[] | null;
   initial: LmsKind | null;
   onExisting: (c: LmsConnection) => void;
@@ -469,11 +452,11 @@ function KindStep({
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
       <StepHead {...frame} title="Which course site does your school use?">
-        <p>Phaethon reads your courses from it and keeps them in {spaceName} as files you can open.</p>
+        <p>Phaethon reads your courses from it and keeps them as files you can open, for the spaces you choose.</p>
       </StepHead>
       {connections && connections.length > 0 && (
         <div className="flex flex-col gap-2" data-existing-sites="">
-          <h3 className="text-md font-semibold text-ink">Already connected in {spaceName}</h3>
+          <h3 className="text-md font-semibold text-ink">Already connected</h3>
           <ul className="flex flex-col gap-2">
             {connections.map((c) => (
               <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-2.5">
@@ -866,17 +849,13 @@ function SchoolSearch({
 
 function SignInStep({
   site,
-  space,
-  spaceName,
   reason,
   onBack,
   onSignedIn,
   ...frame
 }: FrameProps & {
   site: Site;
-  space: string;
-  spaceName: string;
-  reason: "signedOut" | { space: string } | null;
+  reason: "signedOut" | null;
   onBack: () => void;
   onSignedIn: (c: LmsConnection) => void;
 }) {
@@ -895,7 +874,7 @@ function SignInStep({
     setWaiting(true);
     requestAnimationFrame(() => cancelRef.current?.focus());
     try {
-      const c = await lmsConnect(space, site.kind, site.address, site.schoolName);
+      const c = await lmsConnect(site.kind, site.address, site.schoolName);
       if (attempt.current !== mine) return;
       setWaiting(false);
       onSignedIn(c);
@@ -923,8 +902,6 @@ function SignInStep({
       <StepHead {...frame} title={reason === "signedOut" ? `Sign in to ${school} again` : `Sign in to ${school}`}>
         {reason === "signedOut" ? (
           <p>You’ve been signed out of {school}, so Phaethon can’t see your courses. Sign in again to carry on.</p>
-        ) : reason ? (
-          <p>Each space keeps its own sign-in, so sign in once more for {spaceName}.</p>
         ) : null}
         <p>
           Phaethon opens your school’s own sign-in page ({hostOf(site.address)}) in a separate window. Sign in there as you always do, including any
@@ -985,12 +962,14 @@ function ChooseStep({
   error: string;
   onBack: () => void;
   onSignedOut: () => void;
-  onImport: (target: string, courses: LmsCourse[]) => void | Promise<void>;
+  onImport: (viewers: string[], courses: LmsCourse[]) => void | Promise<void>;
 }) {
   const [courses, setCourses] = useState<LmsCourse[] | null>(null);
   const [loadError, setLoadError] = useState(syncError);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [target, setTarget] = useState(space);
+  // Who can see the courses: the space asking, unless the person chooses otherwise.
+  const [viewers, setViewers] = useState<Set<string>>(() => new Set([space]));
+  const [viewerError, setViewerError] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const errId = useId();
@@ -1001,7 +980,7 @@ function ChooseStep({
   const load = useCallback(() => {
     setLoadError("");
     setCourses(null);
-    lmsCourses(space, connection.id).then(
+    lmsCourses(connection.id).then(
       (cs) => {
         setCourses(cs);
         // Current courses not imported yet start checked; past ones and ones already here don't.
@@ -1012,7 +991,7 @@ function ChooseStep({
         else setLoadError(String(e));
       },
     );
-  }, [space, connection.id, onSignedOut]);
+  }, [connection.id, onSignedOut]);
   useEffect(() => {
     if (!syncError) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1020,7 +999,6 @@ function ChooseStep({
 
   const current = courses?.filter((c) => c.current) ?? [];
   const past = courses?.filter((c) => !c.current) ?? [];
-  const targetName = spaces.find((s) => s.id === target)?.name ?? target;
 
   function toggle(id: string, on: boolean) {
     setChosen((s) => {
@@ -1052,9 +1030,17 @@ function ChooseStep({
       listRef.current?.querySelector<HTMLElement>('input[type="checkbox"]')?.focus();
       return;
     }
+    if (!viewers.size) {
+      setViewerError("Choose at least one space that can see these courses.");
+      document.querySelector<HTMLElement>("[data-import-viewer] input")?.focus();
+      return;
+    }
     setBusy(true);
     try {
-      await onImport(target, picked);
+      await onImport(
+        spaces.filter((s) => viewers.has(s.id)).map((s) => s.id),
+        picked,
+      );
     } finally {
       setBusy(false);
     }
@@ -1106,29 +1092,39 @@ function ChooseStep({
           {error && <FieldError id={errId}>{error}</FieldError>}
         </div>
       )}
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={spaceId} className="text-base font-medium text-ink">
-          Import into
-        </label>
-        <select
-          id={spaceId}
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          data-import-space=""
-          aria-describedby={`${spaceId}-what`}
-          className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto max-w-full self-start px-2")}
-        >
-          {spaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <p id={`${spaceId}-what`} className="text-sm text-ink-secondary" data-import-what="">
-          Each course gets a folder in {targetName} with its syllabus, assignments, files and the readings it links to.
-          {target !== space && ` Each space keeps its own sign-in, so you may be asked to sign in for ${targetName}.`}
+      <fieldset className="flex min-w-0 flex-col gap-1.5" aria-describedby={`${spaceId}-what${viewerError ? ` ${spaceId}-err` : ""}`} data-import-viewers="">
+        <legend className="float-start text-base font-medium text-ink">Who can see these courses</legend>
+        <p id={`${spaceId}-what`} className="clear-both text-sm text-ink-secondary" data-import-what="">
+          Each course gets a folder with its syllabus, assignments, files and the readings it links to. The spaces you check can see all of each new course;
+          choose part by part later in Settings › Course sites. Courses imported before keep who can see them.
         </p>
-      </div>
+        <ul className="flex flex-wrap gap-x-4 gap-y-1">
+          {spaces.map((s) => (
+            <li key={s.id}>
+              <label className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink" data-import-viewer={s.id}>
+                <input
+                  type="checkbox"
+                  checked={viewers.has(s.id)}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setViewers((v) => {
+                      const next = new Set(v);
+                      if (on) next.add(s.id);
+                      else next.delete(s.id);
+                      return next;
+                    });
+                    setViewerError("");
+                  }}
+                  className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
+                />
+                {s.name}
+                {s.id === space && <span className="text-sm text-ink-secondary">(this space)</span>}
+              </label>
+            </li>
+          ))}
+        </ul>
+        {viewerError && <FieldError id={`${spaceId}-err`}>{viewerError}</FieldError>}
+      </fieldset>
       <Footer>
         <BackButton onBack={onBack} />
         <Button type="submit" disabled={!courses || busy} data-step-next="" data-import-start="">
@@ -1237,7 +1233,7 @@ function ProgressStep({
       else if (c.failed && !was?.failed && run.status === "running") lines.push(`${c.name} couldn’t be imported.`);
     }
     if (prev.status === "running" && run.status !== "running") {
-      lines.push(endText(run, spaces.find((s) => s.id === run.space)?.name ?? run.space));
+      lines.push(endText(run));
       onSeen(run.key);
     }
     if (lines.length) {
@@ -1258,15 +1254,17 @@ function ProgressStep({
       </StepHead>
     );
   }
-  const spaceName = spaces.find((s) => s.id === run.space)?.name ?? run.space;
   const running = run.status === "running";
+  const viewer = viewerOf(run);
+  const seenBy = run.spaces.map((id) => spaces.find((s) => s.id === id)?.name ?? id);
   const done = importedCount(run);
 
   async function show(c: CourseRun) {
     if (!c.result) return;
     setShowError("");
     try {
-      await openSpaceFile(run!.space, `${c.result.folder}/README.md`, true);
+      if (!viewer) return;
+      await openSpaceFile(viewer, `${c.result.folder}/README.md`, true);
     } catch (e) {
       setShowError(`${c.name}’s folder couldn’t be shown. ${String(e)}`);
     }
@@ -1274,11 +1272,14 @@ function ProgressStep({
 
   return (
     <div className="flex flex-col gap-4">
-      <StepHead {...frame} stepLabel={null} title={running ? `Importing into ${spaceName}` : run.status === "failed" && !done ? "The import stopped" : "Import finished"}>
+      <StepHead {...frame} stepLabel={null} title={running ? "Importing courses" : run.status === "failed" && !done ? "The import stopped" : "Import finished"}>
         <p>
           {running
             ? "You can close this window: the import keeps going, and Phaethon says when it’s done."
-            : `From ${run.school}. ${endText(run, spaceName)}`}
+            : `From ${run.school}. ${endText(run)}`}
+        </p>
+        <p data-import-seen-by="">
+          {seenBy.length ? `New courses can be seen in ${seenBy.join(", ")}.` : "No space can see the new courses yet: choose in Settings › Course sites."}
         </p>
       </StepHead>
       {run.status === "failed" && run.error && <Alert>{run.error}</Alert>}
@@ -1290,7 +1291,7 @@ function ProgressStep({
       {showError && <Alert>{showError}</Alert>}
       <ul className="flex flex-col gap-2" aria-label="Courses" data-import-list="">
         {run.courses.map((c) => (
-          <CourseProgress key={c.id} course={c} running={running} onShow={() => void show(c)} onAsk={() => onAsk(run.space, askText(c))} />
+          <CourseProgress key={c.id} course={c} running={running} onShow={viewer ? () => void show(c) : undefined} onAsk={viewer ? () => onAsk(viewer, askText(c)) : undefined} />
         ))}
       </ul>
       <p role="status" className="sr-only" data-import-status="">
@@ -1319,7 +1320,7 @@ function stepText(c: CourseRun): string {
 
 const askText = (c: CourseRun) => `What’s coming up in ${c.name}, and what should I read first?`;
 
-function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseRun; running: boolean; onShow: () => void; onAsk: () => void }) {
+function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseRun; running: boolean; onShow?: () => void; onAsk?: () => void }) {
   const nameId = useId();
   const state = c.result ? "done" : c.failed ? "failed" : c.step ? "working" : "waiting";
   const total = Math.max(c.total, 1);
@@ -1377,7 +1378,7 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
           </ul>
         </div>
       )}
-      {state === "done" && (
+      {state === "done" && onShow && onAsk && (
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={onShow} data-course-show="">
             <Icon name="folder" />
@@ -1402,7 +1403,7 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
  * then how it ended (said once, politely, when it ends). Never takes focus;
  * Show opens the dialog on it.
  */
-function ImportNotice({ run, spaceName, onShow, onDismiss }: { run: Run; spaceName: string; onShow: () => void; onDismiss: () => void }) {
+function ImportNotice({ run, onShow, onDismiss }: { run: Run; onShow: () => void; onDismiss: () => void }) {
   const msgId = useId();
   const running = run.status === "running";
   const finished = run.courses.filter((c) => c.result || c.failed).length;
@@ -1421,7 +1422,7 @@ function ImportNotice({ run, spaceName, onShow, onDismiss }: { run: Run; spaceNa
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p id={msgId} className="wrap-break-word">
-          {running ? `Importing courses into ${spaceName}: ${finished} of ${run.courses.length} done.` : endText(run, spaceName)}
+          {running ? `Importing courses: ${finished} of ${run.courses.length} done.` : endText(run)}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" aria-describedby={msgId} onClick={onShow} data-import-notice-show="">

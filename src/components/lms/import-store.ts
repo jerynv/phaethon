@@ -7,8 +7,9 @@ import { isSignedOut } from "./sites";
 // ---- Opening the dialog ----
 
 /**
- * Where the Import courses dialog opens. `space`: the space it imports into
- * (and whose course sites it uses). With `connection` it starts at that site:
+ * Where the Import courses dialog opens. `space`: the space asking (it can see
+ * what it imports, unless the person chooses otherwise; course sites belong to
+ * the whole vault). With `connection` it starts at that site:
  * "choose" its courses, "signin" again, or "sync" (import its imported
  * courses again, straight to progress). "run": the import running now, or
  * the one that just finished.
@@ -50,7 +51,10 @@ export type CourseRun = {
 
 export type Run = {
   key: number;
+  /** The space that asked. */
   space: string;
+  /** The spaces that may see each course imported for the first time. */
+  spaces: string[];
   connection: string;
   school: string;
   courses: CourseRun[];
@@ -96,11 +100,12 @@ const patchCourse = (r: Run, id: string, f: (c: CourseRun) => CourseRun): Run =>
 const working = (r: Run) => r.courses.find((c) => !c.result && !c.failed && (c.step || c.done > 0)) ?? null;
 
 /**
- * Start importing `courses` into `space`. Refused (false) while another import
- * runs. `onCourse` hears each course as it finishes, and `onEnd` the end.
+ * Start importing `courses` (asked from `space`; `spaces` may see the new ones).
+ * Refused (false) while another import runs. `onCourse` hears each course as it finishes, and `onEnd` the end.
  */
 export function startImport(
   space: string,
+  spaces: string[],
   connection: string,
   school: string,
   courses: Pick<LmsCourse, "id" | "name">[],
@@ -108,7 +113,7 @@ export function startImport(
 ): boolean {
   if (run?.status === "running") return false;
   const key = runKey++;
-  setRun({ key, space, connection, school, status: "running", courses: courses.map((c) => ({ id: c.id, name: c.name, done: 0, total: 0 })) });
+  setRun({ key, space, spaces, connection, school, status: "running", courses: courses.map((c) => ({ id: c.id, name: c.name, done: 0, total: 0 })) });
   const mine = () => (run?.key === key ? run : null);
 
   function finish(status: Run["status"], error?: string, courseWhy?: string) {
@@ -159,9 +164,9 @@ export function startImport(
   }
 
   lmsImport(
-    space,
     connection,
     courses.map((c) => c.id),
+    spaces,
     onEvent,
   ).then(
     () => finish("done"),

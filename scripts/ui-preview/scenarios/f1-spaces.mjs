@@ -89,7 +89,7 @@ export default [
       const m = await page.$eval(MENU, (el) => ({ role: el.getAttribute("role"), label: el.getAttribute("aria-label") }));
       check(m.role === "menu" && m.label === "Work: actions", "right-click on Work opens its menu, named for Work", JSON.stringify(m));
       const items = await menuItems(page);
-      check(items.join("|") === "Show in Finder|Export…|Import courses…|Edit name and colour…", "the menu has Show in Finder, Export…, Import courses… and Edit name and colour…", items.join("|"));
+      check(items.join("|") === "Show in Finder|Export…|Import courses…|Course access…|Edit name and colour…", "the menu has Show in Finder, Export…, Import courses…, Course access… and Edit name and colour…", items.join("|"));
       const more = await page.$eval('[data-space-more="work"]', (b) => ({ expanded: b.getAttribute("aria-expanded"), shown: getComputedStyle(b).opacity }));
       check(more.expanded === "true" && more.shown === "1", "Work’s More button shows, marked expanded, while its menu is open", JSON.stringify(more));
       await h.shot("open");
@@ -110,7 +110,7 @@ export default [
       await page.hover(space("work"));
       await page.click('[data-space-more="work"]');
       await page.waitForSelector(`${MENU}[data-space-menu="work"]`, { timeout: 3000 });
-      check((await menuItems(page)).length === 4, "Work’s More button opens the same menu");
+      check((await menuItems(page)).length === 5, "Work’s More button opens the same menu");
       await page.keyboard.press("Escape");
       await menuGone(page);
     },

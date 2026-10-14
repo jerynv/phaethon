@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { openCourseImport, useSitesVersion } from "@/components/lms/import-store";
 import { connectionName, isSignedOut, whenText } from "@/components/lms/sites";
 import { announce } from "@/components/shell/announcer";
@@ -54,11 +55,12 @@ export function GradesView({ space }: { space: Space }) {
   const headingId = useId();
   const sites = useSitesVersion();
   const signInRef = useRef<HTMLButtonElement>(null);
+  const hidden = hiddenCourses(useCourseReach(space.id), "grades");
 
   const load = useCallback(async () => {
     if (!inTauri()) return setCourses([]);
     try {
-      const [g, cs] = await Promise.all([lmsGrades(space.id), lmsConnections(space.id).catch(() => [] as LmsConnection[])]);
+      const [g, cs] = await Promise.all([lmsGrades(space.id), lmsConnections().catch(() => [] as LmsConnection[])]);
       setCourses(g);
       setConnections(cs);
       setSignedOut(new Set(cs.filter((c) => !c.signedIn).map((c) => c.id)));
@@ -124,7 +126,7 @@ export function GradesView({ space }: { space: Space }) {
             <h2 id={headingId} className="text-xl font-semibold text-ink">
               Grades
             </h2>
-            <p className="text-sm text-ink-secondary">From the courses imported into {space.name}. Phaethon only reads them: nothing changes on your course site.</p>
+            <p className="text-sm text-ink-secondary">From the courses {space.name} can see. Phaethon only reads them: nothing changes on your course site.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {connIds.map((id) => (
@@ -179,10 +181,12 @@ export function GradesView({ space }: { space: Space }) {
             <Icon name="spinner" className="motion-safe:animate-spin" />
             Loading grades…
           </p>
+        ) : courses.length === 0 && hidden ? (
+          <NoCourseAccess why={hidden} part="grades" />
         ) : courses.length === 0 ? (
           <div className="flex flex-col items-start gap-3 rounded-lg border border-line bg-surface px-5 py-4" data-grades-empty="">
             <p className="text-md font-medium text-ink">No grades here yet</p>
-            <p className="text-base text-ink-secondary">Grades come from your school’s course site. Import your courses into {space.name}, and their grades show here.</p>
+            <p className="text-base text-ink-secondary">Grades come from your school’s course site. Import your courses, and their grades show here.</p>
             <Button type="button" onClick={() => openCourseImport({ space: space.id })}>
               <Icon name="book" />
               Import courses…

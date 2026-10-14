@@ -12,6 +12,7 @@ import { SPACE_DESCRIPTION_MAX, SPACE_NAME_MAX, updateSpace, useSpaces, type Spa
 import { cn } from "@/lib/utils";
 
 import { HueSwatches, PathText, SectionHeader, SettingGroup } from "./controls";
+import { SpaceCourses } from "./space-courses";
 import { useStatus } from "./status";
 
 /** "line 3 column 5" in a parser message, as "line 3". */
@@ -326,6 +327,7 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
               </ul>
             </div>
           ))}
+        <SpaceCourses space={space} />
       </div>
     </li>
   );

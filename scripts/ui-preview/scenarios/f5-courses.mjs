@@ -127,7 +127,7 @@ export default [
       s = await waitStep(page, "choose");
       check(s.focused && s.title === "Choose courses to import", "signed in: step 4, heading focused", JSON.stringify(s));
       const sent = (await calls(page, "lms_connect")).at(-1);
-      check(sent.space === "school" && sent.kind === "canvas" && sent.address === "https://iu.instructure.com", "the core is asked to sign in to that school’s site for this space", JSON.stringify(sent));
+      check(sent.space === undefined && sent.kind === "canvas" && sent.address === "https://iu.instructure.com", "the core is asked to sign in to that school’s site (for the whole vault)", JSON.stringify(sent));
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
       const list = await page.evaluate(() =>
         [...document.querySelectorAll("[data-course]")].map((l) => ({ id: l.dataset.course, on: l.querySelector("input").checked, text: l.textContent })),
@@ -135,16 +135,18 @@ export default [
       check(list.filter((c) => c.on).map((c) => c.id).join() === "101,102,103", "the three current courses are checked", JSON.stringify(list));
       check(list[0].text.includes("CSCI-C 241") && list[0].text.includes("Fall 2026"), "each shows its code and term", list[0].text);
       const what = await page.evaluate(() => document.querySelector("[data-import-what]")?.textContent);
-      check(what.startsWith("Each course gets a folder in School with its syllabus, assignments, files and the readings it links to."), "it says what will happen, in the current space", what);
+      check(what.startsWith("Each course gets a folder with its syllabus, assignments, files and the readings it links to."), "it says what will happen", what);
+      const viewers = await page.evaluate(() => [...document.querySelectorAll("[data-import-viewer]")].filter((l) => l.querySelector("input").checked).map((l) => l.dataset.importViewer));
+      check(viewers.join() === "school", "the current space can see them, unless chosen otherwise", viewers.join());
       await h.shot("choose");
       await tabTo(page, "[data-import-start]");
       const btn = (await active(page)).text;
       check(btn === "Import 3 courses", "the button counts the courses", btn);
       await page.keyboard.press("Enter");
       s = await waitStep(page, "progress");
-      check(s.title === "Importing into School", "the import starts, heading focused", JSON.stringify(s));
+      check(s.title === "Importing courses", "the import starts, heading focused", JSON.stringify(s));
       const imp = (await calls(page, "lms_import")).at(-1);
-      check(imp.space === "school" && imp.connection === "c1" && imp.courseIds.join() === "101,102,103", "the core is asked for exactly those courses", JSON.stringify(imp));
+      check(imp.spaces.join() === "school" && imp.connection === "c1" && imp.courseIds.join() === "101,102,103", "the core is asked for exactly those courses, seen by School", JSON.stringify(imp));
       await waitFor(page, () => document.querySelector("[data-step-title]")?.textContent === "Import finished", undefined, 6000);
       const done = await page.evaluate(() => ({
         courses: [...document.querySelectorAll("[data-import-course]")].map((c) => [c.dataset.importCourse, c.dataset.state, c.querySelector("[data-course-status]").textContent]),
@@ -152,7 +154,7 @@ export default [
       }));
       check(done.courses.map((c) => c[1]).join() === "done,failed,done", "two imported, one failed", JSON.stringify(done.courses));
       check(done.courses[1][2] === "Not imported. The site said you don’t have access to it any more.", "the failed course says why, without repeating its name", done.courses[1][2]);
-      check(done.said?.endsWith("2 of 3 courses imported into School."), "the end is said politely", done.said);
+      check(done.said?.endsWith("2 of 3 courses imported."), "the end is said politely", done.said);
       await h.shot("summary");
     },
   },
@@ -398,14 +400,14 @@ export default [
       await page.keyboard.press("Escape");
       await page.waitForSelector('[data-import-notice="running"]', { timeout: 3000 });
       const n = await page.$eval('[data-import-notice="running"]', (e) => e.textContent);
-      check(/Importing courses into School: \d of 3 done\./.test(n), "closed: the notice says how far it is", n);
+      check(/Importing courses: \d of 3 done\./.test(n), "closed: the notice says how far it is", n);
       const focusNow = await waitFor(page, () => document.activeElement?.hasAttribute("data-composer-input"));
       check(focusNow, "focus goes back to the composer");
       await h.shot("background");
       await page.waitForSelector('[data-import-notice="done"]', { timeout: 8000 });
       await waitFor(page, () => document.querySelector("[data-shell-status]")?.textContent !== "", undefined, 1500);
       const end = await page.evaluate(() => ({ text: document.querySelector('[data-import-notice="done"]').textContent, said: document.querySelector("[data-shell-status]")?.textContent }));
-      check(end.text.includes("2 of 3 courses imported into School.") && end.said === "2 of 3 courses imported into School.", "the end is shown and said once", JSON.stringify(end));
+      check(end.text.includes("2 of 3 courses imported.") && end.said === "2 of 3 courses imported.", "the end is shown and said once", JSON.stringify(end));
       check(await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input")), "the notice never takes focus");
       await page.click("[data-import-notice-show]");
       await waitStep(page, "progress");
@@ -461,28 +463,28 @@ export default [
       await page.waitForSelector('[data-testid="settings-tab-courses"]', { timeout: 3000 });
       await page.$eval('[data-testid="settings-tab-courses"]', (el) => el.click());
       await page.waitForSelector('[data-site-row="c1"]', { timeout: 3000 });
+      // One list for the whole vault: each site once, whichever space connected it.
       const rows = await page.evaluate(() =>
-        [...document.querySelectorAll("[data-course-sites]")].map((g) => ({
-          space: g.dataset.courseSites,
-          rows: [...g.querySelectorAll("[data-site-row]")].map((r) => ({
-            status: r.querySelector("[data-site-status]").textContent,
-            imported: r.querySelector("[data-site-imported]").textContent,
-            actions: [...r.querySelectorAll("[data-site-action]")].map((b) => b.textContent),
-          })),
+        [...document.querySelectorAll("[data-course-sites] [data-site-row]")].map((r) => ({
+          id: r.dataset.siteRow,
+          status: r.querySelector("[data-site-status]").textContent,
+          imported: r.querySelector("[data-site-imported]").textContent,
+          actions: [...r.querySelectorAll("[data-site-action]")].map((b) => b.textContent),
         })),
       );
-      const school = rows.find((r) => r.space === "school").rows[0];
-      const work = rows.find((r) => r.space === "work").rows[0];
-      check(school.status === "Signed in" && school.imported.startsWith("2 courses imported, last on "), "School: signed in, two courses, when it last imported", JSON.stringify(school));
-      check(school.actions.join("|") === "Import more…|Import again|Sign out…", "School offers Import more, Import again and Sign out", school.actions.join("|"));
-      check(work.status.startsWith("Signed out") && work.actions.join("|") === "Sign in again…|Sign out…", "Work is signed out and offers Sign in again", JSON.stringify(work));
+      check(rows.length === 2, "both sites are listed once, for the vault", JSON.stringify(rows));
+      const iu = rows.find((r) => r.id === "c1");
+      const moodle = rows.find((r) => r.id !== "c1");
+      check(iu.status === "Signed in" && iu.imported.startsWith("2 courses imported, last on "), "IU: signed in, two courses, when it last imported", JSON.stringify(iu));
+      check(iu.actions.join("|") === "Import more…|Import again|Sign out…", "IU offers Import more, Import again and Sign out", iu.actions.join("|"));
+      check(moodle.status.startsWith("Signed out") && moodle.actions.join("|") === "Sign in again…", "Moodle is signed out and offers Sign in again", JSON.stringify(moodle));
       await sleep(400);
       await h.shot("list");
       // Import again: the dialog opens over Settings on the import of the two imported courses.
       await page.click('[data-site-row="c1"] [data-site-action="sync"]');
       await waitStep(page, "progress");
       const imp = (await calls(page, "lms_import")).at(-1);
-      check(imp.space === "school" && imp.courseIds.join() === "101,103", "Import again imports the courses imported before", JSON.stringify(imp));
+      check(imp.connection === "c1" && imp.courseIds.join() === "101,103", "Import again imports the courses imported before", JSON.stringify(imp));
       await waitFor(page, () => document.querySelector("[data-step-title]")?.textContent === "Import finished", undefined, 6000);
       await page.click("[data-import-close]");
       await waitFor(page, () => document.activeElement?.matches('[data-site-action="sync"]'));
@@ -492,20 +494,21 @@ export default [
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-site-confirm]", { timeout: 2000 });
       const ask = await page.evaluate(() => ({ text: document.querySelector("[data-site-confirm] p").textContent, focus: document.activeElement?.textContent }));
-      check(ask.text.includes("The 2 courses already imported stay in School as files.") && ask.focus === "Sign out", "Sign out asks first and says the files stay", JSON.stringify(ask));
+      check(ask.text.includes("The 2 courses already imported stay as files, and so does who can see them.") && ask.focus === "Sign out", "Sign out asks first and says the courses stay", JSON.stringify(ask));
       await h.shot("confirm");
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => !document.querySelector('[data-course-sites="school"] [data-site-row]'), { timeout: 3000 });
-      const after = await page.evaluate(() => ({ focus: document.activeElement?.dataset.sitesImport, calls: window.__calls.filter((c) => c[0] === "lms_disconnect").map((c) => c[1]) }));
-      check(after.calls.length === 1 && after.calls[0].space === "school" && after.calls[0].connection === "c1", "the core is asked to sign out of that site", JSON.stringify(after.calls));
-      check(after.focus === "school", "focus moves to Import courses in the same space", JSON.stringify(after));
-      // Sign in again for Work's signed-out site.
-      await page.click('[data-course-sites="work"] [data-site-action="signin"]');
+      await page.waitForFunction(() => document.querySelector('[data-site-row="c1"] [data-site-status]')?.textContent.startsWith("Signed out"), { timeout: 3000 });
+      const after = await page.evaluate(() => ({ actions: [...document.querySelectorAll('[data-site-row="c1"] [data-site-action]')].map((b) => b.textContent), calls: window.__calls.filter((c) => c[0] === "lms_disconnect").map((c) => c[1]) }));
+      check(after.calls.length === 1 && after.calls[0].connection === "c1" && after.calls[0].space === undefined, "the core is asked to sign out of that site", JSON.stringify(after.calls));
+      check(after.actions.join("|") === "Sign in again…", "signed out, the site stays with its courses and offers Sign in again", JSON.stringify(after));
+      // Sign in again for the signed-out Moodle site.
+      await page.click(`[data-site-row="${moodle.id}"] [data-site-action="signin"]`);
       const s = await waitStep(page, "signin");
       check(s.title === "Sign in to moodle.example.edu again", "Sign in again opens the sign-in step for that site", JSON.stringify(s));
     },
   },
   {
+
     name: "f5-signed-out",
     sizes: [[1100, 720], [640, 480]],
     themes: ["light"],
@@ -562,7 +565,7 @@ export default [
       await page.waitForSelector(DIALOG, { timeout: 3000 });
       const s = await waitStep(page, "kind");
       const lead = await page.evaluate(() => document.querySelector("[data-course-import] [data-step-title]").parentElement.textContent);
-      check(s.focused && lead.includes("keeps them in Work"), "from Work’s menu it imports into Work", lead);
+      check(s.focused && lead.includes("for the spaces you choose"), "from Work’s menu the import opens, for the spaces chosen", lead);
       // Escape returns focus to Work in the sidebar.
       await page.keyboard.press("Escape");
       await page.waitForFunction((D) => !document.querySelector(D), { timeout: 3000 }, DIALOG);

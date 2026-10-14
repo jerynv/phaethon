@@ -11,7 +11,7 @@ export type LmsKind = "canvas" | "brightspace" | "moodle" | "blackboard";
 /** A school found by name (Canvas only). `address` is the site's https origin. */
 export type LmsSchool = { name: string; address: string };
 
-/** A course site this space is connected to. `courses` are the ids of the imported courses. */
+/** A course site connected in this vault. `courses` are the ids of the imported courses. */
 export type LmsConnection = {
   id: string;
   kind: LmsKind;
@@ -48,7 +48,7 @@ export type LmsImportEvent =
   | {
       type: "course";
       course: string;
-      /** Relative to the space, e.g. "courses/Calculus II". */
+      /** As spaces see it, e.g. "courses/Calculus II". */
       folder: string;
       /** Course files in the folder (downloaded now or already up to date). */
       files: number;
@@ -75,31 +75,74 @@ export const lmsSchools = (kind: LmsKind, query: string) => invoke<LmsSchool[]>(
  * Rejects with `LMS_CANCELLED` when the window is closed. The same kind and address
  * again (Sign in again) keeps the connection's id and imported courses.
  * `schoolName` (optional, e.g. from `lmsSchools`) titles the window and is kept as the connection's `schoolName`.
+ * Course sites belong to the whole vault: one sign-in serves every space.
  */
-export const lmsConnect = (space: string, kind: LmsKind, address: string, schoolName?: string) =>
-  invoke<LmsConnection>("lms_connect", schoolName ? { space, kind, address, schoolName } : { space, kind, address });
+export const lmsConnect = (kind: LmsKind, address: string, schoolName?: string) =>
+  invoke<LmsConnection>("lms_connect", schoolName ? { kind, address, schoolName } : { kind, address });
 
-export const lmsConnections = (space: string) => invoke<LmsConnection[]>("lms_connections", { space });
+/** Every course site connected in this vault. Never asks the keychain (`signedIn` is a saved hint). */
+export const lmsConnections = () => invoke<LmsConnection[]>("lms_connections");
 
 /** Rejects with `LMS_SIGNED_OUT` when the session has ended. */
-export const lmsCourses = (space: string, connection: string) =>
-  invoke<LmsCourse[]>("lms_courses", { space, connection });
+export const lmsCourses = (connection: string) => invoke<LmsCourse[]>("lms_courses", { connection });
 
-/** Import (or update) the chosen courses into `<space>/courses/`, streaming `onEvent`. */
-export function lmsImport(
-  space: string,
-  connection: string,
-  courseIds: string[],
-  onEvent: (e: LmsImportEvent) => void,
-): Promise<void> {
+/**
+ * Import (or update) the chosen courses into the vault's `courses/`, streaming `onEvent`.
+ * `spaces` may see every part of each course imported for the first time; a course
+ * imported before keeps who can see it.
+ */
+export function lmsImport(connection: string, courseIds: string[], spaces: string[], onEvent: (e: LmsImportEvent) => void): Promise<void> {
   const channel = new Channel<LmsImportEvent>();
   channel.onmessage = onEvent;
-  return invoke<void>("lms_import", { space, connection, courseIds, onEvent: channel });
+  return invoke<void>("lms_import", { connection, courseIds, spaces, onEvent: channel });
 }
 
-/** Forget the session and the connection; imported files stay in the space. */
-export const lmsDisconnect = (space: string, connection: string) =>
-  invoke<void>("lms_disconnect", { space, connection });
+/** Sign out: the session leaves the keychain. The connection, its courses and who can see them stay. */
+export const lmsDisconnect = (connection: string) => invoke<void>("lms_disconnect", { connection });
+
+// ---- Who can see each course -------------------------------------------------
+
+/** A part of a course a space may be allowed to see. */
+export type CoursePart = "overview" | "syllabus" | "assignments" | "announcements" | "files" | "grades";
+
+/** Every part, in the order Settings shows them, with its name in words and what it covers. */
+export const COURSE_PARTS: readonly { part: CoursePart; label: string; hint: string }[] = [
+  { part: "overview", label: "Overview", hint: "The course’s summary and when things are due" },
+  { part: "syllabus", label: "Syllabus", hint: "The syllabus" },
+  { part: "assignments", label: "Assignments", hint: "Assignments and their due dates" },
+  { part: "announcements", label: "Announcements", hint: "Announcements" },
+  { part: "files", label: "Files", hint: "Course files, readings, pages and links" },
+  { part: "grades", label: "Grades", hint: "Your grades" },
+];
+
+/** One imported course. `key` names it in `courseAccessSet`. */
+export type CourseInfo = {
+  key: string;
+  connection: string;
+  courseId: string;
+  name: string;
+  code?: string;
+  term?: string;
+  /** As spaces see it, e.g. "courses/Calculus II". */
+  folder: string;
+};
+
+export type CourseAccessView = {
+  /** Every space in the vault. */
+  spaces: string[];
+  /** Every imported course in the vault, by name. */
+  courses: CourseInfo[];
+  /** Space → course key → the parts it may see (only the asked space when one was named). */
+  access: Record<string, Record<string, CoursePart[]>>;
+  /** Plain-language notes on entries of course-access.json that were ignored. */
+  problems: string[];
+};
+
+/** Which courses each space may see (or only `space`'s access, when named). */
+export const courseAccessGet = (space?: string) => invoke<CourseAccessView>("course_access_get", space ? { space } : {});
+
+/** Let `space` see `parts` of `course` (`[]`: nothing). */
+export const courseAccessSet = (space: string, course: string, parts: CoursePart[]) => invoke<void>("course_access_set", { space, course, parts });
 
 // ---- Grades ----------------------------------------------------------------
 
@@ -137,7 +180,7 @@ export type GradeItem = {
   comments: string[];
 };
 
-/** One imported course's grades, as kept in `<space>/.phaethon/grades.json` (also written as `<folder>/grades.md`). */
+/** One imported course's grades, as kept in `<vault>/.phaethon/grades.json` (also written as `<folder>/grades.md`). */
 export type CourseGradeView = {
   connection: string;
   courseId: string;
@@ -168,10 +211,10 @@ export type LmsGradesEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-/** Every imported course's grades in `space`, from disk (fast, no network), by course name. */
+/** The grades `space` may see, from disk (fast, no network), by course name. */
 export const lmsGrades = (space: string) => invoke<CourseGradeView[]>("lms_grades", { space });
 
-/** Read only the grades again from the site, for each course imported from `connection`. */
+/** Read only the grades again from the site, for each course from `connection` whose grades `space` may see. */
 export function lmsGradesRefresh(space: string, connection: string, onEvent: (e: LmsGradesEvent) => void): Promise<void> {
   const channel = new Channel<LmsGradesEvent>();
   channel.onmessage = onEvent;

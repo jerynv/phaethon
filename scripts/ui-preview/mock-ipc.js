@@ -292,18 +292,40 @@
           return { conversations: found.slice(0, 50), truncated: found.length > 50 };
         }
         // lms (UI team)
-        // Course sites, as the contract in src/lib/lms.ts. M.lms: { schools, courses, connections: { space: [...] },
-        // connect: "ok" | "cancelled" | "<error>", connectHold (resolve with window.__lmsSignIn(result)),
-        // signedOut (lms_courses refuses), failCourse (an id whose import fails), signedOutAt (an id where the session
-        // ends mid-import: error "signedOut", then done), skipped: { id: [...] }, step (ms) }.
+        // Course sites, as the contract in src/lib/lms.ts: they belong to the vault. M.lms: { schools, courses,
+        // list: [connection] (or, as before, connections: { space: [...] }: those are joined into one list and each
+        // space sees all of the courses imported in its own), connect: "ok" | "cancelled" | "<error>", connectHold
+        // (resolve with window.__lmsSignIn(result)), signedOut (lms_courses refuses), failCourse (an id whose import
+        // fails), signedOutAt (an id where the session ends mid-import: error "signedOut", then done), skipped:
+        // { id: [...] }, step (ms) }. M.courseAccess: { space: { "<connection>/<course>": parts } }.
         case "lms_schools":
         case "lms_connect":
         case "lms_connections":
         case "lms_courses":
         case "lms_import":
-        case "lms_disconnect": {
+        case "lms_disconnect":
+        case "course_access_get":
+        case "course_access_set": {
           const L = (M.lms ??= {});
-          L.connections ??= {};
+          const A = (M.courseAccess ??= {});
+          const ALL = ["overview", "syllabus", "assignments", "announcements", "files", "grades"];
+          if (!L.list) {
+            L.list = [];
+            for (const [space, cs] of Object.entries(L.connections ?? {})) {
+              for (const c of cs) {
+                let mine = L.list.find((x) => x.id === c.id && x.address === c.address);
+                if (!mine) {
+                  // Two spaces' connections with one id but different sites stay apart.
+                  mine = { ...c, id: L.list.some((x) => x.id === c.id) ? `${c.id}-${space}` : c.id, courses: [...c.courses] };
+                  L.list.push(mine);
+                }
+                for (const id of c.courses) {
+                  if (!mine.courses.includes(id)) mine.courses.push(id);
+                  ((A[space] ??= {})[`${mine.id}/${id}`] ??= [...ALL]);
+                }
+              }
+            }
+          }
           L.schools ??= [
             { name: "Indiana University Bloomington", address: "https://iu.instructure.com" },
             { name: "Indiana University Indianapolis", address: "https://iu.instructure.com" },
@@ -319,41 +341,66 @@
           const spaceOk = (s) => {
             if (!M.spaces.some((x) => x.id === s)) throw `space "${s}" does not exist in this vault`;
           };
-          const conns = (s) => (L.connections[s] ??= []);
-          const find = (s, id) => {
-            const c = conns(s).find((x) => x.id === id);
-            if (!c) throw "That course site isn’t connected in this space any more.";
+          const find = (id) => {
+            const c = L.list.find((x) => x.id === id);
+            if (!c) throw "That course site isn’t connected.";
             return c;
           };
+          const imported = () =>
+            L.list.flatMap((c) =>
+              c.courses.map((id) => {
+                const x = L.courses.find((k) => k.id === id) ?? { name: id };
+                return { key: `${c.id}/${id}`, connection: c.id, courseId: id, name: x.name, ...(x.code ? { code: x.code } : {}), ...(x.term ? { term: x.term } : {}), folder: `courses/${x.name}` };
+              }),
+            ).sort((a, b) => a.name.localeCompare(b.name));
+          if (cmd === "course_access_get") {
+            if (args.space != null) spaceOk(args.space);
+            const courses = imported();
+            const keys = new Set(courses.map((c) => c.key));
+            const access = {};
+            for (const [s, m] of Object.entries(A)) {
+              if (args.space != null && s !== args.space) continue;
+              access[s] = Object.fromEntries(Object.entries(m).filter(([k, p]) => keys.has(k) && p.length));
+            }
+            return { spaces: M.spaces.map((s) => s.id).sort(), courses, access, problems: L.accessProblems ?? [] };
+          }
+          if (cmd === "course_access_set") {
+            spaceOk(args.space);
+            if (!imported().some((c) => c.key === args.course)) throw "That course isn’t imported.";
+            if (L.accessFail) throw L.accessFail;
+            const parts = ALL.filter((p) => args.parts.includes(p));
+            if (parts.length) (A[args.space] ??= {})[args.course] = parts;
+            else delete A[args.space]?.[args.course];
+            return;
+          }
           if (cmd === "lms_schools") {
             if (args.kind !== "canvas") return [];
             const q = String(args.query ?? "").trim().toLowerCase();
             if (q.length < 2) return [];
             return L.schools.filter((s) => s.name.toLowerCase().includes(q) || s.address.includes(q));
           }
-          spaceOk(args.space);
-          if (cmd === "lms_connections") return conns(args.space).map((c) => ({ ...c, courses: [...c.courses] }));
+          if (cmd === "lms_connections") return L.list.map((c) => ({ ...c, courses: [...c.courses] }));
           if (cmd === "lms_connect") {
             const result = L.connectHold ? await new Promise((r) => (window.__lmsSignIn = r)) : (await sleep(L.connectDelay ?? 300), L.connect ?? "ok");
             if (result === "cancelled") throw "cancelled";
             if (result !== "ok") throw result;
             const address = /^https:\/\//.test(args.address) ? args.address.replace(/\/+$/, "") : `https://${args.address.replace(/\/+$/, "")}`;
-            let c = conns(args.space).find((x) => x.kind === args.kind && x.address === address);
+            let c = L.list.find((x) => x.kind === args.kind && x.address === address);
             if (!c) {
               const school = L.schools.find((s) => s.address === address);
-              c = { id: `c${conns(args.space).length + 1}`, kind: args.kind, address, schoolName: school?.name, signedIn: true, courses: [] };
-              conns(args.space).push(c);
+              c = { id: `c${L.list.length + 1}`, kind: args.kind, address, schoolName: school?.name, signedIn: true, courses: [] };
+              L.list.push(c);
             }
             c.signedIn = true;
             L.signedOut = false;
             return { ...c, courses: [...c.courses] };
           }
           if (cmd === "lms_disconnect") {
-            find(args.space, args.connection);
-            L.connections[args.space] = conns(args.space).filter((x) => x.id !== args.connection);
+            // Sign out: the connection, its courses and who sees them stay.
+            find(args.connection).signedIn = false;
             return;
           }
-          const c = find(args.space, args.connection);
+          const c = find(args.connection);
           if (cmd === "lms_courses") {
             if (L.signedOut || !c.signedIn) {
               c.signedIn = false;
@@ -362,6 +409,7 @@
             return L.courses.map((x) => ({ ...x, imported: c.courses.includes(x.id) }));
           }
           // lms_import: per course a few steps, then its summary; a failed course is an error event and the import goes on.
+          for (const s of args.spaces ?? []) spaceOk(s);
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
           let index = 0;
           const send = (message) => callbacks[id]?.({ index: index++, message });
@@ -384,7 +432,11 @@
               send({ type: "error", message: `${course?.name ?? "This course"}: the site said you don’t have access to it any more.` });
               continue;
             }
-            if (!c.courses.includes(courseId)) c.courses.push(courseId);
+            // A course imported for the first time: the chosen spaces see all of it.
+            if (!c.courses.includes(courseId)) {
+              c.courses.push(courseId);
+              for (const s of args.spaces ?? []) (A[s] ??= {})[`${c.id}/${courseId}`] = [...ALL];
+            }
             send({
               type: "course",
               course: courseId,
@@ -399,6 +451,7 @@
           send({ type: "done" });
           return;
         }
+
         // lms grades (Grades core). As src/lib/lms.ts (CourseGradeView, LmsGradesEvent). M.lmsGrades: { [space]: CourseGradeView[] }
         // (default: three courses of the space's first connection), M.lmsGradesSignedOut (refresh ends "signedOut"),
         // M.lmsGradesFail (a course id whose refresh fails), M.lmsGradesStep (ms), M.lmsGradesNewlyGraded (see the refresh).
@@ -406,8 +459,10 @@
         case "lms_grades_refresh": {
           if (!M.spaces.some((x) => x.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
           const G = (M.lmsGrades ??= {});
-          const conn = M.lms?.connections?.[args.space]?.[0]?.id;
-          // A space with no course site has no grades (unless a scenario sets them).
+          // The first site whose courses the space may see grades of (or, as before, its own first connection).
+          const seesGrades = Object.entries(M.courseAccess?.[args.space] ?? {}).filter(([, p]) => p.includes("grades")).map(([k]) => k.split("/")[0]);
+          const conn = M.lms?.connections?.[args.space]?.[0]?.id ?? M.lms?.list?.find((c) => seesGrades.includes(c.id))?.id;
+          // A space that sees no grades has none (unless a scenario sets them).
           if (!conn && !G[args.space]) {
             if (cmd === "lms_grades") return [];
             throw "That course site isn’t connected in this space any more.";

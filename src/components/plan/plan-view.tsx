@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
+import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
 import { fieldClasses, Input } from "@/components/ui/input";
@@ -358,11 +359,14 @@ function Exams({ space, exams, courses, onChange }: { space: Space; exams: Exam[
 
 function ComingUp({ space, items }: { space: string; items: Upcoming[] | null }) {
   const id = useId();
+  const hidden = hiddenCourses(useCourseReach(space), ["overview", "assignments"]);
   const shown = (items ?? []).slice(0, 12);
   return (
     <Card title="Coming up in your courses" id={id} data="upcoming">
       {items === null ? (
         <p className="text-base text-ink-secondary">Loading…</p>
+      ) : shown.length === 0 && hidden ? (
+        <NoCourseAccess why={hidden} part="assignments" />
       ) : shown.length === 0 ? (
         <p className="text-base text-ink-secondary">Nothing due in your imported courses. Import courses from your school’s course site to see their due dates here.</p>
       ) : (

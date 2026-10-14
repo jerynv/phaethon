@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { relativeDate } from "@/components/chat/conversations-bar";
+import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { openCourseImport, useRun, useSitesVersion } from "@/components/lms/import-store";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
@@ -279,6 +280,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
 }
 
 function Empty({ space, hasCourses, loading, onMake }: { space: Space; hasCourses: boolean; loading: boolean; onMake: (k: MakeKind) => void }) {
+  const hidden = hiddenCourses(useCourseReach(space.id));
   return (
     <div className="flex flex-col items-center gap-3 px-2 py-8 text-center" data-study-empty="">
       <span className="grid size-[calc(var(--ph-icon-size-lg)*2.5)] place-items-center rounded-full bg-accent-soft text-accent-soft-ink">
@@ -289,11 +291,12 @@ function Empty({ space, hasCourses, loading, onMake }: { space: Space; hasCourse
         Phaethon reads your syllabus, assignments and course files and makes cards and questions from them. Each card comes back just
         before you’d forget it, and a quiz tells you what to study next.
       </p>
-      {!loading && !hasCourses && (
+      {!loading && !hasCourses && hidden && <NoCourseAccess why={hidden} />}
+      {!loading && !hasCourses && !hidden && (
         <p className="max-w-(--ph-measure) text-base text-ink-secondary">There are no courses in {space.name} yet: import them first.</p>
       )}
       <div className="flex flex-wrap justify-center gap-2">
-        {!loading && !hasCourses ? (
+        {!loading && !hasCourses && hidden ? null : !loading && !hasCourses ? (
           <Button type="button" onClick={() => openCourseImport({ space: space.id })} data-empty-import="">
             <Icon name="book" />
             Import courses…

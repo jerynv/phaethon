@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
-import { getSettings, SETTINGS_CHANGED_EVENT, type ProviderId, type SettingsChangedDetail } from "@/lib/backend";
+import { cliOf, getSettings, SETTINGS_CHANGED_EVENT, type ProviderId, type SettingsChangedDetail } from "@/lib/backend";
 import { openSettings } from "@/lib/open-settings";
 import { modelOf, providerName, splitRef, useModels } from "@/lib/space-model";
 import { cn } from "@/lib/utils";
@@ -176,6 +176,44 @@ function forProvider(r: Recovery, code: string | undefined, id: ProviderId, name
   }
 }
 
+/**
+ * The recovery when a CLI other than Claude Code answers: its name in the
+ * words, its own install and sign-in command. The core's own message (with,
+ * for a separate setup in the vault, that setup's folder in the command) stays
+ * under Details.
+ */
+function forCli(r: Recovery, code: string | undefined, cli: ReturnType<typeof cliOf>): Recovery {
+  if (!cli || cli.id === "claude") return r;
+  switch (code) {
+    case "missingCli":
+      return {
+        title: `${cli.name} isn’t installed`,
+        body: (
+          <>
+            Install {cli.name}, then run <InlineCode text={`\`${cli.login}\``} /> once in a terminal to sign in and send again. Or choose
+            another assistant in Settings.
+          </>
+        ),
+        actions: ["settings", "retry"],
+      };
+    case "notLoggedIn":
+      return {
+        title: `${cli.name} isn’t signed in`,
+        body: (
+          <>
+            Run <InlineCode text={`\`${cli.login}\``} /> once in a terminal and sign in, then send again. Or choose another assistant in
+            Settings.
+          </>
+        ),
+        actions: ["retry", "settings"],
+      };
+    case "cli":
+      return { title: `${cli.name} stopped with an error`, body: `Send your message again. If it keeps failing, the details say what ${cli.name} reported.`, actions: ["retry", "settings"] };
+    default:
+      return r;
+  }
+}
+
 /** The backend's own words, folded away: useful to report, not the headline. */
 function ErrorDetails({ text }: { text: string }) {
   const announce = useAnnounce();
@@ -224,7 +262,7 @@ export function MessageError() {
   const models = useModels();
   const provider = splitRef(modelOf(models, spaceId).id).provider;
   const local = !!models.providers.find((p) => p.id === provider)?.local;
-  let recovery = forProvider((code && RECOVERY[code]) || FALLBACK, code, provider, providerName(provider, models), local);
+  let recovery = forCli(forProvider((code && RECOVERY[code]) || FALLBACK, code, provider, providerName(provider, models), local), code, cliOf(models.backend));
   if (keySaved) recovery = KEY_SAVED;
   else if (code === "noApiKey" && setupBelow) recovery = NO_KEY_SETUP_BELOW;
   const actions = recovery.actions ?? [];

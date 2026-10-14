@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
-import type { Settings } from "@/lib/backend";
+import { cliOf, type Settings } from "@/lib/backend";
 
 import { ExternalLink } from "./agent-section";
 import { ANTHROPIC_PRIVACY_URL, KEY_STORE } from "./api-key";
@@ -123,8 +123,10 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
               <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
             </p>
             <p className="max-w-(--ph-measure)" data-about-cli-history="">
-              {settings?.backend === "claude-cli" ? "You use Claude Code, which" : "If you use Claude Code, it"} also keeps its own copy of
-              each conversation, usually in the hidden .claude folder in your home folder. Phaethon doesn’t delete that copy.
+              {cliOf(settings?.backend)
+                ? `You use ${cliOf(settings?.backend)?.name}, which also keeps its own copy of each conversation, usually in the hidden ${cliOf(settings?.backend)?.folder} folder in your home folder.`
+                : "If you use Claude Code, Codex or Gemini CLI, it also keeps its own copy of each conversation, usually in its hidden folder in your home folder (.claude, .codex or .gemini)."}{" "}
+              Phaethon doesn’t delete that copy.
             </p>
             <Details summary="Where the files are" className="max-w-(--ph-measure)">
               <div data-about-files="" className="flex flex-col gap-1.5">

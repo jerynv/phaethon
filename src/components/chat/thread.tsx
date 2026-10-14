@@ -34,12 +34,14 @@ import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import { useComposeRequests } from "@/lib/compose";
+import { cliOf } from "@/lib/backend";
 import { grantLabel, isFileGrant, useGrants } from "@/lib/grants";
 import { findSpace } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom, ContinueRun } from "@/runtime/agent-adapter";
 import { RECORD_PART, type RecordPartData } from "@/runtime/records";
 import { useKnownIndex } from "@/runtime/thread-index";
+import { useModels } from "@/lib/space-model";
 
 import { AccessRequestCard } from "./access-request-card";
 import { AnnounceContext, spokenReply, useAnnounce } from "./announce";
@@ -599,6 +601,7 @@ function standingReads(state: ReturnType<typeof useGrants>["state"], foldersOnly
 function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: string; cli: boolean }) {
   const { state } = useGrants(spaceId);
   const reads = standingReads(state, cli);
+  const cliName = cliOf(useModels().backend)?.name ?? "Claude Code";
   return (
     // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
     // starts at the top and scrolls, never clipped above the log.
@@ -615,9 +618,9 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
       <p className="max-w-md text-md text-ink-secondary" data-empty-reach="">
         {cli ? (
-          // Claude Code here is read-only and has no way to ask (agent.rs): say what it can do, nothing more.
+          // A CLI here is read-only and has no way to ask (agent.rs): say what it can do, nothing more.
           <>
-            Claude Code answers here. It can read and search the files in {spaceName}
+            {cliName} answers here. It can read and search the files in {spaceName}
             {reads ? `, and ${reads} because you allowed that` : ""}. It can’t change any file, and it can’t ask to read
             anything else.
           </>

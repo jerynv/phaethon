@@ -1,7 +1,62 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /** Mirrors `Backend` in src-tauri/src/vault.rs. */
-export type Backend = "phaethon" | "claude-cli";
+export type Backend = "phaethon" | "claude-cli" | "codex-cli" | "gemini-cli";
+
+/** A backend that is someone else's CLI (src-tauri/src/agent.rs), not Phaethon's own agent. */
+export type CliBackend = Exclude<Backend, "phaethon">;
+export const isCliBackend = (b: Backend | undefined | null): b is CliBackend => !!b && b !== "phaethon";
+
+/** Each CLI backend's name for people, its command, and how its sign-in is done. */
+export const CLI_INFO: Readonly<
+  Record<CliBackend, { id: "claude" | "codex" | "gemini"; name: string; command: string; login: string; company: string; account: string; installUrl: string; folder: string }>
+> = {
+  "claude-cli": {
+    id: "claude",
+    name: "Claude Code",
+    command: "claude",
+    login: "claude",
+    company: "Anthropic",
+    account: "your own Claude account",
+    installUrl: "https://docs.anthropic.com/en/docs/claude-code/setup",
+    folder: ".claude",
+  },
+  "codex-cli": {
+    id: "codex",
+    name: "Codex",
+    command: "codex",
+    login: "codex login",
+    company: "OpenAI",
+    account: "your own ChatGPT or OpenAI account",
+    installUrl: "https://developers.openai.com/codex/cli",
+    folder: ".codex",
+  },
+  "gemini-cli": {
+    id: "gemini",
+    name: "Gemini CLI",
+    command: "gemini",
+    login: "gemini",
+    company: "Google",
+    account: "your own Google account",
+    installUrl: "https://github.com/google-gemini/gemini-cli",
+    folder: ".gemini",
+  },
+};
+
+/** The CLI that answers, or null for Phaethon's own agent. */
+export const cliOf = (b: Backend | undefined | null) => (isCliBackend(b) ? (CLI_INFO[b] ?? null) : null);
+
+/** Mirrors `CliInfo` in src-tauri/src/agent.rs. `loggedIn` is null when the CLI can't say without a real question. */
+export type AgentCliStatus = {
+  id: "claude" | "codex" | "gemini" | "opencode";
+  name: string;
+  installed: boolean;
+  loggedIn: boolean | null;
+  loginCommand: string;
+  supported: boolean;
+};
+/** Which CLIs are on this computer, and (Codex) whether signed in, from the CLI's own status command. */
+export const agentClis = () => invoke<AgentCliStatus[]>("agent_clis_status");
 
 /**
  * Mirrors `SettingsView` in src-tauri/src/lib.rs. The key itself never comes back.

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "./backend";
+import { cliOf, getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "./backend";
 import { findSpace } from "./spaces";
 import { inTauri } from "./tauri";
 
@@ -245,13 +245,13 @@ export function usePendingRevokes(): Snapshot {
  */
 export const isFileGrant = (path: string) => /\.[^/.]+$/.test(path.replace(/\/+$/, "").split("/").pop() ?? "");
 
-/** True while Claude Code (not Phaethon's own assistant) answers; follows Settings. */
-export function useClaudeCodeAnswers(): boolean {
-  const [cli, setCli] = useState(false);
+/** The name of the CLI that answers (Claude Code, Codex, Gemini CLI), or null for Phaethon’s own assistant; follows Settings. */
+export function useCliAnswers(): string | null {
+  const [cli, setCli] = useState<string | null>(null);
   useEffect(() => {
     if (!inTauri()) return;
     let live = true;
-    const read = () => void getSettings().then((s) => live && setCli(s.backend === "claude-cli"), () => {});
+    const read = () => void getSettings().then((s) => live && setCli(cliOf(s.backend)?.name ?? null), () => {});
     read();
     const onChanged = (e: Event) => {
       if ((e as CustomEvent<SettingsChangedDetail>).detail?.what === "backend") read();

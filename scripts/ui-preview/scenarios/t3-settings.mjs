@@ -107,7 +107,7 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       const radios = await page.$$('[role="dialog"] [data-backend]');
-      check(radios.length === 2, "two assistant choices", `${radios.length}`);
+      check(radios.length === 4, "four assistant choices", `${radios.length}`);
       for (const r of radios) {
         const ax = await page.accessibility.snapshot({ root: r, interestingOnly: false });
         const desc = await r.evaluate((el) => (el.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim());
@@ -325,7 +325,7 @@ export default [
       check(/^Deleting a conversation\s+To delete a conversation, open Conversations at the top of the space and choose Delete/.test(shown), "it starts with the Conversations menu's Delete", shown.slice(0, 200));
       check(!/Command-Shift|thread\.json/.test(shown), "the hidden files and Finder keys are not on show", shown);
       check(/attachments folder/.test(shown) && /Anthropic/.test(shown), "it says attachments stay and what was sent to Anthropic", shown);
-      check(/If you use Claude Code, it also keeps its own copy/.test(shown), "it says Claude Code keeps its own copy", shown);
+      check(/If you use Claude Code, Codex or Gemini CLI, it also keeps its own copy/.test(shown), "it says a CLI keeps its own copy", shown);
       await page.$eval("[data-about-delete]", (el) => el.scrollIntoView({ block: "center" }));
       await park(page);
       await h.shot("folded");

@@ -6,7 +6,11 @@ import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
+  agentClis,
+  CLI_INFO,
   clearApiKey,
+  cliOf,
+  isCliBackend,
   listModels,
   providerStatus,
   setBackend,
@@ -14,7 +18,9 @@ import {
   setProvider,
   setProviderModel,
   setProviderUrl,
+  type AgentCliStatus,
   type Backend,
+  type CliBackend,
   type ModelInfo,
   type ProviderInfo,
   type ServerStatus,
@@ -53,7 +59,37 @@ const BACKENDS: { value: Backend; label: string; hint: string }[] = [
     label: "Claude Code on this computer",
     hint: "Uses the Claude Code app you installed and signed into yourself, on your own Claude plan. It can read your files but can’t change them yet.",
   },
+  {
+    value: "codex-cli",
+    label: "Codex on this computer",
+    hint: "Uses OpenAI’s Codex that you installed and signed into yourself, on your own ChatGPT plan or OpenAI account. It can read your files but can’t change them.",
+  },
+  {
+    value: "gemini-cli",
+    label: "Gemini CLI on this computer",
+    hint: "Uses Google’s Gemini CLI that you installed and signed into yourself, with your own Google account or Gemini API key. It can read your files but can’t change them.",
+  },
 ];
+
+/** What to say when a CLI other than Claude Code is missing: what happened, then the way on. */
+const cliMissingText = (b: CliBackend) =>
+  b === "claude-cli"
+    ? CLAUDE_CODE_MISSING
+    : `${CLI_INFO[b].name} isn’t installed on this computer. To use it, install ${CLI_INFO[b].name} from ${CLI_INFO[b].company} and sign in to it (run ${CLI_INFO[b].login} in a terminal), then choose it again.`;
+
+/** OpenCode: looked for, not used yet. */
+const OPENCODE_URL = "https://opencode.ai";
+
+/** "Installed, signed in" and the like, for a CLI's choice. Nothing while unknown. */
+function cliStatusText(s: AgentCliStatus | undefined): string {
+  if (!s) return "";
+  if (!s.installed) return "Not installed on this computer.";
+  if (s.loggedIn === true) return "Installed and signed in.";
+  if (s.loggedIn === false) return `Installed, not signed in: run ${s.loginCommand} in a terminal.`;
+  return s.id === "claude"
+    ? "Installed. Phaethon doesn’t check whether you’re signed in."
+    : `Installed. Phaethon can’t tell whether you’re signed in until you send a message; to sign in, run ${s.loginCommand} in a terminal.`;
+}
 
 /** Links that leave Phaethon: underlined, and say they open in the browser. */
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
@@ -100,21 +136,46 @@ export function AgentSection({
   /** The backend last asked for, so one key press never sends two changes. */
   const backendAsked = useRef<Backend | null>(null);
   const backendTitle = useId();
-  /** Claude Code was chosen but isn't installed: say so under the choices, and stay where we are. */
-  const [cliMissing, setCliMissing] = useState(false);
+  /** A CLI was chosen but isn't installed: say so under the choices, and stay where we are. */
+  const [cliMissing, setCliMissing] = useState<CliBackend | null>(null);
+  /** Each CLI's status (installed, signed in where the CLI can say); null until known or from an older core. */
+  const [clis, setClis] = useState<AgentCliStatus[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    agentClis().then(
+      (c) => live && setClis(c),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [settings?.backend]);
+  // The note appears under the choices, perhaps below the fold: bring it into view.
+  useEffect(() => {
+    if (cliMissing) requestAnimationFrame(() => document.querySelector("[data-cli-missing]")?.scrollIntoView({ block: "nearest" }));
+  }, [cliMissing]);
+  const statusOf = (b: Backend) => (isCliBackend(b) ? clis?.find((c) => c.id === CLI_INFO[b].id) : undefined);
+  const opencode = clis?.find((c) => c.id === "opencode");
 
   function chooseBackend(v: string) {
     const b = BACKENDS.find((x) => x.value === v);
     if (!b || backendAsked.current === b.value) return;
     backendAsked.current = b.value;
-    setCliMissing(false);
+    setCliMissing(null);
     void (async () => {
-      // Claude Code: check it is on this computer before switching to it.
+      // A CLI: check it is on this computer before switching to it.
       if (b.value === "claude-cli") {
         const status = await checkClaudeCode();
         if (status && !status.installed) {
-          setCliMissing(true);
+          setCliMissing("claude-cli");
           say(CLAUDE_CODE_MISSING);
+          return;
+        }
+      } else if (isCliBackend(b.value)) {
+        const status = (await agentClis().catch(() => null))?.find((c) => c.id === CLI_INFO[b.value as CliBackend].id);
+        if (status && !status.installed) {
+          setCliMissing(b.value);
+          say(cliMissingText(b.value));
           return;
         }
       }
@@ -181,7 +242,7 @@ export function AgentSection({
                   data-backend={b.value}
                   // Named by its title alone; the hint is the description, so it is said once.
                   aria-labelledby={`${backendTitle}-${b.value}-name`}
-                  aria-describedby={`${backendTitle}-${b.value}`}
+                  aria-describedby={[`${backendTitle}-${b.value}`, statusOf(b.value) && `${backendTitle}-${b.value}-status`].filter(Boolean).join(" ")}
                   className={cn(
                     "group flex w-full min-w-0 items-start gap-3 rounded-lg border border-line-strong bg-raised px-4 py-3 text-left shadow-sm transition-colors duration-(--ph-duration-fast) hover:bg-hover",
                     "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft",
@@ -197,18 +258,54 @@ export function AgentSection({
                     <span id={`${backendTitle}-${b.value}`} className="text-sm text-ink-secondary group-data-[state=checked]:text-accent-soft-ink">
                       {b.hint}
                     </span>
+                    {statusOf(b.value) && (
+                      <span
+                        id={`${backendTitle}-${b.value}-status`}
+                        data-cli-status={statusOf(b.value)!.installed ? (statusOf(b.value)!.loggedIn === false ? "signed-out" : "installed") : "missing"}
+                        className="mt-0.5 flex items-start gap-1.5 text-sm font-medium text-ink group-data-[state=checked]:text-accent-soft-ink"
+                      >
+                        <Icon
+                          name={!statusOf(b.value)!.installed || statusOf(b.value)!.loggedIn === false ? "warning" : "check"}
+                          className="mt-0.5 size-(--ph-icon-size-sm) shrink-0"
+                        />
+                        <span className="min-w-0 wrap-anywhere">{cliStatusText(statusOf(b.value))}</span>
+                      </span>
+                    )}
                   </span>
                 </RadioGroup.Item>
               ))}
             </RadioGroup.Root>
             {cliMissing && (
               // Said once through the status line when it appears; shown here until another choice is made.
-              <div data-cli-missing="" className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">
+              <div data-cli-missing={cliMissing} className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">
                 <Icon name="warning" className="mt-0.5 shrink-0" />
                 <p className="min-w-0">
-                  {CLAUDE_CODE_MISSING} <ExternalLink href={CLAUDE_CODE_INSTALL_URL}>How to install Claude Code</ExternalLink>
+                  {cliMissingText(cliMissing)}{" "}
+                  <ExternalLink href={cliMissing === "claude-cli" ? CLAUDE_CODE_INSTALL_URL : CLI_INFO[cliMissing].installUrl}>
+                    How to install {CLI_INFO[cliMissing].name}
+                  </ExternalLink>
                 </p>
               </div>
+            )}
+            <p data-cli-can="" className="text-sm text-ink-secondary">
+              Claude Code, Codex and Gemini CLI read a space’s files and the course folders it can see, but can’t change anything, ask to
+              read another space, or carry on a stopped reply. They see each course whole: letting a space see only some parts of a course
+              (files but not grades, say) works only with Phaethon’s own assistant.
+            </p>
+            {opencode && (
+              <p data-opencode={opencode.installed ? "installed" : "missing"} className="flex items-start gap-2 text-sm text-ink-secondary">
+                <Icon name="info" className="mt-0.5 shrink-0" />
+                <span className="min-w-0">
+                  {opencode.installed ? (
+                    "OpenCode is on this computer, but Phaethon can’t answer through it yet."
+                  ) : (
+                    <>
+                      OpenCode isn’t installed, and Phaethon can’t answer through it yet.{" "}
+                      <ExternalLink href={OPENCODE_URL}>How to install OpenCode</ExternalLink>
+                    </>
+                  )}
+                </span>
+              </p>
             )}
           </SettingGroup>
 
@@ -223,9 +320,18 @@ export function AgentSection({
           )}
 
           <SettingGroup title="Which model answers">
-            {settings.backend !== "phaethon" ? (
+            {settings.backend === "claude-cli" ? (
               <SettingRow label="Model" description="Claude Code chooses its own model. Change it in Claude Code.">
                 <span className="text-base text-ink-secondary">Chosen by Claude Code</span>
+              </SettingRow>
+            ) : isCliBackend(settings.backend) ? (
+              <SettingRow
+                label="Model"
+                description={`${CLI_INFO[settings.backend].name} uses its own default model. A space can name another one: use the model button beside Send, or Change model in ${modCap()} K.`}
+              >
+                <span className="text-base text-ink-secondary" data-cli-model-default="">
+                  Chosen by {CLI_INFO[settings.backend].name}
+                </span>
               </SettingRow>
             ) : provider.id === "anthropic" ? (
               <ModelPicker current={settings.model} act={act} />
@@ -847,13 +953,14 @@ function OwnModels() {
 /** What leaves this computer, when, and where the rules for it are. */
 function SentDisclosure({ backend, provider }: { backend: Backend; provider: ProviderInfo }) {
   const { go } = useSettingsNav();
-  // Claude Code always sends to Anthropic, whichever provider Phaethon's own assistant would use.
+  // A CLI always sends to its own company, whichever provider Phaethon's own assistant would use.
+  const cli = cliOf(backend);
   const p = backend === "phaethon" ? provider : ANTHROPIC_INFO;
-  const anthropic = p.id === "anthropic";
-  const here = p.local && isLoopback(p.baseUrl);
+  const anthropic = cli ? cli.id === "claude" : p.id === "anthropic";
+  const here = !cli && p.local && isLoopback(p.baseUrl);
   const to = p.id === "custom" ? `your server (${hostOf(p.baseUrl) || "no address yet"})` : p.name;
   return (
-    <SettingGroup title={here ? `What ${p.name} gets` : `What is sent to ${p.id === "custom" ? "your server" : p.name}`}>
+    <SettingGroup title={cli ? `What is sent to ${cli.company}` : here ? `What ${p.name} gets` : `What is sent to ${p.id === "custom" ? "your server" : p.name}`}>
       <div data-disclosure="" className="flex flex-col gap-2.5 px-4 py-3.5 text-sm text-ink-secondary">
         {backend === "phaethon" ? (
           <>
@@ -878,15 +985,25 @@ function SentDisclosure({ backend, provider }: { backend: Backend; provider: Pro
         ) : (
           <>
             <p className="text-base text-ink">
-              Claude Code sends your messages, and the files it reads to answer, to Anthropic under your own Claude account, with every message.
+              {cli?.name} sends your messages, and the files it reads to answer, to {cli?.company} under {cli?.account}, with every message.
             </p>
             <p data-cli-history="">
-              Claude Code also keeps its own copy of each conversation, usually in the hidden .claude folder in your home folder. Deleting a
-              conversation in Phaethon doesn’t delete that copy.
+              {cli?.name} also keeps its own copy of each conversation, usually in the hidden {cli?.folder} folder in your home folder. Deleting
+              a conversation in Phaethon doesn’t delete that copy.
             </p>
+            {cli && cli.id !== "claude" && (
+              <p data-cli-own-setup="">
+                {cli.name} still reads its own instructions file ({cli.id === "codex" ? "AGENTS.md in .codex" : "GEMINI.md in .gemini"}) and
+                its own settings, so what you wrote there for it reaches every space. Phaethon can’t switch that off.
+              </p>
+            )}
           </>
         )}
-        {anthropic ? (
+        {cli && cli.id !== "claude" ? (
+          <p>
+            How long {cli.company} keeps it and what they may use it for is in {cli.company}’s own privacy policy.
+          </p>
+        ) : anthropic ? (
           <p>
             How long Anthropic keeps it and what they may use it for is in{" "}
             <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.

@@ -79,6 +79,8 @@
   ];
   const PROVIDER_IDS = Object.fromEntries(PRESETS.map((x) => [x.id, true]));
   const MODEL_ID = /^(?![-./:])(?!.*\.\.)[A-Za-z0-9._:/@+-]{1,200}$/;
+  /** The CLI whose own per-space models are in use (lib.rs cli_with_models). */
+  const cliWithModels = () => ({ "codex-cli": "codex", "gemini-cli": "gemini" })[M.settings.backend] ?? null;
   const baseOf = (x) => (x.editableBase && M.prov?.urls?.[x.id]) || x.base;
   const providerView = () => {
     const P = M.prov;
@@ -145,9 +147,25 @@
             : { running, models, message: `${preset.name} isn’t running at ${at}. Open it, then check again.` };
         }
         // A space's own model (space.json "model"), as src-tauri/src/space_model.rs: M.spaceModels[id].
-        case "space_model_get": return (M.spaceModels ?? {})[args.space] ?? null;
+        // With Codex or Gemini CLI answering, its own per-space models instead (space.json "cliModels"): M.cliModels[cli][id].
+        case "space_model_get": {
+          const cli = cliWithModels();
+          if (cli) return M.cliModels?.[cli]?.[args.space] ? `${cli}:${M.cliModels[cli][args.space]}` : null;
+          return (M.spaceModels ?? {})[args.space] ?? null;
+        }
         case "space_model_set": {
           if (!M.spaces.some((s) => s.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
+          const tagged = /^(codex|gemini):(.*)$/.exec(args.model ?? "");
+          const cli = tagged?.[1] ?? (args.model == null ? cliWithModels() : null);
+          if (cli) {
+            const model = tagged?.[2]?.trim();
+            if (model != null && (!MODEL_ID.test(model) || model.length > 100))
+              throw "That isn’t a model name Phaethon can pass on: use letters, digits, and . - _ : / only.";
+            ((M.cliModels ??= {})[cli] ??= {});
+            if (model == null) delete M.cliModels[cli][args.space];
+            else M.cliModels[cli][args.space] = model;
+            return;
+          }
           if (args.model != null && !/^claude-[a-z0-9.-]+$/.test(args.model) && !(args.model.split(":")[0] in PROVIDER_IDS && MODEL_ID.test(args.model.slice(args.model.indexOf(":") + 1))))
             throw "That isn’t a model Phaethon knows how to use.";
           M.spaceModels ??= {};
@@ -155,7 +173,11 @@
           else M.spaceModels[args.space] = args.model;
           return;
         }
-        case "space_models_list": return { ...(M.spaceModels ?? {}) };
+        case "space_models_list": {
+          const cli = cliWithModels();
+          if (cli) return Object.fromEntries(Object.entries(M.cliModels?.[cli] ?? {}).map(([id, m]) => [id, `${cli}:${m}`]));
+          return { ...(M.spaceModels ?? {}) };
+        }
         case "api_key_check": {
           if (M.keyCheck) return M.keyCheck;
           const k = String(args.key ?? "").trim();
@@ -285,6 +307,16 @@
         case "claude_cli_status":
           // Contract: whether the claude command is installed (and where). Never says anything about the login.
           return M.claudeCli ?? { installed: true, path: "/Users/you/.local/bin/claude" };
+        case "agent_clis_status":
+          // Contract (agent::CliInfo): installed, signed in only where the CLI itself says (Codex), the sign-in command.
+          return (
+            M.clis ?? [
+              { id: "claude", name: "Claude Code", installed: M.claudeCli?.installed ?? true, loggedIn: null, loginCommand: "claude", supported: true },
+              { id: "codex", name: "Codex", installed: true, loggedIn: true, loginCommand: "codex login", supported: true },
+              { id: "gemini", name: "Gemini CLI", installed: true, loggedIn: null, loginCommand: "gemini", supported: true },
+              { id: "opencode", name: "OpenCode", installed: false, loggedIn: null, loginCommand: "opencode auth login", supported: false },
+            ]
+          );
         case "threads_list": {
           const summary = (id, messages, updated, current) => ({ id, title: titleOf(messages), updated, messages: messages.length, current });
           const rest = (M.threadArchive[args.space] ?? [])

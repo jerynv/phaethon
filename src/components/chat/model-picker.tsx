@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IconTip } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
-import type { ProviderId } from "@/lib/backend";
+import { cliOf, type ProviderId } from "@/lib/backend";
 import {
   changedText,
   choosableProviders,
@@ -16,6 +16,7 @@ import {
   modelName,
   modelOf,
   setSpaceModel,
+  splitCliRef,
   splitRef,
   toRef,
   useModels,
@@ -65,7 +66,10 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  if (s.backend !== "phaethon" || s.status === "loading") return null;
+  if (s.status === "loading" || s.backend === "claude-cli") return null;
+  // An assistant this version doesn't know picks its own model too.
+  if (s.backend !== "phaethon" && !cliOf(s.backend)) return null;
+  if (s.backend !== "phaethon") return <CliModelPicker s={s} spaceId={spaceId} spaceName={spaceName} running={running} open={open} setOpen={setOpen} contentRef={contentRef} />;
 
   const current = modelOf(s, spaceId);
   const name = modelName(current.id, s.models);
@@ -190,6 +194,214 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
 }
 
 /**
+ * Codex or Gemini CLI answers: the model button offers the CLI's own default
+ * first, then the model this space chose (if any), then Another model… to
+ * type a name the CLI knows (it is passed on as `-m`; Phaethon can't list a
+ * CLI's models). Saved in the space, apart from Phaethon's own choice.
+ */
+function CliModelPicker({
+  s,
+  spaceId,
+  spaceName,
+  running,
+  open,
+  setOpen,
+  contentRef,
+}: {
+  s: ModelsState;
+  spaceId: string;
+  spaceName: string;
+  running: boolean;
+  open: boolean;
+  setOpen: (o: boolean) => void;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const cli = cliOf(s.backend)!;
+  const [typing, setTyping] = useState(false);
+  const [error, setError] = useState("");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const own = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
+  const name = own ? own.model : `${cli.name} default`;
+  const label = `Model in ${spaceName}: ${own ? `${cli.name} · ${own.model}` : `${cli.name}’s own default`}`;
+
+  /** `atField`: the dialog shows (and says) a refusal at its own field, so the menu doesn't too. */
+  async function choose(model: string | null, atField = false): Promise<string> {
+    if (model === (own?.model ?? null)) return "";
+    try {
+      await setSpaceModel(spaceId, model ? `${cli.id}:${model}` : null);
+      announce(
+        `${model ? `${spaceName} now uses ${cli.name} · ${model}.` : `${spaceName} now uses ${cli.name}’s own default model.`}${running ? " The reply now running keeps its model." : ""}`,
+      );
+      setError("");
+      return "";
+    } catch (e) {
+      if (!atField) {
+        const message = `The model couldn’t be changed. ${String(e)}`;
+        setError(message);
+        announce(message);
+      }
+      return String(e);
+    }
+  }
+
+  return (
+    <>
+      <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
+        <IconTip label={label} spoken="Change which model answers here">
+          <DropdownMenu.Trigger asChild>
+            <Button
+              ref={triggerRef}
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={label}
+              data-model-picker={spaceId}
+              data-model={own ? s.own[spaceId] : ""}
+              className="min-w-0 shrink px-2 text-sm font-medium"
+            >
+              <span className="truncate">{name}</span>
+              <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
+            </Button>
+          </DropdownMenu.Trigger>
+        </IconTip>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            ref={contentRef}
+            side="top"
+            align="end"
+            sideOffset={6}
+            collisionPadding={8}
+            aria-label={`Model in ${spaceName}`}
+            data-model-menu=""
+            className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(20rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
+          >
+            <DropdownMenu.Label className="px-2.5 pt-1.5 text-sm font-semibold text-ink-secondary">Model in {spaceName}</DropdownMenu.Label>
+            <p className="px-2.5 pb-1.5 text-sm text-ink-secondary" data-model-note="">
+              {cli.name} answers here. {running ? "A change applies from your next message; the reply now running keeps its model." : "A change applies from your next message."}
+            </p>
+            {error && (
+              <p role="alert" className="flex items-start gap-2 px-2.5 pb-1.5 text-sm text-danger-ink">
+                <Icon name="error" className="mt-0.5 shrink-0" />
+                <span className="min-w-0 wrap-anywhere">{error}</span>
+              </p>
+            )}
+            <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)}>
+              <ModelItem value={DEFAULT} title={`${cli.name}’s own default`} hint={`The model ${cli.name} chooses`} />
+              {own && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
+            </DropdownMenu.RadioGroup>
+            <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
+            <DropdownMenu.Item
+              data-model-option={OTHER}
+              textValue="Another model"
+              onSelect={() => {
+                setOpen(false);
+                setTyping(true);
+              }}
+              className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
+            >
+              <Icon name="edit" />
+              <span className="text-base font-medium">Another model…</span>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      {typing && (
+        <CliModelDialog
+          cli={cli}
+          spaceName={spaceName}
+          current={own?.model ?? ""}
+          onClose={() => {
+            setTyping(false);
+            requestAnimationFrame(() => triggerRef.current?.focus());
+          }}
+          onChoose={(m) => choose(m, true)}
+        />
+      )}
+    </>
+  );
+}
+
+/** A model's name for a CLI, typed: Save (or Enter) passes it on from the next message; Escape closes. */
+function CliModelDialog({
+  cli,
+  spaceName,
+  current,
+  onClose,
+  onChoose,
+}: {
+  cli: NonNullable<ReturnType<typeof cliOf>>;
+  spaceName: string;
+  current: string;
+  onClose: () => void;
+  onChoose: (model: string) => Promise<string>;
+}) {
+  const [draft, setDraft] = useState(current);
+  const [error, setError] = useState("");
+  const inputId = useId();
+  const hintId = useId();
+  const errorId = useId();
+  const example = cli.id === "codex" ? "gpt-5.5" : "gemini-2.5-pro";
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent data-cli-model-dialog="">
+        <DialogHeader>
+          <DialogTitle>Model in {spaceName}</DialogTitle>
+          <DialogDescription>
+            {cli.name} answers with this model here, from your next message. Phaethon can’t list {cli.name}’s models, so type the name as{" "}
+            {cli.name} knows it.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          noValidate
+          className="flex flex-col gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const m = draft.trim();
+            if (!m) {
+              setError("Type a model’s name, or close this to keep the model as it is.");
+              return;
+            }
+            void onChoose(m).then((problem) => (problem ? setError(problem) : onClose()));
+          }}
+        >
+          <label htmlFor={inputId} className="text-base font-medium text-ink">
+            Model name
+          </label>
+          <p id={hintId} className="text-sm text-ink-secondary">
+            For example {example}. Your {cli.name} plan decides which models you can use.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <input
+              id={inputId}
+              data-cli-model-input=""
+              autoComplete="off"
+              spellCheck={false}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                if (error) setError("");
+              }}
+              aria-describedby={[hintId, error && errorId].filter(Boolean).join(" ")}
+              aria-invalid={error ? true : undefined}
+              className="min-h-(--ph-control-height-lg) min-w-0 flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink aria-invalid:border-danger"
+            />
+            <Button type="submit" className="min-h-(--ph-control-height-lg)" data-cli-model-save="">
+              Use this model
+            </Button>
+          </div>
+          {error && (
+            <p id={errorId} role="alert" className="flex items-start gap-1.5 text-sm text-danger-ink">
+              <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+              <span className="min-w-0">{error}</span>
+            </p>
+          )}
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
  * Any model of any provider that can answer, for one space: the provider,
  * then its list to search (or a model's name to type). Choosing saves it for
  * the space and closes; Escape closes without a change.
@@ -272,11 +484,16 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
       id: "change-model",
       group: "Actions",
       label: "Change model…",
-      hint: s.backend === "phaethon" ? `in ${space.name}: ${modelName(current.id, s.models)}` : `in ${space.name}`,
-      keywords,
+      hint:
+        s.backend === "phaethon"
+          ? `in ${space.name}: ${modelName(current.id, s.models)}`
+          : s.backend !== "claude-cli"
+            ? `in ${space.name}: ${current.own ? modelName(current.id) : `${cliOf(s.backend)?.name}’s own default`}`
+            : `in ${space.name}`,
+      keywords: `${keywords} codex gemini`,
       icon: "agent",
       run: () => {
-        if (s.backend !== "phaethon") announce("Claude Code chooses its own model. Change it in Claude Code.");
+        if (s.backend === "claude-cli") announce("Claude Code chooses its own model. Change it in Claude Code.");
         else if (!document.querySelector(`[data-model-picker="${CSS.escape(space.id)}"]`))
           announce(`The model can be changed once the conversation in ${space.name} has loaded.`);
         else openModelPicker(space.id);

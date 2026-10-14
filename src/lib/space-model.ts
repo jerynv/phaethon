@@ -4,6 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { readableModel } from "@/components/settings/api-key";
 
 import {
+  CLI_INFO,
   getSettings,
   listModels,
   SETTINGS_CHANGED_EVENT,
@@ -19,7 +20,9 @@ import { inTauri } from "./tauri";
  * Which model answers in each space. A space may choose its own (saved in its
  * space.json, so it syncs with the space; src-tauri/src/space_model.rs);
  * every other space uses the default model from Settings. Only Phaethon's own
- * agent uses either: Claude Code picks its own model.
+ * agent uses either: Claude Code picks its own model. With Codex or Gemini CLI
+ * answering, `own` holds each space's model for that CLI instead ("codex:gpt-5.5"),
+ * and a space without one uses the CLI's own default.
  *
  * A model is named by a reference, as the core saves it (providers.rs): a
  * plain id is an Anthropic model ("claude-opus-5-5"), any other provider's is
@@ -90,6 +93,17 @@ export function splitRef(ref: string): { provider: ProviderId; model: string } {
   return { provider: "anthropic", model: ref };
 }
 
+/**
+ * A CLI's model as the core writes it ("codex:gpt-5.5", "gemini:gemini-2.5-pro";
+ * space_model.rs), or null. Only Codex and Gemini CLI take one; Claude Code picks its own.
+ */
+export function splitCliRef(ref: string): { backend: "codex-cli" | "gemini-cli"; name: string; model: string } | null {
+  const m = /^(codex|gemini):(.+)$/.exec(ref);
+  if (!m) return null;
+  const backend = m[1] === "codex" ? "codex-cli" : "gemini-cli";
+  return { backend, name: CLI_INFO[backend].name, model: m[2] };
+}
+
 /** The reference for `model` of `provider`, as the core saves it. */
 export const toRef = (provider: ProviderId, model: string) => (provider === "anthropic" ? model : `${provider}:${model}`);
 
@@ -155,6 +169,8 @@ export function providerName(id: ProviderId, s: ModelsState = state): string {
  */
 export function modelName(ref: string, models: readonly ModelInfo[] = state.models): string {
   if (!ref) return "No model chosen";
+  const cli = splitCliRef(ref);
+  if (cli) return `${cli.name} · ${cli.model}`;
   const { provider, model } = splitRef(ref);
   if (provider === "anthropic") return models.find((m) => m.id === model)?.name ?? readableModel(model);
   return `${providerName(provider)} · ${state.names[ref] ?? model}`;

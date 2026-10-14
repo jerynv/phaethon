@@ -293,7 +293,7 @@ export default [
   {
     name: "f7-tutor-cli",
     sizes: [[1100, 720]],
-    mock: { ...MOCK, settings: { ...SETTINGS, backend: "claudeCli" }, tutorModes: { school: "socratic" } },
+    mock: { ...MOCK, settings: { ...SETTINGS, backend: "claude-cli" }, tutorModes: { school: "socratic" } },
     async run(page) {
       const btn = `${shown} [data-tutor-mode]`;
       await page.waitForSelector(btn, { timeout: 5000 });

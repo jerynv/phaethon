@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
 import {
+  cliOf,
   clearThread,
   forgetThread,
   getSettings,
@@ -94,7 +95,7 @@ const STOPS = '[role^="menuitem"]:not([data-delete-thread]):not([data-disabled])
 
 type ListState =
   | { status: "loading" }
-  | { status: "ready"; threads: ThreadSummary[]; cli: boolean }
+  | { status: "ready"; threads: ThreadSummary[]; cli: ReturnType<typeof cliOf> }
   | { status: "error"; message: string };
 
 /**
@@ -125,9 +126,9 @@ type ListState =
  * switch or delete asked for while a reply runs is refused with an alert
  * here, which clears itself once the reply ends.
  *
- * Claude Code's conversations are kept here the same way: each one resumes its
- * own Claude Code session when opened, and New conversation starts a fresh one.
- * Its confirm adds that Claude Code's own copy stays in Claude Code's folder.
+ * A CLI’s conversations (Claude Code, Codex, Gemini CLI) are kept here the same way: each one resumes its
+ * own CLI session when opened, and New conversation starts a fresh one.
+ * Its confirm adds that the CLI’s own copy stays in its folder.
  */
 export function ConversationsBar({
   space,
@@ -361,7 +362,7 @@ export function ConversationsBar({
       return;
     }
     Promise.all([listThreads(space.id), getSettings()]).then(
-      ([threads, settings]) => live && setList({ status: "ready", threads, cli: settings.backend === "claude-cli" }),
+      ([threads, settings]) => live && setList({ status: "ready", threads, cli: cliOf(settings.backend) }),
       (e: unknown) => live && setList({ status: "error", message: String(e) }),
     );
     return () => {
@@ -578,7 +579,7 @@ export function ConversationsBar({
                           )}
                           <p data-delete-stays="" className="text-sm text-ink-secondary">
                             {list.status === "ready" && list.cli
-                              ? "What was already sent to Anthropic isn’t affected, and Claude Code’s own copy stays in its folder."
+                              ? `What was already sent to ${list.cli.company} isn’t affected, and ${list.cli.name}’s own copy stays in its folder.`
                               : "What was already sent to Anthropic isn’t affected."}
                           </p>
                           {/* Every choice at least a whole target from the next, across and down: a slip off

@@ -5,8 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
-import { clearApiKey, listModels, setBackend, setModel, type Backend, type ModelInfo, type Settings } from "@/lib/backend";
-import { changedText, modelName, setSpaceModel, useModels } from "@/lib/space-model";
+import {
+  clearApiKey,
+  listModels,
+  providerStatus,
+  setBackend,
+  setModel,
+  setProvider,
+  setProviderModel,
+  setProviderUrl,
+  type Backend,
+  type ModelInfo,
+  type ProviderInfo,
+  type ServerStatus,
+  type Settings,
+} from "@/lib/backend";
+import { changedText, modelName, setSpaceModel, toRef, useModels } from "@/lib/space-model";
 import { useSpaces } from "@/lib/spaces";
 import { modCap } from "@/components/shell/shortcuts";
 
@@ -19,19 +33,20 @@ import {
   canSaveUnchecked,
   checkAndSave,
   isSaved,
-  outcomeText,
+  outcomeTextFor,
   readableModel,
   type KeyOutcome,
 } from "./api-key";
 import { CLAUDE_CODE_INSTALL_URL, CLAUDE_CODE_MISSING, checkClaudeCode } from "./claude-code";
+import { ModelSearch } from "./model-search";
 import { SectionHeader, SettingGroup, SettingRow, radioArrowKeys } from "./controls";
 import { useSettingsNav, useStatus } from "./status";
 
 const BACKENDS: { value: Backend; label: string; hint: string }[] = [
   {
     value: "phaethon",
-    label: "Phaethon, using your Anthropic account",
-    hint: "Needs an Anthropic API key (below). Phaethon only sees the space you’re in, and asks before it changes any file.",
+    label: "Phaethon’s own assistant",
+    hint: "Answers with the model provider you choose below: Anthropic, OpenAI, OpenRouter, a model on this computer, and more. Phaethon only sees the space you’re in, and asks before it changes any file.",
   },
   {
     value: "claude-cli",
@@ -81,6 +96,7 @@ export function AgentSection({
 }) {
   const { say } = useStatus();
   const [retrying, setRetrying] = useState(false);
+  const provider = settings ? chosenProvider(settings) : ANTHROPIC_INFO;
   /** The backend last asked for, so one key press never sends two changes. */
   const backendAsked = useRef<Backend | null>(null);
   const backendTitle = useId();
@@ -196,29 +212,309 @@ export function AgentSection({
             )}
           </SettingGroup>
 
-          <SettingGroup title="Anthropic API key" description="Only needed when Phaethon answers.">
-            <KeyForm hasKey={settings.hasAnthropicKey} act={act} />
-          </SettingGroup>
+          {settings.backend === "phaethon" && <ProviderChoice settings={settings} act={act} />}
+
+          {provider.id === "anthropic" || settings.backend !== "phaethon" ? (
+            <SettingGroup title="Anthropic API key" description="Only needed when Phaethon answers.">
+              <KeyForm hasKey={settings.hasAnthropicKey} act={act} />
+            </SettingGroup>
+          ) : (
+            <ProviderSetup key={provider.id} provider={provider} act={act} />
+          )}
 
           <SettingGroup title="Which model answers">
-            {settings.backend === "phaethon" ? (
-              <ModelPicker current={settings.model} act={act} />
-            ) : (
+            {settings.backend !== "phaethon" ? (
               <SettingRow label="Model" description="Claude Code chooses its own model. Change it in Claude Code.">
                 <span className="text-base text-ink-secondary">Chosen by Claude Code</span>
               </SettingRow>
+            ) : provider.id === "anthropic" ? (
+              <ModelPicker current={settings.model} act={act} />
+            ) : (
+              <ProviderModel key={provider.id} provider={provider} act={act} />
             )}
           </SettingGroup>
 
-          <SentDisclosure backend={settings.backend} />
+          <SentDisclosure backend={settings.backend} provider={provider} />
         </>
       )}
     </>
   );
 }
 
+/** Anthropic as an older core describes it (no provider list). */
+const ANTHROPIC_INFO: ProviderInfo = {
+  id: "anthropic",
+  name: "Anthropic",
+  key: "required",
+  local: false,
+  editableBase: false,
+  hasKey: false,
+  baseUrl: "https://api.anthropic.com",
+  defaultBaseUrl: "https://api.anthropic.com",
+  model: null,
+  keysUrl: CONSOLE_KEYS_URL,
+  keyPrefix: "sk-ant-",
+  ready: false,
+};
+
+/** The provider Phaethon's own agent uses, as Settings describes it. */
+function chosenProvider(settings: Settings): ProviderInfo {
+  const id = settings.provider ?? "anthropic";
+  return settings.providers?.find((p) => p.id === id) ?? { ...ANTHROPIC_INFO, hasKey: settings.hasAnthropicKey };
+}
+
+/** The services first, then the ones on this computer, then one's own server. */
+const PROVIDER_GROUPS: { label: string; test: (p: ProviderInfo) => boolean }[] = [
+  { label: "Services", test: (p) => !p.local && p.id !== "custom" },
+  { label: "On this computer", test: (p) => p.local },
+  { label: "Other", test: (p) => p.id === "custom" },
+];
+
+/** Which provider runs the model: a native select, saved on change. */
+function ProviderChoice({ settings, act }: { settings: Settings; act: Parameters<typeof AgentSection>[0]["act"] }) {
+  const selectId = useId();
+  const descId = useId();
+  const list = settings.providers?.length ? settings.providers : [ANTHROPIC_INFO];
+  const current = settings.provider ?? "anthropic";
+  return (
+    <SettingGroup title="Model provider">
+      <SettingRow
+        label="Provider"
+        htmlFor={selectId}
+        description="Who runs the model that writes Phaethon’s replies. Each service needs its own account and API key; a model on this computer needs neither, and nothing you send leaves the computer."
+        descriptionId={descId}
+      >
+        <select
+          id={selectId}
+          data-provider-select=""
+          value={current}
+          aria-describedby={descId}
+          onChange={(e) => {
+            const p = list.find((x) => x.id === e.target.value);
+            if (p) void act(() => setProvider(p.id), `Phaethon now answers with ${p.name}.`, undefined, false);
+          }}
+          className="min-h-(--ph-control-height-lg) w-full rounded-md border border-line-strong bg-raised px-2.5 text-base text-ink shadow-sm hover:bg-hover"
+        >
+          {PROVIDER_GROUPS.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {list.filter(g.test).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.local ? " (on this computer)" : ""}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </SettingRow>
+    </SettingGroup>
+  );
+}
+
+/** Whether an address is this computer's own (mirrors providers.rs `is_loopback`). */
+const isLoopback = (url: string) => {
+  try {
+    const h = new URL(url).hostname;
+    return h === "localhost" || h === "[::1]" || /^127\./.test(h);
+  } catch {
+    return false;
+  }
+};
+
+/** `https://openrouter.ai/settings/keys` → `openrouter.ai`. */
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** A provider other than Anthropic: its address (servers on this computer and one's own), whether it runs, and its key. */
+function ProviderSetup({ provider, act }: { provider: ProviderInfo; act: Parameters<typeof AgentSection>[0]["act"] }) {
+  return (
+    <>
+      {provider.editableBase && (
+        <SettingGroup title={provider.local ? `Where ${provider.name} runs` : "Your server’s address"}>
+          <AddressForm provider={provider} act={act} />
+        </SettingGroup>
+      )}
+      {provider.key !== "none" && (
+        <SettingGroup
+          title={provider.id === "custom" ? "API key" : `${provider.name} API key`}
+          description={provider.id === "custom" ? "Only if your server asks for one." : undefined}
+        >
+          <KeyForm hasKey={provider.hasKey} act={act} provider={provider} />
+        </SettingGroup>
+      )}
+    </>
+  );
+}
+
+/**
+ * The address of a server on this computer or one's own, and whether
+ * something answers there, checked when shown and after each change, and
+ * again on Check again. Saved with Save (or Enter); the usual address comes back with its own button.
+ */
+function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameters<typeof AgentSection>[0]["act"] }) {
+  const { say } = useStatus();
+  const [draft, setDraft] = useState(provider.baseUrl);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState<ServerStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const inputId = useId();
+  const hintId = useId();
+  const errorId = useId();
+  const statusId = useId();
+  const changed = !!provider.defaultBaseUrl && provider.baseUrl !== provider.defaultBaseUrl;
+
+  useEffect(() => setDraft(provider.baseUrl), [provider.baseUrl]);
+
+  async function check(announce: boolean) {
+    if (!provider.baseUrl) return;
+    setChecking(true);
+    let s: ServerStatus;
+    try {
+      s = await providerStatus(provider.id);
+    } catch (e) {
+      s = { running: false, models: [], message: String(e) };
+    }
+    setChecking(false);
+    setStatus(s);
+    if (announce) say(s.message);
+  }
+
+  useEffect(() => {
+    void check(false);
+    // Checked again whenever the saved address changes.
+  }, [provider.id, provider.baseUrl]);
+
+  async function save(url: string | null) {
+    setError("");
+    await act(() => setProviderUrl(provider.id, url), url ? "Address saved." : `${provider.name}’s usual address is back.`, setError);
+  }
+
+  return (
+    <form
+      noValidate
+      className="flex flex-col gap-3 px-4 py-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save(draft.trim() || null);
+      }}
+    >
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={inputId} className="text-base font-medium text-ink">
+          Address
+        </label>
+        <p id={hintId} className="text-sm text-ink-secondary">
+          {provider.local
+            ? `Where ${provider.name} answers. Usually ${provider.defaultBaseUrl}; change it only if you set ${provider.name} up differently.`
+            : "Your server’s address for OpenAI-style requests, often ending in /v1, for example https://llm.example.com/v1."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            id={inputId}
+            data-provider-url=""
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (error) setError("");
+            }}
+            aria-describedby={[hintId, error && errorId].filter(Boolean).join(" ")}
+            aria-invalid={error ? true : undefined}
+            className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink aria-invalid:border-danger"
+          />
+          <Button type="submit" className="min-h-(--ph-control-height-lg)" data-provider-url-save="">
+            Save
+          </Button>
+        </div>
+        {error && (
+          <p id={errorId} className="flex items-start gap-1.5 text-sm text-danger-ink">
+            <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+            <span className="min-w-0">{error}</span>
+          </p>
+        )}
+        {changed && (
+          <Button type="button" variant="outline" className="self-start" onClick={() => void save(null)}>
+            Use the usual address
+          </Button>
+        )}
+      </div>
+      {provider.baseUrl && (
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2" data-provider-status={status ? (status.running ? "running" : "stopped") : "checking"}>
+          <p id={statusId} className={cn("flex min-w-0 flex-[1_1_16em] items-start gap-1.5 text-sm", status?.running ? "text-success-ink" : status ? "text-warning-ink" : "text-ink-secondary")}>
+            <Icon name={!status ? "spinner" : status.running ? "check" : "warning"} className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+            <span className="min-w-0 wrap-anywhere">{status ? status.message : `Checking whether ${provider.local ? provider.name : "your server"} is running…`}</span>
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-provider-check=""
+            aria-describedby={statusId}
+            aria-disabled={checking || undefined}
+            className="aria-disabled:cursor-progress"
+            onClick={() => !checking && void check(true)}
+          >
+            <Icon name="retry" />
+            {checking ? "Checking…" : "Check again"}
+          </Button>
+        </div>
+      )}
+    </form>
+  );
+}
+
+/** Another provider's default model: what is in use, then its list to search, or a name to type. */
+function ProviderModel({ provider, act }: { provider: ProviderInfo; act: Parameters<typeof AgentSection>[0]["act"] }) {
+  const inUseId = useId();
+  const current = provider.model;
+  return (
+    <>
+      <div className="flex flex-col gap-3 px-4 py-3.5">
+        <p id={inUseId} data-provider-model={current ?? ""} className="text-base text-ink">
+          {current ? (
+            <>
+              Phaethon answers with <span className="font-medium">{modelName(toRef(provider.id, current))}</span>.
+            </>
+          ) : (
+            `No model is chosen for ${provider.id === "custom" ? "your server" : provider.name} yet. Choose one below, or type its name.`
+          )}
+        </p>
+        <ModelSearch
+          provider={provider}
+          current={current}
+          label="Default model"
+          onChoose={(id, name) => {
+            if (id === current) return;
+            void act(() => setProviderModel(provider.id, id), `The default model is now ${provider.name} · ${name}.`);
+          }}
+        />
+        <p className="text-sm text-ink-secondary">
+          A space can choose its own model, from any provider you’ve set up: use the model button beside Send, or Change model in {modCap()}{" "}
+          K.
+        </p>
+      </div>
+      <OwnModels />
+    </>
+  );
+}
+
 /** The key field: Check and save, the result in words, and Remove saved key. */
-function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof AgentSection>[0]["act"] }) {
+function KeyForm({
+  hasKey,
+  act,
+  provider = ANTHROPIC_INFO,
+}: {
+  hasKey: boolean;
+  act: Parameters<typeof AgentSection>[0]["act"];
+  provider?: ProviderInfo;
+}) {
   const { say } = useStatus();
   const [keyDraft, setKeyDraft] = useState("");
   const [outcome, setOutcome] = useState<KeyOutcome | null>(null);
@@ -240,11 +536,11 @@ function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof Agen
     let result: KeyOutcome = { kind: "problem", problem: "unchecked" };
     // act() reloads the settings and announces; the outcome itself shows at the field.
     await act(async () => {
-      result = await checkAndSave(keyDraft, skipCheck);
+      result = await checkAndSave(keyDraft, skipCheck, undefined, provider.id);
     }, "");
     setSaving(false);
     setOutcome(result);
-    say(outcomeText(result));
+    say(outcomeTextFor(result, provider));
     if (isSaved(result)) setKeyDraft("");
     else requestAnimationFrame(() => inputRef.current?.focus());
   }
@@ -257,7 +553,7 @@ function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof Agen
   async function removeKey() {
     if (removing) return;
     setRemoving(true);
-    const ok = await act(clearApiKey, `API key removed from ${KEY_STORE}.`);
+    const ok = await act(() => clearApiKey(provider.id), `API key removed from ${KEY_STORE}.`);
     setRemoving(false);
     if (ok) {
       setConfirmRemove(false);
@@ -286,6 +582,17 @@ function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof Agen
         <Icon name={hasKey ? "lock" : "key"} className="mt-0.5 shrink-0 text-ink-tertiary" />
         {hasKey ? (
           <p className="min-w-0">A key is saved in {KEY_STORE}. Phaethon never shows it again; paste a new one to replace it.</p>
+        ) : provider.id === "custom" ? (
+          <p className="min-w-0">
+            If your server asks for a key, paste it here. It’s sent only to {hostOf(provider.baseUrl) || "your server’s address"}, and kept in{" "}
+            {KEY_STORE}, never in your Phaethon folder. If the address changes, save the key again.
+          </p>
+        ) : provider.id !== "anthropic" ? (
+          <p className="min-w-0">
+            The key comes from {provider.name}: a pay-as-you-go account with them, separate from any chat subscription. Create a key at{" "}
+            <ExternalLink href={provider.keysUrl}>{hostOf(provider.keysUrl)}</ExternalLink>, then paste it here. It’s sent only to{" "}
+            {provider.name}, and kept in {KEY_STORE}, never in your Phaethon folder, so it never syncs.
+          </p>
         ) : (
           <div className="flex min-w-0 flex-col gap-1.5">
             <p>
@@ -326,7 +633,7 @@ function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof Agen
             {saving ? "Checking…" : "Check and save"}
           </Button>
         </div>
-        {outcome && <KeyOutcomeLine id={outcomeId} outcome={outcome} />}
+        {outcome && <KeyOutcomeLine id={outcomeId} outcome={outcome} provider={provider} />}
         {canSaveUnchecked(outcome) && (
           <Button type="button" variant="outline" className="self-start" onClick={() => void save(true)}>
             Save without checking
@@ -339,8 +646,11 @@ function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof Agen
             <p id={confirmId} className="flex items-start gap-2 text-sm text-danger-ink">
               <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
               <span className="min-w-0">
-                Remove the saved key from {KEY_STORE}? Phaethon can’t answer in your spaces until you add a key again or switch to Claude
-                Code.
+                {provider.id === "anthropic"
+                  ? `Remove the saved key from ${KEY_STORE}? Phaethon can’t answer in your spaces until you add a key again or switch to Claude Code.`
+                  : provider.key === "optional"
+                    ? `Remove the saved key from ${KEY_STORE}? Phaethon will ask your server without one.`
+                    : `Remove the saved key from ${KEY_STORE}? Phaethon can’t answer with ${provider.name} until you add a key again.`}
               </span>
             </p>
             {/* Default-size buttons, well apart: a slip lands in the gap, not on the other answer. */}
@@ -371,7 +681,8 @@ function KeyForm({ hasKey, act }: { hasKey: boolean; act: Parameters<typeof Agen
 }
 
 /** The result of a key check, at the field. Not a live region: whoever shows it announces it once. */
-export function KeyOutcomeLine({ id, outcome }: { id: string; outcome: KeyOutcome }) {
+export function KeyOutcomeLine({ id, outcome, provider = ANTHROPIC_INFO }: { id: string; outcome: KeyOutcome; provider?: ProviderInfo }) {
+  const anthropic = provider.id === "anthropic";
   const tone = outcome.kind === "saved" ? "success" : outcome.kind === "no-credit" ? "warning" : "danger";
   return (
     <div
@@ -386,17 +697,17 @@ export function KeyOutcomeLine({ id, outcome }: { id: string; outcome: KeyOutcom
     >
       <Icon name={tone === "success" ? "check" : tone === "warning" ? "warning" : "error"} className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
       <span className="min-w-0">
-        {outcomeText(outcome)}
-        {outcome.kind === "no-credit" && (
+        {outcomeTextFor(outcome, provider)}
+        {anthropic && outcome.kind === "no-credit" && (
           <>
             {" "}
             <ExternalLink href={CONSOLE_BILLING_URL}>Open Billing</ExternalLink>
           </>
         )}
-        {outcome.kind === "problem" && outcome.problem === "rejected" && (
+        {outcome.kind === "problem" && outcome.problem === "rejected" && (anthropic || provider.keysUrl) && (
           <>
             {" "}
-            <ExternalLink href={CONSOLE_KEYS_URL}>Open API keys</ExternalLink>
+            <ExternalLink href={anthropic ? CONSOLE_KEYS_URL : provider.keysUrl}>Open API keys</ExternalLink>
           </>
         )}
       </span>
@@ -534,14 +845,23 @@ function OwnModels() {
 }
 
 /** What leaves this computer, when, and where the rules for it are. */
-function SentDisclosure({ backend }: { backend: Backend }) {
+function SentDisclosure({ backend, provider }: { backend: Backend; provider: ProviderInfo }) {
   const { go } = useSettingsNav();
+  // Claude Code always sends to Anthropic, whichever provider Phaethon's own assistant would use.
+  const p = backend === "phaethon" ? provider : ANTHROPIC_INFO;
+  const anthropic = p.id === "anthropic";
+  const here = p.local && isLoopback(p.baseUrl);
+  const to = p.id === "custom" ? `your server (${hostOf(p.baseUrl) || "no address yet"})` : p.name;
   return (
-    <SettingGroup title="What is sent to Anthropic">
+    <SettingGroup title={here ? `What ${p.name} gets` : `What is sent to ${p.id === "custom" ? "your server" : p.name}`}>
       <div data-disclosure="" className="flex flex-col gap-2.5 px-4 py-3.5 text-sm text-ink-secondary">
         {backend === "phaethon" ? (
           <>
-            <p className="text-base text-ink">Nothing is sent until you send a message. Then, with every message, Phaethon sends Anthropic:</p>
+            <p className="text-base text-ink">
+              {here
+                ? `${p.name} runs on this computer, so none of this leaves it. With every message, Phaethon gives ${p.name}:`
+                : `Nothing is sent until you send a message. Then, with every message, Phaethon sends ${to}:`}
+            </p>
             <ul className="flex list-disc flex-col gap-1 ps-5">
               <li>your message and the conversation so far in that space</li>
               <li>any files you attach</li>
@@ -566,10 +886,16 @@ function SentDisclosure({ backend }: { backend: Backend }) {
             </p>
           </>
         )}
-        <p>
-          How long Anthropic keeps it and what they may use it for is in{" "}
-          <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
-        </p>
+        {anthropic ? (
+          <p>
+            How long Anthropic keeps it and what they may use it for is in{" "}
+            <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
+          </p>
+        ) : p.id === "openrouter" ? (
+          <p>OpenRouter passes it on to the company that runs the model you chose. How long each keeps it, and what they may use it for, is in their own privacy policies.</p>
+        ) : p.local || p.id === "custom" ? null : (
+          <p>How long {p.name} keeps it and what they may use it for is in {p.name}’s own privacy policy.</p>
+        )}
         <p>
           Your conversations also stay on this computer as plain files.{" "}
           <Button type="button" variant="link" className="h-auto min-h-0 align-baseline text-sm underline decoration-1 hover:decoration-2" onClick={() => go("about", "[data-files-heading]")}>

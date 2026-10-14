@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
-import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
+import { getSettings, SETTINGS_CHANGED_EVENT, type ProviderId, type SettingsChangedDetail } from "@/lib/backend";
 import { openSettings } from "@/lib/open-settings";
+import { modelOf, providerName, splitRef, useModels } from "@/lib/space-model";
 import { cn } from "@/lib/utils";
 import { cancelSpaceRun, type AgentMessageCustom } from "@/runtime/agent-adapter";
 
@@ -142,6 +143,39 @@ const RECOVERY: Record<string, Recovery> = {
 };
 const FALLBACK: Recovery = { title: "Phaethon couldn’t finish this reply", body: "Send your message again.", actions: ["retry"] };
 
+/**
+ * The recovery for a provider other than Anthropic: its name in the words, no
+ * Anthropic console, and the core's own message where it says what to do
+ * (which key, which model, how to start a server on this computer).
+ */
+function forProvider(r: Recovery, code: string | undefined, id: ProviderId, name: string, local: boolean): Recovery {
+  if (id === "anthropic") return r;
+  switch (code) {
+    case "noApiKey":
+      return { title: "Phaethon can’t reply yet", body: "Finish setting up the model provider in Settings, then send again.", actions: ["settings", "retry"], ownWords: true };
+    case "apiKey":
+      return { ...r, body: `${name} didn’t accept the key saved in Settings. Check it or paste a new one, then send again.` };
+    case "billing":
+      return {
+        title: `Your ${name} account is out of credit`,
+        body: `Add credit to the ${name} account your API key belongs to, then send again. Phaethon itself never charges you.`,
+        actions: ["retry"],
+      };
+    case "rateLimit":
+      return { ...r, title: `${name} asked Phaethon to slow down` };
+    case "unavailable":
+      return local
+        ? { title: `${name} had a problem`, body: "Check that it’s running and the model is loaded, then send again.", actions: ["retry"] }
+        : { ...r, title: `${name}’s service is busy or down`, body: `This is on ${name}’s side and usually passes within minutes. Send again in a little while.` };
+    case "badRequest":
+      return { ...r, title: `${name} couldn’t accept this message`, ownWords: true };
+    case "network":
+      return local || id === "custom" ? { title: `Phaethon couldn’t reach ${name}`, body: `Check that it’s running and its address in Settings is right, then send again.`, actions: ["retry", "settings"], ownWords: true } : r;
+    default:
+      return r;
+  }
+}
+
 /** The backend's own words, folded away: useful to report, not the headline. */
 function ErrorDetails({ text }: { text: string }) {
   const announce = useAnnounce();
@@ -187,7 +221,10 @@ export function MessageError() {
   const setupBelow = useContext(SetupBelowContext);
   const textId = useId();
   const keySaved = useKeySavedSince(code === "noApiKey" || code === "apiKey");
-  let recovery = (code && RECOVERY[code]) || FALLBACK;
+  const models = useModels();
+  const provider = splitRef(modelOf(models, spaceId).id).provider;
+  const local = !!models.providers.find((p) => p.id === provider)?.local;
+  let recovery = forProvider((code && RECOVERY[code]) || FALLBACK, code, provider, providerName(provider, models), local);
   if (keySaved) recovery = KEY_SAVED;
   else if (code === "noApiKey" && setupBelow) recovery = NO_KEY_SETUP_BELOW;
   const actions = recovery.actions ?? [];
@@ -317,7 +354,7 @@ function useKeySavedSince(watch: boolean): boolean {
     const onChanged = (e: Event) => {
       if ((e as CustomEvent<SettingsChangedDetail>).detail?.what !== "key") return;
       getSettings().then(
-        (s) => live && setSaved(s.hasAnthropicKey),
+        (s) => live && setSaved(s.providerReady ?? s.hasAnthropicKey),
         () => {},
       );
     };

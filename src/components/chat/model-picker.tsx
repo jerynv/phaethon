@@ -1,12 +1,26 @@
 import { DropdownMenu } from "radix-ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { ModelSearch } from "@/components/settings/model-search";
 import { announce } from "@/components/shell/announcer";
 import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IconTip } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
-import { changedText, modelChoices, modelName, modelOf, setSpaceModel, useModels, type ModelsState } from "@/lib/space-model";
+import type { ProviderId } from "@/lib/backend";
+import {
+  changedText,
+  choosableProviders,
+  modelGroups,
+  modelName,
+  modelOf,
+  setSpaceModel,
+  splitRef,
+  toRef,
+  useModels,
+  type ModelsState,
+} from "@/lib/space-model";
 import type { Space } from "@/lib/spaces";
 
 /** Fired on window to open a space's model menu (the command palette's "Change model…"). */
@@ -18,6 +32,7 @@ const DEFAULT = "__default__";
 
 /** "Claude Opus 5.5" → "Opus 5.5": the composer's toolbar has little room. */
 const shortName = (name: string) => name.replace(/^Claude\s+/, "");
+const OTHER = "__other__";
 
 /**
  * The model that answers in this space, as a small button in the composer's
@@ -29,8 +44,10 @@ const shortName = (name: string) => name.replace(/^Claude\s+/, "");
 export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; spaceName: string; running: boolean }) {
   const s = useModels();
   const [open, setOpen] = useState(false);
+  const [other, setOther] = useState(false);
   const [error, setError] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -55,25 +72,31 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   const defaultName = modelName(s.defaultModel, s.models);
   const label = `Model in ${spaceName}: ${name}${current.own ? "" : ", the default"}`;
 
-  async function choose(value: string) {
+  async function choose(value: string): Promise<boolean> {
     const model = value === DEFAULT ? null : value;
-    if (model === (current.own ? current.id : null)) return;
+    if (model === (current.own ? current.id : null)) return true;
     setError("");
     try {
       await setSpaceModel(spaceId, model);
       announce(`${changedText(spaceName, model, s)}${running ? " The reply now running keeps its model." : ""}`);
+      return true;
     } catch (e) {
       const message = `The model couldn’t be changed. ${String(e)}`;
       setError(message);
       announce(message);
+      return false;
     }
   }
+  const groups = modelGroups(s);
+  const canChooseOther = choosableProviders(s).length > 0;
 
   return (
+    <>
     <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
       <IconTip label={label} spoken="Change which model answers here">
         <DropdownMenu.Trigger asChild>
           <Button
+            ref={triggerRef}
             type="button"
             variant="ghost"
             size="sm"
@@ -110,14 +133,123 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           )}
           <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)}>
             <ModelItem value={DEFAULT} title={`Use the default (${defaultName})`} hint="Follows the default in Settings" />
-            <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
-            {modelChoices(s).map((m) => (
-              <ModelItem key={m.id} value={m.id} title={m.name} />
+            {groups.map((g) => (
+              <DropdownMenu.Group key={g.provider} aria-label={groups.length > 1 ? g.name : undefined}>
+                <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
+                {groups.length > 1 && (
+                  <DropdownMenu.Label aria-hidden className="px-2.5 pt-1 pb-0.5 text-sm font-semibold text-ink-secondary" data-model-group={g.provider}>
+                    {g.name}
+                  </DropdownMenu.Label>
+                )}
+                {g.models.map((m) => (
+                  <ModelItem
+                    key={m.id}
+                    value={m.id}
+                    title={m.name}
+                    // Grouped under the provider's name on screen; said in full.
+                    spoken={g.provider === "anthropic" ? undefined : modelName(m.id, s.models)}
+                  />
+                ))}
+              </DropdownMenu.Group>
             ))}
           </DropdownMenu.RadioGroup>
+          {canChooseOther && (
+            <>
+              <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
+              <DropdownMenu.Item
+                data-model-option={OTHER}
+                textValue="Another model"
+                onSelect={() => {
+                  setOpen(false);
+                  setOther(true);
+                }}
+                className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
+              >
+                <Icon name="search" />
+                <span className="text-base font-medium">Another model…</span>
+              </DropdownMenu.Item>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+    {other && (
+      <OtherModelDialog
+        s={s}
+        spaceName={spaceName}
+        current={current.id}
+        onClose={() => {
+          setOther(false);
+          requestAnimationFrame(() => triggerRef.current?.focus());
+        }}
+        onChoose={choose}
+      />
+    )}
+    </>
+  );
+}
+
+/**
+ * Any model of any provider that can answer, for one space: the provider,
+ * then its list to search (or a model's name to type). Choosing saves it for
+ * the space and closes; Escape closes without a change.
+ */
+function OtherModelDialog({
+  s,
+  spaceName,
+  current,
+  onClose,
+  onChoose,
+}: {
+  s: ModelsState;
+  spaceName: string;
+  current: string;
+  onClose: () => void;
+  onChoose: (ref: string) => Promise<boolean>;
+}) {
+  const providers = choosableProviders(s);
+  const start = splitRef(current).provider;
+  const [provider, setProvider] = useState<ProviderId>(providers.some((p) => p.id === start) ? start : providers[0].id);
+  const selectId = useId();
+  const info = providers.find((p) => p.id === provider) ?? providers[0];
+  const inUse = splitRef(current).provider === info.id ? splitRef(current).model : null;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent data-other-model-dialog="">
+        <DialogHeader>
+          <DialogTitle>Model in {spaceName}</DialogTitle>
+          <DialogDescription>Any model from a provider you’ve set up in Settings. It applies from your next message here.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={selectId} className="text-base font-medium text-ink">
+            Provider
+          </label>
+          <select
+            id={selectId}
+            data-other-provider=""
+            value={info.id}
+            onChange={(e) => setProvider(e.target.value as ProviderId)}
+            className="min-h-(--ph-control-height-lg) w-full rounded-md border border-line-strong bg-raised px-2.5 text-base text-ink shadow-sm hover:bg-hover"
+          >
+            {providers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.local ? " (on this computer)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <ModelSearch
+          key={info.id}
+          provider={info}
+          current={inUse}
+          label="Model"
+          onChoose={(id) => {
+            void onChoose(toRef(info.id, id)).then((ok) => ok && onClose());
+          }}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -134,7 +266,7 @@ export function useModelCommands(space: Space | undefined): Command[] {
 function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
   if (!space || s.status === "loading") return [];
   const current = modelOf(s, space.id);
-  const keywords = "model claude opus sonnet haiku switch choose";
+  const keywords = "model claude opus sonnet haiku gpt llama openai openrouter ollama provider switch choose";
   const list: Command[] = [
     {
       id: "change-model",
@@ -169,11 +301,12 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
   return list;
 }
 
-function ModelItem({ value, title, hint }: { value: string; title: string; hint?: string }) {
+function ModelItem({ value, title, hint, spoken }: { value: string; title: string; hint?: string; spoken?: string }) {
   return (
     <DropdownMenu.RadioItem
       value={value}
       textValue={title}
+      aria-label={spoken}
       data-model-option={value}
       className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
     >

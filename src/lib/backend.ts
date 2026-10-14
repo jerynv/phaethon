@@ -12,10 +12,51 @@ export type Backend = "phaethon" | "claude-cli";
 export type Settings = {
   backend: Backend;
   hasAnthropicKey: boolean;
+  /** The Anthropic model chosen in Settings. */
   model: string;
+  /** The provider Phaethon's own agent uses (Anthropic when missing, from an older core). */
+  provider?: ProviderId;
+  /** The default model as a reference ("provider:model", plain for Anthropic); null while none is chosen. */
+  defaultModel?: string | null;
+  /** Whether the chosen provider can answer: a key saved where one is needed, and a model. */
+  providerReady?: boolean;
+  /** Every provider, with whether a key is saved; never the key. */
+  providers?: ProviderInfo[];
   appearance?: unknown;
   vaultPath?: string;
   version?: string;
+};
+
+/** Mirrors the presets in src-tauri/src/providers.rs. */
+export type ProviderId =
+  | "anthropic"
+  | "openai"
+  | "openrouter"
+  | "groq"
+  | "together"
+  | "mistral"
+  | "deepseek"
+  | "xai"
+  | "ollama"
+  | "lmstudio"
+  | "custom";
+
+/** Mirrors `ProviderView` in src-tauri/src/providers.rs. */
+export type ProviderInfo = {
+  id: ProviderId;
+  name: string;
+  key: "required" | "optional" | "none";
+  local: boolean;
+  editableBase: boolean;
+  hasKey: boolean;
+  /** Where requests go ("" while a server of one's own has no address yet). */
+  baseUrl: string;
+  defaultBaseUrl: string;
+  /** The model chosen for it in Settings; for Anthropic always one. */
+  model: string | null;
+  keysUrl: string;
+  keyPrefix: string;
+  ready: boolean;
 };
 
 /**
@@ -53,7 +94,7 @@ export type SavedAttachment = { name: string; path: string; mediaType: string };
  * backend change alters which conversation a space shows.
  */
 export const SETTINGS_CHANGED_EVENT = "phaethon:settings-changed";
-export type SettingsChangedDetail = { what: "backend" | "key" | "model" };
+export type SettingsChangedDetail = { what: "backend" | "key" | "model" | "provider" };
 
 function announce<T>(what: SettingsChangedDetail["what"], p: Promise<T>): Promise<T> {
   return p.then((v) => {
@@ -64,21 +105,38 @@ function announce<T>(what: SettingsChangedDetail["what"], p: Promise<T>): Promis
 
 export const getSettings = () => invoke<Settings>("settings_get");
 export const setBackend = (backend: Backend) => announce("backend", invoke<void>("settings_set_backend", { backend }));
-export const setApiKey = (key: string) => announce("key", invoke<void>("api_key_set", { provider: "anthropic", key }));
-export const clearApiKey = () => announce("key", invoke<void>("api_key_clear", { provider: "anthropic" }));
+export const setApiKey = (key: string, provider: ProviderId = "anthropic") => announce("key", invoke<void>("api_key_set", { provider, key }));
+export const clearApiKey = (provider: ProviderId = "anthropic") => announce("key", invoke<void>("api_key_clear", { provider }));
 
 /** Why a key failed its check. "billing": the key is real but the account has no credit. */
 export type KeyProblem = "format" | "rejected" | "network" | "billing";
 export type KeyCheck = { ok: boolean; problem?: KeyProblem; message: string };
-/** Checks a key (its shape, then a small real call) without saving it. */
-export const checkApiKey = (key: string) => invoke<KeyCheck>("api_key_check", { key });
+/** Checks a key (its shape, then a small real call to that provider only) without saving it. */
+export const checkApiKey = (key: string, provider: ProviderId = "anthropic") =>
+  invoke<KeyCheck>("api_key_check", provider === "anthropic" ? { key } : { key, provider });
 
 /** A model Phaethon's own agent can use. `name` is for people ("Claude Opus 5.5"). */
 export type ModelInfo = { id: string; name: string };
-/** From the provider when a key works; a fixed list otherwise. */
-export const listModels = () => invoke<ModelInfo[]>("models_list");
-/** `null` goes back to the default model. */
+/**
+ * Anthropic's: from Anthropic when a key works, a fixed list otherwise. Any
+ * other provider's: its own list, or an error in words (a model can still be typed).
+ */
+export const listModels = (provider: ProviderId = "anthropic") =>
+  invoke<ModelInfo[]>("models_list", provider === "anthropic" ? {} : { provider });
+/** The Anthropic model; `null` goes back to the default model. */
 export const setModel = (model: string | null) => announce("model", invoke<void>("settings_set_model", { model }));
+/** Which provider Phaethon's own agent uses. */
+export const setProvider = (provider: ProviderId) => announce("provider", invoke<void>("settings_set_provider", { provider }));
+/** The model `provider` (not Anthropic) answers with by default; `null` clears it. */
+export const setProviderModel = (provider: ProviderId, model: string | null) =>
+  announce("model", invoke<void>("settings_set_provider_model", { provider, model }));
+/** The address of a server on this computer or one's own; `null` goes back to the usual one. */
+export const setProviderUrl = (provider: ProviderId, url: string | null) =>
+  announce("provider", invoke<void>("settings_set_provider_url", { provider, url }));
+/** Mirrors `ServerStatus` in src-tauri/src/openai.rs. */
+export type ServerStatus = { running: boolean; models: ModelInfo[]; message: string };
+/** Whether a server on this computer (or one's own) answers, in words. */
+export const providerStatus = (provider: ProviderId) => invoke<ServerStatus>("provider_status", { provider });
 
 /** Replaces the vault's saved appearance. Pass only a validated object (src/theme). */
 export const saveAppearance = (appearance: unknown) => invoke<void>("appearance_set", { appearance });

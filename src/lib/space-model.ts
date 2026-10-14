@@ -3,7 +3,16 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { readableModel } from "@/components/settings/api-key";
 
-import { getSettings, listModels, SETTINGS_CHANGED_EVENT, type Backend, type ModelInfo, type SettingsChangedDetail } from "./backend";
+import {
+  getSettings,
+  listModels,
+  SETTINGS_CHANGED_EVENT,
+  type Backend,
+  type ModelInfo,
+  type ProviderId,
+  type ProviderInfo,
+  type SettingsChangedDetail,
+} from "./backend";
 import { inTauri } from "./tauri";
 
 /**
@@ -11,16 +20,41 @@ import { inTauri } from "./tauri";
  * space.json, so it syncs with the space; src-tauri/src/space_model.rs);
  * every other space uses the default model from Settings. Only Phaethon's own
  * agent uses either: Claude Code picks its own model.
+ *
+ * A model is named by a reference, as the core saves it (providers.rs): a
+ * plain id is an Anthropic model ("claude-opus-5-5"), any other provider's is
+ * "provider:model" ("openrouter:openai/gpt-5").
  */
 export type ModelsState = {
   status: "loading" | "ready" | "error";
   backend: Backend;
-  /** The default model's id (Settings › Assistant). */
+  /** The default model's reference (Settings › Assistant); "" while the chosen provider has none picked. */
   defaultModel: string;
+  /** The provider Phaethon's own agent uses by default. */
+  provider: ProviderId;
+  /** Every provider as Settings knows it; empty from an older core (Anthropic only). */
+  providers: readonly ProviderInfo[];
   /** Space id → the model that space chose. Spaces using the default are absent. */
   own: Readonly<Record<string, string>>;
-  /** The models to choose from; the fixed list until the provider's has loaded. */
+  /** Anthropic's models to choose from; the fixed list until Anthropic's own has loaded. */
   models: readonly ModelInfo[];
+  /** Names learned from other providers' lists, by reference. */
+  names: Readonly<Record<string, string>>;
+};
+
+/** Mirrors the presets' names in src-tauri/src/providers.rs. */
+export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  groq: "Groq",
+  together: "Together AI",
+  mistral: "Mistral",
+  deepseek: "DeepSeek",
+  xai: "xAI",
+  ollama: "Ollama",
+  lmstudio: "LM Studio",
+  custom: "Your own server",
 };
 
 const FALLBACK: readonly ModelInfo[] = [
@@ -33,15 +67,45 @@ let state: ModelsState = {
   status: inTauri() ? "loading" : "ready",
   backend: "phaethon",
   defaultModel: FALLBACK[0].id,
+  provider: "anthropic",
+  providers: [],
   own: {},
   models: FALLBACK,
+  names: {},
 };
 const listeners = new Set<() => void>();
 let modelsAsked = false;
+const namesAsked = new Set<ProviderId>();
 
 function set(patch: Partial<ModelsState>) {
   state = { ...state, ...patch };
   listeners.forEach((l) => l());
+}
+
+/** A reference's provider and model id. */
+export function splitRef(ref: string): { provider: ProviderId; model: string } {
+  const at = ref.indexOf(":");
+  const head = at > 0 ? ref.slice(0, at) : "";
+  if (head && head in PROVIDER_NAMES) return { provider: head as ProviderId, model: ref.slice(at + 1) };
+  return { provider: "anthropic", model: ref };
+}
+
+/** The reference for `model` of `provider`, as the core saves it. */
+export const toRef = (provider: ProviderId, model: string) => (provider === "anthropic" ? model : `${provider}:${model}`);
+
+/** Names from a provider's list, so its models read as people know them. */
+export function rememberNames(provider: ProviderId, models: readonly ModelInfo[]) {
+  if (provider === "anthropic") return;
+  const names = { ...state.names };
+  let changed = false;
+  for (const m of models) {
+    const ref = toRef(provider, m.id);
+    if (m.name && m.name !== m.id && names[ref] !== m.name) {
+      names[ref] = m.name;
+      changed = true;
+    }
+  }
+  if (changed) set({ names });
 }
 
 /** Read the backend, the default and every space's own model again. */
@@ -49,9 +113,26 @@ export async function refreshModels(): Promise<void> {
   if (!inTauri()) return;
   try {
     const [settings, own] = await Promise.all([getSettings(), invoke<Record<string, string>>("space_models_list")]);
-    set({ status: "ready", backend: settings.backend, defaultModel: settings.model, own });
+    set({
+      status: "ready",
+      backend: settings.backend,
+      defaultModel: settings.defaultModel === undefined ? settings.model : (settings.defaultModel ?? ""),
+      provider: settings.provider ?? "anthropic",
+      providers: settings.providers ?? [],
+      own,
+    });
   } catch {
     set({ status: state.status === "ready" ? "ready" : "error" });
+  }
+  // Other providers' lists for the names of the models in use, once per launch each; their ids stand in until then.
+  for (const ref of [state.defaultModel, ...Object.values(state.own)]) {
+    const p = splitRef(ref).provider;
+    if (p === "anthropic" || namesAsked.has(p) || !state.providers.find((x) => x.id === p)?.ready) continue;
+    namesAsked.add(p);
+    listModels(p).then(
+      (models) => rememberNames(p, models),
+      () => {},
+    );
   }
   // The provider's list once per launch (it is a network call); the fixed list stands in until then.
   if (!modelsAsked) {
@@ -63,9 +144,20 @@ export async function refreshModels(): Promise<void> {
   }
 }
 
-/** The model's name for people ("Claude Sonnet 5.5"). */
-export function modelName(id: string, models: readonly ModelInfo[] = state.models): string {
-  return models.find((m) => m.id === id)?.name ?? readableModel(id);
+/** The provider's name for people ("OpenRouter"). */
+export function providerName(id: ProviderId, s: ModelsState = state): string {
+  return s.providers.find((p) => p.id === id)?.name ?? PROVIDER_NAMES[id];
+}
+
+/**
+ * The model's name for people: "Claude Sonnet 5.5" for Anthropic's, and
+ * "OpenRouter · GPT-5" for another provider's. "" is "no model chosen yet".
+ */
+export function modelName(ref: string, models: readonly ModelInfo[] = state.models): string {
+  if (!ref) return "No model chosen";
+  const { provider, model } = splitRef(ref);
+  if (provider === "anthropic") return models.find((m) => m.id === model)?.name ?? readableModel(model);
+  return `${providerName(provider)} · ${state.names[ref] ?? model}`;
 }
 
 /** The model a space answers with, and whether it is the space's own choice. */
@@ -74,14 +166,44 @@ export function modelOf(s: ModelsState, spaceId: string): { id: string; own: boo
   return own ? { id: own, own: true } : { id: s.defaultModel, own: false };
 }
 
-/** The choices: every listed model, plus the ones in use that the list lacks, so a choice never disappears. */
-export function modelChoices(s: ModelsState): ModelInfo[] {
-  const list = [...s.models];
-  for (const id of [s.defaultModel, ...Object.values(s.own)]) {
-    if (!list.some((m) => m.id === id)) list.push({ id, name: modelName(id, s.models) });
+/** One provider's models to choose from, as references. */
+export type ModelGroup = { provider: ProviderId; name: string; models: ModelInfo[] };
+
+/**
+ * The choices, by provider: Anthropic's list, and for each other provider that
+ * can answer (a key saved, or a server on this computer that is in use or
+ * chosen) its model from Settings and the ones spaces use. A model in use is
+ * always listed, so a choice never disappears.
+ */
+export function modelGroups(s: ModelsState): ModelGroup[] {
+  const inUse = [s.defaultModel, ...Object.values(s.own)].filter(Boolean);
+  const used = (p: ProviderId) => inUse.filter((r) => splitRef(r).provider === p);
+  const groups: ModelGroup[] = [];
+  const anthropic = s.providers.find((p) => p.id === "anthropic");
+  if (!s.providers.length || s.provider === "anthropic" || anthropic?.hasKey || used("anthropic").length) {
+    const list = [...s.models];
+    for (const id of used("anthropic")) if (!list.some((m) => m.id === id)) list.push({ id, name: modelName(id, s.models) });
+    groups.push({ provider: "anthropic", name: "Anthropic", models: list });
   }
-  return list;
+  for (const p of s.providers) {
+    if (p.id === "anthropic") continue;
+    const wanted = p.local ? p.id === s.provider || !!p.model || used(p.id).length > 0 : p.ready;
+    if (!wanted && !used(p.id).length) continue;
+    const refs = [...(p.model ? [toRef(p.id, p.model)] : []), ...used(p.id)];
+    const unique = [...new Set(refs)];
+    if (!unique.length) continue;
+    groups.push({ provider: p.id, name: p.name, models: unique.map((id) => ({ id, name: state.names[id] ?? splitRef(id).model })) });
+  }
+  return groups;
 }
+
+/** Every choice in one list (see [`modelGroups`]). */
+export function modelChoices(s: ModelsState): ModelInfo[] {
+  return modelGroups(s).flatMap((g) => g.models.map((m) => (g.provider === "anthropic" ? m : { id: m.id, name: modelName(m.id) })));
+}
+
+/** The providers a space can pick another model from: the ones that can answer. */
+export const choosableProviders = (s: ModelsState) => s.providers.filter((p) => p.ready);
 
 /**
  * Give `spaceId` its own model, or with `null` put it back on the default.
@@ -111,7 +233,10 @@ function subscribe(l: () => void) {
 let watching = 0;
 function onChanged(e: Event) {
   // A new key may see more models.
-  if ((e as CustomEvent<SettingsChangedDetail>).detail?.what === "key") modelsAsked = false;
+  if ((e as CustomEvent<SettingsChangedDetail>).detail?.what === "key") {
+    modelsAsked = false;
+    namesAsked.clear();
+  }
   void refreshModels();
 }
 

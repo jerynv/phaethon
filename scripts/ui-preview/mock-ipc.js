@@ -63,6 +63,36 @@
     if (!t) return "New conversation";
     return [...t].length > 60 ? `${[...t].slice(0, 59).join("").trimEnd()}…` : t;
   };
+  // The providers as src-tauri/src/providers.rs has them, and settings_get's view of them.
+  const PRESETS = [
+    { id: "anthropic", name: "Anthropic", base: "https://api.anthropic.com", key: "required", local: false, editableBase: false, keysUrl: "https://console.anthropic.com/settings/keys", keyPrefix: "sk-ant-" },
+    { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1", key: "required", local: false, editableBase: false, keysUrl: "https://platform.openai.com/api-keys", keyPrefix: "" },
+    { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1", key: "required", local: false, editableBase: false, keysUrl: "https://openrouter.ai/settings/keys", keyPrefix: "sk-or-" },
+    { id: "groq", name: "Groq", base: "https://api.groq.com/openai/v1", key: "required", local: false, editableBase: false, keysUrl: "https://console.groq.com/keys", keyPrefix: "gsk_" },
+    { id: "together", name: "Together AI", base: "https://api.together.xyz/v1", key: "required", local: false, editableBase: false, keysUrl: "https://api.together.ai/settings/api-keys", keyPrefix: "" },
+    { id: "mistral", name: "Mistral", base: "https://api.mistral.ai/v1", key: "required", local: false, editableBase: false, keysUrl: "https://console.mistral.ai/api-keys", keyPrefix: "" },
+    { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1", key: "required", local: false, editableBase: false, keysUrl: "https://platform.deepseek.com/api_keys", keyPrefix: "" },
+    { id: "xai", name: "xAI", base: "https://api.x.ai/v1", key: "required", local: false, editableBase: false, keysUrl: "https://console.x.ai", keyPrefix: "xai-" },
+    { id: "ollama", name: "Ollama", base: "http://127.0.0.1:11434/v1", key: "none", local: true, editableBase: true, keysUrl: "", keyPrefix: "" },
+    { id: "lmstudio", name: "LM Studio", base: "http://127.0.0.1:1234/v1", key: "none", local: true, editableBase: true, keysUrl: "", keyPrefix: "" },
+    { id: "custom", name: "Your own server", base: "", key: "optional", local: false, editableBase: true, keysUrl: "", keyPrefix: "" },
+  ];
+  const PROVIDER_IDS = Object.fromEntries(PRESETS.map((x) => [x.id, true]));
+  const MODEL_ID = /^(?![-./:])(?!.*\.\.)[A-Za-z0-9._:/@+-]{1,200}$/;
+  const baseOf = (x) => (x.editableBase && M.prov?.urls?.[x.id]) || x.base;
+  const providerView = () => {
+    const P = M.prov;
+    const providers = PRESETS.map((x) => {
+      const hasKey = x.id === "anthropic" ? !!M.settings.hasAnthropicKey : !!P.keys?.[x.id];
+      const baseUrl = baseOf(x);
+      const model = x.id === "anthropic" ? M.settings.model : (P.models?.[x.id] ?? null);
+      const { base, ...rest } = x;
+      return { ...rest, hasKey, baseUrl, defaultBaseUrl: base, model, ready: !!baseUrl && (x.key !== "required" || hasKey) };
+    });
+    const chosen = providers.find((x) => x.id === (P.provider ?? "anthropic"));
+    const defaultModel = chosen.model ? (chosen.id === "anthropic" ? chosen.model : `${chosen.id}:${chosen.model}`) : null;
+    return { provider: chosen.id, defaultModel, providerReady: chosen.ready && !!defaultModel, providers };
+  };
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
     transformCallback(cb) { const id = next++; callbacks[id] = cb; return id; },
@@ -76,15 +106,50 @@
       if (cmd.startsWith("plugin:window|")) return null;
       switch (cmd) {
         case "dev_log": return;
-        case "settings_get": return M.settings;
+        case "settings_get": return M.prov ? { ...M.settings, ...providerView() } : M.settings;
         case "settings_set_backend": M.settings.backend = args.backend; return;
         case "settings_set_model": M.settings.model = args.model ?? "claude-opus-5-5"; return;
-        case "models_list": return M.models;
+        case "models_list": {
+          if (!args.provider || args.provider === "anthropic") return M.models;
+          // As providers.rs and openai.rs: a server on this computer that isn't running says so; a list may be refused.
+          const preset = PRESETS.find((x) => x.id === args.provider);
+          if (preset.local && !M.prov?.running?.[preset.id]) throw `${preset.name} isn’t running at ${baseOf(preset).replace(/\/v1$/, "")}. Open it, then check again.`;
+          const list = M.prov?.lists?.[preset.id];
+          if (!list) throw `Phaethon couldn’t get the list of models from ${preset.name} just now. You can still type a model’s name.`;
+          return list;
+        }
+        // Providers (src-tauri/src/providers.rs), when a scenario sets M.prov:
+        // { provider, keys: { id: true }, models: { id: model }, urls: { id: url }, running: { id: true }, lists: { id: [ModelInfo] } }.
+        case "settings_set_provider": M.prov.provider = args.provider; return;
+        case "settings_set_provider_model": {
+          if (args.model != null && !MODEL_ID.test(args.model)) throw "That isn’t a model name Phaethon can use. It’s one word, like gpt-5 or llama3.2:3b.";
+          M.prov.models ??= {};
+          M.prov.models[args.provider] = args.model ?? null;
+          return;
+        }
+        case "settings_set_provider_url": {
+          if (args.url != null && !/^https?:\/\/[^\s/?#@]+(\/[^\s?#]*)?$/.test(args.url))
+            throw "That isn’t an address Phaethon can use. It looks like http://127.0.0.1:11434/v1 or https://example.com/v1.";
+          M.prov.urls ??= {};
+          if (args.url == null) delete M.prov.urls[args.provider];
+          else M.prov.urls[args.provider] = args.url.replace(/\/+$/, "");
+          return;
+        }
+        case "provider_status": {
+          const preset = PRESETS.find((x) => x.id === args.provider);
+          const running = !!M.prov?.running?.[preset.id];
+          const models = running ? (M.prov.lists?.[preset.id] ?? []) : [];
+          const at = baseOf(preset).replace(/\/v1$/, "");
+          return running
+            ? { running, models, message: models.length ? `${preset.name} is running, with ${models.length} model${models.length === 1 ? "" : "s"}.` : `${preset.name} is running, but has no models yet. Download one with ollama pull llama3.2 in a terminal, then check again.` }
+            : { running, models, message: `${preset.name} isn’t running at ${at}. Open it, then check again.` };
+        }
         // A space's own model (space.json "model"), as src-tauri/src/space_model.rs: M.spaceModels[id].
         case "space_model_get": return (M.spaceModels ?? {})[args.space] ?? null;
         case "space_model_set": {
           if (!M.spaces.some((s) => s.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
-          if (args.model != null && !/^claude-[a-z0-9.-]+$/.test(args.model)) throw "That isn’t a model Phaethon knows how to use.";
+          if (args.model != null && !/^claude-[a-z0-9.-]+$/.test(args.model) && !(args.model.split(":")[0] in PROVIDER_IDS && MODEL_ID.test(args.model.slice(args.model.indexOf(":") + 1))))
+            throw "That isn’t a model Phaethon knows how to use.";
           M.spaceModels ??= {};
           if (args.model == null) delete M.spaceModels[args.space];
           else M.spaceModels[args.space] = args.model;
@@ -94,13 +159,27 @@
         case "api_key_check": {
           if (M.keyCheck) return M.keyCheck;
           const k = String(args.key ?? "").trim();
+          if (args.provider && args.provider !== "anthropic") {
+            const name = PRESETS.find((x) => x.id === args.provider).name;
+            if (k.startsWith("sk-ant-"))
+              return { ok: false, problem: "format", message: `That looks like a key for Anthropic, not ${name}, so it wasn’t sent anywhere. Choose Anthropic as the provider, or paste a ${name} key.` };
+            if (k.length < 8 || /\s/.test(k)) return { ok: false, problem: "format", message: `That doesn’t look like a ${name} API key. Copy the whole key again; it’s one line with no spaces.` };
+            if (k.includes("deleted")) return { ok: false, problem: "rejected", message: `${name} didn’t accept this key. It may have been deleted, or part of it is missing. Copy it again and paste it here.` };
+            return { ok: true, message: "This key works." };
+          }
           return k.startsWith("sk-ant-") && k.length > 20
             ? { ok: true, message: "This key works." }
             : { ok: false, problem: "format", message: "That isn’t an Anthropic API key. Keys start with sk-ant-." };
         }
         case "file_open": return;
-        case "api_key_set": M.settings.hasAnthropicKey = true; return;
-        case "api_key_clear": M.settings.hasAnthropicKey = false; return;
+        case "api_key_set":
+          if (!args.provider || args.provider === "anthropic") M.settings.hasAnthropicKey = true;
+          if (M.prov) (M.prov.keys ??= {})[args.provider] = true;
+          return;
+        case "api_key_clear":
+          if (!args.provider || args.provider === "anthropic") M.settings.hasAnthropicKey = false;
+          if (M.prov) delete (M.prov.keys ??= {})[args.provider];
+          return;
         case "appearance_set": M.settings.appearance = args.appearance; return;
         case "spaces_list":
           return [...M.spaces]

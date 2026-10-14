@@ -3,7 +3,7 @@
  * check a pasted key, save it only when it works (or the person says to), and
  * say what happened in plain words. Also the links and model names both show.
  */
-import { checkApiKey, setApiKey, type KeyProblem } from "@/lib/backend";
+import { checkApiKey, setApiKey, type KeyProblem, type ProviderId } from "@/lib/backend";
 
 export const CONSOLE_KEYS_URL = "https://console.anthropic.com/settings/keys";
 export const CONSOLE_BILLING_URL = "https://console.anthropic.com/settings/billing";
@@ -56,6 +56,32 @@ export function outcomeText(o: KeyOutcome): string {
   }
 }
 
+/**
+ * [`outcomeText`] for any provider: Anthropic's own words for Anthropic, and
+ * for the others the core's message (it names the provider and what to do).
+ */
+export function outcomeTextFor(o: KeyOutcome, provider: { id: ProviderId; name: string }): string {
+  if (provider.id === "anthropic") return outcomeText(o);
+  const name = provider.id === "custom" ? "your server" : provider.name;
+  if (o.kind === "saved") return `Your key works. It’s saved in ${KEY_STORE}.`;
+  if (o.kind === "no-credit") return `Your key is saved, but your ${provider.name} account has no credit yet, so Phaethon can’t answer. Add credit with ${provider.name}; nothing else needs changing here.`;
+  switch (o.problem) {
+    case "empty":
+      return "Paste your key first.";
+    case "format":
+    case "rejected":
+      return `${o.detail ?? `${provider.name} didn’t accept this key.`} It wasn’t saved.`;
+    case "network":
+      return `Phaethon couldn’t reach ${name} to check this key, so it wasn’t saved. Check your connection and try again, or save it without checking.`;
+    case "unchecked":
+      return "Phaethon couldn’t check this key, so it wasn’t saved. Try again, or save it without checking.";
+    case "billing":
+      return `Your ${provider.name} account has no credit yet. Add credit with ${provider.name}.`;
+    case "not-saved":
+      return `The key couldn’t be saved in ${KEY_STORE}.${o.detail ? ` ${o.detail}` : ""}`;
+  }
+}
+
 /** The problems a person can get past by saving without the check. */
 export const canSaveUnchecked = (o: KeyOutcome | null) => o?.kind === "problem" && (o.problem === "network" || o.problem === "unchecked");
 
@@ -66,13 +92,13 @@ export const canSaveUnchecked = (o: KeyOutcome | null) => o?.kind === "problem" 
  * `skipCheck` saves without checking (after a network failure); `beforeSave`
  * runs just before the key is written.
  */
-export async function checkAndSave(raw: string, skipCheck = false, beforeSave?: () => void): Promise<KeyOutcome> {
+export async function checkAndSave(raw: string, skipCheck = false, beforeSave?: () => void, provider: ProviderId = "anthropic"): Promise<KeyOutcome> {
   const key = raw.trim();
   if (!key) return { kind: "problem", problem: "empty" };
   let noCredit = false;
   if (!skipCheck) {
     try {
-      const r = await checkApiKey(key);
+      const r = await checkApiKey(key, provider);
       if (!r.ok) {
         if (r.problem === "billing") noCredit = true;
         else return { kind: "problem", problem: r.problem ?? "rejected", detail: r.message };
@@ -83,7 +109,7 @@ export async function checkAndSave(raw: string, skipCheck = false, beforeSave?: 
   }
   beforeSave?.();
   try {
-    await setApiKey(key);
+    await setApiKey(key, provider);
   } catch (e) {
     return { kind: "problem", problem: "not-saved", detail: String(e) };
   }

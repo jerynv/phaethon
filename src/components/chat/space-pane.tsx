@@ -218,7 +218,8 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
       getSettings().then(
         (s) => {
           if (!live) return;
-          setNeedsKey(s.backend === "phaethon" && !s.hasAnthropicKey);
+          // The first-run card sets up Anthropic; another provider says what it needs in Settings.
+          setNeedsKey(s.backend === "phaethon" && (s.provider ?? "anthropic") === "anthropic" && !s.hasAnthropicKey);
           setCli(s.backend !== "phaethon");
         },
         () => {},
@@ -227,7 +228,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     // A key saved or a backend chosen anywhere (Settings, or the card in another space) puts the card away.
     const onChanged = (e: Event) => {
       const what = (e as CustomEvent<SettingsChangedDetail>).detail?.what;
-      if (what === "key" || what === "backend") void read();
+      if (what === "key" || what === "backend" || what === "provider") void read();
     };
     window.addEventListener(SETTINGS_CHANGED_EVENT, onChanged);
     return () => {

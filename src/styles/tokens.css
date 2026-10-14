@@ -105,6 +105,8 @@
   --ph-dialog-width: 40rem;
   --ph-preview-max-height: 15rem;
   --ph-composer-max-height: 12rem;
+  /* A provider's model list in Settings and the space's model chooser (rem: it grows with the text). */
+  --ph-model-list-max-height: 16rem;
   --ph-chip-name-width: 12rem;
   /* The main pane sits inset from the window chrome by this much. */
   --ph-pane-inset: calc(var(--ph-space) * 2);

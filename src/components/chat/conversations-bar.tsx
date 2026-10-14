@@ -454,9 +454,11 @@ export function ConversationsBar({
       )}
     >
       {/* Padded below too, so a focused button's ring is never under the fade. */}
-      <div className="flex items-center justify-end gap-1 px-2 py-1.5">
+      {/* Wraps when its buttons don't fit beside the views (large text in a narrow window) instead of spilling over them;
+          the title (flex-1, from nothing) gives way first. */}
+      <div className="flex flex-wrap items-center justify-end gap-1 px-2 py-1.5">
         {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used.
-            Nothing while it is empty: "New conversation" here read as a second button beside the real one. */}
+            No words while it is empty ("New conversation" here read as a second button beside the real one), only its room. */}
         {current && current.messages > 0 ? (
           // Title over date, each cut to fit on its own line: a long date (large text, a wide reading font)
           // can never run into the Conversations button.

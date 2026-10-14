@@ -50,6 +50,16 @@ async function measure(page, h, label) {
   await park(page);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const chat = await boxes(page);
+  // The bar's buttons never spill over the views (large text in a narrow window once put Conversations over Plan).
+  const overlap = await page.evaluate((shown) => {
+    const pane = document.querySelector(shown);
+    const s = pane.querySelector("[data-view-switcher]").getBoundingClientRect();
+    return [...pane.querySelectorAll("[data-conversations-bar] button")].some((b) => {
+      const r = b.getBoundingClientRect();
+      return r.left < s.right && r.right > s.left && r.top < s.bottom && r.bottom > s.top;
+    });
+  }, shown);
+  check(!overlap, `${label}: the conversations bar never covers the views`);
   const seen = { chat };
   for (const v of [...VIEWS.slice(1), "chat"]) {
     await show(page, h, v);

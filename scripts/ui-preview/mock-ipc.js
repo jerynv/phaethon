@@ -1047,6 +1047,51 @@
           return;
         }
         // ---- end study from chat (f13) ----
+        // ---- Rich output: LaTeX (src-tauri/src/latex.rs) and the file viewer (viewer.rs) ----
+        // M.latex: { noEngine: true } | { fail: { message, line, log } } | {} (compiles);
+        // M.pdfs: { doc: base64, fig: base64 } served by latex_pdf (ids "doc" and "fig");
+        // M.files: { "<path>": { kind, text?, b64?, mediaType?, size?, language?, tooBig? } } for file_view / file_bytes.
+        case "latex_status":
+          return M.latex?.noEngine
+            ? { engine: null, engines: [], message: "There’s no LaTeX on this computer. To see LaTeX documents here, install a TeX distribution: MacTeX on a Mac (tug.org/mactex), TeX Live on Linux or Windows (tug.org/texlive), or tectonic (tectonic-typesetting.github.io). Then open this again." }
+            : { engine: "pdfLaTeX", engines: ["pdfLaTeX", "XeLaTeX"], message: null };
+        case "latex_compile": {
+          await sleep(M.latex?.delay ?? 150);
+          if (M.latex?.noEngine) return { status: "noEngine", message: "There’s no LaTeX on this computer. To see LaTeX documents here, install a TeX distribution: MacTeX on a Mac (tug.org/mactex), TeX Live on Linux or Windows (tug.org/texlive), or tectonic (tectonic-typesetting.github.io). Then open this again." };
+          const fail = M.latex?.fail ?? (/\\undefinedcommand/.test(args.source) ? { message: "LaTeX doesn’t know the command \\undefinedcommand (line 4). It may need a package the document doesn’t load, or be a typo.", line: 4, log: "! Undefined control sequence.\nl.4 \\undefinedcommand\n" } : null);
+          if (fail) return { status: "failed", line: null, log: "", ...fail };
+          return { status: "ok", id: args.figure ? "fig" : "doc", engine: "pdfLaTeX" };
+        }
+        case "latex_pdf": {
+          const b64 = M.pdfs?.[args.id];
+          if (!b64) throw "That PDF isn’t here any more. Compile the document again.";
+          return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
+        }
+        case "latex_save": {
+          const slug = (args.title || "document").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "document";
+          (M.latexSaved ??= []).push(args);
+          const n = M.latexSaved.filter((s) => s.title === args.title).length;
+          const name = n === 1 ? slug : `${slug}-${n}`;
+          return M.latex?.fail ? { tex: `documents/${name}.tex`, pdf: null, note: `Only the source was saved: ${M.latex.fail.message}` } : { tex: `documents/${name}.tex`, pdf: `documents/${name}.pdf`, note: null };
+        }
+        case "file_view":
+        case "file_bytes": {
+          const path = String(args.path).trim();
+          // As viewer.rs: nothing outside the space (or courses it may see).
+          if (!path || path.startsWith("/") || path.startsWith("@") || path.split("/").includes("..") || path.startsWith(".phaethon")) {
+            throw "Only files in this space can be opened from here.";
+          }
+          const f = M.files?.[path] ?? (M.files ? null : { kind: "markdown", text: `# ${path.split("/").pop()}\n\nA file in this space.` });
+          if (!f) throw `“${path}” isn’t in this space any more. It may have been moved or deleted.`;
+          if (cmd === "file_bytes") {
+            if (!f.b64) throw "Only PDFs and pictures are read this way.";
+            return Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0)).buffer;
+          }
+          const name = path.split("/").pop();
+          const size = f.size ?? (f.b64 ? Math.floor((f.b64.length * 3) / 4) : (f.text ?? "").length);
+          return { path, name, kind: f.kind, size, mediaType: f.mediaType ?? "", text: f.text ?? null, language: f.language ?? null, tooBig: !!f.tooBig };
+        }
+        // ---- end of rich output ----
         case "agent_send": {
           M.currentSpace = args.space;
           const usedSpace = M.spaces.find((s) => s.id === args.space);

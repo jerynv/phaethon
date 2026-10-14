@@ -1,13 +1,42 @@
 import { AttachmentPrimitive, ComposerPrimitive, MessagePrimitive, useAui, useAuiState } from "@assistant-ui/react";
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type RefObject } from "react";
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useFileViewer, type ViewSource } from "@/components/viewer/file-viewer";
 import { useAttachmentSrc } from "@/hooks/use-attachment-src";
 import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
+import { fromBase64 } from "@/lib/files";
 import { formatBytes, typeLabel } from "@/runtime/attachments";
 
 import { useAnnounce } from "./announce";
+import { SpaceIdContext } from "./approval-card";
+
+/** A reloaded file's id says where it is saved in the space (agent-adapter.ts savedAttachmentId). */
+const SAVED = "saved-file:";
+
+type Viewable = {
+  id: string;
+  name: string;
+  contentType?: string;
+  file?: File;
+  content?: readonly { type: string; image?: string; data?: string }[];
+};
+
+/**
+ * Where the viewer finds an attached file: in the space once it is saved
+ * there (a reloaded message), else its own bytes (being attached, or just
+ * sent). Null when there's nothing to show.
+ */
+function viewSourceOf(a: Viewable, space: string): ViewSource | null {
+  if (a.id.startsWith(SAVED) && space) return { kind: "space", space, path: a.id.slice(SAVED.length) };
+  const file = a.file;
+  if (file) return { kind: "bytes", name: a.name, mediaType: a.contentType ?? file.type, size: file.size, load: () => file.arrayBuffer() };
+  const part = a.content?.find((p) => (p.type === "image" && p.image) || (p.type === "file" && p.data));
+  const data = part?.image ?? part?.data;
+  if (data) return { kind: "bytes", name: a.name, mediaType: a.contentType, load: async () => fromBase64(data) };
+  return null;
+}
 
 function iconFor(type: string, mediaType: string | undefined): IconName {
   if (type === "image" || mediaType?.startsWith("image/")) return "image";
@@ -47,6 +76,29 @@ function Thumb({ icon }: { icon: IconName }) {
 
 type Removed = { file: File; name: string };
 
+/** A chip's picture and words: a button that opens the file in the viewer when it can be shown. */
+function ChipBody({ view, thumb, children }: { view?: () => void; thumb: React.ReactNode; children: React.ReactNode }) {
+  if (!view) {
+    return (
+      <>
+        {thumb}
+        <span className="flex min-w-0 flex-col">{children}</span>
+      </>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={view}
+      data-view-attachment=""
+      className="-my-0.5 -ms-0.5 flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md py-0.5 ps-0.5 pe-1 text-start hover:bg-hover"
+    >
+      {thumb}
+      <span className="flex min-w-0 flex-col">{children}</span>
+    </button>
+  );
+}
+
 /**
  * One attached file: a thumbnail or type icon, its name (shortened in the
  * middle; the full name is its accessible name and tooltip), its type and
@@ -65,6 +117,10 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
       : undefined,
   );
   const meta = [typeLabel(name, mediaType), size !== undefined ? formatBytes(size) : null].filter(Boolean).join(" · ");
+  const space = useContext(SpaceIdContext);
+  const attachment = useAuiState((s) => s.attachment) as Viewable;
+  const source = useMemo(() => (failed ? null : viewSourceOf(attachment, space)), [attachment, space, failed]);
+  const { open, viewer } = useFileViewer();
   const short = middleEllipsis(name);
   const removable = !!onRemoved;
 
@@ -85,8 +141,11 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
           failed ? "border-danger" : "border-line",
         )}
       >
-        <Thumb icon={iconFor(type, mediaType)} />
-        <span className="flex min-w-0 flex-col">
+        {/* The file itself opens it in the viewer ("notes.md, Markdown · 2 KB, open in the viewer"). */}
+        <ChipBody
+          view={source ? () => open(source) : undefined}
+          thumb={<Thumb icon={iconFor(type, mediaType)} />}
+        >
           <span className="text-sm font-medium whitespace-nowrap text-ink" title={name}>
             <span aria-hidden="true">{short}</span>
             <span className="sr-only">{name}</span>
@@ -94,8 +153,10 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
           <span className={cn("text-xs", failed ? "text-danger-ink" : "text-ink-secondary")}>
             <span className="sr-only">, </span>
             {failed ?? meta}
+            {source && <span className="sr-only">, open in the viewer</span>}
           </span>
-        </span>
+        </ChipBody>
+        {viewer}
         {removable && (
           <Button
             type="button"

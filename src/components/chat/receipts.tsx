@@ -4,6 +4,7 @@ import { useContext, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/icons";
 import { platform } from "@/lib/platform";
+import { useFileViewer } from "@/components/viewer/file-viewer";
 import { cn } from "@/lib/utils";
 import { openSpaceFile, type AccessAnswer, type ChatRecord, type RecordPartData } from "@/runtime/records";
 
@@ -46,12 +47,14 @@ export const revealLabel = () =>
   platform() === "mac" ? "Show in Finder" : platform() === "windows" ? "Show in File Explorer" : "Show in folder";
 
 /**
- * A file Phaethon wrote, as a link that opens it in its default app, with a
- * second, quieter way to show it in the file manager. A failure says why, here.
+ * A file Phaethon wrote, as a link that opens it in the viewer here (which
+ * offers its own app too), with a second, quieter way to show it in the file
+ * manager. A failure says why, here.
  */
 function FileLink({ path }: { path: string }) {
   const space = useContext(SpaceIdContext);
   const [problem, setProblem] = useState("");
+  const { open: view, viewer } = useFileViewer();
   const open = async (reveal: boolean) => {
     setProblem("");
     try {
@@ -68,11 +71,12 @@ function FileLink({ path }: { path: string }) {
         size="xs"
         data-file-open={path}
         className="min-w-0 font-mono text-sm underline decoration-1 underline-offset-2 wrap-anywhere hover:decoration-2"
-        onClick={() => void open(false)}
+        onClick={() => view({ kind: "space", space, path })}
       >
         {path}
-        <span className="sr-only">, open</span>
+        <span className="sr-only">, view</span>
       </Button>
+      {viewer}
       <Button
         type="button"
         variant="ghost"

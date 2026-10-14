@@ -9,15 +9,20 @@ import {
   MarkdownTextPrimitive,
   type MarkdownTextPrimitiveProps,
   memoizeMarkdownComponents,
+  type SyntaxHighlighterProps,
   useIsMarkdownCodeBlock,
 } from "@assistant-ui/react-markdown";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   type ComponentProps,
+  createContext,
   type CSSProperties,
   type FC,
   memo,
+  type ReactNode,
+  useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -25,13 +30,20 @@ import {
   useRef,
   useState,
 } from "react";
-import type { TextMessagePartProps } from "@assistant-ui/react";
+import { type TextMessagePartProps, useAuiState } from "@assistant-ui/react";
 
+import { SpaceIdContext } from "@/components/chat/approval-card";
 import { useAnnounce } from "@/components/chat/announce";
+import { LatexDocumentCard, TikzFigure } from "@/components/rich/latex-block";
+import { MATH_REHYPE, MATH_REMARK, prepareMath } from "@/components/rich/math";
+import { MermaidDiagram } from "@/components/rich/mermaid-diagram";
+import { SpaceFileLink, useLinkBase } from "@/components/viewer/file-viewer";
 import { Button } from "@/components/ui/button";
 import { setCodeWrap, useCodeWrap } from "@/hooks/use-code-wrap";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { Icon } from "@/icons";
+import { spacePathOf } from "@/lib/files";
+import { isLatexDocument } from "@/lib/latex";
 import { cn } from "@/lib/utils";
 
 import { SyntaxHighlighter } from "./syntax-highlighter";
@@ -104,8 +116,34 @@ function remarkHeadingLevels() {
   };
 }
 
-const ASSISTANT_PLUGINS = [remarkGfm, remarkHeadingLevels];
-const USER_PLUGINS = [remarkGfm, remarkSoftBreaks, remarkHeadingLevels];
+const ASSISTANT_PLUGINS = [remarkGfm, ...MATH_REMARK, remarkHeadingLevels];
+const USER_PLUGINS = [remarkGfm, ...MATH_REMARK, remarkSoftBreaks, remarkHeadingLevels];
+
+/**
+ * The text markdown is being drawn from (after prepareMath), so a fence can
+ * tell whether it is closed yet: a diagram, document or figure is drawn only
+ * once its fence is, and shows as code while it streams in.
+ */
+const FenceSourceContext = createContext<{ current: string } | null>(null);
+
+/** Whether a fenced block's markdown (from its opening fence on) ends with its closing fence. */
+export function fenceClosed(raw: string): boolean {
+  const lines = raw.replace(/\s+$/, "").split("\n");
+  const open = /^ {0,3}(`{3,}|~{3,})/.exec(lines[0] ?? "");
+  if (!open || lines.length < 2) return false;
+  const close = lines[lines.length - 1].trim();
+  return close.length >= open[1].length && [...close].every((c) => c === open[1][0]);
+}
+
+type Positioned = { position?: { start?: { offset?: number }; end?: { offset?: number } } };
+/** Whether the fenced block at `node` is complete (always, outside a streaming message). */
+function useFenceClosed(node: Positioned | undefined): boolean {
+  const source = useContext(FenceSourceContext);
+  const start = node?.position?.start?.offset;
+  const end = node?.position?.end?.offset;
+  if (!source || start === undefined || end === undefined) return true;
+  return fenceClosed(source.current.slice(start, end));
+}
 
 const MarkdownTextImpl: FC<MarkdownTextProps & { user?: boolean }> = ({ components, componentsByLanguage, user }) => {
   const stableComponents = useShallowStable(components);
@@ -114,18 +152,34 @@ const MarkdownTextImpl: FC<MarkdownTextProps & { user?: boolean }> = ({ componen
     if (!stableComponents) return defaultComponents;
     return { ...defaultComponents, ...memoizeMarkdownComponents(stableComponents) };
   }, [stableComponents]);
+  const byLanguage = useMemo(() => ({ ...RICH_FENCES, ...stableComponentsByLanguage }), [stableComponentsByLanguage]);
+  // While the reply streams, a half-written $$ block is held back rather than drawn half-made.
+  const streaming = useAuiState((s) => s.message.status?.type === "running");
+  const [source] = useState(() => ({ current: "" }));
+  const preprocess = useCallback(
+    (text: string) => {
+      const out = prepareMath(text, streaming);
+      source.current = out;
+      return out;
+    },
+    [streaming, source],
+  );
 
   return (
-    <MarkdownTextPrimitive
-      remarkPlugins={user ? USER_PLUGINS : ASSISTANT_PLUGINS}
-      className={cn("aui-md text-md text-ink", user ? "max-w-full" : "max-w-(--ph-measure)")}
-      components={markdownComponents}
-      componentsByLanguage={stableComponentsByLanguage}
-      // Text shows as it arrives, with no typing effect: Copy and "Phaethon
-      // replied" then never come before the last words are on screen (C15).
-      smooth={false}
-      defer
-    />
+    <FenceSourceContext.Provider value={source}>
+      <MarkdownTextPrimitive
+        remarkPlugins={user ? USER_PLUGINS : ASSISTANT_PLUGINS}
+        rehypePlugins={MATH_REHYPE}
+        preprocess={preprocess}
+        className={cn("aui-md text-md text-ink", user ? "max-w-full" : "max-w-(--ph-measure)")}
+        components={markdownComponents}
+        componentsByLanguage={byLanguage}
+        // Text shows as it arrives, with no typing effect: Copy and "Phaethon
+        // replied" then never come before the last words are on screen (C15).
+        smooth={false}
+        defer
+      />
+    </FenceSourceContext.Provider>
   );
 };
 
@@ -135,18 +189,23 @@ export const MarkdownText = memo(MarkdownTextImpl);
 export const UserMarkdownText = memo((props: MarkdownTextProps) => <MarkdownTextImpl {...props} user />);
 
 /**
- * Markdown outside a message (the approval card's preview of a file): the
- * same look, no streaming, no syntax colours.
+ * Markdown outside a message (the approval card's preview of a file, the
+ * file viewer, study cards): the same look, with math, diagrams, LaTeX
+ * documents and figures; no streaming and no syntax colours. Links to files
+ * open the viewer where a space is known (SpaceIdContext).
  */
-export function StaticMarkdown({ text, className }: { text: string; className?: string }) {
+export function RichMarkdown({ text, className }: { text: string; className?: string }) {
   return (
-    <div className={cn("aui-md text-md text-ink", className)}>
-      <ReactMarkdown remarkPlugins={ASSISTANT_PLUGINS} components={staticComponents}>
-        {text}
+    <div className={cn("aui-md text-md text-ink", className)} data-rich="">
+      <ReactMarkdown remarkPlugins={ASSISTANT_PLUGINS} rehypePlugins={MATH_REHYPE} components={staticComponents}>
+        {prepareMath(text)}
       </ReactMarkdown>
     </div>
   );
 }
+
+/** The approval card's name for the same renderer. */
+export const StaticMarkdown = RichMarkdown;
 
 /** The bar above a code block: its language, Wrap lines and Copy (which says when it worked). */
 const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
@@ -350,6 +409,28 @@ function TaskBox({ checked }: { checked: boolean }) {
   );
 }
 
+/**
+ * A link. One to a file in the space (a relative path, or courses/...) opens
+ * it in the viewer, through the core's walls; any other opens outside the app.
+ */
+function Anchor({ className, href, children, node: _node, ...props }: ComponentProps<"a"> & { node?: unknown }) {
+  const space = useContext(SpaceIdContext);
+  const base = useLinkBase();
+  const path = space ? spacePathOf(href, base) : null;
+  if (path) {
+    return (
+      <SpaceFileLink space={space} path={path} className={cn("inline", className)} title={path}>
+        {children}
+      </SpaceFileLink>
+    );
+  }
+  return (
+    <a className={cn("text-accent-ink underline decoration-1 hover:decoration-2", className)} target="_blank" rel="noreferrer" href={href} {...props}>
+      {children}
+    </a>
+  );
+}
+
 /** The elements markdown becomes. */
 const elements = {
   h1: heading(1),
@@ -359,14 +440,7 @@ const elements = {
   h5: heading(5),
   h6: heading(6),
   p: ({ className, ...props }) => <p className={cn("my-3 first:mt-0 last:mb-0", className)} {...props} />,
-  a: ({ className, ...props }) => (
-    <a
-      className={cn("text-accent-ink underline decoration-1 hover:decoration-2", className)}
-      target="_blank"
-      rel="noreferrer"
-      {...props}
-    />
-  ),
+  a: Anchor,
   blockquote: ({ className, ...props }) => (
     <blockquote className={cn("my-3 border-s-2 border-line-strong ps-4 text-ink-secondary", className)} {...props} />
   ),
@@ -415,6 +489,37 @@ const elements = {
   sup: ({ className, ...props }) => <sup className={cn("[&>a]:text-xs [&>a]:no-underline", className)} {...props} />,
 } satisfies Components;
 
+/** A fence drawn as more than code: a diagram, a LaTeX document, a figure. Null for any other. */
+function richFence(language: string, code: string): ReactNode {
+  switch (language.toLowerCase()) {
+    case "mermaid":
+      return <MermaidDiagram code={code} />;
+    case "latex":
+    case "tex":
+      return isLatexDocument(code) ? <LatexDocumentCard source={code} /> : null;
+    case "tikz":
+      return <TikzFigure source={code} />;
+    default:
+      return null;
+  }
+}
+
+/** In a message: a rich fence once it is closed; until then (and for a LaTeX snippet) the code as usual. */
+function RichHighlighter(props: SyntaxHighlighterProps) {
+  const closed = useFenceClosed(props.node as Positioned | undefined);
+  const rich = closed ? richFence(props.language, props.code.replace(/\n$/, "")) : null;
+  return rich ?? <SyntaxHighlighter {...props} />;
+}
+/** The code bar goes with the code: not over a diagram, a document card or a figure. */
+function RichCodeHeader(props: CodeHeaderProps) {
+  const closed = useFenceClosed(props.node as Positioned | undefined);
+  const lang = (props.language ?? "").toLowerCase();
+  const drawn = closed && (lang === "mermaid" || lang === "tikz" || ((lang === "latex" || lang === "tex") && isLatexDocument(props.code)));
+  return drawn ? null : <CodeHeader {...props} />;
+}
+const RICH = { SyntaxHighlighter: RichHighlighter, CodeHeader: RichCodeHeader };
+const RICH_FENCES: NonNullable<MarkdownTextPrimitiveProps["componentsByLanguage"]> = { mermaid: RICH, latex: RICH, tex: RICH, tikz: RICH };
+
 const defaultComponents = memoizeMarkdownComponents({
   ...elements,
   pre: Pre,
@@ -423,19 +528,29 @@ const defaultComponents = memoizeMarkdownComponents({
   SyntaxHighlighter,
 });
 
-/** For StaticMarkdown: a code block has no header there, so it gets the full rounded box. */
+type HastText = { type: string; value?: string; tagName?: string; properties?: { className?: unknown }; children?: HastText[] };
+const hastText = (n: HastText | undefined): string => (n?.type === "text" ? (n.value ?? "") : (n?.children ?? []).map(hastText).join(""));
+
+/** For RichMarkdown: a code block has no header there, so it gets the full rounded box; a rich fence is drawn. */
 const staticComponents: Components = {
   ...elements,
-  pre: ({ className, ...props }) => (
-    <pre
-      tabIndex={0}
-      className={cn(
-        "my-3 overflow-x-auto rounded-lg border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  pre: ({ className, node, ...props }) => {
+    const code = (node as HastText | undefined)?.children?.find((c) => c.type === "element" && c.tagName === "code");
+    const cls = code?.properties?.className;
+    const lang = (Array.isArray(cls) ? cls : []).map(String).find((c) => c.startsWith("language-"))?.slice(9);
+    const rich = lang ? richFence(lang, hastText(code).replace(/\n$/, "")) : null;
+    if (rich) return rich;
+    return (
+      <pre
+        tabIndex={0}
+        className={cn(
+          "my-3 overflow-x-auto rounded-lg border border-line bg-surface-sunken p-3 font-mono text-sm leading-normal",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
   code: ({ className, ...props }) => (
     <code
       className={cn(

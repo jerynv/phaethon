@@ -279,15 +279,22 @@ export default [
       const waiting = await page.evaluate(() => [...document.querySelectorAll("[data-activity]")].map((a) => a.textContent).join("|"));
       check(!waiting.includes("Waiting for you"), "the waiting line is gone once answered", waiting);
       await h.waitText("Done.");
+      // The link opens the file in the viewer, which offers its own app; Show in Finder reveals it.
       await page.click('[data-file-open="plans/week6.md"]');
+      await page.waitForSelector('[data-file-viewer="plans/week6.md"] [data-viewer-open-app]', { timeout: 5000 });
+      await page.click("[data-viewer-open-app]");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-file-viewer]"), { timeout: 3000 });
       await page.click('[data-file-reveal="plans/week6.md"]');
       const opened = await calls(page, "file_open");
+      const viewed = await calls(page, "file_view");
       check(
-        opened.length === 2 &&
+        viewed.some((v) => v.space === "school" && v.path === "plans/week6.md") &&
+          opened.length === 2 &&
           opened[0].space === "school" && opened[0].path === "plans/week6.md" && opened[0].reveal === false &&
           opened[1].reveal === true,
-        "the file link opens the file (file_open), Show in Finder reveals it",
-        JSON.stringify(opened),
+        "the file link opens the file in the viewer (file_view), Open in its app opens it (file_open), Show in Finder reveals it",
+        JSON.stringify({ opened, viewed }),
       );
       await h.shot("receipt");
     },

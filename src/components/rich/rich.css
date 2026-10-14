@@ -1,0 +1,141 @@
+/* Math, diagrams and PDF pages in replies and the viewer. Every colour is a token. */
+
+/* ---- Math (KaTeX) ---- */
+
+/* KaTeX sets its own size (1.21em); a touch smaller sits better in reading text, and it follows the text size setting. */
+.aui-md .katex,
+[data-rich] .katex {
+  font-size: 1.12em;
+  color: inherit;
+}
+/* Display math: its own box, scrolling sideways when wider than the reply (the page itself never does). */
+.katex-display[data-math-display] {
+  margin-block: calc(var(--ph-space) * 3);
+  padding-block: calc(var(--ph-space) * 1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  border-radius: var(--ph-radius-sm);
+}
+.katex-display > .katex {
+  /* KaTeX centres; a wide formula then starts at its box's edge, so its start is never cut off. */
+  max-width: max-content;
+  margin-inline: auto;
+}
+/* A formula KaTeX couldn't read: its source, readable, marked as a problem (the reason is its title). */
+.katex-error {
+  font-family: var(--ph-font-mono);
+  font-size: 0.92em;
+  text-decoration: underline wavy var(--ph-danger-ink);
+  text-underline-offset: 0.25em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Diagrams (mermaid) ---- */
+
+[data-mermaid-figure] svg {
+  max-width: 100%;
+  height: auto;
+}
+
+@media (forced-colors: active) {
+  .katex-display[data-math-display] {
+    border: 1px solid CanvasText;
+  }
+  /* SVG paints aren't forced: the diagram is drawn in the system's own text and background colours. */
+  [data-mermaid-figure] svg :is(rect, circle, ellipse, polygon, path, line, polyline) {
+    stroke: CanvasText !important;
+  }
+  [data-mermaid-figure] svg :is(rect, circle, ellipse, polygon) {
+    fill: Canvas !important;
+  }
+  [data-mermaid-figure] svg :is(text, tspan, span, div, p, foreignObject *) {
+    fill: CanvasText !important;
+    color: CanvasText !important;
+  }
+  [data-mermaid-figure] svg marker path {
+    fill: CanvasText !important;
+  }
+  /* A PDF page or a figure keeps its own colours: it's a picture of paper. */
+  [data-pdf-page] canvas,
+  [data-tikz-figure] img {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+  }
+}
+
+/* ---- PDF pages (pdf.js) ---- */
+
+/* A page: the drawing, with pdf.js's invisible text over it, so text can be selected and read aloud. */
+[data-pdf-page] {
+  position: relative;
+  margin-inline: auto;
+  background: var(--ph-pdf-paper);
+  box-shadow: var(--ph-shadow);
+}
+[data-pdf-page] > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * The text layer, after pdf.js's own (pdfjs-dist web/pdf_viewer.css,
+ * Apache-2.0, Mozilla): every span sits where its text is drawn, transparent,
+ * selectable. The colours of its selection are Phaethon's.
+ */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer .markedContent {
+  display: contents;
+}
+.textLayer ::selection {
+  background: var(--ph-pdf-selection);
+  color: transparent;
+}
+.textLayer br::selection {
+  background: transparent;
+}
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}

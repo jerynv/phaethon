@@ -104,6 +104,9 @@
   --ph-composer-radius: var(--ph-radius-xl);
   --ph-dialog-width: 40rem;
   --ph-preview-max-height: 15rem;
+  /* The file viewer (a dialog as wide as the window allows) and a figure drawn in a reply. */
+  --ph-viewer-width: 72rem;
+  --ph-figure-max-height: 28rem;
   --ph-composer-max-height: 12rem;
   /* A provider's model list in Settings and the space's model chooser (rem: it grows with the text). */
   --ph-model-list-max-height: 16rem;
@@ -186,6 +189,10 @@
   --ph-overlay: oklch(0.2 0.01 var(--ph-ink-h) / 35%);
   --ph-scrim: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h) / 92%);
   --ph-scrollbar: oklch(0.8 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+
+  /* A PDF page or a compiled figure is paper in both themes; its text selection is translucent over the drawing. */
+  --ph-pdf-paper: oklch(1 0 0);
+  --ph-pdf-selection: oklch(0.62 0.16 var(--ph-accent-h) / 35%);
 }
 
 /* ---- Dark theme: dusk rather than black ---- */

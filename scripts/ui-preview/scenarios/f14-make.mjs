@@ -1,10 +1,10 @@
 // Making flashcards or a quiz is step by step (the shared wizard, ui/stepper.tsx). Behaviour checks: check(...) fails the run.
-//   f14-make-quiz-keys   keyboard only: Step n of 4 with the step list, Enter is Next, a missing choice said in words with
+//   f14-make-quiz-keys   keyboard only: Step n of 5 with the step list, Enter is Next, a missing choice said in words with
 //                        focus there, each heading focused, Back keeps what was typed, the review shows all of it, and
-//                        nothing is made until Make the quiz; no step scrolls at 1100x720 or 640x480
+//                        nothing is made until Make the quiz; no step scrolls at 1100x720 (at 640x480 the courses and the review may, Next in view)
 //   f14-make-discard     Escape on a fresh dialog closes it; with something chosen it asks (Keep going is focused,
 //                        Escape keeps the work), and Discard closes without making anything
-//   f14-make-deck-steps  flashcards have three steps, and the review's Change goes straight back to a step
+//   f14-make-deck-steps  flashcards have four steps (no kinds of question), and the review's Change goes straight back to a step
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
@@ -79,7 +79,7 @@ export default [
     async run(page, h) {
       await openMake(page, "quiz");
       let s = await at(page);
-      check(s.label === "Step 1 of 4" && s.current === "sources", "it opens on step 1 of 4: the courses", JSON.stringify(s));
+      check(s.label === "Step 1 of 5" && s.current === "sources", "it opens on step 1 of 5: the courses", JSON.stringify(s));
       // Radix puts focus on the first field: a course's box.
       check(await page.evaluate(() => !!document.activeElement?.closest("[data-source-course]")), "focus starts on the first course");
       // Enter with nothing chosen: said in words, beside the courses, focus stays there.
@@ -93,7 +93,11 @@ export default [
       if (page.viewport().width >= 1100) await fits(page, await at(page), "courses");
       else if ((await textScale(page)) === 1) check(await page.$eval("[data-step-next]", (b) => b.getBoundingClientRect().bottom <= innerHeight), "Next stays in view while the courses scroll");
       await page.keyboard.press("Enter");
-      s = await expectStep(page, "questions", 2, 4);
+      // Which test (f16-exam has the whole of it): one course, so its tests; Enter on the heading takes everything so far.
+      s = await expectStep(page, "exam", 2, 5);
+      check(await waitFor(page, () => !!document.querySelector('[data-exam-choice=""]')?.checked), "everything so far is chosen to start with");
+      await page.keyboard.press("Enter");
+      s = await expectStep(page, "questions", 3, 5);
       await fits(page, s, "kinds of question");
       await h.shot("2-questions");
       // Every kind off: Next says so.
@@ -107,7 +111,7 @@ export default [
       await page.focus('[data-quiz-kind="cloze"]');
       await page.keyboard.press("Space");
       await page.keyboard.press("Enter");
-      s = await expectStep(page, "details", 3, 4);
+      s = await expectStep(page, "details", 4, 5);
       await fits(page, s, "focus and number");
       await tabTo(page, "[data-make-focus]");
       await page.keyboard.type("Test 1");
@@ -124,25 +128,28 @@ export default [
       await retype("12");
       await h.shot("3-details");
       await page.keyboard.press("Enter");
-      s = await expectStep(page, "review", 4, 4);
-      await fits(page, s, "review");
+      s = await expectStep(page, "review", 5, 5);
+      // The quiz's review has a row per choice (seven): in a small window it scrolls between the header and the footer,
+      // Make the quiz always in view, as the courses do.
+      if (page.viewport().width >= 1100) await fits(page, s, "review");
+      else if ((await textScale(page)) === 1) check(await page.$eval("[data-step-next]", (b) => b.getBoundingClientRect().bottom <= innerHeight), "Make the quiz stays in view while the review scrolls");
       const review = await page.$eval("[data-wizard-review]", (e) => e.innerText.replace(/\s+/g, " "));
-      check(/CSCI-C 241 Discrete Structures \(all of it\)/.test(review) && /Fill in the blank/.test(review) && /12/.test(review) && /Test 1/.test(review), "the review shows every choice", review);
+      check(/CSCI-C 241 Discrete Structures \(all of it\)/.test(review) && /Fill in the blank/.test(review) && /12/.test(review) && /Test 1/.test(review) && /Test Everything so far/.test(review), "the review shows every choice", review);
       check((await calls(page, "study_make_quiz")).length === 0, "nothing is made before the last step");
       await h.shot("4-review");
       // Back keeps what was typed.
       await tabTo(page, "[data-step-back]");
       await page.keyboard.press("Enter");
-      await expectStep(page, "details", 3, 4);
+      await expectStep(page, "details", 4, 5);
       const kept = await page.evaluate(() => ({ focus: document.querySelector("[data-make-focus]").value, count: document.querySelector("[data-make-count]").value }));
       check(kept.focus === "Test 1" && kept.count === "12", "Back keeps what was typed", JSON.stringify(kept));
       await page.keyboard.press("Enter");
-      await expectStep(page, "review", 4, 4);
+      await expectStep(page, "review", 5, 5);
       // Enter on the review makes it.
       await page.keyboard.press("Enter");
       check(await waitFor(page, () => !!document.querySelector("[data-make-done]"), null, 5000), "Make the quiz makes it");
       const sent = (await calls(page, "study_make_quiz"))[0];
-      check(sent?.options.count === 12 && sent.options.focus === "Test 1" && sent.options.kinds.join() === "cloze", "the core gets what was chosen", JSON.stringify(sent?.options));
+      check(sent?.options.count === 12 && sent.options.focus === "Test 1" && sent.options.kinds.join() === "cloze" && !("exam" in sent.options), "the core gets what was chosen (no test: no exam)", JSON.stringify(sent?.options));
       check(await waitFor(page, () => document.activeElement?.matches("[data-make-title]")), "the result's heading has focus");
     },
   },
@@ -181,16 +188,18 @@ export default [
     async run(page, h) {
       await openMake(page, "deck");
       let s = await at(page);
-      check(s.label === "Step 1 of 3", "flashcards: three steps", JSON.stringify(s));
+      check(s.label === "Step 1 of 4", "flashcards: four steps", JSON.stringify(s));
       await page.keyboard.press("Space");
       await page.keyboard.press("Enter");
-      await expectStep(page, "details", 2, 3);
+      await expectStep(page, "exam", 2, 4);
       await page.keyboard.press("Enter");
-      s = await expectStep(page, "review", 3, 3);
+      await expectStep(page, "details", 3, 4);
+      await page.keyboard.press("Enter");
+      s = await expectStep(page, "review", 4, 4);
       await fits(page, s, "deck review");
       await h.shot("review");
       await page.click('[data-review-change="name"]');
-      await expectStep(page, "details", 2, 3);
+      await expectStep(page, "details", 3, 4);
       check(await page.$("[data-make-name]"), "Change goes back to the step that has it");
     },
   },

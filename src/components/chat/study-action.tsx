@@ -2,15 +2,14 @@ import { useAuiState } from "@assistant-ui/react";
 import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { announce } from "@/components/shell/announcer";
-import { ScopeEvidence } from "@/components/study/grounding";
+import { ScopeEvidence, ScopeForm } from "@/components/study/grounding";
 import { requestStudy } from "@/components/study/space-view";
-import { needsModel, plainError } from "@/components/study/words";
+import { needsModel, plainError, progressWords } from "@/components/study/words";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
-import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
-import { studyChatCancel, studyChatMake, studyChatPlan, studyScopeState, type Grounding, type StudyEvent, type UnknownScope } from "@/lib/study";
+import { studyChatCancel, studyChatMake, studyChatPlan, type Grounding, type StudyEvent, type UnknownScope } from "@/lib/study";
 import { STUDY_FENCE, makeLabel, openLabel, planSentence, planTitle, questionBefore, readBlock, type PlanScope, type StudyPlan } from "@/lib/study-chat";
 import { mathAsText } from "@/lib/study-math";
 
@@ -65,19 +64,7 @@ function start(space: string, plan: StudyPlan, block: string, question: string, 
   }
 }
 
-type Running = Extract<Run, { at: "running" }>;
-const noun = (p: StudyPlan) => (p.kind === "quiz" ? "questions" : "cards");
 const courseOf = (p: StudyPlan) => p.scope?.courseName ?? (p.sources.length === 1 ? p.sources[0].name : "your course");
-/** Each step in plain words; a careful run takes minutes, so each says what it is doing. */
-const STEP_WORDS: Record<string, (p: StudyPlan, r: Running) => string> = {
-  mapping: (p, r) =>
-    `Mapping what ${courseOf(p)} teaches${p.exam ? ` and what ${p.exam} covers` : ""}, from its own materials${r.total > 1 ? ` (part ${Math.min(r.done + 1, r.total)} of ${r.total})` : ""}. This takes a few minutes the first time…`,
-  reading: (p) => `Finding the passages that teach each topic${p.exam ? ` in ${p.exam}` : ""}…`,
-  making: (p, r) => (r.done === 0 ? `Writing the ${noun(p)} from those passages…` : `Writing replacements for the ${noun(p)} that didn’t pass…`),
-  checking: (_p, r) =>
-    `Checking each one against your notes${r.total ? ` (${Math.min(r.done, r.total)} of ${r.total})` : ""}: ${r.kept ?? 0} kept, ${r.dropped ?? 0} dropped so far…`,
-  saving: (p) => (p.kind === "quiz" ? "Saving the quiz…" : "Saving the cards…"),
-};
 
 /** What a kind of thing is called while the block is still arriving. */
 const guessKind = (code: string) => (/"kind"\s*:\s*"(deck|flashcards|cards)"/i.test(code) ? "deck" : "quiz");
@@ -184,7 +171,7 @@ export function StudyAction({ code }: { code: string }) {
   let status = "";
   if (read.state === "writing") status = "Still writing the plan…";
   else if (!plan) status = "Checking the plan…";
-  else if (run?.at === "running") status = (STEP_WORDS[run.step] ?? (() => "Starting…"))(plan, run);
+  else if (run?.at === "running") status = progressWords(run, { quiz: plan.kind === "quiz", course: courseOf(plan), exam: plan.exam });
   else if (busy) status = "Being made. It opens in Study when it’s ready.";
   else if (made) status = kind === "quiz" ? "Made. It’s in Study with your quizzes." : "Made. They’re in Study with your decks.";
   else if (run?.at === "cancelled") status = "Stopped. Nothing was made.";
@@ -331,66 +318,6 @@ function PlanScopeLine({ space, scope }: { space: string; scope: PlanScope }) {
         </Details>
       )}
     </div>
-  );
-}
-
-/** The exam's scope wasn't found: say it, and the quiz is made from that. */
-function ScopeForm({ space, needs, onSaved }: { space: string; needs: UnknownScope; onSaved: () => void }) {
-  const id = useId();
-  const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [problem, setProblem] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => ref.current?.focus(), []);
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!text.trim()) {
-      setProblem(`Say what ${needs.exam} covers, in a few words.`);
-      return;
-    }
-    setSaving(true);
-    try {
-      await studyScopeState(space, needs.course, needs.exam, text.trim());
-      announce(`Saved what ${needs.exam} covers. Making it now.`);
-      onSaved();
-    } catch (err) {
-      setProblem(plainError(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-  return (
-    <form onSubmit={save} noValidate className="flex flex-col gap-1.5" data-scope-form="">
-      <label htmlFor={`${id}-scope`} className="text-base font-medium text-ink">
-        What does {needs.exam} cover?
-      </label>
-      <p id={`${id}-hint`} className="text-sm text-ink-secondary">
-        As your instructor said it, for example “through HW 6, not graphs or combinatorics”. It’s kept for {needs.courseName} and shown as yours.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          ref={ref}
-          id={`${id}-scope`}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setProblem("");
-          }}
-          aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ""}`}
-          aria-invalid={!!problem || undefined}
-          className="max-w-md min-w-0 flex-1"
-        />
-        <Button type="submit" disabled={saving} data-scope-save="">
-          {saving ? <Icon name="spinner" className="animate-spin" /> : <Icon name="check" />}
-          Save and make it
-        </Button>
-      </div>
-      {problem && (
-        <p id={`${id}-problem`} className="text-sm text-danger-ink">
-          {problem}
-        </p>
-      )}
-    </form>
   );
 }
 

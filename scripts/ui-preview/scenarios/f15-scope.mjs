@@ -156,8 +156,8 @@ export default [
       await cardReady(page);
       await page.click(`${CARD} [data-study-action-make]`);
       const live = `${CARD} [data-study-action-live]`;
-      check(await waitFor(page, (L) => /Mapping what CSCI-C 241 Discrete Structures teaches and what Test 1 covers/.test(document.querySelector(L)?.textContent ?? ""), live), "mapping is said in words", await page.evaluate((L) => document.querySelector(L)?.textContent, live));
-      check(await waitFor(page, (L) => /Checking each one against your notes \(0 of 5\): 0 kept, 1 dropped so far/.test(document.querySelector(L)?.textContent ?? ""), live, 6000), "checking says kept and dropped", await page.evaluate((L) => document.querySelector(L)?.textContent, live));
+      check(await waitFor(page, (L) => /Reading CSCI-C 241 Discrete Structures to see what it teaches and what Test 1 covers/.test(document.querySelector(L)?.textContent ?? ""), live), "mapping is said in words", await page.evaluate((L) => document.querySelector(L)?.textContent, live));
+      check(await waitFor(page, (L) => /Checking each question against your notes \(0 of 5\): 0 kept, 1 dropped so far/.test(document.querySelector(L)?.textContent ?? ""), live, 6000), "checking says kept and dropped", await page.evaluate((L) => document.querySelector(L)?.textContent, live));
       const role = await page.evaluate((L) => document.querySelector(L)?.getAttribute("role"), live);
       check(role === "status", "progress is a polite status");
       await h.shot("checking");

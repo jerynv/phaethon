@@ -1,12 +1,84 @@
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+
 import { Passage, sourceWords } from "@/components/rich/citation";
+import { announce } from "@/components/shell/announcer";
+import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
+import { Input } from "@/components/ui/input";
 import { SpaceFileLink } from "@/components/viewer/file-viewer";
 import { Icon } from "@/icons";
-import type { Evidence, Grounding } from "@/lib/study";
+import { studyScopeState, type Evidence, type Grounding, type UnknownScope } from "@/lib/study";
 import { citeName } from "@/lib/study-cite";
 
 import { MathText } from "./card-text";
-import { plural } from "./words";
+import { plainError, plural } from "./words";
+
+/** Asking what an exam covers, in the same words wherever it is asked (the chat card, the make dialog). */
+export const scopeQuestion = (exam: string) => `What does ${exam} cover?`;
+export const scopeHint = (courseName: string) =>
+  `As your instructor said it, for example “through HW 6, not graphs or combinatorics”. It’s kept for ${courseName} and shown as yours.`;
+export const scopeMissing = (exam: string) => `Say what ${exam} covers, in a few words.`;
+
+/** The exam's scope wasn't found when making it: say it, it is kept for the course, and it is made from that. */
+export function ScopeForm({ space, needs, onSaved }: { space: string; needs: UnknownScope; onSaved: () => void }) {
+  const id = useId();
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => ref.current?.focus(), []);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) {
+      setProblem(scopeMissing(needs.exam));
+      ref.current?.focus();
+      return;
+    }
+    setSaving(true);
+    try {
+      await studyScopeState(space, needs.course, needs.exam, text.trim());
+      announce(`Saved what ${needs.exam} covers. Making it now.`);
+      onSaved();
+    } catch (err) {
+      setProblem(plainError(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <form onSubmit={save} noValidate className="flex flex-col gap-1.5" data-scope-form="">
+      <label htmlFor={`${id}-scope`} className="text-base font-medium text-ink">
+        {scopeQuestion(needs.exam)}
+      </label>
+      <p id={`${id}-hint`} className="text-sm text-ink-secondary">
+        {scopeHint(needs.courseName)}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          ref={ref}
+          id={`${id}-scope`}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setProblem("");
+          }}
+          aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ""}`}
+          aria-invalid={!!problem || undefined}
+          className="max-w-md min-w-0 flex-1"
+        />
+        <Button type="submit" disabled={saving} data-scope-save="">
+          {saving ? <Icon name="spinner" className="animate-spin" /> : <Icon name="check" />}
+          Save and make it
+        </Button>
+      </div>
+      {problem && (
+        <p id={`${id}-problem`} className="text-sm text-danger-ink">
+          {problem}
+        </p>
+      )}
+    </form>
+  );
+}
 
 /** Where an exam's scope comes from: each passage, with its file one click away; the person's own word said as theirs. */
 export function ScopeEvidence({ space, evidence }: { space: string; evidence: Evidence[] }) {

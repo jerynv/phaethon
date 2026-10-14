@@ -101,3 +101,55 @@ export async function courseFolders(space: string, alsoNamed: (string | undefine
   }
   return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+// ---- What making them is doing, in words ----
+
+/** One step of making a quiz or cards, as the core streams it (study/grounded.rs). */
+export type MakeProgress = { step: string; done: number; total: number; kept?: number; dropped?: number };
+
+/**
+ * Each step of making a quiz or cards in plain words, wherever it shows (the
+ * make dialog, the chat card): a careful run takes minutes, so each says what
+ * it is doing, never a raw step code like "mapping".
+ */
+export function progressWords(p: MakeProgress, o: { quiz: boolean; course?: string; exam?: string }): string {
+  const noun = o.quiz ? "question" : "card";
+  switch (p.step) {
+    case "mapping":
+      return `Reading ${o.course ?? "the course"} to see what it teaches and what ${o.exam ?? "each test"} covers${p.total > 1 ? ` (part ${Math.min(p.done + 1, p.total)} of ${p.total})` : ""}. The first time takes a few minutes…`;
+    case "reading":
+      return `Finding the passages that teach each topic${o.exam ? ` in ${o.exam}` : ""}…`;
+    case "making":
+      return p.done === 0 ? `Writing the ${noun}s from those passages…` : `Writing replacements for the ${noun}s that didn’t pass…`;
+    case "checking":
+      return `Checking each ${noun} against your notes${p.total ? ` (${Math.min(p.done, p.total)} of ${p.total})` : ""}: ${p.kept ?? 0} kept, ${p.dropped ?? 0} dropped so far…`;
+    case "saving":
+      return o.quiz ? "Saving the quiz…" : "Saving the cards…";
+    case "grading":
+      return "Checking your answers…";
+    case "reviewing":
+      return "Looking over your mistakes…";
+    default:
+      return "Getting started…";
+  }
+}
+
+/** Two names of one test: "Exam 1" is "Test 1"; case, spaces and punctuation aside (as scope.rs reads them). */
+export const examKey = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/\b(exam|quiz|examination)\b/g, "test")
+    .replace(/([a-z])(\d)/g, "$1 $2")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** An exam named for `course` in study/exams.json: one naming no course is any course's (as schedule.rs reads it). */
+export function sameCourse(examCourse: string | undefined, course: CourseFolder): boolean {
+  const squash = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  if (!examCourse?.trim()) return true;
+  const a = squash(examCourse);
+  return [course.name, course.folder.replace(/^courses\//, "")].some((n) => {
+    const b = squash(n);
+    return !!a && !!b && (a.includes(b) || b.includes(a));
+  });
+}

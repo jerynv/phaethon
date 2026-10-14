@@ -187,7 +187,10 @@ export function WizardHeader({
   children,
   titleProps,
   task,
+  autoFocus = true,
 }: {
+  /** False when something in the step takes focus itself as it shows (a field asking a question). */
+  autoFocus?: boolean;
   /** What the whole task is ("Make a quiz"), said before the step number. */
   task?: string;
   steps: readonly WizardStep[];
@@ -205,7 +208,8 @@ export function WizardHeader({
       first.current = false;
       return;
     }
-    requestAnimationFrame(() => titleRef.current?.focus());
+    if (autoFocus) requestAnimationFrame(() => titleRef.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, titleRef]);
   const numbered = at >= 0 && steps.length > 1;
   const next = numbered ? steps[at + 1] : undefined;

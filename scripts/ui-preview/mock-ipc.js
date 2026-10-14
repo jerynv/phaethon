@@ -756,18 +756,40 @@
               const quiz = cmd === "study_make_quiz";
               if (!args.sources?.length) throw "Choose what to make them from.";
               if (!args.sources.every(inSpace)) throw "That isn’t a file in this space.";
-              const steps = [["reading your course files", 1, 3], ["reading your course files", 2, 3], ["reading your course files", 3, 3], [quiz ? "writing the questions" : "writing the cards", 0, 1]];
-              for (const [step, done, total] of steps) {
+              // The core's steps (study/grounded.rs): mapping when the course has no fresh scope map, then reading,
+              // making, checking (with kept and dropped so far) and saving. S.makeSteps overrides them.
+              const count = Number(args.options.count) || 10;
+              const course = args.sources[0].split("/").slice(0, 2).join("/");
+              const view = S.scopeViews?.[course];
+              const steps = S.makeSteps ?? [
+                ...(view && view.state !== "fresh" ? [["mapping", 0, 2], ["mapping", 1, 2]] : []),
+                ["reading", 0, 1],
+                ["reading", 1, 1],
+                ["making", 0, 3],
+                ["checking", 0, count, 0, 0],
+                ["checking", count, count, count, 1],
+                ["saving", 0, 1],
+              ];
+              // An exam whose scope isn't known (S.unknownScopes, as the core finds it) and that the person
+              // hasn't said (S.statedScopes): needsScope, then the core's error, nothing made.
+              const exam = args.options.exam;
+              const needsScope = exam && (S.unknownScopes ?? []).includes(exam) && !S.statedScopes?.[exam];
+              for (const [step, done, total, kept, dropped] of needsScope ? steps.filter((s) => s[0] === "mapping").concat([["mapping", 2, 2]]) : steps) {
                 await sleep(S.step ?? 60);
-                send({ type: "progress", step, done, total });
-                if (S.makeError && done === 2) break;
+                send({ type: "progress", step, done, total, ...(kept != null ? { kept, dropped } : {}) });
+                if (S.makeError) break;
               }
               await sleep(S.step ?? 60);
+              if (needsScope) {
+                const name = (S.courses ?? []).find((c) => c.folder === course)?.course ?? course;
+                send({ type: "needsScope", course, courseName: name, exam });
+                send({ type: "error", message: `I couldn’t find what ${exam} covers in your ${name} materials, so I haven’t made anything: I won’t guess. Tell me what it covers (for example “through HW 6, not graphs”) and I’ll make it from that.` });
+                return;
+              }
               if (S.makeError) {
                 send({ type: "error", message: S.makeError });
                 return;
               }
-              const count = Number(args.options.count) || 10;
               const title = args.options.title || (args.options.fromAttempt ? "Mistakes to review" : args.options.focus ? `Cards on ${args.options.focus}` : quiz ? "Practice quiz" : "New cards");
               if (quiz) {
                 const kinds = args.options.kinds?.length ? args.options.kinds : ["choice"];
@@ -1102,7 +1124,9 @@
           const view = S.scopeViews?.[args.course];
           if (cmd === "study_scope") {
             if (!view) throw "That course isn’t one this space can see.";
-            return view;
+            // What the person said is kept with the course, as scope.rs keeps it.
+            const said = Object.entries(S.statedScopes ?? {}).map(([exam, text]) => ({ exam, text, at: 0 }));
+            return { ...view, stated: [...(view.stated ?? []).filter((x) => !said.some((y) => y.exam === x.exam)), ...said] };
           }
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
           let index = 0;

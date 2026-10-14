@@ -220,6 +220,9 @@ export default [
       check(mixed, "one part chosen: the course's box is mixed");
       await page.click(`[data-source-course="${C241}"] [data-source-part="syllabus.md"]`);
       await page.click("[data-step-next]");
+      // Which test: everything so far (f16-exam has the rest).
+      await page.waitForSelector('[data-make-form][data-make-at="exam"]', { timeout: 3000 });
+      await page.click("[data-step-next]");
       await page.waitForSelector("[data-make-focus]", { timeout: 3000 });
       // The step's heading takes focus first, as it shows.
       await waitFor(page, () => document.activeElement?.matches("[data-make-title]"));
@@ -229,9 +232,9 @@ export default [
       await page.waitForSelector("[data-make-submit]", { timeout: 3000 });
       await page.click("[data-make-submit]");
       check(await waitFor(page, () => !!document.querySelector("[data-make-running] [role=progressbar]")), "making shows a progress bar");
-      await waitFor(page, () => /of 3/.test(document.querySelector("[data-make-step]")?.textContent ?? ""));
+      await waitFor(page, () => /Checking each card/.test(document.querySelector("[data-make-step]")?.textContent ?? ""));
       const p = await page.evaluate(() => document.querySelector("[role=progressbar]")?.getAttribute("aria-valuetext"));
-      check(/Reading your course files, \d of 3/.test(p ?? ""), "the progress is in words", p);
+      check(/Checking each card against your notes \(\d+ of 20\): \d+ kept, \d+ dropped so far/.test(p ?? ""), "the progress is in words", p);
       await h.shot("running");
       check(await waitFor(page, () => !!document.querySelector("[data-make-done]"), null, 5000), "it finishes");
       const sent = (await calls(page, "study_make_deck"))[0];
@@ -257,6 +260,8 @@ export default [
       await page.click(`${SHOWN} [data-make="quiz"]`);
       await page.waitForSelector("[data-make-dialog='quiz']", { timeout: 3000 });
       await page.click(`[data-source-course="${C241}"] input`);
+      await page.click("[data-step-next]");
+      await page.waitForSelector('[data-make-form][data-make-at="exam"]', { timeout: 3000 });
       await page.click("[data-step-next]");
       // Quiz kinds: none chosen is an error too.
       await page.waitForSelector('[data-quiz-kind="choice"]', { timeout: 3000 });

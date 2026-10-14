@@ -1055,6 +1055,91 @@ mod tests {
         fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
     }
 
+    /// A checker that keeps the checker's rule literally: an item passes only when every
+    /// symbol in it is in a passage it cites or in <course_notation>, and no word of it is
+    /// one the course never uses. Anything else asked of it is a writer's reply, in order.
+    struct RuleChecker {
+        writes: Mutex<Vec<String>>,
+        asked: Mutex<Vec<(String, String)>>,
+    }
+
+    impl super::super::model::Model for RuleChecker {
+        async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+            self.asked.lock().unwrap().push((system.into(), user.into()));
+            if !system.starts_with("You check practice questions") {
+                let mut w = self.writes.lock().unwrap();
+                return Ok(if w.is_empty() { "nothing more".into() } else { w.remove(0) });
+            }
+            let notation = user.split_once("<course_notation>").and_then(|(_, r)| r.split_once("</course_notation>")).map_or("", |(n, _)| n);
+            let mut verdicts = vec![];
+            for chunk in user.split("<item id=\"").skip(1) {
+                let (id, body) = chunk.split_once("\">").unwrap();
+                let (asked, rest) = body.split_once("\n<cited>\n").unwrap();
+                let (cited, after) = rest.split_once("</cited>").unwrap();
+                let symbol = |c: char| !c.is_alphanumeric() && !c.is_whitespace() && !".,;:?!'\"()=-+^_".contains(c);
+                let missing: Vec<char> = asked.chars().filter(|c| symbol(*c) && !cited.contains(*c) && !notation.contains(*c)).collect();
+                let unknown = after.contains("appear nowhere in the course");
+                let verdict = if missing.is_empty() && !unknown { "yes" } else { "no" };
+                let why = if !missing.is_empty() { format!("{} isn't taught", missing[0]) } else if unknown { "preimages aren't taught".into() } else { String::new() };
+                verdicts.push(format!(r#"{{"id": "{id}", "verdict": "{verdict}", "missing": "{why}", "answerOk": true}}"#));
+            }
+            Ok(format!(r#"{{"verdicts": [{}]}}"#, verdicts.join(",")))
+        }
+    }
+
+    #[test]
+    fn the_checker_takes_the_courses_evidenced_notation_as_taught_and_nothing_else() {
+        let dir = space("notation");
+        let vault = dir.parent().unwrap().parent().unwrap().to_path_buf();
+        // The course defines ∅ in a file of its own; the power set passage the questions cite
+        // (and the text around it the checker sees) doesn't.
+        const Q4: &str = "The empty set ∅ is the set with no members, and it is a subset of every set.";
+        const NOTES: &str = "courses/CSCI-C 241/files/Notation.md";
+        fs::write(vault.join(NOTES), format!("# Notation\n\n{Q4}\n")).unwrap();
+        let map = map_reply().replace(r#" "exams":"#, &format!(r#" "notation": [{{"symbol": "∅", "meaning": "the empty set", "evidence": {{"source": "Notation.md", "quote": "{Q4}"}}}}], "exams":"#));
+        let v = vis(&dir);
+        let built = block_on(super::super::scope::build(&v, &v.courses[0], &[], &Scripted::new(&[&map]), 1, &|_, _| {})).unwrap();
+        assert_eq!(built.notation.iter().map(|n| n.symbol.as_str()).collect::<Vec<_>>(), ["∅"]);
+        // Two entries without a passage really in the files (one made up, one with none),
+        // as a hand-edited or older map could have: never given to the writer or the checker.
+        let store = vault.join(".phaethon/scope/CSCI-C 241.json");
+        let mut kept: Value = serde_json::from_str(&fs::read_to_string(&store).unwrap()).unwrap();
+        let entry = kept["maps"].as_object_mut().unwrap().values_mut().next().unwrap();
+        entry["notation"].as_array_mut().unwrap().push(serde_json::json!({"symbol": "|S|", "meaning": "how many members S has", "evidence": [{"source": SRC, "quote": "The size |S| of a set S is how many members it has."}]}));
+        entry["notation"].as_array_mut().unwrap().push(serde_json::json!({"symbol": "⊆", "meaning": "is a subset of", "evidence": []}));
+        fs::write(&store, serde_json::to_string(&kept).unwrap()).unwrap();
+
+        let tf = |p: &str, a: &str, e: &str| format!(r#"{{"topic": "t2", "kind": "truefalse", "prompt": "{p}", "answer": "{a}", "explanation": "{e}", "citations": {}}}"#, cite(Q2));
+        let reply = format!(
+            r#"{{"title": "Power sets", "questions": [{}, {}, {}, {}]}}"#,
+            tf("The power set of every set has ∅ as a member.", "true", "∅ is a subset of every set, so it is in the power set."),
+            tf("If |S| = 3, the power set of S has 8 members.", "true", "It has 2^3 = 8 members."),
+            tf("If A ⊆ B, the power set of A has fewer members.", "false", "Not if A = B."),
+            tf("The preimage of a set is its power set.", "false", "By definition of preimage."),
+        );
+        let m = RuleChecker { writes: Mutex::new(vec![reply]), asked: Mutex::default() };
+        let (path, n, g) = block_on(make_quiz(&dir, &v, &["courses/CSCI-C 241".into()], &QuizOptions { exam: Some("Test 1".into()), ..quiz_opts(4) }, &m, &|_| {}, 4)).unwrap();
+        assert_eq!(n, 1);
+        let q = super::super::load_quiz(&dir, &path).unwrap().1;
+        assert_eq!(q.questions[0].prompt, "The power set of every set has ∅ as a member.", "∅ is the course's own, evidenced notation: the question is fair");
+        let whys: Vec<(&str, &str)> = g.dropped.iter().map(|d| (d.text.as_str(), d.why.as_str())).collect();
+        assert!(whys.contains(&("If |S| = 3, the power set of S has 8 members.", "not taught in your notes or not in scope: | isn't taught")), "{whys:?}");
+        assert!(whys.contains(&("If A ⊆ B, the power set of A has fewer members.", "not taught in your notes or not in scope: ⊆ isn't taught")), "{whys:?}");
+        assert!(whys.iter().any(|(t, w)| t.contains("preimage") && w.contains("preimages aren't taught")), "the wall still holds: {whys:?}");
+        let asked = m.asked.lock().unwrap();
+        let check = asked.iter().find(|(s, _)| s.starts_with("You check practice questions")).unwrap();
+        assert!(check.0.contains("a symbol listed in <course_notation> counts as taught") && check.0.contains("doesn't make any other symbol, term or idea taught"));
+        let given = check.1.split_once("<course_notation>").unwrap().1.split_once("</course_notation>").unwrap().0;
+        assert_eq!(given.trim(), format!("∅: the empty set [source: {NOTES} \"{Q4}\"]"), "only the entry whose passage is in the files");
+        assert!(check.1.contains("Words in it that appear nowhere in the course's materials: preimage"));
+        let first = check.1.split("<item id=").nth(1).unwrap();
+        assert!(first.contains("has ∅ as a member") && !first.split_once("<cited>").unwrap().1.contains('∅'), "the passage it cites doesn't define ∅");
+        let write = &asked[0].1;
+        assert!(write.contains("<notation>\n∅: the empty set") && !write.contains("|S|") && !write.contains("⊆:"), "the writer gets the same list: {write}");
+        drop(asked);
+        fs::remove_dir_all(vault).unwrap();
+    }
+
     #[test]
     fn similar_fronts() {
         assert!(similar("What is a set?", "what is a SET"));

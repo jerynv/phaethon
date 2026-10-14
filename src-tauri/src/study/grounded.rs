@@ -13,9 +13,10 @@
 //! 4. The gate. Mechanically: the topic is in scope, and every quote is in the
 //!    file it names, which the space may read. Words the course never uses are
 //!    picked out. Then an independent check (a fresh call of the study model,
-//!    given only the scope, the cited passages and the question): is every
-//!    concept and notation taught there, inside the exam's scope, and is the
-//!    answer right? "No" or "unsure" drops it.
+//!    given only the scope, the cited passages, the course's notation whose
+//!    passages are found in its files, and the question): is every concept and
+//!    notation taught there, inside the exam's scope, and is the answer right?
+//!    "No" or "unsure" drops it.
 //! 5. Shortfalls are written again, a bounded number of times; what is still
 //!    short is delivered short, with the reasons, never padded.
 
@@ -513,10 +514,10 @@ Every one is checked: a quote not found in its file, a topic out of scope, or an
 
 pub const VERIFY_SYSTEM: &str = r#"You check practice questions and flashcards against a student's own course materials, before the student sees them. Someone else wrote them; be strict and independent.
 
-For each item you get the exam scope, the topic it claims, the passages it cites (with the text around them, the quote marked «like this»), and words in it that appear nowhere in the course's materials.
+For each item you get the exam scope, the topic it claims, the passages it cites (with the text around them, the quote marked «like this»), and words in it that appear nowhere in the course's materials. You may also get <course_notation>: symbols the course itself defines, each with the passage where it does, found in the course's files.
 
 Answer "yes" only if all of these hold:
-1. Every concept, term, symbol, notation and technique needed to understand it and to answer it (including its choices, its answer and its explanation) is taught in the cited passages. A standard idea of the subject that the passages don't teach is a "no", however basic. A word that appears nowhere in the course is a strong sign of that.
+1. Every concept, term, symbol, notation and technique needed to understand it and to answer it (including its choices, its answer and its explanation) is taught in the cited passages, except that a symbol listed in <course_notation> counts as taught, with the meaning given there, even when the cited passages don't define it. That list covers only those symbols as written: it doesn't make any other symbol, term or idea taught. A standard idea of the subject that the passages don't teach is a "no", however basic. A word that appears nowhere in the course is a strong sign of that.
 2. Its topic is inside the exam's scope: not excluded, not after the cutoff.
 3. The marked answer is right according to the passages, and the question has one defensible answer.
 Answer "no" when any fails, and "unsure" when you can't tell from what you were given.
@@ -545,6 +546,23 @@ fn scope_block(s: &Scoped, course: &str) -> String {
     }
     out.push_str("</scope>");
     out
+}
+
+/// The course's notation that may be taken as taught: only entries of the map
+/// whose evidence is still found, word for word, in a file the space may read.
+/// An entry without such a passage is never given to the writer or the checker.
+fn taught_notation(map: Option<&ScopeMap>, library: &Library) -> String {
+    let Some(map) = map else { return String::new() };
+    let mut out = vec![];
+    for n in &map.notation {
+        let found = n.evidence.iter().filter(|e| e.source != scope::FROM_YOU).find_map(|e| library.check(&e.source, &e.quote).ok());
+        if let Some((ev, _)) = found
+            && !n.symbol.trim().is_empty()
+        {
+            out.push(format!("{}: {} {}", n.symbol.trim(), n.meaning.trim(), scope::cite(&ev)));
+        }
+    }
+    out.join("\n")
 }
 
 /// The request for one round of writing.
@@ -682,10 +700,14 @@ fn sort_reply(v: &Value, want: &Want, s: &Scoped, material: &Material, library: 
 }
 
 /// The independent check, in batches. Returns, per candidate, `None` to keep or why it goes.
-async fn verify<M: Model>(s: &Scoped, course: &str, cands: &[Candidate], model: &M, emit: Emit<'_>, kept_so_far: usize, dropped_so_far: usize) -> Result<Vec<Option<String>>, String> {
+#[allow(clippy::too_many_arguments)] // one check's inputs, each needed
+async fn verify<M: Model>(s: &Scoped, course: &str, notation: &str, cands: &[Candidate], model: &M, emit: Emit<'_>, kept_so_far: usize, dropped_so_far: usize) -> Result<Vec<Option<String>>, String> {
     let mut out: Vec<Option<String>> = vec![];
     let titles: HashMap<&str, String> = s.plan.iter().map(|(t, _)| (t.id.as_str(), format!("{}{}", t.title, t.sections.as_deref().map(|x| format!(" ({x})")).unwrap_or_default()))).collect();
-    let scope = scope_block(s, course);
+    let mut scope = scope_block(s, course);
+    if !notation.is_empty() {
+        scope.push_str(&format!("\n\n<course_notation>\n{notation}\n</course_notation>"));
+    }
     let (mut kept, mut dropped) = (kept_so_far, dropped_so_far);
     for (b, batch) in cands.chunks(CHECK_BATCH).enumerate() {
         emit(StudyEvent::checking(b * CHECK_BATCH, cands.len(), kept, dropped));
@@ -831,7 +853,7 @@ pub async fn make<M: Model>(
         sources::words_of(&f.text, &mut vocab);
     }
     let course_name = seen.map_or("your material".to_string(), |s| s.state.name.clone());
-    let notation = s.map.as_ref().map(|m| m.notation.iter().map(|n| format!("{}: {}", n.symbol, n.meaning)).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    let notation = taught_notation(s.map.as_ref(), &library);
     let system = match want {
         Want::Quiz { .. } => format!("{}\n\n{GROUNDING_RULES}\n\nReply with only JSON, no prose: {{\"title\": \"a short quiz title\", \"questions\": [{{\"kind\": \"...\", \"topic\": \"t1\", \"prompt\": \"...\", \"choices\": [\"...\"], \"answer\": \"...\", \"accept\": [\"...\"], \"explanation\": \"...\", \"citations\": [{{\"source\": \"...\", \"quote\": \"...\"}}]}}]}}", generate::QUIZ_RULES),
         Want::Deck { .. } => format!("{}\n\n{GROUNDING_RULES}\n\nReply with only JSON, no prose: {{\"title\": \"a short deck title\", \"cards\": [{{\"topic\": \"t1\", \"front\": \"...\", \"back\": \"...\", \"citations\": [{{\"source\": \"...\", \"quote\": \"...\"}}]}}]}}", generate::DECK_RULES),
@@ -904,7 +926,7 @@ pub async fn make<M: Model>(
         if fresh.is_empty() {
             continue;
         }
-        let verdicts = verify(&s, &course_name, &fresh, model, emit, kept.len(), dropped.len()).await?;
+        let verdicts = verify(&s, &course_name, &notation, &fresh, model, emit, kept.len(), dropped.len()).await?;
         for (c, why) in fresh.into_iter().zip(verdicts) {
             match why {
                 None => kept.push(c),

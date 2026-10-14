@@ -63,7 +63,40 @@ pub fn run(vault: &Vault, keys: &dyn Keys) -> Report {
             report.notes.push(format!("{space}: {e}"));
         }
     }
+    adopt_left_sign_ins(vault, keys, &mut report);
     report
+}
+
+/// A vault connection marked signed out whose session is still under a space's
+/// old keychain entry (an earlier move couldn't read it and went on without it):
+/// moved now, the same way. Only signed-out connections are looked at, so a
+/// normal launch reads nothing from the keychain.
+fn adopt_left_sign_ins(vault: &Vault, keys: &dyn Keys, report: &mut Report) {
+    let root = vault.root();
+    let Ok(st) = store::load(root) else { return };
+    for conn in st.connections.iter().filter(|c| !c.signed_in) {
+        for space in access::spaces(vault) {
+            let found = match keys.space_get(&space, &conn.id) {
+                Ok(Some(secret)) => secret,
+                Ok(None) => continue,
+                Err(e) => {
+                    report.notes.push(format!("{space}: the sign-in for {} couldn’t be read yet ({e}); trying again next time", conn.id));
+                    break;
+                }
+            };
+            let moved = match keys.vault_get(&conn.id) {
+                Ok(Some(_)) => true,
+                Ok(None) => keys.vault_set(&conn.id, &found).is_ok() && keys.vault_get(&conn.id).ok().flatten().is_some_and(|s| s == found),
+                Err(_) => false,
+            };
+            if moved {
+                let _ = keys.space_clear(&space, &conn.id);
+                super::service::mark_signed_in(root, &conn.id, true);
+                report.moved.push(format!("{space}: the sign-in for {} → the vault", conn.id));
+            }
+            break;
+        }
+    }
 }
 
 fn move_space(vault: &Vault, space: &str, dir: &Path, keys: &dyn Keys, report: &mut Report) -> Result<(), String> {
@@ -122,13 +155,10 @@ fn move_space(vault: &Vault, space: &str, dir: &Path, keys: &dyn Keys, report: &
     // 3. The sessions: old entry read, new one written (unless the vault already
     //    has one), and only then the old one removed.
     for conn in &old.connections {
-        let had = match keys.space_get(space, &conn.id) {
-            Ok(v) => v,
-            Err(e) => {
-                report.notes.push(format!("{space}: the sign-in for {} couldn’t be read ({e}); sign in again in Settings.", conn.id));
-                continue;
-            }
-        };
+        // Unreadable (macOS asked for keychain access and nobody said yes): stop here,
+        // keeping the old record, so the next launch tries again rather than leaving
+        // the sign-in behind.
+        let had = keys.space_get(space, &conn.id).map_err(|e| format!("the sign-in for {} couldn’t be read yet ({e}); trying again next time", conn.id))?;
         let signed_in = match (had, keys.vault_get(&conn.id)?) {
             (_, Some(_)) => true,
             (Some(secret), None) => {
@@ -229,10 +259,14 @@ mod tests {
     struct Fake {
         entries: RefCell<BTreeMap<String, String>>,
         fail_vault_set: bool,
+        fail_space_get: bool,
     }
 
     impl Keys for Fake {
         fn space_get(&self, space: &str, c: &str) -> Result<Option<String>, String> {
+            if self.fail_space_get {
+                return Err("Unable to obtain authorization for this operation.".into());
+            }
             Ok(self.entries.borrow().get(&format!("space/{space}/{c}")).cloned())
         }
         fn space_clear(&self, space: &str, c: &str) -> Result<(), String> {
@@ -367,9 +401,47 @@ mod tests {
         // The old entry and the old record stay, so the next run can finish.
         assert_eq!(k.space_get("school", IU).unwrap().as_deref(), Some(SECRET));
         assert!(dir.join("spaces/school/.phaethon/lms.json").exists());
-        let k = Fake { fail_vault_set: false, entries: k.entries };
+        let k = Fake { fail_vault_set: false, entries: k.entries, ..Fake::default() };
         run(&v, &k);
         check_moved(&dir, &v, &k);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// What happened on the owner's machine: macOS refused the keychain read while
+    /// nobody was there. Nothing moves until it can be read; then all of it does.
+    #[test]
+    fn an_unreadable_sign_in_waits_for_the_next_launch() {
+        let (dir, v) = old_vault("readfail");
+        let k = Fake { fail_space_get: true, ..keys_with_old() };
+        let r = run(&v, &k);
+        assert!(r.notes.iter().any(|n| n.contains("trying again next time")), "{r:?}");
+        assert!(dir.join("spaces/school/.phaethon/lms.json").exists(), "the old record stays");
+        assert_eq!(k.entries.borrow().get(&format!("space/school/{IU}")).map(String::as_str), Some(SECRET));
+        let k = Fake { fail_space_get: false, entries: k.entries, ..Fake::default() };
+        run(&v, &k);
+        check_moved(&dir, &v, &k);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A sign-in an earlier move left under the space's old entry (its record already
+    /// gone, the connection marked signed out) is picked up on the next launch.
+    #[test]
+    fn a_sign_in_left_behind_is_picked_up() {
+        let (dir, v) = old_vault("left");
+        let k = keys_with_old();
+        run(&v, &k);
+        check_moved(&dir, &v, &k);
+        // Put things as the owner's machine has them: the session still in the old entry.
+        let secret = k.entries.borrow_mut().remove(&format!("vault/{IU}")).unwrap();
+        k.entries.borrow_mut().insert(format!("space/school/{IU}"), secret);
+        crate::lms::service::mark_signed_in(&dir, IU, false);
+        let r = run(&v, &k);
+        assert!(r.moved.iter().any(|m| m.contains("the sign-in")), "{r:?}");
+        check_moved(&dir, &v, &k);
+        // And a launch with nothing left to pick up reads no keychain entry for it.
+        let k2 = Fake { fail_space_get: true, entries: k.entries, ..Fake::default() };
+        let r = run(&v, &k2);
+        assert!(r.notes.is_empty() && r.moved.is_empty(), "{r:?}");
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -207,8 +207,8 @@ export default [
       await openStudy(page);
       await page.click(`${SHOWN} [data-study-hub] [data-make="deck"]`);
       await page.waitForSelector("[data-make-dialog='deck']", { timeout: 3000 });
-      // Nothing chosen: a plain error, tied to the choices, focus there.
-      await page.click("[data-make-submit]");
+      // Step by step (f14-make has the whole of it): nothing chosen is a plain error, tied to the choices, focus there.
+      await page.click("[data-step-next]");
       const err = await page.evaluate(() => ({
         text: document.querySelector("[data-field-error]")?.textContent ?? "",
         focusInSources: !!document.activeElement?.closest("[data-source-course]"),
@@ -219,8 +219,14 @@ export default [
       const mixed = await page.evaluate((C) => document.querySelector(`[data-source-course="${C}"] input`).indeterminate, C241);
       check(mixed, "one part chosen: the course's box is mixed");
       await page.click(`[data-source-course="${C241}"] [data-source-part="syllabus.md"]`);
+      await page.click("[data-step-next]");
+      await page.waitForSelector("[data-make-focus]", { timeout: 3000 });
+      // The step's heading takes focus first, as it shows.
+      await waitFor(page, () => document.activeElement?.matches("[data-make-title]"));
       await page.type("[data-make-focus]", "Test 1");
       await h.shot("form");
+      await page.click("[data-step-next]");
+      await page.waitForSelector("[data-make-submit]", { timeout: 3000 });
       await page.click("[data-make-submit]");
       check(await waitFor(page, () => !!document.querySelector("[data-make-running] [role=progressbar]")), "making shows a progress bar");
       await waitFor(page, () => /of 3/.test(document.querySelector("[data-make-step]")?.textContent ?? ""));
@@ -251,12 +257,18 @@ export default [
       await page.click(`${SHOWN} [data-make="quiz"]`);
       await page.waitForSelector("[data-make-dialog='quiz']", { timeout: 3000 });
       await page.click(`[data-source-course="${C241}"] input`);
+      await page.click("[data-step-next]");
       // Quiz kinds: none chosen is an error too.
+      await page.waitForSelector('[data-quiz-kind="choice"]', { timeout: 3000 });
       for (const k of ["choice", "truefalse", "short"]) await page.click(`[data-quiz-kind="${k}"]`);
-      await page.click("[data-make-submit]");
+      await page.click("[data-step-next]");
       check((await status(page, "[data-field-error]")).includes("at least one kind"), "no kind of question: said in words");
       await page.click('[data-quiz-kind="multi"]');
       await page.click('[data-difficulty="harder"]');
+      await page.click("[data-step-next]");
+      await page.waitForSelector("[data-make-count]", { timeout: 3000 });
+      await page.click("[data-step-next]");
+      await page.waitForSelector("[data-make-submit]", { timeout: 3000 });
       await page.click("[data-make-submit]");
       check(await waitFor(page, () => !!document.querySelector("[data-make-error] [role=alert]")), "the error shows as an alert");
       const e = await page.evaluate(() => ({ text: document.querySelector("[data-make-error]")?.innerText ?? "", settings: !!document.querySelector("[data-make-settings]"), title: document.querySelector("[data-make-title]")?.textContent }));
@@ -265,6 +277,12 @@ export default [
       check(JSON.stringify(sent.options.kinds) === '["multi"]' && sent.options.difficulty === "harder", "kinds and difficulty go to the core", JSON.stringify(sent.options));
       await h.shot("error");
       await page.click("[data-make-retry]");
+      // Back to the look at everything, each choice kept and a way to change it.
+      await page.waitForSelector("[data-wizard-review]", { timeout: 3000 });
+      const review = await page.$eval("[data-wizard-review]", (e) => e.innerText.replace(/\s+/g, " "));
+      check(/Choose all that apply/.test(review) && /Harder/.test(review), "Change and try again shows what was chosen", review);
+      await page.click('[data-review-change="sources"]');
+      await page.waitForSelector(`[data-source-course="${C241}"] input`, { timeout: 3000 });
       const kept = await page.evaluate((C) => document.querySelector(`[data-source-course="${C}"] input`)?.checked, C241);
       check(kept, "Change and try again keeps the choices");
     },

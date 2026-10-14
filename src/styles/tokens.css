@@ -103,6 +103,10 @@
   --ph-message-max-width: 85%;
   --ph-composer-radius: var(--ph-radius-xl);
   --ph-dialog-width: 40rem;
+  /* A step-by-step task's review (ui/stepper.tsx): the width of what each row is, beside what was chosen. */
+  --ph-review-label-width: 9rem;
+  /* The least a step's body keeps when header and footer crowd it (very large text in a small window): the dialog scrolls then. */
+  --ph-wizard-body-min: 8rem;
   --ph-preview-max-height: 15rem;
   /* The file viewer (a dialog as wide as the window allows) and a figure drawn in a reply. */
   --ph-viewer-width: 72rem;

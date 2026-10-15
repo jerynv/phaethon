@@ -3,7 +3,7 @@
 // focus; a hue slider mid-drag; a changed control, its Reset and the section's
 // Undo reset; every accessibility switch on; Spaces with grants, with
 // grants.json problems, with none, and failing; About's copy feedback.
-import { CONVERSATION, GRANTS, PANEL, SETTINGS, activeDesc, check, clickText, openSettings, park, scrollPanel } from "../audit-fixtures.mjs";
+import { CONVERSATION, GRANTS, PANEL, SETTINGS, activeDesc, check, clickText, openSettings, openSpaceDetails, park, scrollPanel } from "../audit-fixtures.mjs";
 
 const SIZES3 = [[1100, 720], [760, 560], [640, 480]];
 const WIDE = [[1100, 720]];
@@ -450,6 +450,11 @@ export default [
     mock: { settings: SETTINGS, threads: {}, grants: { school: GRANTS.many, work: [{ id: "w1", from: "school", path: "syllabus.md", created: "2026-10-08T10:00:00Z", scope: "always" }] }, grantProblems: ['Grant 7 was ignored: "from" names a space that does not exist ("garden").', "Grant 8 was ignored: its path leaves the space (../../etc)."] },
     async run(page, h) {
       await openSettings(page, h, "spaces");
+      // Folded, the access each space keeps is still said.
+      const folded = await page.evaluate((p) => Object.fromEntries([...document.querySelectorAll(`${p} [data-space-row]`)].map((r) => [r.dataset.spaceRow, r.querySelector("[data-space-summary]")?.textContent])), PANEL);
+      check(folded.school === "Reads 1 file in Home (no longer one of your spaces) and all of Work · Read by Work" && folded.work === "Reads 1 file in School · Read by School", "folded, each space sums up what it reads and who reads it", JSON.stringify(folded));
+      await h.shot("folded");
+      await openSpaceDetails(page);
       await park(page);
       // N-009: the dot sits on the first line of its row, and the space name is
       // never alone on a line: the path starts on the same line as "Work /".

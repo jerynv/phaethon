@@ -473,7 +473,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
                 Course access…
               </ContextMenu.Item>
               <ContextMenu.Separator className="mx-1 my-1 h-px bg-line forced-colors:bg-[CanvasText]" />
-              <ContextMenu.Item data-space-action="edit" onSelect={() => choose(() => openSettings("spaces"))} className={itemClass}>
+              <ContextMenu.Item data-space-action="edit" onSelect={() => choose(() => openSettings("spaces", { space: space.id }))} className={itemClass}>
                 <Icon name="edit" className="shrink-0 text-ink-secondary" />
                 Edit name and colour…
               </ContextMenu.Item>

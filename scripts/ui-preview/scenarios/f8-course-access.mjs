@@ -5,7 +5,7 @@
 //   f8-space-courses   Settings › Spaces: the courses each space can see, in words, and the way to change it
 //   f8-import-access   the import's "Who can see these courses": the current space by default, others by choice
 //   f8-no-access       a space that can't see any courses: Study, Grades and Plan say so and lead to Settings
-import { SETTINGS, check, park } from "../audit-fixtures.mjs";
+import { SETTINGS, check, openSpaceDetails, park } from "../audit-fixtures.mjs";
 
 const COMPOSER = "[data-composer-input]";
 const shown = "[data-space-pane][data-shown]";
@@ -133,6 +133,10 @@ export default [
       await page.waitForSelector('[data-testid="settings-tab-spaces"]', { timeout: 3000 });
       await page.$eval('[data-testid="settings-tab-spaces"]', (el) => el.click());
       await page.waitForSelector('[data-space-courses="work"] [data-space-course]', { timeout: 3000 });
+      // Folded, each space's line says how many courses it sees.
+      const folded = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("[data-space-row]")].map((r) => [r.dataset.spaceRow, r.querySelector("[data-space-summary]")?.textContent])));
+      check(folded.school === "Sees 2 courses" && folded.work === "Sees 1 course", "folded, each space says how many courses it sees", JSON.stringify(folded));
+      await openSpaceDetails(page);
       const lists = await page.evaluate(() =>
         Object.fromEntries([...document.querySelectorAll("[data-space-courses]")].map((d) => [d.dataset.spaceCourses, [...d.querySelectorAll("[data-space-course]")].map((li) => li.innerText.replace(/\s+/g, " ").trim())])),
       );

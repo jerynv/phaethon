@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { SPACE_HUES, spaceSwatch, spaceSwatchCheck } from "@/components/shell/new-space-dialog";
 import { SpaceMark } from "@/components/shell/space-mark";
@@ -7,12 +7,12 @@ import { Details } from "@/components/ui/details";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import { getSettings } from "@/lib/backend";
-import { grantDate, grantLabel, scheduleRevoke, spaceInfo, undoRevoke, useGrants, usePendingRevokes } from "@/lib/grants";
+import { grantDate, grantLabel, grantNoun, scheduleRevoke, spaceInfo, undoRevoke, useGrants, usePendingRevokes } from "@/lib/grants";
 import { SPACE_DESCRIPTION_MAX, SPACE_NAME_MAX, updateSpace, useSpaces, type Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
 import { HueSwatches, PathText, SectionHeader, SettingGroup } from "./controls";
-import { SpaceCourses } from "./space-courses";
+import { coursesSeen, SpaceCourses, useSpaceCourses } from "./space-courses";
 import { useStatus } from "./status";
 
 /** "line 3 column 5" in a parser message, as "line 3". */
@@ -34,7 +34,7 @@ function lineOf(message: string): string | null {
  * Problems with grants.json are about the whole file, so they are shown once,
  * above the list, not repeated under every space.
  */
-export function SpacesSection({ headingId }: { headingId: string }) {
+export function SpacesSection({ headingId, editSpace }: { headingId: string; editSpace?: { id: string; n: number } | null }) {
   const [vaultPath, setVaultPath] = useState<string | undefined>();
   useEffect(() => {
     getSettings().then(
@@ -54,7 +54,7 @@ export function SpacesSection({ headingId }: { headingId: string }) {
       <SectionHeader
         id={headingId}
         title="Spaces"
-        description="A space only sees its own files. When Phaethon needs something from another space, it asks you in the conversation. Under each space is the access you chose to keep: what it can read in other spaces, and which other spaces can read it. It is read-only: one space can never change another’s files."
+        description="A space only sees its own files. When Phaethon needs something from another space, it asks you in the conversation. Each space says the access you chose to keep: what it can read in other spaces, and which other spaces can read it; Edit shows it in full, with its name and colour. It is read-only: one space can never change another’s files."
       />
       {fileError && (
         <FileNotice tone="danger" icon="error" title="Phaethon can’t read its list of access between spaces, so no space can read another.">
@@ -72,7 +72,7 @@ export function SpacesSection({ headingId }: { headingId: string }) {
       <SettingGroup title="Your spaces">
         <ul className="flex flex-col divide-y divide-line" aria-label="Your spaces">
           {spaces.map((s) => (
-            <SpaceRow key={s.id} space={s} fileError={fileError} />
+            <SpaceRow key={s.id} space={s} fileError={fileError} editRequest={editSpace?.id === s.id ? editSpace.n : 0} />
           ))}
         </ul>
         {spacesStatus === "ready" && spaces.length === 0 && <p className="px-4 py-3.5 text-sm text-ink-secondary">You have no spaces yet.</p>}
@@ -130,17 +130,56 @@ const SETTINGS_UNDO_MS = 9 * 60 * 1000;
 /** One access between two spaces, from either side: `who` reads `what`. */
 type AccessRow = { id: string; other: string; path: string; created: string; scope: "always" | "once"; who: string; what: string };
 
+const listOf = (names: string[]) => new Intl.ListFormat("en", { type: "conjunction" }).format(names);
+
+/**
+ * A folded space's access in one line: "Reads 1 folder in Work · Read by Art
+ * · Sees 2 courses", or "Only its own files" when there is none. Nothing while
+ * it is being checked or could not be (the details say why).
+ */
+function accessSummary({ status, reads, readBy, courses }: { status: string; reads: AccessRow[]; readBy: AccessRow[]; courses: number }): string {
+  if (status !== "ready") return "";
+  const parts: string[] = [];
+  if (reads.length) {
+    const byOther = new Map<string, AccessRow[]>();
+    for (const r of reads) byOther.set(r.other, [...(byOther.get(r.other) ?? []), r]);
+    const each = [...byOther].map(([other, rows]) => {
+      const name = spaceInfo(other).name;
+      if (rows.some((r) => !r.path)) return `all of ${name}`;
+      return `${rows.length} ${grantNoun(rows, rows.length > 1)} in ${name}`;
+    });
+    parts.push(`Reads ${listOf(each)}`);
+  }
+  if (readBy.length) parts.push(`Read by ${listOf([...new Set(readBy.map((r) => spaceInfo(r.other).name))])}`);
+  if (courses) parts.push(courses === 1 ? "Sees 1 course" : `Sees ${courses} courses`);
+  return parts.length ? parts.join(" · ") : "Only its own files";
+}
+
 /**
  * Under each space: what it can read in other spaces, and which other spaces
  * can read it. Remove takes access away at once and leaves the row, struck
  * through, with Undo until Settings closes (the same revoke-with-Undo as the
  * title bar's popover, src/lib/grants.ts). Focus moves from Remove to Undo and
  * back; when a row goes, to the row that took its place.
+ *
+ * Folded by default to one line per space: its name, its description, and a
+ * summary of its access (so access is never hidden by the fold), with Edit to
+ * open the rest. Folded, the details stay mounted and only hidden, so an
+ * unsaved field or a pending Undo survives; the summary says so.
+ * `editRequest` (a count) opens it when it changes from 0: the sidebar's Edit
+ * name and colour… for this space.
  */
-function SpaceRow({ space, fileError }: { space: Space; fileError: string | null }) {
+function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: string | null; editRequest: number }) {
   const { state } = useGrants(space.id);
   const { pending, revoked } = usePendingRevokes();
   const { say, fail } = useStatus();
+  const courses = useSpaceCourses(space.id);
+  const [open, setOpen] = useState(editRequest > 0);
+  useEffect(() => {
+    if (editRequest > 0) setOpen(true);
+  }, [editRequest]);
+  const [unsaved, setUnsaved] = useState<string[]>([]);
+  const panelId = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const focusNext = useRef<{ undo: string } | { revoke: string } | { index: number } | null>(null);
   const emptyId = `space-${space.id}-grants`;
@@ -276,58 +315,113 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
     );
   };
 
-  return (
-    <li data-space-row={space.id} className="flex flex-col gap-3 px-4 py-3.5">
-      <SpaceEditor space={space} />
+  const summary = accessSummary({
+    status: state.status,
+    // Access taken away (even with Undo still open) no longer counts.
+    reads: reads.filter((r) => !pending.has(r.id)),
+    readBy: readBy.filter((r) => !pending.has(r.id)),
+    courses: courses ? coursesSeen(courses, space.id).length : 0,
+  });
+  const undoable = [...reads, ...readBy].filter((r) => pending.has(r.id)).length;
+  const notes = [...unsaved.map((f) => `${f} not saved`), ...(undoable ? [undoable === 1 ? "1 removal can be undone" : `${undoable} removals can be undone`] : [])];
 
-      <div ref={listRef} className="ms-(--ph-space-mark-size) flex flex-col gap-3 ps-3">
-        {state.status === "loading" && <p className="text-sm text-ink-secondary">Checking what {space.name} can read…</p>}
-        {state.status === "error" &&
-          (state.error === fileError ? (
-            <p className="flex items-start gap-1.5 text-sm text-ink-secondary">
-              <Icon name="lock" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-              Can’t read anything outside {space.name} until the access file is fixed.
+  return (
+    <li data-space-row={space.id} data-open={open ? "" : undefined} className="flex flex-col gap-3 px-4 py-3">
+      <div className="flex items-start gap-3">
+        {/* One line tall, so the dot sits on the name's first line however it wraps. */}
+        <span className="flex h-[1lh] shrink-0 items-center text-base">
+          <SpaceMark hue={space.hue} />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {/* The name has the row to itself: it wraps rather than being cut short. */}
+          <h5 data-space-name="" className="text-base font-medium wrap-anywhere text-ink">
+            {space.name}
+          </h5>
+          {space.description && (
+            <p data-space-description="" className="truncate text-sm text-ink-secondary" title={space.description}>
+              {space.description}
             </p>
-          ) : (
-            <div className="flex items-start gap-1.5 text-sm text-danger-ink">
-              <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-              <div className="flex min-w-0 flex-col items-start">
-                <p>Couldn’t check what {space.name} can read. Close Settings and open it again to retry.</p>
-                <Details className="text-danger-ink">
-                  <p className="font-mono wrap-anywhere">{state.error}</p>
-                </Details>
+          )}
+          {summary && (
+            <p data-space-summary="" className="text-sm text-ink-secondary">
+              {summary}
+            </p>
+          )}
+          {!open && notes.length > 0 && (
+            <p data-space-notes="" className="flex items-start gap-1.5 text-sm text-warning-ink">
+              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+              {notes.join(" · ")}. Edit to see.
+            </p>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-expanded={open}
+          aria-controls={panelId}
+          data-space-edit={space.id}
+          onClick={() => setOpen((o) => !o)}
+          className="min-h-(--ph-target-min) shrink-0"
+        >
+          {open ? "Done" : "Edit"}
+          <span className="sr-only">{open ? ` editing ${space.name}` : ` ${space.name}`}</span>
+        </Button>
+      </div>
+
+      {/* Hidden, never unmounted, when folded: unsaved text and Undo survive it. */}
+      <div id={panelId} hidden={!open} data-space-details={space.id} className="ms-(--ph-space-mark-size) flex flex-col gap-4 ps-3">
+        <SpaceEditor space={space} onUnsaved={setUnsaved} />
+
+        <div ref={listRef} className="flex flex-col gap-3">
+          {state.status === "loading" && <p className="text-sm text-ink-secondary">Checking what {space.name} can read…</p>}
+          {state.status === "error" &&
+            (state.error === fileError ? (
+              <p className="flex items-start gap-1.5 text-sm text-ink-secondary">
+                <Icon name="lock" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+                Can’t read anything outside {space.name} until the access file is fixed.
+              </p>
+            ) : (
+              <div className="flex items-start gap-1.5 text-sm text-danger-ink">
+                <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+                <div className="flex min-w-0 flex-col items-start">
+                  <p>Couldn’t check what {space.name} can read. Close Settings and open it again to retry.</p>
+                  <Details className="text-danger-ink">
+                    <p className="font-mono wrap-anywhere">{state.error}</p>
+                  </Details>
+                </div>
               </div>
-            </div>
-          ))}
-        {ready &&
-          (reads.length === 0 ? (
-            <p id={emptyId} tabIndex={-1} className="flex items-center gap-1.5 text-sm text-ink-secondary outline-none">
-              <Icon name="lock" className="size-(--ph-icon-size-sm) shrink-0" />
-              Can’t read anything outside {space.name}.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <p className="text-sm text-ink-secondary">{space.name} can also read, without asking:</p>
-              <ul aria-label={`What ${space.name} can read in other spaces`} className="flex flex-col rounded-md bg-surface-sunken">
-                {reads.map((r, i) => row(r, i, "out"))}
-              </ul>
-            </div>
-          ))}
-        {ready &&
-          (readBy.length === 0 ? (
-            <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
-              <Icon name="lock" className="size-(--ph-icon-size-sm) shrink-0" />
-              No other space can read {space.name}.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <p className="text-sm text-ink-secondary">Other spaces that can read {space.name}, without asking:</p>
-              <ul aria-label={`Who can read ${space.name}`} className="flex flex-col rounded-md bg-surface-sunken">
-                {readBy.map((r, i) => row(r, reads.length + i, "in"))}
-              </ul>
-            </div>
-          ))}
-        <SpaceCourses space={space} />
+            ))}
+          {ready &&
+            (reads.length === 0 ? (
+              <p id={emptyId} tabIndex={-1} className="flex items-center gap-1.5 text-sm text-ink-secondary outline-none">
+                <Icon name="lock" className="size-(--ph-icon-size-sm) shrink-0" />
+                Can’t read anything outside {space.name}.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <p className="text-sm text-ink-secondary">{space.name} can also read, without asking:</p>
+                <ul aria-label={`What ${space.name} can read in other spaces`} className="flex flex-col rounded-md bg-surface-sunken">
+                  {reads.map((r, i) => row(r, i, "out"))}
+                </ul>
+              </div>
+            ))}
+          {ready &&
+            (readBy.length === 0 ? (
+              <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
+                <Icon name="lock" className="size-(--ph-icon-size-sm) shrink-0" />
+                No other space can read {space.name}.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <p className="text-sm text-ink-secondary">Other spaces that can read {space.name}, without asking:</p>
+                <ul aria-label={`Who can read ${space.name}`} className="flex flex-col rounded-md bg-surface-sunken">
+                  {readBy.map((r, i) => row(r, reads.length + i, "in"))}
+                </ul>
+              </div>
+            ))}
+          <SpaceCourses space={space} view={courses} />
+        </div>
       </div>
     </li>
   );
@@ -338,11 +432,20 @@ function SpaceRow({ space, fileError }: { space: Space; fileError: string | null
  * on Enter or when focus leaves them, and Escape puts back the saved text
  * (Settings stays open while a field has unsaved text). A colour saves when
  * chosen. Each save is said in the Settings status region and shown under
- * the fields.
+ * the fields. `onUnsaved` hears which fields hold unsaved text, for the
+ * folded row to say so.
  */
-function SpaceEditor({ space }: { space: Space }) {
+function SpaceEditor({ space, onUnsaved }: { space: Space; onUnsaved: (fields: string[]) => void }) {
   const { say, fail } = useStatus();
   const [saved, setSaved] = useState("");
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const markDirty = useCallback((label: string, d: boolean) => setDirty((m) => (!!m[label] === d ? m : { ...m, [label]: d })), []);
+  const dirtyKey = Object.keys(dirty)
+    .filter((k) => dirty[k])
+    .join();
+  useEffect(() => {
+    onUnsaved(dirtyKey ? dirtyKey.split(",") : []);
+  }, [dirtyKey, onUnsaved]);
 
   async function save(patch: { name?: string; description?: string; hue?: number }, done: (s: Space) => string): Promise<string | null> {
     try {
@@ -360,21 +463,14 @@ function SpaceEditor({ space }: { space: Space }) {
   const presets = SPACE_HUES.some((p) => p.value === space.hue) ? SPACE_HUES : [{ label: "Current", value: space.hue }, ...SPACE_HUES];
   return (
     <>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <SpaceMark hue={space.hue} />
-        <h5 className="min-w-0 flex-1 truncate text-base font-medium text-ink">{space.name}</h5>
-        {/* Where its files are, in words rather than a path. */}
-        <span className="text-xs text-ink-secondary" data-space-folder="">
-          Kept in the folder named “{space.id}”, inside the spaces folder of your Phaethon folder.
-        </span>
-      </div>
-      <div className="ms-(--ph-space-mark-size) flex flex-wrap gap-x-4 gap-y-3 ps-3">
+      <div className="flex flex-wrap gap-x-4 gap-y-3">
         <InlineField
           label="Name"
           spaceName={space.name}
           value={space.name}
           maxLength={SPACE_NAME_MAX}
           required
+          onDirty={markDirty}
           className="flex-[1_1_12em]"
           onSave={(name) => save({ name }, (s) => `Renamed to ${s.name}.`)}
         />
@@ -383,9 +479,14 @@ function SpaceEditor({ space }: { space: Space }) {
           spaceName={space.name}
           value={space.description}
           maxLength={SPACE_DESCRIPTION_MAX}
+          onDirty={markDirty}
           className="flex-[2_1_18em]"
           onSave={(description) => save({ description }, (s) => (s.description ? `${s.name}’s description saved.` : `${s.name}’s description removed.`))}
         />
+        {/* Where its files are, in words rather than a path. */}
+        <p className="-mt-1.5 w-full text-xs text-ink-secondary" data-space-folder="">
+          Kept in the folder named “{space.id}”, inside the spaces folder of your Phaethon folder.
+        </p>
         <div className="flex w-full flex-col gap-1">
           <span aria-hidden="true" className="text-sm font-medium text-ink">
             Colour <span className="font-normal text-ink-secondary">({colourName(space.hue)})</span>
@@ -423,6 +524,7 @@ function InlineField({
   maxLength,
   required,
   className,
+  onDirty,
   onSave,
 }: {
   label: string;
@@ -431,6 +533,8 @@ function InlineField({
   maxLength: number;
   required?: boolean;
   className?: string;
+  /** Hears whether the field holds unsaved text (or a refused save). */
+  onDirty: (label: string, dirty: boolean) => void;
   /** Resolves with an error message, or null once saved. */
   onSave: (value: string) => Promise<string | null>;
 }) {
@@ -441,6 +545,8 @@ function InlineField({
   const busy = useRef(false);
   const { say } = useStatus();
   const dirty = draft !== value;
+  const unsaved = dirty || !!error;
+  useEffect(() => onDirty(label, unsaved), [label, unsaved, onDirty]);
 
   // A saved change (here, or in space.json by hand) shows unless this field holds unsaved text.
   const last = useRef(value);

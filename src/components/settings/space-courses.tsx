@@ -8,28 +8,40 @@ import type { Space } from "@/lib/spaces";
 
 import { useSettingsNav } from "./status";
 
-/**
- * In Settings › Spaces, under a space: the courses it can see and which parts,
- * in words, with a way to Settings › Course sites to change it. Nothing when
- * no course is imported in the vault.
- */
-export function SpaceCourses({ space }: { space: Space }) {
+/** The vault's courses and who may see them, kept fresh when course sites change; null until known or when it can't be read. */
+export function useSpaceCourses(spaceId: string): CourseAccessView | null {
   const [view, setView] = useState<CourseAccessView | null>(null);
   const changed = useSitesVersion();
-  const { go } = useSettingsNav();
   useEffect(() => {
     let live = true;
-    courseAccessGet(space.id).then(
+    courseAccessGet(spaceId).then(
       (v) => live && setView(v),
       () => live && setView(null),
     );
     return () => {
       live = false;
     };
-  }, [space.id, changed]);
+  }, [spaceId, changed]);
+  return view;
+}
+
+/** The courses `spaceId` can see some part of. */
+export function coursesSeen(view: CourseAccessView | null, spaceId: string) {
+  if (!view) return [];
+  const mine = view.access[spaceId] ?? {};
+  return view.courses.filter((c) => (mine[c.key] ?? []).length > 0);
+}
+
+/**
+ * In Settings › Spaces, under a space: the courses it can see and which parts,
+ * in words, with a way to Settings › Course sites to change it. Nothing when
+ * no course is imported in the vault.
+ */
+export function SpaceCourses({ space, view }: { space: Space; view: CourseAccessView | null }) {
+  const { go } = useSettingsNav();
   if (!view || view.courses.length === 0) return null;
   const mine = view.access[space.id] ?? {};
-  const seen = view.courses.filter((c) => (mine[c.key] ?? []).length > 0);
+  const seen = coursesSeen(view, space.id);
   const words = (key: string) => {
     const parts = mine[key] ?? [];
     if (parts.length === COURSE_PARTS.length) return "all of it";

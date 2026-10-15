@@ -21,6 +21,7 @@ const settings = { backend: "phaethon", hasAnthropicKey: true, model: "claude-op
 const CHIP = "[data-grants-chip]";
 const POPOVER = '[data-radix-popper-content-wrapper] [role="dialog"]';
 
+import { openSpaceDetails } from "../audit-fixtures.mjs";
 import { chipA11y } from "./audit-shell.mjs";
 
 /** "<name> | <description>", as a screen reader gets the chip. */
@@ -197,6 +198,7 @@ export default [
     mock: { threads: { school: thread }, settings, grants: { school: [grants().school[0]] } },
     async run(page, h) {
       await openSettings(page, h);
+      await openSpaceDetails(page, ["school"]);
       await h.click('[role="dialog"] [role="tabpanel"]:not([hidden]) [data-revoke]');
       // Removed at once; the row keeps an Undo (focused) until Settings closes (t3-undo has the rest).
       await page.waitForSelector('[role="dialog"] [role="tabpanel"]:not([hidden]) [data-undo="g-cal"]', { timeout: 5000 });

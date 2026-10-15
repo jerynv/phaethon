@@ -226,6 +226,28 @@ export const scrollPanel = (page, y) =>
     if (p) p.scrollTop = y === "end" ? p.scrollHeight : y;
   }, y, PANEL);
 
+/**
+ * Settings › Spaces lists each space folded to one line; open the details
+ * (its Edit button) of the spaces named, or of every space.
+ */
+export async function openSpaceDetails(page, ids) {
+  await page.waitForSelector(`${PANEL} [data-space-edit]`, { timeout: 5000 });
+  const want = ids ?? null;
+  await page.evaluate(
+    (want, panel) => {
+      for (const b of document.querySelectorAll(`${panel} [data-space-edit][aria-expanded="false"]`)) if (!want || want.includes(b.dataset.spaceEdit)) b.click();
+    },
+    want,
+    PANEL,
+  );
+  await page.waitForFunction(
+    (want, panel) => [...document.querySelectorAll(`${panel} [data-space-edit]`)].every((b) => (want && !want.includes(b.dataset.spaceEdit)) || b.getAttribute("aria-expanded") === "true"),
+    { timeout: 3000 },
+    want,
+    PANEL,
+  );
+}
+
 /** Scroll an element into the middle of its scroller. */
 export const reveal = (page, sel) => page.evaluate((sel) => document.querySelector(sel)?.scrollIntoView({ block: "center" }), sel);
 

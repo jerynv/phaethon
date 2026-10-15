@@ -12,7 +12,7 @@
 //   t3-disclosure     space names, granted folders, and what is saved where (sam14)
 //   t3-about-delete   About leads with the menu's Delete; the hidden files are folded (linda r3)
 //   t3-space-folder   a space's folder in plain words, not "Folder: spaces/school" (linda r3)
-import { SETTINGS, check, openSettings, park, PANEL } from "../audit-fixtures.mjs";
+import { SETTINGS, check, openSettings, openSpaceDetails, park, PANEL } from "../audit-fixtures.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const css = (page, name) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
@@ -43,6 +43,7 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "spaces");
       const row = `${PANEL} [data-space-row="school"]`;
+      await openSpaceDetails(page, ["school"]);
       await page.focus(`${row} [data-revoke="g-cal"]`);
       await page.keyboard.press("Enter");
       await page.waitForSelector(`${row} [data-undo="g-cal"]`, { timeout: 3000 });
@@ -71,6 +72,7 @@ export default [
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
       await openSettings(page, h, "spaces");
+      await openSpaceDetails(page, ["school"]);
       const text = await page.$eval(row, (el) => el.innerText);
       check(!(await page.$(`${row} [data-undo]`)) && !(await page.$(`${row} [data-revoke]`)) && /Can’t read anything outside School/.test(text), "after closing, the removal stands and Undo is gone", text.slice(0, 200));
     },
@@ -82,6 +84,9 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "spaces");
       const work = `${PANEL} [data-space-row="work"]`;
+      const folded = await page.$eval(`${work} [data-space-summary]`, (el) => el.textContent);
+      check(folded === "Read by School", "folded, Work's row says School reads it", folded);
+      await openSpaceDetails(page);
       const text = await page.$eval(work, (el) => el.innerText);
       check(/School\sreads\scalendar/.test(text), "Work's row says School reads its calendar", text);
       const list = await page.$eval(work, (el) => el.querySelector('ul[aria-label^="Who can read"]')?.getAttribute("aria-label"));
@@ -345,6 +350,7 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "spaces");
+      await openSpaceDetails(page);
       const text = await panelText(page);
       check(!/Folder: |spaces\/school/.test(text), "no \"Folder: spaces/school\" path", text.slice(0, 400));
       const f = await page.$$eval("[data-space-folder]", (els) => els.map((e) => ({ text: e.textContent, mono: getComputedStyle(e).fontFamily.includes("Mono") })));

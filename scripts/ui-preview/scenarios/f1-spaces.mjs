@@ -103,6 +103,13 @@ export default [
       await choose(page, "edit");
       await page.waitForSelector('[data-testid="settings-tab-spaces"][data-state="active"]', { timeout: 5000 });
       check(true, "Edit name and colour… opens Settings at Spaces");
+      await page.waitForFunction(() => document.activeElement?.closest('[data-space-row="school"]') && document.activeElement.dataset.spaceField === "name", { timeout: 3000 }).catch(() => {});
+      const opened = await page.evaluate(() => ({
+        school: document.querySelector('[data-space-edit="school"]')?.getAttribute("aria-expanded"),
+        work: document.querySelector('[data-space-edit="work"]')?.getAttribute("aria-expanded"),
+        focus: document.activeElement?.closest("[data-space-row]")?.dataset.spaceRow + ":" + document.activeElement?.dataset.spaceField,
+      }));
+      check(opened.school === "true" && opened.work === "false" && opened.focus === "school:name", "with School's details open and focus on its name; Work stays folded", JSON.stringify(opened));
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
       check((await focused(page)) === "space:school", "closing Settings puts focus back on School", await focused(page));

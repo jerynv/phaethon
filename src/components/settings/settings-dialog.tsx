@@ -20,7 +20,8 @@ import { NavContext, StatusContext, type SectionId, type SettingsNav, type Setti
 /** Opens Settings from anywhere: `window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: { section } }))`. */
 export const OPEN_SETTINGS_EVENT = "phaethon:open-settings";
 /** `focus`: a field to land on ("key" is the default when opening on the Assistant page, since that comes from a key error). */
-export type OpenSettingsDetail = { section?: SectionId; focus?: FocusTarget };
+/** `space`: on the Spaces page, open that space's details and focus its name. */
+export type OpenSettingsDetail = { section?: SectionId; focus?: FocusTarget; space?: string };
 type FocusTarget = "key" | "model" | "heading";
 const FOCUS_SELECTOR: Record<Exclude<FocusTarget, "heading">, string> = { key: "[data-key-input]", model: "[data-model-select]" };
 
@@ -80,6 +81,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   const returnTo = useRef<HTMLElement | null | undefined>(undefined);
   /** A field to focus once the page has it (the key field after a key error). */
   const pendingFocus = useRef<string | null>(null);
+  /** A space whose details Settings › Spaces opens (the sidebar's Edit name and colour…); `n` makes a repeat a new request. */
+  const [editSpace, setEditSpace] = useState<{ id: string; n: number } | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   /** The window's size, measured when it opens and kept while it is open (see frozenRef). */
   const [frozen, setFrozen] = useState<{ width: number; height: number } | null>(null);
@@ -140,6 +143,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   }, []);
 
   useEffect(() => {
+    // A request to open a space's details is for that opening only.
+    if (!open) setEditSpace(null);
     if (!open) return;
     setStatus("");
     setError("");
@@ -188,6 +193,12 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
       // Opened on the Assistant page by a key error: land on the key field itself.
       const focus = detail?.focus ?? (wanted === "agent" ? "key" : undefined);
       pendingFocus.current = focus && focus !== "heading" ? FOCUS_SELECTOR[focus] : null;
+      // A space's Edit name and colour…: its details open and its name field takes focus.
+      const space = detail?.space;
+      if (wanted === "spaces" && space) {
+        setEditSpace((e) => ({ id: space, n: (e?.n ?? 0) + 1 }));
+        pendingFocus.current = `[data-space-row="${CSS.escape(space)}"] [data-space-field="name"]`;
+      }
       if (isOpen.current) focusPending();
       setOpen(true);
     }
@@ -288,7 +299,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
     agent: <AgentSection headingId={ids.agent} settings={settings} loadError={loadError} retryLoad={load} act={act} />,
     appearance: <AppearanceSection headingId={ids.appearance} />,
     accessibility: <AccessibilitySection headingId={ids.accessibility} />,
-    spaces: <SpacesSection headingId={ids.spaces} />,
+    spaces: <SpacesSection headingId={ids.spaces} editSpace={editSpace} />,
     courses: <CoursesSection headingId={ids.courses} />,
     about: <AboutSection headingId={ids.about} settings={settings} />,
   };

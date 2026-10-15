@@ -5,9 +5,9 @@
 //! `https://github.com/<owner>/<repo>/releases/latest/download/latest.json`
 //! (the `latest.json` tauri-action uploads beside each release), and `pubkey` is
 //! the public half of the release signing key (`pnpm tauri signer generate`, the
-//! contents of the .pub file, never a path). Both are empty until the project
-//! has a repository and a key; until then this build never checks for or
-//! installs anything, and Settings › About says updates aren't set up.
+//! contents of the .pub file, never a path). The repository and feed are set;
+//! until the key is configured, this build never checks for or installs
+//! anything, and Settings › About says updates aren't set up.
 //!
 //! What protects a person:
 //! - Only `https` feeds count as set up (the plugin itself allows `http` in

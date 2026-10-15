@@ -12,8 +12,8 @@
 #   the repository.
 # - Optional macOS signing and notarization: APPLE_CERTIFICATE (base64 .p12),
 #   APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD
-#   (an app-specific password) and APPLE_TEAM_ID. Without them the macOS build is
-#   unsigned and Gatekeeper warns on first open.
+#   (an app-specific password) and APPLE_TEAM_ID. Without them the macOS build
+#   uses the configured ad-hoc signature, and Gatekeeper may warn on first open.
 name: release
 
 on:

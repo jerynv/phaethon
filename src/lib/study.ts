@@ -213,10 +213,22 @@ export function clozeParts(front: string): Array<{ text: string; blank: boolean 
   return out;
 }
 
+/**
+ * Resolves once the run's last event (done, error or cancelled) has arrived,
+ * not when the command returns: Tauri fetches a message of 8 KB or more
+ * separately, so a big one (a 25-question attempt) lands after the command's
+ * return, and a caller that stopped there missed it.
+ */
 function stream(cmd: string, args: Record<string, unknown>, onEvent: (e: StudyEvent) => void): Promise<void> {
   const channel = new Channel<StudyEvent>();
-  channel.onmessage = onEvent;
-  return invoke<void>(cmd, { ...args, onEvent: channel });
+  let ended = () => {};
+  const last = new Promise<void>((resolve) => (ended = resolve));
+  channel.onmessage = (e) => {
+    onEvent(e);
+    if (e.type === "done" || e.type === "error" || e.type === "cancelled") ended();
+  };
+  // A command that returned without a last event (none should) isn't waited on for ever.
+  return invoke<void>(cmd, { ...args, onEvent: channel }).then(() => Promise.race([last, new Promise<void>((r) => setTimeout(r, 15_000))]));
 }
 
 

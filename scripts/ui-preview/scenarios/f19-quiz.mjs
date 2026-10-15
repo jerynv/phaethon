@@ -242,4 +242,26 @@ export default [
       await h.shot("answered");
     },
   },
+  {
+    // A checked 25-question quiz is more than 8 KB, which Tauri delivers after the command has returned (the mock does too): the results still come.
+    name: "f19-quiz-big-check",
+    sizes: [[1100, 720]],
+    themes: ["light"],
+    mock: (() => {
+      const m = mock();
+      const long = "This is the reason, said at length as a real explanation is, naming the definition, the step that uses it and the trap in the other choices. ".repeat(3);
+      const many = Array.from({ length: 25 }, (_, i) => ({ ...Q(i + 1, `Which holds for set number ${i + 1}?`, ["$1 \\in A$", "$3 \\in A$"], "$1 \\in A$"), explanation: long }));
+      m.study.quizzes[PATH] = { ...QUIZ, questions: many, grounding: { ...GROUNDING, asked: 25, kept: 25 } };
+      return m;
+    })(),
+    async run(page, h) {
+      await openQuiz(page);
+      await page.$eval('[data-question="q1"] input', (el) => el.click());
+      await page.click("[data-quiz-submit]");
+      await page.waitForSelector("[data-submit-anyway]");
+      await page.click("[data-submit-anyway]");
+      check(await waitFor(page, () => !!document.querySelector("[data-quiz-results]")), "the results show", await text(page, "[data-quiz-error]"));
+      check(!(await page.$("[data-quiz-error]")), "and no error says they couldn't be checked");
+    },
+  },
 ];

@@ -757,7 +757,12 @@
           const stream = () => {
             const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
             let index = 0;
-            return (message) => callbacks[id]?.({ index: index++, message });
+            // As Tauri does (ipc/channel.rs): a message of 8192 bytes of JSON or more is fetched by the page, so it arrives after the command has returned.
+            return (message) => {
+              const m = { index: index++, message };
+              if (JSON.stringify(message).length >= 8192) setTimeout(() => callbacks[id]?.(m), 40);
+              else callbacks[id]?.(m);
+            };
           };
           const titleFile = (dir, title, ext) => `study/${dir}/${title.replace(/[\\/:*?"<>|]/g, "-")}.${ext}`;
           switch (cmd) {

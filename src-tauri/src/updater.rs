@@ -5,9 +5,8 @@
 //! `https://github.com/<owner>/<repo>/releases/latest/download/latest.json`
 //! (the `latest.json` tauri-action uploads beside each release), and `pubkey` is
 //! the public half of the release signing key (`pnpm tauri signer generate`, the
-//! contents of the .pub file, never a path). The repository and feed are set;
-//! until the key is configured, this build never checks for or installs
-//! anything, and Settings › About says updates aren't set up.
+//! contents of the .pub file, never a path). The repository, feed and key are
+//! configured in the shipped build.
 //!
 //! What protects a person:
 //! - Only `https` feeds count as set up (the plugin itself allows `http` in
@@ -394,7 +393,7 @@ mod tests {
             Setup::Ready { source: "updates.example.org".into() }
         );
         for (conf, why) in [
-            (json!({"pubkey": "", "endpoints": []}), "nothing set (this repo's own state)"),
+            (json!({"pubkey": "", "endpoints": []}), "nothing set"),
             (json!({"pubkey": key, "endpoints": []}), "no feed"),
             (json!({"pubkey": "", "endpoints": [FEED]}), "no key"),
             (json!({"pubkey": "not a key", "endpoints": [FEED]}), "key isn't base64"),
@@ -409,11 +408,11 @@ mod tests {
         assert!(matches!(setup_of(None), Setup::NotSetUp { .. }));
     }
 
-    /// The shipped config: updates off until the owner sets the feed and key, and when they
-    /// do, each signature must name the version the feed announces. The webview gets no
-    /// updater or process permission; it uses this module's commands.
+    /// The shipped config has a readable key and feed, and each signature must
+    /// name the version the feed announces. The webview gets no updater or
+    /// process permission; it uses this module's commands.
     #[test]
-    fn shipped_config_is_off_and_strict() {
+    fn shipped_config_is_ready_and_strict() {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let updater = &conf["plugins"]["updater"];
         // The plugin reads the same section at startup and fails the launch if it can't.
@@ -424,11 +423,7 @@ mod tests {
         assert_ne!(updater["dangerousInsecureTransportProtocol"], true);
         assert_ne!(updater["dangerousAcceptInvalidCerts"], true);
         assert_ne!(updater["dangerousAcceptInvalidHostnames"], true);
-        if updater["pubkey"] == "" {
-            assert!(matches!(setup_of(Some(updater)), Setup::NotSetUp { .. }));
-        } else {
-            assert!(matches!(setup_of(Some(updater)), Setup::Ready { .. }), "a feed and key are set but don't read as set up");
-        }
+        assert!(matches!(setup_of(Some(updater)), Setup::Ready { .. }), "the shipped feed and key must be ready");
         let caps: serde_json::Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         for p in caps["permissions"].as_array().unwrap() {
             let p = p.as_str().unwrap_or("");

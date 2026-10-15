@@ -127,6 +127,8 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           aria-label={`Model in ${spaceName}`}
           data-model-menu=""
           className={MENU}
+          // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
+          onCloseAutoFocus={(e) => other && e.preventDefault()}
         >
           <MenuHeader spaceName={spaceName} note={running ? "Applies from your next message. The reply now running keeps its model." : "Applies from your next message."} />
           {error && <MenuError error={error} />}
@@ -274,6 +276,8 @@ function CliModelPicker({
             aria-label={`Model in ${spaceName}`}
             data-model-menu=""
             className={MENU}
+            // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
+            onCloseAutoFocus={(e) => typing && e.preventDefault()}
           >
             <MenuHeader
               spaceName={spaceName}

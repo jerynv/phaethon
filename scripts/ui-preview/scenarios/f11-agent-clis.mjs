@@ -152,7 +152,12 @@ export default [
       const desc = await page.$eval("[data-cli-model-dialog]", (d) => d.textContent);
       check(/For a model Codex’s list doesn’t show, type its name as Codex knows it/.test(desc) && /For example gpt-5\.5/.test(desc), "it says to type the name as Codex knows it", desc);
       // A name that could be read as a flag is refused, at the field.
+      // Typed once the menu has finished closing, as a person would.
+      await page.waitForFunction(() => !document.querySelector("[data-model-menu]"), { timeout: 3000 });
       await page.keyboard.type("--yolo");
+      await page.waitForFunction(() => document.querySelector("[data-cli-model-input]")?.value === "--yolo", { timeout: 3000 }).catch(() => {});
+      const typed = await page.$eval("[data-cli-model-input]", (i) => [i.value, document.activeElement === i]);
+      check(typed[0] === "--yolo", "the name is typed into the field", JSON.stringify(typed));
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-cli-model-dialog] [role=alert]", { timeout: 3000 });
       const err = await page.$eval("[data-cli-model-input]", (i) => [i.getAttribute("aria-invalid"), document.getElementById(i.getAttribute("aria-describedby").split(" ")[1])?.textContent]);

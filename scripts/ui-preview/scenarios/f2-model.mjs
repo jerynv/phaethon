@@ -61,7 +61,7 @@ export default [
       await h.idle();
       const items = await page.$$eval('[data-model-menu] [role="menuitemradio"]', (els) => els.map((e) => [e.dataset.modelOption, e.getAttribute("aria-checked"), e.textContent.trim()]));
       console.log(`     items: ${JSON.stringify(items)}`);
-      check(items[0][0] === "__default__" && items[0][1] === "true" && /Use the default \(Claude Opus 5\.5\)/.test(items[0][2]), "Use the default (Claude Opus 5.5) comes first, and is checked", JSON.stringify(items[0]));
+      check(items[0][0] === "__default__" && items[0][1] === "true" && /^DefaultClaude Opus 5\.5, as set in Settings/.test(items[0][2]), "Default (Claude Opus 5.5) comes first, and is checked", JSON.stringify(items[0]));
       check(items.length === 4 && items.slice(1).every(([, , t]) => /^Claude /.test(t)), "then each model by its name", JSON.stringify(items));
       const f = await focused(page);
       check(f.startsWith("menuitemradio|__default__"), "the menu opens on the model in use", f);

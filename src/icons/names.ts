@@ -5,7 +5,7 @@
 export const ICON_NAMES = [
   // actions
   "plus", "close", "check", "copy", "edit", "retry", "more", "download", "search",
-  "send", "stop", "attach", "remove", "play", "pause",
+  "send", "stop", "attach", "remove", "trash", "play", "pause",
   // direction
   "chevron-down", "chevron-up", "chevron-left", "chevron-right", "arrow-down",
   // files and media

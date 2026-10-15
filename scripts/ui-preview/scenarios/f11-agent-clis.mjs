@@ -112,7 +112,7 @@ export default [
       await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
       await h.idle();
       const items = await page.$$eval("[data-model-menu] [data-model-option]", (els) => els.map((e) => e.textContent.trim()));
-      check(/^Codex’s own default/.test(items[0]) && items.at(-1) === "Another model…", "Codex's default first, then Another model…", JSON.stringify(items));
+      check(/^DefaultThe model Codex chooses/.test(items[0]) && items.at(-1) === "Another model…", "Codex's default first, then Another model…", JSON.stringify(items));
       check(/^GPT-6\.1-SolLatest workhorse/.test(items[1]) && /^GPT-6-Astra/.test(items[2]) && /^GPT-6-Luna/.test(items[3]), "then the models Codex lists, by its names, with what each is for", JSON.stringify(items));
       check(items.at(-2) === "Refresh the list", "Refresh the list before Another model…", JSON.stringify(items));
       check((await calls(page, "agent_cli_models")).every((a) => a.cli === "codex") && (await calls(page, "agent_cli_models")).length === 1, "Codex is asked once", JSON.stringify(await calls(page, "agent_cli_models")));

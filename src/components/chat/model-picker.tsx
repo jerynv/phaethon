@@ -7,7 +7,8 @@ import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IconTip } from "@/components/ui/tooltip";
-import { Icon } from "@/icons";
+import { Icon, type IconName } from "@/icons";
+import { cn } from "@/lib/utils";
 import { cliOf, type ProviderId } from "@/lib/backend";
 import {
   changedText,
@@ -125,25 +126,17 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           collisionPadding={8}
           aria-label={`Model in ${spaceName}`}
           data-model-menu=""
-          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(20rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
+          className={MENU}
         >
-          <DropdownMenu.Label className="px-2.5 pt-1.5 text-sm font-semibold text-ink-secondary">Model in {spaceName}</DropdownMenu.Label>
-          <p className="px-2.5 pb-1.5 text-sm text-ink-secondary" data-model-note="">
-            {running ? "Applies from your next message. The reply now running keeps its model." : "Applies from your next message."}
-          </p>
-          {error && (
-            <p role="alert" className="flex items-start gap-2 px-2.5 pb-1.5 text-sm text-danger-ink">
-              <Icon name="error" className="mt-0.5 shrink-0" />
-              <span className="min-w-0 wrap-anywhere">{error}</span>
-            </p>
-          )}
+          <MenuHeader spaceName={spaceName} note={running ? "Applies from your next message. The reply now running keeps its model." : "Applies from your next message."} />
+          {error && <MenuError error={error} />}
           <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)}>
-            <ModelItem value={DEFAULT} title={`Use the default (${defaultName})`} hint="Follows the default in Settings" />
+            <ModelItem value={DEFAULT} title="Default" hint={`${defaultName}, as set in Settings`} spoken={`Use the default, ${defaultName}`} />
             {groups.map((g) => (
               <DropdownMenu.Group key={g.provider} aria-label={groups.length > 1 ? g.name : undefined}>
-                <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
+                <Separator />
                 {groups.length > 1 && (
-                  <DropdownMenu.Label aria-hidden className="px-2.5 pt-1 pb-0.5 text-sm font-semibold text-ink-secondary" data-model-group={g.provider}>
+                  <DropdownMenu.Label aria-hidden className={GROUP_LABEL} data-model-group={g.provider}>
                     {g.name}
                   </DropdownMenu.Label>
                 )}
@@ -152,6 +145,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
                     key={m.id}
                     value={m.id}
                     title={m.name}
+                    hint={g.provider === "anthropic" ? anthropicHint(m.id) : undefined}
                     // Grouped under the provider's name on screen; said in full.
                     spoken={g.provider === "anthropic" ? undefined : modelName(m.id, s.models)}
                   />
@@ -160,21 +154,18 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
             ))}
           </DropdownMenu.RadioGroup>
           {canChooseOther && (
-            <>
-              <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
-              <DropdownMenu.Item
-                data-model-option={OTHER}
-                textValue="Another model"
+            <MenuFooter>
+              <MenuAction
+                option={OTHER}
+                icon="search"
                 onSelect={() => {
                   setOpen(false);
                   setOther(true);
                 }}
-                className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
               >
-                <Icon name="search" />
-                <span className="text-base font-medium">Another model…</span>
-              </DropdownMenu.Item>
-            </>
+                Another model…
+              </MenuAction>
+            </MenuFooter>
           )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -282,37 +273,32 @@ function CliModelPicker({
             collisionPadding={8}
             aria-label={`Model in ${spaceName}`}
             data-model-menu=""
-            className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(20rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
+            className={MENU}
           >
-            <DropdownMenu.Label className="px-2.5 pt-1.5 text-sm font-semibold text-ink-secondary">Model in {spaceName}</DropdownMenu.Label>
-            <p className="px-2.5 pb-1.5 text-sm text-ink-secondary" data-model-note="">
-              {cli.name} answers here. {running ? "A change applies from your next message; the reply now running keeps its model." : "A change applies from your next message."}
-            </p>
-            {error && (
-              <p role="alert" className="flex items-start gap-2 px-2.5 pb-1.5 text-sm text-danger-ink">
-                <Icon name="error" className="mt-0.5 shrink-0" />
-                <span className="min-w-0 wrap-anywhere">{error}</span>
-              </p>
-            )}
+            <MenuHeader
+              spaceName={spaceName}
+              note={`${cli.name} answers here. ${running ? "A change applies from your next message; the reply now running keeps its model." : "A change applies from your next message."}`}
+            />
+            {error && <MenuError error={error} />}
             <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)}>
-              <ModelItem value={DEFAULT} title={`${cli.name}’s own default`} hint={`The model ${cli.name} chooses`} />
-              {!!list?.models.length && <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />}
+              <ModelItem value={DEFAULT} title="Default" hint={`The model ${cli.name} chooses`} spoken={`${cli.name}’s own default`} />
+              {!!list?.models.length && <Separator />}
               {list?.models.map((m) => (
                 <ModelItem key={m.id} value={m.id} title={m.name} hint={m.description} spoken={`${cli.name} · ${m.name}`} />
               ))}
               {own && !list?.models.some((m) => m.id === own.model) && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
             </DropdownMenu.RadioGroup>
             {(list?.status === "loading" || list?.note) && (
-              <p className="flex items-start gap-2 px-2.5 py-1.5 text-sm text-ink-secondary" data-cli-models-note={list.status}>
-                <Icon name="info" className="mt-0.5 shrink-0" />
+              <p className="mx-1 mt-1 flex items-start gap-2 rounded-md bg-surface-sunken px-2.5 py-2 text-sm text-ink-secondary" data-cli-models-note={list.status}>
+                <Icon name={list.status === "loading" ? "spinner" : "info"} className={cn("mt-0.5 size-(--ph-icon-size-sm) shrink-0", list.status === "loading" && "animate-spin")} />
                 <span className="min-w-0">{list.status === "loading" ? `Asking ${cli.name} which models it offers…` : list.note}</span>
               </p>
             )}
-            <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
-            <DropdownMenu.Item
-              data-model-option="__refresh__"
-              textValue="Refresh the list"
-              aria-disabled={list?.status === "loading" || undefined}
+            <MenuFooter>
+            <MenuAction
+              option="__refresh__"
+              icon="retry"
+              busy={list?.status === "loading"}
               onSelect={(e) => {
                 // Stays open: the list is asked again in place, and focus stays here.
                 e.preventDefault();
@@ -321,23 +307,20 @@ function CliModelPicker({
                   announce(after?.models.length ? `${cli.name} offers ${after.models.length} models.` : (after?.note ?? `${cli.name} listed no models.`)),
                 );
               }}
-              className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover aria-disabled:cursor-progress"
             >
-              <Icon name="retry" />
-              <span className="text-base font-medium">{list?.status === "loading" ? "Refreshing the list…" : "Refresh the list"}</span>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item
-              data-model-option={OTHER}
-              textValue="Another model"
+              {list?.status === "loading" ? "Refreshing the list…" : "Refresh the list"}
+            </MenuAction>
+            <MenuAction
+              option={OTHER}
+              icon="edit"
               onSelect={() => {
                 setOpen(false);
                 setTyping(true);
               }}
-              className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
             >
-              <Icon name="edit" />
-              <span className="text-base font-medium">Another model…</span>
-            </DropdownMenu.Item>
+              Another model…
+            </MenuAction>
+            </MenuFooter>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
@@ -551,6 +534,7 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
   return list;
 }
 
+/** A model: its name with a line on what it's for beneath, a check at the end when it's the one in use. */
 function ModelItem({ value, title, hint, spoken }: { value: string; title: string; hint?: string; spoken?: string }) {
   return (
     <DropdownMenu.RadioItem
@@ -558,17 +542,89 @@ function ModelItem({ value, title, hint, spoken }: { value: string; title: strin
       textValue={title}
       aria-label={spoken}
       data-model-option={value}
-      className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
+      className="group/model grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[minmax(0,1fr)_var(--ph-icon-size)] items-center gap-x-3 rounded-md px-2.5 py-2 outline-none select-none data-highlighted:bg-hover data-[state=checked]:bg-accent-soft data-[state=checked]:data-highlighted:bg-selected"
     >
-      <span className="flex h-[1lh] items-center text-base">
-        <DropdownMenu.ItemIndicator>
-          <Icon name="check" className="text-accent-ink" />
-        </DropdownMenu.ItemIndicator>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-base font-medium wrap-break-word group-data-[state=checked]/model:text-accent-soft-ink">{title}</span>
+        {hint && <span className="text-sm text-ink-secondary wrap-break-word">{hint}</span>}
       </span>
-      <span className="flex min-w-0 flex-col">
-        <span className="text-base font-medium wrap-break-word">{title}</span>
-        {hint && <span className="text-sm text-ink-secondary">{hint}</span>}
-      </span>
+      <DropdownMenu.ItemIndicator className="flex items-center justify-center">
+        <Icon name="check" className="text-accent-ink" />
+      </DropdownMenu.ItemIndicator>
     </DropdownMenu.RadioItem>
+  );
+}
+
+/** What each of Anthropic's families is for, said under its name. */
+function anthropicHint(id: string): string | undefined {
+  if (/opus/i.test(id)) return "Most capable, for hard problems";
+  if (/sonnet/i.test(id)) return "Fast and capable, for most things";
+  if (/haiku/i.test(id)) return "Quickest, for short answers";
+  return undefined;
+}
+
+const MENU =
+  "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(19rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-xl border border-line bg-raised p-1.5 text-ink shadow-lg outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
+const GROUP_LABEL = "px-2.5 pt-2 pb-1 text-sm font-medium text-ink-secondary";
+
+function Separator() {
+  return <DropdownMenu.Separator className="mx-1 my-1.5 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />;
+}
+
+/** "Model" over the space's name, and when a change takes effect. */
+function MenuHeader({ spaceName, note }: { spaceName: string; note: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
+      <DropdownMenu.Label className="text-base font-semibold text-ink">Model in {spaceName}</DropdownMenu.Label>
+      <p className="text-sm text-ink-secondary" data-model-note="">
+        {note}
+      </p>
+    </div>
+  );
+}
+
+function MenuError({ error }: { error: string }) {
+  return (
+    <p role="alert" className="mx-1 mb-1.5 flex items-start gap-2 rounded-md bg-danger-soft px-2.5 py-2 text-sm text-danger-ink">
+      <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+      <span className="min-w-0 wrap-anywhere">{error}</span>
+    </p>
+  );
+}
+
+/** The menu's actions, set apart beneath the models. */
+function MenuFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <Separator />
+      {children}
+    </>
+  );
+}
+
+function MenuAction({
+  option,
+  icon,
+  busy,
+  onSelect,
+  children,
+}: {
+  option: string;
+  icon: IconName;
+  busy?: boolean;
+  onSelect: (e: Event) => void;
+  children: string;
+}) {
+  return (
+    <DropdownMenu.Item
+      data-model-option={option}
+      textValue={children.replace(/…$/, "")}
+      aria-disabled={busy || undefined}
+      onSelect={onSelect}
+      className="flex min-h-(--ph-control-height) cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base text-ink-secondary outline-none select-none data-highlighted:bg-hover data-highlighted:text-ink aria-disabled:cursor-progress"
+    >
+      <Icon name={busy ? "spinner" : icon} className={cn("size-(--ph-icon-size-sm) shrink-0", busy && "animate-spin")} />
+      <span>{children}</span>
+    </DropdownMenu.Item>
   );
 }

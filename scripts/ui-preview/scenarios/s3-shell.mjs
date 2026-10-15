@@ -39,7 +39,8 @@ const archive = () => [
 const conversations = (extra = {}) => ({
   threads: { school: structuredClone(current) },
   threadArchive: { school: archive() },
-  currentUpdated: { school: now - 3 * 3600000 },
+  // Three hours ago, but never before midnight, so it reads "Today at" whenever the suite runs.
+  currentUpdated: { school: Math.max(now - 3 * 3600000, new Date(now).setHours(0, 0, 0, 0)) },
   ...extra,
 });
 const DYSLEXIC = { backend: "phaethon", hasAnthropicKey: true, model: "claude-opus-5-5", appearance: { readingFont: "opendyslexic" } };

@@ -721,7 +721,9 @@ export function ConversationsBar({
                       );
                     }
                     return (
-                      <div key={t.id} className="flex items-start gap-1">
+                      // One row: Delete is a small bin inside it, at the top right, and the row keeps its
+                      // hover while the pointer is on the bin.
+                      <div key={t.id} className="group/row relative">
                         <DropdownMenu.RadioItem
                           value={t.id}
                           textValue={t.title}
@@ -731,7 +733,8 @@ export function ConversationsBar({
                           onSelect={() => void choose(t)}
                           className={cn(
                             itemClass,
-                            "grid min-w-0 flex-1 grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 px-2.5 py-2",
+                            "grid min-w-0 grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 py-2 ps-2.5",
+                            empty ? "pe-2.5" : "pe-[calc(var(--ph-control-height)+var(--ph-space)*1.5)] group-hover/row:bg-hover",
                           )}
                         >
                           {/* One line tall, so the check centres on the title at any text size. */}
@@ -762,10 +765,10 @@ export function ConversationsBar({
                             }}
                             className={cn(
                               itemClass,
-                              "mt-1 flex min-h-(--ph-control-height) shrink-0 items-center px-2 text-sm text-ink-secondary data-highlighted:text-danger-ink",
+                              "absolute end-1 top-1 flex size-(--ph-control-height) items-center justify-center text-ink-secondary data-highlighted:bg-danger-soft data-highlighted:text-danger-ink",
                             )}
                           >
-                            Delete
+                            <Icon name="trash" className="size-(--ph-icon-size-sm)" />
                           </DropdownMenu.Item>
                         )}
                       </div>

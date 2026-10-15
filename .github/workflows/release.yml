@@ -89,6 +89,10 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: Phaethon __VERSION__
+          releaseBody: |
+            Pre-alpha desktop build. Phaethon is still in development and is not ready for real data.
+
+            Download the installer for your operating system from the assets below. Future releases can update from inside the app.
           # latest.json's notes (the app's "What's new") are this release's body as it is
           # when the files are uploaded; editing the draft later doesn't change them.
           releaseDraft: true

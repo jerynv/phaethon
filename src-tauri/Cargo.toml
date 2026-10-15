@@ -37,6 +37,7 @@ tauri-plugin-dialog = "2"
 zip = { version = "9.0.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 # Text copies of course PDFs (MIT), read in a child process (lms/text.rs).
 lopdf = { version = "0.45", default-features = false }
+tauri-plugin-updater = "2.13.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -66,4 +67,6 @@ panic = "abort"
 strip = true
 
 [dev-dependencies]
+minisign = "0.10"
+tauri = { version = "2", features = ["test"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "io-util"] }

@@ -21,6 +21,7 @@ fn main() {
             "plan_upcoming", "plan_exams_get", "plan_exams_set", "plan_save", "plan_state_get", "plan_state_set",
             "settings_set_provider", "settings_set_provider_model", "settings_set_provider_url", "provider_status",
             "latex_status", "latex_compile", "latex_pdf", "latex_save", "file_view", "file_bytes",
+            "update_state", "update_check", "update_install",
         ]),
     ))
     .expect("failed to run tauri-build");

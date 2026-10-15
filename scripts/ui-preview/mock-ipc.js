@@ -1253,6 +1253,28 @@
           return { path, name, kind: f.kind, size, mediaType: f.mediaType ?? "", text: f.text ?? null, language: f.language ?? null, tooBig: !!f.tooBig };
         }
         // ---- end of rich output ----
+        // ---- Updates (src-tauri/src/updater.rs, u1) ----
+        // M.updates: { view: UpdateView, check: UpdateView (update_check's answer), install: [InstallEvent & { delay }],
+        // installError: "words" }. Without it, this build isn't set up for updates, as the repo ships.
+        case "update_state": return structuredClone(M.updates?.view ?? { currentVersion: "0.1.0", source: null, canInstall: true, status: { state: "notSetUp", reason: "This build doesn’t name a place to get updates from." } });
+        case "update_check": {
+          await sleep(M.updates?.checkDelay ?? 300);
+          if (M.updates?.check) M.updates.view = structuredClone(M.updates.check);
+          return structuredClone(M.updates?.view);
+        }
+        case "update_install": {
+          const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
+          let index = 0;
+          for (const ev of M.updates?.install ?? []) {
+            await sleep(ev.delay ?? 200);
+            const { delay, ...message } = ev;
+            callbacks[id]?.({ index: index++, message });
+          }
+          if (M.updates?.installError) throw M.updates.installError;
+          if (M.updates?.holdInstall) await new Promise(() => {});
+          return;
+        }
+        // ---- end updates ----
         case "agent_send": {
           M.currentSpace = args.space;
           const usedSpace = M.spaces.find((s) => s.id === args.space);

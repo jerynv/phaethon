@@ -9,6 +9,7 @@ import { ExternalLink } from "./agent-section";
 import { ANTHROPIC_PRIVACY_URL, KEY_STORE } from "./api-key";
 import { PathText, SectionHeader, SettingGroup, SettingRow } from "./controls";
 import { useStatus } from "./status";
+import { UpdatesGroup } from "./updates";
 
 /** How long "Copied" shows before the button reads "Copy path" again. */
 const COPIED_MS = 2000;
@@ -71,6 +72,8 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
           <span className="text-base text-ink">MIT</span>
         </SettingRow>
       </SettingGroup>
+
+      <UpdatesGroup />
 
       <SettingGroup title="Your Phaethon folder" description="Your spaces, conversations, attachments and these settings are files in this folder.">
         <SettingRow

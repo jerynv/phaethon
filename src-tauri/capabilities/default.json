@@ -102,6 +102,9 @@
     "allow-latex-pdf",
     "allow-latex-save",
     "allow-file-view",
-    "allow-file-bytes"
+    "allow-file-bytes",
+    "allow-update-state",
+    "allow-update-check",
+    "allow-update-install"
   ]
 }

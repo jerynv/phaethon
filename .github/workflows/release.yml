@@ -1,0 +1,98 @@
+# Builds Phaethon for macOS, Windows and Linux and puts the installers, the signed
+# updater files and latest.json on a draft GitHub release. Publishing the draft is
+# what makes it the update everyone gets: the app reads
+# https://github.com/<owner>/<repo>/releases/latest/download/latest.json, and
+# "latest" never means a draft or a prerelease.
+#
+# Before the first run (see src-tauri/src/updater.rs):
+# - plugins.updater in src-tauri/tauri.conf.json names that latest.json as its
+#   endpoint and carries the public key; this workflow refuses to run without both.
+# - Repository secrets TAURI_SIGNING_PRIVATE_KEY (the private key's contents) and,
+#   if the key has one, TAURI_SIGNING_PRIVATE_KEY_PASSWORD. The key never goes in
+#   the repository.
+# - Optional macOS signing and notarization: APPLE_CERTIFICATE (base64 .p12),
+#   APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD
+#   (an app-specific password) and APPLE_TEAM_ID. Without them the macOS build is
+#   unsigned and Gatekeeper warns on first open.
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Updates are set up in tauri.conf.json
+        shell: bash
+        run: |
+          node -e '
+            const u = require("./src-tauri/tauri.conf.json").plugins?.updater ?? {};
+            const bad = [];
+            if (!u.pubkey) bad.push("plugins.updater.pubkey is empty");
+            if (!u.endpoints?.length || !u.endpoints.every((e) => e.startsWith("https://"))) bad.push("plugins.updater.endpoints must be https addresses");
+            if (u.requireSignedVersion !== true) bad.push("plugins.updater.requireSignedVersion must be true");
+            if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+          '
+
+      - name: Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Phaethon __VERSION__
+          # latest.json's notes (the app's "What's new") are this release's body as it is
+          # when the files are uploaded; editing the draft later doesn't change them.
+          releaseDraft: true
+          prerelease: false
+          # The updater files (.app.tar.gz, setup .exe, .AppImage, each with its .sig) are
+          # made only here, so a local build needs no signing key.
+          args: ${{ matrix.args }} --config {"bundle":{"createUpdaterArtifacts":true}}

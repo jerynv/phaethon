@@ -23,6 +23,7 @@ pub mod study;
 pub mod thread;
 pub mod tools;
 pub mod tutor_mode;
+pub mod updater;
 pub mod vault;
 pub mod viewer;
 pub mod vision;
@@ -1013,6 +1014,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         // Used from Rust only (Export's save dialog); no capability lets the webview call it.
         .plugin(tauri_plugin_dialog::init())
+        // Updates from the project's releases (updater.rs). Driven from Rust only: no capability
+        // gives the webview the plugin's own commands; it asks updater.rs's.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let vault = Vault::default_location()?;
             vault.ensure_initialized()?;
@@ -1044,6 +1048,7 @@ pub fn run() {
             // main thread, each space marked busy while it is looked through.
             let (to_import, root, busy) = (vault.clone(), isolated_config_root.clone(), runs.clone());
             std::thread::spawn(move || import_cli_conversations(&to_import, root.as_deref(), &busy));
+            updater::init(app.handle());
             app.manage(AppState {
                 vault,
                 runs,
@@ -1151,7 +1156,10 @@ pub fn run() {
             latex::latex_pdf,
             latex::latex_save,
             viewer::file_view,
-            viewer::file_bytes
+            viewer::file_bytes,
+            updater::update_state,
+            updater::update_check,
+            updater::update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -324,6 +324,24 @@
             .sort((a, b) => b.updated - a.updated);
           return [summary("current", M.threads[args.space] ?? [], M.currentUpdated?.[args.space] ?? Date.now(), true), ...rest];
         }
+        // ---- Earlier Claude Code conversations (src-tauri/src/cli_import.rs, f17) ----
+        // M.cliImport: { offered?: bool, found: [{ messages, updated }] }. Offered when Claude Code answers or
+        // `offered` says Claude Code kept transcripts here; a run moves what was found into the archive once
+        // and says their titles, refused while a reply runs in the space.
+        case "cli_import_offered":
+          return M.cliImport?.offered ?? M.settings.backend === "claude-cli";
+        case "cli_import_run": {
+          if (window.__liveTurn && M.currentSpace === args.space) throw BUSY;
+          (M.cliImportRuns ??= []).push(args.space);
+          await sleep(M.cliImport?.delay ?? 120);
+          const found = M.cliImport?.found ?? [];
+          if (M.cliImport) M.cliImport.found = [];
+          const archive = (M.threadArchive[args.space] ??= []);
+          found.forEach((t, i) => archive.push({ id: `${t.updated}-${i}`, updated: t.updated, messages: t.messages }));
+          persist();
+          return found.map((t) => titleOf(t.messages));
+        }
+        // ---- end earlier Claude Code conversations ----
         case "grants_list": {
           const incoming = Object.entries(M.grants).flatMap(([to, gs]) => gs.filter((g) => g.from === args.space).map((g) => ({ ...g, to })));
           return { grants: M.grants[args.space] ?? [], incoming, problems: M.grantProblems ?? [] };

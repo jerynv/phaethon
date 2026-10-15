@@ -60,6 +60,15 @@ export function relativeDate(ms: number, now = Date.now(), withTime = false): st
  */
 const deleteThread = (space: string, id: string) => invoke<void>("thread_delete", { space, id });
 
+/**
+ * Conversations Claude Code had in this space before Phaethon kept them (src-tauri/src/cli_import.rs).
+ * `cli_import_offered`: whether to offer looking (Claude Code answers here, or kept transcripts for
+ * this space). `cli_import_run`: brings in each one not here yet as a past conversation that resumes
+ * its own session, and says their titles. Refused while a reply runs in the space.
+ */
+const cliImportOffered = (space: string) => invoke<boolean>("cli_import_offered", { space });
+const cliImportRun = (space: string) => invoke<string[]>("cli_import_run", { space });
+
 function countText(n: number) {
   return n === 0 ? "No messages yet" : `${n} message${n === 1 ? "" : "s"}`;
 }
@@ -96,7 +105,7 @@ const STOPS = '[role^="menuitem"]:not([data-delete-thread]):not([data-disabled])
 
 type ListState =
   | { status: "loading" }
-  | { status: "ready"; threads: ThreadSummary[]; cli: ReturnType<typeof cliOf> }
+  | { status: "ready"; threads: ThreadSummary[]; cli: ReturnType<typeof cliOf>; findEarlier: boolean }
   | { status: "error"; message: string };
 
 /**
@@ -129,7 +138,9 @@ type ListState =
  *
  * A CLI’s conversations (Claude Code, Codex, Gemini CLI) are kept here the same way: each one resumes its
  * own CLI session when opened, and New conversation starts a fresh one.
- * Its confirm adds that the CLI’s own copy stays in its folder.
+ * Its confirm adds that the CLI’s own copy stays in its folder. Where Claude Code answers, or kept
+ * transcripts for this space, "Find earlier Claude Code conversations" brings in those it had here
+ * before Phaethon kept them (each resumes its own session); what it found is said under it.
  */
 export function ConversationsBar({
   space,
@@ -164,6 +175,9 @@ export function ConversationsBar({
   // After a Clear: what was kept, shown under the bar until dismissed.
   const [kept, setKept] = useState<{ title: string; facts: string[] } | null>(null);
   const [showKept, setShowKept] = useState(false);
+  // What the last Find earlier Claude Code conversations found, said under it until the menu closes.
+  const [found, setFound] = useState<string | null>(null);
+  const [finding, setFinding] = useState(false);
   // Where Cancel puts focus back: the row (Delete key) or its Delete item.
   const confirmFrom = useRef<"row" | "del">("del");
   const contentRef = useRef<HTMLDivElement>(null);
@@ -341,6 +355,39 @@ export function ConversationsBar({
     }
   }
 
+  /**
+   * Find earlier Claude Code conversations: bring in those Claude Code had here before Phaethon kept
+   * them, then show the list again with them in it. The menu stays open with focus on the item, and
+   * what was found is said under it and announced.
+   */
+  async function findEarlier() {
+    if (running) {
+      setProblem(BUSY);
+      setOpen(false);
+      return;
+    }
+    setProblem("");
+    setFound(null);
+    setWorking(true);
+    setFinding(true);
+    try {
+      const titles = await cliImportRun(space.id);
+      const threads = await listThreads(space.id);
+      setList((l) => (l.status === "ready" ? { ...l, threads } : l));
+      const said = titles.length
+        ? `Found ${plural(titles.length, "earlier conversation")} from Claude Code: ${titles.map((t) => `“${t}”`).join(", ")}. ${titles.length === 1 ? "It’s" : "They’re"} in the list now.`
+        : "There are no earlier Claude Code conversations in this space that aren’t already here.";
+      setFound(said);
+      announce(said);
+    } catch (e) {
+      setProblem(String(e));
+      setOpen(false);
+    } finally {
+      setWorking(false);
+      setFinding(false);
+    }
+  }
+
   // Cmd+N (Ctrl+N elsewhere), unless a dialog (Settings) has focus.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -366,8 +413,10 @@ export function ConversationsBar({
       setList({ status: "error", message: "Conversations are kept only in the desktop app." });
       return;
     }
-    Promise.all([listThreads(space.id), getSettings()]).then(
-      ([threads, settings]) => live && setList({ status: "ready", threads, cli: cliOf(settings.backend) }),
+    setFound(null);
+    // The offer to look for Claude Code's earlier conversations never keeps the list from showing.
+    Promise.all([listThreads(space.id), getSettings(), cliImportOffered(space.id).catch(() => false)]).then(
+      ([threads, settings, findEarlier]) => live && setList({ status: "ready", threads, cli: cliOf(settings.backend), findEarlier }),
       (e: unknown) => live && setList({ status: "error", message: String(e) }),
     );
     return () => {
@@ -398,6 +447,14 @@ export function ConversationsBar({
     const rows = root.querySelectorAll<HTMLElement>('[role="menuitemradio"]');
     (rows[Math.min(want.index, rows.length - 1)] ?? q("[data-menu-new-conversation]"))?.focus();
   });
+
+  // After a find the list above grows: keep what it found, and the item with focus, in view.
+  useLayoutEffect(() => {
+    if (!found) return;
+    const root = contentRef.current;
+    root?.querySelector("[data-find-earlier-result]")?.scrollIntoView({ block: "nearest" });
+    root?.querySelector("[data-find-earlier]")?.scrollIntoView({ block: "nearest" });
+  }, [found, list]);
 
   const threads = list.status === "ready" ? list.threads : [];
 
@@ -738,6 +795,29 @@ export function ConversationsBar({
                   {`${modKeyLabel()}${mac ? "" : "+"}N`}
                 </kbd>
               </DropdownMenu.Item>
+              {list.status === "ready" && list.findEarlier && (
+                <>
+                  <DropdownMenu.Item
+                    data-find-earlier=""
+                    disabled={working}
+                    aria-describedby={found ? `found-${space.id}` : undefined}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      void findEarlier();
+                    }}
+                    className={cn(itemClass, "flex shrink-0 items-center gap-2 px-2.5 py-2 text-base font-medium")}
+                  >
+                    <Icon name={finding ? "spinner" : "search"} className={cn("text-ink-secondary", finding && "animate-spin")} />
+                    <span className="flex-1">{finding ? "Looking for earlier Claude Code conversations…" : "Find earlier Claude Code conversations"}</span>
+                  </DropdownMenu.Item>
+                  {/* Already announced; shown here until the menu closes. */}
+                  {found && (
+                    <p id={`found-${space.id}`} data-find-earlier-result="" className="px-2.5 pt-1 pb-2 text-sm wrap-break-word text-ink-secondary">
+                      {found}
+                    </p>
+                  )}
+                </>
+              )}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>

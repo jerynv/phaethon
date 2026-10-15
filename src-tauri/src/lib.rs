@@ -2,6 +2,7 @@ pub mod agent;
 pub mod agent_loop;
 pub mod anthropic;
 pub mod attachments;
+pub mod cli_import;
 pub mod continuation;
 pub mod export;
 pub mod grants;
@@ -386,6 +387,49 @@ fn thread_delete(state: State<'_, AppState>, space: String, id: String) -> Resul
     thread::while_idle(&state.runs, &space, || {
         thread::delete(&dir, &id).map_err(|e| format!("That conversation couldn’t be deleted: {e}"))
     })
+}
+
+/// Claude Code's folder for this vault (cli_import.rs): its isolated one, or the user's.
+fn claude_home(vault: &Vault, isolated_root: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    cli_import::claude_home(study::model::cli_config_dir(vault, isolated_root, agent::Cli::Claude))
+}
+
+/// Whether the Conversations menu offers "Find earlier Claude Code
+/// conversations" in `space`: the vault answers with Claude Code, or Claude
+/// Code kept transcripts for this space's folder.
+#[tauri::command]
+fn cli_import_offered(state: State<'_, AppState>, space: String) -> Result<bool, String> {
+    let dir = state.vault.space_dir(&space)?;
+    let home = claude_home(&state.vault, state.isolated_config_root.as_deref());
+    Ok(cli_import::offered(&dir, home.as_deref(), state.vault.settings().backend == Backend::ClaudeCli))
+}
+
+/// Bring in the Claude Code conversations had in `space` that Phaethon
+/// doesn't have yet, each as a past conversation that resumes its own
+/// session. Returns their titles. Refused while a reply is running there.
+#[tauri::command]
+fn cli_import_run(state: State<'_, AppState>, space: String) -> Result<Vec<String>, String> {
+    let dir = state.vault.space_dir(&space)?;
+    let Some(home) = claude_home(&state.vault, state.isolated_config_root.as_deref()) else {
+        return Ok(vec![]);
+    };
+    thread::while_idle(&state.runs, &space, || {
+        cli_import::import(&dir, &home).map_err(|e| format!("Earlier Claude Code conversations couldn’t be brought in: {e}"))
+    })
+}
+
+/// At launch, once per space ever: bring in its earlier Claude Code
+/// conversations. A space with a reply already running is left for the next launch.
+fn import_cli_conversations(vault: &Vault, isolated_root: Option<&std::path::Path>, runs: &Runs) {
+    let Some(home) = claude_home(vault, isolated_root) else { return };
+    for space in spaces::list(vault).unwrap_or_default() {
+        let Ok(dir) = vault.space_dir(&space.id) else { continue };
+        match thread::while_idle(runs, &space.id, || cli_import::import_once(&dir, &home).map_err(|e| e.to_string())) {
+            Ok(Some(titles)) if !titles.is_empty() => eprintln!("{}: brought in {} earlier Claude Code conversations", space.id, titles.len()),
+            Err(e) if e != thread::BUSY => eprintln!("{}: earlier Claude Code conversations: {e}", space.id),
+            _ => {}
+        }
+    }
 }
 
 /// Clear the conversation `id` in `space`: the vault's model (Phaethon's
@@ -938,6 +982,10 @@ pub fn run() {
             let runs = Runs::default();
             #[cfg(unix)]
             kill_children_on_signal(app.handle().clone(), runs.clone());
+            // Conversations Claude Code had before Phaethon kept them (cli_import.rs): off the
+            // main thread, each space marked busy while it is looked through.
+            let (to_import, root, busy) = (vault.clone(), isolated_config_root.clone(), runs.clone());
+            std::thread::spawn(move || import_cli_conversations(&to_import, root.as_deref(), &busy));
             app.manage(AppState {
                 vault,
                 runs,
@@ -972,6 +1020,8 @@ pub fn run() {
             thread_clear,
             thread_forget,
             thread_forget_preview,
+            cli_import_offered,
+            cli_import_run,
             claude_cli_status,
             agent_clis_status,
             settings_get,

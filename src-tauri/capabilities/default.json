@@ -45,6 +45,8 @@
     "allow-file-open",
     "allow-grant-restore",
     "allow-thread-delete",
+    "allow-cli-import-offered",
+    "allow-cli-import-run",
     "allow-claude-cli-status",
     "allow-agent-clis-status",
     "allow-thread-clear",

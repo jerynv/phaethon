@@ -79,6 +79,15 @@ pub enum Record {
     /// past a Deny by asking again in the new version. Counts for [`denied`];
     /// never shown (its receipt is in the archived version where it was given).
     DeniedEarlier { space: String, path: String },
+    /// The conversation was brought in from a CLI's own transcript (see
+    /// cli_import.rs): which CLI, its session, and the title the CLI gave it.
+    /// Never shown; it names the conversation in the list.
+    Imported {
+        from: String,
+        session: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+    },
 }
 
 impl Record {
@@ -132,7 +141,7 @@ fn refusal(r: &Record) -> Option<(&str, &str)> {
 
 /// Whether the UI shows this record on its reply.
 fn is_shown(r: &Record) -> bool {
-    !matches!(r, Record::DeniedEarlier { .. })
+    !matches!(r, Record::DeniedEarlier { .. } | Record::Imported { .. })
 }
 
 /// The thread as the provider gets it: only each message's role and content
@@ -372,7 +381,7 @@ fn session_from_archive(space: &Path, id: &str) -> io::Result<()> {
     if is_regular_file(&kept) {
         fs::rename(kept, session_file(space))
     } else {
-        remove_if_there(&session_file(space))
+        drop_session(space, &session_file(space))
     }
 }
 
@@ -381,6 +390,43 @@ fn remove_if_there(path: &Path) -> io::Result<()> {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
     }
+}
+
+/// Remove a CLI session file that is going for good, noting its session as one
+/// Phaethon knew, so a later search for earlier Claude Code conversations
+/// (cli_import.rs) never brings back one the user deleted.
+fn drop_session(space: &Path, path: &Path) -> io::Result<()> {
+    if is_regular_file(path)
+        && let Ok(raw) = fs::read_to_string(path)
+    {
+        crate::cli_import::remember(space, raw.trim());
+    }
+    remove_if_there(path)
+}
+
+/// Add a whole conversation to the archive as a past one, with the CLI
+/// session it resumes (if any) and its file dated `updated` (milliseconds
+/// since the epoch), so the list shows it where it falls in time. Returns its
+/// archive id. Used to bring in conversations had elsewhere (cli_import.rs).
+pub fn add_archived(space: &Path, msgs: &[Value], session: Option<&str>, updated: Option<u64>) -> io::Result<String> {
+    let id = free_id(space)?;
+    let path = archived(space, &id);
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_vec_pretty(msgs)?)?;
+    if let Some(ms) = updated {
+        let when = std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms);
+        // Only where it sorts: a file that keeps today's date is still a whole conversation.
+        let _ = fs::File::options().write(true).open(&tmp).and_then(|f| f.set_modified(when));
+    }
+    if let Some(s) = session {
+        fs::write(archived_session(space, &id), format!("{s}\n"))?;
+    }
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_file(archived_session(space, &id));
+        return Err(e);
+    }
+    Ok(id)
 }
 
 fn is_regular_file(path: &Path) -> bool {
@@ -408,14 +454,26 @@ fn title_of(msgs: &[UiMessage]) -> String {
         .map(|m| m.text.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|t| !t.is_empty())
         .or_else(|| first.and_then(|m| m.attachments.first()).map(|a| a.name.clone()));
-    match text {
-        None => "New conversation".into(),
-        Some(t) if t.chars().count() > TITLE_CHARS => {
-            let cut: String = t.chars().take(TITLE_CHARS - 1).collect();
-            format!("{}…", cut.trim_end())
-        }
-        Some(t) => t,
+    text.map_or_else(|| "New conversation".into(), |t| short_title(&t))
+}
+
+/// `t` with its whitespace collapsed, cut to the list's length.
+pub fn short_title(t: &str) -> String {
+    let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    if t.chars().count() > TITLE_CHARS {
+        let cut: String = t.chars().take(TITLE_CHARS - 1).collect();
+        format!("{}…", cut.trim_end())
+    } else {
+        t
     }
+}
+
+/// The title a CLI gave a conversation brought in from it, if it gave one.
+fn imported_title(msgs: &[Value]) -> Option<String> {
+    records(msgs).find_map(|r| match r {
+        Record::Imported { title: Some(t), .. } if !t.trim().is_empty() => Some(short_title(&t)),
+        _ => None,
+    })
 }
 
 fn mtime_ms(path: &Path) -> u64 {
@@ -444,7 +502,7 @@ fn summary(path: &Path, id: String, current: bool) -> ThreadSummary {
     let (title, messages) = match read_messages(path) {
         Ok(msgs) => {
             let ui = to_ui(&msgs);
-            (title_of(&ui), ui.len())
+            (imported_title(&msgs).unwrap_or_else(|| title_of(&ui)), ui.len())
         }
         // Listed anyway: the file is the user's, and opening it shows why it can't be read.
         Err(_) => ("A conversation that couldn’t be read".into(), 0),
@@ -598,7 +656,7 @@ pub fn cut_at(space: &Path, msgs: &mut Vec<Value>, index: usize) -> Result<(), S
 /// The CLI starts a fresh session too.
 pub fn start_new(space: &Path) -> io::Result<()> {
     archive_current(space)?;
-    remove_if_there(&session_file(space))
+    drop_session(space, &session_file(space))
 }
 
 /// Make the archived conversation `id` current, archiving the current one
@@ -637,7 +695,7 @@ pub fn delete(space: &Path, id: &str) -> io::Result<()> {
     if id == CURRENT_ID {
         let _ = fs::remove_file(file(space).with_extension("json.tmp"));
         remove_if_there(&file(space))?;
-        return remove_if_there(&session_file(space));
+        return drop_session(space, &session_file(space));
     }
     if !is_valid_id(id) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a conversation id"));
@@ -647,7 +705,7 @@ pub fn delete(space: &Path, id: &str) -> io::Result<()> {
         return Err(io::Error::new(io::ErrorKind::NotFound, "that conversation is no longer there"));
     }
     fs::remove_file(chosen)?;
-    remove_if_there(&archived_session(space, id))
+    drop_session(space, &archived_session(space, id))
 }
 
 /// The saved messages of conversation `id`: `"current"`, or an archive id

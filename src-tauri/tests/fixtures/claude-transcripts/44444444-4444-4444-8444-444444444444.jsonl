@@ -1,0 +1,2 @@
+{"parentUuid":null,"type":"user","message":{"role":"user","content":"hi"},"uuid":"d0000000-0000-4000-8000-000000000001","timestamp":"2026-10-11T07:01:50.072Z","cwd":"@SPACE@","sessionId":"44444444-4444-4444-8444-444444444444"}
+{"parentUuid":"d0000000-0000-4000-8000-000000000001","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi! What do you need?"}]},"uuid":"d0000000-0000-4000-8000-000000000002","timestamp":"2026-10-11T07:01:52.303Z","cwd":"@SPACE@","sessionId":"44444444-4444-4444-8444-444444444444"}

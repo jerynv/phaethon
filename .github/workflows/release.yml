@@ -12,8 +12,8 @@
 #   the repository.
 # - Optional macOS signing and notarization: APPLE_CERTIFICATE (base64 .p12),
 #   APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD
-#   (an app-specific password) and APPLE_TEAM_ID. Without them the macOS build
-#   uses the configured ad-hoc signature, and Gatekeeper may warn on first open.
+#   (an app-specific password) and APPLE_TEAM_ID. Without a certificate the macOS
+#   build uses the configured ad-hoc signature, and Gatekeeper may warn on first open.
 name: release
 
 on:
@@ -75,17 +75,44 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Configure Apple signing when available
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ACCOUNT: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import uuid
+
+          if not os.environ.get('CERTIFICATE'):
+              raise SystemExit(0)
+          names = {
+              'CERTIFICATE': 'APPLE_CERTIFICATE',
+              'CERTIFICATE_PASSWORD': 'APPLE_CERTIFICATE_PASSWORD',
+              'SIGNING_IDENTITY': 'APPLE_SIGNING_IDENTITY',
+              'APPLE_ACCOUNT': 'APPLE_ID',
+              'APPLE_APP_PASSWORD': 'APPLE_PASSWORD',
+              'TEAM_ID': 'APPLE_TEAM_ID',
+          }
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+              for source, target in names.items():
+                  value = os.environ.get(source, '')
+                  if value:
+                      delimiter = 'EOF_' + uuid.uuid4().hex
+                      output.write(f'{target}<<{delimiter}\n{value}\n{delimiter}\n')
+          PY
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: v__VERSION__
           releaseName: Phaethon __VERSION__

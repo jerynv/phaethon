@@ -80,7 +80,7 @@
   const PROVIDER_IDS = Object.fromEntries(PRESETS.map((x) => [x.id, true]));
   const MODEL_ID = /^(?![-./:])(?!.*\.\.)[A-Za-z0-9._:/@+-]{1,200}$/;
   /** The CLI whose own per-space models are in use (lib.rs cli_with_models). */
-  const cliWithModels = () => ({ "codex-cli": "codex", "gemini-cli": "gemini" })[M.settings.backend] ?? null;
+  const cliWithModels = () => ({ "claude-cli": "claude", "codex-cli": "codex", "gemini-cli": "gemini" })[M.settings.backend] ?? null;
   const baseOf = (x) => (x.editableBase && M.prov?.urls?.[x.id]) || x.base;
   const providerView = () => {
     const P = M.prov;
@@ -155,7 +155,7 @@
         }
         case "space_model_set": {
           if (!M.spaces.some((s) => s.id === args.space)) throw `space "${args.space}" does not exist in this vault`;
-          const tagged = /^(codex|gemini):(.*)$/.exec(args.model ?? "");
+          const tagged = /^(claude|codex|gemini):(.*)$/.exec(args.model ?? "");
           const cli = tagged?.[1] ?? (args.model == null ? cliWithModels() : null);
           if (cli) {
             const model = tagged?.[2]?.trim();
@@ -333,6 +333,30 @@
           M.signInWaiting = null;
           if (out.status === "signedIn" && args.cli === "codex" && M.clis) M.clis = M.clis.map((c) => (c.id === "codex" ? { ...c, loggedIn: true } : c));
           return out;
+        }
+        // Each CLI's own model list (agent/models.rs), as the installed versions gave it (Oct 2026). M.cliLists[cli]
+        // replaces one ({ models, note }); M.cliListDelay delays the answer (to show "Asking…").
+        case "agent_cli_models": {
+          if (M.cliListDelay) await sleep(M.cliListDelay);
+          const own = M.cliLists?.[args.cli];
+          if (own) return typeof own === "function" ? own() : own;
+          if (args.cli === "codex")
+            return {
+              models: [
+                { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", description: "Latest workhorse model for coding and everyday work." },
+                { id: "gpt-6-astra", name: "GPT-6-Astra", description: "Frontier intelligence for the most demanding work." },
+                { id: "gpt-6-luna", name: "GPT-6-Luna", description: "Fast and affordable model for easier tasks." },
+              ],
+            };
+          if (args.cli === "claude")
+            return {
+              models: ["fable", "opus", "sonnet"].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1) })),
+              note: "Claude Code can’t list its models: these are the names its help gives, each its newest model of that kind. Another model… takes a model’s full name.",
+            };
+          return {
+            models: [["auto", "Auto"], ["pro", "Pro"], ["flash", "Flash"], ["flash-lite", "Flash-Lite"]].map(([id, name]) => ({ id, name })),
+            note: "Gemini CLI can’t list its models: these are the choices its own model menu offers. Another model… takes a model’s full name.",
+          };
         }
         case "agent_cli_sign_in_cancel": {
           if (!M.signInWaiting) return false;

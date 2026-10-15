@@ -6,9 +6,11 @@ import { readableModel } from "@/components/settings/api-key";
 import {
   CLI_INFO,
   getSettings,
+  listCliModels,
   listModels,
   SETTINGS_CHANGED_EVENT,
   type Backend,
+  type CliModelInfo,
   type ModelInfo,
   type ProviderId,
   type ProviderInfo,
@@ -20,9 +22,10 @@ import { inTauri } from "./tauri";
  * Which model answers in each space. A space may choose its own (saved in its
  * space.json, so it syncs with the space; src-tauri/src/space_model.rs);
  * every other space uses the default model from Settings. Only Phaethon's own
- * agent uses either: Claude Code picks its own model. With Codex or Gemini CLI
- * answering, `own` holds each space's model for that CLI instead ("codex:gpt-5.5"),
- * and a space without one uses the CLI's own default.
+ * agent uses either. With a CLI answering (Claude Code, Codex, Gemini CLI),
+ * `own` holds each space's model for that CLI instead ("codex:gpt-5.5"), and a
+ * space without one uses the CLI's own default; `cliModels` is what each CLI
+ * itself says it offers (agent/models.rs), asked once and on Refresh.
  *
  * A model is named by a reference, as the core saves it (providers.rs): a
  * plain id is an Anthropic model ("claude-opus-5-5"), any other provider's is
@@ -43,7 +46,12 @@ export type ModelsState = {
   models: readonly ModelInfo[];
   /** Names learned from other providers' lists, by reference. */
   names: Readonly<Record<string, string>>;
+  /** Each CLI's own list, once asked: loading, or its models and (when it can't list them) a note. */
+  cliModels: Readonly<Partial<Record<CliId, CliModelsState>>>;
 };
+
+export type CliId = "claude" | "codex" | "gemini";
+export type CliModelsState = { status: "loading" | "ready" | "error"; models: readonly CliModelInfo[]; note?: string };
 
 /** Mirrors the presets' names in src-tauri/src/providers.rs. */
 export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = {
@@ -75,6 +83,7 @@ let state: ModelsState = {
   own: {},
   models: FALLBACK,
   names: {},
+  cliModels: {},
 };
 const listeners = new Set<() => void>();
 let modelsAsked = false;
@@ -94,14 +103,38 @@ export function splitRef(ref: string): { provider: ProviderId; model: string } {
 }
 
 /**
- * A CLI's model as the core writes it ("codex:gpt-5.5", "gemini:gemini-2.5-pro";
- * space_model.rs), or null. Only Codex and Gemini CLI take one; Claude Code picks its own.
+ * A CLI's model as the core writes it ("codex:gpt-5.5", "gemini:pro",
+ * "claude:opus"; space_model.rs), or null.
  */
-export function splitCliRef(ref: string): { backend: "codex-cli" | "gemini-cli"; name: string; model: string } | null {
-  const m = /^(codex|gemini):(.+)$/.exec(ref);
+export function splitCliRef(ref: string): { backend: "claude-cli" | "codex-cli" | "gemini-cli"; name: string; model: string } | null {
+  const m = /^(claude|codex|gemini):(.+)$/.exec(ref);
   if (!m) return null;
-  const backend = m[1] === "codex" ? "codex-cli" : "gemini-cli";
+  const backend = `${m[1]}-cli` as "claude-cli" | "codex-cli" | "gemini-cli";
   return { backend, name: CLI_INFO[backend].name, model: m[2] };
+}
+
+/**
+ * Ask `cli` which models it offers (a listing only, never a model turn): once,
+ * or again with `force` (Settings opening, the menu's Refresh). A list already
+ * shown stays while a new one loads.
+ */
+export async function loadCliModels(cli: CliId, force = false): Promise<CliModelsState | undefined> {
+  const had = state.cliModels[cli];
+  if (had && (had.status === "loading" || (!force && had.status === "ready"))) return had;
+  if (!inTauri()) return undefined;
+  set({ cliModels: { ...state.cliModels, [cli]: { status: "loading", models: had?.models ?? [], note: had?.note } } });
+  try {
+    const out = await listCliModels(cli);
+    set({ cliModels: { ...state.cliModels, [cli]: { status: "ready", models: out.models, note: out.note } } });
+  } catch (e) {
+    set({ cliModels: { ...state.cliModels, [cli]: { status: "error", models: had?.models ?? [], note: `Phaethon couldn’t ask for the list: ${String(e)}` } } });
+  }
+  return state.cliModels[cli];
+}
+
+/** The name a CLI gives one of its models ("GPT-6.1-Sol"), or the id while unknown. */
+export function cliModelName(cli: CliId, model: string, s: ModelsState = state): string {
+  return s.cliModels[cli]?.models.find((m) => m.id === model)?.name ?? model;
 }
 
 /** The reference for `model` of `provider`, as the core saves it. */
@@ -138,6 +171,8 @@ export async function refreshModels(): Promise<void> {
   } catch {
     set({ status: state.status === "ready" ? "ready" : "error" });
   }
+  // The answering CLI's own list, once per launch (Settings and the menu's Refresh ask again).
+  if (state.backend !== "phaethon" && state.backend in CLI_INFO) void loadCliModels(CLI_INFO[state.backend as keyof typeof CLI_INFO].id);
   // Other providers' lists for the names of the models in use, once per launch each; their ids stand in until then.
   for (const ref of [state.defaultModel, ...Object.values(state.own)]) {
     const p = splitRef(ref).provider;
@@ -170,7 +205,7 @@ export function providerName(id: ProviderId, s: ModelsState = state): string {
 export function modelName(ref: string, models: readonly ModelInfo[] = state.models): string {
   if (!ref) return "No model chosen";
   const cli = splitCliRef(ref);
-  if (cli) return `${cli.name} · ${cli.model}`;
+  if (cli) return `${cli.name} · ${cliModelName(CLI_INFO[cli.backend].id, cli.model)}`;
   const { provider, model } = splitRef(ref);
   if (provider === "anthropic") return models.find((m) => m.id === model)?.name ?? readableModel(model);
   return `${providerName(provider)} · ${state.names[ref] ?? model}`;

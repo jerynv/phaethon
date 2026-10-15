@@ -176,7 +176,7 @@ export default [
       const text = await page.$eval("[data-disclosure]", (el) => el.innerText);
       check(text.includes("Claude Code sends your messages") && !text.includes("MANUAL.md"), "with Claude Code it says what Claude Code sends", text.slice(0, 160));
       const model = await panelText(page);
-      check(model.includes("Claude Code chooses its own model"), "the model row says Claude Code chooses");
+      check(model.includes("Claude Code uses its own default model. A space can name another one"), "the model row says Claude Code chooses unless a space names one");
       // Sam: Claude Code's own history isn't deleted by Phaethon, and Assistant and About both say so.
       check(/keeps its own copy of each conversation.*doesn’t delete that copy/s.test(text), "with Claude Code it says Claude Code keeps its own copy, which Phaethon doesn't delete", text);
       await page.$eval("[data-disclosure]", (el) => el.scrollIntoView({ block: "center" }));

@@ -51,6 +51,7 @@
     "allow-agent-clis-status",
     "allow-agent-cli-sign-in",
     "allow-agent-cli-sign-in-cancel",
+    "allow-agent-cli-models",
     "allow-thread-clear",
     "allow-thread-forget",
     "allow-thread-forget-preview",

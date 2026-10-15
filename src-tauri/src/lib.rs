@@ -722,10 +722,19 @@ fn space_model_get(state: State<'_, AppState>, space: String) -> Result<Option<S
     })
 }
 
-/// The CLI whose per-space models are in use: Codex or Gemini CLI when one
-/// answers (Claude Code picks its own); `None` for Phaethon's own agent.
+/// The CLI whose per-space models are in use: the CLI that answers; `None`
+/// for Phaethon's own agent.
 fn cli_with_models(vault: &Vault) -> Option<agent::Cli> {
-    agent::Cli::of(vault.settings().backend).filter(|c| *c != agent::Cli::Claude)
+    agent::Cli::of(vault.settings().backend)
+}
+
+/// The models `cli` offers, from the CLI itself (agent/models.rs), run with
+/// this vault's own home for it. Listing only: no model is asked anything.
+#[tauri::command]
+async fn agent_cli_models(state: State<'_, AppState>, cli: String) -> Result<agent::models::CliModels, String> {
+    let cli = agent::Cli::ALL.into_iter().find(|c| c.id() == cli).ok_or("Phaethon doesn’t know that assistant.")?;
+    let home = study::model::cli_config_dir(&state.vault, state.isolated_config_root.as_deref(), cli);
+    Ok(agent::models::list(cli, home.as_deref()).await)
 }
 
 /// Choose the model that answers in `space`: Phaethon's own agent's (a model
@@ -1027,6 +1036,7 @@ pub fn run() {
             agent_cancel,
             agent_cli_sign_in,
             agent_cli_sign_in_cancel,
+            agent_cli_models,
             agent_approve,
             agent_access_answer,
             grants_list,

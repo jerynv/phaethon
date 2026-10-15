@@ -30,6 +30,11 @@ use phaethon_lib::{memory, space_model, study};
 /// to its CODEX_HOME (slowly, or failing, when told to); `login status` says
 /// whether that home is signed in.
 const CODEX: &str = r#"
+if [ "$1" = debug ] && [ "$2" = models ]; then
+  printf '%s' "$CODEX_HOME" > "$d/models-home"
+  echo '{"models":[{"slug":"gpt-6-astra","display_name":"GPT-6-Astra","description":"Frontier.","visibility":"list","priority":2},{"slug":"gpt-6.1-sol","display_name":"GPT-6.1-Sol","visibility":"list","priority":1},{"slug":"codex-auto-review","display_name":"Review","visibility":"hide","priority":3}]}'
+  exit 0
+fi
 if [ "$1" = login ]; then
   if [ "$2" = status ]; then
     if [ -f "$CODEX_HOME/signed-in" ]; then echo "Logged in using ChatGPT"; exit 0; fi
@@ -368,6 +373,13 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
     assert_eq!(vault::read_cli_session(&f.dir, tag), None);
 
     signing_in_works(&f);
+    if cli == Cli::Codex {
+        // Its model menu: what `codex debug models` lists in Codex's own picker, run with the vault's home.
+        let listed = tauri::async_runtime::block_on(agent::models::list(cli, Some(&f.home())));
+        assert_eq!(listed.models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["gpt-6.1-sol", "gpt-6-astra"]);
+        assert_eq!(listed.note, None);
+        assert_eq!(fs::read_to_string(f.root.join("models-home")).unwrap(), f.home().to_str().unwrap());
+    }
     fs::remove_dir_all(&f.root).unwrap();
 }
 

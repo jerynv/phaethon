@@ -20,6 +20,7 @@
 pub mod claude;
 pub mod codex;
 pub mod gemini;
+pub mod models;
 pub mod sign_in;
 
 use std::collections::HashMap;
@@ -296,8 +297,7 @@ pub struct TurnRequest<'a> {
     /// "always" grant for (`grants::cli_dirs`) and the courses it sees in full.
     /// Asking for access mid-conversation is not available on these backends.
     pub add_dirs: Vec<(String, PathBuf)>,
-    /// The space's own model for this CLI (`-m`); its default when `None`.
-    /// Claude Code always uses its own.
+    /// The space's own model for this CLI (`-m`, `--model`); its default when `None`.
     pub model: Option<String>,
 }
 
@@ -651,6 +651,8 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
     Ok(match cli {
         Cli::Claude => {
             let mut args = cli_args(resume, &dirs);
+            // The space's own model for Claude Code (an alias its help gives, or a full name).
+            args.extend(model.iter().flat_map(|m| ["--model".to_string(), m.to_string()]));
             // The study block, what the chat can show and the tutor mode, appended to Claude Code's own system prompt.
             args.extend(mode.iter().flat_map(|m| ["--append-system-prompt".to_string(), m.clone()]));
             (args, prompt.to_string())

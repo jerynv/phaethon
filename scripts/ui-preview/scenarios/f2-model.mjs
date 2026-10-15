@@ -185,18 +185,21 @@ export default [
     themes: ["light"],
     mock: { settings: { ...SETTINGS, backend: "claude-cli" }, threads: {}, spaceModels: { school: "claude-haiku-5-5" } },
     async run(page, h) {
-      await page.waitForSelector(`${shown} [data-composer-input]`, { timeout: 5000 });
-      await h.idle();
-      check(!(await page.$(picker)), "no model button while Claude Code answers");
+      // Claude Code answering: its own models (the aliases its help gives), not Phaethon's own choice for the space.
+      await page.waitForSelector(picker, { timeout: 5000 });
+      const label = await page.$eval(picker, (b) => [b.getAttribute("aria-label"), b.textContent.trim()]);
+      check(label[0] === "Model in School: Claude Code default, the model Claude Code chooses" && label[1] === "Claude Code default", "the button says Claude Code picks unless the space names one", JSON.stringify(label));
       await palette(page, "model");
-      check(!(await page.$('[data-command="default-model"]')), "no Use the default model either");
+      check(!(await page.$('[data-command="default-model"]')), "no Use the default model (that is Phaethon's own)");
       await page.waitForFunction(() => document.querySelector('[role="option"][aria-selected="true"]')?.dataset.command === "change-model", { timeout: 3000 });
       await page.keyboard.press("Enter");
-      check(await shellSaid(page, "Claude Code chooses its own model. Change it in Claude Code."), "Change model… explains Claude Code picks its own", await shellStatus(page));
-      check((await calls(page, "space_model_set")).length === 0, "nothing is saved");
+      await page.waitForSelector('[data-model-menu] [data-model-option="opus"]', { timeout: 3000 });
+      await page.click('[data-model-menu] [data-model-option="opus"]');
+      check(await shellSaid(page, "School now uses Claude Code · Opus."), "choosing Opus says so", await shellStatus(page));
+      check((await calls(page, "space_model_set")).at(-1)?.model === "claude:opus", "saved as claude:opus", JSON.stringify(await calls(page, "space_model_set")));
       await openSettings(page, h, "agent");
       const text = await page.$eval(PANEL, (e) => e.innerText);
-      check(/Chosen by Claude Code/.test(text), "Settings says the model is chosen by Claude Code", text.slice(0, 300));
+      check(/Chosen by Claude Code/.test(text) && /A space can name another one/.test(text), "Settings says Claude Code chooses unless a space names one", text.slice(0, 300));
       await park(page);
     },
   },

@@ -12,6 +12,8 @@ import { cliOf, type ProviderId } from "@/lib/backend";
 import {
   changedText,
   choosableProviders,
+  cliModelName,
+  loadCliModels,
   modelGroups,
   modelName,
   modelOf,
@@ -39,8 +41,8 @@ const OTHER = "__other__";
  * The model that answers in this space, as a small button in the composer's
  * toolbar that opens a menu: Use the default first, then each model. A choice
  * is saved in the space (so each space keeps its own) and applies from the
- * next message; a reply already running keeps its model. Not shown when
- * Claude Code answers: it picks its own model (Settings says so).
+ * next message; a reply already running keeps its model. With a CLI
+ * answering (Claude Code, Codex, Gemini CLI), the CLI's own models instead.
  */
 export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; spaceName: string; running: boolean }) {
   const s = useModels();
@@ -66,7 +68,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  if (s.status === "loading" || s.backend === "claude-cli") return null;
+  if (s.status === "loading") return null;
   // An assistant this version doesn't know picks its own model too.
   if (s.backend !== "phaethon" && !cliOf(s.backend)) return null;
   if (s.backend !== "phaethon") return <CliModelPicker s={s} spaceId={spaceId} spaceName={spaceName} running={running} open={open} setOpen={setOpen} contentRef={contentRef} />;
@@ -194,10 +196,12 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
 }
 
 /**
- * Codex or Gemini CLI answers: the model button offers the CLI's own default
- * first, then the model this space chose (if any), then Another model… to
- * type a name the CLI knows (it is passed on as `-m`; Phaethon can't list a
- * CLI's models). Saved in the space, apart from Phaethon's own choice.
+ * A CLI answers (Claude Code, Codex, Gemini CLI): the model button offers the
+ * CLI's own default first, then the models the CLI itself says it offers
+ * (asked once, again on Refresh the list or when Settings opens; a note says
+ * in words when it can't list them), the model this space chose if it isn't
+ * listed, then Another model… to type a name the CLI knows. Passed on as
+ * `-m` / `--model`; saved in the space, apart from Phaethon's own choice.
  */
 function CliModelPicker({
   s,
@@ -221,8 +225,13 @@ function CliModelPicker({
   const [error, setError] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const own = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
-  const name = own ? own.model : `${cli.name} default`;
-  const label = `Model in ${spaceName}: ${own ? `${cli.name} · ${own.model}` : `${cli.name} default, the model ${cli.name} chooses`}`;
+  const list = s.cliModels[cli.id];
+  const ownName = own ? cliModelName(cli.id, own.model, s) : "";
+  const name = own ? ownName : `${cli.name} default`;
+  const label = `Model in ${spaceName}: ${own ? `${cli.name} · ${ownName}` : `${cli.name} default, the model ${cli.name} chooses`}`;
+  useEffect(() => {
+    if (open) void loadCliModels(cli.id);
+  }, [open, cli.id]);
 
   /** `atField`: the dialog shows (and says) a refusal at its own field, so the menu doesn't too. */
   async function choose(model: string | null, atField = false): Promise<string> {
@@ -230,7 +239,7 @@ function CliModelPicker({
     try {
       await setSpaceModel(spaceId, model ? `${cli.id}:${model}` : null);
       announce(
-        `${model ? `${spaceName} now uses ${cli.name} · ${model}.` : `${spaceName} now uses ${cli.name}’s own default model.`}${running ? " The reply now running keeps its model." : ""}`,
+        `${model ? `${spaceName} now uses ${cli.name} · ${cliModelName(cli.id, model, s)}.` : `${spaceName} now uses ${cli.name}’s own default model.`}${running ? " The reply now running keeps its model." : ""}`,
       );
       setError("");
       return "";
@@ -287,9 +296,36 @@ function CliModelPicker({
             )}
             <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)}>
               <ModelItem value={DEFAULT} title={`${cli.name}’s own default`} hint={`The model ${cli.name} chooses`} />
-              {own && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
+              {!!list?.models.length && <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />}
+              {list?.models.map((m) => (
+                <ModelItem key={m.id} value={m.id} title={m.name} hint={m.description} spoken={`${cli.name} · ${m.name}`} />
+              ))}
+              {own && !list?.models.some((m) => m.id === own.model) && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
             </DropdownMenu.RadioGroup>
+            {(list?.status === "loading" || list?.note) && (
+              <p className="flex items-start gap-2 px-2.5 py-1.5 text-sm text-ink-secondary" data-cli-models-note={list.status}>
+                <Icon name="info" className="mt-0.5 shrink-0" />
+                <span className="min-w-0">{list.status === "loading" ? `Asking ${cli.name} which models it offers…` : list.note}</span>
+              </p>
+            )}
             <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
+            <DropdownMenu.Item
+              data-model-option="__refresh__"
+              textValue="Refresh the list"
+              aria-disabled={list?.status === "loading" || undefined}
+              onSelect={(e) => {
+                // Stays open: the list is asked again in place, and focus stays here.
+                e.preventDefault();
+                if (list?.status === "loading") return;
+                void loadCliModels(cli.id, true).then((after) =>
+                  announce(after?.models.length ? `${cli.name} offers ${after.models.length} models.` : (after?.note ?? `${cli.name} listed no models.`)),
+                );
+              }}
+              className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover aria-disabled:cursor-progress"
+            >
+              <Icon name="retry" />
+              <span className="text-base font-medium">{list?.status === "loading" ? "Refreshing the list…" : "Refresh the list"}</span>
+            </DropdownMenu.Item>
             <DropdownMenu.Item
               data-model-option={OTHER}
               textValue="Another model"
@@ -340,14 +376,14 @@ function CliModelDialog({
   const inputId = useId();
   const hintId = useId();
   const errorId = useId();
-  const example = cli.id === "codex" ? "gpt-5.5" : "gemini-2.5-pro";
+  const example = cli.id === "codex" ? "gpt-5.5" : cli.id === "claude" ? "claude-sonnet-5-5" : "gemini-2.5-pro";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-cli-model-dialog="">
         <DialogHeader>
           <DialogTitle>Model in {spaceName}</DialogTitle>
           <DialogDescription>
-            {cli.name} answers with this model here, from your next message. Phaethon can’t list {cli.name}’s models, so type the name as{" "}
+            {cli.name} answers with this model here, from your next message. For a model {cli.name}’s list doesn’t show, type its name as{" "}
             {cli.name} knows it.
           </DialogDescription>
         </DialogHeader>
@@ -487,14 +523,11 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
       hint:
         s.backend === "phaethon"
           ? `in ${space.name}: ${modelName(current.id, s.models)}`
-          : s.backend !== "claude-cli"
-            ? `in ${space.name}: ${current.own ? modelName(current.id) : `${cliOf(s.backend)?.name}’s own default`}`
-            : `in ${space.name}`,
+          : `in ${space.name}: ${current.own ? modelName(current.id) : `${cliOf(s.backend)?.name}’s own default`}`,
       keywords: `${keywords} codex gemini`,
       icon: "agent",
       run: () => {
-        if (s.backend === "claude-cli") announce("Claude Code chooses its own model. Change it in Claude Code.");
-        else if (!document.querySelector(`[data-model-picker="${CSS.escape(space.id)}"]`))
+        if (!document.querySelector(`[data-model-picker="${CSS.escape(space.id)}"]`))
           announce(`The model can be changed once the conversation in ${space.name} has loaded.`);
         else openModelPicker(space.id);
       },

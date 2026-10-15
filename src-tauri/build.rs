@@ -4,7 +4,7 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "dev_log", "agent_send", "agent_cancel", "agent_approve", "agent_access_answer", "grants_list", "grant_revoke", "grant_restore",
-            "thread_load", "thread_new", "threads_list", "thread_open", "thread_delete", "claude_cli_status", "agent_clis_status", "agent_cli_sign_in", "agent_cli_sign_in_cancel",
+            "thread_load", "thread_new", "threads_list", "thread_open", "thread_delete", "claude_cli_status", "agent_clis_status", "agent_cli_sign_in", "agent_cli_sign_in_cancel", "agent_cli_models",
             "thread_clear", "thread_forget", "thread_forget_preview", "cli_import_offered", "cli_import_run",
             "settings_get", "settings_set_backend", "api_key_set", "api_key_clear", "appearance_set",
             "spaces_list", "space_create", "space_update",

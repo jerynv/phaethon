@@ -89,7 +89,7 @@ pub fn get_cli(dir: &Path, cli: &str) -> Option<String> {
 /// `codex:gpt-5.5` → (`codex`, `gpt-5.5`), for a CLI that takes a model.
 pub fn split_cli_ref(r: &str) -> Option<(&'static str, &str)> {
     let (cli, model) = r.trim().split_once(':')?;
-    let cli = [crate::agent::Cli::Codex, crate::agent::Cli::Gemini].into_iter().find(|c| c.id() == cli)?.id();
+    let cli = crate::agent::Cli::ALL.into_iter().find(|c| c.id() == cli)?.id();
     Some((cli, model))
 }
 
@@ -262,7 +262,8 @@ mod tests {
         set_cli(&vault, "school", "gemini", None).unwrap();
         assert_eq!(saved(&root, "school"), json!({"model": "claude-haiku-5-5"}));
         assert_eq!(split_cli_ref("codex:gpt-5.5"), Some(("codex", "gpt-5.5")));
-        assert_eq!(split_cli_ref("claude:x"), None);
+        assert_eq!(split_cli_ref("claude:opus"), Some(("claude", "opus")));
+        assert_eq!(split_cli_ref("opencode:x"), None);
         assert_eq!(split_cli_ref("openai:gpt-5"), None);
         // A hand edit that isn't a model is ignored.
         fs::write(root.join("spaces/school/.phaethon/space.json"), r#"{"cliModels":{"codex":"--dangerously-bypass-approvals-and-sandbox"}}"#).unwrap();

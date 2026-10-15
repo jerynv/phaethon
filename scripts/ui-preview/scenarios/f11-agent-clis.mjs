@@ -4,8 +4,12 @@
 //                  it; choosing Codex by keyboard switches, and the model and disclosure sections name Codex and OpenAI and say
 //                  the person's own AGENTS.md, settings and hooks don't reach the spaces (Codex has a setup of its own here)
 //   f11-missing    choosing Gemini CLI when it isn't installed says so with how to install it, and doesn't switch
-//   f11-model      with Codex answering, a space's model button offers Codex's own default and Another model…, where a typed name
-//                  is saved as codex:<name> (a name that could be a flag is refused at the field) and the default comes back
+//   f11-model      with Codex answering, a space's model button offers Codex's own default, then the models Codex itself lists
+//                  (asked of Codex once, names and what each is for), Refresh the list (asks again, menu stays open, said) and
+//                  Another model…, where a typed name is saved as codex:<name> (a name that could be a flag is refused at the
+//                  field) and the default comes back; a listed model chosen by keyboard is saved and named as Codex names it
+//   f11-model-lists Gemini CLI's menu lists the choices its own menu offers with a note that it can't list its models
+//   f11-model-unlisted a Codex that can't list says so in words and Another model… still works; Settings opening asks again
 //   f11-errors     a chat error names the CLI that answers and says to sign in to it in Settings, never in a terminal
 //   f11-sign-in    with Codex answering, Settings signs in to it for this Phaethon folder by keyboard: the button keeps focus
 //                  and says it waits for the browser, Stop signing in stops it (said), signing in again says it worked and
@@ -109,24 +113,44 @@ export default [
       await h.idle();
       const items = await page.$$eval("[data-model-menu] [data-model-option]", (els) => els.map((e) => e.textContent.trim()));
       check(/^Codex’s own default/.test(items[0]) && items.at(-1) === "Another model…", "Codex's default first, then Another model…", JSON.stringify(items));
+      check(/^GPT-6\.1-SolLatest workhorse/.test(items[1]) && /^GPT-6-Astra/.test(items[2]) && /^GPT-6-Luna/.test(items[3]), "then the models Codex lists, by its names, with what each is for", JSON.stringify(items));
+      check(items.at(-2) === "Refresh the list", "Refresh the list before Another model…", JSON.stringify(items));
+      check((await calls(page, "agent_cli_models")).every((a) => a.cli === "codex") && (await calls(page, "agent_cli_models")).length === 1, "Codex is asked once", JSON.stringify(await calls(page, "agent_cli_models")));
+      check(!(await page.$("[data-cli-models-note]")), "no note: Codex lists its own models");
       await park(page);
       await h.shot("menu");
-      // By keyboard alone: close, open from the button, start on the model in use, the next item is Another model….
+      // Refresh the list: asked again, the menu stays open, said.
+      await page.click('[data-model-option="__refresh__"]');
+      check(await shellSaid(page, "Codex offers 3 models."), "refreshing says how many Codex offers", await shellStatus(page));
+      check((await calls(page, "agent_cli_models")).length === 2 && !!(await page.$("[data-model-menu]")), "asked again, menu still open", "");
+      // A listed model, chosen: saved and named as Codex names it.
+      await page.click('[data-model-option="gpt-6-astra"]');
+      check(await shellSaid(page, "School now uses Codex · GPT-6-Astra."), "choosing a listed model says its name", await shellStatus(page));
+      check((await calls(page, "space_model_set")).at(-1)?.model === "codex:gpt-6-astra", "saved as codex:gpt-6-astra", "");
+      await page.waitForFunction((p) => document.querySelector(p)?.textContent.trim() === "GPT-6-Astra", { timeout: 3000 }, picker).catch(() => {});
+      check((await page.$eval(picker, (b) => b.textContent.trim())) === "GPT-6-Astra", "the button shows it", "");
+      await page.waitForFunction(() => !document.querySelector("[data-model-menu]"), { timeout: 3000 });
+      await h.idle();
+      await page.click(picker);
+      await page.waitForSelector('[data-model-option="__default__"]', { timeout: 3000 });
+      await page.click('[data-model-option="__default__"]');
+      check(await shellSaid(page, "School now uses Codex’s own default model."), "and back to the default", await shellStatus(page));
+      // By keyboard alone: close, open from the button, start on the model in use, End reaches Another model….
       await page.keyboard.press("Escape");
       await page.waitForFunction((p) => !document.querySelector("[data-model-menu]") && document.activeElement === document.querySelector(p), { timeout: 3000 }, picker);
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => document.activeElement?.getAttribute("aria-checked") === "true", { timeout: 3000 });
       await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("End");
       await page.waitForFunction(() => /Another model/.test(document.activeElement?.textContent ?? ""), { timeout: 3000 }).catch(() => {});
       const at = await page.evaluate(() => document.activeElement?.textContent);
-      check(/Another model/.test(at ?? ""), "ArrowDown reaches Another model…", at);
+      check(/Another model/.test(at ?? ""), "End reaches Another model…, the last item", at);
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-cli-model-dialog]", { timeout: 3000 });
       const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-cli-model-input"));
       check(focused, "the name field has focus", String(focused));
       const desc = await page.$eval("[data-cli-model-dialog]", (d) => d.textContent);
-      check(/can’t list Codex’s models/.test(desc) && /For example gpt-5\.5/.test(desc), "it says to type the name as Codex knows it", desc);
+      check(/For a model Codex’s list doesn’t show, type its name as Codex knows it/.test(desc) && /For example gpt-5\.5/.test(desc), "it says to type the name as Codex knows it", desc);
       // A name that could be read as a flag is refused, at the field.
       await page.keyboard.type("--yolo");
       await page.keyboard.press("Enter");
@@ -153,6 +177,49 @@ export default [
       check(await shellSaid(page, "School now uses Codex’s own default model."), "the default comes back, said", await shellStatus(page));
       const last = (await calls(page, "space_model_set")).at(-1);
       check(last.model === null, "cleared with null (the core clears Codex's)", JSON.stringify(last));
+    },
+  },
+  {
+    name: "f11-model-lists",
+    sizes: [[1100, 720]],
+    mock: { settings: { ...SETTINGS, backend: "gemini-cli" }, threads: {} },
+    async run(page, h) {
+      await page.waitForSelector(picker, { timeout: 5000 });
+      await page.click(picker);
+      await page.waitForSelector('[data-model-menu] [data-model-option="flash-lite"]', { timeout: 3000 });
+      await h.idle();
+      const items = await page.$$eval("[data-model-menu] [data-model-option]", (els) => els.map((e) => e.textContent.trim()));
+      check(JSON.stringify(items.slice(1, 5)) === JSON.stringify(["Auto", "Pro", "Flash", "Flash-Lite"]), "Gemini CLI's own menu's choices", JSON.stringify(items));
+      const note = await page.$eval("[data-cli-models-note]", (p) => p.textContent);
+      check(/Gemini CLI can’t list its models: these are the choices its own model menu offers/.test(note), "with a note in words that it can't list them", note);
+      await park(page);
+      await h.shot("gemini");
+    },
+  },
+  {
+    name: "f11-model-unlisted",
+    sizes: [[1100, 720]],
+    mock: {
+      settings: { ...SETTINGS, backend: "codex-cli" },
+      threads: {},
+      cliLists: { codex: { models: [], note: "Codex couldn’t list its models just now. Type a model’s name with Another model…" } },
+    },
+    async run(page, h) {
+      // A Codex that can't answer: said in words, and a name can still be typed.
+      await page.waitForSelector(picker, { timeout: 5000 });
+      await page.click(picker);
+      await page.waitForSelector("[data-cli-models-note]", { timeout: 3000 });
+      const said = await page.$eval("[data-cli-models-note]", (p) => p.textContent);
+      check(/Codex couldn’t list its models just now/.test(said), "a list that couldn't be had is said in words", said);
+      check(!!(await page.$('[data-model-option="__other__"]')), "Another model… is still there", "");
+      await park(page);
+      await h.shot("codex-unlisted");
+      await page.keyboard.press("Escape");
+      // Settings opening asks Codex again.
+      const before = (await calls(page, "agent_cli_models")).length;
+      await openSettings(page, h, "agent");
+      await page.waitForFunction((n) => window.__calls.filter(([c]) => c === "agent_cli_models").length > n, { timeout: 3000 }, before).catch(() => {});
+      check((await calls(page, "agent_cli_models")).length > before, "Settings asks the CLI for its list again", JSON.stringify(await calls(page, "agent_cli_models")));
     },
   },
   {

@@ -29,7 +29,7 @@ import {
   type ServerStatus,
   type Settings,
 } from "@/lib/backend";
-import { changedText, modelName, setSpaceModel, toRef, useModels } from "@/lib/space-model";
+import { changedText, loadCliModels, modelName, setSpaceModel, toRef, useModels } from "@/lib/space-model";
 import { useSpaces } from "@/lib/spaces";
 import { modCap } from "@/components/shell/shortcuts";
 
@@ -163,6 +163,10 @@ export function AgentSection({
     return () => {
       live = false;
     };
+  }, [settings?.backend]);
+  // Each time Settings opens (or the assistant changes), the answering CLI's model list is asked again.
+  useEffect(() => {
+    if (settings && isCliBackend(settings.backend)) void loadCliModels(CLI_INFO[settings.backend].id, true);
   }, [settings?.backend]);
   // The note appears under the choices, perhaps below the fold: bring it into view.
   useEffect(() => {
@@ -343,11 +347,7 @@ export function AgentSection({
           )}
 
           <SettingGroup title="Which model answers">
-            {settings.backend === "claude-cli" ? (
-              <SettingRow label="Model" description="Claude Code chooses its own model. Change it in Claude Code.">
-                <span className="text-base text-ink-secondary">Chosen by Claude Code</span>
-              </SettingRow>
-            ) : isCliBackend(settings.backend) ? (
+            {isCliBackend(settings.backend) ? (
               <SettingRow
                 label="Model"
                 description={`${CLI_INFO[settings.backend].name} uses its own default model. A space can name another one: use the model button beside Send, or Change model in ${modCap()} K.`}

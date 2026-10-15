@@ -8,7 +8,10 @@
 // Results: a strip of every verdict to jump from, all or only the ones to look
 // at again, and each choice question with all its choices marked yours and
 // right. Also: a doubled scope ("no …; not …") is said once, and a quoted
-// string in a formula is upright text. Each scenario throws when wrong.
+// string in a formula is upright text. f19-quiz-steady: in a short window a
+// 25-question map keeps its lines as answers come in, and moving never leaves
+// the map cut off at the top or the buttons below; answered numbers are filled,
+// the one shown without an answer dotted; the chosen answer pressed again clears it. Each scenario throws when wrong.
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
@@ -181,6 +184,62 @@ export default [
       check(!!(await page.$('[data-result="q1"]')), "and shows all of them again");
       await page.click('[data-result-jump="q8"]');
       check(await waitFor(page, () => document.activeElement?.id === "quiz-result-q8"), "by keyboard or pointer");
+    },
+  },
+  {
+    name: "f19-quiz-steady",
+    sizes: [[1000, 600]],
+    sizesRequired: true,
+    mock: (() => {
+      const m = mock();
+      const many = Array.from({ length: 25 }, (_, i) => Q(i + 1, `Question about sets number ${i + 1}: which of these holds for $A=\\{1,2\\}$?`, ["$1 \\in A$", "$3 \\in A$", "$\\{1\\} \\in A$"], "$1 \\in A$"));
+      m.study.quizzes[PATH] = { ...QUIZ, questions: many, grounding: { ...GROUNDING, asked: 25, kept: 25 } };
+      return m;
+    })(),
+    async run(page, h) {
+      await openQuiz(page);
+      const mapHeight = () => page.$eval("[data-question-map] ol", (e) => Math.round(e.getBoundingClientRect().height));
+      const before = await mapHeight();
+      const fits = () =>
+        page.evaluate(() => {
+          const view = document.querySelector("[data-question-map]").closest(".overflow-y-auto").getBoundingClientRect();
+          const map = document.querySelector("[data-question-map]").getBoundingClientRect();
+          const steps = document.querySelector("[data-quiz-steps]").getBoundingClientRect();
+          return { ok: map.top >= view.top - 0.5 && steps.bottom <= view.bottom + 0.5, map: Math.round(map.top - view.top), steps: Math.round(view.bottom - steps.bottom) };
+        });
+      // Answered by keyboard, one after another, the way it is taken.
+      for (let i = 1; i <= 24; i++) {
+        await page.$eval(`[data-question="q${i}"] input`, (el) => el.focus());
+        await page.keyboard.press("Space");
+        await page.keyboard.press("Enter");
+        await page.waitForSelector(`[data-question="q${i + 1}"]`);
+        const f = await fits();
+        check(f.ok, `after question ${i}, the whole map and the buttons show`, JSON.stringify(f));
+      }
+      const after = await mapHeight();
+      check(after === before, "answers don't make the map wrap onto more lines", `${before} → ${after}`);
+      await new Promise((r) => setTimeout(r, 300)); // colours settle
+      const looks = await page.$$eval("[data-go-question]", (bs) => bs.map((b) => { const c = getComputedStyle(b); return `${b.dataset.done === undefined ? "open" : "done"}:${c.borderTopStyle}:${/^rgba\(0, 0, 0, 0\)$|^transparent$/.test(c.backgroundColor) ? "none" : "fill"}`; }));
+      check(looks.slice(0, 24).every((l) => l === "done:solid:fill") && looks[24] === "open:dotted:none", "answered numbers are filled, the one shown without an answer is dotted", JSON.stringify(looks.slice(22)));
+      check(!(await page.$("[data-go-question] svg")), "no check beside a number");
+      // Pressing the chosen answer again leaves the question open.
+      await page.$eval('[data-question="q25"] input', (el) => el.click());
+      check((await text(page, "[data-answered]")) === "25 of 25 answered", "all answered");
+      await page.$eval('[data-question="q25"] input', (el) => el.click());
+      check(await waitFor(page, () => document.querySelector("[data-answered]")?.textContent === "24 of 25 answered" && !document.querySelector('[data-question="q25"] input:checked')), "the chosen answer clicked again is cleared", await text(page, "[data-answered]"));
+      check((await page.$eval('[data-go-question="q25"]', (b) => b.getAttribute("aria-label"))) === "Question 25, no answer yet", "and the map says so");
+      await page.focus('[data-question="q25"] label:nth-child(2) input');
+      await page.keyboard.press("Space");
+      check((await text(page, "[data-answered]")) === "25 of 25 answered", "Space chooses");
+      await page.keyboard.press("Space");
+      check((await text(page, "[data-answered]")) === "24 of 25 answered", "and Space again clears it");
+      await page.$eval('[data-go-question="q3"]', (b) => b.click());
+      const f = await fits();
+      check(f.ok, "going back by the map shows it whole", JSON.stringify(f));
+      const shell = await page.evaluate(() => ({ html: getComputedStyle(document.documentElement).overscrollBehaviorY, body: getComputedStyle(document.body).overscrollBehaviorY, top: document.scrollingElement.scrollTop, digits: getComputedStyle(document.querySelector("[data-answered]")).fontVariantNumeric }));
+      check(shell.html === "none" && shell.body === "none" && shell.top === 0, "the window itself never scrolls or bounces, only the view in it", JSON.stringify(shell));
+      check(shell.digits === "tabular-nums", "digits are all one width", shell.digits);
+      await h.shot("answered");
     },
   },
 ];

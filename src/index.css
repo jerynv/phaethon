@@ -154,6 +154,14 @@
     -webkit-font-smoothing: antialiased;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
+    /* Every digit the same width, so a count or a number that changes never shifts what's beside it (the reading fonts that have them; Lexend has none). */
+    font-variant-numeric: tabular-nums;
+  }
+  /* The window itself never scrolls or bounces; only the views inside it do. */
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
   }
   body {
     background: var(--ph-bg);
@@ -177,9 +185,6 @@
   }
   a {
     text-underline-offset: 0.2em;
-  }
-  :where(table, [data-numeric]) {
-    font-variant-numeric: tabular-nums;
   }
 }
 

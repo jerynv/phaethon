@@ -87,7 +87,14 @@ export function QuizView({
     if (!moved.current) return;
     moved.current = false;
     questionRef.current?.focus({ preventScroll: true });
-    questionRef.current?.closest("[data-question]")?.scrollIntoView({ block: "nearest" });
+    // The map, the question and its buttons are one piece: when it doesn't all show, the map goes to the top of the view, never half cut off above it.
+    const map = document.querySelector<HTMLElement>("[data-question-map]");
+    const end = document.querySelector<HTMLElement>("[data-quiz-steps], [data-unanswered]") ?? questionRef.current;
+    const view = map?.closest<HTMLElement>(".overflow-y-auto");
+    if (map && end && view) {
+      const box = view.getBoundingClientRect();
+      if (map.getBoundingClientRect().top < box.top || end.getBoundingClientRect().bottom > box.bottom) map.scrollIntoView({ block: "start" });
+    }
   });
 
   // Every change is kept until the answers are checked.
@@ -276,7 +283,7 @@ export function QuizView({
         </div>
       )}
 
-      <nav aria-label="Questions" className="flex flex-col gap-1.5" data-question-map="">
+      <nav aria-label="Questions" className="flex scroll-mt-3 flex-col gap-1.5" data-question-map="">
         <p className="flex items-center gap-3 text-sm text-ink-secondary">
           <span data-answered="">
             {answered} of {total} answered
@@ -299,16 +306,17 @@ export function QuizView({
                   data-go-question={qid}
                   data-done={done ? "" : undefined}
                   className={cn(
-                    "inline-flex min-h-(--ph-target-min) min-w-(--ph-target-min) cursor-default items-center justify-center gap-0.5 rounded-md border px-1.5 text-sm font-medium tabular-nums select-none",
+                    "inline-flex min-h-(--ph-target-min) min-w-(--ph-target-min) cursor-default items-center justify-center rounded-md border px-1.5 text-sm font-medium tabular-nums select-none",
                     "transition-[color,background-color,border-color] duration-(--ph-duration-fast) ease-out",
-                    here
-                      ? "border-accent-fill bg-accent-fill text-ink-inverse forced-colors:border-[Highlight] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]"
-                      : done
-                        ? "border-transparent bg-accent-soft text-ink hover:bg-hover forced-colors:border-[CanvasText]"
+                    // Answered is filled in the accent; the one shown has a ring when answered, a dotted border when not. Never a check beside the number, so every number keeps one width and the map never reflows onto another line as answers come in.
+                    done
+                      ? "border-accent-fill bg-accent-fill text-ink-inverse hover:bg-accent-fill-hover forced-colors:border-[Highlight] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]"
+                      : here
+                        ? "border-2 border-dotted border-accent-ink text-ink forced-colors:border-[CanvasText]"
                         : "border-line text-ink-secondary hover:bg-hover hover:text-ink forced-colors:border-[CanvasText]",
+                    done && here && "ring-2 ring-ink ring-offset-2 ring-offset-bg forced-colors:outline-2 forced-colors:outline-offset-2 forced-colors:outline-[CanvasText] forced-colors:outline-solid",
                   )}
                 >
-                  {done && <Icon name="check" className="size-(--ph-icon-size-sm)" />}
                   {i + 1}
                 </button>
               </li>
@@ -444,6 +452,13 @@ function QuestionField({
                 value={c}
                 checked={value === c}
                 onChange={() => onChange(c)}
+                // The chosen answer pressed again (a click, or Space, which on a chosen radio does nothing by itself) is no answer, so a question can be left open after all.
+                onClick={() => value === c && onChange("")}
+                onKeyDown={(e) => {
+                  if (e.key !== " " || value !== c) return;
+                  e.preventDefault();
+                  onChange("");
+                }}
                 className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
               />
               {q.kind !== "truefalse" && <Letter i={i} />}

@@ -108,6 +108,7 @@ pub struct LoopRequest<'a> {
 pub fn system_prompt(vault_root: &Path, space_id: &str) -> String {
     let mut s = format!("{BASE_PROMPT}\n\nThis space is called \"{space_id}\".");
     s.push_str(&format!("\n\n{}", crate::rich_output::PROMPT)); // what the chat can show (rich_output.rs)
+    s.push_str(&format!("\n\n{}", crate::app_guide::prompt_section())); // buttons under a reply; where things are is a tool call
     let vault = Vault::at(vault_root);
     let others = grants::other_spaces(&vault, space_id);
     if !others.is_empty() {

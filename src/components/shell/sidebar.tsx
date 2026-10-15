@@ -10,7 +10,7 @@ import { holdSpaceOrder, markSpaceUsed, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-import { exportSpace, showInLabel, showSpaceFolder, SpaceActionNotice } from "./space-actions";
+import { addToSpace, exportSpace, showInLabel, showSpaceFolder, SpaceActionNotice } from "./space-actions";
 import { spaceHueStyle, SpaceMark } from "./space-mark";
 
 type Props = {
@@ -457,6 +457,14 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
           <ContextMenu.Item data-space-action="show" onSelect={() => choose(() => void showSpaceFolder(space.id))} className={itemClass}>
             <Icon name="folder" className="shrink-0 text-ink-secondary" />
             {showInLabel()}
+          </ContextMenu.Item>
+          <ContextMenu.Item data-space-action="add-files" onSelect={() => choose(() => void addToSpace(space.id, false))} className={itemClass}>
+            <Icon name="file-plus" className="shrink-0 text-ink-secondary" />
+            Add files…
+          </ContextMenu.Item>
+          <ContextMenu.Item data-space-action="add-folder" onSelect={() => choose(() => void addToSpace(space.id, true))} className={itemClass}>
+            <Icon name="folder-plus" className="shrink-0 text-ink-secondary" />
+            Add a folder…
           </ContextMenu.Item>
           <ContextMenu.Item data-space-action="export" onSelect={() => choose(() => void exportSpace(space.id))} className={itemClass}>
             <Icon name="download" className="shrink-0 text-ink-secondary" />

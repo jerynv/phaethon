@@ -52,11 +52,14 @@ import { MessageError, SetupBelowContext } from "./message-error";
 import { MessageTime } from "./message-time";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
 import { RecordPart, announcesRecord, recordText } from "./receipts";
+import { CHAT_ACTION_LANGUAGES } from "./chat-actions";
 import { STUDY_ACTION_LANGUAGES } from "./study-action";
 
 const Nothing = () => null;
-// A reply's ```phaethon-study block is drawn as a card with Generate (study-action.tsx).
-const AssistantText = (p: Parameters<typeof MarkdownText>[0]) => <MarkdownText {...p} componentsByLanguage={STUDY_ACTION_LANGUAGES} />;
+// A reply's ```phaethon-study block is drawn as a card with Generate (study-action.tsx),
+// and a ```phaethon-actions block as buttons (chat-actions.tsx).
+const REPLY_LANGUAGES = { ...STUDY_ACTION_LANGUAGES, ...CHAT_ACTION_LANGUAGES };
+const AssistantText = (p: Parameters<typeof MarkdownText>[0]) => <MarkdownText {...p} componentsByLanguage={REPLY_LANGUAGES} />;
 const ASSISTANT_PARTS = {
   Text: AssistantText,
   data: { by_name: { [RECORD_PART]: RecordPart as DataMessagePartComponent } },

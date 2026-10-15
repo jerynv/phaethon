@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod agent_loop;
 pub mod anthropic;
+pub mod app_guide;
 pub mod attachments;
 pub mod cli_import;
 pub mod continuation;
@@ -17,6 +18,7 @@ pub mod providers;
 pub mod rich_output;
 pub mod search;
 pub mod secrets;
+pub mod space_add;
 pub mod space_model;
 pub mod spaces;
 pub mod study;
@@ -341,6 +343,50 @@ async fn space_export(app: tauri::AppHandle, state: State<'_, AppState>, id: Str
     let file_name = done.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     *state.last_export.lock().unwrap_or_else(|p| p.into_inner()) = Some(done.file);
     Ok(Some(ExportDone { file_name, files: done.files }))
+}
+
+/// Add files (`folder` false) or one folder from elsewhere on the computer to
+/// a space's files/ folder (space_add.rs). The core asks which in the
+/// system's picker, so the webview never names a path; `None` when the
+/// person cancels it.
+#[tauri::command]
+async fn space_add(app: tauri::AppHandle, state: State<'_, AppState>, id: String, folder: bool) -> Result<Option<space_add::Added>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let space = spaces::get(&state.vault, &id)?;
+    let dir = state.vault.space_dir(&id)?;
+    let mut dialog = app.dialog().file().set_title(if folder {
+        format!("Add a folder to {}", space.name)
+    } else {
+        format!("Add files to {}", space.name)
+    });
+    if let Some(home) = vault::home_dir() {
+        dialog = dialog.set_directory(home.join("Documents"));
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    if folder {
+        dialog.pick_folder(move |p| {
+            let _ = tx.send(p.map(|p| vec![p]));
+        });
+    } else {
+        dialog.pick_files(move |p| {
+            let _ = tx.send(p);
+        });
+    }
+    let Some(picked) = rx.await.ok().flatten() else {
+        return Ok(None);
+    };
+    let sources = picked
+        .into_iter()
+        .map(|p| p.into_path().map_err(|_| "Phaethon can only add files on this computer.".to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let root = state.vault.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || space_add::add(&dir, &root, &sources))
+        .await
+        .map_err(|e| format!("Adding stopped unexpectedly: {e}"))?
+        .map(Some)
 }
 
 /// Show the last exported file in the file manager.
@@ -1070,6 +1116,7 @@ pub fn run() {
             dev_log,
             agent_send,
             agent_cancel,
+            space_add,
             agent_cli_sign_in,
             agent_cli_sign_in_cancel,
             agent_cli_models,

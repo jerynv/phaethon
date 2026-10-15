@@ -91,7 +91,7 @@ async fn write_with_approval_over_http() {
     // and on the second request the tool_use echoed with its result.
     let bodies = bodies.lock().unwrap();
     assert!(bodies[0]["system"][0]["text"].as_str().unwrap().contains("Keep it short."));
-    assert_eq!(bodies[0]["tools"].as_array().unwrap().len(), 5);
+    assert_eq!(bodies[0]["tools"].as_array().unwrap().len(), 6);
     let second = bodies[1]["messages"].as_array().unwrap();
     assert_eq!(second[1]["content"][1]["input"]["path"], "plans/week.md");
     assert_eq!(second[2]["content"][0]["tool_use_id"], "toolu_1");

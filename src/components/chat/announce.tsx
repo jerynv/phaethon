@@ -15,6 +15,7 @@ export const useAnnounce = () => useContext(AnnounceContext);
  */
 export function plainText(md: string): string {
   return md
+    .replace(/```phaethon-actions[\s\S]*?(?:```|$)/g, " ") // buttons, said by themselves (chat-actions.tsx)
     .replace(/```[\s\S]*?(?:```|$)/g, " (code) ")
     .replace(/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/gm, "")
     .replace(/^\s*\|/gm, "")

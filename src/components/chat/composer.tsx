@@ -4,7 +4,9 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, ty
 
 import { Button } from "@/components/ui/button";
 import { IconTip } from "@/components/ui/tooltip";
+import { addToSpace } from "@/components/shell/space-actions";
 import { Icon } from "@/icons";
+import { ATTACH_FILES_EVENT } from "@/lib/chat-actions";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom } from "@/runtime/agent-adapter";
 import {
@@ -103,17 +105,33 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
   );
 }
 
+const itemClass = "flex cursor-default items-start gap-2.5 rounded-md px-2.5 py-2 outline-none select-none data-highlighted:bg-hover";
+
 /**
- * The + button: a small menu of things to add to the message. Non-modal: a
- * one-item menu has no reason to hide the rest of the window from assistive
+ * The + button: attach files to this message, or add files or a folder to
+ * the space itself (copied into its files/ folder, space_add.rs). Non-modal:
+ * a small menu has no reason to hide the rest of the window from assistive
  * technology (a modal menu marks it aria-hidden while it stays focusable).
  */
-function AddMenu({ onAttach }: { onAttach: () => void }) {
+function AddMenu({ onAttach, space }: { onAttach: () => void; space?: string }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Adding to the space: focus isn't handed back to + as the menu closes (that would
+  // open its tooltip under the notice that then takes focus); back to + only when the
+  // picker is cancelled, or nothing else took it.
+  const adding = useRef(false);
+  const add = (folder: boolean) => {
+    if (!space) return;
+    adding.current = true;
+    void addToSpace(space, folder).then((done) => {
+      if (!done || document.activeElement === document.body) triggerRef.current?.focus();
+    });
+  };
   return (
     <DropdownMenu.Root modal={false}>
       <IconTip label="Add to message" spoken="Attach files">
         <DropdownMenu.Trigger asChild>
           <Button
+            ref={triggerRef}
             type="button"
             variant="ghost"
             size="icon"
@@ -129,18 +147,38 @@ function AddMenu({ onAttach }: { onAttach: () => void }) {
           side="top"
           align="start"
           sideOffset={6}
+          onCloseAutoFocus={(e) => {
+            if (adding.current) e.preventDefault();
+            adding.current = false;
+          }}
           className="z-50 min-w-[min(20rem,calc(100vw-var(--ph-space)*8))] rounded-lg border border-line bg-raised p-1 text-ink shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
         >
-          <DropdownMenu.Item
-            onSelect={onAttach}
-            className="flex cursor-default items-start gap-2.5 rounded-md px-2.5 py-2 outline-none select-none data-highlighted:bg-hover"
-          >
+          <DropdownMenu.Item onSelect={onAttach} className={itemClass}>
             <Icon name="attach" className="mt-0.5 text-ink-secondary" />
             <span className="flex flex-col">
               <span className="text-base font-medium">Attach files…</span>
               <span className="text-sm text-ink-secondary">{ACCEPTED_SUMMARY}</span>
             </span>
           </DropdownMenu.Item>
+          {space && (
+            <>
+              <DropdownMenu.Separator className="mx-1 my-1 h-px bg-line forced-colors:bg-[CanvasText]" />
+              <DropdownMenu.Item onSelect={() => add(false)} className={itemClass} data-add-to-space="files">
+                <Icon name="file-plus" className="mt-0.5 text-ink-secondary" />
+                <span className="flex flex-col">
+                  <span className="text-base font-medium">Add files to this space…</span>
+                  <span className="text-sm text-ink-secondary">Copied into its files folder, any kind, for every conversation here</span>
+                </span>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => add(true)} className={itemClass} data-add-to-space="folder">
+                <Icon name="folder-plus" className="mt-0.5 text-ink-secondary" />
+                <span className="flex flex-col">
+                  <span className="text-base font-medium">Add a folder to this space…</span>
+                  <span className="text-sm text-ink-secondary">The whole folder, copied; the original stays where it is</span>
+                </span>
+              </DropdownMenu.Item>
+            </>
+          )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -233,6 +271,15 @@ export function Composer({
   }, [isRunning]);
   useDraft(pane?.spaceId ?? spaceName);
   const tray = useAttachmentTray(inputRef);
+  // Attach files… under a reply (chat-actions.tsx) opens this space's picker.
+  const spaceId = pane?.spaceId;
+  useEffect(() => {
+    const open = (e: Event) => {
+      if ((e as CustomEvent<{ space?: string }>).detail?.space === spaceId) fileInput.current?.click();
+    };
+    window.addEventListener(ATTACH_FILES_EVENT, open);
+    return () => window.removeEventListener(ATTACH_FILES_EVENT, open);
+  }, [spaceId]);
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     // Arrow Up in an empty message box edits your last message (where it can be edited); Escape
@@ -322,7 +369,7 @@ export function Composer({
           Enter to send, Shift+Enter for a new line.
         </span>
         <div className="group/toolbar flex shrink-0 items-center gap-2">
-          <AddMenu onAttach={() => fileInput.current?.click()} />
+          <AddMenu onAttach={() => fileInput.current?.click()} space={spaceId} />
           <AttachmentFold tray={tray} />
           <input
             ref={fileInput}

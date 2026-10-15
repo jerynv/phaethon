@@ -89,7 +89,7 @@ export default [
       const m = await page.$eval(MENU, (el) => ({ role: el.getAttribute("role"), label: el.getAttribute("aria-label") }));
       check(m.role === "menu" && m.label === "Work: actions", "right-click on Work opens its menu, named for Work", JSON.stringify(m));
       const items = await menuItems(page);
-      check(items.join("|") === "Show in Finder|Export…|Import courses…|Course access…|Edit name and colour…", "the menu has Show in Finder, Export…, Import courses…, Course access… and Edit name and colour…", items.join("|"));
+      check(items.join("|") === "Show in Finder|Add files…|Add a folder…|Export…|Import courses…|Course access…|Edit name and colour…", "the menu has Show in Finder, Add files…, Add a folder…, Export…, Import courses…, Course access… and Edit name and colour…", items.join("|"));
       const more = await page.$eval('[data-space-more="work"]', (b) => ({ expanded: b.getAttribute("aria-expanded"), shown: getComputedStyle(b).opacity }));
       check(more.expanded === "true" && more.shown === "1", "Work’s More button shows, marked expanded, while its menu is open", JSON.stringify(more));
       await h.shot("open");
@@ -117,7 +117,7 @@ export default [
       await page.hover(space("work"));
       await page.click('[data-space-more="work"]');
       await page.waitForSelector(`${MENU}[data-space-menu="work"]`, { timeout: 3000 });
-      check((await menuItems(page)).length === 5, "Work’s More button opens the same menu");
+      check((await menuItems(page)).length === 7, "Work’s More button opens the same menu");
       await page.keyboard.press("Escape");
       await menuGone(page);
     },
@@ -136,7 +136,7 @@ export default [
       await h.idle();
       check((await focused(page)) === "item:Show in Finder", "Shift+F10 opens School’s menu with its first item focused", await focused(page));
       await page.keyboard.press("ArrowDown");
-      check((await focused(page)) === "item:Export…", "ArrowDown moves to Export…", await focused(page));
+      check((await focused(page)) === "item:Add files…", "ArrowDown moves to Add files…", await focused(page));
       await h.shot("keys");
       await page.keyboard.press("Escape");
       await menuGone(page);
@@ -278,8 +278,20 @@ export default [
       await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
       await page.keyboard.type("folder");
       await h.idle();
+      const found = await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent));
+      check(found[0]?.startsWith("Add a folder…") && found.some((t) => t.startsWith("Show space in Finder")), "\"folder\" finds Add a folder… first, and Show space in Finder", JSON.stringify(found));
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__calls.some(([c]) => c === "space_add"), { timeout: 3000 });
+      check(JSON.stringify(await calls(page, "space_add")) === JSON.stringify([{ id: "school", folder: true }]), "Enter adds a folder to the space on screen");
+      await waitNotice(page);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-space-action-notice]"), { timeout: 3000 });
+      await chord(page, "k");
+      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.keyboard.type("finder");
+      await h.idle();
       const show = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute("aria-activedescendant"))?.textContent);
-      check(show?.startsWith("Show space in Finder"), "\"folder\" finds Show space in Finder", show);
+      check(show?.startsWith("Show space in Finder"), "\"finder\" finds Show space in Finder", show);
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "space_show"), { timeout: 3000 });
       check(JSON.stringify(await calls(page, "space_show")) === JSON.stringify([{ id: "school" }]), "Enter shows the space on screen in Finder");

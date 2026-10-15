@@ -645,6 +645,11 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
         (Some(s), Some(m)) => Some(format!("{s}\n\n{m}")),
         (s, m) => s.or(m),
     };
+    // Where things are in the app and the buttons a reply can offer: a CLI can't call app_guide, so it gets the guide whole.
+    let mode = Some(match mode {
+        Some(m) => format!("{}\n\n{m}", crate::app_guide::cli_section()),
+        None => crate::app_guide::cli_section(),
+    });
     let mode = crate::rich_output::with_instructions(mode); // what the chat can show, before the tutor mode
     // How to offer a quiz or flashcards from the chat, before the tutor mode (which shapes every answer).
     let mode = Some(crate::study::chat::with_prompt(mode.as_deref()));

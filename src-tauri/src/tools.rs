@@ -116,6 +116,11 @@ pub fn definitions() -> Value {
                 "required": ["space", "path", "reason"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "app_guide",
+            "description": "Where everything is in Phaethon, the app the user is talking to you in: spaces and their menus, adding files and folders, attaching files, the views, keyboard shortcuts and every section of Settings, by the names shown in the app. Call it before telling the user where something is or how to change a setting.",
+            "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}
         }
     ])
 }
@@ -129,6 +134,8 @@ pub enum Call {
     Search { query: String, path: String },
     Write { path: String, contents: String },
     RequestAccess { space: String, path: String, reason: String },
+    /// Where things are in the app (app_guide.rs).
+    Guide,
 }
 
 pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
@@ -141,6 +148,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
         "search_files" => &["query", "path"],
         "write_file" => &["path", "contents"],
         "request_access" => &["space", "path", "reason"],
+        "app_guide" => &[],
         _ => return Err(format!("there is no tool named {name}")),
     };
     if let Some(k) = obj.keys().find(|k| !allowed.contains(&k.as_str())) {
@@ -171,6 +179,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
             path: req("path")?,
             reason: req("reason")?.chars().take(MAX_REASON).collect(),
         },
+        "app_guide" => Call::Guide,
         _ => {
             let path = req("path")?;
             if let Target::Other { space, .. } = target(&path) {
@@ -243,6 +252,7 @@ pub fn label(call: &Call) -> String {
             space.trim_start_matches('@'),
             path.trim_end_matches('/')
         ),
+        Call::Guide => "Looking up where things are in Phaethon".into(),
     }
 }
 
@@ -289,6 +299,7 @@ pub fn run_in(ctx: &Ctx, call: &Call) -> Result<String, String> {
             Target::Local(p) => write(&ctx.space, p, contents),
         },
         Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
+        Call::Guide => Ok(crate::app_guide::guide()),
     }
 }
 
@@ -332,6 +343,7 @@ pub fn run(space: &Path, call: &Call) -> Result<String, String> {
         Call::Search { query, path } => search(space, query, path),
         Call::Write { path, contents } => write(space, path, contents),
         Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
+        Call::Guide => Ok(crate::app_guide::guide()),
     }
 }
 

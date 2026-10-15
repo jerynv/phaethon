@@ -12,6 +12,7 @@ import { announce } from "@/components/shell/announcer";
 import { CommandPalette, ShortcutsSheet, type Command } from "@/components/shell/command-palette";
 import { NewSpaceDialog } from "@/components/shell/new-space-dialog";
 import { SearchDialog } from "@/components/shell/search-dialog";
+import { addToSpace } from "@/components/shell/space-actions";
 import { digitOf, isModChord, isModShiftChord, modAria, modCap, shortcutById, viewChord, viewDigitOf } from "@/components/shell/shortcuts";
 import { Sidebar } from "@/components/shell/sidebar";
 import { focusView, getSpaceView, requestStudy, setSpaceView, VIEWS } from "@/components/study/space-view";
@@ -23,6 +24,7 @@ import { Icon } from "@/icons";
 import { useSpaceActivity } from "@/lib/activity";
 import { requestCompose } from "@/lib/compose";
 import { requestOpenConversation } from "@/lib/open-conversation";
+import { NEW_SPACE_EVENT } from "@/lib/chat-actions";
 import { openSettings } from "@/lib/open-settings";
 import { refreshSpaces, setActiveSpaceId, useSpaces, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
@@ -327,6 +329,11 @@ export default function App() {
     createdId.current = null;
     setNewSpace((n) => ({ key: n.key + 1, open: true }));
   }, []);
+  // New space… under a reply (chat-actions.tsx).
+  useEffect(() => {
+    window.addEventListener(NEW_SPACE_EVENT, openNewSpace);
+    return () => window.removeEventListener(NEW_SPACE_EVENT, openNewSpace);
+  }, [openNewSpace]);
   const focusAfterNewSpace = useCallback((created: boolean) => {
     requestAnimationFrame(() => {
       const main = document.getElementById("main");
@@ -435,6 +442,26 @@ export default function App() {
           run: () => openCourseImport({ space: active.id }),
         });
       }
+      list.push(
+        {
+          id: "add-files",
+          group: "Actions",
+          label: "Add files…",
+          hint: `to ${active.name}`,
+          keywords: "import upload copy documents pdf resume",
+          icon: "file-plus",
+          run: () => void addToSpace(active.id, false),
+        },
+        {
+          id: "add-folder",
+          group: "Actions",
+          label: "Add a folder…",
+          hint: `to ${active.name}`,
+          keywords: "import upload copy directory documents",
+          icon: "folder-plus",
+          run: () => void addToSpace(active.id, true),
+        },
+      );
     }
     list.push(
       {

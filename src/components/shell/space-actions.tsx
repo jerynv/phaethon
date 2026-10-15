@@ -29,6 +29,7 @@ type ExportDone = { fileName: string; files: number };
  */
 type Notice =
   | { kind: "exported"; key: number; space: string; fileName: string }
+  | { kind: "added"; key: number; id: string; message: string }
   | { kind: "error"; key: number; message: string; retry?: () => void };
 
 let notice: Notice | null = null;
@@ -83,6 +84,51 @@ export async function exportSpace(id: string): Promise<void> {
     setNotice({ kind: "error", key: nextKey++, message: `${name} couldn’t be exported. ${String(e)}`, retry: () => void exportSpace(id) });
   } finally {
     busy = false;
+  }
+}
+
+/** Mirrors `Added` in src-tauri/src/space_add.rs: where each picked thing now is in the space, and how many files. */
+export type Added = { paths: string[]; files: number; skipped: number };
+
+/** "Added Scool to Life: 34 files, in files/Scool." Hidden files and links left out are said too. */
+export function addedWords(space: string, a: Added): string {
+  const names = a.paths.map((p) => p.replace(/^files\//, ""));
+  const what = names.length === 1 ? names[0] : `${names.length} items`;
+  const count = a.files === 1 ? "1 file" : `${a.files} files`;
+  const where = names.length === 1 ? `files/${names[0]}` : "its files folder";
+  const left = a.skipped ? ` ${a.skipped === 1 ? "1 hidden file or link was" : `${a.skipped} hidden files or links were`} left out.` : "";
+  return `Added ${what} to ${space}: ${count}, in ${where}.${left}`;
+}
+
+let adding = false;
+
+/**
+ * Add files, or one folder, from elsewhere on the computer to the space's
+ * files/ folder: the core asks which in the system's picker and copies them
+ * (space_add.rs). Cancelling does nothing (null). With `notice` (from a
+ * menu) the result is shown at the foot of the window; a button under a
+ * reply shows it itself, and gets the error thrown.
+ */
+export async function addToSpace(id: string, folder: boolean, notice = true): Promise<Added | null> {
+  if (adding) return null;
+  const name = nameOf(id);
+  if (!inTauri()) {
+    const message = "Files can be added only in the Phaethon app.";
+    if (!notice) throw new Error(message);
+    setNotice({ kind: "error", key: nextKey++, message });
+    return null;
+  }
+  adding = true;
+  try {
+    const done = await invoke<Added | null>("space_add", { id, folder });
+    if (done && notice) setNotice({ kind: "added", key: nextKey++, id, message: addedWords(name, done) });
+    return done;
+  } catch (e) {
+    if (!notice) throw e;
+    setNotice({ kind: "error", key: nextKey++, message: `Nothing was added to ${name}. ${String(e)}`, retry: () => void addToSpace(id, folder) });
+    return null;
+  } finally {
+    adding = false;
   }
 }
 
@@ -141,10 +187,11 @@ export function SpaceActionNotice() {
     ) : (
       n.message
     );
+  const ok = n.kind !== "error";
   return createPortal(
     <section
       key={n.key}
-      aria-label={n.kind === "exported" ? "Export finished" : "Something went wrong"}
+      aria-label={n.kind === "exported" ? "Export finished" : n.kind === "added" ? "Files added" : "Something went wrong"}
       data-space-action-notice={n.kind}
       onKeyDown={onKeyDown}
       className={cn(
@@ -153,8 +200,8 @@ export function SpaceActionNotice() {
       )}
     >
       <Icon
-        name={n.kind === "exported" ? "success" : "error"}
-        className={cn("mt-0.5 shrink-0", n.kind === "exported" ? "text-success-ink" : "text-danger-ink")}
+        name={ok ? "success" : "error"}
+        className={cn("mt-0.5 shrink-0", ok ? "text-success-ink" : "text-danger-ink")}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p id={msgId} className="wrap-break-word">
@@ -163,6 +210,12 @@ export function SpaceActionNotice() {
         <div className="flex flex-wrap gap-2">
           {n.kind === "exported" && (
             <Button ref={firstRef} type="button" variant="outline" size="sm" aria-describedby={msgId} data-notice-show="" onClick={() => void showExport()}>
+              <Icon name="folder" />
+              {showInLabel()}
+            </Button>
+          )}
+          {n.kind === "added" && (
+            <Button ref={firstRef} type="button" variant="outline" size="sm" aria-describedby={msgId} data-notice-show="" onClick={() => void showSpaceFolder(n.id)}>
               <Icon name="folder" />
               {showInLabel()}
             </Button>

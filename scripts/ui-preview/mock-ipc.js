@@ -225,6 +225,14 @@
           M.exported = true;
           return M.exportResult ?? { fileName: `${name} 2026-10-10.zip`, files: 12 };
         }
+        // Contract (src-tauri/src/lib.rs space_add): the core asks which files or folder in the system's
+        // picker. { addResult: null } is the picker cancelled; M.fail.space_add a refusal (too big, in the vault).
+        case "space_add": {
+          if (!M.spaces.some((s) => s.id === args.id)) throw "That space isn’t in your Phaethon folder any more.";
+          (M.added ??= []).push({ id: args.id, folder: args.folder });
+          if (M.addResult === null) return null;
+          return M.addResult ?? (args.folder ? { paths: ["files/Scool"], files: 34, skipped: 2 } : { paths: ["files/Resume.pdf"], files: 1, skipped: 0 });
+        }
         case "export_show":
           if (!M.exported) throw "There’s no export to show yet.";
           return;

@@ -16,6 +16,7 @@ const NOTES = `## What's new
 - Updates from GitHub Releases, checked against Phaethon's signature
 - Study decks remember the page a card came from
 - Fixes: the course import no longer stops on an empty folder
+- See [the release page](https://example.com/x) <img src=x onerror="window.__pwned=1"> <b>bold</b>
 
 ${Array.from({ length: 12 }, (_, i) => `- Smaller fix ${i + 1}`).join("\n")}`;
 
@@ -61,6 +62,8 @@ export default [
       const text = await page.$eval("[data-update-available]", (e) => e.innerText);
       check(text.includes("Phaethon 0.2.0 is available") && text.includes("You have 0.1.0") && /Released (12 October|October 12,) 2026/.test(text), "names both versions and the date", text.slice(0, 120));
       check(text.includes("Study decks remember the page"), "shows what's new");
+      const notes = await page.$eval("[data-update-notes]", (e) => ({ heading: !e.textContent.includes("##"), list: e.querySelectorAll("li").length, links: e.querySelectorAll("a, img, b, script").length, pwned: !!window.__pwned, link: e.textContent.includes("the release page") }));
+      check(notes.heading && notes.list === 16 && notes.links === 0 && !notes.pwned && notes.link, "what's new reads as markdown (a heading, a list), never as html, and a link is only its words", JSON.stringify(notes));
       await page.keyboard.press("Tab");
       check(await focused(page, "[data-update-notes]"), "what's new is a tab stop, so it scrolls by keyboard");
       await page.keyboard.press("Tab");

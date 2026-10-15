@@ -1,5 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState } from "react";
+import Markdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
@@ -250,15 +252,18 @@ export function UpdatesGroup() {
               <p id={notesId} className="text-sm font-medium text-ink">
                 What’s new
               </p>
-              {/* A tab stop, so long notes scroll by keyboard. Plain text: never rendered as markup. */}
+              {/* A tab stop, so long notes scroll by keyboard. The notes come from the unsigned feed:
+                  Markdown only, never HTML, and links and pictures are shown as their words. */}
               <div
                 role="region"
                 aria-labelledby={notesId}
                 tabIndex={0}
                 data-update-notes=""
-                className="max-h-48 overflow-y-auto rounded-md bg-surface-sunken px-3 py-2 text-sm whitespace-pre-wrap wrap-break-word text-ink"
+                className="flex max-h-48 flex-col gap-1.5 overflow-y-auto rounded-md bg-surface-sunken px-3 py-2 text-sm wrap-break-word text-ink"
               >
-                {s.notes}
+                <Markdown remarkPlugins={[remarkGfm]} skipHtml components={NOTES}>
+                  {s.notes}
+                </Markdown>
               </div>
             </div>
           )}
@@ -327,3 +332,21 @@ export function UpdatesGroup() {
     </SettingGroup>
   );
 }
+
+/** Release notes: headings as a bold line, lists as lists, a link or a picture as its words. */
+const heading = ({ children }: { children?: React.ReactNode }) => <p className="pt-1 font-semibold first:pt-0">{children}</p>;
+const NOTES: Components = {
+  h1: heading,
+  h2: heading,
+  h3: heading,
+  h4: heading,
+  h5: heading,
+  h6: heading,
+  p: ({ children }) => <p>{children}</p>,
+  ul: ({ children }) => <ul className="list-disc ps-5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal ps-5">{children}</ol>,
+  a: ({ children }) => <>{children}</>,
+  img: ({ alt }) => <>{alt}</>,
+  code: ({ children }) => <code className="font-mono">{children}</code>,
+  pre: ({ children }) => <pre className="font-mono whitespace-pre-wrap">{children}</pre>,
+};

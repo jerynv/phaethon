@@ -189,12 +189,13 @@ function MakeFlow({
   const [said, setSaid] = useState("");
   const titleRef = useRef<HTMLHeadingElement>(null);
   const live = useRef(true);
-  useEffect(
-    () => () => {
+  // Set on every mount: React's StrictMode mounts, unmounts and mounts again in development.
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const what = quiz ? "quiz" : "flashcards";
   const task = quiz ? "Make a quiz" : "Make flashcards";

@@ -386,12 +386,13 @@ function CliSignInGroup({ backend, onSignedIn }: { backend: OwnHomeBackend; onSi
   const live = useRef(true);
   const startRef = useRef<HTMLButtonElement>(null);
   const stopRef = useRef<HTMLButtonElement>(null);
-  useEffect(
-    () => () => {
+  // Set on every mount: React's StrictMode mounts, unmounts and mounts again in development.
+  useEffect(() => {
+    live.current = true;
+    return () => {
       live.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   async function start() {
     if (waiting) return;

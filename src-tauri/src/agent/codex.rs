@@ -9,9 +9,14 @@
 //! - `--add-dir` would make a folder *writable*, so it is never passed.
 //! - The person's config.toml (MCP servers, providers, hooks), rules, plugins,
 //!   apps, skills, sub-agents, memories, web search and image viewing are off.
-//! - The global `AGENTS.md` in Codex's own folder still loads: Codex has no
-//!   switch for it short of a separate `CODEX_HOME` (the vault's isolated
-//!   CLI setting), which means logging in to Codex again for that vault.
+//! - The global `AGENTS.md` (and `AGENTS.override.md`) in `CODEX_HOME` always
+//!   loads: codex-cli 0.162 adds it to every root session with no setting to
+//!   stop it (`codex-home/src/instructions`, `thread_manager.rs`;
+//!   `--ignore-user-config` and `project_doc_max_bytes=0` leave it in). So
+//!   Codex always runs with a `CODEX_HOME` of its own for the vault (agent.rs),
+//!   signed in to there with `codex login` (sign_in.rs); the person's own
+//!   `~/.codex` (instructions, config, hooks, skills, sessions, login) is never
+//!   used. Proven with the real binary in tests/cli_isolation.rs.
 //!
 //! A turn's prompt goes over stdin (`-`); a resumed one is
 //! `codex exec [options] resume <id> -`, the options before `resume`.
@@ -23,7 +28,7 @@ use serde_json::Value;
 use super::{AgentEvent, Outcome, shown_path};
 
 pub const MISSING_CLI_MESSAGE: &str =
-    "Codex was not found. Install Codex, then run `codex login` once in a terminal to sign in.";
+    "Codex was not found. Install Codex, then sign in to it in Settings › Assistant.";
 
 /// Variables Codex sets for the commands it runs; inherited, they would make
 /// our child think it runs inside another Codex session or sandbox.

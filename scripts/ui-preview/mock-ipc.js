@@ -308,15 +308,37 @@
           // Contract: whether the claude command is installed (and where). Never says anything about the login.
           return M.claudeCli ?? { installed: true, path: "/Users/you/.local/bin/claude" };
         case "agent_clis_status":
-          // Contract (agent::CliInfo): installed, signed in only where the CLI itself says (Codex), the sign-in command.
+          // Contract (agent::CliInfo): installed, signed in only where the CLI itself says (Codex), the sign-in command,
+          // and whether it has a setup of its own for the vault (Codex and Gemini CLI always).
           return (
             M.clis ?? [
-              { id: "claude", name: "Claude Code", installed: M.claudeCli?.installed ?? true, loggedIn: null, loginCommand: "claude", supported: true },
-              { id: "codex", name: "Codex", installed: true, loggedIn: true, loginCommand: "codex login", supported: true },
-              { id: "gemini", name: "Gemini CLI", installed: true, loggedIn: null, loginCommand: "gemini", supported: true },
-              { id: "opencode", name: "OpenCode", installed: false, loggedIn: null, loginCommand: "opencode auth login", supported: false },
+              { id: "claude", name: "Claude Code", installed: M.claudeCli?.installed ?? true, loggedIn: null, loginCommand: "claude", supported: true, ownHome: false },
+              { id: "codex", name: "Codex", installed: true, loggedIn: true, loginCommand: 'CODEX_HOME="/Users/you/Library/Application Support/app.phaethon/claude-config/default-codex" codex login', supported: true, ownHome: true },
+              { id: "gemini", name: "Gemini CLI", installed: true, loggedIn: null, loginCommand: 'GEMINI_CLI_HOME="/Users/you/Library/Application Support/app.phaethon/claude-config/default-gemini" gemini', supported: true, ownHome: true },
+              { id: "opencode", name: "OpenCode", installed: false, loggedIn: null, loginCommand: "opencode auth login", supported: false, ownHome: false },
             ]
           );
+        // Settings' sign-in to Codex or Gemini CLI for the vault's own setup (agent/sign_in.rs). M.signIn[cli]:
+        // { status, message } answered after M.signInDelay ms (default 300), or { hold: true } to wait until
+        // window.__signInDone(outcome) or a cancel. Signed in to Codex marks it signed in for agent_clis_status.
+        case "agent_cli_sign_in": {
+          const name = args.cli === "codex" ? "Codex" : "Gemini CLI";
+          const plan = M.signIn?.[args.cli] ?? { status: "signedIn", message: `Signed in to ${name} for this Phaethon folder.` };
+          if (M.signInWaiting) return { status: "busy", message: `Phaethon is already waiting for you to sign in to ${name}.` };
+          const out = await new Promise((resolve) => {
+            M.signInWaiting = resolve;
+            window.__signInDone = resolve;
+            if (!plan.hold) setTimeout(() => resolve(plan), M.signInDelay ?? 300);
+          });
+          M.signInWaiting = null;
+          if (out.status === "signedIn" && args.cli === "codex" && M.clis) M.clis = M.clis.map((c) => (c.id === "codex" ? { ...c, loggedIn: true } : c));
+          return out;
+        }
+        case "agent_cli_sign_in_cancel": {
+          if (!M.signInWaiting) return false;
+          M.signInWaiting({ status: "cancelled", message: `Signing in to ${args.cli === "codex" ? "Codex" : "Gemini CLI"} was stopped.` });
+          return true;
+        }
         case "threads_list": {
           const summary = (id, messages, updated, current) => ({ id, title: titleOf(messages), updated, messages: messages.length, current });
           const rest = (M.threadArchive[args.space] ?? [])

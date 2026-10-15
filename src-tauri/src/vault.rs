@@ -26,6 +26,8 @@ pub struct VaultSettings {
     /// Opt-in: run the `claude` CLI with a per-vault `CLAUDE_CONFIG_DIR`.
     /// Off by default because a fresh config dir is logged out: turning this on
     /// means logging in to the CLI again for this vault. See ARCHITECTURE.md.
+    /// Codex and Gemini CLI always have a home of their own for the vault,
+    /// whatever this says (`agent::Cli::own_home`).
     pub isolate_claude_config: bool,
     /// Which agent runs in this vault's spaces.
     pub backend: Backend,

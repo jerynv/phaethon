@@ -40,16 +40,26 @@ fn missing_codex_or_gemini_names_that_cli() {
         unsafe { std::env::set_var(var, "/nonexistent/cli") };
         let dir = std::env::temp_dir().join(format!("phaethon-missing-{}-{}", cli.id(), std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let mut events = vec![];
-        tauri::async_runtime::block_on(agent::run_cli_turn(
-            &Runs::default(),
-            "school",
-            cli,
-            TurnRequest { space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir: None, add_dirs: vec![], model: None },
-            |e| events.push(e),
-        ));
+        let send = |config_dir| {
+            let mut events = vec![];
+            tauri::async_runtime::block_on(agent::run_cli_turn(
+                &Runs::default(),
+                "school",
+                cli,
+                TurnRequest { space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir, add_dirs: vec![], model: None },
+                |e| events.push(e),
+            ));
+            events
+        };
+        let events = send(Some(dir.join("home")));
         assert_eq!(events, vec![AgentEvent::error(ErrorCode::MissingCli, cli.missing_message()), AgentEvent::End { session_id: None }]);
-        assert!(cli.missing_message().starts_with(cli.name()));
+        assert!(cli.missing_message().starts_with(cli.name()) && cli.missing_message().contains("Settings › Assistant"));
+        // Without a home of its own for the vault it never runs, not even to say it is missing.
+        let events = send(None);
+        assert!(
+            matches!(&events[..], [AgentEvent::Error { code: ErrorCode::Cli, message, .. }, AgentEvent::End { .. }] if message.contains("own setup") && message.contains("nothing was sent")),
+            "{events:?}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

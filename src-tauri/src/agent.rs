@@ -1,7 +1,11 @@
 //! Agent supervisor for the CLI backends: Claude Code, Codex and Gemini CLI.
 //!
 //! Phaethon never touches a CLI's credentials: it only locates the binary the
-//! user installed and logged into, and spawns it. One child process per turn,
+//! user installed and spawns it. Codex and Gemini CLI always run with a home
+//! of their own for the vault (`CODEX_HOME`, `GEMINI_CLI_HOME`), because each
+//! loads the person's global instructions, settings and hooks from its usual
+//! home with no switch to stop it (see codex.rs, gemini.rs); the person signs
+//! in to them there once, through the CLI's own sign-in (sign_in.rs). One child process per turn,
 //! with its working directory set to the space folder, read-only tools, and
 //! the session of the space's current conversation resumed. What differs per
 //! CLI (arguments, its JSON events, how it says "not logged in") is in
@@ -16,6 +20,7 @@
 pub mod claude;
 pub mod codex;
 pub mod gemini;
+pub mod sign_in;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -201,9 +206,21 @@ impl Cli {
         }
     }
 
+    /// Whether the CLI always runs with a home of its own for the vault, never
+    /// the person's: their global instructions, settings and hooks would
+    /// otherwise reach every space. Claude Code's has its own switches for
+    /// those (claude.rs) and a home of its own only when the vault asks.
+    pub fn own_home(self) -> bool {
+        self != Cli::Claude
+    }
+
     pub fn not_logged_in_message(self, config_dir: Option<&Path>) -> String {
         match (self, config_dir) {
             (Cli::Claude, None) => NOT_LOGGED_IN_MESSAGE.into(),
+            (cli, _) if cli.own_home() => format!(
+                "{} isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Assistant, then send your message again.",
+                self.name()
+            ),
             _ => format!(
                 "{} is not logged in. Run `{}` once in a terminal to sign in, then try again.",
                 self.name(),
@@ -356,9 +373,18 @@ fn child_path(bin: &Path) -> OsString {
     std::env::join_paths(dirs).unwrap_or_default()
 }
 
+/// Where Codex or Gemini CLI is pointed when Phaethon has no home for it
+/// (no app data folder): an empty one, so it runs signed out and loads
+/// nothing of the person's, rather than their own home.
+pub fn no_home() -> PathBuf {
+    std::env::temp_dir().join("phaethon-no-cli-home")
+}
+
 /// The command for a run of `cli` at `bin`: its own process group, piped
 /// stdio, the inherited variables that would confuse it removed, and its
-/// isolated setup folder when the vault has one.
+/// setup folder: the vault's own for Codex and Gemini CLI always (an empty
+/// one if none is given, never the person's), for Claude Code when the vault
+/// asks for one.
 pub fn command(cli: Cli, bin: &Path, cwd: &Path, config_dir: Option<&Path>) -> Command {
     let mut cmd = Command::new(bin);
     cmd.current_dir(cwd)
@@ -372,8 +398,9 @@ pub fn command(cli: Cli, bin: &Path, cwd: &Path, config_dir: Option<&Path>) -> C
     if cli != Cli::Claude {
         cmd.env("PATH", child_path(bin));
     }
-    if let Some(dir) = config_dir {
-        if cli != Cli::Claude {
+    let fallback = (cli.own_home() && config_dir.is_none()).then(no_home);
+    if let Some(dir) = config_dir.or(fallback.as_deref()) {
+        if cli.own_home() {
             // Codex refuses a CODEX_HOME that isn't there.
             let _ = std::fs::create_dir_all(dir);
         }
@@ -652,6 +679,10 @@ async fn drive(
         emit(AgentEvent::error(code, message));
     };
 
+    if cli.own_home() && req.config_dir.is_none() {
+        fail(emit, ErrorCode::Cli, format!("Phaethon couldn’t find a folder for {}’s own setup in this Phaethon folder, so nothing was sent.", cli.name()));
+        return Attempt::NotStarted;
+    }
     let Some(bin) = cli.find() else {
         fail(emit, ErrorCode::MissingCli, cli.missing_message().into());
         return Attempt::NotStarted;
@@ -903,6 +934,9 @@ pub struct CliInfo {
     pub login_command: String,
     /// Whether Phaethon can answer through it.
     pub supported: bool,
+    /// Whether it runs with a home of its own for this vault, signed in to
+    /// from Settings (`agent_cli_sign_in`), never the person's own.
+    pub own_home: bool,
 }
 
 /// [`CliInfo`] for every CLI. Codex says whether it is signed in through its
@@ -926,16 +960,17 @@ pub async fn clis_info(config_dir: impl Fn(Cli) -> Option<PathBuf>) -> Vec<CliIn
             logged_in,
             login_command: cli.login_command(dir.as_deref()),
             supported: true,
+            own_home: cli.own_home(),
         });
     }
     let opencode = find_on_path("opencode", &[common_bin_dirs(), vault::home_dir().map(|h| vec![h.join(".opencode/bin")]).unwrap_or_default()].concat());
-    out.push(CliInfo { id: "opencode", name: "OpenCode", installed: opencode.is_some(), logged_in: None, login_command: "opencode auth login".into(), supported: false });
+    out.push(CliInfo { id: "opencode", name: "OpenCode", installed: opencode.is_some(), logged_in: None, login_command: "opencode auth login".into(), supported: false, own_home: false });
     out
 }
 
 /// `codex login status`: "Logged in using …" or "Not logged in"; anything
 /// else (or no answer within a few seconds) is unknown.
-async fn codex_logged_in(bin: &Path, config_dir: Option<&Path>) -> Option<bool> {
+pub(crate) async fn codex_logged_in(bin: &Path, config_dir: Option<&Path>) -> Option<bool> {
     let mut cmd = command(Cli::Codex, bin, &std::env::temp_dir(), config_dir);
     cmd.args(["login", "status"]).stdin(Stdio::null());
     let out = tokio::time::timeout(Duration::from_secs(5), cmd.output()).await.ok()?.ok()?;
@@ -985,10 +1020,15 @@ mod tests {
     #[test]
     fn each_cli_says_how_to_sign_in_in_its_own_words() {
         assert_eq!(Cli::Claude.not_logged_in_message(None), NOT_LOGGED_IN_MESSAGE);
-        assert!(Cli::Codex.not_logged_in_message(None).contains("Run `codex login`"));
-        assert!(Cli::Gemini.not_logged_in_message(None).starts_with("Gemini CLI is not logged in. Run `gemini`"));
-        let iso = Cli::Codex.not_logged_in_message(Some(Path::new("/x/default-codex")));
-        assert!(iso.contains("CODEX_HOME=\"/x/default-codex\" codex login"), "{iso}");
+        // Codex and Gemini CLI sign in for the vault's own home, from Settings, never in a terminal.
+        for cli in [Cli::Codex, Cli::Gemini] {
+            let said = cli.not_logged_in_message(Some(Path::new("/x/default-codex")));
+            assert!(said.starts_with(&format!("{} isn’t signed in for this Phaethon folder", cli.name())) && said.contains("Settings › Assistant"), "{said}");
+            assert!(!said.contains("terminal") && !said.contains("/x/"), "{said}");
+        }
+        let iso = Cli::Claude.not_logged_in_message(Some(Path::new("/x/default")));
+        assert!(iso.contains("CLAUDE_CONFIG_DIR=\"/x/default\" claude"), "{iso}");
+        assert_eq!(Cli::Codex.login_command(Some(Path::new("/x/default-codex"))), "CODEX_HOME=\"/x/default-codex\" codex login");
         assert_eq!(Cli::of(Backend::Phaethon), None);
         assert_eq!(Cli::of(Backend::GeminiCli), Some(Cli::Gemini));
         assert_eq!(parse_codex_login("Logged in using ChatGPT\n"), Some(true));

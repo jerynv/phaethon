@@ -484,6 +484,24 @@ async fn agent_clis_status(state: State<'_, AppState>) -> Result<Vec<agent::CliI
     Ok(agent::clis_info(|cli| study::model::cli_config_dir(&vault, root.as_deref(), cli)).await)
 }
 
+/// Sign in to Codex or Gemini CLI for this vault's own home, through the
+/// CLI's own sign-in (it opens the browser itself); waits until the person
+/// finishes there or `agent_cli_sign_in_cancel`. Phaethon learns only what
+/// the CLI says, never what it saved.
+#[tauri::command]
+async fn agent_cli_sign_in(state: State<'_, AppState>, cli: String) -> Result<agent::sign_in::SignInOutcome, String> {
+    let cli = agent::Cli::ALL.into_iter().find(|c| c.id() == cli && c.own_home()).ok_or("Phaethon signs in only to Codex and Gemini CLI.")?;
+    let home = study::model::cli_config_dir(&state.vault, state.isolated_config_root.as_deref(), cli)
+        .ok_or_else(|| format!("Phaethon couldn’t find a folder for {}’s own setup.", cli.name()))?;
+    Ok(agent::sign_in::sign_in(&state.runs, cli, &home).await)
+}
+
+/// Stop a sign-in that is waiting for the browser. False if none was.
+#[tauri::command]
+fn agent_cli_sign_in_cancel(state: State<'_, AppState>, cli: String) -> bool {
+    agent::Cli::ALL.into_iter().find(|c| c.id() == cli).is_some_and(|c| agent::sign_in::cancel(&state.runs, c))
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsView {
@@ -1007,6 +1025,8 @@ pub fn run() {
             dev_log,
             agent_send,
             agent_cancel,
+            agent_cli_sign_in,
+            agent_cli_sign_in_cancel,
             agent_approve,
             agent_access_answer,
             grants_list,

@@ -3,8 +3,11 @@
 //! kills them, "not logged in" says how to sign in, each conversation keeps
 //! its own session (resumed when reopened, started afresh with the
 //! conversation as text when lost), turns are recorded, the tutor mode and the
-//! space's model reach them, and Clear asks them one tool-less question.
-//! Uses fake CLIs that log their arguments and stdin; never the real ones.
+//! space's model reach them, Clear asks them one tool-less question, each
+//! always runs with the vault's own home for it (never the person's), and
+//! Settings' sign-in runs the CLI's own sign-in there.
+//! Uses fake CLIs that log their arguments and stdin; never the real ones
+//! (tests/cli_isolation.rs runs the real ones against a fake model server).
 #![cfg(unix)]
 
 use std::fs;
@@ -12,6 +15,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use phaethon_lib::agent::sign_in::{self, SignInStatus};
 use phaethon_lib::agent::{self, AgentEvent, Cli, ErrorCode, Runs, TurnRequest};
 use phaethon_lib::thread::{self, Record};
 use phaethon_lib::tutor_mode::{self, Mode};
@@ -22,10 +26,24 @@ use phaethon_lib::{memory, space_model, study};
 /// (`--ephemeral`) answers one detail; a resumed id listed in `stale` is
 /// unknown; "logout" in the message fails as with no login; "slow" sends
 /// "Partial" and hangs; otherwise it reads a file and answers "Reply n." in
-/// the thread it resumed or `00000000-0000-7000-8000-<n>`.
+/// the thread it resumed or `00000000-0000-7000-8000-<n>`. `login` signs in
+/// to its CODEX_HOME (slowly, or failing, when told to); `login status` says
+/// whether that home is signed in.
 const CODEX: &str = r#"
+if [ "$1" = login ]; then
+  if [ "$2" = status ]; then
+    if [ -f "$CODEX_HOME/signed-in" ]; then echo "Logged in using ChatGPT"; exit 0; fi
+    echo "Not logged in"; exit 1
+  fi
+  printf '%s' "$CODEX_HOME" > "$d/login-home"
+  echo "Starting local login server on http://localhost:1455."
+  [ -f "$d/login-slow" ] && sleep 30
+  if [ -f "$d/login-fails" ]; then echo "Error logging in: Login was not completed" >&2; exit 1; fi
+  touch "$CODEX_HOME/signed-in"; echo "Successfully logged in"; exit 0
+fi
 n=$(cat "$d/count" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$d/count"
 printf '%s\n' "$@" > "$d/args-$n"
+printf '%s' "${CODEX_HOME:-unset}" > "$d/home-$n"
 cat > "$d/stdin-$n"
 case " $* " in *" --ephemeral "*)
   echo '{"type":"thread.started","thread_id":"00000000-0000-7000-8000-ffffffffffff"}'
@@ -55,9 +73,24 @@ echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
 
 /// A fake `gemini --output-format stream-json`, as above; a one-shot is
 /// `--output-format json`. Sessions are `00000000-0000-4000-8000-<n>`.
+/// `--output-format text` is Settings' sign-in: it asks before "opening the
+/// browser" as Gemini CLI does, waits for the answer on stdin, and ends at
+/// "No input provided" (signed in) or says why not.
 const GEMINI: &str = r#"
+case " $* " in *" text "*)
+  printf '%s' "$GEMINI_CLI_HOME" > "$d/signin-home"; printf '%s' "$PWD" > "$d/signin-cwd"
+  printf '\nOpening authentication page in your browser. Do you want to continue? [Y/n]: '
+  read answer
+  [ -f "$d/signin-slow" ] && sleep 30
+  if [ "$answer" = y ]; then
+    [ -f "$d/signin-ineligible" ] && echo "Error authenticating: IneligibleTierError: This client is no longer supported." >&2
+    echo "No input provided via stdin. Input can be provided by piping data into gemini or using the --prompt option." >&2; exit 42
+  fi
+  echo "Error authenticating: FatalCancellationError: Authentication cancelled by user." >&2; exit 42;;
+esac
 n=$(cat "$d/count" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "$d/count"
 printf '%s\n' "$@" > "$d/args-$n"
+printf '%s' "${GEMINI_CLI_HOME:-unset}" > "$d/home-$n"
 cat > "$d/stdin-$n"
 printf '%s' "${GEMINI_CLI_TRUST_WORKSPACE:-unset} ${GEMINI_SYSTEM_MD:-unset}" > "$d/env-$n"
 case " $* " in *" json "*)
@@ -99,6 +132,8 @@ struct Fixture {
     dir: PathBuf,
     runs: Runs,
     cli: Cli,
+    /// Where Phaethon keeps the CLIs' own homes (the app's data folder).
+    homes: PathBuf,
 }
 
 impl Fixture {
@@ -110,7 +145,12 @@ impl Fixture {
         vault.set_setting("backend", format!("{}-cli", cli.id()).into()).unwrap();
         let dir = vault.space_dir("school").unwrap();
         fs::write(dir.join("notes.md"), "Test 1 is on Thursday.").unwrap();
-        Fixture { root, vault, dir, runs: Runs::default(), cli }
+        let homes = root.join("cli-homes");
+        Fixture { root, vault, dir, runs: Runs::default(), cli, homes }
+    }
+    /// The vault's own home for the CLI, as Phaethon chooses it.
+    fn home(&self) -> PathBuf {
+        study::model::cli_config_dir(&self.vault, Some(&self.homes), self.cli).expect("Codex and Gemini CLI always have one")
     }
     fn run(&self) -> usize {
         fs::read_to_string(self.root.join("count")).map_or(0, |s| s.trim().parse().unwrap())
@@ -139,7 +179,7 @@ impl Fixture {
                 prompt,
                 attachments: vec![],
                 replace_from: None,
-                config_dir: None,
+                config_dir: Some(self.home()),
                 add_dirs,
                 model: space_model::get_cli(&self.dir, self.cli.id()),
             },
@@ -174,6 +214,11 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
     // A first turn: streamed, a tool receipt, recorded, its session saved under the CLI's tag.
     let events = f.send("When is Test 1?");
     no_errors(&events);
+    // Always the vault's own home for this CLI, though the vault never asked to keep Claude Code's apart.
+    assert!(!f.vault.settings().isolate_claude_config);
+    assert_eq!(study::model::cli_config_dir(&f.vault, Some(&f.homes), Cli::Claude), None);
+    assert_eq!(f.home(), f.homes.join(format!("{}-{}", f.vault.name(), cli.id())));
+    assert_eq!(fs::read_to_string(f.root.join("home-1")).unwrap(), f.home().to_str().unwrap());
     let texts: Vec<&AgentEvent> = events.iter().filter(|e| matches!(e, AgentEvent::Text { .. } | AgentEvent::Tool { .. })).collect();
     let label = if cli == Cli::Codex { "Running cat notes.md" } else { "Reading file notes.md" };
     assert_eq!(texts, [&AgentEvent::Tool { label: label.into() }, &AgentEvent::Text { delta: "Reply 1.".into() }]);
@@ -298,10 +343,11 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
     assert_ne!(unsafe { libc_killpg(pid) }, 0, "the CLI's process group is gone");
 
     // Clear asks the CLI one question with no tools, then removes the conversation.
-    let model = study::model::for_space(&f.vault, &f.dir, None).unwrap();
+    let model = study::model::for_space(&f.vault, &f.dir, Some(&f.homes)).unwrap();
     let out = tauri::async_runtime::block_on(memory::clear(&f.dir, "current", Ok(&model))).unwrap();
     assert_eq!(out, memory::ClearOutcome::Cleared { kept: vec!["Test 1 for C241 is on Thursday.".into()] });
     let n = f.run();
+    assert_eq!(fs::read_to_string(f.root.join(format!("home-{n}"))).unwrap(), f.home().to_str().unwrap(), "one-shot questions too");
     let a = f.args(n);
     match cli {
         Cli::Codex => {
@@ -321,7 +367,68 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
     assert!(thread::load(&f.dir).unwrap().is_empty());
     assert_eq!(vault::read_cli_session(&f.dir, tag), None);
 
+    signing_in_works(&f);
     fs::remove_dir_all(&f.root).unwrap();
+}
+
+/// Settings' sign-in: the CLI's own, in the vault's home, said in words; Stop ends it.
+fn signing_in_works(f: &Fixture) {
+    let cli = f.cli;
+    let sign_in = || tauri::async_runtime::block_on(sign_in::sign_in(&f.runs, cli, &f.home()));
+    let (slow, fails) = match cli {
+        Cli::Codex => ("login-slow", "login-fails"),
+        _ => ("signin-slow", "signin-ineligible"),
+    };
+    // It fails: said in words, from the CLI's own.
+    fs::write(f.root.join(fails), "").unwrap();
+    let out = sign_in();
+    assert_eq!(out.status, SignInStatus::NotSignedIn, "{out:?}");
+    match cli {
+        Cli::Codex => assert_eq!(out.message, "Codex didn’t finish signing in: Error logging in: Login was not completed"),
+        _ => assert_eq!(out.message, agent::gemini::INELIGIBLE_MESSAGE),
+    }
+    fs::remove_file(f.root.join(fails)).unwrap();
+
+    let out = sign_in();
+    assert_eq!(out.status, SignInStatus::SignedIn, "{out:?}");
+    assert_eq!(out.message, format!("Signed in to {} for this Phaethon folder.", cli.name()));
+    match cli {
+        Cli::Codex => {
+            assert_eq!(fs::read_to_string(f.root.join("login-home")).unwrap(), f.home().to_str().unwrap());
+            // Settings asks Codex itself, with the vault's home.
+            let info = tauri::async_runtime::block_on(agent::clis_info(|c| study::model::cli_config_dir(&f.vault, Some(&f.homes), c)));
+            let codex = info.iter().find(|c| c.id == "codex").unwrap();
+            assert_eq!((codex.logged_in, codex.own_home), (Some(true), true));
+            assert!(!info.iter().find(|c| c.id == "claude").unwrap().own_home);
+        }
+        _ => {
+            assert_eq!(fs::read_to_string(f.root.join("signin-home")).unwrap(), f.home().to_str().unwrap());
+            // An empty folder of its own in that home, never the space.
+            assert_eq!(fs::read_to_string(f.root.join("signin-cwd")).unwrap(), f.home().join("sign-in").canonicalize().unwrap().to_str().unwrap());
+            let settings = fs::read_to_string(f.home().join(".gemini/settings.json")).unwrap();
+            assert!(settings.contains("\"selectedType\": \"oauth-personal\""), "{settings}");
+        }
+    }
+
+    // Stop while it waits for the browser.
+    fs::write(f.root.join(slow), "").unwrap();
+    let canceller = f.runs.clone();
+    let watcher = std::thread::spawn(move || {
+        let start = Instant::now();
+        while canceller.running_pid(&sign_in::run_key(cli)).is_none() {
+            assert!(start.elapsed() < Duration::from_secs(20), "the sign-in never started");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(sign_in::cancel(&canceller, cli));
+    });
+    let started = Instant::now();
+    let out = sign_in();
+    watcher.join().unwrap();
+    assert_eq!(out.status, SignInStatus::Cancelled, "{out:?}");
+    assert!(started.elapsed() < Duration::from_secs(10), "stopped, not waited out");
+    assert!(!sign_in::cancel(&f.runs, cli), "nothing left waiting");
+    fs::remove_file(f.root.join(slow)).unwrap();
 }
 
 /// `killpg(pid, 0)`: 0 while the process group exists.

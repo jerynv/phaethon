@@ -54,9 +54,27 @@ export type AgentCliStatus = {
   loggedIn: boolean | null;
   loginCommand: string;
   supported: boolean;
+  /**
+   * Runs with a setup (home) of its own for this vault, never the person's, and is signed in to
+   * from Settings (`signInCli`): Codex and Gemini CLI. Missing from an older core.
+   */
+  ownHome?: boolean;
 };
 /** Which CLIs are on this computer, and (Codex) whether signed in, from the CLI's own status command. */
 export const agentClis = () => invoke<AgentCliStatus[]>("agent_clis_status");
+
+/** Mirrors `SignInOutcome` in src-tauri/src/agent/sign_in.rs. `message` is plain words for the person. */
+export type CliSignIn = {
+  status: "signedIn" | "notSignedIn" | "cancelled" | "busy" | "missing";
+  message: string;
+};
+/**
+ * Sign in to Codex or Gemini CLI for this vault's own setup, with the CLI's own sign-in (it opens the
+ * browser itself). Resolves when the person finishes there, or `cancelCliSignIn`.
+ */
+export const signInCli = (cli: "codex" | "gemini") => invoke<CliSignIn>("agent_cli_sign_in", { cli });
+/** Stop a sign-in that waits for the browser; false if none was waiting. */
+export const cancelCliSignIn = (cli: "codex" | "gemini") => invoke<boolean>("agent_cli_sign_in_cancel", { cli });
 
 /**
  * Mirrors `SettingsView` in src-tauri/src/lib.rs. The key itself never comes back.

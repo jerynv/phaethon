@@ -7,6 +7,7 @@ import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
   agentClis,
+  cancelCliSignIn,
   CLI_INFO,
   clearApiKey,
   cliOf,
@@ -18,9 +19,11 @@ import {
   setProvider,
   setProviderModel,
   setProviderUrl,
+  signInCli,
   type AgentCliStatus,
   type Backend,
   type CliBackend,
+  type CliSignIn,
   type ModelInfo,
   type ProviderInfo,
   type ServerStatus,
@@ -75,7 +78,13 @@ const BACKENDS: { value: Backend; label: string; hint: string }[] = [
 const cliMissingText = (b: CliBackend) =>
   b === "claude-cli"
     ? CLAUDE_CODE_MISSING
-    : `${CLI_INFO[b].name} isn’t installed on this computer. To use it, install ${CLI_INFO[b].name} from ${CLI_INFO[b].company} and sign in to it (run ${CLI_INFO[b].login} in a terminal), then choose it again.`;
+    : `${CLI_INFO[b].name} isn’t installed on this computer. To use it, install ${CLI_INFO[b].name} from ${CLI_INFO[b].company}, then choose it again and sign in to it here.`;
+
+/** The CLIs Phaethon runs with a setup of their own for the Phaethon folder, signed in to here. */
+type OwnHomeBackend = Exclude<CliBackend, "claude-cli">;
+const isOwnHome = (b: Backend): b is OwnHomeBackend => isCliBackend(b) && b !== "claude-cli";
+/** Each one's global instructions file, which its own setup here keeps out of every space. */
+const OWN_FILE: Record<OwnHomeBackend, string> = { "codex-cli": "AGENTS.md", "gemini-cli": "GEMINI.md" };
 
 /** OpenCode: looked for, not used yet. */
 const OPENCODE_URL = "https://opencode.ai";
@@ -84,6 +93,11 @@ const OPENCODE_URL = "https://opencode.ai";
 function cliStatusText(s: AgentCliStatus | undefined): string {
   if (!s) return "";
   if (!s.installed) return "Not installed on this computer.";
+  if (s.ownHome) {
+    if (s.loggedIn === true) return "Installed and signed in for this Phaethon folder.";
+    if (s.loggedIn === false) return "Installed, not signed in for this Phaethon folder yet.";
+    return "Installed. Phaethon can’t tell whether you’re signed in for this Phaethon folder until you sign in here or send a message.";
+  }
   if (s.loggedIn === true) return "Installed and signed in.";
   if (s.loggedIn === false) return `Installed, not signed in: run ${s.loginCommand} in a terminal.`;
   return s.id === "claude"
@@ -155,6 +169,11 @@ export function AgentSection({
     if (cliMissing) requestAnimationFrame(() => document.querySelector("[data-cli-missing]")?.scrollIntoView({ block: "nearest" }));
   }, [cliMissing]);
   const statusOf = (b: Backend) => (isCliBackend(b) ? clis?.find((c) => c.id === CLI_INFO[b].id) : undefined);
+  const refreshClis = () =>
+    agentClis().then(
+      (c) => setClis(c),
+      () => {},
+    );
   const opencode = clis?.find((c) => c.id === "opencode");
 
   function chooseBackend(v: string) {
@@ -309,6 +328,10 @@ export function AgentSection({
             )}
           </SettingGroup>
 
+          {isOwnHome(settings.backend) && statusOf(settings.backend)?.installed !== false && (
+            <CliSignInGroup key={settings.backend} backend={settings.backend} onSignedIn={refreshClis} />
+          )}
+
           {settings.backend === "phaethon" && <ProviderChoice settings={settings} act={act} />}
 
           {provider.id === "anthropic" || settings.backend !== "phaethon" ? (
@@ -344,6 +367,88 @@ export function AgentSection({
         </>
       )}
     </>
+  );
+}
+
+/**
+ * Signing in to Codex or Gemini CLI for this Phaethon folder's own setup, with the CLI's own sign-in in
+ * the browser. Keyboard: the sign-in button keeps focus while it waits (it says so, and can't be pressed
+ * twice); Stop signing in sits beside it and, as it goes, hands focus back to the sign-in button. The
+ * outcome is said through the status line and stays shown.
+ */
+function CliSignInGroup({ backend, onSignedIn }: { backend: OwnHomeBackend; onSignedIn: () => void }) {
+  const cli = CLI_INFO[backend];
+  const id = cli.id as "codex" | "gemini";
+  const { say } = useStatus();
+  const descId = useId();
+  const [waiting, setWaiting] = useState(false);
+  const [outcome, setOutcome] = useState<CliSignIn | null>(null);
+  const live = useRef(true);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const stopRef = useRef<HTMLButtonElement>(null);
+  useEffect(
+    () => () => {
+      live.current = false;
+    },
+    [],
+  );
+
+  async function start() {
+    if (waiting) return;
+    setWaiting(true);
+    setOutcome(null);
+    say(`Opening ${cli.name}’s sign-in in your browser. Come back here when you’ve signed in.`);
+    const out: CliSignIn = await signInCli(id).catch((e: unknown) => ({
+      status: "notSignedIn" as const,
+      message: `${cli.name} couldn’t start signing in: ${String(e)}`,
+    }));
+    if (!live.current) return;
+    // Stop signing in goes away with the wait: focus on it moves to the sign-in button.
+    if (document.activeElement === stopRef.current) startRef.current?.focus();
+    setWaiting(false);
+    setOutcome(out);
+    say(out.message);
+    if (out.status === "signedIn") onSignedIn();
+  }
+
+  return (
+    <SettingGroup title={`Signing in to ${cli.name}`}>
+      <div data-cli-sign-in={id} className="flex flex-col gap-3 px-4 py-3.5">
+        <p id={descId} className="text-sm text-ink-secondary">
+          Phaethon gives {cli.name} a setup of its own for this Phaethon folder, apart from the one in your home folder, so the{" "}
+          {OWN_FILE[backend]}, settings and hooks you made for {cli.name} yourself never reach your spaces. So you sign in to {cli.name} once
+          more here, with {cli.name}’s own sign-in in your browser. Phaethon never sees your password or what {cli.name} saves.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            ref={startRef}
+            type="button"
+            variant="outline"
+            data-cli-sign-in-start=""
+            aria-describedby={descId}
+            aria-disabled={waiting || undefined}
+            onClick={() => void start()}
+            className="aria-disabled:cursor-progress"
+          >
+            {waiting ? "Waiting for you to sign in in your browser…" : `Sign in to ${cli.name} for this Phaethon folder`}
+          </Button>
+          {waiting && (
+            <Button ref={stopRef} type="button" variant="ghost" data-cli-sign-in-stop="" onClick={() => void cancelCliSignIn(id).catch(() => false)}>
+              Stop signing in
+            </Button>
+          )}
+        </div>
+        {outcome && outcome.status !== "busy" && (
+          <p
+            data-cli-sign-in-outcome={outcome.status}
+            className={cn("flex items-start gap-2 text-sm", outcome.status === "signedIn" ? "text-ink" : "text-ink-secondary")}
+          >
+            <Icon name={outcome.status === "signedIn" ? "check" : outcome.status === "cancelled" ? "info" : "warning"} className="mt-0.5 shrink-0" />
+            <span className="min-w-0 wrap-anywhere">{outcome.message}</span>
+          </p>
+        )}
+      </div>
+    </SettingGroup>
   );
 }
 
@@ -987,14 +1092,21 @@ function SentDisclosure({ backend, provider }: { backend: Backend; provider: Pro
             <p className="text-base text-ink">
               {cli?.name} sends your messages, and the files it reads to answer, to {cli?.company} under {cli?.account}, with every message.
             </p>
-            <p data-cli-history="">
-              {cli?.name} also keeps its own copy of each conversation, usually in the hidden {cli?.folder} folder in your home folder. Deleting
-              a conversation in Phaethon doesn’t delete that copy.
-            </p>
-            {cli && cli.id !== "claude" && (
-              <p data-cli-own-setup="">
-                {cli.name} still reads its own instructions file ({cli.id === "codex" ? "AGENTS.md in .codex" : "GEMINI.md in .gemini"}) and
-                its own settings, so what you wrote there for it reaches every space. Phaethon can’t switch that off.
+            {isOwnHome(backend) && cli ? (
+              <>
+                <p data-cli-history="">
+                  {cli.name} also keeps its own copy of each conversation, in its setup for this Phaethon folder (in Phaethon’s own app data,
+                  not your home folder). Deleting a conversation in Phaethon doesn’t delete that copy.
+                </p>
+                <p data-cli-own-setup="">
+                  Your own {OWN_FILE[backend]} and {cli.name} settings and hooks in the {cli.folder} folder in your home folder aren’t sent and
+                  don’t run here: {cli.name} uses a setup of its own for this Phaethon folder.
+                </p>
+              </>
+            ) : (
+              <p data-cli-history="">
+                {cli?.name} also keeps its own copy of each conversation, usually in the hidden {cli?.folder} folder in your home folder.
+                Deleting a conversation in Phaethon doesn’t delete that copy.
               </p>
             )}
           </>

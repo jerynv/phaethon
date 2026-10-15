@@ -49,6 +49,8 @@
     "allow-cli-import-run",
     "allow-claude-cli-status",
     "allow-agent-clis-status",
+    "allow-agent-cli-sign-in",
+    "allow-agent-cli-sign-in-cancel",
     "allow-thread-clear",
     "allow-thread-forget",
     "allow-thread-forget-preview",

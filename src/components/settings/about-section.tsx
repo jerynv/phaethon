@@ -123,9 +123,11 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
               <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
             </p>
             <p className="max-w-(--ph-measure)" data-about-cli-history="">
-              {cliOf(settings?.backend)
-                ? `You use ${cliOf(settings?.backend)?.name}, which also keeps its own copy of each conversation, usually in the hidden ${cliOf(settings?.backend)?.folder} folder in your home folder.`
-                : "If you use Claude Code, Codex or Gemini CLI, it also keeps its own copy of each conversation, usually in its hidden folder in your home folder (.claude, .codex or .gemini)."}{" "}
+              {cliOf(settings?.backend)?.id === "claude"
+                ? "You use Claude Code, which also keeps its own copy of each conversation, usually in the hidden .claude folder in your home folder."
+                : cliOf(settings?.backend)
+                  ? `You use ${cliOf(settings?.backend)?.name}, which also keeps its own copy of each conversation, in its own setup for this Phaethon folder (in Phaethon’s own app data, not your home folder).`
+                  : "If you use Claude Code, Codex or Gemini CLI, it also keeps its own copy of each conversation: Claude Code usually in the hidden .claude folder in your home folder, Codex and Gemini CLI in a setup of their own for this Phaethon folder, in Phaethon’s own app data."}{" "}
               Phaethon doesn’t delete that copy.
             </p>
             <Details summary="Where the files are" className="max-w-(--ph-measure)">

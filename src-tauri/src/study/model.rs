@@ -299,10 +299,11 @@ impl Model for AnyModel {
     }
 }
 
-/// The setup folder `cli` uses in `vault` when the vault keeps its CLIs'
-/// setups apart (`isolateClaudeConfig`), under `root`; `None` otherwise.
+/// The setup folder `cli` uses in `vault`, under `root`: always for Codex and
+/// Gemini CLI (see [`agent::Cli::own_home`]), for Claude Code when the vault
+/// keeps its setup apart (`isolateClaudeConfig`); `None` otherwise.
 pub fn cli_config_dir(vault: &Vault, root: Option<&Path>, cli: agent::Cli) -> Option<PathBuf> {
-    if !vault.settings().isolate_claude_config {
+    if !cli.own_home() && !vault.settings().isolate_claude_config {
         return None;
     }
     let root = root?;

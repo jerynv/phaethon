@@ -14,11 +14,14 @@
 //! - Headless runs need a trusted folder, so the space is trusted for the run
 //!   (`GEMINI_CLI_TRUST_WORKSPACE`). A space with its own `.gemini` folder is
 //!   refused: trusted, its settings and `.env` would load.
-//! - What can't be switched off from outside: the person's global GEMINI.md
-//!   and their own settings.json (hooks included). Gemini CLI ignores a
-//!   settings file from Phaethon unless root owns it. The vault's isolated CLI
-//!   setting gives Gemini CLI a home of its own (`GEMINI_CLI_HOME`) instead,
-//!   which means signing in to it again there.
+//! - The person's global GEMINI.md and their own settings.json (hooks
+//!   included) can't be switched off from outside: GEMINI.md always loads
+//!   from the home's `.gemini` (`context.fileName` only adds names), and a
+//!   system settings file from Phaethon is ignored unless root owns it. So
+//!   Gemini CLI always runs with a home of its own for the vault
+//!   (`GEMINI_CLI_HOME`, agent.rs), where its settings, GEMINI.md, skills,
+//!   agents, sessions and sign-in live; the person signs in to it there from
+//!   Settings (sign_in.rs). Proven with the real binary in tests/cli_isolation.rs.
 //! - It has no flag to add to its system prompt (`GEMINI_SYSTEM_MD` replaces
 //!   it whole), so a tutor mode's instructions go before each message.
 //!
@@ -32,7 +35,7 @@ use serde_json::Value;
 use super::{AgentEvent, Outcome, place};
 
 pub const MISSING_CLI_MESSAGE: &str =
-    "Gemini CLI was not found. Install Gemini CLI, then run `gemini` once in a terminal to sign in.";
+    "Gemini CLI was not found. Install Gemini CLI, then sign in to it in Settings › Assistant.";
 
 /// Variables Gemini CLI sets for what it runs, or that would change how it
 /// starts: a parent session's marker, a replaced system prompt, another

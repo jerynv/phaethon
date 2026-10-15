@@ -178,9 +178,10 @@ function forProvider(r: Recovery, code: string | undefined, id: ProviderId, name
 
 /**
  * The recovery when a CLI other than Claude Code answers: its name in the
- * words, its own install and sign-in command. The core's own message (with,
- * for a separate setup in the vault, that setup's folder in the command) stays
- * under Details.
+ * words, how to install it, and signing in to it in Settings (Codex and Gemini
+ * CLI run with a setup of their own for the Phaethon folder, so signing in in
+ * a terminal would sign in the wrong one). The core's own message stays under
+ * Details.
  */
 function forCli(r: Recovery, code: string | undefined, cli: ReturnType<typeof cliOf>): Recovery {
   if (!cli || cli.id === "claude") return r;
@@ -190,8 +191,7 @@ function forCli(r: Recovery, code: string | undefined, cli: ReturnType<typeof cl
         title: `${cli.name} isn’t installed`,
         body: (
           <>
-            Install {cli.name}, then run <InlineCode text={`\`${cli.login}\``} /> once in a terminal to sign in and send again. Or choose
-            another assistant in Settings.
+            Install {cli.name}, then sign in to it in Settings › Assistant and send again. Or choose another assistant in Settings.
           </>
         ),
         actions: ["settings", "retry"],
@@ -199,13 +199,8 @@ function forCli(r: Recovery, code: string | undefined, cli: ReturnType<typeof cl
     case "notLoggedIn":
       return {
         title: `${cli.name} isn’t signed in`,
-        body: (
-          <>
-            Run <InlineCode text={`\`${cli.login}\``} /> once in a terminal and sign in, then send again. Or choose another assistant in
-            Settings.
-          </>
-        ),
-        actions: ["retry", "settings"],
+        body: `Sign in to ${cli.name} for this Phaethon folder in Settings › Assistant, then send again. Or choose another assistant there.`,
+        actions: ["settings", "retry"],
       };
     case "cli":
       return { title: `${cli.name} stopped with an error`, body: `Send your message again. If it keeps failing, the details say what ${cli.name} reported.`, actions: ["retry", "settings"] };

@@ -37,6 +37,8 @@ const showSidebar = async (page) => {
     await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
   }
 };
+/** The pointer off the sidebar, so its order (most recently used first) is no longer held and catches up. */
+const away = (page) => page.mouse.move(page.viewport().width - 8, page.viewport().height / 2);
 const choose = async (page, id) => {
   await showSidebar(page);
   await page.click(space(id));
@@ -93,8 +95,10 @@ export default [
   },
   {
     // S1: coming back to a space finds it where you left it (scroll position kept while hidden).
+    // The sidebar reorders (most recently used first) once the pointer leaves it, and in a small window at once (it
+    // closes on choosing): the panes must not reorder with it, as a moved pane lost its scroll position (200 -> 0).
     name: "s2-panes-scroll",
-    sizes: [[1100, 720]],
+    sizes: [[1100, 720], [640, 480]],
     themes: ["light"],
     mock: { threads: { school: LONG, work: WORK } },
     async run(page, h) {
@@ -105,8 +109,12 @@ export default [
       await h.idle();
       const before = await page.$eval(log, (l) => l.scrollTop);
       await choose(page, "work");
+      await away(page);
       await h.idle();
+      const order = await page.$$eval("#spaces-sidebar [data-space-id]", (els) => els.map((e) => e.getAttribute("data-space-id")).join());
+      check(order === "work,school", "the sidebar has moved Work, just used, to the top", order);
       await choose(page, "school");
+      await away(page);
       await h.idle();
       const after = await page.$eval(log, (l) => l.scrollTop);
       check(before > 0 && Math.abs(after - before) < 2, "School's conversation keeps its scroll position across a switch", `${before} -> ${after}`);
@@ -116,7 +124,7 @@ export default [
     // S1: with every visited space mounted, Cmd+N (and the palette's New conversation) must start a
     // new conversation in the space shown, never in another one visited earlier.
     name: "s2-cmd-n-target",
-    sizes: [[1100, 720]],
+    sizes: [[1100, 720], [640, 480]],
     themes: ["light"],
     mock: { threads: { school: SCHOOL, work: WORK } },
     async run(page, h) {
@@ -128,7 +136,10 @@ export default [
       await h.idle();
       let spaces = (await calls(page, "thread_new")).map((a) => a.space);
       check(spaces.join() === "work", "Cmd+N in Work starts a new conversation in Work only", JSON.stringify(spaces));
-      await chord(page, "1");
+      // Cmd+1…9 follow the order shown (most recently used first, held while the pointer is on the sidebar):
+      // School's own number, wherever it is now.
+      const at = await page.$$eval("#spaces-sidebar [data-space-id]", (els) => els.map((e) => e.getAttribute("data-space-id")).indexOf("school"));
+      await chord(page, String(at + 1));
       await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "School", { timeout: 3000 });
       await chord(page, "k");
       await page.waitForSelector("[data-palette-input]", { timeout: 3000 });

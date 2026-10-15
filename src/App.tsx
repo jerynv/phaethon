@@ -100,7 +100,9 @@ export default function App() {
   // A space that leaves the vault leaves this list too.
   const [visited, setVisited] = useState<readonly string[]>([]);
   if (shownId && !visited.includes(shownId)) setVisited([...visited, shownId]);
-  const mounted = spaces.filter((s) => visited.includes(s.id));
+  // In the order first visited, never the sidebar's (most recently used first, so it changes on every
+  // switch): reordering the panes would move their DOM nodes, and a moved node loses its scroll position.
+  const mounted = visited.map((id) => spaces.find((s) => s.id === id)).filter((s): s is (typeof spaces)[number] => !!s);
 
   // The active space's hue tints the whole window, dialogs included (they
   // render in a portal outside the app root), so it is set on <html>.

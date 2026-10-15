@@ -88,7 +88,8 @@ function BarButton({
           aria-label={text ? undefined : label}
           aria-keyshortcuts={keyshortcuts}
           onClick={onClick}
-          className="min-w-0 group-data-[inactive]/titlebar:text-ink-tertiary"
+          // Inactive, its words dim only as far as text may (secondary); the icon further (tertiary is for icons and large text).
+          className="min-w-0 group-data-[inactive]/titlebar:text-ink-secondary group-data-[inactive]/titlebar:[&_svg]:text-ink-tertiary"
           {...rest}
         >
           <Icon name={icon} />

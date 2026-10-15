@@ -928,7 +928,7 @@ pub fn prompt_section(visible: &Visible) -> Option<String> {
 Stay inside these when you advise the user what to study or explain course material: never teach, quiz or recommend a topic, term or notation the course hasn't covered, and never stretch an exam past its scope. \
 Cite the course's own words for every claim about what a course covers or teaches, as [source: courses/<folder>/<file> \"words copied exactly from that file\"] (the file's path as it is under courses/, for a PDF the PDF's own name). \
 Phaethon checks each citation against the file and shows the user whether it was found, so copy the words exactly and never cite what you haven't read. \
-Never write practice questions, a practice test or flashcards in the chat: offer them with a phaethon-study block, with \"exam\" set when they are for an exam.\n\n{}",
+For new practice questions, a practice test or flashcards, offer them with a phaethon-study block instead of writing them in chat. Reviewing existing quizzes in chat is allowed, including reproducing their original questions and answer choices and explaining completed attempts. For new material, use the block with \"exam\" set when they are for an exam.\n\n{}",
         super::COURSE_ONLY_CHAT,
         parts.join("\n\n")
     ))

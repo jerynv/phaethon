@@ -121,6 +121,15 @@ pub fn definitions() -> Value {
             "name": "app_guide",
             "description": "Where everything is in Phaethon, the app the user is talking to you in: spaces and their menus, adding files and folders, attaching files, the views, keyboard shortcuts and every section of Settings, by the names shown in the app. Call it before telling the user where something is or how to change a setting.",
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}
+        },
+        {
+            "name": "study_attempt",
+            "description": "Find completed quiz attempts in this space. Call with no path to list them, then call with an attempt path from that list to read the answers and results. Read the quiz itself with read_file using the quiz path in the attempt. This tool cannot read other hidden app state or another space.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "A quiz attempt path returned by this tool. Omit to list completed attempts."}},
+                "additionalProperties": false
+            }
         }
     ])
 }
@@ -136,6 +145,7 @@ pub enum Call {
     RequestAccess { space: String, path: String, reason: String },
     /// Where things are in the app (app_guide.rs).
     Guide,
+    StudyAttempt { path: String },
 }
 
 pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
@@ -149,6 +159,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
         "write_file" => &["path", "contents"],
         "request_access" => &["space", "path", "reason"],
         "app_guide" => &[],
+        "study_attempt" => &["path"],
         _ => return Err(format!("there is no tool named {name}")),
     };
     if let Some(k) = obj.keys().find(|k| !allowed.contains(&k.as_str())) {
@@ -180,6 +191,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
             reason: req("reason")?.chars().take(MAX_REASON).collect(),
         },
         "app_guide" => Call::Guide,
+        "study_attempt" => Call::StudyAttempt { path: opt("path")? },
         _ => {
             let path = req("path")?;
             if let Target::Other { space, .. } = target(&path) {
@@ -253,6 +265,8 @@ pub fn label(call: &Call) -> String {
             path.trim_end_matches('/')
         ),
         Call::Guide => "Looking up where things are in Phaethon".into(),
+        Call::StudyAttempt { path } if path.is_empty() => "Finding completed quizzes".into(),
+        Call::StudyAttempt { .. } => "Reading a completed quiz".into(),
     }
 }
 
@@ -300,6 +314,7 @@ pub fn run_in(ctx: &Ctx, call: &Call) -> Result<String, String> {
         },
         Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
         Call::Guide => Ok(crate::app_guide::guide()),
+        Call::StudyAttempt { path } => study_attempt(&ctx.space, path),
     }
 }
 
@@ -344,7 +359,21 @@ pub fn run(space: &Path, call: &Call) -> Result<String, String> {
         Call::Write { path, contents } => write(space, path, contents),
         Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
         Call::Guide => Ok(crate::app_guide::guide()),
+        Call::StudyAttempt { path } => study_attempt(space, path),
     }
+}
+
+fn study_attempt(space: &Path, path: &str) -> Result<String, String> {
+    if path.is_empty() {
+        let mut attempts = crate::study::attempts(space);
+        attempts.sort_by_key(|a| std::cmp::Reverse(a.taken));
+        let list: Vec<_> = attempts.into_iter().take(100).map(|a| json!({
+            "path": a.path, "quiz": a.quiz, "taken": a.taken, "score": a.score
+        })).collect();
+        return serde_json::to_string(&list).map_err(|e| e.to_string());
+    }
+    let attempt = crate::study::load_attempt(space, path)?;
+    serde_json::to_string(&attempt).map_err(|e| e.to_string())
 }
 
 /// The lexical check every path gets: relative, no `..`, not under `.phaethon/`.
@@ -691,6 +720,34 @@ mod tests {
         assert!(!run(&s, &Call::Search { query: "secret".into(), path: String::new() }).unwrap().contains(".phaethon"));
         run(&s, &Call::Write { path: "drafts/b.md".into(), contents: "new".into() }).unwrap();
         assert_eq!(fs::read_to_string(s.join("drafts/b.md")).unwrap(), "new");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn completed_quiz_can_be_reviewed_without_exposing_other_state() {
+        let dir = space("study-attempt");
+        let s = dir.join("space");
+        let path = ".phaethon/study/attempts/Practice-42.json";
+        fs::create_dir_all(s.join(".phaethon/study/attempts")).unwrap();
+        fs::write(s.join(path), json!({
+            "path": path,
+            "quiz": "study/quizzes/Practice.json",
+            "taken": 42,
+            "score": 0.0,
+            "results": [{
+                "id": "q1", "correct": false, "given": "B", "expected": "A",
+                "feedback": "A follows from the course notes."
+            }]
+        }).to_string()).unwrap();
+
+        let listed: Value = serde_json::from_str(&run(&s, &Call::StudyAttempt { path: String::new() }).unwrap()).unwrap();
+        assert_eq!(listed, json!([{"path": path, "quiz": "study/quizzes/Practice.json", "taken": 42, "score": 0.0}]));
+        let result: Value = serde_json::from_str(&run(&s, &Call::StudyAttempt { path: path.into() }).unwrap()).unwrap();
+        assert_eq!(result["results"][0]["given"], "B");
+        assert_eq!(result["results"][0]["expected"], "A");
+        assert!(run(&s, &Call::StudyAttempt { path: ".phaethon/session".into() }).is_err());
+        assert!(run(&s, &Call::Read { path: path.into() }).is_err());
+        assert!(parse_call("study_attempt", &json!({"path": path, "other": true})).is_err());
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -352,7 +352,7 @@ fn cards_of(path: &str, d: &Deck, states: Option<&BTreeMap<String, schedule::Car
         .collect()
 }
 
-fn attempts(space: &Path) -> Vec<Attempt> {
+pub(crate) fn attempts(space: &Path) -> Vec<Attempt> {
     list(space, Item::Attempt).iter().filter_map(|n| load_attempt(space, &format!("{ATTEMPTS}/{n}")).ok()).collect()
 }
 

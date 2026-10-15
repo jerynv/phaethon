@@ -58,6 +58,8 @@
     "allow-space-touch",
     "allow-space-show",
     "allow-space-add",
+    "allow-full-access-list",
+    "allow-full-access-set",
     "allow-space-export",
     "allow-export-show",
     "allow-conversations-search",

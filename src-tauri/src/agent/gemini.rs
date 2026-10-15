@@ -132,6 +132,30 @@ pub fn cli_args(policy: &Path, add_dirs: &[PathBuf], model: Option<&str>, resume
     args
 }
 
+/// One turn in a space with full access (full_access.rs): every tool without
+/// asking (`--approval-mode yolo`), no policy file, and the person's home in
+/// the workspace so its file tools reach past the space. Still no extensions
+/// or MCP servers, and the vault's own Gemini home as always.
+pub fn cli_args_full(home: Option<&Path>, model: Option<&str>, resume: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = ["--output-format", "stream-json", "--approval-mode", "yolo", "--extensions", "none", "--allowed-mcp-server-names", NO_MCP]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    if let Some(m) = model {
+        args.push("--model".into());
+        args.push(m.into());
+    }
+    if let Some(h) = home.map(|h| h.to_string_lossy()).filter(|h| !h.contains(',')) {
+        args.push("--include-directories".into());
+        args.push(h.into_owned());
+    }
+    if let Some(id) = resume {
+        args.push("--resume".into());
+        args.push(id.into());
+    }
+    args
+}
+
 /// What Gemini CLI is asked: the tutor mode's instructions first (it has no
 /// way to add them to its system prompt), then the message. A message starting
 /// with `/` would be read as one of its commands, so it gets a leading space.
@@ -259,6 +283,16 @@ mod tests {
     }
 
     /// Shapes from gemini-cli 0.63 `--output-format stream-json`.
+    #[test]
+    fn full_access_asks_nothing_and_loads_no_policy() {
+        let a = cli_args_full(Some(Path::new("/Users/p")), Some("gemini-2.5-pro"), Some("abc"));
+        let has = |w: &[&str]| a.windows(w.len()).any(|x| x == w);
+        assert!(has(&["--approval-mode", "yolo"]) && has(&["--extensions", "none"]) && has(&["--allowed-mcp-server-names", NO_MCP]));
+        assert!(has(&["--include-directories", "/Users/p"]) && has(&["--model", "gemini-2.5-pro"]));
+        assert!(!a.iter().any(|x| x.contains("policy") || x == "plan"), "{a:?}");
+        assert_eq!(a[a.len() - 2..], ["--resume", "abc"]);
+    }
+
     #[test]
     fn a_turn_streams_text_tools_and_the_session() {
         let (evs, out) = feed_all(&[

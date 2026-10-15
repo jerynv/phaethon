@@ -299,6 +299,9 @@ pub struct TurnRequest<'a> {
     pub add_dirs: Vec<(String, PathBuf)>,
     /// The space's own model for this CLI (`-m`, `--model`); its default when `None`.
     pub model: Option<String>,
+    /// The person turned full access on for this space (full_access.rs): the
+    /// CLI runs with no walls.
+    pub full_access: bool,
 }
 
 /// Whether a CLI is installed, for Settings and the setup card to check
@@ -635,6 +638,9 @@ impl Parser {
     }
 }
 
+/// Told to a CLI in a space with full access, so it says plainly what it did.
+const FULL_ACCESS_NOTE: &str = "# Full access\n\nThe user turned on full access for this space: you may read and change files anywhere on this computer, run any command and use the internet, without asking. Do only what the user asked, and say in your reply exactly which files you changed or created (full paths) and which commands you ran that changed anything.";
+
 /// The arguments and stdin for one run of `cli`, or why it can't run.
 fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>, prompt: &str) -> Result<(Vec<String>, String), String> {
     let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
@@ -653,16 +659,19 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
     let mode = crate::rich_output::with_instructions(mode); // what the chat can show, before the tutor mode
     // How to offer a quiz or flashcards from the chat, before the tutor mode (which shapes every answer).
     let mode = Some(crate::study::chat::with_prompt(mode.as_deref()));
+    let mode = if req.full_access { mode.map(|m| format!("{FULL_ACCESS_NOTE}\n\n{m}")) } else { mode };
     Ok(match cli {
         Cli::Claude => {
-            let mut args = cli_args(resume, &dirs);
+            let mut args = if req.full_access { claude::cli_args_full(resume) } else { cli_args(resume, &dirs) };
             // The space's own model for Claude Code (an alias its help gives, or a full name).
             args.extend(model.iter().flat_map(|m| ["--model".to_string(), m.to_string()]));
             // The study block, what the chat can show and the tutor mode, appended to Claude Code's own system prompt.
             args.extend(mode.iter().flat_map(|m| ["--append-system-prompt".to_string(), m.clone()]));
             (args, prompt.to_string())
         }
+        Cli::Codex if req.full_access => (codex::cli_args_full(req.space_dir, model, mode.as_deref(), resume), prompt.to_string()),
         Cli::Codex => (codex::cli_args(req.space_dir, bin, &dirs, model, mode.as_deref(), resume), prompt.to_string()),
+        Cli::Gemini if req.full_access => (gemini::cli_args_full(vault::home_dir().as_deref(), model, resume), gemini::prompt(mode.as_deref(), prompt)),
         Cli::Gemini => {
             let policy = gemini::policy_file(false).map_err(|e| format!("Phaethon couldn’t prepare Gemini CLI’s read-only rules: {e}"))?;
             (gemini::cli_args(&policy, &dirs, model, resume), gemini::prompt(mode.as_deref(), prompt))

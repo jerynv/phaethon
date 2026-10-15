@@ -6,6 +6,7 @@ pub mod attachments;
 pub mod cli_import;
 pub mod continuation;
 pub mod export;
+pub mod full_access;
 pub mod grants;
 pub mod latex;
 pub mod lms;
@@ -70,6 +71,8 @@ struct AppState {
     /// The last file Export wrote, for its Show in Finder. Kept here so the
     /// webview never names a path outside a space.
     last_export: std::sync::Mutex<Option<std::path::PathBuf>>,
+    /// Which spaces have full access (full_access.rs), on this computer only.
+    full_access_file: Option<std::path::PathBuf>,
 }
 
 /// Send one message to the agent in `space` and stream the reply over `on_event`.
@@ -178,6 +181,7 @@ async fn agent_send(
                 // Granted folders of other spaces, and the courses this space sees in full.
                 add_dirs: grants::cli_dirs(&state.vault, &space).into_iter().chain(lms::access::visible(&state.vault, &space).cli_dirs()).collect(),
                 model: space_model::get_cli(&space_dir, cli.id()),
+                full_access: full_access::is_on(state.full_access_file.as_deref(), state.vault.root(), &space),
             };
             agent::run_cli_turn(&state.runs, &space, cli, req, emit).await;
         }
@@ -297,6 +301,45 @@ fn space_touch(state: State<'_, AppState>, id: String) -> Result<(), String> {
 fn space_show(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let dir = state.vault.space_dir(&id).map_err(|_| "That space isn’t in your Phaethon folder any more.".to_string())?;
     open::show_space(&dir)
+}
+
+/// The spaces with full access (full_access.rs).
+#[tauri::command]
+fn full_access_list(state: State<'_, AppState>) -> Vec<String> {
+    full_access::list(state.full_access_file.as_deref(), state.vault.root())
+}
+
+/// Turn full access on or off for a space. Turning it on asks in a dialog of
+/// the system's own, which the webview can't answer for the person; whether
+/// it is on afterwards is returned.
+#[tauri::command]
+async fn full_access_set(app: tauri::AppHandle, state: State<'_, AppState>, id: String, on: bool) -> Result<bool, String> {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let space = spaces::get(&state.vault, &id)?;
+    let file = state.full_access_file.as_deref();
+    if on && !full_access::is_on(file, state.vault.root(), &id) {
+        let mut dialog = app
+            .dialog()
+            .message(format!(
+                "The assistant in {} will be able to read, change and delete any file on this Mac that you can, run any command and use the internet, without asking you first. Your other spaces’ walls won’t stop it.\n\nThis is for Claude Code, Codex and Gemini CLI. It stays on, on this Mac only, until you turn it off.",
+                space.name
+            ))
+            .title(format!("Give {} full access?", space.name))
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom("Turn On Full Access".into(), "Cancel".into()));
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.parent(&window);
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        dialog.show(move |yes| {
+            let _ = tx.send(yes);
+        });
+        if !rx.await.unwrap_or(false) {
+            return Ok(false);
+        }
+    }
+    full_access::set(file, state.vault.root(), &id, on)?;
+    Ok(on)
 }
 
 #[derive(serde::Serialize)]
@@ -1101,6 +1144,7 @@ pub fn run() {
                 approvals: Approvals::default(),
                 isolated_config_root,
                 last_export: Default::default(),
+                full_access_file: app.path().app_data_dir().ok().map(|d| d.join("full-access.json")),
             });
             // The app's window, from tauri.conf.json, with Object.prototype frozen before
             // any of its scripts run. Done here rather than with freezePrototype, which
@@ -1117,6 +1161,8 @@ pub fn run() {
             agent_send,
             agent_cancel,
             space_add,
+            full_access_list,
+            full_access_set,
             agent_cli_sign_in,
             agent_cli_sign_in_cancel,
             agent_cli_models,

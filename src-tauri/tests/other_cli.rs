@@ -187,6 +187,7 @@ impl Fixture {
                 config_dir: Some(self.home()),
                 add_dirs,
                 model: space_model::get_cli(&self.dir, self.cli.id()),
+                full_access: false,
             },
             |e| events.push(e),
         ));

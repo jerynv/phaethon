@@ -29,6 +29,7 @@ fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
             config_dir: None,
             add_dirs: vec![],
             model: None,
+            full_access: false,
         },
         |e| {
             eprintln!("event: {e:?}");
@@ -117,6 +118,7 @@ fn cancel_kills_the_child_and_its_group() {
             config_dir: None,
             add_dirs: vec![],
             model: None,
+            full_access: false,
         },
         |e| events.push(e),
     ));

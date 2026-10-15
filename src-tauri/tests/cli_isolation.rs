@@ -30,6 +30,8 @@ const SKILL_MARKER: &str = "PERSON-SKILL-5512";
 struct FakeModel {
     port: u16,
     log: Arc<Mutex<Vec<(String, String)>>>,
+    /// Output items the Responses API gives first, one per request, before "ok".
+    script: Arc<Mutex<std::collections::VecDeque<String>>>,
 }
 
 impl FakeModel {
@@ -37,10 +39,11 @@ impl FakeModel {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let log = Arc::new(Mutex::new(vec![]));
-        let l = log.clone();
+        let script = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+        let (l, sc) = (log.clone(), script.clone());
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
-                let l = l.clone();
+                let (l, sc) = (l.clone(), sc.clone());
                 std::thread::spawn(move || {
                     let mut r = BufReader::new(stream.try_clone().unwrap());
                     let mut first = String::new();
@@ -62,9 +65,13 @@ impl FakeModel {
                     let _ = r.read_exact(&mut body);
                     l.lock().unwrap().push((path.clone(), String::from_utf8_lossy(&body).into_owned()));
                     let (kind, out) = if path.contains("responses") {
+                        let item = sc.lock().unwrap().pop_front().unwrap_or_else(|| {
+                            r#"{"type":"message","role":"assistant","id":"m1","content":[{"type":"output_text","text":"ok"}]}"#.to_string()
+                        });
+                        let done = format!(r#"{{"type":"response.output_item.done","item":{item}}}"#);
                         let evs = [
                             r#"{"type":"response.created","response":{"id":"resp_1"}}"#,
-                            r#"{"type":"response.output_item.done","item":{"type":"message","role":"assistant","id":"m1","content":[{"type":"output_text","text":"ok"}]}}"#,
+                            done.as_str(),
                             r#"{"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":1,"input_tokens_details":null,"output_tokens":1,"output_tokens_details":null,"total_tokens":2}}}"#,
                         ];
                         let sse: String = evs
@@ -81,7 +88,7 @@ impl FakeModel {
                 });
             }
         });
-        FakeModel { port, log }
+        FakeModel { port, log, script }
     }
     fn take(&self) -> Vec<(String, String)> {
         std::mem::take(&mut *self.log.lock().unwrap())
@@ -273,5 +280,52 @@ fn gemini_never_loads_the_persons_instructions_settings_or_hooks_and_signs_in_th
     let chosen: serde_json::Value = serde_json::from_str(&fs::read_to_string(fresh.join(".gemini/settings.json")).unwrap()).unwrap();
     assert_eq!(chosen["security"]["auth"]["selectedType"], "oauth-personal");
     assert!(server.take().is_empty(), "nothing was sent to the model");
+    fs::remove_dir_all(&root).unwrap();
+}
+
+/// Full access (full_access.rs), as Phaethon runs Codex with it: a command the
+/// model asks for writes outside the space and reaches the network. The same
+/// command in a walled space writes nothing outside it.
+#[test]
+#[ignore = "runs the real codex against a fake model server"]
+fn codex_with_full_access_writes_outside_the_space_and_walled_does_not() {
+    let bin = codex::find_codex().expect("codex is installed");
+    let root = root("codex-full");
+    let space = root.join("space");
+    let outside = root.join("person/Documents");
+    fs::create_dir_all(&outside).unwrap();
+    let server = FakeModel::start();
+    let provider = format!("model_providers.fake={{name=\"fake\",base_url=\"http://127.0.0.1:{}/v1\",wire_api=\"responses\"}}", server.port);
+    let turn = |args: Vec<String>, target: &Path| {
+        // The model asks to run one command, then says "ok".
+        let cmd_line = format!("touch '{}' && curl -s -o /dev/null http://127.0.0.1:{}/net-check", target.display(), server.port);
+        // codex-cli 0.162 offers one JavaScript tool, `exec`, with the shell as `tools.exec_command` inside it.
+        let js = format!("const r = await tools.exec_command({{cmd: {}}}); text(JSON.stringify(r));", serde_json::to_string(&cmd_line).unwrap());
+        let call = serde_json::json!({"type": "custom_tool_call", "id": "ct_1", "call_id": "call_1", "name": "exec", "input": js});
+        server.script.lock().unwrap().push_back(call.to_string());
+        let mut cmd = agent::command(Cli::Codex, &bin, &space, Some(&root.join("homes/default-codex")));
+        cmd.env("HOME", root.join("person"));
+        let mut args = args;
+        args.splice(1..1, ["-c".to_string(), "model_provider=\"fake\"".into(), "-c".into(), provider.clone()]);
+        cmd.args(args);
+        let out = run(cmd, "make the file");
+        let said = String::from_utf8_lossy(&out.stdout).into_owned();
+        let sent = server.take();
+        (said, sent)
+    };
+
+    let walled_target = outside.join("walled.txt");
+    let (said, sent) = turn(codex::cli_args(&space, &bin, &[], None, None, None), &walled_target);
+    assert!(said.contains("\"turn.completed\""), "the walled turn ran: {said}");
+    // The command ran and was refused: what it said went back to the model.
+    assert!(sent.iter().any(|(_, b)| b.contains("Operation not permitted")), "the command was tried and refused");
+    assert!(!walled_target.exists(), "walled: nothing written outside the space");
+    assert!(!sent.iter().any(|(p, _)| p.contains("net-check")), "walled: no network");
+
+    let full_target = outside.join("full.txt");
+    let (said, sent) = turn(codex::cli_args_full(&space, None, None, None), &full_target);
+    assert!(said.contains("\"turn.completed\""), "the full-access turn ran: {said}");
+    assert!(full_target.exists(), "full access: written outside the space: {said}");
+    assert!(sent.iter().any(|(p, _)| p.contains("net-check")), "full access: the network is reachable");
     fs::remove_dir_all(&root).unwrap();
 }

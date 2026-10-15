@@ -40,7 +40,7 @@ Use this to tell the user exactly where a control is, by its name as it appears.
   - Assistant: which assistant answers (Phaethon's own assistant, with a provider such as Anthropic, OpenAI, OpenRouter, Groq, or Ollama and LM Studio on this computer; or Claude Code, Codex or Gemini CLI on this computer, signed in there), the provider's API key and the default model.
   - Appearance: theme (light, dark or the computer's), colour, and layout (density, roundness, sidebar width).
   - Accessibility: increase contrast, reading font (Atkinson Hyperlegible, OpenDyslexic, Lexend, the system font), text size with line, letter and word spacing, larger click targets, reduce motion, wide reading.
-  - Spaces: each space's name, description and colour; which other spaces it may read (read-only, and removable) and which courses it sees.
+  - Spaces: each space's name, description and colour; which other spaces it may read (read-only, and removable) and which courses it sees; and Full access (Give full access…), which lets Claude Code, Codex or Gemini CLI in that space read and change anything on this Mac and use the internet without asking, on this Mac only, after a warning. While it's on, a banner above the message box says so, with Turn off.
   - Course sites: connect Canvas, Brightspace, Moodle or Blackboard; who can see each course.
   - About: the version, the licence, where the Phaethon folder is, and updates.
 - Another space's files can't be read by default; the user can give read-only access when asked, and remove it in Settings › Spaces.";

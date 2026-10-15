@@ -154,7 +154,7 @@ function useLiftOverComposer(open: boolean, ref: RefObject<HTMLElement | null>) 
   useLayoutEffect(() => {
     if (!open) return setLift(0);
     const measure = () => {
-      const box = [...document.querySelectorAll<HTMLElement>("[data-composer]")].find(canFocus);
+      const box = [...document.querySelectorAll<HTMLElement>("[data-composer-wrap]")].find(canFocus);
       const notice = ref.current;
       if (!box || !notice) return setLift(0);
       const b = box.getBoundingClientRect();
@@ -164,7 +164,7 @@ function useLiftOverComposer(open: boolean, ref: RefObject<HTMLElement | null>) 
     };
     measure();
     const ro = new ResizeObserver(measure);
-    document.querySelectorAll("[data-composer]").forEach((el) => ro.observe(el));
+    document.querySelectorAll("[data-composer-wrap]").forEach((el) => ro.observe(el));
     window.addEventListener("resize", measure);
     return () => {
       ro.disconnect();

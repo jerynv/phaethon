@@ -21,6 +21,7 @@ fn missing_binary_reports_install_hint() {
             config_dir: None,
             add_dirs: vec![],
             model: None,
+            full_access: false,
         },
         |e| events.push(e),
     ));
@@ -46,7 +47,7 @@ fn missing_codex_or_gemini_names_that_cli() {
                 &Runs::default(),
                 "school",
                 cli,
-                TurnRequest { space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir, add_dirs: vec![], model: None },
+                TurnRequest { space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir, add_dirs: vec![], model: None, full_access: false },
                 |e| events.push(e),
             ));
             events

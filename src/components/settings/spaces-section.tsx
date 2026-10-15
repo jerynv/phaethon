@@ -7,6 +7,7 @@ import { Details } from "@/components/ui/details";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import { getSettings } from "@/lib/backend";
+import { setFullAccess, useFullAccess } from "@/lib/full-access";
 import { grantDate, grantLabel, grantNoun, scheduleRevoke, spaceInfo, undoRevoke, useGrants, usePendingRevokes } from "@/lib/grants";
 import { SPACE_DESCRIPTION_MAX, SPACE_NAME_MAX, updateSpace, useSpaces, type Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
@@ -174,6 +175,7 @@ function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: 
   const { pending, revoked } = usePendingRevokes();
   const { say, fail } = useStatus();
   const courses = useSpaceCourses(space.id);
+  const fullAccess = useFullAccess(space.id);
   const [open, setOpen] = useState(editRequest > 0);
   useEffect(() => {
     if (editRequest > 0) setOpen(true);
@@ -347,6 +349,12 @@ function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: 
               {summary}
             </p>
           )}
+          {fullAccess && (
+            <p data-space-full-access="" className="flex items-start gap-1.5 text-sm font-medium text-warning-ink">
+              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
+              Full access: can read and change anything on this Mac
+            </p>
+          )}
           {!open && notes.length > 0 && (
             <p data-space-notes="" className="flex items-start gap-1.5 text-sm text-warning-ink">
               <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
@@ -422,8 +430,58 @@ function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: 
             ))}
           <SpaceCourses space={space} view={courses} />
         </div>
+        <FullAccess space={space} on={fullAccess} />
       </div>
     </li>
+  );
+}
+
+/**
+ * Full access for one space (src/lib/full-access.ts): off, a button that asks
+ * the core, which warns in a dialog of the system's own before turning it on;
+ * on, what it means and Turn off. Focus stays on the one button, whose words
+ * change, and the change is said in the Settings status region.
+ */
+function FullAccess({ space, on }: { space: Space; on: boolean }) {
+  const { say, fail } = useStatus();
+  const [busy, setBusy] = useState(false);
+  const descId = useId();
+  async function toggle() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const now = await setFullAccess(space.id, !on);
+      if (now) say(`Full access is on for ${space.name}. The assistant there can read and change anything on this Mac and use the internet, without asking.`);
+      else if (on) say(`Full access is off for ${space.name}. Its assistant can only read ${space.name} again.`);
+      else say(`Full access stays off for ${space.name}.`);
+    } catch (e) {
+      fail(`Full access for ${space.name} couldn’t be changed: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div data-full-access={space.id} className="flex flex-col items-start gap-2 border-t border-line pt-3">
+      <h6 className="text-sm font-medium text-ink">Full access</h6>
+      <p id={descId} className={cn("text-sm", on ? "text-warning-ink" : "text-ink-secondary")}>
+        {on
+          ? `On, on this Mac only. The assistant in ${space.name} can read, change and delete any file you can, run any command and use the internet, without asking. Your other spaces’ walls don’t stop it.`
+          : `Off. The assistant in ${space.name} can only read its own files and what you share with it. Full access lets it change anything on this Mac and use the internet, without asking. For Claude Code, Codex and Gemini CLI; Phaethon’s own assistant still asks before saving.`}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-full-access-toggle={on ? "off" : "on"}
+        aria-describedby={descId}
+        aria-disabled={busy || undefined}
+        onClick={() => void toggle()}
+        className="min-h-(--ph-target-min)"
+      >
+        <Icon name={on ? "lock" : "warning"} />
+        {on ? "Turn off full access" : "Give full access…"}
+      </Button>
+    </div>
   );
 }
 

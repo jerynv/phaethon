@@ -95,6 +95,33 @@ pub fn cli_args(resume: Option<&str>, add_dirs: &[PathBuf]) -> Vec<String> {
     args
 }
 
+/// One turn in a space with full access (full_access.rs): every tool, no
+/// permission checks, files anywhere, the network on. Still none of the
+/// person's own setup: no MCP servers of theirs, CLAUDE.md, plugins, hooks,
+/// custom agents or slash commands.
+pub fn cli_args_full(resume: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--dangerously-skip-permissions",
+        "--strict-mcp-config",
+        "--no-chrome",
+        "--safe-mode",
+        "--disable-slash-commands",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    if let Some(id) = resume {
+        args.push("--resume".into());
+        args.push(id.into());
+    }
+    args
+}
+
 pub(super) fn not_logged_in(s: &str) -> bool {
     s.contains("Not logged in") || s.contains("/login")
 }
@@ -233,6 +260,16 @@ mod tests {
         let mut p = StreamParser::new(Path::new("/vault/spaces/school"));
         let evs = lines.iter().flat_map(|l| p.feed(l)).collect();
         (evs, p.finish())
+    }
+
+    #[test]
+    fn full_access_has_no_walls_but_none_of_the_persons_setup() {
+        let a = cli_args_full(Some("abc"));
+        for flag in ["--dangerously-skip-permissions", "--strict-mcp-config", "--safe-mode", "--disable-slash-commands", "--no-chrome"] {
+            assert!(a.iter().any(|x| x == flag), "missing {flag}");
+        }
+        assert!(!a.iter().any(|x| x == "--tools" || x == "--allowedTools" || x == "--restricted" || x == "dontAsk"), "{a:?}");
+        assert_eq!(a[a.len() - 2..], ["--resume", "abc"]);
     }
 
     #[test]

@@ -20,6 +20,7 @@ import {
 } from "@/runtime/attachments";
 
 import { useAnnounce } from "./announce";
+import { FullAccessBanner } from "./full-access-banner";
 import { AttachmentFold, ComposerAttachments, useAttachmentTray } from "./attachments";
 import { jumpKeyLabel } from "./card-arrival";
 import { ModelPicker } from "./model-picker";
@@ -314,6 +315,7 @@ export function Composer({
     // Never more than about 40% of the window: what is inside (problems, files, the text) gives
     // way first, each scrolling in its own box, so the conversation always keeps the rest.
     <div className="mx-auto flex max-h-[40dvh] w-full max-w-(--ph-thread-width) flex-col px-6 pt-2 pb-4" data-composer-wrap="">
+      <FullAccessBanner space={spaceId} onOff={() => inputRef.current?.focus()} />
       <AttachProblems problems={problems} onDismiss={clearProblems} />
       <ComposerPrimitive.Root
         aria-label="Message composer"

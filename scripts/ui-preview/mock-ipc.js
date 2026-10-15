@@ -233,6 +233,20 @@
           if (M.addResult === null) return null;
           return M.addResult ?? (args.folder ? { paths: ["files/Scool"], files: 34, skipped: 2 } : { paths: ["files/Resume.pdf"], files: 1, skipped: 0 });
         }
+        // Contract (src-tauri/src/lib.rs full_access_set): turning on asks in the system's own dialog;
+        // { fullAccessDeclined: true } is that dialog cancelled. Returns whether it is on afterwards.
+        case "full_access_list":
+          return [...(M.fullAccess ?? [])];
+        case "full_access_set": {
+          if (!M.spaces.some((s) => s.id === args.id)) throw "That space isn’t in your Phaethon folder any more.";
+          (M.fullAccessCalls ??= []).push({ id: args.id, on: args.on });
+          const now = args.on && !M.fullAccessDeclined;
+          const set = new Set(M.fullAccess ?? []);
+          if (now) set.add(args.id);
+          else if (!args.on) set.delete(args.id);
+          M.fullAccess = [...set];
+          return set.has(args.id);
+        }
         case "export_show":
           if (!M.exported) throw "There’s no export to show yet.";
           return;

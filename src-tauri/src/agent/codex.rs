@@ -124,7 +124,37 @@ pub fn cli_args(space_dir: &Path, bin: &Path, add_dirs: &[PathBuf], model: Optio
     let mut readable = vec![space_dir.to_path_buf()];
     readable.extend(add_dirs.iter().cloned());
     readable.extend(own_dirs(bin));
-    let mut args = base_args(space_dir, &readable, model);
+    turn_tail(base_args(space_dir, &readable, model), mode, resume)
+}
+
+/// One turn in a space with full access (full_access.rs): no sandbox, no
+/// approvals, the network on, starting in the space. Still none of the
+/// person's own Codex setup (config, rules, hooks, project instructions,
+/// skills, plugins): Codex runs with the vault's home, as always.
+pub fn cli_args_full(space_dir: &Path, model: Option<&str>, mode: Option<&str>, resume: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = ["exec", "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "--dangerously-bypass-approvals-and-sandbox"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    args.push("--cd".into());
+    args.push(space_dir.to_string_lossy().into_owned());
+    if let Some(m) = model {
+        args.push("-m".into());
+        args.push(m.into());
+    }
+    for c in ["project_doc_max_bytes=0", "skills.include_instructions=false", "skills.bundled.enabled=false"] {
+        args.push("-c".into());
+        args.push(c.into());
+    }
+    for f in DISABLED_FEATURES {
+        args.push("--disable".into());
+        args.push((*f).into());
+    }
+    turn_tail(args, mode, resume)
+}
+
+/// The tutor mode's instructions, then `resume <id>` and `-` (the prompt on stdin), after every option.
+fn turn_tail(mut args: Vec<String>, mode: Option<&str>, resume: Option<&str>) -> Vec<String> {
     if let Some(m) = mode {
         args.push("-c".into());
         args.push(format!("developer_instructions={}", toml_str(m)));
@@ -316,6 +346,24 @@ mod tests {
         let fresh = cli_args(Path::new(SPACE), bin, &[], None, None, None);
         assert_eq!(fresh.last().map(String::as_str), Some("-"));
         assert!(!fresh.iter().any(|x| x == "resume" || x == "-m" || x.starts_with("developer_instructions")));
+    }
+
+    #[test]
+    fn full_access_has_no_walls_but_none_of_the_persons_setup() {
+        let a = cli_args_full(Path::new(SPACE), Some("gpt-5.5"), Some("Be brief."), Some("01a1"));
+        let has = |w: &[&str]| a.windows(w.len()).any(|x| x == w);
+        assert!(has(&["--cd", SPACE]) && has(&["-m", "gpt-5.5"]) && a.iter().any(|x| x == "--dangerously-bypass-approvals-and-sandbox"));
+        for flag in ["--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules"] {
+            assert!(a.iter().any(|x| x == flag), "missing {flag}");
+        }
+        assert!(has(&["-c", "project_doc_max_bytes=0"]) && has(&["-c", "skills.include_instructions=false"]));
+        for f in DISABLED_FEATURES {
+            assert!(has(&["--disable", f]), "{f} stays off");
+        }
+        // No profile or sandbox mode to fight the bypass, and the network isn't switched off.
+        assert!(!a.iter().any(|x| x.starts_with("permissions.") || x.starts_with("default_permissions") || x == "--sandbox" || x.contains("web_search") || x.contains("approval_policy")));
+        assert_eq!(a[a.len() - 3..], ["resume", "01a1", "-"]);
+        assert!(a.iter().any(|x| x == "developer_instructions=\"Be brief.\""));
     }
 
     #[test]

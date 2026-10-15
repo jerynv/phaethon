@@ -81,7 +81,7 @@ impl Fixture {
         tauri::async_runtime::block_on(agent::run_turn(
             &self.runs,
             "school",
-            TurnRequest { space_dir: &self.dir, prompt, attachments: files, replace_from, config_dir: None, add_dirs: vec![], model: None },
+            TurnRequest { space_dir: &self.dir, prompt, attachments: files, replace_from, config_dir: None, add_dirs: vec![], model: None, full_access: false },
             |e| events.push(e),
         ));
         assert!(matches!(events.last(), Some(AgentEvent::End { .. })), "{events:?}");

@@ -53,6 +53,7 @@ import { MessageTime } from "./message-time";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
 import { RecordPart, announcesRecord, recordText } from "./receipts";
 import { CHAT_ACTION_LANGUAGES } from "./chat-actions";
+import { useFullAccess } from "@/lib/full-access";
 import { STUDY_ACTION_LANGUAGES } from "./study-action";
 
 const Nothing = () => null;
@@ -608,6 +609,7 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
   const { state } = useGrants(spaceId);
   const reads = standingReads(state, cli);
   const cliName = cliOf(useModels().backend)?.name ?? "Claude Code";
+  const full = useFullAccess(spaceId);
   return (
     // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
     // starts at the top and scrolls, never clipped above the log.
@@ -623,7 +625,13 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
       </span>
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
       <p className="max-w-md text-md text-ink-secondary" data-empty-reach="">
-        {cli ? (
+        {cli && full ? (
+          // Full access (full_access.rs): no walls, so none are promised.
+          <>
+            {cliName} answers here, with full access: it can read and change anything on this Mac and use the internet,
+            without asking.
+          </>
+        ) : cli ? (
           // A CLI here is read-only and has no way to ask (agent.rs): say what it can do, nothing more.
           <>
             {cliName} answers here. It can read and search the files in {spaceName}

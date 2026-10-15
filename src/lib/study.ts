@@ -86,8 +86,23 @@ export type Evidence = {
   /** `courses/<folder>/<path>` (the PDF's own name for its text copy), or "from you". */
   source: string;
   quote: string;
-  /** Where in the file: "§5.3", "#3". */
+  /** Where in the file: "§5.3", "#3", "p. 4". */
   at?: string;
+  /** Read by the model from the picture of this page (handwriting, a scan): checked only roughly. */
+  picture?: number;
+};
+
+/** Mirrors `Sight` in src-tauri/src/vision.rs: whether the space's model can look at pictures. */
+export type Sight = { sees: "yes" | "no" | "unknown"; model: string; shown: boolean };
+/** Mirrors `Alert` in vision.rs. */
+export type MaterialAlert = { kind: "cantSee" | "unknown" | "notShown"; text: string };
+/** Mirrors `MaterialView` in study/material.rs. */
+export type MaterialView = {
+  lines: string[];
+  pages: number;
+  sight: Sight;
+  alert?: MaterialAlert;
+  exams: { title: string; pages: number; alert?: MaterialAlert }[];
 };
 
 /** Mirrors `Grounding` in src-tauri/src/study/grounded.rs: what a quiz or deck was made against, and how the check went. */
@@ -283,7 +298,7 @@ export type ScopeMap = {
   course: string;
   name: string;
   built: number;
-  topics: { id: string; title: string; sections?: string; terms: string[]; weight: number; homework: string[]; evidence: Evidence[] }[];
+  topics: { id: string; title: string; sections?: string; terms: string[]; weight: number; homework: string[]; evidence: Evidence[]; reference?: boolean; assignedBy?: Evidence[] }[];
   notation: { symbol: string; meaning: string; evidence: Evidence[] }[];
   exams: ExamScope[];
   /** Quotes the model gave that weren't in the files, so were dropped. */
@@ -298,6 +313,8 @@ export type ScopeView = {
   state: "none" | "fresh" | "stale";
   map?: ScopeMap;
   stated: { exam: string; text: string; at: number }[];
+  /** What the course's documents are made of, and whether the space's model can look at the pictures. */
+  material?: MaterialView;
 };
 
 /** A course's scope map as this space sees it (only what is kept; nothing is built here). */

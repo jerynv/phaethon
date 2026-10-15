@@ -28,7 +28,8 @@ use super::sources::{self, CourseFile};
 use crate::lms::access::{Part, Seen, Visible};
 use crate::lms::names;
 
-pub const VERSION: u32 = 1;
+/// 2: readings (textbooks) count only where the course points to them.
+pub const VERSION: u32 = 2;
 const DIR: &str = "scope";
 /// Characters of course text in one mapping call (about 45k tokens).
 pub const MAP_CHUNK: usize = 180_000;
@@ -41,20 +42,24 @@ const EVIDENCE_MAX: usize = 4;
 const TEXT_MAX: usize = 300;
 
 /// A passage that shows something: the file it is in, and the words, checked to be there.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Evidence {
     /// `courses/<folder>/<path>`, or "from you" for what the person said.
     pub source: String,
     pub quote: String,
-    /// Where in the file: "§5.3", "#3".
+    /// Where in the file: "§5.3", "#3", "p. 4".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<String>,
+    /// Read by the model from the picture of this page (handwriting or a
+    /// scan): checked only roughly against the page's recognised text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picture: Option<u32>,
 }
 
 pub const FROM_YOU: &str = "from you";
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Topic {
     pub id: String,
@@ -72,6 +77,15 @@ pub struct Topic {
     #[serde(default)]
     pub homework: Vec<String>,
     pub evidence: Vec<Evidence>,
+    /// Only in the readings (a textbook), and nothing the course gives out
+    /// (syllabus, assignments, announcements, its pages) points to it: there
+    /// for reference, never tested.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reference: bool,
+    /// For a topic found only in the readings: where the course points
+    /// students to it ("Read sections 5.1–5.3").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assigned_by: Vec<Evidence>,
 }
 
 fn one() -> f64 {
@@ -376,6 +390,7 @@ pub const MAP_SYSTEM: &str = r#"You map what a course teaches, from its own mate
 
 From the <source> files (and the current map, if one is given, which you extend and correct), list:
 - "topics": what the course teaches, in the order it teaches it, at the grain of a lecture section or a homework problem (aim for 10 to 40 topics). Each: "id" (keep ids from the current map; new ones "t" plus a number), "title" (the course's own words), "sections" (the course's numbering if it has one, like "3.8–3.13", else omit), "terms" (2 to 8 words or short phrases the course uses for it), "weight" (1 to 5: how much the course leans on it: homework problems, lecture time, review sheets, "focus on"), "homework" (problems on it, like "HW 4 #3"), and "evidence": 1 to 3 passages that show the course teaches it.
+- A topic whose evidence is only in readings/ files (textbooks and other readings the course links to) counts only where the course points students to it: give it "assignedBy", 1 or 2 passages from the syllabus, assignments, announcements, modules or the course's own pages that assign or point to that chapter, section or topic, naming it (same form as evidence). Without one it is kept as reference only and never tested. Never give a topic for a chapter of a textbook nothing in the course points to.
 - "notation": symbols and notation the course defines that a student must know (like |s| for a string's length, ε for the empty string): "symbol", "meaning", "evidence" (one passage).
 - "exams": every exam the materials mention. Each: "title" as the course names it ("Test 1"), "date" (YYYY-MM-DD) if stated, "through" (the last homework or section it covers, if stated), "includes" (topic ids it covers), "excludes" (topic ids it explicitly leaves out), "excludedWords" (what it leaves out, in the course's words), "homework" (paths of the homework files it covers, copied from the source paths), "summary" (a few words, like "through HW 6; not graphs or combinatorics"), and "evidence": the passages that say what it covers. If the materials don't say what an exam covers, give it with "includes": [] and no evidence. Never infer an exam's coverage from dates alone.
 
@@ -431,11 +446,27 @@ fn strings(v: &Value, k: &str, max_items: usize, max_len: usize) -> Vec<String> 
 pub struct Docs {
     files: Vec<(String, String)>,
     compact: Vec<std::sync::OnceLock<quote::Compact>>,
+    /// Pages the model was shown as pictures: a quote from one is checked roughly against its recognised text.
+    pictured: std::sync::Mutex<Vec<super::material::PageRef>>,
 }
 
 impl Docs {
     pub fn new(files: &[CourseFile]) -> Docs {
-        Docs { files: files.iter().map(|f| (f.label.clone(), f.text.clone())).collect(), compact: files.iter().map(|_| std::sync::OnceLock::new()).collect() }
+        Docs {
+            files: files.iter().map(|f| (f.label.clone(), f.text.clone())).collect(),
+            compact: files.iter().map(|_| std::sync::OnceLock::new()).collect(),
+            pictured: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Note that the model was shown these pages as pictures.
+    pub fn shown(&self, pages: &[super::material::PageRef]) {
+        let mut p = self.pictured.lock().unwrap_or_else(|e| e.into_inner());
+        for x in pages {
+            if !p.contains(x) {
+                p.push(x.clone());
+            }
+        }
     }
 
     pub fn labels(&self) -> Vec<String> {
@@ -459,10 +490,47 @@ impl Docs {
         let i = self.index(source)?;
         let (label, text) = (&self.files[i].0, &self.files[i].1);
         let hay = self.compact[i].get_or_init(|| quote::compact(text));
-        let f = quote::find_in(text, hay, q)?;
+        let Some(f) = quote::find_in(text, hay, q) else {
+            // Not word for word: only a page shown as a picture may match, and only roughly.
+            let shown: Vec<u32> = self.pictured.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|(l, _)| l == label).map(|(_, p)| *p).collect();
+            let page = super::material::picture_quote(text, &shown, q)?;
+            return Some(Evidence { source: label.clone(), quote: quote::tidy(q), at: Some(format!("p. {page}")), picture: Some(page) });
+        };
         let problem_set = super::grounded::is_problem_set(label);
-        Some(Evidence { source: label.clone(), quote: quote::tidy(q), at: quote::locate(text, f.start, problem_set) })
+        Some(Evidence { source: label.clone(), quote: quote::tidy(q), at: quote::locate(text, f.start, problem_set), picture: None })
     }
+}
+
+/// A file among the course's readings (textbooks and other documents it links to).
+pub fn is_reading(label: &str) -> bool {
+    label.splitn(3, '/').nth(2).is_some_and(|r| r.to_lowercase().starts_with("readings/"))
+}
+
+/// Whether a passage of the course points to a topic: it names one of its
+/// sections ("5.3"), its chapter ("chapter 5", "ch. 5"), one of its terms,
+/// or a longer word of its title.
+pub fn points_to(quote: &str, sections: Option<&str>, terms: &[String], title: &str) -> bool {
+    let q = quote.to_lowercase();
+    let has_number = |n: &str| {
+        q.match_indices(n).any(|(i, _)| {
+            let before = q[..i].chars().next_back();
+            let after = q[i + n.len()..].chars().next();
+            !before.is_some_and(|c| c.is_ascii_digit() || c == '.') && !after.is_some_and(|c| c.is_ascii_digit())
+        })
+    };
+    let numbers = super::grounded::section_numbers(sections);
+    if numbers.iter().any(|n| has_number(n)) {
+        return true;
+    }
+    let chapters: HashSet<&str> = numbers.iter().filter_map(|n| n.split('.').next()).chain(sections.into_iter().filter(|s| s.chars().all(|c| c.is_ascii_digit()))).collect();
+    for c in chapters {
+        if ["chapter ", "chapters ", "ch. ", "ch "].iter().any(|w| has_number(&format!("{w}{c}"))) {
+            return true;
+        }
+    }
+    const SKIP: [&str; 8] = ["about", "using", "their", "with", "from", "basic", "introduction", "definitions"];
+    terms.iter().map(|t| t.to_lowercase()).filter(|t| t.chars().count() >= 4).any(|t| q.contains(&t))
+        || title.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 5 && !SKIP.contains(w)).any(|w| q.contains(w))
 }
 
 /// Check a model's map: every quote found or dropped, topics without evidence
@@ -505,15 +573,19 @@ pub fn check_map(v: &Value, files: &Docs, prior_ids: &HashSet<String>) -> Result
             ids.insert(said, id.clone());
         }
         let weight = t["weight"].as_f64().or_else(|| t["weight"].as_str().and_then(|s| s.parse().ok())).unwrap_or(2.0).clamp(1.0, 5.0);
-        topics.push(Topic {
-            id,
-            title,
-            sections: Some(text(t, "sections", 40)).filter(|s| !s.is_empty()),
-            terms: strings(t, "terms", 8, 60),
-            weight,
-            homework: strings(t, "homework", 12, 40),
-            evidence,
-        });
+        let sections = Some(text(t, "sections", 40)).filter(|s| !s.is_empty());
+        let terms = strings(t, "terms", 8, 60);
+        // Only in the readings: tested only where the course points to it, by a passage found in its own files.
+        let (assigned_by, reference) = if evidence.iter().all(|e| is_reading(&e.source)) {
+            let (ab, d) = check_evidence(&t["assignedBy"], files, 2);
+            dropped += d;
+            let ab: Vec<Evidence> = ab.into_iter().filter(|e| !is_reading(&e.source) && points_to(&e.quote, sections.as_deref(), &terms, &title)).collect();
+            let reference = ab.is_empty();
+            (ab, reference)
+        } else {
+            (vec![], false)
+        };
+        topics.push(Topic { id, title, sections, terms, weight, homework: strings(t, "homework", 12, 40), evidence, reference, assigned_by });
     }
     if topics.is_empty() {
         return Err("none of the topics had a passage that is really in the files: quote each one exactly".into());
@@ -596,12 +668,22 @@ pub async fn build<M: Model>(visible: &Visible, seen: &Seen, exams: &[Exam], mod
     let chunks = map_chunks(&files);
     let (mut topics, mut notation, mut exams_found, mut dropped) = (vec![], vec![], vec![], 0);
     let calendar = exams_note(exams, seen);
+    let system = super::course_only(MAP_SYSTEM);
     for (i, chunk) in chunks.iter().enumerate() {
         progress(i, chunks.len());
         let prior = if i == 0 { String::new() } else { format!("\n\n<current_map>\n{}\n</current_map>\n\nExtend and correct the current map with what these files add; reply with the whole map.", prior_json(&topics, &notation, &exams_found)) };
-        let user = format!("Course: {}{calendar}\n\n{chunk}{prior}", seen.state.name);
+        // Handwritten, scanned and figure pages this call carries, shown as pictures to a model that can look.
+        let pictures = if model.shows_pictures() {
+            let pages = super::material::pages_in_chunk(seen, chunk, super::material::MAP_PICTURES);
+            let pics = super::material::pictures(visible, seen, &pages, super::material::MAP_PICTURES);
+            docs.shown(&pages.into_iter().filter(|(l, p)| pics.iter().any(|x| x.label == format!("{l}, page {p}") || x.label == *l)).collect::<Vec<_>>());
+            pics
+        } else {
+            vec![]
+        };
+        let user = format!("Course: {}{calendar}\n\n{chunk}{prior}{}", seen.state.name, super::material::pictures_note(&pictures));
         let prior_ids: HashSet<String> = topics.iter().map(|t: &Topic| t.id.clone()).collect();
-        let reply = model.complete(MAP_SYSTEM, &user).await?;
+        let reply = model.complete_seeing(&system, &user, &pictures).await?;
         let checked = match extract_json(&reply) {
             Some(v) => check_map(&v, &docs, &prior_ids),
             None => Err("the reply had no JSON in it".into()),
@@ -611,7 +693,7 @@ pub async fn build<M: Model>(visible: &Visible, seen: &Seen, exams: &[Exam], mod
             Err(problem) => {
                 let shown: String = reply.chars().take(3_000).collect();
                 let retry = format!("{user}\n\n<previous_reply>\n{shown}\n</previous_reply>\n\nThat reply couldn't be used: {problem}. Answer again with only the corrected JSON.");
-                let reply = model.complete(MAP_SYSTEM, &retry).await?;
+                let reply = model.complete_seeing(&system, &retry, &pictures).await?;
                 match extract_json(&reply).map(|v| check_map(&v, &docs, &prior_ids)) {
                     Some(Ok(c)) => c,
                     Some(Err(p)) => return Err(format!("The course couldn’t be mapped ({p}). Try again.")),
@@ -692,7 +774,7 @@ pub async fn exam_scope<M: Model>(visible: &Visible, seen: &Seen, map: &ScopeMap
         let homework: Vec<String> = map.topics.iter().filter(|t| !t.homework.is_empty()).map(|t| format!("{}: {}", t.id, t.homework.join(", "))).collect();
         let user = format!("Exam: {}\nWhat the student said it covers: {}\n\nTopics:\n{}\n\nHomework on each topic:\n{}", s.exam, s.text, list.join("\n"), homework.join("\n"));
         let ids: HashSet<String> = map.topics.iter().map(|t| t.id.clone()).collect();
-        let (inc, exc) = super::model::ask_json(model, RESOLVE_SYSTEM, &user, |v| {
+        let (inc, exc) = super::model::ask_json(model, &super::course_only(RESOLVE_SYSTEM), &user, |v| {
             let pick = |k: &str| strings(v, k, TOPICS_MAX, 20).into_iter().filter(|i| ids.contains(i)).collect::<Vec<_>>();
             let exc = pick("excludes");
             let inc: Vec<String> = pick("includes").into_iter().filter(|i| !exc.contains(i)).collect();
@@ -714,7 +796,7 @@ pub async fn exam_scope<M: Model>(visible: &Visible, seen: &Seen, map: &ScopeMap
         excludes: s.excludes.clone(),
         excluded_words: vec![],
         homework: found.map(|f| f.homework).unwrap_or_default(),
-        evidence: vec![Evidence { source: FROM_YOU.into(), quote: s.text.clone(), at: None }],
+        evidence: vec![Evidence { source: FROM_YOU.into(), quote: s.text.clone(), ..Default::default() }],
         from_user: true,
     }))
 }
@@ -768,9 +850,10 @@ pub fn allocate(topics: &[&Topic], count: usize) -> Vec<(String, usize)> {
 
 /// The topics an exam covers, in the course's order; all of them with no exam.
 pub fn in_scope<'a>(map: &'a ScopeMap, exam: Option<&ExamScope>) -> Vec<&'a Topic> {
+    // A reading the course never points to is reference only: never in scope.
     match exam {
-        None => map.topics.iter().collect(),
-        Some(e) => map.topics.iter().filter(|t| e.includes.contains(&t.id) && !e.excludes.contains(&t.id)).collect(),
+        None => map.topics.iter().filter(|t| !t.reference).collect(),
+        Some(e) => map.topics.iter().filter(|t| !t.reference && e.includes.contains(&t.id) && !e.excludes.contains(&t.id)).collect(),
     }
 }
 
@@ -802,8 +885,18 @@ pub fn prompt_section(visible: &Visible) -> Option<String> {
             continue;
         };
         let mut s = format!("## {}{}\n\nTopics, in the order taught:", map.name, if fresh { "" } else { " (the course has changed since this was mapped)" });
-        for t in &map.topics {
+        for t in map.topics.iter().filter(|t| !t.reference) {
             s.push_str(&format!("\n- {}{}", t.title, t.sections.as_deref().map(|x| format!(" ({x})")).unwrap_or_default()));
+        }
+        let reference: Vec<String> = map.topics.iter().filter(|t| t.reference).map(|t| format!("{}{}", t.title, t.sections.as_deref().map(|x| format!(" ({x})")).unwrap_or_default())).collect();
+        if !reference.is_empty() {
+            s.push_str(&format!("\n\nIn the readings but never assigned, so reference only (not taught, never tested): {}.", reference.join("; ")));
+        }
+        if let Some(r) = seen.state.material.as_ref() {
+            let m = crate::lms::material::summarise(r, |_| true);
+            if m.handwriting_pages + m.unreadable_pages + m.pictures > 0 {
+                s.push_str(&format!("\n\nIts files: {}", m.lines.join(" ")));
+            }
         }
         let said = stated(visible, seen);
         for e in &map.exams {
@@ -828,11 +921,12 @@ pub fn prompt_section(visible: &Visible) -> Option<String> {
         return None;
     }
     Some(format!(
-        "# What each course teaches, and what its exams cover\n\n\
+        "# What each course teaches, and what its exams cover\n\n{}\n\n\
 Stay inside these when you advise the user what to study or explain course material: never teach, quiz or recommend a topic, term or notation the course hasn't covered, and never stretch an exam past its scope. \
 Cite the course's own words for every claim about what a course covers or teaches, as [source: courses/<folder>/<file> \"words copied exactly from that file\"] (the file's path as it is under courses/, for a PDF the PDF's own name). \
 Phaethon checks each citation against the file and shows the user whether it was found, so copy the words exactly and never cite what you haven't read. \
 Never write practice questions, a practice test or flashcards in the chat: offer them with a phaethon-study block, with \"exam\" set when they are for an exam.\n\n{}",
+        super::COURSE_ONLY_CHAT,
         parts.join("\n\n")
     ))
 }
@@ -900,6 +994,95 @@ mod tests {
     }
 
     #[test]
+    fn readings_count_only_where_the_course_points_to_them() {
+        let (root, vis) = course("readings");
+        let c = root.join("courses/C241");
+        fs::create_dir_all(c.join("readings")).unwrap();
+        fs::write(c.join("syllabus.md"), "# Syllabus\n\nBefore Test 1, read Chapter 5 of the textbook, sections 5.1 to 5.3.").unwrap();
+        fs::write(c.join("readings/Book.pdf"), "%PDF").unwrap();
+        fs::write(c.join("readings/Book.pdf.md"), "# Text of Book.pdf\n\n5.1 Relations\n\nA relation from A to B is a subset of the product A x B.\n\n7.2 Trees\n\nA tree is a connected graph with no cycles at all.").unwrap();
+        let files = sources::course_files(&vis, &vis.courses[0]);
+        let docs = Docs::new(&files);
+        let map = json!({"topics": [
+            {"id": "r1", "title": "Relations", "sections": "5.1", "evidence": [{"source": "readings/Book.pdf", "quote": "A relation from A to B is a subset of the product A x B."}],
+             "assignedBy": [{"source": "syllabus.md", "quote": "read Chapter 5 of the textbook, sections 5.1 to 5.3."}]},
+            {"id": "r2", "title": "Trees", "sections": "7.2", "evidence": [{"source": "readings/Book.pdf", "quote": "A tree is a connected graph with no cycles at all."}],
+             "assignedBy": [{"source": "syllabus.md", "quote": "read Chapter 5 of the textbook, sections 5.1 to 5.3."}, {"source": "readings/Book.pdf", "quote": "A tree is a connected graph with no cycles at all."}]},
+            {"id": "r3", "title": "Trees again", "evidence": [{"source": "readings/Book.pdf", "quote": "A tree is a connected graph with no cycles at all."}]},
+            {"id": "a", "title": "Injective functions", "sections": "5.3", "evidence": [{"source": "Notes.pdf", "quote": "A function f is injective if no two inputs give the same output."}]}
+        ], "exams": [{"title": "Test 1", "includes": ["r1", "r2", "a"], "evidence": [{"source": "announcements.md", "quote": "The test will cover everything up through and including HW 6."}]}]});
+        let (topics, _, exams, _) = check_map(&map, &docs, &HashSet::new()).unwrap();
+        let by = |t: &str| topics.iter().find(|x| x.title == t).unwrap();
+        assert!(!by("Relations").reference && by("Relations").assigned_by[0].source == "courses/C241/syllabus.md", "the syllabus names its section");
+        assert!(by("Trees").reference && by("Trees").assigned_by.is_empty(), "the syllabus passage doesn't name chapter 7, and a reading can't assign itself");
+        assert!(by("Trees again").reference, "nothing points to it");
+        assert!(!by("Injective functions").reference, "taught in the course's own files");
+        let built = ScopeMap { version: VERSION, course: "C241".into(), name: "C241".into(), parts: vec![], fingerprint: String::new(), built: 0, topics: topics.clone(), notation: vec![], exams: exams.clone(), dropped: 0 };
+        let titles = |ts: Vec<&Topic>| ts.iter().map(|t| t.title.clone()).collect::<Vec<_>>();
+        assert_eq!(titles(in_scope(&built, Some(&exams[0]))), ["Relations", "Injective functions"], "reference topics are never in scope, even when an exam lists them");
+        assert_eq!(titles(in_scope(&built, None)), ["Relations", "Injective functions"]);
+        assert!(points_to("Read sections 5.1–5.3", Some("5.1"), &[], "x") && points_to("Homework covers Chapter 7", Some("7.2–7.4"), &[], "x"));
+        assert!(!points_to("Read sections 5.10 and 15.1", Some("5.1"), &[], "x"), "5.10 isn't 5.1");
+        assert!(points_to("This week: spanning trees", None, &["spanning tree".into()], "x") && !points_to("This week: sets", None, &[], "Trees"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A model that can look at pictures: answers like [`Scripted`], and keeps what it was shown.
+    struct Seeing(super::super::model::tests::Scripted, std::sync::Mutex<Vec<Vec<String>>>);
+
+    impl Model for Seeing {
+        async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+            self.1.lock().unwrap().push(vec![]);
+            self.0.complete(system, user).await
+        }
+        fn shows_pictures(&self) -> bool {
+            true
+        }
+        async fn complete_seeing(&self, system: &str, user: &str, pictures: &[super::super::model::Picture]) -> Result<String, String> {
+            self.1.lock().unwrap().push(pictures.iter().map(|p| p.label.clone()).collect());
+            self.0.complete(system, user).await
+        }
+    }
+
+    #[test]
+    fn a_model_that_sees_is_shown_handwritten_pages_and_its_quotes_from_them_are_checked_roughly() {
+        let (root, mut vis) = course("pictures");
+        let c = root.join("courses/C241");
+        // A scanned page (a stored picture), and what text recognition read from it.
+        let grey: Vec<u8> = (0..300 * 200).map(|i| (i % 250) as u8).collect();
+        fs::write(c.join("files/Week 4.pdf"), crate::lms::text::pictures::tests::grey_pdf(300, 200, &grey)).unwrap();
+        fs::write(c.join("files/Week 4.pdf.md"), format!("# Text of Week 4.pdf\n\n## Page 1 {}\n\nA relation R on a set A is reflexive\nif for every a e A, (a,a) e R", crate::lms::text::RECOGNISED)).unwrap();
+        vis.courses[0].state.material = Some(crate::lms::material::Report {
+            version: crate::lms::material::VERSION,
+            files: vec![crate::lms::material::FileQuality { path: "files/Week 4.pdf".into(), pages: 1, handwriting: vec![1], ..Default::default() }],
+            cant_recognise: None,
+        });
+        // The words as the model reads them from the picture, not as recognition did.
+        let reply = r#"{"topics": [
+          {"id": "r", "title": "Reflexive relations", "evidence": [{"source": "Week 4.pdf", "quote": "A relation R on a set A is reflexive if for every a ∈ A, (a,a) ∈ R"}]},
+          {"id": "a", "title": "Injective functions", "evidence": [{"source": "Notes.pdf", "quote": "A function f is injective if no two inputs give the same output."}]},
+          {"id": "x", "title": "Made up", "evidence": [{"source": "Week 4.pdf", "quote": "A function is surjective when every element of the codomain is hit"}]}
+        ], "exams": []}"#;
+        let seeing = Seeing(super::super::model::tests::Scripted::new(&[reply]), Default::default());
+        let map = tauri::async_runtime::block_on(build(&vis, &vis.courses[0], &[], &seeing, 1, &|_, _| {})).unwrap();
+        assert_eq!(*seeing.1.lock().unwrap(), [vec!["courses/C241/files/Week 4.pdf, page 1".to_string()]], "shown the handwritten page");
+        let (system, user) = seeing.0.asked.lock().unwrap()[0].clone();
+        assert!(system.starts_with(crate::study::COURSE_ONLY), "{system}");
+        assert!(user.contains("<pictures>") && user.contains("Week 4.pdf, page 1"));
+        let r = map.topics.iter().find(|t| t.title == "Reflexive relations").unwrap();
+        assert_eq!((r.evidence[0].picture, r.evidence[0].at.as_deref()), (Some(1), Some("p. 1")), "read from the picture, close enough to what was recognised");
+        assert!(map.topics.iter().all(|t| t.title != "Made up"), "a quote the page doesn't roughly hold is dropped");
+        assert_eq!(map.topics.iter().find(|t| t.title == "Injective functions").unwrap().evidence[0].picture, None, "typed text: exact, as before");
+
+        // A model that can't look: never shown anything, and the same quote isn't believed.
+        let blind = super::super::model::tests::Scripted::new(&[reply]);
+        let map = tauri::async_runtime::block_on(build(&vis, &vis.courses[0], &[], &blind, 2, &|_, _| {})).unwrap();
+        assert!(map.topics.iter().all(|t| t.title != "Reflexive relations"));
+        assert!(!blind.asked.lock().unwrap()[0].1.contains("<pictures>"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn built_cached_invalidated_and_stated() {
         let (root, vis) = course("build");
         let seen = &vis.courses[0];
@@ -955,7 +1138,7 @@ mod tests {
 
     #[test]
     fn questions_are_spread_by_weight_over_every_topic() {
-        let t = |id: &str, w: f64| Topic { id: id.into(), title: id.into(), sections: None, terms: vec![], weight: w, homework: vec![], evidence: vec![] };
+        let t = |id: &str, w: f64| Topic { id: id.into(), title: id.into(), weight: w, ..Default::default() };
         let ts = [t("a", 5.0), t("b", 1.0), t("c", 2.0), t("d", 2.0)];
         let refs: Vec<&Topic> = ts.iter().collect();
         let a = allocate(&refs, 10);

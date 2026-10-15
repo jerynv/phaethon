@@ -144,7 +144,10 @@ pub(crate) async fn study_review_mistakes(state: State<'_, AppState>, space: Str
 #[tauri::command]
 pub(crate) fn study_chat_plan(state: State<'_, AppState>, space: String, block: String, question: String) -> Result<super::chat::Plan, String> {
     let dir = space_dir(&state, &space)?;
-    super::chat::plan(&dir, &crate::lms::access::visible(&state.vault, &space), &block, &question)
+    let visible = crate::lms::access::visible(&state.vault, &space);
+    let mut plan = super::chat::plan(&dir, &visible, &block, &question)?;
+    plan.material = super::chat::material_alert(&dir, &visible, &plan, &crate::vision::for_space(&state.vault, &dir));
+    Ok(plan)
 }
 
 /// Make what the block describes, with the conversation as context. Made
@@ -210,6 +213,9 @@ pub(crate) struct ScopeView {
     pub map: Option<super::scope::ScopeMap>,
     /// What the person said exams cover.
     pub stated: Vec<super::scope::Stated>,
+    /// What the course's documents are made of, and whether the space's model can look at the pictures.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub material: Option<super::material::MaterialView>,
 }
 
 /// The course `course` names ("courses/<folder>" or the folder) among those the space sees.
@@ -218,12 +224,30 @@ fn seen_course<'a>(visible: &'a crate::lms::access::Visible, course: &str) -> Re
     visible.get(folder).ok_or_else(|| "That course isn’t one this space can see.".to_string())
 }
 
+/// The material view for a course: each exam the map found, with what the
+/// person said one covers (once it has been read against the map) in place of
+/// what was found.
+fn scope_material(visible: &crate::lms::access::Visible, seen: &crate::lms::access::Seen, map: Option<&super::scope::ScopeMap>, sight: &crate::vision::Sight) -> Option<super::material::MaterialView> {
+    let mut exams: Vec<super::scope::ExamScope> = map.map(|m| m.exams.clone()).unwrap_or_default();
+    for s in super::scope::stated(visible, seen) {
+        let resolved = map.is_some_and(|m| s.resolved_for.as_deref() == Some(m.fingerprint.as_str())) && !s.includes.is_empty();
+        let said = super::scope::ExamScope { title: s.exam.clone(), date: None, known: resolved, summary: s.text.clone(), includes: s.includes.clone(), excludes: s.excludes.clone(), excluded_words: vec![], homework: vec![], evidence: vec![], from_user: true };
+        match exams.iter_mut().find(|e| super::scope::find_exam(std::slice::from_ref(&said), &e.title).is_some()) {
+            Some(e) if resolved => *e = super::scope::ExamScope { title: e.title.clone(), date: e.date.clone(), ..said },
+            Some(_) => {}
+            None => exams.push(said),
+        }
+    }
+    super::material::view(seen, map, &exams, sight)
+}
+
 #[tauri::command]
 pub(crate) fn study_scope(state: State<'_, AppState>, space: String, course: String) -> Result<ScopeView, String> {
-    space_dir(&state, &space)?;
+    let dir = space_dir(&state, &space)?;
     let visible = crate::lms::access::visible(&state.vault, &space);
     let seen = seen_course(&visible, &course)?;
     let kept = super::scope::cached(&visible, seen, None);
+    let material = scope_material(&visible, seen, kept.as_ref().map(|(m, _)| m), &crate::vision::for_space(&state.vault, &dir));
     Ok(ScopeView {
         course: format!("courses/{}", seen.folder()),
         name: seen.state.name.clone(),
@@ -234,6 +258,7 @@ pub(crate) fn study_scope(state: State<'_, AppState>, space: String, course: Str
         },
         map: kept.map(|(m, _)| m),
         stated: super::scope::stated(&visible, seen),
+        material,
     })
 }
 

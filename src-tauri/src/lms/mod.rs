@@ -43,6 +43,7 @@ pub mod access;
 pub mod migrate;
 pub mod textbooks;
 pub mod text;
+pub mod material;
 #[cfg(test)]
 pub mod fake;
 

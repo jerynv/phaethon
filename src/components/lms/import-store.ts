@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { lmsImport, type LmsImportEvent, type LmsCourse } from "@/lib/lms";
+import { lmsImport, type LmsImportEvent, type LmsCourse, type MaterialSummary } from "@/lib/lms";
 
 import { isSignedOut } from "./sites";
 
@@ -45,7 +45,7 @@ export type CourseRun = {
   step?: string;
   done: number;
   total: number;
-  result?: { folder: string; files: number; readings: number; links: number; skipped: string[] };
+  result?: { folder: string; files: number; readings: number; links: number; skipped: string[]; material?: MaterialSummary };
   failed?: string;
 };
 
@@ -137,7 +137,7 @@ export function startImport(
         step: undefined,
         done: Math.max(c.total, 1),
         total: Math.max(c.total, 1),
-        result: { folder: e.folder, files: e.files, readings: e.readings, links: e.links, skipped: e.skipped },
+        result: { folder: e.folder, files: e.files, readings: e.readings, links: e.links, skipped: e.skipped, material: e.material },
       }));
       setRun(next);
       const c = next.courses.find((x) => x.id === e.course);

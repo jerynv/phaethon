@@ -58,6 +58,8 @@ export type LmsImportEvent =
       links: number;
       /** What couldn't be imported, each in plain words. */
       skipped: string[];
+      /** What its documents are made of (typed, handwriting, pictures). */
+      material?: MaterialSummary;
     }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -125,6 +127,29 @@ export type CourseInfo = {
   term?: string;
   /** As spaces see it, e.g. "courses/Calculus II". */
   folder: string;
+  /** What its documents are made of, from the last import. */
+  material?: MaterialSummary;
+};
+
+/** Mirrors `Summary` in src-tauri/src/lms/material.rs: what a course's documents are made of. */
+export type MaterialSummary = {
+  documents: number;
+  /** Documents with nothing flagged. */
+  typedDocuments: number;
+  /** Pages read by text recognition (handwriting, scans). */
+  handwritingPages: number;
+  /** Pages nothing could be read from. */
+  unreadablePages: number;
+  /** Pictures (figures, diagrams, photos) that can't be read as text. */
+  pictures: number;
+  /** How well the handwriting was read, when there is any. */
+  readability?: "good" | "fair" | "poor";
+  knownWords?: number;
+  /** Why handwriting couldn't be read on the computer that imported it, with what to do. */
+  cantRecognise?: string;
+  /** The report in sentences, most important first. */
+  lines: string[];
+  flagged: { path: string; handwriting: number; unreadable: number; pictures: number; knownWords?: number }[];
 };
 
 export type CourseAccessView = {

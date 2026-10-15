@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } f
 
 import { openCourseImport, sitesChanged, useRun, useSitesVersion } from "@/components/lms/import-store";
 import { connectionName, hostOf, kindLabel, plural, whenText } from "@/components/lms/sites";
+import { MaterialLines } from "@/components/study/material-note";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import {
@@ -304,6 +305,7 @@ function AccessGrid({
         </h5>
         {label && <p className="text-sm text-ink-secondary">{label}</p>}
       </div>
+      <MaterialLines summary={course.material} details className="flex flex-col" />
       {/* A data table: wider than a narrow window, it scrolls sideways on its own, never the page. */}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <table ref={tableRef} role="grid" aria-labelledby={captionId} onKeyDown={onKeyDown} className="w-max min-w-full border-collapse text-sm" data-access-grid={course.key}>

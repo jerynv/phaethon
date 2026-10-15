@@ -63,6 +63,9 @@ pub struct CourseState {
     pub due: Vec<Due>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_sync: Option<u64>,
+    /// What each document is made of (typed, handwriting, pictures), from the last import.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material: Option<super::material::Report>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

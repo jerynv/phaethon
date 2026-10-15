@@ -24,6 +24,7 @@ import { studyMakeDeck, studyMakeQuiz, studyScope, studyScopeState, type ExamSco
 import { cn } from "@/lib/utils";
 
 import { ScopeEvidence, ScopeForm, scopeHint, scopeMissing, scopeQuestion } from "./grounding";
+import { MaterialAlertNote } from "./material-note";
 import { COURSE_PARTS, doneField, examKey, needsModel, plainError, plural, progressWords, sameCourse, type CourseFolder, type MakeProgress } from "./words";
 
 export type MakeKind = "deck" | "quiz";
@@ -469,8 +470,29 @@ function MakeFlow({
     );
   }
 
-  /** What is known of the chosen test's scope: found (with what is on it and not, and where it says so), said, not found, not looked for yet. */
+  /** The warning when the chosen test's material (or the course's) leans on pages the space's model can't look at. */
+  function materialAlert() {
+    const m = examInfo?.course === course?.folder ? examInfo?.view?.material : undefined;
+    if (!m) return undefined;
+    const named = examChoice === OTHER ? otherName.trim() : examChoice;
+    const exam = named ? m.exams.find((e) => e.title.toLowerCase() === named.toLowerCase()) : undefined;
+    return exam ? exam.alert : m.alert;
+  }
+
   function scopePanel(): ReactNode {
+    const panel = scopeDetails();
+    const alert = materialAlert();
+    if (!panel && !alert) return null;
+    return (
+      <>
+        {panel}
+        <MaterialAlertNote alert={alert} />
+      </>
+    );
+  }
+
+  /** What is known of the chosen test's scope: found (with what is on it and not, and where it says so), said, not found, not looked for yet. */
+  function scopeDetails(): ReactNode {
     if (!course) return null;
     const name = course.name;
     if (examChoice === "")
@@ -509,7 +531,7 @@ function MakeFlow({
     if (option.state === "known" && option.scope) {
       const e = option.scope;
       const topics = examInfo?.view?.map?.topics ?? [];
-      const on = topics.filter((t) => e.includes.includes(t.id) && !e.excludes.includes(t.id));
+      const on = topics.filter((t) => !t.reference && e.includes.includes(t.id) && !e.excludes.includes(t.id));
       const off = topics.filter((t) => !on.includes(t));
       const topicName = (t: (typeof topics)[number]) => `${t.title}${t.sections ? ` (${t.sections})` : ""}`;
       return (
@@ -833,6 +855,7 @@ function MakeFlow({
               { id: "name", label: "Name", value: title.trim() || "Named from what it covers", onChange: goTo("details") },
             ]}
           />
+          <MaterialAlertNote alert={materialAlert()} />
           <p className="text-sm text-ink-secondary">
             Phaethon sends what you chose to the model that makes them. It can take a minute, and you can close this window while it works.
           </p>

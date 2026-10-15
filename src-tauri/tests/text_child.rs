@@ -65,6 +65,25 @@ fn the_app_recognises_a_scanned_page_in_a_child() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The page pictures a model is shown come from the app as a child too:
+/// a scanned page's picture as stored, a typed page drawn (macOS).
+#[cfg(target_os = "macos")]
+#[test]
+fn the_app_gives_page_pictures_in_a_child() {
+    let dir = temp("pictures");
+    let file = dir.join("scan.pdf");
+    std::fs::write(&file, text::ocr::image_only_pdf(&text_pdf("Week 3: Hash tables"), 150.0)).unwrap();
+    let got = text::page_pictures(Some(app()), &file, &[1, 2]);
+    assert_eq!(got.len(), 1, "page 2 isn't there");
+    assert_eq!((got[0].page, got[0].mime.as_str()), (1, "image/png"));
+    std::fs::write(&file, text_pdf("Week 3: Hash tables and their load factor, typed")).unwrap();
+    let drawn = text::page_pictures(Some(app()), &file, &[1]);
+    assert_eq!(drawn.len(), 1, "a typed page is drawn");
+    std::fs::write(&file, b"%PDF-1.4 broken").unwrap();
+    assert!(text::page_pictures(Some(app()), &file, &[1]).is_empty(), "junk gives nothing, never a crash");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// Recognise a real file and write its text copy body somewhere to look at:
 /// `PHAETHON_OCR_SAMPLE=<file> PHAETHON_OCR_OUT=<file.md> cargo test --test text_child -- --ignored`.
 #[test]

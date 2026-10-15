@@ -137,7 +137,9 @@ export function CitationChip({ path, quote }: { path: string; quote: string }) {
 /** "Wennstrom Lecture Notes - C241 Fa26 §5.3": a citation's file and place, in a few words. */
 export function sourceWords(e: Evidence): string {
   const name = citeName(e.source).replace(/\.(pdf|md|docx|pptx|txt)$/i, "");
-  return e.at ? `${name} ${e.at}` : name;
+  const where = e.at ? `${name} ${e.at}` : name;
+  // Read by the model from the page's picture: matched only roughly, so said.
+  return e.picture ? `${where} (read from a picture of the page)` : where;
 }
 
 /**

@@ -1,6 +1,10 @@
 //! Text recognition for pages that are pictures: handwritten notes, scans and
-//! photos. On macOS it uses Apple's Vision on the device (nothing leaves the
-//! computer); elsewhere it isn't available yet and the text copy says so.
+//! photos, always on the device (nothing leaves the computer): Apple's Vision
+//! on macOS, Windows' own recogniser on Windows (ocr/winocr.rs), and the
+//! `tesseract` program elsewhere when it is installed (ocr/tesseract.rs); where
+//! there is none, the text copy says what to install. Every platform gives the
+//! same three things: a PDF opened for its pages' text, a picture file's
+//! text, and whether recognition works here at all.
 //!
 //! Recognition runs in a child process (this same program, started with
 //! [`CHILD_ENV`]), like the PDF reader in text.rs: a crash there never takes
@@ -29,8 +33,27 @@ const DPI: f64 = 300.0;
 /// Most text kept from one page, in bytes.
 const MAX_PAGE_TEXT: usize = 256 * 1024;
 
-/// Recognition works on this computer.
-pub const AVAILABLE: bool = cfg!(target_os = "macos");
+#[cfg(not(windows))]
+pub mod tesseract;
+#[cfg(windows)]
+mod winocr;
+
+#[cfg(target_os = "macos")]
+use mac as platform;
+#[cfg(all(not(target_os = "macos"), not(windows)))]
+use tesseract as platform;
+#[cfg(windows)]
+use winocr as platform;
+
+/// Whether text recognition works on this computer; `Err` says, in words for
+/// the person, what it needs (on Linux: the tesseract program).
+pub fn availability() -> Result<(), String> {
+    platform::availability()
+}
+
+pub fn available() -> bool {
+    availability().is_ok()
+}
 
 /// Picture files a text copy is made for by recognising their text.
 pub fn is_picture(path: &Path) -> bool {
@@ -163,10 +186,7 @@ pub(crate) fn recognise_here(file: &Path, pages: Option<&[u32]>) -> BTreeMap<u32
     wanted
         .into_iter()
         .map(|p| {
-            #[cfg(target_os = "macos")]
-            let r = if pages.is_none() { picture_text(file) } else { page_text_here(file, p) };
-            #[cfg(not(target_os = "macos"))]
-            let r: Result<String, String> = Err(format!("no text recognition here ({})", file.display()));
+            let r = if pages.is_none() { platform::picture_text(file) } else { platform::Pdf::open(file).and_then(|d| d.page_text(p)) };
             (p, r.map(Page::Text).unwrap_or_else(Page::Failed))
         })
         .collect()
@@ -197,42 +217,45 @@ pub fn child_main() -> Option<i32> {
         };
         serde_json::to_string(&line).map(|s| writeln!(out, "{s}").and_then(|_| out.flush()).is_ok()).unwrap_or(false)
     };
-    #[cfg(target_os = "macos")]
-    {
-        let path = Path::new(&path);
-        match pages {
-            None => {
-                emit(1, mac::picture_text(path));
-            }
-            Some(pages) => match mac::Pdf::open(path) {
-                Ok(pdf) => {
-                    for p in pages {
-                        if !emit(p, pdf.page_text(p)) {
-                            return Some(1);
-                        }
-                    }
-                }
-                Err(e) => {
-                    for p in pages {
-                        emit(p, Err(e.clone()));
-                    }
-                }
-            },
+    let path = Path::new(&path);
+    match pages {
+        None => {
+            emit(1, platform::picture_text(path));
         }
-        Some(0)
+        Some(pages) => match platform::Pdf::open(path) {
+            Ok(pdf) => {
+                for p in pages {
+                    if !emit(p, pdf.page_text(p)) {
+                        return Some(1);
+                    }
+                }
+            }
+            Err(e) => {
+                for p in pages {
+                    emit(p, Err(e.clone()));
+                }
+            }
+        },
     }
+    Some(0)
+}
+
+/// Grey pixels of a small page showing `text` (width, height, rows top to
+/// bottom), for tests that need a picture of words; `None` where nothing here
+/// can draw one.
+#[cfg(test)]
+pub fn test_text_pixels(text: &str) -> Option<(usize, usize, Vec<u8>)> {
+    #[cfg(target_os = "macos")]
+    return Some(grey_pixels(&crate::lms::text::test_pdf(text), 150.0));
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = path;
-        for p in pages.unwrap_or_else(|| vec![1]) {
-            emit(p, Err("text recognition needs macOS for now".into()));
-        }
-        Some(0)
+        let _ = text;
+        None
     }
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::{page_text_here, picture_text};
+pub use mac::{page_text_here, picture_text, render_png};
 
 #[cfg(target_os = "macos")]
 mod mac {
@@ -274,8 +297,41 @@ mod mac {
         }
     }
 
+    pub fn availability() -> Result<(), String> {
+        Ok(())
+    }
+
     /// Draw page `n` (from 1) in shades of grey at about 300 dpi, white behind it.
     pub(super) fn render(doc: &CGPDFDocument, n: usize) -> Option<CFRetained<CGImage>> {
+        let (ctx, _, _) = draw(doc, n, DPI, MAX_SIDE)?;
+        CGBitmapContextCreateImage(Some(&ctx))
+    }
+
+    /// Page `n` (from 1) of the PDF at `path` as a grey PNG, the longest side
+    /// at most `max_side` pixels (for a model to look at).
+    pub fn render_png(path: &Path, n: u32, max_side: f64) -> Result<Vec<u8>, String> {
+        use objc2_core_graphics::{CGBitmapContextGetBytesPerRow, CGBitmapContextGetData};
+        autoreleasepool(|_| {
+            let pdf = Pdf::open(path)?;
+            let (ctx, w, h) = draw(&pdf.0, n as usize, 150.0, max_side).ok_or("the page couldn’t be drawn")?;
+            let c = Some(&*ctx);
+            let stride = CGBitmapContextGetBytesPerRow(c);
+            let data = CGBitmapContextGetData(c) as *const u8;
+            if data.is_null() {
+                return Err("the page couldn’t be drawn".into());
+            }
+            // SAFETY: the context's own buffer, `stride * h` bytes, alive while `ctx` is.
+            let buf = unsafe { std::slice::from_raw_parts(data, stride * h) };
+            let mut pixels = Vec::with_capacity(w * h);
+            for row in buf.chunks(stride) {
+                pixels.extend_from_slice(&row[..w]);
+            }
+            crate::lms::text::png::encode(w as u32, h as u32, 1, &pixels, false).ok_or_else(|| "the page couldn’t be drawn".to_string())
+        })
+    }
+
+    /// Page `n` drawn in grey into a new bitmap at `dpi`, the longest side at most `max_side`.
+    fn draw(doc: &CGPDFDocument, n: usize, dpi: f64, max_side: f64) -> Option<(CFRetained<CGContext>, usize, usize)> {
         if n == 0 || n > CGPDFDocument::number_of_pages(Some(doc)) {
             return None;
         }
@@ -287,7 +343,7 @@ mod mac {
         if !(pw > 0.0 && ph > 0.0) {
             return None;
         }
-        let scale = (DPI / 72.0).min(MAX_SIDE / pw.max(ph));
+        let scale = (dpi / 72.0).min(max_side / pw.max(ph));
         let (w, h) = (((pw * scale).round() as usize).max(1), ((ph * scale).round() as usize).max(1));
         let grey = CGColorSpace::new_device_gray()?;
         // SAFETY: a null buffer asks Core Graphics to allocate one itself.
@@ -301,7 +357,7 @@ mod mac {
         let fit = CGPDFPage::drawing_transform(page, CGPDFBox::CropBox, CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(pw, ph)), 0, true);
         CGContext::concat_ctm(c, fit);
         CGContext::draw_pdf_page(c, page);
-        CGBitmapContextCreateImage(c)
+        Some((ctx, w, h))
     }
 
     /// The text of a picture file (PNG, JPEG, HEIC…), turned upright as the

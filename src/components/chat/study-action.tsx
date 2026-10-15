@@ -3,6 +3,7 @@ import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, use
 
 import { announce } from "@/components/shell/announcer";
 import { ScopeEvidence, ScopeForm } from "@/components/study/grounding";
+import { MaterialAlertNote } from "@/components/study/material-note";
 import { requestStudy } from "@/components/study/space-view";
 import { needsModel, plainError, progressWords } from "@/components/study/words";
 import { Button } from "@/components/ui/button";
@@ -207,6 +208,7 @@ export function StudyAction({ code }: { code: string }) {
             </p>
           ))}
           {plan?.scope && <PlanScopeLine space={space} scope={plan.scope} />}
+          {plan && !plan.made && <MaterialAlertNote alert={plan.material} />}
           {run?.at === "done" &&
             run.grounding?.notes?.map((n) => (
               <p key={n} className="flex items-start gap-2 text-sm wrap-break-word text-ink" data-study-action-note="">

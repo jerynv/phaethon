@@ -27,6 +27,8 @@ export type StudyPlan = {
   exam?: string;
   /** What is known so far about that exam's scope (from the kept map; nothing is built for the plan). */
   scope?: PlanScope;
+  /** Said when the material leans on pages the space's model can't look at (handwriting, diagrams). */
+  material?: { kind: "cantSee" | "unknown" | "notShown"; text: string };
 };
 
 /** Mirrors `PlanScope` in chat.rs. */

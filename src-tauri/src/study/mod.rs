@@ -17,12 +17,25 @@ pub(crate) mod commands;
 pub mod deck;
 pub mod generate;
 pub mod grounded;
+pub mod material;
 pub mod model;
 pub mod quiz;
 pub mod quote;
 pub mod schedule;
 pub mod scope;
 pub mod sources;
+
+/// Said in every prompt that makes, checks or explains study material: the
+/// model has the course, all of it, and nothing else counts.
+pub const COURSE_ONLY: &str = "You are given the student's entire coursework for this course, as Phaethon imported it: its files, syllabus, assignments, announcements and readings (textbooks among them), and what the student has said the course or an exam covers. Base everything only on that. If something isn't in it, don't teach it or test it: say it isn't covered. A textbook or other reading counts as course material only for the chapters and sections the syllabus, assignments or announcements point to; the rest of it is reference only, and is never tested.";
+
+/// A study prompt's rules after [`COURSE_ONLY`].
+pub fn course_only(rules: &str) -> String {
+    format!("{COURSE_ONLY}\n\n{rules}")
+}
+
+/// [`COURSE_ONLY`] for the assistant in a conversation, where the courses are folders it reads.
+pub const COURSE_ONLY_CHAT: &str = "Each course's entire coursework is in courses/<folder>/: its files, syllabus, assignments, announcements and readings (textbooks among them), as Phaethon imported it; with what the user says a course or exam covers, that is everything the course is. When you teach, explain, quiz or advise on a course, base it only on that. If something isn't in it, don't teach it from what you know of the subject: say the course doesn't cover it. A textbook or other reading counts as course material only for the chapters and sections the syllabus, assignments or announcements point to; the rest of it is reference only, never what an exam tests. Pages marked as recognised from handwriting or a scan may have wrong words and symbols: say so when you rely on one.";
 
 use std::collections::BTreeMap;
 use std::fs;

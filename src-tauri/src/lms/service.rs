@@ -59,7 +59,17 @@ pub struct School {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ImportEvent {
     Progress { course: String, step: &'static str, done: usize, total: usize },
-    Course { course: String, folder: String, files: usize, readings: usize, links: usize, skipped: Vec<String> },
+    Course {
+        course: String,
+        folder: String,
+        files: usize,
+        readings: usize,
+        links: usize,
+        skipped: Vec<String>,
+        /// What its documents are made of (typed, handwriting, pictures).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        material: Option<super::material::Summary>,
+    },
     Done,
     Error { message: String },
 }
@@ -284,6 +294,7 @@ async fn import_inner(vault: &Vault, id: &str, course_ids: &[String], spaces: &[
         };
         let mut st = store::load(root)?;
         let folder = out.state.folder.clone();
+        let material = out.state.material.as_ref().map(|r| super::material::summarise(r, |_| true));
         let Some(conn) = st.get_mut(id) else {
             return Err("This course site was disconnected while importing.".into());
         };
@@ -301,7 +312,7 @@ async fn import_inner(vault: &Vault, id: &str, course_ids: &[String], spaces: &[
         {
             skipped.push(format!("Grades: {e}"));
         }
-        emit(ImportEvent::Course { course: course.id.clone(), folder: format!("courses/{folder}"), files: out.files, readings: out.readings, links: out.links, skipped });
+        emit(ImportEvent::Course { course: course.id.clone(), folder: format!("courses/{folder}"), files: out.files, readings: out.readings, links: out.links, skipped, material });
     }
     Ok(())
 }
@@ -513,8 +524,17 @@ mod tests {
     fn events_have_the_contracts_shape() {
         let e = serde_json::to_value(ImportEvent::Progress { course: "1".into(), step: "files", done: 2, total: 5 }).unwrap();
         assert_eq!(e, serde_json::json!({"type": "progress", "course": "1", "step": "files", "done": 2, "total": 5}));
-        let e = serde_json::to_value(ImportEvent::Course { course: "1".into(), folder: "courses/X".into(), files: 1, readings: 2, links: 3, skipped: vec![] }).unwrap();
+        let e = serde_json::to_value(ImportEvent::Course { course: "1".into(), folder: "courses/X".into(), files: 1, readings: 2, links: 3, skipped: vec![], material: None }).unwrap();
         assert_eq!(e, serde_json::json!({"type": "course", "course": "1", "folder": "courses/X", "files": 1, "readings": 2, "links": 3, "skipped": []}));
+        let report = crate::lms::material::Report {
+            version: 1,
+            files: vec![crate::lms::material::FileQuality { path: "files/n.pdf".into(), pages: 2, handwriting: vec![1, 2], ..Default::default() }],
+            cant_recognise: None,
+        };
+        let material = Some(crate::lms::material::summarise(&report, |_| true));
+        let e = serde_json::to_value(ImportEvent::Course { course: "1".into(), folder: "courses/X".into(), files: 1, readings: 0, links: 0, skipped: vec![], material }).unwrap();
+        assert_eq!(e["material"]["handwritingPages"], 2);
+        assert_eq!(e["material"]["lines"][0], "2 pages are handwriting or scans: read with text recognition; may contain mistakes.");
         assert_eq!(serde_json::to_value(ImportEvent::Done).unwrap(), serde_json::json!({"type": "done"}));
         let c = ConnectionView { id: "a".into(), kind: Kind::Canvas, address: "https://x".into(), school_name: None, signed_in: true, last_sync: None, courses: vec![] };
         assert_eq!(serde_json::to_value(c).unwrap(), serde_json::json!({"id": "a", "kind": "canvas", "address": "https://x", "signedIn": true, "courses": []}));

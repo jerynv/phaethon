@@ -513,6 +513,9 @@ pub struct CourseInfo {
     pub term: Option<String>,
     /// "courses/<folder>", as spaces see it.
     pub folder: String,
+    /// What its documents are made of, from the last import.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub material: Option<super::material::Summary>,
 }
 
 /// What `course_access_get` gives the UI.
@@ -544,6 +547,7 @@ pub fn all_courses(vault: &Vault) -> Result<Vec<CourseInfo>, String> {
                 code: c.code.clone(),
                 term: c.term.clone(),
                 folder: format!("{COURSES_DIR}/{}", c.folder),
+                material: c.material.as_ref().map(|r| super::material::summarise(r, |_| true)),
             })
         })
         .collect();

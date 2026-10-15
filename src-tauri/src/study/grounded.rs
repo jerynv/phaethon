@@ -112,12 +112,24 @@ pub struct Library<'a> {
     space: &'a Path,
     visible: &'a Visible,
     docs: Mutex<Vec<Arc<Doc>>>,
+    /// Pages the model was shown as pictures: a quote from one is checked roughly against its recognised text.
+    pictured: Mutex<Vec<super::material::PageRef>>,
 }
 
 impl<'a> Library<'a> {
     pub fn new(space: &'a Path, visible: &'a Visible, files: &[CourseFile]) -> Library<'a> {
         let docs = files.iter().map(|f| Arc::new(Doc { label: f.label.clone(), text: f.text.clone(), compact: OnceLock::new() })).collect();
-        Library { space, visible, docs: Mutex::new(docs) }
+        Library { space, visible, docs: Mutex::new(docs), pictured: Mutex::default() }
+    }
+
+    /// Note that the model was shown these pages as pictures.
+    pub fn shown(&self, pages: &[super::material::PageRef]) {
+        let mut p = self.pictured.lock().unwrap_or_else(|e| e.into_inner());
+        for x in pages {
+            if !p.contains(x) {
+                p.push(x.clone());
+            }
+        }
     }
 
     fn doc(&self, source: &str) -> Result<Arc<Doc>, String> {
@@ -143,12 +155,19 @@ impl<'a> Library<'a> {
         }
         let d = self.doc(source).map_err(|e| format!("it cites {e}"))?;
         let hay = d.compact.get_or_init(|| quote::compact(&d.text));
-        let f = quote::find_in(&d.text, hay, q).ok_or_else(|| format!("its quote isn’t in {}", file_name(&d.label)))?;
+        let Some(f) = quote::find_in(&d.text, hay, q) else {
+            // Not word for word: only a page shown as a picture may match, and only roughly.
+            let shown: Vec<u32> = self.pictured.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|(l, _)| *l == d.label).map(|(_, p)| *p).collect();
+            let page = super::material::picture_quote(&d.text, &shown, q).ok_or_else(|| format!("its quote isn’t in {}", file_name(&d.label)))?;
+            let recognised = quote::page_text(&d.text, page).unwrap_or_default();
+            let passage = format!("[{} p. {page}, read from the picture of the page; text recognition read it as:] {}\nQuoted from the picture: «{}»", d.label, recognised.chars().take(2 * AROUND).collect::<String>(), quote::tidy(q));
+            return Ok((Evidence { source: d.label.clone(), quote: quote::tidy(q), at: Some(format!("p. {page}")), picture: Some(page) }, passage));
+        };
         let problem_set = is_problem_set(&d.label);
         let (before, hit, after) = quote::context(&d.text, f, AROUND);
         let at = quote::locate(&d.text, f.start, problem_set);
         let shown = format!("[{}{}] {before}«{hit}»{after}", d.label, at.as_deref().map(|a| format!(" {a}")).unwrap_or_default());
-        Ok((Evidence { source: d.label.clone(), quote: quote::tidy(q), at }, shown))
+        Ok((Evidence { source: d.label.clone(), quote: quote::tidy(q), at, picture: None }, shown))
     }
 }
 
@@ -220,7 +239,7 @@ fn topic_terms(t: &Topic) -> Vec<String> {
 }
 
 /// Section numbers a topic names ("3.8–3.13" → 3.8, 3.9 … 3.13; "5.4" → 5.4).
-fn section_numbers(s: Option<&str>) -> Vec<String> {
+pub(crate) fn section_numbers(s: Option<&str>) -> Vec<String> {
     let Some(s) = s else { return vec![] };
     let nums: Vec<&str> = s.split(|c: char| !(c.is_ascii_digit() || c == '.')).map(|x| x.trim_matches('.')).filter(|x| x.contains('.')).collect();
     match nums.as_slice() {
@@ -701,7 +720,18 @@ fn sort_reply(v: &Value, want: &Want, s: &Scoped, material: &Material, library: 
 
 /// The independent check, in batches. Returns, per candidate, `None` to keep or why it goes.
 #[allow(clippy::too_many_arguments)] // one check's inputs, each needed
-async fn verify<M: Model>(s: &Scoped, course: &str, notation: &str, cands: &[Candidate], model: &M, emit: Emit<'_>, kept_so_far: usize, dropped_so_far: usize) -> Result<Vec<Option<String>>, String> {
+async fn verify<M: Model>(
+    s: &Scoped,
+    course: &str,
+    notation: &str,
+    cands: &[Candidate],
+    model: &M,
+    pictures_of: &(dyn Fn(&[super::material::PageRef], usize) -> Vec<super::model::Picture> + Sync),
+    emit: Emit<'_>,
+    kept_so_far: usize,
+    dropped_so_far: usize,
+) -> Result<Vec<Option<String>>, String> {
+    let system = super::course_only(VERIFY_SYSTEM);
     let mut out: Vec<Option<String>> = vec![];
     let titles: HashMap<&str, String> = s.plan.iter().map(|(t, _)| (t.id.as_str(), format!("{}{}", t.title, t.sections.as_deref().map(|x| format!(" ({x})")).unwrap_or_default()))).collect();
     let mut scope = scope_block(s, course);
@@ -730,7 +760,11 @@ async fn verify<M: Model>(s: &Scoped, course: &str, notation: &str, cands: &[Can
             u.push_str("</item>\n\n");
         }
         let ids: Vec<String> = (1..=batch.len()).map(|i| format!("i{i}")).collect();
-        let verdicts = super::model::ask_json(model, VERIFY_SYSTEM, &u, |v| {
+        // A passage read from a page's picture is checked against that picture too.
+        let read: Vec<super::material::PageRef> = batch.iter().flat_map(|c| c.cites.iter().filter_map(|e| e.picture.map(|p| (e.source.clone(), p)))).collect();
+        let pictures = pictures_of(&super::material::round_robin(vec![read], super::material::CHECK_PICTURES), super::material::CHECK_PICTURES);
+        u.push_str(&super::material::pictures_note(&pictures));
+        let verdicts = super::model::ask_json_seeing(model, &system, &u, &pictures, |v| {
             let list = v.get("verdicts").and_then(Value::as_array).ok_or("expected an object with a \"verdicts\" array")?;
             let mut got: HashMap<String, (String, String, bool)> = HashMap::new();
             for x in list {
@@ -854,9 +888,23 @@ pub async fn make<M: Model>(
     }
     let course_name = seen.map_or("your material".to_string(), |s| s.state.name.clone());
     let notation = taught_notation(s.map.as_ref(), &library);
-    let system = match want {
+    let system = super::course_only(&match want {
         Want::Quiz { .. } => format!("{}\n\n{GROUNDING_RULES}\n\nReply with only JSON, no prose: {{\"title\": \"a short quiz title\", \"questions\": [{{\"kind\": \"...\", \"topic\": \"t1\", \"prompt\": \"...\", \"choices\": [\"...\"], \"answer\": \"...\", \"accept\": [\"...\"], \"explanation\": \"...\", \"citations\": [{{\"source\": \"...\", \"quote\": \"...\"}}]}}]}}", generate::QUIZ_RULES),
         Want::Deck { .. } => format!("{}\n\n{GROUNDING_RULES}\n\nReply with only JSON, no prose: {{\"title\": \"a short deck title\", \"cards\": [{{\"topic\": \"t1\", \"front\": \"...\", \"back\": \"...\", \"citations\": [{{\"source\": \"...\", \"quote\": \"...\"}}]}}]}}", generate::DECK_RULES),
+    });
+    // The handwritten, scanned and figure pages the passages come from, for a model that can look at them.
+    let pictures_of = |pages: &[super::material::PageRef], max: usize| match seen {
+        Some(seen) if model.shows_pictures() && !pages.is_empty() => {
+            let pics = super::material::pictures(visible, seen, pages, max);
+            let shown: Vec<super::material::PageRef> = pages.iter().filter(|(l, p)| pics.iter().any(|x| x.label == format!("{l}, page {p}") || x.label == *l)).cloned().collect();
+            library.shown(&shown);
+            pics
+        }
+        _ => vec![],
+    };
+    let writing_pictures = match seen {
+        Some(seen) => pictures_of(&super::material::pages_of_passages(seen, &vocab_files, &material.text, super::material::WRITE_PICTURES), super::material::WRITE_PICTURES),
+        None => vec![],
     };
     let existing: Vec<String> = match &want {
         Want::Deck { existing } => existing.to_vec(),
@@ -864,7 +912,7 @@ pub async fn make<M: Model>(
     };
     // Without a map there is one "topic": the material itself.
     let target: Vec<(Topic, usize)> = if s.plan.is_empty() {
-        vec![(Topic { id: String::new(), title: String::new(), sections: None, terms: vec![], weight: 1.0, homework: vec![], evidence: vec![] }, ask.count)]
+        vec![(Topic { weight: 1.0, ..Default::default() }, ask.count)]
     } else {
         s.plan.clone()
     };
@@ -893,8 +941,8 @@ pub async fn make<M: Model>(
         }
         emit(StudyEvent::progress("making", round, ROUNDS));
         let kept_texts: Vec<String> = kept.iter().map(|c| c.item.text()).chain(existing.iter().cloned()).collect();
-        let user = write_request(&s, &want, &material, &need, &kept_texts, &dropped, ask.context, ask.extra, &notation);
-        let reply = match model.complete(&system, &user).await {
+        let user = write_request(&s, &want, &material, &need, &kept_texts, &dropped, ask.context, ask.extra, &notation) + &super::material::pictures_note(&writing_pictures);
+        let reply = match model.complete_seeing(&system, &user, &writing_pictures).await {
             Ok(r) => r,
             Err(e) if kept.is_empty() => return Err(e),
             // A later round failing keeps what passed.
@@ -926,7 +974,7 @@ pub async fn make<M: Model>(
         if fresh.is_empty() {
             continue;
         }
-        let verdicts = verify(&s, &course_name, &notation, &fresh, model, emit, kept.len(), dropped.len()).await?;
+        let verdicts = verify(&s, &course_name, &notation, &fresh, model, &pictures_of, emit, kept.len(), dropped.len()).await?;
         for (c, why) in fresh.into_iter().zip(verdicts) {
             match why {
                 None => kept.push(c),
@@ -1053,5 +1101,26 @@ mod tests {
         assert_eq!(section_numbers(Some("5.4")), ["5.4"]);
         assert_eq!(section_numbers(Some("Chapter 2")), Vec::<String>::new());
         assert!(is_logistics("courses/C/announcements.md") && is_logistics("courses/C/files/Syllabus - C241.pdf") && !is_logistics("courses/C/files/Notes.pdf"));
+    }
+
+    #[test]
+    fn a_question_may_quote_a_page_read_from_its_picture_only_once_that_picture_was_shown() {
+        let label = "courses/C/files/Week 4.pdf";
+        let text = format!("## Page 1\n\nTyped: a set is a collection of distinct objects.\n\n## Page 2 {}\n\nA relation R on a set A is reflexive\nif for every a e A, (a,a) e R", crate::lms::text::RECOGNISED);
+        let files = [CourseFile { label: label.into(), sub: Default::default(), text, size: 0, modified: 0 }];
+        let visible = Visible::default();
+        let lib = Library::new(Path::new("/nonexistent"), &visible, &files);
+        let q = "A relation R on a set A is reflexive if for every a ∈ A, (a,a) ∈ R";
+        assert!(lib.check(label, q).unwrap_err().contains("isn’t in Week 4.pdf"), "not shown: the check is exact");
+        lib.shown(&[(label.to_string(), 1)]);
+        assert!(lib.check(label, q).is_err(), "shown page 1, not the page it is on");
+        lib.shown(&[(label.to_string(), 2)]);
+        let (ev, passage) = lib.check(label, q).unwrap();
+        assert_eq!((ev.picture, ev.at.as_deref()), (Some(2), Some("p. 2")));
+        assert!(passage.contains("read from the picture of the page") && passage.contains("(a,a) e R"), "the checker sees what recognition read: {passage}");
+        // Typed text on a page shown as a picture still has to be word for word.
+        let (typed, _) = lib.check(label, "a set is a collection of distinct objects").unwrap();
+        assert_eq!(typed.picture, None);
+        assert!(lib.check(label, "a set is a colection of distinct objects, as typed").is_err(), "page 1 wasn't read from a picture");
     }
 }

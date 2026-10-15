@@ -23,6 +23,7 @@ import { Icon } from "@/icons";
 import { lmsConnect, lmsConnections, lmsCourses, lmsSchools, type LmsConnection, type LmsCourse, type LmsKind, type LmsSchool } from "@/lib/lms";
 import type { Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
+import { MaterialLines } from "@/components/study/material-note";
 import { openSpaceFile } from "@/runtime/records";
 
 import { clearRun, openCourseImport, sitesChanged, startImport, useImportRequest, useRun, type CourseRun, type ImportRequest, type Run } from "./import-store";
@@ -1511,6 +1512,7 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
           />
         </div>
       )}
+      {state === "done" && <MaterialLines summary={c.result!.material} details className="flex flex-col" />}
       {state === "done" && c.result!.skipped.length > 0 && (
         <div className="flex flex-col gap-0.5 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-ink forced-colors:border forced-colors:border-[CanvasText]" data-course-skipped="">
           <p className="font-medium">Some parts couldn’t be imported:</p>

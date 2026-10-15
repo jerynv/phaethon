@@ -41,7 +41,7 @@ const MADE_KEEP: usize = 500;
 /// What the assistant is taught, for every backend's prompt.
 pub const PROMPT: &str = r#"# A quiz or flashcards from the chat
 
-Never write practice questions, a practice test, quiz questions or flashcards in the chat yourself, not even one or two as examples: Phaethon makes them, checking every one against the course's own notes and the exam's scope, and you can't. When the user asks for any of these, reply in a few short sentences of prose: what it will cover, which course material it draws on (by name), how many questions or cards, and which kinds of question. Don't promise topics the course hasn't covered or an exam's coverage you haven't seen in its materials. Then end the reply with exactly one block like this, with nothing after it:
+Never write practice questions, a practice test, quiz questions or flashcards in the chat yourself, not even one or two as examples: Phaethon makes them, checking every one against the course's own notes and the exam's scope, and you can't. When the user asks for any of these, reply in a few short sentences of prose: what it will cover, which course material it draws on (by name), how many questions or cards, and which kinds of question. Everything Phaethon makes comes only from the course's own material (its files, syllabus, assignments, announcements and the readings it assigns) and what the user says it covers, so don't promise topics the course hasn't covered or an exam's coverage you haven't seen in its materials. Then end the reply with exactly one block like this, with nothing after it:
 
 ```phaethon-study
 {"kind": "quiz", "title": "Test 1 practice", "exam": "Test 1", "focus": "", "count": 10, "kinds": ["choice", "truefalse", "short"], "difficulty": "exam", "sources": ["courses/<course folder>"]}
@@ -249,6 +249,9 @@ pub struct Plan {
     /// What is known so far about that exam's scope (from the kept map; nothing is built here).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<PlanScope>,
+    /// Said when the material leans on pages the space's model can't look at (handwriting, diagrams).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub material: Option<crate::vision::Alert>,
 }
 
 /// An exam's scope as the card shows it before anything is made.
@@ -277,7 +280,7 @@ fn plan_scope(space: &Path, visible: &Visible, sources: &[PlanSource], exam: &st
     let said = super::scope::stated(visible, seen);
     let probe = |e: &str| super::scope::find_exam(std::slice::from_ref(&super::scope::ExamScope { title: e.to_string(), date: None, known: false, summary: String::new(), includes: vec![], excludes: vec![], excluded_words: vec![], homework: vec![], evidence: vec![], from_user: false }), exam).is_some();
     if let Some(s) = said.iter().find(|s| probe(&s.exam)) {
-        return Some(base("known", s.text.clone(), true, vec![super::scope::Evidence { source: super::scope::FROM_YOU.into(), quote: s.text.clone(), at: None }], s.exam.clone()));
+        return Some(base("known", s.text.clone(), true, vec![super::scope::Evidence { source: super::scope::FROM_YOU.into(), quote: s.text.clone(), ..Default::default() }], s.exam.clone()));
     }
     let Some((map, _)) = super::scope::cached(visible, seen, None) else {
         return Some(base("unmapped", String::new(), false, vec![], exam.to_string()));
@@ -511,7 +514,25 @@ pub fn plan(space: &Path, visible: &Visible, block: &str, question: &str) -> Res
         notes: a.notes,
         exam: a.exam,
         scope,
+        material: None,
     })
+}
+
+/// What to tell the person before making `plan` when its material leans on
+/// pages their model (`sight`) can't look at: the exam's share when the plan
+/// is for one, else the course's.
+pub fn material_alert(space: &Path, visible: &Visible, plan: &Plan, sight: &crate::vision::Sight) -> Option<crate::vision::Alert> {
+    let inputs: Vec<String> = plan.sources.iter().map(|s| s.path.clone()).collect();
+    let seen = sources::course_of(space, visible, &inputs)?;
+    let report = super::material::report_of(seen)?;
+    let map = super::scope::cached(visible, seen, None).map(|(m, _)| m);
+    let exam = plan.exam.as_deref().and_then(|e| map.as_ref().and_then(|m| super::scope::find_exam(&m.exams, e).cloned()));
+    let pages = super::material::exam_pages(report, seen.folder(), map.as_ref(), exam.as_ref());
+    let of = match &exam {
+        Some(e) if e.known => format!("{}’s material", e.title),
+        _ => "this course".to_string(),
+    };
+    crate::vision::alert(pages, &of, sight)
 }
 
 fn cut(s: &str, max: usize) -> String {

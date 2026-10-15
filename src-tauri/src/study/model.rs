@@ -28,17 +28,40 @@ const CLI_TIMEOUT: Duration = Duration::from_secs(600);
 /// Most of the CLI's output kept.
 const CLI_OUTPUT_MAX: u64 = 8 * 1024 * 1024;
 
+/// A page's picture handed to a model with a question (handwriting, a scan, a diagram).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picture {
+    /// What it is, as the model is told: "courses/C241/files/notes.pdf, page 3".
+    pub label: String,
+    /// `image/png` or `image/jpeg`.
+    pub mime: String,
+    /// The file, base64.
+    pub data: String,
+}
+
 /// Ask once, get text back. `Err` is a message for the person.
 pub trait Model: Send + Sync {
     fn complete(&self, system: &str, user: &str) -> impl Future<Output = Result<String, String>> + Send;
+
+    /// Whether [`Model::complete_seeing`] really shows it pictures.
+    fn shows_pictures(&self) -> bool {
+        false
+    }
+
+    /// Ask with `pictures` alongside the question, each introduced by its
+    /// label, in order. A model that can't be shown pictures is asked without.
+    fn complete_seeing(&self, system: &str, user: &str, pictures: &[Picture]) -> impl Future<Output = Result<String, String>> + Send {
+        let _ = pictures;
+        self.complete(system, user)
+    }
 }
 
-/// Phaethon's own provider, asked with no tools.
-pub struct ProviderModel<P: Provider>(pub P);
+/// Phaethon's own provider, asked with no tools; and whether its model takes pictures.
+pub struct ProviderModel<P: Provider>(pub P, pub bool);
 
-impl<P: Provider> Model for ProviderModel<P> {
-    async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
-        let messages = [json!({"role": "user", "content": [{"type": "text", "text": user}]})];
+impl<P: Provider> ProviderModel<P> {
+    async fn ask(&self, system: &str, content: Vec<Value>) -> Result<String, String> {
+        let messages = [json!({"role": "user", "content": content})];
         let no_tools = json!([]);
         let mut ignore = |_: Delta<'_>| {};
         let turn = self.0.turn(ModelRequest { system, messages: &messages, tools: &no_tools }, &mut ignore).await.map_err(|e| e.message)?;
@@ -50,6 +73,34 @@ impl<P: Provider> Model for ProviderModel<P> {
             return Err("The answer was cut off before it began. Try fewer cards or questions.".into());
         }
         Ok(text)
+    }
+}
+
+/// A message's content: each picture after a line naming it, then the question.
+pub fn picture_blocks(user: &str, pictures: &[Picture]) -> Vec<Value> {
+    let mut content = vec![];
+    for p in pictures {
+        content.push(json!({"type": "text", "text": format!("Picture: {}", p.label)}));
+        content.push(json!({"type": "image", "source": {"type": "base64", "media_type": p.mime, "data": p.data}}));
+    }
+    content.push(json!({"type": "text", "text": user}));
+    content
+}
+
+impl<P: Provider> Model for ProviderModel<P> {
+    async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+        self.ask(system, vec![json!({"type": "text", "text": user})]).await
+    }
+
+    fn shows_pictures(&self) -> bool {
+        self.1
+    }
+
+    async fn complete_seeing(&self, system: &str, user: &str, pictures: &[Picture]) -> Result<String, String> {
+        if !self.1 || pictures.is_empty() {
+            return self.complete(system, user).await;
+        }
+        self.ask(system, picture_blocks(user, pictures)).await
     }
 }
 
@@ -158,11 +209,28 @@ async fn run_once(cli: agent::Cli, mut cmd: tokio::process::Command, input: &str
     Ok((String::from_utf8_lossy(&stdout).into_owned(), String::from_utf8_lossy(&stderr).into_owned(), status))
 }
 
-impl Model for CliModel {
-    async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+/// [`cli_args`] for a question with pictures: the message goes over stdin as
+/// one stream-json user message (the pictures as image blocks), and the
+/// answer comes back as stream-json events ending with the result.
+pub fn cli_args_seeing(system: &str) -> Vec<String> {
+    let mut args = cli_args(system);
+    if let Some(i) = args.iter().position(|a| a == "--output-format") {
+        args[i + 1] = "stream-json".into();
+    }
+    args.splice(1..1, ["--input-format".to_string(), "stream-json".to_string(), "--verbose".to_string()]);
+    args
+}
+
+/// The stdin line for [`cli_args_seeing`].
+pub fn cli_message(user: &str, pictures: &[Picture]) -> String {
+    json!({"type": "user", "message": {"role": "user", "content": picture_blocks(user, pictures)}}).to_string() + "\n"
+}
+
+impl CliModel {
+    async fn ask(&self, args: Vec<String>, input: &str) -> Result<String, String> {
         let mut cmd = agent::command(agent::Cli::Claude, &self.bin, &self.cwd, self.config_dir.as_deref());
-        cmd.args(cli_args(system));
-        let (stdout, stderr, status) = run_once(agent::Cli::Claude, cmd, user).await?;
+        cmd.args(args);
+        let (stdout, stderr, status) = run_once(agent::Cli::Claude, cmd, input).await?;
         match parse_cli_output(&stdout) {
             Ok(text) => Ok(text),
             Err(_) if stderr.contains("Not logged in") || stderr.contains("/login") => Err(agent::NOT_LOGGED_IN_MESSAGE.into()),
@@ -176,6 +244,23 @@ impl Model for CliModel {
             }
             Err(e) => Err(e),
         }
+    }
+}
+
+impl Model for CliModel {
+    async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
+        self.ask(cli_args(system), user).await
+    }
+
+    fn shows_pictures(&self) -> bool {
+        true
+    }
+
+    async fn complete_seeing(&self, system: &str, user: &str, pictures: &[Picture]) -> Result<String, String> {
+        if pictures.is_empty() {
+            return self.complete(system, user).await;
+        }
+        self.ask(cli_args_seeing(system), &cli_message(user, pictures)).await
     }
 }
 
@@ -248,9 +333,55 @@ pub fn parse_other_output(cli: agent::Cli, stdout: &str) -> Result<String, Strin
     }
 }
 
+/// Codex's arguments with `images` attached (`--image=<file>` each, before the prompt from stdin).
+pub fn with_images(mut args: Vec<String>, images: &[PathBuf]) -> Vec<String> {
+    let at = if args.last().is_some_and(|a| a == "-") { args.len() - 1 } else { args.len() };
+    let flags: Vec<String> = images.iter().map(|p| format!("--image={}", p.display())).collect();
+    args.splice(at..at, flags);
+    args
+}
+
 impl Model for OtherCliModel {
     async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
         let (args, input) = self.invocation(system, user)?;
+        self.run(args, input).await
+    }
+
+    fn shows_pictures(&self) -> bool {
+        self.cli == agent::Cli::Codex
+    }
+
+    async fn complete_seeing(&self, system: &str, user: &str, pictures: &[Picture]) -> Result<String, String> {
+        if pictures.is_empty() || self.cli != agent::Cli::Codex {
+            return self.complete(system, user).await;
+        }
+        use base64::Engine;
+        // The pictures as files for the length of the call, in a folder of its own.
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join("phaethon-codex-pictures").join(format!("{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Phaethon couldn’t prepare the pictures for Codex: {e}"))?;
+        let mut files = vec![];
+        for (i, p) in pictures.iter().enumerate() {
+            let ext = if p.mime == "image/jpeg" { "jpg" } else { "png" };
+            let file = dir.join(format!("picture-{}.{ext}", i + 1));
+            let bytes = base64::engine::general_purpose::STANDARD.decode(&p.data).map_err(|_| "A picture couldn’t be prepared for Codex.".to_string())?;
+            std::fs::write(&file, bytes).map_err(|e| format!("Phaethon couldn’t prepare the pictures for Codex: {e}"))?;
+            files.push(file);
+        }
+        let labels: Vec<String> = pictures.iter().enumerate().map(|(i, p)| format!("Picture {}: {}", i + 1, p.label)).collect();
+        let user = format!("{}\n\n{user}", labels.join("\n"));
+        let result = match self.invocation(system, &user) {
+            Ok((args, input)) => self.run(with_images(args, &files), input).await,
+            Err(e) => Err(e),
+        };
+        let _ = std::fs::remove_dir_all(&dir);
+        result
+    }
+}
+
+impl OtherCliModel {
+    async fn run(&self, args: Vec<String>, input: String) -> Result<String, String> {
         // Gemini CLI describes its folder to the model; an empty one says nothing about the space.
         let cwd = if self.cli == agent::Cli::Gemini {
             let empty = std::env::temp_dir().join("phaethon-gemini").join("one-shot");
@@ -297,6 +428,22 @@ impl Model for AnyModel {
             AnyModel::OtherCli(m) => m.complete(system, user).await,
         }
     }
+
+    fn shows_pictures(&self) -> bool {
+        match self {
+            AnyModel::Api(m) => m.shows_pictures(),
+            AnyModel::Cli(m) => m.shows_pictures(),
+            AnyModel::OtherCli(m) => m.shows_pictures(),
+        }
+    }
+
+    async fn complete_seeing(&self, system: &str, user: &str, pictures: &[Picture]) -> Result<String, String> {
+        match self {
+            AnyModel::Api(m) => m.complete_seeing(system, user, pictures).await,
+            AnyModel::Cli(m) => m.complete_seeing(system, user, pictures).await,
+            AnyModel::OtherCli(m) => m.complete_seeing(system, user, pictures).await,
+        }
+    }
 }
 
 /// The setup folder `cli` uses in `vault`, under `root`: always for Codex and
@@ -340,7 +487,7 @@ pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&
         }));
     }
     match crate::providers::for_space(vault, space_dir) {
-        Ok(p) => Ok(AnyModel::Api(ProviderModel(p))),
+        Ok(p) => Ok(AnyModel::Api(ProviderModel(p, crate::vision::for_space(vault, space_dir).shown))),
         Err(why) => cli(&settings).map(AnyModel::Cli).ok_or(why),
     }
 }
@@ -397,7 +544,13 @@ pub fn extract_json(reply: &str) -> Option<Value> {
 /// Ask for JSON and check it with `validate`. One retry, telling the model what
 /// was wrong; a second bad answer is an error (and nothing gets written).
 pub async fn ask_json<M: Model, T>(model: &M, system: &str, user: &str, validate: impl Fn(&Value) -> Result<T, String>) -> Result<T, String> {
-    let reply = model.complete(system, user).await?;
+    ask_json_seeing(model, system, user, &[], validate).await
+}
+
+/// [`ask_json`] with pictures alongside the question (and its retry).
+pub async fn ask_json_seeing<M: Model, T>(model: &M, system: &str, user: &str, pictures: &[Picture], validate: impl Fn(&Value) -> Result<T, String>) -> Result<T, String> {
+    let ask = |u: String| async move { if pictures.is_empty() { model.complete(system, &u).await } else { model.complete_seeing(system, &u, pictures).await } };
+    let reply = ask(user.to_string()).await?;
     let first = match extract_json(&reply) {
         Some(v) => validate(&v),
         None => Err("the reply had no JSON in it".into()),
@@ -410,7 +563,7 @@ pub async fn ask_json<M: Model, T>(model: &M, system: &str, user: &str, validate
     let retry = format!(
         "{user}\n\n<previous_reply>\n{shown}\n</previous_reply>\n\nThat reply couldn't be used: {problem}. Answer again with only the corrected JSON, in the same format."
     );
-    let reply = model.complete(system, &retry).await?;
+    let reply = ask(retry).await?;
     match extract_json(&reply) {
         Some(v) => validate(&v),
         None => Err("the reply had no JSON in it".into()),
@@ -467,15 +620,27 @@ pub mod tests {
 
     #[test]
     fn the_provider_is_asked_once_with_no_tools() {
-        let p = ProviderModel(FakeProvider(Ok(("{\"ok\":1}", "end_turn")), Mutex::default()));
+        let p = ProviderModel(FakeProvider(Ok(("{\"ok\":1}", "end_turn")), Mutex::default()), true);
         assert_eq!(block_on(p.complete("sys", "hello")).unwrap(), "{\"ok\":1}");
         let asked = p.0.1.lock().unwrap().clone().unwrap();
         assert_eq!(asked["system"], "sys");
         assert_eq!(asked["tools"], json!([]));
         assert_eq!(asked["messages"][0]["content"][0]["text"], "hello");
-        let refused = ProviderModel(FakeProvider(Ok(("", "refusal")), Mutex::default()));
+        // With pictures: each named, then shown, then the question.
+        let pic = Picture { label: "courses/C/files/n.pdf, page 2".into(), mime: "image/png".into(), data: "iVBO".into() };
+        block_on(p.complete_seeing("sys", "read it", std::slice::from_ref(&pic))).unwrap();
+        let asked = p.0.1.lock().unwrap().clone().unwrap();
+        assert_eq!(asked["messages"][0]["content"][0]["text"], "Picture: courses/C/files/n.pdf, page 2");
+        assert_eq!(asked["messages"][0]["content"][1], json!({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBO"}}));
+        assert_eq!(asked["messages"][0]["content"][2]["text"], "read it");
+        // A model that can't see pictures is asked without them.
+        let blind = ProviderModel(FakeProvider(Ok(("ok", "end_turn")), Mutex::default()), false);
+        assert!(!blind.shows_pictures());
+        block_on(blind.complete_seeing("sys", "read it", &[pic])).unwrap();
+        assert_eq!(blind.0.1.lock().unwrap().clone().unwrap()["messages"][0]["content"], json!([{"type": "text", "text": "read it"}]));
+        let refused = ProviderModel(FakeProvider(Ok(("", "refusal")), Mutex::default()), false);
         assert!(block_on(refused.complete("s", "u")).unwrap_err().contains("declined"));
-        let down = ProviderModel(FakeProvider(Err(ErrorKind::Network), Mutex::default()));
+        let down = ProviderModel(FakeProvider(Err(ErrorKind::Network), Mutex::default()), false);
         assert_eq!(block_on(down.complete("s", "u")).unwrap_err(), "Phaethon couldn’t reach Anthropic.");
     }
 
@@ -526,6 +691,22 @@ pub mod tests {
         assert!(a.windows(2).any(|w| w[0] == "--output-format" && w[1] == "json"));
         assert!(a.windows(2).any(|w| w[0] == "--system-prompt" && w[1] == "SYS"));
         assert!(!a.iter().any(|x| x.contains("dangerously") || x == "bypassPermissions" || x == "--bare" || x == "--resume"));
+        // With pictures: the same walls, the message as stream-json on stdin.
+        let s = cli_args_seeing("SYS");
+        assert!(s.windows(2).any(|w| w[0] == "--input-format" && w[1] == "stream-json"));
+        assert!(s.windows(2).any(|w| w[0] == "--output-format" && w[1] == "stream-json"));
+        assert!(s.iter().any(|x| x == "--verbose") && s.windows(2).any(|w| w[0] == "--tools" && w[1].is_empty()));
+        for flag in ["--restricted", "--strict-mcp-config", "--safe-mode", "--disable-slash-commands", "--no-session-persistence"] {
+            assert!(s.iter().any(|x| x == flag), "missing {flag}");
+        }
+        let line = cli_message("read it", &[Picture { label: "p. 1".into(), mime: "image/jpeg".into(), data: "/9j/".into() }]);
+        let v: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(v["type"], "user");
+        assert_eq!(v["message"]["content"][1]["source"]["media_type"], "image/jpeg");
+        assert_eq!(v["message"]["content"][2]["text"], "read it");
+        // Codex: each picture a file, before the prompt read from stdin.
+        let a = with_images(vec!["exec".into(), "--json".into(), "-".into()], &[PathBuf::from("/t/picture-1.png")]);
+        assert_eq!(a, ["exec", "--json", "--image=/t/picture-1.png", "-"]);
     }
 
     #[cfg(unix)]

@@ -25,6 +25,7 @@ pub mod tools;
 pub mod tutor_mode;
 pub mod vault;
 pub mod viewer;
+pub mod vision;
 
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent, State};

@@ -19,7 +19,7 @@ use url::Url;
 use super::html::{self, FoundLink};
 use super::store::{self, CourseState, Due, FileRec, LinkRec};
 use super::textbooks::{self, Isbn};
-use super::{Course, CourseContent, CourseGrades, GradeItem, LmsError, MAX_DOWNLOAD, Session, names, text};
+use super::{Course, CourseContent, CourseGrades, GradeItem, LmsError, MAX_DOWNLOAD, Session, material, names, text};
 
 pub struct Options {
     /// Largest single download.
@@ -797,6 +797,17 @@ pub async fn import_course(
     write(README, &readme)?;
     progress(STEP_WRITING, 1, 1);
 
+    // ---- What each document is made of (typed, handwriting, pictures). ----
+    let docs: Vec<String> = files_state
+        .values()
+        .map(|r| r.path.clone())
+        .chain(links_state.values().filter_map(|r| r.path.clone()))
+        .filter(|p| text::kind_of(Path::new(p)) != text::Doc::Other)
+        .collect();
+    let prev_material = prev.and_then(|p| p.material.clone());
+    let at = root.clone();
+    let material = tokio::task::spawn_blocking(move || material::assess_course(&at, &docs, prev_material.as_ref(), &|p| text::pdf_layers(None, p))).await.ok();
+
     let readings = links_state.values().filter(|r| r.path.is_some()).count();
     let links = web_pages.len();
     let state = CourseState {
@@ -808,6 +819,7 @@ pub async fn import_course(
         links: links_state,
         due,
         last_sync: Some(store::now_ms()),
+        material,
     };
     Ok(Outcome { state, files: present, downloaded, readings, links, skipped })
 }

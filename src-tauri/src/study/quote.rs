@@ -198,6 +198,95 @@ pub fn context(text: &str, f: Found, around: usize) -> (String, String, String) 
     (format!("{}{lead}", squeeze(&before)).trim_start().to_string(), squeeze(&text[f.start..f.end]), format!("{trail}{}", squeeze(&after)).trim_end().to_string())
 }
 
+// ---- Pages read from a picture ------------------------------------------------------
+
+/// Of a quote's words, the share that must be on the page (see [`roughly`]).
+pub const ROUGH_SHARE: f64 = 0.6;
+/// A quote checked roughly has at least this many words of three letters or more.
+pub const ROUGH_MIN_WORDS: usize = 4;
+
+fn rough_words(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_alphanumeric()).filter(|w| w.chars().count() >= 3).map(str::to_lowercase).collect()
+}
+
+/// Whether `a` and `b` differ by at most `max` single-character edits.
+fn near(a: &str, b: &str, max: usize) -> bool {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if a.len().abs_diff(b.len()) > max {
+        return false;
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            cur[j + 1] = (prev[j] + usize::from(ca != cb)).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        if cur.iter().min().is_some_and(|m| *m > max) {
+            return false;
+        }
+        prev = cur;
+    }
+    prev[b.len()] <= max
+}
+
+/// Whether `quote`, as a model read it from a page's picture, roughly
+/// matches what text recognition read from the same page (`page`): at least
+/// [`ROUGH_SHARE`] of its words (of three letters or more, at least
+/// [`ROUGH_MIN_WORDS`]) are on the page, a word counting when the page has
+/// it or one a letter or two away (recognition garbles some letters). Only
+/// ever used for a page recognised from a picture and shown to the model,
+/// never for typed text, which must match exactly ([`find`]).
+pub fn roughly(page: &str, quote: &str) -> bool {
+    if strip_marks(quote).chars().count() > MAX_CHARS {
+        return false;
+    }
+    let want = rough_words(strip_marks(quote));
+    if want.len() < ROUGH_MIN_WORDS {
+        return false;
+    }
+    let have: std::collections::HashSet<String> = rough_words(page).into_iter().collect();
+    let found = want
+        .iter()
+        .filter(|w| {
+            have.contains(*w) || {
+                let n = w.chars().count();
+                let max = if n >= 8 { 2 } else if n >= 5 { 1 } else { 0 };
+                max > 0 && have.iter().any(|h| near(w, h, max))
+            }
+        })
+        .count();
+    found as f64 >= ROUGH_SHARE * want.len() as f64
+}
+
+/// The text under "## Page N" in a text copy, up to the next page.
+pub fn page_text(copy: &str, n: u32) -> Option<String> {
+    let mut out: Option<String> = None;
+    for line in copy.lines() {
+        if let Some(rest) = line.strip_prefix("## Page ") {
+            if out.is_some() {
+                break;
+            }
+            let num: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            if num.parse::<u32>().ok() == Some(n) {
+                out = Some(String::new());
+            }
+            continue;
+        }
+        if let Some(t) = out.as_mut() {
+            t.push_str(line);
+            t.push('\n');
+        }
+    }
+    out.map(|t| t.trim().to_string())
+}
+
+/// The page of a text copy a byte offset is on (its last "## Page N" before it).
+pub fn page_at(copy: &str, at: usize) -> Option<u32> {
+    let head = &copy[..at.min(copy.len())];
+    let i = head.rfind("## Page ")?;
+    head[i + 8..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().ok()
+}
+
 /// Where in its file a passage is, in a few words: the nearest numbered
 /// section before it ("§5.3") or, on a problem set, the problem ("#3").
 pub fn locate(text: &str, at: usize, problem_set: bool) -> Option<String> {
@@ -267,6 +356,28 @@ mod tests {
         // Typographic quotes and dashes, and a word broken across a line.
         assert!(find(PDF, "injective (or \"one-to-one\") if no two inputs give the same output.").is_some());
         assert!(find(PDF, "c1 : R -> R").is_none(), "an arrow written differently is not the same text");
+    }
+
+    /// What Vision read from a real handwritten C241 page (20260917, page 3), and
+    /// quotes a model might give from its picture.
+    const RECOGNISED_PAGE: &str = "## Page 2\n\nx\n\n## Page 3 (recognised from handwriting or a scan; may contain mistakes)\n\nA relation R on a set A is reflexive\nif for every a e A, (a,a) e R\nIt is symmetric if whenever (a,b) € R then (b, a) E R\nTransitive: if (a,b) eR and (b,c) e R then (a,c) € R\nequivalance relation = reflexive, symmetric, transitive\n\n## Page 4\n\nnext";
+
+    #[test]
+    fn a_quote_read_from_a_picture_matches_its_recognised_page_roughly() {
+        let page = page_text(RECOGNISED_PAGE, 3).unwrap();
+        assert!(page.starts_with("A relation R on a set A is reflexive"), "{page}");
+        assert!(!page.contains("next"));
+        assert_eq!(page_text(RECOGNISED_PAGE, 9), None);
+        assert_eq!(page_at(RECOGNISED_PAGE, RECOGNISED_PAGE.find("Transitive").unwrap()), Some(3));
+        assert_eq!(page_at(RECOGNISED_PAGE, 0), None);
+        // The symbols are what recognition mangled; the words are there.
+        assert!(roughly(&page, "A relation R on a set A is reflexive if for every a ∈ A, (a,a) ∈ R"));
+        assert!(roughly(&page, "An equivalence relation is reflexive, symmetric and transitive"), "a letter off still counts");
+        assert!(!roughly(&page, "A function is surjective when every element of the codomain is hit"), "a different passage");
+        assert!(!roughly(&page, "reflexive symmetric"), "too few words to say");
+        // Typed text never goes through this: its check stays exact.
+        assert!(find(&page, "An equivalence relation is reflexive, symmetric and transitive").is_none());
+        assert!(near("equivalence", "equivalance", 1) && !near("relation", "function", 2));
     }
 
     #[test]

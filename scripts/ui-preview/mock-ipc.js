@@ -532,7 +532,7 @@
             L.list.flatMap((c) =>
               c.courses.map((id) => {
                 const x = L.courses.find((k) => k.id === id) ?? { name: id };
-                return { key: `${c.id}/${id}`, connection: c.id, courseId: id, name: x.name, ...(x.code ? { code: x.code } : {}), ...(x.term ? { term: x.term } : {}), folder: `courses/${x.name}` };
+                return { key: `${c.id}/${id}`, connection: c.id, courseId: id, name: x.name, ...(x.code ? { code: x.code } : {}), ...(x.term ? { term: x.term } : {}), folder: `courses/${x.name}`, ...(L.material?.[id] ? { material: L.material[id] } : {}) };
               }),
             ).sort((a, b) => a.name.localeCompare(b.name));
           if (cmd === "course_access_get") {
@@ -627,6 +627,8 @@
               readings: Number(courseId) % 4,
               links: 5,
               skipped: L.skipped?.[courseId] ?? [],
+              // f18: what its documents are made of (L.material { courseId: MaterialSummary }).
+              ...(L.material?.[courseId] ? { material: L.material[courseId] } : {}),
             });
           }
           c.lastSync = Date.now();
@@ -1085,6 +1087,8 @@
             notes,
             ...(madePath ? { made: madePath } : {}),
             running: !!runsNow[origin],
+            // f18: the warning when the material leans on pages the model can't look at (S.planMaterial).
+            ...(S.planMaterial ? { material: S.planMaterial } : {}),
             // f15: the exam and what is known of its scope (S.planScopes { exam: PlanScope }, S.statedScopes { exam: text }).
             ...(b.exam ? { exam: b.exam } : {}),
             ...(b.exam && S.statedScopes?.[b.exam]

@@ -52,6 +52,10 @@ objc2-core-graphics = { version = "0.3", default-features = false, features = ["
 objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "objc2-core-graphics"] }
 objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNTypes", "objc2-core-graphics"] }
 
+# Text recognition on Windows (lms/text/ocr/winocr.rs): Windows' own PDF
+# drawing and recogniser. MIT OR Apache-2.0, already in the tree through Tauri.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Data_Pdf", "Foundation", "Foundation_Collections", "Graphics_Imaging", "Media_Ocr", "Storage", "Storage_Streams", "Win32_System_WinRT"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

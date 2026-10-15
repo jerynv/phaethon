@@ -621,7 +621,7 @@ pub async fn submit<M: Model>(
             ));
         }
         let graded = match model() {
-            Ok(m) => ask_json(&m, GRADE_SYSTEM, &user, |v| check_grades(v, &ids)).await,
+            Ok(m) => ask_json(&m, &super::course_only(GRADE_SYSTEM), &user, |v| check_grades(v, &ids)).await,
             Err(e) => Err(e),
         };
         for (i, q, given) in short {
@@ -703,7 +703,7 @@ pub async fn review<M: Model>(space: &Path, attempt_path: &str, model: impl FnOn
     emit(progress("reviewing", 0, 1));
     let user = format!("Quiz: {}\n\n{}", quiz.title, mistakes_block(&missed));
     let out = match model() {
-        Ok(m) => m.complete(REVIEW_SYSTEM, &user).await,
+        Ok(m) => m.complete(&super::course_only(REVIEW_SYSTEM), &user).await,
         Err(e) => Err(e),
     };
     emit(progress("reviewing", 1, 1));
@@ -1066,7 +1066,7 @@ mod tests {
     impl super::super::model::Model for RuleChecker {
         async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
             self.asked.lock().unwrap().push((system.into(), user.into()));
-            if !system.starts_with("You check practice questions") {
+            if !system.contains("You check practice questions") {
                 let mut w = self.writes.lock().unwrap();
                 return Ok(if w.is_empty() { "nothing more".into() } else { w.remove(0) });
             }
@@ -1127,7 +1127,7 @@ mod tests {
         assert!(whys.contains(&("If A ⊆ B, the power set of A has fewer members.", "not taught in your notes or not in scope: ⊆ isn't taught")), "{whys:?}");
         assert!(whys.iter().any(|(t, w)| t.contains("preimage") && w.contains("preimages aren't taught")), "the wall still holds: {whys:?}");
         let asked = m.asked.lock().unwrap();
-        let check = asked.iter().find(|(s, _)| s.starts_with("You check practice questions")).unwrap();
+        let check = asked.iter().find(|(s, _)| s.contains("You check practice questions")).unwrap();
         assert!(check.0.contains("a symbol listed in <course_notation> counts as taught") && check.0.contains("doesn't make any other symbol, term or idea taught"));
         let given = check.1.split_once("<course_notation>").unwrap().1.split_once("</course_notation>").unwrap().0;
         assert_eq!(given.trim(), format!("∅: the empty set [source: {NOTES} \"{Q4}\"]"), "only the entry whose passage is in the files");

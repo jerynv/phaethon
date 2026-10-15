@@ -9,6 +9,15 @@ import { CONVERSATION, GRANTS, SETTINGS, WORK_THREAD, activeDesc, blurWindow, ch
 const CHIP = "[data-grants-chip]";
 const POPOVER = '[data-radix-popper-content-wrapper] [role="dialog"]';
 const WIDE = [[1100, 720]];
+/** Whether the sidebar is docked beside the conversation (a wide window) rather than laid over it. */
+const docked = (page) => page.evaluate(() => !document.getElementById("spaces-sidebar")?.hasAttribute("data-overlay") && !document.getElementById("main")?.inert && innerWidth > 720 * Math.max(1, parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ph-text-scale")) || 1));
+/** Where the space dots showing now are, and those without their forced-colours rules (for audit-shell-forced-dots). */
+const dotsIn = () => {
+  const dots = [...document.querySelectorAll("span[data-space-hue][aria-hidden]")].filter((e) => e.getClientRects().length);
+  const where = (e) => (e.closest("header") ? "title bar" : e.closest("nav") ? "sidebar" : e.closest("[data-radix-popper-content-wrapper]") ? "popover" : "other");
+  const needs = ["forced-colors:forced-color-adjust-none", "forced-colors:border-[CanvasText]", "forced-colors:border"];
+  return { places: [...new Set(dots.map(where))].sort(), unruled: dots.filter((e) => needs.some((c) => !e.classList.contains(c))).map(where) };
+};
 const ctrl = (label) => `[data-window-control][aria-label="${label}"]`;
 
 /**
@@ -94,7 +103,7 @@ export default [
   platform("linux"),
   {
     name: "audit-shell-inactive",
-    sizes: WIDE,
+    sizes: [[1100, 720], [640, 480]],
     mock: { platform: "windows", settings: SETTINGS, threads: { school: CONVERSATION }, grants: { school: GRANTS.two } },
     async run(page, h) {
       await h.idle();
@@ -108,6 +117,17 @@ export default [
       // A-017: the whole app is marked, so the sidebar selection greys too.
       const root = await page.evaluate(() => !!document.querySelector('#root > [data-inactive] #spaces-sidebar [aria-current="page"]'));
       check(root, "the app root is marked inactive, around the sidebar's current space");
+      // A small window's title bar has Spaces and Settings in words: dimmed, they stay text colour (secondary,
+      // 4.5:1), not the tertiary kept for icons (it measured 4.23:1 here).
+      const words = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.className = "text-ink-secondary";
+        document.querySelector("header").append(probe);
+        const want = getComputedStyle(probe).color;
+        probe.remove();
+        return { want, got: [...document.querySelectorAll("header button[aria-keyshortcuts] .truncate")].map((e) => getComputedStyle(e).color) };
+      });
+      check(words.got.every((c) => c === words.want), "inactive, the title bar's words are dimmed only to secondary text", JSON.stringify(words));
       console.log(`     active space background: ${before} -> ${await activeBg()}`);
     },
   },
@@ -121,7 +141,10 @@ export default [
       // A narrow window starts with the sidebar hidden; show it first, as this is about hiding it.
       await showSidebar(page);
       const before = await page.evaluate(() => !!document.querySelector('header [data-testid="titlebar-settings"]'));
-      check(!before, "no title bar Settings button while the sidebar (with its own) shows");
+      // Docked (a wide window), the sidebar's own Settings is the one; in a small window the sidebar only lies over
+      // the conversation for a moment, so the title bar's Settings stays where it always is (3.2.3).
+      if (await docked(page)) check(!before, "no title bar Settings button while the docked sidebar (with its own) shows");
+      else check(before, "in a small window the title bar's Settings stays, the sidebar over the conversation or not");
       await page.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
@@ -206,6 +229,9 @@ export default [
     mock: { settings: SETTINGS, threads: { school: CONVERSATION } },
     async run(page, h) {
       await showSidebar(page);
+      // In a small window showing the sidebar was a click on this very toggle, and a tooltip never shows again
+      // under a pointer that pressed it until it leaves (Radix): leave first, as a person's pointer would.
+      await park(page);
       await h.hover('button[aria-controls="spaces-sidebar"]');
       await new Promise((r) => setTimeout(r, 900));
       await page.waitForSelector('[data-slot="tooltip-content"]', { timeout: 3000 });
@@ -409,6 +435,14 @@ export default [
     async run(page, h) {
       await h.idle();
       await showSidebar(page);
+      // In a small window the sidebar lies over the conversation and closes as anything else is used, so it can't
+      // show with the popover: its dots are read first, then the popover's, and the places put together.
+      const narrow = !(await docked(page));
+      const before = narrow ? await page.evaluate(dotsIn) : null;
+      if (narrow) {
+        await page.click('button[aria-controls="spaces-sidebar"]');
+        await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+      }
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });
       await park(page);
@@ -442,6 +476,10 @@ export default [
           cssLength: css.length,
         };
       });
+      if (before) {
+        d.places = [...new Set([...d.places, ...before.places])].sort();
+        d.unruled.push(...before.unruled);
+      }
       check(["popover", "sidebar", "title bar"].every((p) => d.places.includes(p)), "space dots show in the title bar, sidebar and popover", d.places.join(", "));
       check(!d.missingCss.length, "the stylesheet defines the dots' forced-colours rules (own colour, CanvasText edge)", `${d.missingCss.join(", ")}; ${d.cssLength} characters of CSS read`);
       check(!d.unruled.length, "every space dot carries those forced-colours rules", d.unruled.join(", "));

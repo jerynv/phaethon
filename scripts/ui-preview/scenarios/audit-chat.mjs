@@ -680,6 +680,14 @@ export default [
       await park(page);
       await h.idle();
       await h.shot("three");
+      // In a short window the files fold into one "3 files attached" button (attachments.tsx) so the message keeps
+      // its lines: open it, and the files and their Remove buttons are there.
+      if (await page.$("[data-attachment-fold]")) {
+        check((await page.$eval("[data-attachment-fold]", (b) => b.textContent.trim())) === "3 files attached", "folded: the button says how many");
+        await page.click("[data-attachment-fold]");
+        await page.waitForFunction(() => [...document.querySelectorAll('button[aria-label^="Remove"]')].some((b) => b.getClientRects().length), { timeout: 3000 });
+        check(await page.$eval("[data-attachment-fold]", (b) => b.getAttribute("aria-expanded")) === "true", "it opens the files, said as expanded");
+      }
       await h.hover('button[aria-label^="Remove"]');
       await h.idle();
       await h.shot("remove-hover");

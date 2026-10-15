@@ -86,9 +86,23 @@ const firstRun = (name, scale) => ({
     check(s.first?.startsWith("Set up Phaethon"), "the setup card's heading is the first thing in the conversation", s.first);
     check(s.factsFolded && s.summary === "What is an API key?", "the facts are folded into “What is an API key?”", JSON.stringify(s));
     const field = await inLog(page, "[data-setup-key]");
-    check(field.inside && s.scrollTop === 0, "the key field is in view without scrolling", JSON.stringify(field));
     const save = await inLog(page, '[data-setup-card] button[type="submit"]');
-    check(save.inside, "Check and save is in view too", JSON.stringify(save));
+    // Where the conversation has room for the card down to Check and save, all of it shows at once. In a window
+    // too short for that (640x480 at 200% text leaves the conversation about 84 px), it can't: there each one
+    // must come whole into view when it is reached by keyboard.
+    const room = field.logBottom - field.logTop >= save.bottom - field.logTop;
+    if (room) {
+      check(field.inside && s.scrollTop === 0, "the key field is in view without scrolling", JSON.stringify(field));
+      check(save.inside, "Check and save is in view too", JSON.stringify(save));
+    } else {
+      for (const [sel, what] of [["[data-setup-key]", "the key field"], ['[data-setup-card] button[type="submit"]', "Check and save"]]) {
+        await page.evaluate(() => document.activeElement?.blur());
+        await h.focusVia(sel);
+        await h.idle();
+        const at = await inLog(page, sel);
+        check(at.inside, `too short to show the card at once: ${what} scrolls whole into view when Tab reaches it`, JSON.stringify(at));
+      }
+    }
   },
 });
 

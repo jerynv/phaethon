@@ -102,6 +102,20 @@ async function runAxe(page, name) {
   }
 }
 
+/**
+ * Wait for every finite animation and transition to end (a menu or tooltip fading in or out, a colour easing on
+ * hover), so a screenshot and axe see the page as it rests, not a frame of a fade: a half-faded tooltip measures a
+ * contrast it never has at rest. Endless ones (spinners) don't count. At most 3 s; then it goes on as it is.
+ */
+async function settle(page) {
+  await page
+    .waitForFunction(
+      () => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getTiming?.().iterations === Infinity),
+      { timeout: 3000, polling: 50 },
+    )
+    .catch(() => {});
+}
+
 const scenarios = [];
 // --scenarios <dir> loads scenario files from another folder instead (kept out of the repo).
 const scenarioDir = arg("scenarios", null) ?? join(here, "scenarios");
@@ -202,6 +216,7 @@ for (const s of chosen) {
           /** An extra screenshot now (axe runs on it too, with --axe). */
           shot: async (label) => {
             const n = `${s.name}--${label}${suffix}`;
+            await settle(page);
             await page.screenshot({ path: join(out, `${n}.png`) });
             shots++;
             console.log(`ok   ${n}`);
@@ -209,6 +224,7 @@ for (const s of chosen) {
           },
         };
         await s.run(page, helpers);
+        await settle(page);
         await page.screenshot({ path: join(out, `${name}.png`) });
         shots++;
         console.log(`ok   ${name}${errors.length ? `  (page errors: ${errors.join(" | ").slice(0, 300)})` : ""}`);

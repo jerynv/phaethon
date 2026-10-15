@@ -256,8 +256,13 @@ export default [
       await page.click(`${SHOWN} [data-view-tab="study"]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
-      await page.waitForSelector(`${SHOWN} [data-question="q1"] [data-provenance]`, { timeout: 4000 });
-      const from = await text(page, `${SHOWN} [data-question="q1"] [data-provenance] p`);
+      // Where it comes from shows with the results.
+      await page.waitForSelector(`${SHOWN} [data-quiz-submit]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-quiz-submit]`);
+      await page.waitForSelector(`${SHOWN} [data-submit-anyway]`, { timeout: 3000 });
+      await page.click(`${SHOWN} [data-submit-anyway]`);
+      await page.waitForSelector(`${SHOWN} [data-result="q1"] [data-provenance]`, { timeout: 4000 });
+      const from = await text(page, `${SHOWN} [data-result="q1"] [data-provenance] p`);
       check(from === "From: notes c241 Fa26 - 20260917 p. 3 (read from a picture of the page)", "a passage read from a picture says so", from);
       await h.shot("source");
     },

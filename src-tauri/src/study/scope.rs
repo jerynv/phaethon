@@ -863,8 +863,11 @@ pub fn scope_words(e: &ExamScope) -> String {
         return format!("{}: I couldn’t find what it covers", e.title);
     }
     let mut s = if e.summary.is_empty() { format!("{} topics", e.includes.len()) } else { e.summary.clone() };
-    if !e.excluded_words.is_empty() && !s.to_lowercase().contains("not ") {
-        s.push_str(&format!("; not {}", e.excluded_words.join(" or ")));
+    // "no graphs or combinatorics" already says it: only words the summary doesn't name are added.
+    let lower = s.to_lowercase();
+    let unsaid: Vec<&str> = e.excluded_words.iter().map(|w| w.as_str()).filter(|w| !lower.contains(&w.to_lowercase())).collect();
+    if !unsaid.is_empty() {
+        s.push_str(&format!("; not {}", unsaid.join(" or ")));
     }
     format!("{}: {s}", e.title)
 }
@@ -988,6 +991,10 @@ mod tests {
         assert!(!exams[1].known && exams[1].includes.is_empty(), "the final's scope has no real evidence: unknown, not guessed");
         assert_eq!(scope_words(t1), "Test 1: through HW 6; not graphs or combinatorics");
         assert_eq!(scope_words(&exams[1]), "Final: I couldn’t find what it covers");
+        // A summary that already leaves them out ("no …") isn't told again; one it doesn't name is added.
+        let said = |summary: &str| ExamScope { summary: summary.into(), ..t1.clone() };
+        assert_eq!(scope_words(&said("October 15 or 16; through HW 6; no graphs or combinatorics")), "Test 1: October 15 or 16; through HW 6; no graphs or combinatorics");
+        assert_eq!(scope_words(&said("through HW 6; no graphs")), "Test 1: through HW 6; no graphs; not combinatorics");
         // Nothing real at all: asked again.
         assert!(check_map(&json!({"topics": [{"title": "x", "evidence": [{"source": "Notes.pdf", "quote": "not in the file at all, nowhere"}]}]}), &docs, &HashSet::new()).is_err());
         fs::remove_dir_all(root).unwrap();

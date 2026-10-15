@@ -77,3 +77,11 @@ export const hasMath = (src: string) => mathPieces(src).some((p) => p.math);
  * math (an announcement, a title): `$\lambda$` reads as `\lambda`.
  */
 export const mathAsText = (src: string) => mathPieces(src).map((p) => p.text).join("");
+
+/**
+ * A quoted string inside a formula (`F(\{"cat","ant"\})`) as upright text in
+ * curly quotes, the way a course writes strings, instead of TeX's italic
+ * letters between two closing quotes. Left as it is when the string holds a
+ * character text mode would read as a command.
+ */
+export const texStrings = (tex: string) => tex.replace(/"([^"\\{}$&#^_%~]*)"/g, (_, s: string) => `\\text{“${s}”}`);

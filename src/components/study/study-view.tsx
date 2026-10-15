@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import { studyOverview, type Attempt, type DeckSummary, type Quiz, type QuizSummary } from "@/lib/study";
 import type { Space } from "@/lib/spaces";
+import { draftCount } from "@/lib/quiz-answers";
 import { cn } from "@/lib/utils";
 
 import { DeckEditor } from "./deck-editor";
@@ -250,7 +251,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
           ) : (
             <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised" data-quiz-list="">
               {quizzes.map((q) => (
-                <QuizRow key={q.path} quiz={q} onTake={() => setScreen({ at: "quiz", path: q.path })} />
+                <QuizRow key={q.path} space={space.id} quiz={q} onTake={() => setScreen({ at: "quiz", path: q.path })} />
               ))}
             </ul>
           )}
@@ -359,8 +360,15 @@ function DeckRow({ deck, onOpen, onStudy }: { deck: DeckSummary; onOpen: () => v
   );
 }
 
-function QuizRow({ quiz, onTake }: { quiz: QuizSummary; onTake: () => void }) {
-  const last = quiz.lastScore != null ? `Last score ${percent(quiz.lastScore)}${quiz.lastTaken ? ` · ${relativeDate(quiz.lastTaken)}` : ""}` : "Not taken yet";
+function QuizRow({ space, quiz, onTake }: { space: string; quiz: QuizSummary; onTake: () => void }) {
+  // Answers not yet checked are kept on this computer (quiz-answers.ts): the row says so and continues them.
+  const begun = draftCount(space, quiz.path);
+  const last =
+    begun > 0
+      ? `${begun} of ${quiz.questions} answered, not checked yet`
+      : quiz.lastScore != null
+        ? `Last score ${percent(quiz.lastScore)}${quiz.lastTaken ? ` · ${relativeDate(quiz.lastTaken)}` : ""}`
+        : "Not taken yet";
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3" data-quiz-row={quiz.path}>
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
@@ -374,7 +382,8 @@ function QuizRow({ quiz, onTake }: { quiz: QuizSummary; onTake: () => void }) {
         {last}
       </p>
       <Button type="button" variant="outline" size="sm" onClick={onTake} data-take-quiz={quiz.path}>
-        Take quiz<span className="sr-only">: {quiz.title}</span>
+        {begun > 0 ? "Continue quiz" : "Take quiz"}
+        <span className="sr-only">: {quiz.title}</span>
       </Button>
     </li>
   );

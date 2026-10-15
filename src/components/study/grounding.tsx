@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { SpaceFileLink } from "@/components/viewer/file-viewer";
 import { Icon } from "@/icons";
 import { studyScopeState, type Evidence, type Grounding, type UnknownScope } from "@/lib/study";
+import { tidyScope } from "@/lib/quiz-answers";
 import { citeName } from "@/lib/study-cite";
 
 import { MathText } from "./card-text";
@@ -115,7 +116,7 @@ export function GroundingSummary({ space, g, noun = "question" }: { space: strin
         <p className="flex items-start gap-2 text-base text-ink" data-scope-line="">
           <Icon name="book" className="mt-0.5 shrink-0 text-ink-secondary" />
           <span className="min-w-0 wrap-break-word">
-            <span className="font-semibold">{g.exam}:</span> {g.scope || "its topics"}
+            <span className="font-semibold">{g.exam}:</span> {g.scope ? tidyScope(g.scope) : "its topics"}
             {g.fromUser && <span className="text-ink-secondary"> (as you said)</span>}
           </span>
         </p>

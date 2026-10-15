@@ -443,22 +443,38 @@ export default [
       await openStudy(page);
       await page.click(`${SHOWN} [data-take-quiz="study/quizzes/Test 1 practice.json"]`);
       check(await waitFor(page, () => document.activeElement?.matches("[data-quiz-title]")), "the quiz opens with its title focused");
-      const kinds = await page.evaluate(() => [...document.querySelectorAll("[data-question]")].map((q) => q.getAttribute("data-kind")).join(","));
-      check(kinds === "choice,multi,truefalse,short,cloze", "every kind of question is there", kinds);
-      // Choice by keyboard: Tab into the radios, arrows move between them.
+      // One question at a time: Next goes through every kind.
+      const kinds = [];
+      for (let i = 0; i < 5; i++) {
+        kinds.push(await page.$eval("[data-question]", (q) => q.getAttribute("data-kind")));
+        if (i < 4) await page.click("[data-quiz-next]");
+      }
+      check(kinds.join(",") === "choice,multi,truefalse,short,cloze", "every kind of question is there, one at a time", kinds.join(","));
+      check((await page.$$("[data-question]")).length === 1, "only one question shows");
+      await page.click('[data-go-question="q1"]');
+      check(await waitFor(page, () => document.activeElement?.matches("[data-question-heading]") && document.querySelector("[data-question]")?.getAttribute("data-question") === "q1"), "the map goes back to question 1, its heading focused");
+      // Choice by keyboard: arrows move between the radios, Enter goes on.
       await page.focus('[data-question="q1"] input[type=radio]');
       await page.keyboard.press("ArrowDown");
       const picked = await page.evaluate(() => document.querySelector('[data-question="q1"] input:checked')?.value);
       check(picked === "A square (a 4-cycle)", "arrow keys choose within a question", picked);
+      await page.keyboard.press("Enter");
+      check(await waitFor(page, () => document.querySelector("[data-question]")?.getAttribute("data-question") === "q2" && document.activeElement?.matches("[data-question-heading]")), "Enter on a choice is Next, not hand in");
+      check((await calls(page, "study_quiz_submit")).length === 0, "nothing handed in");
       // Multi: two of three right, one wrong.
       for (const i of [1, 2, 3]) {
         await page.focus(`[data-question="q2"] label:nth-child(${i}) input`);
         await page.keyboard.press("Space");
       }
+      await page.click("[data-quiz-next]");
       await page.focus('[data-question="q3"] input[type=radio]');
       await page.keyboard.press("Space");
+      await page.click("[data-quiz-next]");
       await page.type('[data-question="q4"] textarea', "The sides alternate, so an odd cycle would end on the same side.");
+      await page.click("[data-quiz-next]");
       check((await status(page, "[data-answered]")) === "4 of 5 answered", "the answered count", await status(page, "[data-answered]"));
+      const map = await page.$$eval("[data-go-question]", (bs) => bs.map((b) => b.getAttribute("aria-label")));
+      check(map[0] === "Question 1, answered" && map[4] === "Question 5, no answer yet", "the map says which have answers", JSON.stringify(map));
       // Check with one empty: asks first.
       await page.click("[data-quiz-submit]");
       check(await waitFor(page, () => document.activeElement?.matches("[data-unanswered]")), "an unanswered question: asks first, focus there");

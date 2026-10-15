@@ -3,7 +3,7 @@ import "katex/dist/katex.min.css";
 import katex from "katex";
 import { memo } from "react";
 
-import { mathPieces } from "@/lib/study-math";
+import { mathPieces, texStrings } from "@/lib/study-math";
 
 import { clozePieces } from "./words";
 
@@ -20,7 +20,7 @@ function draw(tex: string, display: boolean): string | null {
   if (drawn.has(key)) return drawn.get(key)!;
   let html: string | null;
   try {
-    html = katex.renderToString(tex, { displayMode: display, output: "htmlAndMathml", throwOnError: true, trust: false, strict: "ignore", maxSize: 20, maxExpand: 200 });
+    html = katex.renderToString(texStrings(tex), { displayMode: display, output: "htmlAndMathml", throwOnError: true, trust: false, strict: "ignore", maxSize: 20, maxExpand: 200 });
   } catch {
     html = null;
   }

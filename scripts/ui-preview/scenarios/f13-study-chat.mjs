@@ -196,7 +196,15 @@ export default [
       check(q.focus === "q1" && q.tag === "INPUT", "focus is on the first question's first choice", JSON.stringify(q));
       check(q.said?.includes("Your quiz is ready: Eigenvalues practice, 3 questions"), "its arrival is said", q.said);
       check(q.title === "Eigenvalues practice", "it is the quiz just made", q.title);
-      check(q.katex >= 8 && q.mathml === q.katex && q.display && !q.rawDollar, "math is drawn by KaTeX, with MathML for screen readers, no $ left", JSON.stringify(q));
+      check(q.katex >= 8 && q.mathml === q.katex && !q.rawDollar, "math is drawn by KaTeX, with MathML for screen readers, no $ left", JSON.stringify(q));
+      // One question at a time: display math is on one of the others.
+      let display = false;
+      for (const id of await page.$$eval(`${SHOWN} [data-go-question]`, (bs) => bs.map((b) => b.dataset.goQuestion))) {
+        await page.click(`${SHOWN} [data-go-question="${id}"]`);
+        display ||= await page.evaluate(() => !!document.querySelector('[data-quiz-form] [data-math="display"]'));
+      }
+      check(display, "display math is drawn as display");
+      await page.click(`${SHOWN} [data-go-question="q1"]`);
       const st = await mockState(page);
       check(st.makes.length === 1 && st.quizzes.length === 1, "two presses made one quiz", JSON.stringify(st));
       check(st.makes[0].question === QUESTION && st.makes[0].reply.includes("6 questions") && st.makes[0].reply.includes("phaethon-study"), "the question and the reply go along as context", JSON.stringify(st.makes[0]).slice(0, 200));

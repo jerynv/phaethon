@@ -185,26 +185,32 @@ export default [
         return {
           scope: box.querySelector("[data-scope-line]")?.innerText.replace(/\s+/g, " "),
           note: box.querySelector("[data-grounding-note]")?.innerText,
-          from: [...document.querySelectorAll(`${S} [data-question] [data-provenance] p`)].map((p) => p.textContent),
+          hidden: !document.querySelector(`${S} [data-question] [data-provenance]`),
           fit: document.documentElement.scrollWidth <= window.innerWidth,
         };
       }, SHOWN);
       check(g.scope === "Test 1: through HW 6; not graphs or combinatorics", "the quiz header says the exam's scope", g.scope);
       check(g.note?.startsWith("Only 3 of the 4 questions you asked for passed the check"), "fewer questions are explained, never padded", g.note);
-      check(g.from[0] === "From: Wennstrom Lecture Notes - C241 Fa26 §5.3" && g.from[2] === "From: HW 06 - C241 Fa26 #2", "each question says where it comes from", JSON.stringify(g.from));
+      check(g.hidden, "where a question comes from stays hidden while answering (its passage can give the answer away)");
       check(g.fit, "nothing scrolls sideways");
       await h.shot("header");
-      // The passage, one fold below, with the file a click on.
-      await page.click(`${SHOWN} [data-question="q1"] [data-provenance] summary`);
-      const p = await page.evaluate((S) => ({ passage: document.querySelector(`${S} [data-question="q1"] [data-passage] mark`)?.textContent, open: document.querySelector(`${S} [data-question="q1"] [data-view-file]`)?.getAttribute("data-view-file") }), SHOWN);
-      check(p.passage?.startsWith("A function f : A → B is injective") && p.open === NOTES, "the quote is shown and its file opens in the viewer", JSON.stringify(p));
       // Coverage and what the check left out.
       await page.evaluate((S) => document.querySelectorAll(`${S} [data-grounding] details`).forEach((d) => (d.open = true)), SHOWN);
       const cov = await page.evaluate((S) => ({ cov: document.querySelector(`${S} [data-coverage]`)?.innerText, dropped: document.querySelector(`${S} [data-dropped]`)?.innerText }), SHOWN);
       check(cov.cov.includes("Relations (4.1–4.4): none, its questions didn’t pass the check") && cov.cov.includes("Properties of functions (5.3): 2 questions"), "coverage says which topics got questions and why one got none", cov.cov);
       check(cov.dropped.includes("preimages are never defined"), "what was dropped is said with why", cov.dropped);
       await h.shot("details");
-      await page.click(`${SHOWN} [data-question="q1"] [data-view-file]`);
+      // In the results, each question says where it comes from, the passage one fold below with the file a click on.
+      await page.click(`${SHOWN} [data-quiz-submit]`);
+      await page.waitForSelector(`${SHOWN} [data-submit-anyway]`, { timeout: 3000 });
+      await page.click(`${SHOWN} [data-submit-anyway]`);
+      await page.waitForSelector(`${SHOWN} [data-quiz-results]`, { timeout: 4000 });
+      const from = await page.evaluate((S) => [...document.querySelectorAll(`${S} [data-result] [data-provenance] p`)].map((p) => p.textContent), SHOWN);
+      check(from[0] === "From: Wennstrom Lecture Notes - C241 Fa26 §5.3" && from[2] === "From: HW 06 - C241 Fa26 #2", "each question says where it comes from", JSON.stringify(from));
+      await page.click(`${SHOWN} [data-result="q1"] [data-provenance] summary`);
+      const p = await page.evaluate((S) => ({ passage: document.querySelector(`${S} [data-result="q1"] [data-passage] mark`)?.textContent, open: document.querySelector(`${S} [data-result="q1"] [data-view-file]`)?.getAttribute("data-view-file") }), SHOWN);
+      check(p.passage?.startsWith("A function f : A → B is injective") && p.open === NOTES, "the quote is shown and its file opens in the viewer", JSON.stringify(p));
+      await page.click(`${SHOWN} [data-result="q1"] [data-view-file]`);
       check(await waitFor(page, (n) => document.querySelector("[data-file-viewer]")?.getAttribute("data-file-viewer") === n, NOTES), "the file opens in the in-app viewer");
     },
   },

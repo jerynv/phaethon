@@ -57,6 +57,7 @@
     "allow-thread-forget-preview",
     "allow-space-touch",
     "allow-space-show",
+    "allow-space-add",
     "allow-space-export",
     "allow-export-show",
     "allow-conversations-search",

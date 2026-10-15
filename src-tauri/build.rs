@@ -10,7 +10,7 @@ fn main() {
             "spaces_list", "space_create", "space_update",
             "api_key_check", "models_list", "settings_set_model", "file_open",
             "space_model_get", "space_model_set", "space_models_list",
-            "space_touch", "space_show", "space_export", "export_show",
+            "space_touch", "space_show", "space_add", "space_export", "export_show",
             "conversations_search",
             "lms_schools", "lms_connect", "lms_connections", "lms_courses", "lms_import", "lms_disconnect",
             "lms_grades", "lms_grades_refresh", "course_access_get", "course_access_set",

@@ -1263,3 +1263,27 @@ mod keychain_tests {
     }
 }
 
+
+#[cfg(test)]
+mod acl_tests {
+    /// Every command the app registers is declared in build.rs and allowed in
+    /// the main window's capability, or the real app refuses it at the IPC
+    /// layer ("not allowed by ACL"), which the UI tests' fake backend never does.
+    #[test]
+    fn every_registered_command_is_allowed() {
+        let lib = include_str!("lib.rs");
+        let handler = lib.split("generate_handler![").nth(1).and_then(|r| r.split(']').next()).expect("the handler list");
+        let commands: Vec<&str> = handler
+            .split(',')
+            .map(|c| c.trim().rsplit("::").next().unwrap().trim())
+            .filter(|c| !c.is_empty())
+            .collect();
+        assert!(commands.len() > 50, "{commands:?}");
+        let build = include_str!("../build.rs");
+        let caps = include_str!("../capabilities/default.json");
+        for c in commands {
+            assert!(build.contains(&format!("\"{c}\"")), "{c} is not declared in build.rs");
+            assert!(caps.contains(&format!("\"allow-{}\"", c.replace('_', "-"))), "{c} is not allowed in capabilities/default.json");
+        }
+    }
+}

@@ -54,7 +54,7 @@
   "plugins": {
     "updater": {
       "pubkey": "",
-      "endpoints": [],
+      "endpoints": ["https://github.com/jerynv/phaethon/releases/latest/download/latest.json"],
       "requireSignedVersion": true,
       "windows": {
         "installMode": "passive"

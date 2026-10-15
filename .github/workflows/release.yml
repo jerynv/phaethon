@@ -1,7 +1,7 @@
 # Builds Phaethon for macOS, Windows and Linux and puts the installers, the signed
 # updater files and latest.json on a draft GitHub release. Publishing the draft is
 # what makes it the update everyone gets: the app reads
-# https://github.com/<owner>/<repo>/releases/latest/download/latest.json, and
+# https://github.com/jerynv/phaethon/releases/latest/download/latest.json, and
 # "latest" never means a draft or a prerelease.
 #
 # Before the first run (see src-tauri/src/updater.rs):

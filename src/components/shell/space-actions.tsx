@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useId, useLayoutEffect, useRef, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -145,6 +145,36 @@ const canFocus = (el: HTMLElement | null): el is HTMLElement =>
   !!el?.isConnected && !el.closest("[hidden],[inert]") && el.getClientRects().length > 0;
 
 /**
+ * How far the notice must rise to sit above the message box it would
+ * otherwise cover (its + button among it): 0 when no message box is shown
+ * beside it. Followed as the box grows and the window changes size.
+ */
+function useLiftOverComposer(open: boolean, ref: RefObject<HTMLElement | null>) {
+  const [lift, setLift] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) return setLift(0);
+    const measure = () => {
+      const box = [...document.querySelectorAll<HTMLElement>("[data-composer]")].find(canFocus);
+      const notice = ref.current;
+      if (!box || !notice) return setLift(0);
+      const b = box.getBoundingClientRect();
+      const n = notice.getBoundingClientRect();
+      const beside = b.left < n.right && b.right > n.left;
+      setLift(beside ? Math.max(0, window.innerHeight - b.top) : 0);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    document.querySelectorAll("[data-composer]").forEach((el) => ro.observe(el));
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [open, ref]);
+  return lift;
+}
+
+/**
  * The notice for the last space action. Rendered once (by the sidebar, which
  * is always mounted) into the page's body, at the foot of the window.
  */
@@ -153,6 +183,8 @@ export function SpaceActionNotice() {
   const msgId = useId();
   const firstRef = useRef<HTMLButtonElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
+  const noticeRef = useRef<HTMLElement>(null);
+  const lift = useLiftOverComposer(!!n, noticeRef);
 
   // A new notice takes focus; where focus was is remembered from the first notice on.
   useLayoutEffect(() => {
@@ -191,11 +223,13 @@ export function SpaceActionNotice() {
   return createPortal(
     <section
       key={n.key}
+      ref={noticeRef}
+      style={{ "--ph-notice-lift": `${lift}px` } as CSSProperties}
       aria-label={n.kind === "exported" ? "Export finished" : n.kind === "added" ? "Files added" : "Something went wrong"}
       data-space-action-notice={n.kind}
       onKeyDown={onKeyDown}
       className={cn(
-        "fixed start-(--ph-pane-inset) bottom-(--ph-pane-inset) z-40 flex w-88 max-w-[calc(100%-var(--ph-pane-inset)*2)] items-start gap-2.5",
+        "fixed start-(--ph-pane-inset) bottom-[calc(var(--ph-notice-lift)+var(--ph-pane-inset))] z-40 flex w-88 max-w-[calc(100%-var(--ph-pane-inset)*2)] items-start gap-2.5",
         "rounded-lg border border-line bg-raised px-3.5 py-3 text-base text-ink shadow-lg forced-colors:border-[CanvasText]",
       )}
     >

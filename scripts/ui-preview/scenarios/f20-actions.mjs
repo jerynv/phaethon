@@ -10,7 +10,8 @@
 //   f20-open-settings  Settings: Spaces under a reply opens Settings on Spaces
 //   f20-attach         Attach files… under a reply opens this space's file picker
 //   f20-streaming      while the reply is still coming, no buttons yet
-//   f20-plus-menu      the + menu adds files or a folder to the space; the notice says what and offers Show in Finder
+//   f20-plus-menu      the + menu adds files or a folder to the space; the notice says what and offers Show in Finder,
+//                      above the message box rather than over it
 //   f20-space-menu     a space's menu has Add files… and Add a folder…, which add to that space
 import { SETTINGS, check, park } from "../audit-fixtures.mjs";
 
@@ -152,6 +153,7 @@ export default [
   },
   {
     name: "f20-plus-menu",
+    sizes: [[1100, 720], [640, 480]],
     mock: { settings: SETTINGS, threads: {} },
     async run(page) {
       await page.focus(`${SHOWN} [aria-label="Add to message"]`);
@@ -172,6 +174,12 @@ export default [
       await new Promise((r) => setTimeout(r, 400));
       const tip = await page.evaluate(() => [...document.querySelectorAll('[role="tooltip"]')].map((t) => t.textContent));
       check(tip.length === 0, "and the + button's tooltip isn't left over it", JSON.stringify(tip));
+      const over = await page.evaluate((s) => {
+        const n = document.querySelector("[data-space-action-notice]").getBoundingClientRect();
+        const b = document.querySelector(`${s} [data-composer]`).getBoundingClientRect();
+        return { clear: n.bottom <= b.top, n: n.bottom, b: b.top };
+      }, SHOWN);
+      check(over.clear, "the notice sits above the message box, never over its + button", JSON.stringify(over));
       await park(page);
     },
   },

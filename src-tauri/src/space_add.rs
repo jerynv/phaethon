@@ -199,7 +199,7 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(docs.join("secret.txt"), school.join("link.txt")).unwrap();
 
-        let added = add(&space, &vault, &[school.clone()]).unwrap();
+        let added = add(&space, &vault, std::slice::from_ref(&school)).unwrap();
         assert_eq!(added.paths, vec!["files/Scool"]);
         assert_eq!(added.files, 2);
         assert_eq!(fs::read(space.join("files/Scool/2026/Resume.pdf")).unwrap(), b"%PDF-1.7");

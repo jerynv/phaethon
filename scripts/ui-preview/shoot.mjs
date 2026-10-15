@@ -11,7 +11,8 @@
 // sizes, and writes <out>/<scenario>-<theme>-<w>x<h>[-variant].png. Prints any page
 // errors; exits non-zero if a scenario failed.
 //
-// Selecting scenarios: --only a,b (exact names) or --match prefix (names starting with it).
+// Selecting scenarios: --only a,b (exact names) or --match a,b (names starting with any of them).
+// --help prints this and exits.
 //
 // Variants (apply to every scenario in the run, and name the files):
 //   --scale 1.5        text size token at startup (mock appearance)   -> -scale1.5
@@ -34,6 +35,11 @@ import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 
 const here = dirname(fileURLToPath(import.meta.url));
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  const head = readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1);
+  console.log(head.slice(0, head.findIndex((l) => !l.startsWith("//"))).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+  process.exit(0);
+}
 const arg = (k, d) => {
   const i = process.argv.indexOf(`--${k}`);
   return i > 0 ? process.argv[i + 1] : d;
@@ -42,7 +48,7 @@ const flag = (k) => process.argv.includes(`--${k}`);
 const dist = arg("dist", "dist");
 const out = arg("out", "ui-shots");
 const only = arg("only", "")?.split(",").filter(Boolean);
-const match = arg("match", "");
+const match = arg("match", "")?.split(",").filter(Boolean);
 const sizesGiven = flag("sizes");
 const sizes = arg("sizes", "1100x720,760x560").split(",").map((s) => s.split("x").map(Number));
 const themes = arg("themes", "light,dark").split(",");
@@ -122,7 +128,7 @@ const scenarioDir = arg("scenarios", null) ?? join(here, "scenarios");
 for (const f of readdirSync(scenarioDir).sort()) {
   if (f.endsWith(".mjs")) scenarios.push(...(await import(join(scenarioDir, f))).default);
 }
-const chosen = scenarios.filter((s) => (!only?.length || only.includes(s.name)) && (!match || s.name.startsWith(match)));
+const chosen = scenarios.filter((s) => (!only?.length || only.includes(s.name)) && (!match?.length || match.some((m) => s.name.startsWith(m))));
 
 const mockJs = readFileSync(join(here, "mock-ipc.js"), "utf8");
 const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png" };

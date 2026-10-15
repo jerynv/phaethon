@@ -254,7 +254,7 @@ Rules:
 /// or of each other (repeats are dropped, not errors).
 /// One card from the model's JSON, checked (its source given by the caller).
 pub fn card_from(c: &Value, n: usize, m: &Material, source: Option<String>) -> Result<Note, String> {
-    let note = Note { front: space_math_braces(&str_field(c, "front")), back: space_math_braces(&str_field(c, "back")), source, quote: None };
+    let note = Note { front: space_math_braces(&str_field(c, "front")), back: space_math_braces(&str_field(c, "back")), source, ..Default::default() };
     if note.front.is_empty() {
         return Err(format!("card {n} has no front"));
     }

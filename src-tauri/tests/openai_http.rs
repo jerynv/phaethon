@@ -377,3 +377,85 @@ async fn model_lists_and_key_checks() {
     assert_eq!(seen[4].path(), "/v1/key", "OpenRouter's key is checked where a key is needed");
     assert_eq!(seen[4].header("authorization").as_deref(), Some("Bearer sk-or-v1-good-key"));
 }
+
+/// A space whose model is `provider`'s `model` at `base`, in a vault of its own.
+fn space_with(provider: &str, base: &str, model: &str) -> (phaethon_lib::vault::Vault, std::path::PathBuf) {
+    let root = std::env::temp_dir().join(format!("phaethon-sight-{provider}-{}-{}", std::process::id(), base.len()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join(".phaethon")).unwrap();
+    let settings = json!({"provider": provider, "providerModels": {provider: model}, "providerUrls": {provider: base}});
+    std::fs::write(root.join(".phaethon/settings.json"), settings.to_string()).unwrap();
+    let space = root.join("spaces/school");
+    std::fs::create_dir_all(&space).unwrap();
+    (phaethon_lib::vault::Vault::at(&root), space)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_providers_list_says_which_models_read_pictures() {
+    use phaethon_lib::vision::{self, Sees};
+    // OpenRouter's list, as it publishes it: architecture.input_modalities.
+    let (base, _seen, task) = server(vec![plain(
+        "200 OK",
+        &[],
+        &json!({"data": [
+            {"id": "acme/sees-all", "name": "Acme: Sees", "architecture": {"modality": "text+image->text", "input_modalities": ["text", "image"], "output_modalities": ["text"]}},
+            {"id": "google/gemini-text-edition", "name": "Gemini text", "architecture": {"modality": "text->text", "input_modalities": ["text"], "output_modalities": ["text"]}},
+            {"id": "acme/says-nothing", "name": "Quiet"}
+        ]})
+        .to_string(),
+    )])
+    .await;
+    let m = openai::list_models(providers::preset("openrouter").unwrap(), &base, None).await.unwrap();
+    task.await.unwrap();
+    assert_eq!(m.iter().map(|m| m.sees).collect::<Vec<_>>(), [Some(Sees::Yes), Some(Sees::No), None]);
+    assert_eq!(serde_json::to_value(&m[0]).unwrap()["sees"], "yes");
+    assert!(serde_json::to_value(&m[2]).unwrap().get("sees").is_none());
+    assert_eq!(vision::sees("openrouter", &base, "acme/sees-all"), Sees::Yes, "by the list, though its name says nothing");
+    assert_eq!(vision::sees("openrouter", &base, "google/gemini-text-edition"), Sees::No, "by the list, though its name says gemini");
+    assert_eq!(vision::sees("openrouter", &base, "acme/says-nothing"), Sees::Unknown, "the list said nothing: by name");
+
+    // Ollama: its OpenAI-style list says nothing, an older /api/tags neither, so /api/show is asked per model.
+    let (base, seen, task) = server(vec![
+        plain("200 OK", &[], r#"{"object":"list","data":[{"id":"llava:13b"},{"id":"my-notes-model:latest"},{"id":"qwen3:8b"}]}"#),
+        plain("200 OK", &[], r#"{"models":[{"name":"llava:13b","model":"llava:13b"},{"name":"my-notes-model:latest","model":"my-notes-model:latest"},{"name":"qwen3:8b","model":"qwen3:8b"}]}"#),
+        plain("200 OK", &[], r#"{"details":{"family":"llama"},"model_info":{"general.architecture":"llama"},"capabilities":["completion"]}"#),
+        plain("200 OK", &[], r#"{"details":{"family":"gemma3"},"model_info":{"general.architecture":"gemma3"},"capabilities":["completion","vision"]}"#),
+        plain("404 Not Found", &[], r#"{"error":"model 'qwen3:8b' not found"}"#),
+    ])
+    .await;
+    let m = openai::list_models(providers::preset("ollama").unwrap(), &base, None).await.unwrap();
+    task.await.unwrap();
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.iter().map(|s| s.path()).collect::<Vec<_>>(), ["/v1/models", "/api/tags", "/api/show", "/api/show", "/api/show"]);
+    assert_eq!(seen[2].body["model"], "llava:13b");
+    assert_eq!(seen[3].body["model"], "my-notes-model:latest");
+    assert_eq!(m.iter().map(|m| m.sees).collect::<Vec<_>>(), [Some(Sees::No), Some(Sees::Yes), None]);
+    assert_eq!(vision::sees("ollama", &base, "llava:13b"), Sees::No, "what Ollama says over the name");
+    assert_eq!(vision::sees("ollama", &base, "my-notes-model:latest"), Sees::Yes);
+
+    // Study's decision and its alert follow the list.
+    let (vault, space) = space_with("ollama", &base, "my-notes-model:latest");
+    let sight = vision::for_space(&vault, &space);
+    assert_eq!((sight.sees, sight.shown), (Sees::Yes, true));
+    assert_eq!(vision::alert(5, "this course", &sight), None);
+    let (vault, space) = space_with("ollama", &base, "llava:13b");
+    let sight = vision::for_space(&vault, &space);
+    assert_eq!((sight.sees, sight.shown), (Sees::No, false));
+    assert_eq!(vision::alert(5, "this course", &sight).unwrap().kind, "cantSee");
+    std::fs::remove_dir_all(vault.root()).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_newer_ollama_says_in_its_tags_and_show_isnt_asked() {
+    use phaethon_lib::vision::{self, Sees};
+    let (base, seen, task) = server(vec![
+        plain("200 OK", &[], r#"{"object":"list","data":[{"id":"gemma3:4b"},{"id":"flux-image:latest"}]}"#),
+        plain("200 OK", &[], r#"{"models":[{"name":"gemma3:4b","model":"gemma3:4b","capabilities":["completion","vision"]},{"name":"flux-image:latest","model":"flux-image:latest","capabilities":["image"]}]}"#),
+    ])
+    .await;
+    let m = openai::list_models(providers::preset("ollama").unwrap(), &base, None).await.unwrap();
+    task.await.unwrap();
+    assert_eq!(seen.lock().unwrap().len(), 2, "no /api/show");
+    assert_eq!(m.iter().map(|m| m.sees).collect::<Vec<_>>(), [Some(Sees::Yes), Some(Sees::No)], "\"image\" makes pictures, it doesn't read them");
+    assert_eq!(vision::sees("ollama", &base, "flux-image:latest"), Sees::No);
+}

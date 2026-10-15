@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/icons";
-import { studyDeck, studyDeckSave, studyDelete, type Card } from "@/lib/study";
+import { SourceLine } from "@/components/rich/citation";
+import { cardCites, studyDeck, studyDeckSave, studyDelete, type Card } from "@/lib/study";
 import { cn } from "@/lib/utils";
 import { openSpaceFile } from "@/runtime/records";
 
@@ -336,6 +337,7 @@ export function DeckEditor({
                       </span>
                     </p>
                     <p className="text-base wrap-break-word text-ink-secondary">{c.kind === "cloze" ? <CardText text={c.front} reveal /> : <MathText text={c.back} />}</p>
+                    <SourceLine space={space} cites={cardCites(c)} className="mt-1" />
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <Mastery card={c} />

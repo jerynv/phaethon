@@ -51,6 +51,8 @@ export type Card = {
   source?: string;
   /** The passage in that file it was made from, word for word (checked when it was made). */
   quote?: string;
+  /** The page whose picture the passage was read from (handwriting, a scan): checked only roughly. */
+  picture?: number;
   /** The last rating, 1..5. */
   confidence?: number;
   /** When it's due next, ms. */
@@ -189,6 +191,12 @@ export function requeue<T>(queue: T[], card: T, confidence: Confidence): T[] {
 }
 
 /** A cloze front split into text and blanks ("{{c1::text::hint}}" reads as "text"). */
+/** Where a card comes from, as a question's citations say it: its passage, and the page whose picture it was read from. */
+export function cardCites(c: Card): Evidence[] {
+  if (!c.source || !c.quote) return [];
+  return [{ source: c.source, quote: c.quote, ...(c.picture ? { at: `p. ${c.picture}`, picture: c.picture } : {}) }];
+}
+
 export function clozeParts(front: string): Array<{ text: string; blank: boolean }> {
   const out: Array<{ text: string; blank: boolean }> = [];
   const re = /\{\{(.*?)\}\}/gs;

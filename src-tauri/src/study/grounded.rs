@@ -702,6 +702,7 @@ fn sort_reply(v: &Value, want: &Want, s: &Scoped, material: &Material, library: 
             Want::Quiz { kinds, .. } => generate::question_from(raw, n, material, kinds, source).map(Item::Q),
             Want::Deck { .. } => generate::card_from(raw, n, material, source).map(|mut note| {
                 note.quote = Some(cites[0].quote.clone());
+                note.picture = cites[0].picture;
                 Item::N(note)
             }),
         };

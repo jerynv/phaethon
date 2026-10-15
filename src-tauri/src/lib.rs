@@ -419,6 +419,30 @@ fn cli_import_run(state: State<'_, AppState>, space: String) -> Result<Vec<Strin
     })
 }
 
+/// At launch: ask the providers the spaces' models come from, of those whose
+/// model lists say which models read pictures without a key (OpenRouter,
+/// Ollama), for their lists, so Study knows (vision.rs). Quietly: a list that
+/// can't be had leaves what was kept, or the names.
+async fn learn_model_sight(vault: Vault) {
+    let settings = vault.settings();
+    let mut refs: Vec<providers::ModelRef> = providers::default_ref(&settings).into_iter().collect();
+    for s in spaces::list(&vault).unwrap_or_default() {
+        if let Some(r) = vault.space_dir(&s.id).ok().and_then(|d| space_model::get_ref(&d)) {
+            refs.push(r);
+        }
+    }
+    let mut asked = std::collections::BTreeSet::new();
+    for r in refs {
+        let p = r.provider;
+        if !matches!(p.id, "openrouter" | "ollama") || !asked.insert(p.id) {
+            continue;
+        }
+        if let Ok(base) = providers::base_url(&settings, p) {
+            let _ = openai::list_models(p, &base, None).await;
+        }
+    }
+}
+
 /// At launch, once per space ever: bring in its earlier Claude Code
 /// conversations. A space with a reply already running is left for the next launch.
 fn import_cli_conversations(vault: &Vault, isolated_root: Option<&std::path::Path>, runs: &Runs) {
@@ -1007,6 +1031,12 @@ pub fn run() {
                 .app_data_dir()
                 .ok()
                 .map(|d| d.join("claude-config"));
+            // What providers' model lists said about pictures (vision.rs), kept on this
+            // computer, and asked again now of those the spaces use that say.
+            if let Ok(dir) = app.path().app_data_dir() {
+                vision::keep_at(dir.join("model-pictures.json"));
+            }
+            tauri::async_runtime::spawn(learn_model_sight(vault.clone()));
             let runs = Runs::default();
             #[cfg(unix)]
             kill_children_on_signal(app.handle().clone(), runs.clone());

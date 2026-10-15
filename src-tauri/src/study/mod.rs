@@ -295,6 +295,9 @@ pub struct Card {
     /// The passage in its source it was made from, word for word.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quote: Option<String>,
+    /// The page whose picture the passage was read from (handwriting, a scan).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<u32>,
     /// The last rating, 1..5.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<u8>,
@@ -340,6 +343,7 @@ fn cards_of(path: &str, d: &Deck, states: Option<&BTreeMap<String, schedule::Car
                 back: n.back.clone(),
                 source: n.source.clone(),
                 quote: n.quote.clone(),
+                picture: n.picture,
                 confidence: st.and_then(|s| s.last_confidence()),
                 due: st.map(|s| s.due),
                 id,
@@ -417,17 +421,18 @@ pub fn deck_save(space: &Path, path: Option<&str>, title: &str, cards: &[CardInp
     };
     let key = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut d = existing.as_ref().map(|(_, d)| d.clone()).unwrap_or_default();
-    let old_sources: BTreeMap<String, (Option<String>, Option<String>)> = d.notes.iter().map(|n| (key(&n.front), (n.source.clone(), n.quote.clone()))).collect();
+    let old_notes: BTreeMap<String, Note> = d.notes.iter().map(|n| (key(&n.front), n.clone())).collect();
     d.title = title.trim().to_string();
     d.notes = cards
         .iter()
         .map(|c| {
             let front = c.front.replace("\r\n", "\n").trim().to_string();
-            let (old_source, old_quote) = old_sources.get(&key(&front)).cloned().unwrap_or_default();
-            let source = c.source.clone().filter(|s| !s.trim().is_empty()).or(old_source.clone());
-            // The passage stays with the source it was found in.
-            let quote = old_quote.filter(|_| source == old_source);
-            Note { back: c.back.replace("\r\n", "\n").trim().to_string(), source, quote, front }
+            let old = old_notes.get(&key(&front)).cloned().unwrap_or_default();
+            let source = c.source.clone().filter(|s| !s.trim().is_empty()).or(old.source.clone());
+            // The passage (and the page picture it was read from) stays with the source it was found in.
+            let same = source == old.source;
+            let (quote, picture) = (old.quote.filter(|_| same), old.picture.filter(|_| same));
+            Note { back: c.back.replace("\r\n", "\n").trim().to_string(), source, quote, picture, front }
         })
         .collect();
     deck::validate(&d)?;
@@ -702,6 +707,35 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     const HOUR_MS: u64 = 60 * MINUTE;
+
+    #[test]
+    fn a_card_read_from_a_pages_picture_says_so_and_keeps_it_through_edits() {
+        let dir = space("picture-card");
+        fs::create_dir_all(dir.join("study/decks")).unwrap();
+        let src = "courses/C/files/notes.pdf";
+        fs::write(
+            dir.join("study/decks/Relations.md"),
+            format!("---\ntitle: Relations\n---\n\nQ: What is a reflexive relation?\nA: (a,a) ∈ R for every a.\nFrom: {src} (p. 3, read from a picture of the page)\nQuote: \"R is reflexive if (a,a) e R for all a\"\n\nQ: Typed\nA: card\nFrom: {src}\nQuote: \"typed words\"\n"),
+        )
+        .unwrap();
+        let path = "study/decks/Relations.md";
+        let v = deck_view(&dir, path).unwrap();
+        assert_eq!((v.cards[0].source.as_deref(), v.cards[0].picture), (Some(src), Some(3)));
+        assert_eq!((v.cards[1].source.as_deref(), v.cards[1].picture), (Some(src), None));
+        let json = serde_json::to_value(&v.cards[0]).unwrap();
+        assert_eq!(json["picture"], 3);
+        assert!(serde_json::to_value(&v.cards[1]).unwrap().get("picture").is_none());
+        // A new answer keeps where the card came from; a new source drops the passage and its page.
+        let edit = |source: Option<&str>| [CardInput { front: "What is a reflexive relation?".into(), back: "Every a relates to itself.".into(), source: source.map(Into::into) }];
+        deck_save(&dir, Some(path), "Relations", &edit(None)).unwrap();
+        let v = deck_view(&dir, path).unwrap();
+        assert_eq!((v.cards[0].picture, v.cards[0].quote.is_some()), (Some(3), true));
+        assert!(fs::read_to_string(dir.join(path)).unwrap().contains("(p. 3, read from a picture of the page)"));
+        deck_save(&dir, Some(path), "Relations", &edit(Some("courses/C/files/other.pdf"))).unwrap();
+        let v = deck_view(&dir, path).unwrap();
+        assert_eq!((v.cards[0].picture, v.cards[0].quote.as_deref()), (None, None));
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn hand_written_decks_and_bad_saves() {

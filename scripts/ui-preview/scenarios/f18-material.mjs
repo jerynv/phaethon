@@ -10,6 +10,7 @@
 //   f18-wizard-sees      a model that can look at pictures: no warning anywhere
 //   f18-card-alert       the chat card warns before anything is made
 //   f18-picture-source   a question whose passage was read from a picture says so
+//   f18-picture-card     so does a flashcard's, in the review session and the deck editor
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
@@ -259,6 +260,52 @@ export default [
       const from = await text(page, `${SHOWN} [data-question="q1"] [data-provenance] p`);
       check(from === "From: notes c241 Fa26 - 20260917 p. 3 (read from a picture of the page)", "a passage read from a picture says so", from);
       await h.shot("source");
+    },
+  },
+  {
+    name: "f18-picture-card",
+    sizes: [[1100, 720], [640, 480]],
+    mock: studyMock(true, {
+      decks: {
+        "study/decks/Rules.md": {
+          title: "Rules",
+          course: "CSCI-C 241 Discrete Structures",
+          sources: [NOTES],
+          cards: [
+            { front: "What may you conclude from X by weakening?", back: "X or Y, for any Y.", source: NOTES, quote: "If you know that X is true, you can conclude that either X or Y is true.", picture: 3 },
+            { front: "What is a typed card?", back: "One from a typed page.", source: NOTES, quote: "Typed words from the notes." },
+          ],
+        },
+      },
+    }),
+    async run(page, h) {
+      const PICTURED = "From: notes c241 Fa26 - 20260917 p. 3 (read from a picture of the page)";
+      await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
+      await page.click(`${SHOWN} [data-view-tab="study"]`);
+      // The deck editor: each card says where it comes from, as a question does.
+      await page.waitForSelector(`${SHOWN} [data-open-deck="study/decks/Rules.md"]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-open-deck="study/decks/Rules.md"]`);
+      await page.waitForSelector(`${SHOWN} [data-card-row] [data-provenance]`, { timeout: 4000 });
+      const rows = await page.evaluate((S) => [...document.querySelectorAll(`${S} [data-card-row] [data-provenance] p`)].map((p) => p.textContent), SHOWN);
+      check(rows.length === 2 && rows[0] === PICTURED && rows[1] === "From: notes c241 Fa26 - 20260917", "the deck editor says it per card", JSON.stringify(rows));
+      check(await fits(page), "no sideways scroll");
+      await h.shot("editor");
+      await page.click(`${SHOWN} [data-back-to-study]`);
+      // The review session: the answer's source line says the passage was read from a picture.
+      await page.waitForSelector(`${SHOWN} [data-study-deck-row]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-study-deck-row]`);
+      await page.waitForSelector(`${SHOWN} [data-card-front]`, { timeout: 4000 });
+      await page.keyboard.press("Space");
+      await page.waitForSelector(`${SHOWN} [data-card-back] [data-provenance]`, { timeout: 3000 });
+      const first = await text(page, `${SHOWN} [data-card-back] [data-provenance] p`);
+      check(first === PICTURED, "a card read from a picture says so in the review", first);
+      await h.shot("review");
+      await page.keyboard.press("4");
+      await page.waitForFunction((S) => document.querySelector(`${S} [data-session-progress]`)?.textContent === "Card 2 of 2", { timeout: 3000 }, SHOWN);
+      await page.keyboard.press("Space");
+      await page.waitForSelector(`${SHOWN} [data-card-back] [data-provenance]`, { timeout: 3000 });
+      const second = await text(page, `${SHOWN} [data-card-back] [data-provenance] p`);
+      check(second === "From: notes c241 Fa26 - 20260917", "a typed card doesn't", second);
     },
   },
 ];

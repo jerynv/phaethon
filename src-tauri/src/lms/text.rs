@@ -153,6 +153,7 @@ pub fn pdf_pages_here(bytes: &[u8]) -> Result<Vec<Layer>, String> {
     }
     let pages = doc.get_pages();
     let mut out = vec![];
+    let mut drawn = vec![];
     let mut size = 0;
     for (&p, &id) in &pages {
         // Page by page, so one unreadable page doesn't lose the rest (it is
@@ -160,11 +161,15 @@ pub fn pdf_pages_here(bytes: &[u8]) -> Result<Vec<Layer>, String> {
         let t = doc.extract_text_with_limit(&[p], MAX_INFLATE).unwrap_or_default();
         let t = t.lines().map(str::trim_end).collect::<Vec<_>>().join("\n").trim().to_string();
         size += t.len();
-        let pictures = pictures::content_count(&doc, id, letters(&t) >= SPARSE);
-        out.push(Layer { page: p, text: t, pictures });
+        drawn.push(pictures::drawn(&doc, id, letters(&t) >= SPARSE));
+        out.push(Layer { page: p, text: t, pictures: 0 });
         if size > MAX_TEXT {
             break;
         }
+    }
+    // Decoration is told apart across the whole document (a template's picture repeats).
+    for (l, n) in out.iter_mut().zip(pictures::content_counts(&drawn)) {
+        l.pictures = n;
     }
     Ok(out)
 }
@@ -271,6 +276,48 @@ fn assemble(pages: &[Layer], recognised: &BTreeMap<u32, Page>, can_recognise: &R
         out.push_str(&format!("## Page {n}{label}\n\n{body}{note}\n\n"));
     }
     out.trim_end().to_string()
+}
+
+/// `copy` (a PDF's text copy) with each typed page's note about its pictures
+/// as `layers` count them now; `None` when every note already says so. Only
+/// those notes change: recognised text, a person's edits elsewhere and the
+/// copy's heading stay as they are.
+pub fn with_picture_notes(copy: &str, layers: &[Layer]) -> Option<String> {
+    let want: BTreeMap<u32, u32> = layers.iter().filter(|l| letters(&l.text) >= SPARSE).map(|l| (l.page, l.pictures)).collect();
+    let lines: Vec<&str> = copy.split('\n').collect();
+    let mut out: Vec<String> = vec![];
+    let mut changed = false;
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        out.push(line.to_string());
+        i += 1;
+        let Some(rest) = line.strip_prefix("## Page ") else { continue };
+        let end = lines[i..].iter().position(|l| l.starts_with("## ")).map_or(lines.len(), |p| i + p);
+        let mut body: Vec<&str> = lines[i..end].to_vec();
+        let trailing = body.iter().rev().take_while(|l| l.trim().is_empty()).count();
+        body.truncate(body.len() - trailing);
+        let old = body.last().filter(|l| l.starts_with(PICTURES_NOTE)).map(|l| l.to_string());
+        if old.is_some() {
+            body.pop();
+            while body.last().is_some_and(|l| l.trim().is_empty()) {
+                body.pop();
+            }
+        }
+        let page: Option<u32> = rest.split_whitespace().next().and_then(|n| n.parse().ok());
+        let new = page.filter(|_| !rest.contains(RECOGNISED)).and_then(|n| want.get(&n)).filter(|n| **n > 0).map(|n| pictures_note(*n));
+        if old != new {
+            changed = true;
+        }
+        out.extend(body.iter().map(|l| l.to_string()));
+        if let Some(note) = new {
+            out.push(String::new());
+            out.push(note);
+        }
+        out.extend(std::iter::repeat_n(String::new(), trailing));
+        i = end;
+    }
+    changed.then(|| out.join("\n"))
 }
 
 /// A text copy of a picture: whatever text was recognised in it.

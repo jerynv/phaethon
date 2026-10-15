@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { Keys } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
-import { studyOverview, studyRate, studySession, type Confidence, type DeckSummary } from "@/lib/study";
+import { cardCites, studyOverview, studyRate, studySession, type Confidence, type DeckSummary } from "@/lib/study";
 import { cn } from "@/lib/utils";
 
 import { mathAsText } from "@/lib/study-math";
@@ -263,7 +263,7 @@ export function ReviewSession({
               <p className="text-2xl leading-normal wrap-break-word text-ink">
                 <MathText text={cloze ? clozeAnswer(card) : card.back} />
               </p>
-              {card.source && card.quote && <SourceLine space={space} cites={[{ source: card.source, quote: card.quote }]} className="mt-2" />}
+              <SourceLine space={space} cites={cardCites(card)} className="mt-2" />
             </div>
           )}
         </section>

@@ -750,7 +750,7 @@
               const id = hash(`${path}\n${c.front}`);
               // A scenario may give a card's starting progress on the card itself ({ confidence, due }).
               const p = S.progress[id] ?? (c.confidence ? { confidence: c.confidence, due: c.due ?? 0 } : null);
-              return { id, kind: /\{\{.+?\}\}/.test(c.front) ? "cloze" : "basic", front: c.front, back: c.back ?? "", ...(c.source ? { source: c.source } : {}), ...(c.quote ? { quote: c.quote } : {}), ...(p ? { confidence: p.confidence, due: p.due } : {}) };
+              return { id, kind: /\{\{.+?\}\}/.test(c.front) ? "cloze" : "basic", front: c.front, back: c.back ?? "", ...(c.source ? { source: c.source } : {}), ...(c.quote ? { quote: c.quote } : {}), ...(c.picture ? { picture: c.picture } : {}), ...(p ? { confidence: p.confidence, due: p.due } : {}) };
             });
           const now = Date.now();
           const isDue = (c) => c.due == null || c.due <= now;

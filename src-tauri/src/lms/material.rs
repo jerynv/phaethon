@@ -19,7 +19,12 @@ use serde::{Deserialize, Serialize};
 
 use super::text::{self, Layer};
 
-pub const VERSION: u32 = 1;
+/// 2: a template's pictures (repeated, small on the page, under the text) and
+/// icon-sized picture files are no longer counted as pictures.
+pub const VERSION: u32 = 2;
+/// A picture file with no words whose longer side is under this many pixels
+/// is an icon (a course template's), not course material.
+const ICON_SIDE: u32 = 400;
 /// Below this share of known words, handwriting was read poorly; below [`FAIR`], so-so.
 pub const GOOD: f32 = 0.85;
 pub const FAIR: f32 = 0.65;
@@ -256,6 +261,14 @@ pub fn assess_pdf(path: &str, layers: &[Layer], copy: &str) -> FileQuality {
     q
 }
 
+/// A PNG's or JPEG's width and height, from the start of the file.
+fn picture_size(p: &Path) -> Option<(u32, u32)> {
+    use std::io::Read;
+    let mut head = vec![];
+    std::fs::File::open(p).ok()?.take(256 * 1024).read_to_end(&mut head).ok()?;
+    text::png::size_of(&head)
+}
+
 /// A picture file, from its text copy.
 pub fn assess_picture(path: &str, copy: &str) -> FileQuality {
     let mut q = FileQuality { path: path.to_string(), pages: 1, ..Default::default() };
@@ -370,7 +383,7 @@ pub fn assess_course(root: &Path, docs: &[String], prev: Option<&Report>, layers
         let copy_path = root.join(format!("{rel}.md"));
         let Some(copy) = read_copy(&copy_path) else { continue };
         let size = std::fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
-        let copy_modified = modified_ms(&copy_path);
+        let mut copy_modified = modified_ms(&copy_path);
         if let Some(old) = prev.filter(|p| p.version == VERSION).and_then(|p| p.files.iter().find(|f| &f.path == rel))
             && old.size == size
             && old.copy_modified == copy_modified
@@ -380,9 +393,20 @@ pub fn assess_course(root: &Path, docs: &[String], prev: Option<&Report>, layers
         }
         let mut q = match text::kind_of(&full) {
             text::Doc::Pdf => match layers(&full) {
-                Ok(l) => assess_pdf(rel, &l, &copy),
+                Ok(l) => {
+                    // A copy made before decoration was told apart notes pictures that aren't.
+                    let copy = match text::with_picture_notes(&copy, &l) {
+                        Some(fixed) if std::fs::write(&copy_path, &fixed).is_ok() => {
+                            copy_modified = modified_ms(&copy_path);
+                            fixed
+                        }
+                        _ => copy,
+                    };
+                    assess_pdf(rel, &l, &copy)
+                }
                 Err(_) => FileQuality { path: rel.clone(), ..Default::default() },
             },
+            text::Doc::Picture if copy.contains(text::NO_TEXT_IN_PICTURE) && picture_size(&full).is_some_and(|(w, h)| w.max(h) < ICON_SIDE) => continue,
             text::Doc::Picture => assess_picture(rel, &copy),
             text::Doc::Docx | text::Doc::Pptx => FileQuality { path: rel.clone(), ..Default::default() },
             text::Doc::Other => continue,
@@ -506,6 +530,51 @@ mod tests {
                 eprintln!("  - {} hw {} unreadable {} pictures {} known {:?}", f.path, f.handwriting, f.unreadable, f.pictures, f.known_words);
             }
         }
+    }
+
+    #[test]
+    fn icons_are_left_out_and_a_copys_picture_notes_follow_what_counts_now() {
+        let root = std::env::temp_dir().join(format!("phaethon-material-icons-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("files/Template Assets")).unwrap();
+        let png = |w: u32, h: u32| text::png::encode(w, h, 1, &vec![200u8; (w * h) as usize], false).unwrap();
+        let no_words = format!("# Text of x.png\n\n{}", text::NO_TEXT_IN_PICTURE);
+        std::fs::write(root.join("files/Template Assets/syllabus.png"), png(346, 346)).unwrap();
+        std::fs::write(root.join("files/Template Assets/syllabus.png.md"), &no_words).unwrap();
+        std::fs::write(root.join("files/venn.png"), png(800, 600)).unwrap();
+        std::fs::write(root.join("files/venn.png.md"), &no_words).unwrap();
+        // An icon with words read from it is kept: it may be an equation.
+        std::fs::write(root.join("files/eq.png"), png(300, 80)).unwrap();
+        std::fs::write(root.join("files/eq.png.md"), format!("## Picture {}\n\nx = 2y + 1", text::RECOGNISED)).unwrap();
+        // A copy made when the slides' background counted as a picture on every page.
+        std::fs::write(root.join("files/slides.pdf"), b"%PDF-1.4 x").unwrap();
+        let old_note = "(This page also shows a picture (a figure, diagram or photo); it can’t be read as text.)";
+        let copy = format!("# Text of slides.pdf\n\nCopied from it.\n\n## Page 1\n\n{TYPED}\n\n{old_note}\n\n## Page 2\n\n{TYPED}\n\n{old_note}");
+        std::fs::write(root.join("files/slides.pdf.md"), &copy).unwrap();
+        let docs = documents(&root);
+        let layers = |_: &Path| Ok(vec![l(1, TYPED, 0), l(2, TYPED, 2)]);
+        let r = assess_course(&root, &docs, None, &layers);
+        assert_eq!(r.files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), ["files/eq.png", "files/slides.pdf", "files/venn.png"], "the 346 px icon with no words is left out");
+        assert_eq!(r.files[2].pictures, [(1, 1)], "an 800×600 picture with no words is a picture");
+        assert_eq!(r.files[1].pictures, [(2, 2)]);
+        let fixed = std::fs::read_to_string(root.join("files/slides.pdf.md")).unwrap();
+        assert_eq!(
+            fixed,
+            format!("# Text of slides.pdf\n\nCopied from it.\n\n## Page 1\n\n{TYPED}\n\n## Page 2\n\n{TYPED}\n\n(This page also shows 2 pictures (figures, diagrams or photos); they can’t be read as text.)")
+        );
+        // Unchanged since: reused, the copy not written again.
+        let calls = std::cell::Cell::new(0);
+        let counted = |_: &Path| {
+            calls.set(calls.get() + 1);
+            Ok(vec![l(1, TYPED, 0), l(2, TYPED, 2)])
+        };
+        assert_eq!(assess_course(&root, &docs, Some(&r), &counted), r);
+        assert_eq!(calls.get(), 0);
+        // A report from before decoration was told apart is made again.
+        let old = Report { version: 1, ..r.clone() };
+        assess_course(&root, &docs, Some(&old), &counted);
+        assert_eq!(calls.get(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

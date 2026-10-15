@@ -308,6 +308,9 @@ pub async fn check_key_at(base: &str, key: &str) -> KeyCheck {
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
+    /// Whether it reads pictures, where the provider's list says (vision.rs).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sees: Option<crate::vision::Sees>,
 }
 
 /// Shown when the provider's list can't be fetched (no key, offline).
@@ -318,7 +321,7 @@ pub fn fallback_models() -> Vec<ModelInfo> {
         ("claude-haiku-5-5", "Claude Haiku 5.5"),
     ]
     .into_iter()
-    .map(|(id, name)| ModelInfo { id: id.into(), name: name.into() })
+    .map(|(id, name)| ModelInfo { id: id.into(), name: name.into(), sees: None })
     .collect()
 }
 
@@ -352,7 +355,7 @@ pub async fn list_models_at(base: &str, key: &str) -> Option<Vec<ModelInfo>> {
         .filter_map(|m| {
             let id = m["id"].as_str().filter(|id| is_valid_model_id(id))?;
             let name = m["display_name"].as_str().map(str::trim).filter(|n| !n.is_empty()).unwrap_or(id);
-            Some(ModelInfo { id: id.into(), name: name.chars().take(80).collect() })
+            Some(ModelInfo { id: id.into(), name: name.chars().take(80).collect(), sees: None })
         })
         .collect();
     (!models.is_empty()).then_some(models)

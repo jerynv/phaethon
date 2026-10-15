@@ -196,7 +196,8 @@ export const checkApiKey = (key: string, provider: ProviderId = "anthropic") =>
   invoke<KeyCheck>("api_key_check", provider === "anthropic" ? { key } : { key, provider });
 
 /** A model Phaethon's own agent can use. `name` is for people ("Claude Opus 5.5"). */
-export type ModelInfo = { id: string; name: string };
+/** `sees`: whether it reads pictures, where the provider's list says (src-tauri/src/vision.rs). */
+export type ModelInfo = { id: string; name: string; sees?: "yes" | "no" | "unknown" };
 /**
  * Anthropic's: from Anthropic when a key works, a fixed list otherwise. Any
  * other provider's: its own list, or an error in words (a model can still be typed).

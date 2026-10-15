@@ -55,6 +55,21 @@ pub struct Note {
     pub source: Option<String>,
     /// The passage in that file it was made from, word for word (checked when it was made).
     pub quote: Option<String>,
+    /// The page whose picture the passage was read from (handwriting, a
+    /// scan): checked only roughly against the page's recognised text.
+    /// Written on the source's line: `From: notes.pdf (p. 3, read from a picture of the page)`.
+    pub picture: Option<u32>,
+}
+
+/// The end of a `From:` line for a passage read from a page's picture.
+const PICTURE_MARK: &str = ", read from a picture of the page)";
+
+/// `notes.pdf (p. 3, read from a picture of the page)` → (`notes.pdf`, 3).
+fn split_picture(from: &str) -> Option<(&str, u32)> {
+    let inner = from.strip_suffix(PICTURE_MARK)?;
+    let (path, page) = inner.rsplit_once(" (p. ")?;
+    let page: u32 = page.trim().parse().ok().filter(|p| *p > 0)?;
+    (!path.trim().is_empty()).then_some((path.trim_end(), page))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -310,6 +325,12 @@ fn finish_note(mut n: Note) -> Note {
         (None, Some(_)) => *text = before,
         (None, None) => {}
     }
+    // Only a passage can have been read from a picture.
+    if n.quote.is_some()
+        && let Some((path, page)) = n.source.as_deref().and_then(split_picture)
+    {
+        (n.source, n.picture) = (Some(path.to_string()), Some(page));
+    }
     // The first line follows its marker, so only the lines after it can be escaped.
     let clean = |s: &str| {
         let lines: Vec<String> = s.lines().enumerate().map(|(i, l)| if i == 0 { l.to_string() } else { unescape(l) }).collect();
@@ -359,8 +380,12 @@ pub fn write(deck: &Deck) -> String {
             s.push_str(&format!("A: {}\n", block(n.back.trim())));
         }
         if let Some(src) = n.source.as_deref().filter(|s| !s.trim().is_empty()) {
-            s.push_str(&format!("From: {}\n", src.trim()));
-            if let Some(q) = n.quote.as_deref().map(|q| q.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|q| !q.is_empty()) {
+            let quote = n.quote.as_deref().map(|q| q.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|q| !q.is_empty());
+            match (n.picture, &quote) {
+                (Some(page), Some(_)) => s.push_str(&format!("From: {} (p. {page}{PICTURE_MARK}\n", src.trim())),
+                _ => s.push_str(&format!("From: {}\n", src.trim())),
+            }
+            if let Some(q) = quote {
                 s.push_str(&format!("Quote: \"{q}\"\n"));
             }
         }
@@ -490,7 +515,7 @@ A: The number of members X and Y have in common.
     fn marker_lines_inside_text_are_escaped() {
         let d = Deck {
             title: "t".into(),
-            notes: vec![Note { front: "Line one\nQ: not a new card".into(), back: "A: still the answer\nFrom: not a source".into(), source: Some("x.md".into()), quote: None }],
+            notes: vec![Note { front: "Line one\nQ: not a new card".into(), back: "A: still the answer\nFrom: not a source".into(), source: Some("x.md".into()), ..Default::default() }],
             ..Default::default()
         };
         let w = write(&d);
@@ -500,7 +525,7 @@ A: The number of members X and Y have in common.
 
     #[test]
     fn a_cards_passage_is_kept_after_its_source() {
-        let n = Note { front: "What is an injective function?".into(), back: "No two inputs share an output.".into(), source: Some("courses/C/notes.pdf".into()), quote: Some("A function f is  injective if\nno two inputs give the same output.".into()) };
+        let n = Note { front: "What is an injective function?".into(), back: "No two inputs share an output.".into(), source: Some("courses/C/notes.pdf".into()), quote: Some("A function f is  injective if\nno two inputs give the same output.".into()), picture: None };
         let d = Deck { title: "t".into(), notes: vec![n.clone(), Note { front: "{{x}} y".into(), source: Some("s.md".into()), quote: Some("a quoted bit of text".into()), ..Default::default() }], ..Default::default() };
         let w = write(&d);
         assert!(w.contains("From: courses/C/notes.pdf\nQuote: \"A function f is injective if no two inputs give the same output.\"\n"), "{w}");
@@ -510,6 +535,27 @@ A: The number of members X and Y have in common.
         // A Quote: line with no source is part of the card, as written.
         let d = parse("Q: a\nA: b\nQuote: c\n", "t");
         assert_eq!((d.notes[0].back.as_str(), d.notes[0].quote.as_deref()), ("b\nQuote: c", None));
+    }
+
+    #[test]
+    fn a_passage_read_from_a_pages_picture_says_so_on_its_source_line() {
+        let src = "courses/C/files/Notes/notes c241 Fa26 - 20260917.pdf";
+        let n = Note { front: "What is a reflexive relation?".into(), back: "(a,a) ∈ R for every a.".into(), source: Some(src.into()), quote: Some("R is reflexive if (a,a) e R for all a".into()), picture: Some(3) };
+        let w = write(&Deck { title: "t".into(), notes: vec![n.clone()], ..Default::default() });
+        assert!(w.contains(&format!("From: {src} (p. 3, read from a picture of the page)\nQuote: \"R is reflexive if (a,a) e R for all a\"\n")), "{w}");
+        assert_eq!(parse(&w, "t").notes[0], n, "read back as written");
+        // Decks written before: a plain From: line, read as before.
+        let old = parse(&format!("Q: a\nA: b\nFrom: {src}\nQuote: \"c d\"\n"), "t");
+        assert_eq!((old.notes[0].source.as_deref(), old.notes[0].quote.as_deref(), old.notes[0].picture), (Some(src), Some("c d"), None));
+        // Without a passage there is nothing read from a picture: the line is the source, as written.
+        let bare = parse(&format!("Q: a\nA: b\nFrom: {src} (p. 3, read from a picture of the page)\n"), "t");
+        assert_eq!((bare.notes[0].source.as_deref(), bare.notes[0].picture), (Some(format!("{src} (p. 3, read from a picture of the page)").as_str()), None));
+        // A page that isn't a number is part of the path.
+        let odd = parse("Q: a\nA: b\nFrom: x.pdf (p. three, read from a picture of the page)\nQuote: \"c\"\n", "t");
+        assert_eq!(odd.notes[0].picture, None);
+        // A picture page with no passage isn't written.
+        let w = write(&Deck { title: "t".into(), notes: vec![Note { quote: None, ..n }], ..Default::default() });
+        assert!(w.contains(&format!("From: {src}\n")) && !w.contains("read from a picture"), "{w}");
     }
 
     #[test]

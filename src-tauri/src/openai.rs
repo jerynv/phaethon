@@ -22,6 +22,7 @@ use serde_json::{Value, json};
 use crate::anthropic::{IDLE_TIMEOUT, KeyCheck, KeyProblem, MAX_RETRY_WAIT, ModelInfo, RETRIES, backoff, retry_after, split_event};
 use crate::provider::{Delta, ErrorKind, ModelRequest, ModelTurn, Provider, ProviderError};
 use crate::providers::{self, CUSTOM, Preset};
+use crate::vision;
 
 pub struct Config {
     pub provider: &'static Preset,
@@ -810,14 +811,61 @@ pub async fn list_models(p: &'static Preset, base: &str, key: Option<&str>) -> R
                 return None;
             }
             let name = m["name"].as_str().or_else(|| m["display_name"].as_str()).map(str::trim).filter(|n| !n.is_empty()).unwrap_or(id);
-            Some(ModelInfo { id: id.into(), name: name.chars().take(100).collect() })
+            Some(ModelInfo { id: id.into(), name: name.chars().take(100).collect(), sees: vision::from_metadata(m) })
         })
         .take(5000)
         .collect();
     if p.id == "openai" {
         models.sort_by(|a, b| a.id.cmp(&b.id));
     }
+    if p.id == "ollama" && !models.is_empty() {
+        let sight = ollama_sight(p, base, key, &models).await;
+        for m in &mut models {
+            m.sees = m.sees.or_else(|| sight.get(&m.id).copied());
+        }
+    }
+    // Whether each model reads pictures, where the list said, for Study (vision.rs).
+    vision::remember(p.id, base, models.iter().filter_map(|m| Some((m.id.clone(), m.sees?))));
     Ok(models)
+}
+
+/// Which of `models` read pictures, from Ollama's own API (its OpenAI-style
+/// list doesn't say): `capabilities` in `/api/tags` (newer Ollama), else
+/// `/api/show` one model at a time, for a few seconds at most.
+async fn ollama_sight(p: &'static Preset, base: &str, key: Option<&str>, models: &[ModelInfo]) -> HashMap<String, vision::Sees> {
+    let trimmed = base.trim_end_matches('/');
+    let native = trimmed.strip_suffix("/v1").unwrap_or(trimmed);
+    let c = client(connect_timeout(p));
+    let auth = |r: reqwest::RequestBuilder| match key {
+        Some(k) => r.bearer_auth(k),
+        None => r,
+    };
+    let mut out = HashMap::new();
+    if let Ok(resp) = auth(c.get(format!("{native}/api/tags"))).timeout(Duration::from_secs(4)).send().await
+        && resp.status().is_success()
+        && let Ok(v) = resp.json::<Value>().await
+    {
+        for m in v["models"].as_array().into_iter().flatten() {
+            if let (Some(name), Some(s)) = (m["model"].as_str().or_else(|| m["name"].as_str()), vision::from_metadata(m)) {
+                out.insert(name.to_string(), s);
+            }
+        }
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    let unsaid: Vec<&ModelInfo> = models.iter().filter(|m| !out.contains_key(&m.id)).take(64).collect();
+    for m in unsaid {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        let Ok(resp) = auth(c.post(format!("{native}/api/show"))).json(&json!({ "model": m.id })).timeout(Duration::from_secs(3)).send().await else { break };
+        if resp.status().is_success()
+            && let Ok(v) = resp.json::<Value>().await
+            && let Some(s) = vision::from_metadata(&v)
+        {
+            out.insert(m.id.clone(), s);
+        }
+    }
+    out
 }
 
 fn not_running(p: &Preset, base: &str) -> String {

@@ -156,3 +156,22 @@ async fn only_a_release_signed_with_the_bundled_key_for_its_version_is_accepted(
     let err = updater::check(&handle, Some(at("/missing.json"))).await.err().expect("404 is an error");
     assert!(!updater::words(&err).is_empty());
 }
+
+/// The published feed, read as an older Phaethon would: the shipped key and endpoint
+/// find the latest release and its download passes the signature check for this
+/// computer's build. Uses the network, so run on purpose:
+/// `cargo test --test updater_http -- --ignored`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn the_published_release_verifies_with_the_shipped_key() {
+    let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    let mut ctx = tauri::test::mock_context(tauri::test::noop_assets());
+    ctx.config_mut().plugins.0.insert("updater".into(), conf["plugins"]["updater"].clone());
+    ctx.package_info_mut().version = "0.0.1".parse().unwrap();
+    let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().build()).build(ctx).unwrap();
+
+    let update = updater::check(app.app_handle(), None).await.unwrap().expect("a release newer than 0.0.1 is published");
+    eprintln!("found {} at {}", update.version, update.download_url);
+    let bytes = updater::download_verified(&update, |_, _| {}).await.unwrap();
+    assert!(bytes.len() > 1_000_000, "{} bytes", bytes.len());
+}

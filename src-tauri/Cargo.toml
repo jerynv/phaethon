@@ -1,6 +1,6 @@
 [package]
 name = "phaethon"
-version = "0.1.0"
+version = "0.1.1"
 description = "Phaethon: an accessible, desktop-first life OS"
 authors = ["Jeryn Vicari"]
 license = "MIT"

@@ -23,6 +23,12 @@ Design details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 [LibreChat](https://github.com/LibreChat-AI/LibreChat) (MIT) is used as a design reference only. No code is vendored from it; if any is copied later, its MIT notice goes with it.
 
+## Download
+
+Installers for macOS (Apple silicon and Intel `.dmg`), Windows (`-setup.exe` or `.msi`) and Linux (`.AppImage`, `.deb`, `.rpm`) are on the [latest release](https://github.com/jerynv/phaethon/releases/latest). Once installed, Phaethon checks for signed updates itself (Settings › About).
+
+The macOS build isn't notarized yet, so the first open is blocked: open it once, then choose **Open Anyway** in System Settings › Privacy & Security.
+
 ## Running it
 
 Prerequisites: Node 20+, pnpm, a Rust toolchain via [rustup](https://rustup.rs), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS (Xcode Command Line Tools on macOS). For the agent: Claude Code (the `claude` CLI), run once as `claude` in a terminal to log in.

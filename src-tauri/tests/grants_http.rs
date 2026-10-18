@@ -72,7 +72,7 @@ async fn ask_then_read_another_space_over_http() {
 
     let bodies = bodies.lock().unwrap();
     let tools: Vec<&str> = bodies[0]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(tools, ["list_files", "read_file", "search_files", "write_file", "request_access", "app_guide"]);
+    assert_eq!(tools, ["list_files", "read_file", "search_files", "write_file", "request_access", "app_guide", "study_attempt"]);
     let system = bodies[0]["system"][0]["text"].as_str().unwrap();
     assert!(system.contains("other spaces are: work."), "{system}");
     let granted = &bodies[1]["messages"].as_array().unwrap()[2]["content"][0];

@@ -45,6 +45,7 @@ pub const MAX_SOURCE: usize = 512 * 1024;
 /// The largest PDF read back.
 pub const MAX_PDF: u64 = 40 * 1024 * 1024;
 /// The largest file TeX may write (log, aux, PDF): `RLIMIT_FSIZE`.
+#[cfg(target_os = "macos")]
 const MAX_FILE: u64 = 64 * 1024 * 1024;
 /// How long one compile (all its runs) may take.
 pub const TIMEOUT: Duration = Duration::from_secs(60);
@@ -396,6 +397,7 @@ impl WorkDir {
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
         let dir = std::env::temp_dir().join(format!("phaethon-latex-{}-{n}-{nanos}", std::process::id()));
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut b = fs::DirBuilder::new();
         #[cfg(unix)]
         {

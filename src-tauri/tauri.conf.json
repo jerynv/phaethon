@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Phaethon",
-  "version": "0.1.1",
-  "identifier": "dev.phaethon.app",
+  "version": "0.1.2",
+  "identifier": "io.github.jerynv.phaethon",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -64,6 +64,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "phaethon",
+    "windows": {
+      "wix": {
+        "upgradeCode": "f166e2cc-50d4-55f7-af41-fa7b8f35941f"
+      }
+    },
     "macOS": {
       "signingIdentity": "-"
     },

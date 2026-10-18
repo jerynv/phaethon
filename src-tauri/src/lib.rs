@@ -8,6 +8,7 @@ pub mod continuation;
 pub mod export;
 pub mod full_access;
 pub mod grants;
+pub mod identity;
 pub mod latex;
 pub mod lms;
 pub mod memory;
@@ -1107,6 +1108,8 @@ pub fn run() {
         // gives the webview the plugin's own commands; it asks updater.rs's.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Before anything opens the app's own folders (identity.rs).
+            identity::migrate_app(app.handle());
             let vault = Vault::default_location()?;
             vault.ensure_initialized()?;
             // Course sites moved from spaces to the vault: move any a space still has (once;

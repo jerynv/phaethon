@@ -774,7 +774,8 @@ async fn verify<M: Model>(
                 if !["yes", "no", "unsure"].contains(&verdict.as_str()) {
                     return Err(format!("the verdict for {id} must be yes, no or unsure"));
                 }
-                got.insert(id, (verdict, str_of(x, "missing"), x["answerOk"].as_bool().unwrap_or(true)));
+                let answer_ok = x["answerOk"].as_bool().ok_or_else(|| format!("answerOk for {id} must be a boolean"))?;
+                got.insert(id, (verdict, str_of(x, "missing"), answer_ok));
             }
             if got.is_empty() {
                 return Err("there were no verdicts".into());
@@ -1086,6 +1087,37 @@ fn most_common_why(dropped: &[Dropped]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn answer_validation_requires_an_explicit_boolean_and_retries_bad_replies() {
+        use super::super::model::tests::Scripted;
+        use serde_json::json;
+
+        let scope = Scoped { map: None, exam: None, plan: vec![], outside: vec![], notes: vec![] };
+        let candidates = [Candidate { item: Item::N(Note::default()), topic: None, cites: vec![], passages: vec![], unknown: vec![] }];
+        let yes = r#"{"verdicts":[{"id":"i1","verdict":"yes","answerOk":true}]}"#;
+        for field in [None, Some(json!(null)), Some(json!("true")), Some(json!(1)), Some(json!([])), Some(json!({}))] {
+            let mut verdict = json!({"id": "i1", "verdict": "yes"});
+            if let Some(value) = field {
+                verdict["answerOk"] = value;
+            }
+            let bad = json!({"verdicts": [verdict]}).to_string();
+            let model = Scripted::new(&[&bad, &bad]);
+            let error = verify(&scope, "course", "", &candidates, &model, &|_, _| vec![], &|_| {}, 0, 0).await.unwrap_err();
+            assert!(error.contains("answerOk for i1 must be a boolean") && error.contains("nothing was saved"), "{error}");
+            assert_eq!(model.calls(), 2);
+            assert!(model.asked.lock().unwrap()[1].1.contains("answerOk for i1 must be a boolean"));
+
+            let model = Scripted::new(&[&bad, yes]);
+            assert_eq!(verify(&scope, "course", "", &candidates, &model, &|_, _| vec![], &|_| {}, 0, 0).await.unwrap(), vec![None]);
+            assert_eq!(model.calls(), 2);
+        }
+        let no = yes.replace("true", "false");
+        let model = Scripted::new(&[&no]);
+        let dropped = verify(&scope, "course", "", &candidates, &model, &|_, _| vec![], &|_| {}, 0, 0).await.unwrap();
+        assert_eq!(dropped, vec![Some("its answer isn’t right by the notes".into())]);
+        assert_eq!(model.calls(), 1);
+    }
 
     #[test]
     fn words_the_course_never_uses_are_picked_out() {

@@ -128,8 +128,8 @@ export default [
       check(opened && m?.role === "assistant" && m.text.includes("RÉSUMÉ workshop starts") && m.inView, "the found message is focused, in view and marked", JSON.stringify(m));
       const conv = await page.evaluate(() => document.querySelector('[data-testid="conversation-status"]')?.textContent);
       check(conv === "Opened the conversation “When is the Résumé workshop?”.", "the switch is said", conv);
-      const bar = await page.evaluate(() => document.querySelector("[data-space-pane][data-shown] [data-conversations-bar]")?.textContent ?? "");
-      check(bar.includes("Résumé workshop"), "the conversations bar shows the conversation now open", bar);
+      const bar = await page.evaluate(() => document.querySelector("header [data-conversation-current]")?.textContent ?? "");
+      check(bar === "When is the Résumé workshop?", "the title bar names the conversation now open", bar);
       await sleep(2600);
       check(!(await page.evaluate(() => !!document.querySelector("[data-found-message]"))), "the mark goes after a moment");
     },

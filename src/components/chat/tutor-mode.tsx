@@ -101,9 +101,8 @@ function useTutorModes() {
 
 /**
  * The tutor mode, as a small button in the composer's toolbar beside the
- * model: just the icon in normal mode, the mode's short name otherwise (so
- * it's plain that a mode is on). Its menu lists the five modes with what each
- * does.
+ * model. The visible label identifies the control, and an active mode names
+ * the selected tutoring approach. Its menu explains each mode.
  */
 export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: string; spaceName: string; running: boolean }) {
   const all = useTutorModes();
@@ -146,14 +145,14 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
           <Button
             type="button"
             variant="ghost"
-            size={on ? "sm" : "icon"}
+            size="sm"
             aria-label={label}
             data-tutor-mode={spaceId}
             data-mode={mode}
-            className={cn("min-w-0 shrink", on ? "bg-accent-soft px-2 text-sm font-medium text-accent-soft-ink hover:text-accent-soft-ink forced-colors:border-[CanvasText]" : "rounded-full")}
+            className={cn("min-w-0 shrink gap-1.5 px-2 text-sm", on ? "bg-accent-soft font-medium text-accent-soft-ink hover:text-accent-soft-ink forced-colors:border-[CanvasText]" : "text-ink-secondary hover:text-ink")}
           >
-            <Icon name="book" className={on ? "size-(--ph-icon-size-sm)" : undefined} />
-            {on && <span className="truncate">{info.short}</span>}
+            <Icon name="book" className="size-(--ph-icon-size-sm)" />
+            <span className="truncate">{on ? info.short : "Tutor"}</span>
           </Button>
         </DropdownMenu.Trigger>
       </IconTip>

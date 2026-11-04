@@ -65,7 +65,12 @@ export default [
       await page.keyboard.press("ArrowDown");
       await waitFor(page, (id) => document.activeElement?.getAttribute("data-thread-id") === id, rows[1].id);
       await page.keyboard.press("Enter");
-      check(await waitFor(page, () => document.body.innerText.includes("When is Test 1?") && !document.body.innerText.includes("Plan my week")), "the old conversation opens");
+      check(await waitFor(page, (S) => {
+        const log = document.querySelector(`${S} [role="log"]`)?.innerText ?? "";
+        const title = document.querySelector("header [data-conversation-current]")?.textContent;
+        return log.includes("When is Test 1?") && !log.includes("Plan my week") && title === "When is Test 1?";
+      }, shown), "the old conversation replaces the active message log and current breadcrumb");
+      check(await page.$$eval('#spaces-sidebar:not([hidden]) [data-sidebar-thread]:not([aria-current])', (rows) => rows.some((row) => row.textContent.includes("Plan my week"))), "the other conversation remains available in sidebar history");
       check((await calls(page, "thread_open")).some((a) => a.id === rows[1].id), "through thread_open with its id");
       check(await waitFor(page, () => document.activeElement?.matches("[data-composer-input]")), "focus goes to the composer");
 

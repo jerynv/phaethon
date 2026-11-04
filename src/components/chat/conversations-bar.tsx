@@ -22,6 +22,7 @@ import {
   type ForgetPreview,
   type ThreadSummary,
 } from "@/lib/backend";
+import { publishConversations } from "@/lib/conversation-nav";
 import { modKeyLabel, platform } from "@/lib/platform";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
@@ -109,8 +110,8 @@ type ListState =
   | { status: "error"; message: string };
 
 /**
- * The row at the top of a space's conversation: the open conversation's
- * title and date, "Conversations" (a menu of this space's conversations, the
+ * The row at the top of a space's conversation: "Conversations" (a menu of
+ * every conversation in the space, the
  * current one checked, each with Delete) and "New conversation" (Cmd+N,
  * Ctrl+N elsewhere).
  *
@@ -146,26 +147,36 @@ export function ConversationsBar({
   space,
   running,
   onSwitched,
+  onCurrentChosen,
   shown = () => true,
   notes,
+  host,
 }: {
   space: Space;
+  /** Where its controls go: the docked sidebar's place for them, or the pane's compact header. */
+  host?: HTMLElement | null;
   /** Whether this space's pane is the one on screen (other visited spaces stay mounted, hidden). */
   shown?: () => boolean;
   /** A reply is running in this space. */
   running: boolean;
   /** The conversation changed on disk: remount it, focus the composer, say `message`. */
   onSwitched: (message: string) => void;
+  onCurrentChosen: () => void;
   /** Where the notes under the bar go (a refused switch, what a Clear kept), so they never change the header's height. */
   notes?: HTMLElement | null;
 }) {
   const inNotes = (children: ReactNode) => (notes ? createPortal(children, notes) : children);
+  const inHost = (children: ReactNode) => (host ? createPortal(children, host) : children);
+  // In the docked sidebar the bar is that section's header: the menu reads as its title, New conversation is an icon.
+  const inSidebar = !!host?.closest("[data-sidebar-conversations]");
   const [problem, setProblem] = useState("");
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState(false);
-  // The open conversation, as the bar shows it; reloaded after a switch and when a reply ends.
-  const [current, setCurrent] = useState<ThreadSummary | null>(null);
+  // The space's conversations, newest first (the sidebar lists them, the title bar names the open one);
+  // reloaded after a switch and when a reply ends.
+  const [recent, setRecent] = useState<readonly ThreadSummary[]>([]);
+  const [recentStatus, setRecentStatus] = useState<"loading" | "ready" | "error">("loading");
   const [changes, setChanges] = useState(0);
   // The conversation whose Delete is waiting for a confirm, where that confirm is, and what
   // Delete everything would take with it.
@@ -204,8 +215,11 @@ export function ConversationsBar({
     setOpen(false);
     setKept(null);
   }, [space.id]);
+  // Closing the menu after a Delete or a find refreshes the list the sidebar shows.
   useEffect(() => {
-    if (!open) setConfirming(null);
+    if (open) return;
+    setConfirming(null);
+    setChanges((n) => n + 1);
   }, [open]);
   // Each confirm starts by asking, and learns what Delete everything would take.
   useEffect(() => {
@@ -222,13 +236,22 @@ export function ConversationsBar({
     };
   }, [confirming, space.id]);
 
-  // The open conversation's title and date. A reply ending can give it its first title.
+  // The space's conversations, for the sidebar and the title bar. A reply ending can give one its first title.
   useEffect(() => {
-    if (!inTauri() || running) return;
+    if (!inTauri()) {
+      setRecentStatus("ready");
+      return;
+    }
+    if (running) return;
     let live = true;
+    setRecentStatus("loading");
     listThreads(space.id).then(
-      (threads) => live && setCurrent(threads.find((t) => t.current) ?? null),
-      () => live && setCurrent(null),
+      (threads) => {
+        if (!live) return;
+        setRecent(threads);
+        setRecentStatus("ready");
+      },
+      () => live && setRecentStatus("error"),
     );
     return () => {
       live = false;
@@ -258,8 +281,14 @@ export function ConversationsBar({
     }
   }, [running, space.id, switched, working]);
 
-  async function choose(t: ThreadSummary) {
-    if (t.current) return;
+  /** Open `t`. From the sidebar (`fromMenu` false) there is no menu whose closing must leave focus alone. */
+  async function choose(t: ThreadSummary, fromMenu = true) {
+    if (working) return;
+    if (t.current) {
+      switching.current = fromMenu;
+      onCurrentChosen();
+      return;
+    }
     if (running) {
       setProblem(BUSY);
       return;
@@ -268,15 +297,15 @@ export function ConversationsBar({
     setWorking(true);
     // The menu closing must not pull focus back to its button: the composer
     // takes it once the conversation loads. The menu's close clears the flag.
-    switching.current = true;
+    switching.current = fromMenu;
     try {
       await openThread(space.id, t.id);
       switched(`Opened the conversation “${t.title}”.`);
     } catch (e) {
-      // Refused: focus goes back to the button, next to the alert.
+      // Refused: from the menu, focus goes back to the button, next to the alert.
       switching.current = false;
       setProblem(String(e));
-      triggerRef.current?.focus();
+      if (fromMenu) triggerRef.current?.focus();
     } finally {
       setWorking(false);
     }
@@ -388,6 +417,25 @@ export function ConversationsBar({
     }
   }
 
+  // What the sidebar and title bar read: this bar's list and its own guarded actions, never a copy of them.
+  const chooseRef = useRef(choose);
+  chooseRef.current = choose;
+  useEffect(() => {
+    publishConversations(space.id, {
+      threads: recent,
+      status: recentStatus,
+      working,
+      running,
+      open: (t) => void chooseRef.current(t, false),
+      startNew: () => void startNew(),
+      showAll: () => {
+        triggerRef.current?.focus();
+        setOpen(true);
+      },
+    });
+  }, [space.id, recent, recentStatus, running, working, startNew]);
+  useEffect(() => () => publishConversations(space.id, null), [space.id]);
+
   // Cmd+N (Ctrl+N elsewhere), unless a dialog (Settings) has focus.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -416,7 +464,12 @@ export function ConversationsBar({
     setFound(null);
     // The offer to look for Claude Code's earlier conversations never keeps the list from showing.
     Promise.all([listThreads(space.id), getSettings(), cliImportOffered(space.id).catch(() => false)]).then(
-      ([threads, settings, findEarlier]) => live && setList({ status: "ready", threads, cli: cliOf(settings.backend), findEarlier }),
+      ([threads, settings, findEarlier]) => {
+        if (!live) return;
+        setList({ status: "ready", threads, cli: cliOf(settings.backend), findEarlier });
+        setRecent(threads);
+        setRecentStatus("ready");
+      },
       (e: unknown) => live && setList({ status: "error", message: String(e) }),
     );
     return () => {
@@ -500,36 +553,21 @@ export function ConversationsBar({
   const itemClass = "cursor-default rounded-md outline-none select-none data-highlighted:bg-hover data-disabled:opacity-45";
 
   return (
-    <div
-      data-conversations-bar=""
-      className="shrink-0 bg-bg"
-    >
-      {/* Wraps when its buttons don't fit beside the views (large text in a narrow window) instead of spilling over them;
-          the title (flex-1, from nothing) gives way first. */}
-      <div className="flex flex-wrap items-center justify-end gap-1 py-1.5">
-        {/* Which conversation this is, on one line: its title (cut to fit, whole on hover), then, quieter, when it
-            was last used, which gives way first. No words while it is empty ("New conversation" here read as a
-            second button beside the real one), only its room. */}
-        {current && current.messages > 0 ? (
-          <p data-conversation-current="" className="flex min-w-0 flex-1 items-baseline gap-2 text-sm text-ink-secondary">
-            <span className="min-w-0 shrink truncate font-medium text-ink" title={current.title}>
-              {current.title}
-            </span>
-            <span className="min-w-0 shrink-[4] truncate text-xs">
-              <span className="sr-only">, </span>
-              {relativeDate(current.updated)}
-            </span>
-          </p>
-        ) : (
-          // An empty, unseen line: the bar is as tall with a title as without one, so the first message (or a
-          // new conversation) never moves the conversation below.
-          <p aria-hidden="true" className="invisible min-w-0 flex-1 text-sm">
-            {" "}
-          </p>
-        )}
+    <>
+      {/* Wraps when its buttons don't fit (large text in a narrow window) instead of spilling over.
+          The open conversation’s name is in the title bar’s breadcrumb, not here. */}
+      {inHost(
+      <div data-conversations-bar="" className={cn("flex min-w-0 flex-wrap items-center gap-1", inSidebar ? "justify-between" : "justify-end py-1.5")}>
         <DropdownMenu.Root open={open} onOpenChange={(o) => (o || stage.stage !== "clearing") && setOpen(o)} modal={false}>
           <DropdownMenu.Trigger asChild>
-            <Button ref={triggerRef} type="button" variant="ghost" size="sm" data-conversations-trigger="">
+            <Button
+              ref={triggerRef}
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-conversations-trigger=""
+              className={inSidebar ? "min-w-0 text-xs! font-medium text-ink-secondary hover:text-ink" : undefined}
+            >
               Conversations
               <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
             </Button>
@@ -820,13 +858,14 @@ export function ConversationsBar({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size={inSidebar ? "icon-sm" : "sm"}
+              aria-label={inSidebar ? "New conversation" : undefined}
               aria-keyshortcuts={mac ? "Meta+N" : "Control+N"}
               data-new-conversation=""
               onClick={() => void startNew()}
             >
-              <Icon name="plus" />
-              New conversation
+              <Icon name={inSidebar ? "edit" : "plus"} />
+              {!inSidebar && "New conversation"}
             </Button>
           </TooltipTrigger>
           {/* As the title bar's buttons: while it shows, Radix describes the button by the tooltip, so it gives only the shortcut, in words. */}
@@ -835,7 +874,8 @@ export function ConversationsBar({
             <Keys keys={[modCap(), "N"]} className="[&_kbd]:border-ink-inverse/30 [&_kbd]:bg-transparent [&_kbd]:text-ink-inverse/80" />
           </TooltipContent>
         </Tooltip>
-      </div>
+      </div>,
+      )}
       {/* Under the header, at the top of the conversation, when the pane gives them a place (in the bar otherwise). */}
       {inNotes(
         <>
@@ -925,6 +965,6 @@ export function ConversationsBar({
       )}
         </>,
       )}
-    </div>
+    </>
   );
 }

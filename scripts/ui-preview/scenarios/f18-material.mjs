@@ -14,6 +14,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const DIALOG = "[data-course-import]";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitFor = (page, fn, arg, timeout = 5000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
@@ -104,8 +105,8 @@ const studyMock = (sees, extra = {}) => ({
 });
 
 async function toExamStep(page) {
-  await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-  await page.click(`${SHOWN} [data-view-tab="study"]`);
+  await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+  await page.click(`${NAV} [data-view-tab="study"]`);
   await page.waitForSelector(`${SHOWN} [data-study-hub] [data-make="quiz"]`, { timeout: 5000 });
   await page.click(`${SHOWN} [data-study-hub] [data-make="quiz"]`);
   await page.waitForSelector("[data-make-dialog]", { timeout: 3000 });
@@ -252,8 +253,8 @@ export default [
       },
     }),
     async run(page, h) {
-      await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-      await page.click(`${SHOWN} [data-view-tab="study"]`);
+      await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+      await page.click(`${NAV} [data-view-tab="study"]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
       // Where it comes from shows with the results.
@@ -285,8 +286,8 @@ export default [
     }),
     async run(page, h) {
       const PICTURED = "From: notes c241 Fa26 - 20260917 p. 3 (read from a picture of the page)";
-      await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-      await page.click(`${SHOWN} [data-view-tab="study"]`);
+      await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+      await page.click(`${NAV} [data-view-tab="study"]`);
       // The deck editor: each card says where it comes from, as a question does.
       await page.waitForSelector(`${SHOWN} [data-open-deck="study/decks/Rules.md"]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-open-deck="study/decks/Rules.md"]`);

@@ -326,9 +326,9 @@ export function Composer({
           if (pane) pane.typedAt.current = 0;
         }}
         className={cn(
-          // The border is ink-tertiary, at least 3:1 against the page in both themes (WCAG 1.4.11).
-          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow transition-colors",
-          dragging ? "border-focus bg-accent-soft" : "border-ink-tertiary",
+          // T3's ComposerSurface groups input and controls on one quiet surface.
+          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 transition-colors focus-within:border-focus",
+          dragging ? "border-focus bg-accent-soft" : "border-line-strong",
         )}
       >
         <ComposerAttachments tray={tray} />
@@ -390,11 +390,11 @@ export function Composer({
             aria-hidden="true"
             data-composer-hint=""
             className={cn(
-              "flex-1 truncate text-xs group-has-[[data-jump-latest]]/toolbar:hidden",
+              "min-w-0 flex-1 truncate text-xs group-has-[[data-jump-latest]]/toolbar:hidden",
               held || waiting ? "font-medium text-ink" : "text-ink-secondary",
             )}
           >
-            {hint}
+            {held || waiting || isRunning ? hint : null}
           </p>
           {jump}
           <span aria-hidden="true" className="hidden flex-1 group-has-[[data-jump-latest]]/toolbar:block" />

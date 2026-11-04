@@ -1,5 +1,5 @@
 // Shell round 3 (persona re-check fixes), all behaviour checks: check(...) fails the run.
-//   s3-conv-current    the bar names the open conversation and its date; menu titles wrap to two lines (Priya 3)
+//   s3-conv-current    the title breadcrumb and selected sidebar row name the open conversation; menu titles wrap to two lines (Priya 3)
 //   s3-conv-delete     Delete in the Conversations menu: inline confirm, announced, the open one starts afresh (Sam 13)
 //   s3-conv-delete-busy  Delete while a reply runs is refused, nothing deleted
 //   s3-conv-keys       arrows skip the rows' Delete (ArrowRight reaches it); Delete/Backspace on a row asks (Dev)
@@ -39,7 +39,7 @@ const archive = () => [
 const conversations = (extra = {}) => ({
   threads: { school: structuredClone(current) },
   threadArchive: { school: archive() },
-  // Three hours ago, but never before midnight, so it reads "Today at" whenever the suite runs.
+  // Three hours ago, but never before midnight, so menu timestamps read "Today at".
   currentUpdated: { school: Math.max(now - 3 * 3600000, new Date(now).setHours(0, 0, 0, 0)) },
   ...extra,
 });
@@ -85,24 +85,36 @@ export default [
     async run(page, h) {
       await h.waitText("Problem set 4");
       await page.waitForSelector("[data-conversation-current]", { timeout: 5000 });
-      const clash = await page.evaluate(() => {
-        const trigger = document.querySelector("[data-conversations-trigger]").getBoundingClientRect();
-        return [...document.querySelectorAll("[data-conversation-current] > span")].some((n) => {
-          const r = n.getBoundingClientRect();
-          return r.right > trigger.left + 0.5 && r.bottom > trigger.top && r.top < trigger.bottom;
-        });
-      });
-      check(!clash, "neither the title nor the date runs into the Conversations button");
+      const selectedSidebar = async (title) => {
+        const hidden = await page.$eval("#spaces-sidebar", (sidebar) => sidebar.hidden);
+        if (hidden) await page.click('button[aria-controls="spaces-sidebar"]');
+        await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-sidebar-thread][aria-current="page"]', { timeout: 3000 });
+        const selected = await page.$$eval('#spaces-sidebar [data-sidebar-thread][aria-current="page"]', (rows) => rows.map((row) => row.firstElementChild.textContent));
+        check(selected.length === 1 && selected[0] === title, "exactly one sidebar row names the current conversation", JSON.stringify(selected));
+        if (hidden) {
+          await page.click('button[aria-controls="spaces-sidebar"]');
+          await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 3000 });
+        }
+      };
       let bar = await barText(page);
-      check(bar.startsWith("What do I have due this week for C241?") && bar.includes("Today at"), "the bar names the open conversation and when it was last used", bar);
-      // The title may be cut to fit, but the date never is.
+      check(bar === current[0].text, "the title breadcrumb names the open conversation without a timestamp", bar);
+      const trail = await page.$eval('header nav[aria-label="Where you are"]', (nav) => nav.textContent.replace(/\s+/g, " ").trim());
+      check(trail === `School/${current[0].text}`, "the location header contains only the space and current title, no timestamp", trail);
       const fit = await page.evaluate(() => {
-        const p = document.querySelector("[data-conversation-current]");
-        const date = p.lastElementChild.getBoundingClientRect();
-        const bar = p.closest("[data-conversations-bar]").getBoundingClientRect();
-        return { dateRight: date.right, barRight: bar.right, scroll: document.documentElement.scrollWidth, w: innerWidth };
+        const title = document.querySelector("header [data-conversation-current]");
+        const nav = title.closest("nav");
+        const box = title.getBoundingClientRect();
+        const bounds = nav.getBoundingClientRect();
+        const style = getComputedStyle(title);
+        const overlaps = [...document.querySelectorAll('header button, header [data-grants-chip], #space-title')].some((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && box.left < r.right - 0.5 && box.right > r.left + 0.5 && box.top < r.bottom && box.bottom > r.top;
+        });
+        return { count: document.querySelectorAll("[data-conversation-current]").length, title: title.title, truncate: style.textOverflow === "ellipsis" && style.overflowX === "hidden" && style.whiteSpace === "nowrap", contained: box.left >= bounds.left && box.right <= bounds.right + 0.5, overlaps, scroll: document.documentElement.scrollWidth, w: innerWidth };
       });
-      check(fit.dateRight <= fit.barRight && fit.scroll <= fit.w, "the bar fits the window, its date whole", JSON.stringify(fit));
+      check(fit.count === 1 && fit.title === current[0].text && fit.truncate, "one current title keeps its full text available while truncating", JSON.stringify(fit));
+      check(fit.contained && !fit.overlaps && fit.scroll <= fit.w, "the breadcrumb fits without colliding with title bar controls or the space name", JSON.stringify(fit));
+      await selectedSidebar(current[0].text);
       await openMenu(page);
       await h.idle();
       // In OpenDyslexic, a long title takes two lines instead of being cut at about 16 characters.
@@ -113,19 +125,22 @@ export default [
       }, String(now - 2 * DAY));
       check(t.lines === 2 && !t.oneLineCut, "a long title wraps to two lines in the menu", JSON.stringify(t));
       await h.shot("menu");
-      // Opening another conversation updates the bar.
+      // Opening another conversation updates the breadcrumb and selected sidebar row.
       await page.click(`[data-thread-id="${now - DAY}"]`);
       await h.waitText("characteristic polynomial");
       await page.waitForFunction(() => document.querySelector("[data-conversation-current]")?.textContent.includes("Summarise my M301"), { timeout: 3000 });
       bar = await barText(page);
-      check(bar.includes("Yesterday at"), "after opening one, the bar shows its title and date", bar);
+      check(bar === "Summarise my M301 notes on eigenvalues", "opening a conversation updates the title without a header timestamp", bar);
+      await selectedSidebar(bar);
       await menuGone(page);
       await page.click("[data-new-conversation]");
       await h.waitText("Start a conversation in School");
-      // Priya: an empty conversation shows no title, so "New conversation" isn't there twice (it read as a second button).
-      await page.waitForFunction(() => !document.querySelector("[data-conversation-current]"), { timeout: 3000 }).catch(() => {});
-      const words = await page.$eval("[data-conversations-bar]", (b) => b.innerText.match(/New conversation/g)?.length ?? 0);
-      check(!(await page.$("[data-conversation-current]")) && words === 1, "an empty conversation shows no title; \"New conversation\" is only the button", `${words}`);
+      await page.waitForFunction(() => !document.querySelector("[data-conversation-current]") && document.querySelector('header nav[aria-label="Where you are"] [aria-current="page"]')?.textContent.trim() === "New conversation", { timeout: 3000 });
+      check(!(await page.$("[data-conversation-current]")), "a new conversation has no stale current title");
+      const identity = await page.$eval('header nav[aria-label="Where you are"]', (nav) => ({ current: [...nav.querySelectorAll('[aria-current="page"]')].map((el) => el.textContent.trim()), titles: nav.querySelectorAll("[data-conversation-current]").length }));
+      check(identity.current.join() === "New conversation" && identity.titles === 0, "the breadcrumb identifies the new conversation exactly once", JSON.stringify(identity));
+      await selectedSidebar("New conversation");
+      check((await calls(page, "thread_new")).length === 1, "New conversation starts a fresh conversation through the core");
       await h.shot("empty");
       await park(page);
     },

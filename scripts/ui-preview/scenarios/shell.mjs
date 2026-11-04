@@ -105,7 +105,7 @@ export default [
     async run(page, h) {
       await page.waitForSelector("[data-window-control]", { timeout: 5000 });
       await showSidebar(page);
-      await h.click("#spaces-sidebar li:nth-child(2) button");
+      await h.click('#spaces-sidebar [data-space-id="work"]');
       await page.hover('[data-window-control][aria-label="Close"]');
       await settle(page, h);
     },
@@ -168,7 +168,7 @@ export default [
       await h.idle();
       const narrow = await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden);
       await showSidebar(page);
-      await h.click("#spaces-sidebar li:nth-child(2) button");
+      await h.click('#spaces-sidebar [data-space-id="work"]');
       await h.idle();
       const after = await page.evaluate(() => ({
         hidden: document.getElementById("spaces-sidebar")?.hidden,

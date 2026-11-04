@@ -779,7 +779,10 @@ export default [
       });
       check(bubble.code === "cargo test" && bubble.strong === "then" && bubble.br, "your message shows code, bold and its line break", JSON.stringify(bubble));
       const copies = await page.evaluate(() => [...document.querySelectorAll("[data-copy-reply]")].map((b) => getComputedStyle(b.closest("[data-reply-actions]")).opacity));
-      check(copies.length === 3 && copies.every((o) => o === "1"), "every reply's Copy is visible, not only on hover", copies.join());
+      check(copies.length === 3 && copies.at(-1) === "1", "the current reply’s actions stay visible", copies.join());
+      await page.focus("[data-copy-reply]");
+      await h.idle();
+      check(await page.$eval("[data-copy-reply]", (b) => document.activeElement === b && getComputedStyle(b.closest("[data-reply-actions]")).opacity === "1"), "earlier reply actions appear when reached by keyboard");
     },
   },
   // ---- C13: attachment tray ----

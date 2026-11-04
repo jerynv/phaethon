@@ -9,6 +9,7 @@ import { CONVERSATION, SETTINGS, check as strict, park } from "../audit-fixtures
 const check = (ok, what, detail) => (process.env.F14_SOFT && !ok ? console.log(`     MOVED: ${what}${detail ? ` (${detail})` : ""}`) : strict(ok, what, detail));
 
 const shown = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const VIEWS = ["chat", "study", "grades", "plan"];
 const SIZES = [
   [1100, 720],
@@ -18,7 +19,7 @@ const SIZES = [
 
 /** The boxes that must not move, in CSS px, rounded to 1/100 px. */
 const boxes = (page) =>
-  page.evaluate((shown) => {
+  page.evaluate((shown, nav) => {
     const r = (el) => {
       if (!el) return null;
       const b = el.getBoundingClientRect();
@@ -26,19 +27,20 @@ const boxes = (page) =>
     };
     const pane = document.querySelector(shown);
     return {
-      header: r(pane?.querySelector("[data-space-header]")),
-      switcher: r(pane?.querySelector("[data-view-switcher]")),
+      header: r(document.querySelector(`${nav} [data-conversations-bar]`)),
+      switcher: r(document.querySelector(`${nav} [data-view-switcher]`)),
       panel: r(pane?.querySelector("[role=tabpanel][data-view-shown]")),
       titlebar: r(document.querySelector("header")),
+      breadcrumb: r(document.querySelector("header [data-conversation-current]")),
       sidebar: [...document.querySelectorAll("#spaces-sidebar:not([hidden]) [data-space-item]")].map((li) => r(li)),
     };
-  }, shown);
+  }, shown, NAV);
 
 const fmt = (b) => (b ? b.join(",") : "none");
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 async function show(page, h, view) {
-  await page.click(`${shown} [data-view-tab="${view}"]`);
+  await page.click(`${NAV} [data-view-tab="${view}"]`);
   await page.waitForSelector(`${shown} [role=tabpanel][data-space-view="${view}"][data-view-shown]`, { timeout: 5000 });
   // Each view's first load settles (a spinner then its content) before measuring.
   await h.idle();
@@ -50,15 +52,15 @@ async function measure(page, h, label) {
   await park(page);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const chat = await boxes(page);
+  check(chat.header && chat.switcher && chat.panel && chat.titlebar, `${label}: navigation, panel and title bar are present`);
   // The bar's buttons never spill over the views (large text in a narrow window once put Conversations over Plan).
-  const overlap = await page.evaluate((shown) => {
-    const pane = document.querySelector(shown);
-    const s = pane.querySelector("[data-view-switcher]").getBoundingClientRect();
-    return [...pane.querySelectorAll("[data-conversations-bar] button")].some((b) => {
+  const overlap = await page.evaluate((nav) => {
+    const s = document.querySelector(`${nav} [data-view-switcher]`).getBoundingClientRect();
+    return [...document.querySelectorAll(`${nav} [data-conversations-bar] button`)].some((b) => {
       const r = b.getBoundingClientRect();
       return r.left < s.right && r.right > s.left && r.top < s.bottom && r.bottom > s.top;
     });
-  }, shown);
+  }, NAV);
   check(!overlap, `${label}: the conversations bar never covers the views`);
   const seen = { chat };
   for (const v of [...VIEWS.slice(1), "chat"]) {
@@ -77,6 +79,7 @@ async function measure(page, h, label) {
     check(same(b.titlebar, chat.titlebar), `${label}: the title bar keeps its box in ${v}`, `${fmt(chat.titlebar)} -> ${fmt(b.titlebar)}`);
     check(same(b.sidebar, chat.sidebar), `${label}: the sidebar's spaces keep their boxes in ${v}`);
   }
+  if (chat.breadcrumb) check(same(chat.breadcrumb, seen.back.breadcrumb), `${label}: the conversation breadcrumb keeps its box on return to Chat`);
   return chat;
 }
 
@@ -142,8 +145,8 @@ const loadScenario = (v) => ({
   sizes: SIZES,
   mock: { settings: SETTINGS, threads: {}, slow: Object.fromEntries(LOADS[v].cmds.map((c) => [c, SLOW])), ...LOAD_DATA },
   async run(page) {
-    await page.waitForSelector(`${shown} [data-view-switcher]`, { timeout: 5000 });
-    await page.click(`${shown} [data-view-tab="${v}"]`);
+    await page.waitForSelector(`${NAV} [data-view-switcher]`, { timeout: 5000 });
+    await page.click(`${NAV} [data-view-tab="${v}"]`);
     await page.waitForSelector(`${shown} ${LOADS[v].heading}`, { timeout: 5000 });
     const loading = await loadBoxes(page, v);
     await new Promise((r) => setTimeout(r, SLOW + 900));
@@ -178,7 +181,7 @@ export default [
     sizes: SIZES,
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
-      await page.waitForSelector(`${shown} [data-view-switcher]`, { timeout: 5000 });
+      await page.waitForSelector(`${NAV} [data-view-switcher]`, { timeout: 5000 });
       await measure(page, h, "empty");
     },
   },
@@ -190,18 +193,18 @@ export default [
       threads: { school: [{ ...CONVERSATION[0], text: LONG_TITLE }, ...CONVERSATION.slice(1)] },
     },
     async run(page, h) {
-      await page.waitForSelector(`${shown} [data-conversation-current]`, { timeout: 5000 });
+      await page.waitForSelector("header [data-conversation-current]", { timeout: 5000 });
       // The bar keeps its state across views: the very same element, not a remount.
-      await page.evaluate((shown) => (document.querySelector(`${shown} [data-conversations-bar]`).__f14 = true), shown);
+      await page.evaluate((nav) => (document.querySelector(`${nav} [data-conversations-bar]`).__f14 = true), NAV);
       await measure(page, h, "title");
       check(
-        await page.evaluate((shown) => document.querySelector(`${shown} [data-conversations-bar]`)?.__f14 === true, shown),
+        await page.evaluate((nav) => document.querySelector(`${nav} [data-conversations-bar]`)?.__f14 === true, NAV),
         "the conversations bar is the same element after the other views (kept, not remounted)",
       );
-      const hiddenInOthers = await page.evaluate((shown) => {
-        const bar = document.querySelector(`${shown} [data-conversations-bar]`);
+      const hiddenInOthers = await page.evaluate((nav) => {
+        const bar = document.querySelector(`${nav} [data-conversations-bar]`);
         return !bar.closest("[inert]");
-      }, shown);
+      }, NAV);
       check(hiddenInOthers, "in Chat the bar is not inert");
     },
   },
@@ -220,7 +223,7 @@ export default [
       turn: [{ kind: "text", delta: "Working through the chapter…" }],
     },
     async run(page, h) {
-      await page.waitForSelector(`${shown} [data-conversation-current]`, { timeout: 5000 });
+      await page.waitForSelector("header [data-conversation-current]", { timeout: 5000 });
       await park(page);
       const before = await boxes(page);
       await h.send("Make me a plan for the week");
@@ -232,6 +235,7 @@ export default [
       check(same(before.header, during.header), "a reply starting doesn't move the space header", `${fmt(before.header)} -> ${fmt(during.header)}`);
       check(same(before.switcher, during.switcher), "or the view switcher");
       check(same(before.titlebar, during.titlebar), "or the title bar");
+      check(before.breadcrumb && same(before.breadcrumb, during.breadcrumb), "or the conversation breadcrumb");
       check(same(before.sidebar, during.sidebar), "and the sidebar's activity mark doesn't resize its space", JSON.stringify(during.sidebar));
       await measure(page, h, "running");
       check(!!(await page.$('[data-space-status="running"]')), "the reply is still running after visiting every view");

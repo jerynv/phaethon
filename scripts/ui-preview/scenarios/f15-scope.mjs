@@ -11,6 +11,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const CARD = `${SHOWN} [data-study-action]`;
 const waitFor = (page, fn, arg, timeout = 5000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
 const stateIs = (page, s) => waitFor(page, (s) => document.querySelector("[data-space-pane][data-shown] [data-study-action]")?.getAttribute("data-study-action") === s, s);
@@ -175,8 +176,8 @@ export default [
     sizes: [[1100, 720], [640, 480]],
     mock: mock({ threads: {} }, { quizzes: { "study/quizzes/Test 1 practice.json": { title: "Test 1 practice", course: "CSCI-C 241 Discrete Structures", sources: [NOTES, HW6], created: Date.now(), questions: QUIZ, grounding: GROUNDING } } }),
     async run(page, h) {
-      await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-      await page.click(`${SHOWN} [data-view-tab="study"]`);
+      await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+      await page.click(`${NAV} [data-view-tab="study"]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
       await page.waitForSelector(`${SHOWN} [data-grounding]`, { timeout: 4000 });
@@ -235,7 +236,7 @@ export default [
       check(await waitFor(page, (S) => !!document.querySelector(`${S} [data-quiz-form]`), SHOWN, 8000), "then it is made and opens");
       const st = await page.evaluate(() => window.__MOCK__.study.scopeStates);
       check(st?.[0]?.exam === "Test 1" && st[0].text === "Through HW 6, not graphs or combinatorics" && st[0].course === C241, "the person's word is kept for the course", JSON.stringify(st));
-      await page.click(`${SHOWN} [data-view-tab="chat"]`);
+      await page.click(`${NAV} [data-view-tab="chat"]`);
       const after = await page.evaluate((C) => document.querySelector(`${C} [data-study-action-scope]`)?.innerText, CARD);
       check(after?.includes("Through HW 6, not graphs or combinatorics (as you said)"), "the card shows the scope as the person's own", after);
     },
@@ -289,8 +290,8 @@ export default [
       },
     ),
     async run(page, h) {
-      await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-      await page.click(`${SHOWN} [data-view-tab="study"]`);
+      await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+      await page.click(`${NAV} [data-view-tab="study"]`);
       await page.waitForSelector(`${SHOWN} [data-study-deck-row]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-study-deck-row]`);
       await page.waitForSelector(`${SHOWN} [data-card-front]`, { timeout: 4000 });

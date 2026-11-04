@@ -215,7 +215,7 @@ export default [
     async run(page, h) {
       await page.waitForSelector(`${shown}[data-space-pane="work"]`, { timeout: 5000 });
       const empty = async (view) => {
-        await page.click(`${shown} [data-view-tab="${view}"]`);
+        await page.click(`:is(#spaces-sidebar:not([hidden]), ${shown}) [data-view-tab="${view}"]`);
         const root = `${shown} [data-${view === "study" ? "study-hub" : `${view}-view`}]`;
         await page.waitForSelector(root, { timeout: 5000 });
         await page.waitForSelector(`${root} [data-no-course-access]`, { timeout: 3000 });

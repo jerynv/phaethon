@@ -111,6 +111,7 @@
   /* The file viewer (a dialog as wide as the window allows) and a figure drawn in a reply. */
   --ph-viewer-width: 72rem;
   --ph-figure-max-height: 28rem;
+  --ph-media-gallery-width: min(85%, 32rem);
   --ph-composer-max-height: 12rem;
   /* A provider's model list in Settings and the space's model chooser (rem: it grows with the text). */
   --ph-model-list-max-height: 16rem;

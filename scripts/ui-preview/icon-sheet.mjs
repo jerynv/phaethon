@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Write a standalone HTML contact sheet of every Phaethon icon: each glyph at
+// Write a standalone HTML contact sheet of the application's Lucide icons at
 // 16, 20 and 32px, in the light and dark themes, with its name. Loads the real
 // <Icon> through Vite (so TSX and the @/ alias work), renders it to static
 // markup, and needs no browser to build.
@@ -25,7 +25,7 @@ try {
   const sizes = [16, 20, 32];
   const cell = (name) =>
     `<figure><div class="row">${sizes
-      .map((s) => renderToStaticMarkup(createElement(Icon, { name, style: { width: s, height: s, strokeWidth: 1.5 } })))
+      .map((s) => renderToStaticMarkup(createElement(Icon, { name, style: { width: s, height: s, strokeWidth: 2 } })))
       .join("")}</div><figcaption>${name}</figcaption></figure>`;
   const grid = ICON_NAMES.map(cell).join("");
 

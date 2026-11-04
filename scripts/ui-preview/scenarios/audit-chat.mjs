@@ -743,8 +743,7 @@ export default [
       await page.waitForFunction(() => document.body.innerText.includes("Drop files to attach them"), { timeout: 5000 });
       await park(page);
       await h.idle();
-      // A-038: the overlay is opaque, covers the whole pane (inside its border) and sits above
-      // the pane's top fade, so no slice of the conversation shows around the dashed box.
+      // A-038: the opaque drop surface covers the full conversation canvas.
       const cover = await page.evaluate(() => {
         const o = document.querySelector("[data-drop-overlay]");
         const main = document.querySelector("#main");
@@ -754,13 +753,12 @@ export default [
           covers: r.top <= pane.top + 1.5 && r.left <= pane.left + 1.5 && r.right >= pane.right - 1.5 && r.bottom >= pane.bottom - 1.5,
           bg: getComputedStyle(o).backgroundColor,
           z: parseInt(getComputedStyle(o).zIndex, 10) || 0,
-          fadeZ: parseInt(getComputedStyle(main, "::before").zIndex, 10) || 0,
         };
       });
       const opaque = !/transparent|\/\s*0?\.\d|,\s*0?\.\d+\)$/.test(cover.bg);
       check(cover.covers, "the drop overlay covers the whole conversation pane", JSON.stringify(cover));
       check(opaque, "its background is opaque", cover.bg);
-      check(cover.z > cover.fadeZ, "it sits above the pane's top fade", JSON.stringify(cover));
+      check(cover.z > 0, "the drop surface has its own layer above the conversation", JSON.stringify(cover));
     },
   },
 

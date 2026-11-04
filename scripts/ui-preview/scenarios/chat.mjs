@@ -47,6 +47,7 @@ const files = {
   notes: join(dir, "week6-notes.md"),
   zip: join(dir, "lecture-recordings.zip"),
 };
+export { files as attachmentFixtures };
 writeFileSync(files.image, png(48, 32));
 writeFileSync(files.notes, "# Week 6\n\n- recursion 3.1 to 3.6\n- problem set 4\n");
 writeFileSync(files.zip, "PK");

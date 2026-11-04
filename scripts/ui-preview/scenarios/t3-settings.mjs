@@ -247,7 +247,7 @@ export default [
       await openSettings(page, h, "accessibility");
       const thumb = await sliderBy(page, "Text size");
       const track = await thumb.evaluateHandle((t) => t.closest("[data-setting-row]").querySelector("[data-slider-track]"));
-      const box = await track.boundingBox();
+      let box = await track.boundingBox();
       // A slip onto the track at 80%: one step toward it, not a jump to 175%.
       await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
       await h.idle();
@@ -255,11 +255,14 @@ export default [
       check(Math.abs(one - 1.05) < 1e-6, "a click on the track moves text size one step (100% to 105%)", `${one}`);
       check(await thumb.evaluate((t) => document.activeElement === t), "and the thumb has focus, so arrows go on from there");
       // Toward the left of the thumb steps down.
+      // Text size changes reflow the page, so use the track’s current position.
+      box = await track.boundingBox();
       await page.mouse.click(box.x + box.width * 0.02, box.y + box.height / 2);
       await h.idle();
       const back = await thumb.evaluate((t) => Number(t.getAttribute("aria-valuenow")));
       check(Math.abs(back - 1) < 1e-6, "a click left of it steps back down", `${back}`);
       // The thumb still drags.
+      box = await track.boundingBox();
       const tb = await thumb.boundingBox();
       await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
       await page.mouse.down();

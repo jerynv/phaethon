@@ -56,17 +56,27 @@ export function middleEllipsis(name: string, max = 32): string {
   return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - tail).join("")}`;
 }
 
-/** A square preview: the image itself while we have its bytes, otherwise its type's icon. */
-function Thumb({ icon }: { icon: IconName }) {
-  const src = useAttachmentSrc();
-  const [broken, setBroken] = useState(false);
+/** Draft images stay thumbnail-sized; sent images have room to read their contents. */
+function Thumb({ icon, draft }: { icon: IconName; draft: boolean }) {
+  const space = useContext(SpaceIdContext);
+  const src = useAttachmentSrc(space);
+  const [brokenSrc, setBrokenSrc] = useState<string>();
+  const image = icon === "image";
   return (
     <span
       aria-hidden="true"
-      className="flex size-[calc(var(--ph-icon-size)*2.25)] shrink-0 items-center justify-center overflow-hidden rounded-md border border-line bg-surface-sunken text-ink-secondary"
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-sunken text-ink-secondary",
+        image ? (draft ? "h-20 w-24" : "min-h-20 max-w-64") : "size-10",
+      )}
     >
-      {src && !broken ? (
-        <img src={src} alt="" className="size-full object-cover" onError={() => setBroken(true)} />
+      {src && brokenSrc !== src ? (
+        <img
+          src={src}
+          alt=""
+          className={cn("object-contain", draft ? "size-full" : "h-auto max-h-64 w-auto min-w-24 max-w-full")}
+          onError={() => setBrokenSrc(src)}
+        />
       ) : (
         <Icon name={icon} />
       )}
@@ -77,25 +87,22 @@ function Thumb({ icon }: { icon: IconName }) {
 type Removed = { file: File; name: string };
 
 /** A chip's picture and words: a button that opens the file in the viewer when it can be shown. */
-function ChipBody({ view, thumb, children }: { view?: () => void; thumb: React.ReactNode; children: React.ReactNode }) {
-  if (!view) {
-    return (
-      <>
-        {thumb}
-        <span className="flex min-w-0 flex-col">{children}</span>
-      </>
-    );
-  }
+function ChipBody({ view, thumb, image, children }: { view?: () => void; thumb: React.ReactNode; image: boolean; children: React.ReactNode }) {
+  const Body = view ? "button" : "span";
   return (
-    <button
-      type="button"
+    <Body
+      {...(view ? { type: "button" as const } : {})}
       onClick={view}
-      data-view-attachment=""
-      className="-my-0.5 -ms-0.5 flex min-w-0 cursor-pointer items-center gap-2.5 rounded-md py-0.5 ps-0.5 pe-1 text-start hover:bg-hover"
+      data-view-attachment={view ? "" : undefined}
+      className={cn(
+        "flex min-w-0 max-w-full rounded-md text-start",
+        image ? "flex-col items-start gap-1.5" : "items-center gap-2.5",
+        view && "cursor-pointer hover:bg-hover",
+      )}
     >
       {thumb}
-      <span className="flex min-w-0 flex-col">{children}</span>
-    </button>
+      <span className="flex min-w-0 max-w-full flex-col px-0.5">{children}</span>
+    </Body>
   );
 }
 
@@ -123,6 +130,8 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
   const { open, viewer } = useFileViewer();
   const short = middleEllipsis(name);
   const removable = !!onRemoved;
+  const icon = iconFor(type, mediaType);
+  const image = icon === "image" && !failed;
 
   async function remove(e: React.MouseEvent<HTMLButtonElement>) {
     const li = e.currentTarget.closest("li");
@@ -133,10 +142,11 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
   }
 
   return (
-    <li className="min-w-0">
+    <li className="min-w-0 max-w-full">
       <AttachmentPrimitive.Root
         className={cn(
-          "flex h-full min-w-0 items-center gap-2.5 rounded-lg border bg-raised py-1 ps-1",
+          "flex h-full min-w-0 max-w-full gap-2 rounded-lg border bg-raised py-1 ps-1",
+          image ? "items-start" : "items-center",
           removable ? "pe-1" : "pe-3",
           failed ? "border-danger" : "border-line",
         )}
@@ -144,9 +154,10 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
         {/* The file itself opens it in the viewer ("notes.md, Markdown · 2 KB, open in the viewer"). */}
         <ChipBody
           view={source ? () => open(source) : undefined}
-          thumb={<Thumb icon={iconFor(type, mediaType)} />}
+          image={image}
+          thumb={<Thumb icon={failed ? "file" : icon} draft={removable} />}
         >
-          <span className="text-sm font-medium whitespace-nowrap text-ink" title={name}>
+          <span className={cn("truncate", image ? "text-xs text-ink-secondary" : "text-sm font-medium text-ink")} title={name}>
             <span aria-hidden="true">{short}</span>
             <span className="sr-only">{name}</span>
           </span>
@@ -162,7 +173,7 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="ms-0.5 rounded-full text-ink-secondary hover:text-ink"
+            className="ms-0.5 shrink-0 rounded-full text-ink-secondary hover:text-ink"
             aria-label={`Remove ${name}`}
             title={`Remove ${name}`}
             data-remove-attachment=""
@@ -390,7 +401,7 @@ export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
         hidden={folded && !open}
         data-attachment-list=""
         className={cn(
-          "flex min-h-0 flex-wrap gap-2 p-1.5 empty:hidden",
+          "flex min-h-0 flex-wrap items-start gap-2 p-1.5 empty:hidden",
           // Opened from the folded button: a panel over the conversation, just above the message box,
           // so showing the files never makes the message box taller. In the tray every chip shows
           // whole (else the files fold), so the list never scrolls there.
@@ -413,10 +424,10 @@ export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
   );
 }
 
-/** Files sent with a user message (after a reload only names and types are known). */
+/** Files sent with a user message; saved image previews are read through the space's file API. */
 export function MessageAttachments() {
   return (
-    <ul aria-label="Files sent" className="flex max-w-(--ph-message-max-width) flex-wrap justify-end gap-2 empty:hidden">
+    <ul aria-label="Files sent" className="flex max-w-(--ph-message-max-width) flex-wrap items-start justify-end gap-2 empty:hidden">
       <MessagePrimitive.Attachments>{() => <AttachmentChip />}</MessagePrimitive.Attachments>
     </ul>
   );

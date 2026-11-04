@@ -1,6 +1,6 @@
 /**
- * Every icon Phaethon draws. Adding a name here makes it required in glyphs.tsx
- * (the type checker enforces it), so the set can never be half-drawn.
+ * Semantic application names, each mapped to a Lucide component in index.tsx.
+ * The type checker requires a mapping for every name.
  */
 export const ICON_NAMES = [
   // actions

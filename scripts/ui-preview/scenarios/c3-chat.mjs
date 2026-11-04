@@ -787,7 +787,7 @@ export default [
         const regen = row.querySelector('[data-reply-again="regenerate"]').getBoundingClientRect();
         return Math.round(regen.left - copy.right);
       });
-      check(gap >= 44, "Copy and Regenerate are at least a target apart (44 px with Larger click targets)", gap);
+      check(gap >= 4 && gap <= 16, "reply actions stay together with a compact, visible gap, including with Larger click targets", gap);
       const copyText = await page.$$eval("[data-copy-reply]", (bs) => bs.map((b) => b.textContent.trim()));
       check(copyText.every((t) => t === "Copy reply"), "Copy says what it copies", JSON.stringify(copyText));
       await page.click('[data-reply-again="regenerate"]');

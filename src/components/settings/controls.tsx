@@ -3,12 +3,13 @@
  * switches. Every control applies its change at once (see src/theme) and shows
  * its default, with a Reset when it differs.
  *
- * Slider, RadioGroup and Switch are Radix primitives (MIT, WorkOS); their
+ * Slider and RadioGroup are Radix primitives (MIT, WorkOS); their
  * keyboard models are Radix's: arrows, Page Up/Down, Home/End on sliders;
  * arrows within a radio group (made to choose as they move, see
- * radioArrowKeys); Space on a switch.
+ * radioArrowKeys). Vic Switch uses a native button: Space and Enter toggle it.
  */
-import { RadioGroup, Slider, Switch } from "radix-ui";
+import { RadioGroup, Slider } from "radix-ui";
+import { Card, Switch } from "vic-ui";
 import { Fragment, useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,7 @@ export function SettingGroup({
         </h4>
         {description && <p className="text-sm text-ink-secondary">{description}</p>}
       </div>
-      {bare ? children : <div className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised shadow-sm">{children}</div>}
+      {bare ? children : <Card plain className="flex flex-col divide-y divide-line p-0!">{children}</Card>}
     </div>
   );
 }
@@ -327,22 +328,19 @@ function QuickPicks({
       {presets.map((p) => {
         const on = Math.abs(p.value - value) < 1e-6;
         return (
-          <button
+          <Button
+            variant={on ? "default" : "outline"}
+            size="sm"
             key={p.label}
             type="button"
             data-preset=""
             aria-pressed={on}
             onClick={() => onPick(p.value)}
             aria-label={`${p.label}, ${format(p.value)}`}
-            className={cn(
-              "min-h-(--ph-control-height) rounded-md border px-1 text-sm tabular-nums transition-colors duration-(--ph-duration-fast)",
-              on
-                ? "border-accent-fill bg-accent-soft font-semibold text-accent-soft-ink shadow-[inset_0_0_0_var(--ph-border-width)_var(--ph-accent)]"
-                : "border-line-strong bg-raised text-ink-secondary shadow-sm hover:bg-hover hover:text-ink",
-            )}
+            className="min-h-(--ph-control-height) text-sm tabular-nums"
           >
             {format(p.value)}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -477,19 +475,15 @@ export function SwitchRow({
           {status}
         </p>
       </div>
-      <Switch.Root
+      <Switch
         data-switch=""
+        data-state={checked ? "checked" : "unchecked"}
         id={id}
         checked={checked}
         onCheckedChange={onChange}
         aria-describedby={`${descId} ${statusId}`}
-        className={cn(
-          "mt-0.5 inline-flex h-(--ph-switch-height) w-(--ph-switch-width) shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 transition-colors duration-(--ph-duration-fast)",
-          "bg-ink-tertiary data-[state=checked]:bg-accent-fill",
-        )}
-      >
-        <Switch.Thumb data-switch-thumb="" className="block size-(--ph-switch-thumb) rounded-full bg-raised shadow-sm transition-transform duration-(--ph-duration-fast) data-[state=checked]:translate-x-(--ph-switch-travel)" />
-      </Switch.Root>
+        className="mt-0.5 shrink-0"
+      />
     </div>
   );
 }

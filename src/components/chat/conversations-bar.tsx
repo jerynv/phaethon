@@ -677,11 +677,6 @@ export function ConversationsBar({
                               </p>
                             </>
                           )}
-                          <p data-delete-stays="" className="text-sm text-ink-secondary">
-                            {list.status === "ready" && list.cli
-                              ? `What was already sent to ${list.cli.company} isn’t affected, and ${list.cli.name}’s own copy stays in its folder.`
-                              : "What was already sent to Anthropic isn’t affected."}
-                          </p>
                           {/* Every choice at least a whole target from the next, across and down: a slip off
                               Cancel must not remove anything. */}
                           <div className="flex flex-wrap justify-end gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-[max(var(--ph-target-min),calc(var(--ph-space)*4))]">

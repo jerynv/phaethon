@@ -48,7 +48,7 @@ export function SectionHeader({
         description={description}
         actions={action}
         textClassName="min-w-[min(24em,100%)] basis-[min(24em,100%)] text-sm"
-        actionsClassName="max-w-full"
+        actionsClassName="max-w-full pe-(--ph-settings-close-room) max-md:pe-0"
         headingAs="h3"
         size="section"
         headingProps={{ id, tabIndex: -1, className: "self-start rounded-xs pe-(--ph-settings-close-room) max-md:pe-0" }}

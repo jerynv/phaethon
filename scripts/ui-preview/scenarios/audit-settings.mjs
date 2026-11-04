@@ -4,6 +4,7 @@
 // Undo reset; every accessibility switch on; Spaces with grants, with
 // grants.json problems, with none, and failing; About's copy feedback.
 import { CONVERSATION, GRANTS, PANEL, SETTINGS, activeDesc, check, clickText, openSettings, openSpaceDetails, park, scrollPanel } from "../audit-fixtures.mjs";
+import { closeProviderPopup, openProviderConfiguration, useProviderDefault } from "../provider-flow.mjs";
 
 const SIZES3 = [[1100, 720], [760, 560], [640, 480]];
 const WIDE = [[1100, 720]];
@@ -15,7 +16,8 @@ const SECTIONS = ["agent", "appearance", "accessibility", "spaces", "about"];
  */
 const press = async (page, text) => {
   const ok = await page.evaluate((scope, text) => {
-    const b = [...document.querySelectorAll(`${scope} button`)].find((x) => x.textContent.trim() === text);
+    const root = document.querySelector("[data-provider-popup]") ?? document.querySelector(scope);
+    const b = [...root.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
     b?.focus();
     b?.click();
     return !!b;
@@ -89,13 +91,20 @@ export default [
         await page.$eval(`[data-testid="settings-tab-${tab}"]`, (el) => el.click());
         await h.idle();
         if (tab === "agent") {
+          const underClose = await page.evaluate(() => {
+            const action = document.querySelector("[data-provider-add]").getBoundingClientRect();
+            const close = document.querySelector('[aria-label="Close settings"]').getBoundingClientRect();
+            return action.left < close.right && action.right > close.left && action.top < close.bottom && action.bottom > close.top;
+          });
+          check(!underClose, "Add provider stays clear of Close settings");
+          await openProviderConfiguration(page, "anthropic");
           await press(page, "Remove saved key…");
           await h.idle();
         }
         const bad = await page.evaluate(() => {
-          const dialog = document.querySelector('[role="dialog"]');
+          const dialog = document.querySelector('[data-provider-popup]') ?? document.querySelector('[role="dialog"]');
           const d = dialog.getBoundingClientRect();
-          const close = dialog.querySelector('button[aria-label="Close settings"]').getBoundingClientRect();
+          const close = dialog.querySelector('button[aria-label="Close settings"], button[aria-label="Close"]').getBoundingClientRect();
           const out = [];
           const name = (el) => `${el.tagName.toLowerCase()}[${(el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 30)}]`;
           for (const el of dialog.querySelectorAll("*")) {
@@ -103,7 +112,7 @@ export default [
             if (!r.width || !r.height) continue;
             if (r.right > d.right + 1 || r.left < d.left - 1) out.push(`spills sideways: ${name(el)} ${Math.round(r.left)}..${Math.round(r.right)} vs ${Math.round(d.left)}..${Math.round(d.right)}`);
             if (el.matches("button, [role=radio], [role=switch], [role=tab]") && el.scrollWidth > el.clientWidth + 1) out.push(`text wider than its control: ${name(el)} ${el.scrollWidth}>${el.clientWidth}`);
-            if (el.matches('button:not([aria-label="Close settings"]), input, [role=slider], [role=radio], [role=switch], [role=tab], a, h3') && !el.closest('[role="tabpanel"][hidden]')) {
+            if (el.matches('button:not([aria-label="Close settings"]):not([aria-label="Close"]), input, [role=slider], [role=radio], [role=switch], [role=tab], a, h3') && !el.closest('[role="tabpanel"][hidden]')) {
               const hit = r.left < close.right && r.right > close.left && r.top < close.bottom && r.bottom > close.top;
               // Only what is scrolled to the top matters; the panel scrolls under the corner.
               if (hit && el.closest('[role="tabpanel"]')?.scrollTop === 0) out.push(`under Close: ${name(el)}`);
@@ -112,6 +121,7 @@ export default [
           return [...new Set(out)].slice(0, 12);
         });
         check(bad.length === 0, `${tab}: fits, nothing under Close`, bad.join("; "));
+        if (tab === "agent") await closeProviderPopup(page);
       }
     },
   },
@@ -123,6 +133,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.focus('[role="dialog"] input[type="password"]');
       await page.keyboard.press("Shift");
       await h.idle();
@@ -139,6 +150,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, keyCheck: { ok: false, problem: "format", message: "That isn’t an Anthropic API key." } },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.type('[role="dialog"] input[type="password"]', "not-a-real-key");
       await press(page, "Check and save");
       await h.idle();
@@ -156,7 +168,7 @@ export default [
       console.log(`     key error: ${JSON.stringify(got)}`);
       check(!got.banner, "a rejected key is not shown in the window banner", got.banner);
       check(got.invalid === "true", "the key field is marked invalid");
-      check(got.described.includes("doesn’t look like an Anthropic API key"), "the field is described by the plain format message", got.described);
+      check(got.described.includes("Use an Anthropic key starting with sk-ant-"), "the field is described by the plain format message", got.described);
       const sets = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_set").length);
       check(sets === 0, "a key that fails its check is not saved", `${sets}`);
       check(got.focused, "focus is back in the key field");
@@ -169,6 +181,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {}, slow: { api_key_check: 60000 } },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.type('[role="dialog"] input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
       await press(page, "Check and save");
       await h.idle();
@@ -194,6 +207,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.type('[role="dialog"] input[type="password"]', "sk-ant-api03-xxxxxxxxxxxxxxxx");
       await press(page, "Check and save");
       await h.waitText("A key is saved");
@@ -201,7 +215,7 @@ export default [
       await h.idle();
       const status = await page.evaluate(() => document.querySelector('[role="dialog"] p[role="status"]')?.textContent);
       console.log(`     after save, status: ${status}; focus: ${await activeDesc(page)}`);
-      const line = await page.evaluate(() => document.querySelector('[role="dialog"] form')?.innerText.includes("Your key works. It’s saved in this computer’s password store (Keychain)."));
+      const line = await page.evaluate(() => document.querySelector('[data-provider-popup] form')?.innerText.includes("API key saved."));
       check(line, "a visible saved line sits next to the key field");
     },
   },
@@ -211,16 +225,19 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const cards = await page.$$('[role="dialog"] [role="radio"]');
-      await cards[1].hover();
+      await openProviderConfiguration(page, "claude-cli");
+      await h.hover('[data-provider-popup] [data-backend="claude-cli"]');
       await h.idle();
       await h.shot("cli-hover");
-      await cards[1].click();
+      await useProviderDefault(page, "claude-cli");
       await h.waitText("Now using", { soft: true });
       await h.idle();
       await page.keyboard.press("Shift");
       await h.idle();
       await h.shot("cli-chosen");
+      const changes = await page.evaluate(() => window.__calls.filter(([c]) => c === "settings_set_backend"));
+      check(changes.length === 1 && changes[0][1].backend === "claude-cli", "explicit default action selects Claude Code once", JSON.stringify(changes));
+      await closeProviderPopup(page);
       await park(page);
       await scrollPanel(page, "end");
       await h.idle();
@@ -569,6 +586,7 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await press(page, "Remove saved key…");
       await h.idle();
       const ask = await page.evaluate(() => {
@@ -588,7 +606,7 @@ export default [
       await press(page, "Remove saved key…");
       await h.idle();
       await press(page, "Remove key");
-      await h.waitText("The key comes from Anthropic");
+      await h.waitText("Paste your Anthropic API key");
       await h.idle();
       clears = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_clear").length);
       const after = await page.evaluate(() => document.activeElement?.getAttribute("type"));
@@ -716,7 +734,7 @@ export default [
       // The file is fixed; Try again loads the page and focus goes to its heading.
       await page.evaluate(() => { delete window.__MOCK__.fail.settings_get; });
       await press(page, "Try again");
-      await h.waitText("Which assistant answers");
+      await h.waitText("Default assistant");
       await h.idle();
       const focus = await page.evaluate(() => document.activeElement?.textContent);
       check(focus === "Assistant", "after a good retry, focus moves to the page heading", focus);

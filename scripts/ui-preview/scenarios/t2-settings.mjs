@@ -3,7 +3,7 @@
 //   t2-key-*       the key: Open Settings from a key error lands in the field;
 //                  Check and save checks first and says each outcome plainly
 //   t2-model       the model picker: readable names, Default, saves the id
-//   t2-disclosure  what is sent to Anthropic, and where the files are
+//   t2-provider-summary  concise provider actions and useful file locations
 //   t2-modal       aria-modal, inert background, no outside-click close, fixed size
 //   t2-landmarks   no landmark clutter inside the window
 //   t2-font        reading font reachable from Appearance; the stale promise is gone
@@ -11,6 +11,7 @@
 //                  letter spacing below zero
 //   t2-words       no jargon on any page
 import { CONVERSATION, PANEL, SETTINGS, check, openSettings, park } from "../audit-fixtures.mjs";
+import { openProviderConfiguration, closeProviderPopup, providerPopup } from "../provider-flow.mjs";
 
 const NO_KEY = { ...SETTINGS, hasAnthropicKey: false };
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
@@ -29,11 +30,11 @@ async function submitKey(page, key) {
 }
 
 const OUTCOMES = [
-  { name: "format", keyCheck: null, key: "Linda1959!", says: "doesn’t look like an Anthropic API key", saved: false },
-  { name: "rejected", keyCheck: { ok: false, problem: "rejected", message: "invalid x-api-key" }, key: "sk-ant-api03-deleted-key-xxxxxxxx", says: "Anthropic didn’t accept this key", saved: false },
-  { name: "billing", keyCheck: { ok: false, problem: "billing", message: "credit balance too low" }, key: "sk-ant-api03-no-credit-xxxxxxxxxx", says: "no credit yet", saved: true },
-  { name: "network", keyCheck: { ok: false, problem: "network", message: "offline" }, key: "sk-ant-api03-offline-xxxxxxxxxxxx", says: "couldn’t reach Anthropic", saved: false },
-  { name: "ok", keyCheck: null, key: "sk-ant-api03-works-xxxxxxxxxxxxxx", says: "Your key works", saved: true },
+  { name: "format", keyCheck: null, key: "Linda1959!", says: "Use an Anthropic key starting with sk-ant-.", saved: false },
+  { name: "rejected", keyCheck: { ok: false, problem: "rejected", message: "invalid x-api-key" }, key: "sk-ant-api03-deleted-key-xxxxxxxx", says: "Anthropic rejected this key.", saved: false },
+  { name: "billing", keyCheck: { ok: false, problem: "billing", message: "credit balance too low" }, key: "sk-ant-api03-no-credit-xxxxxxxxxx", says: "Add Anthropic API credit", saved: true },
+  { name: "network", keyCheck: { ok: false, problem: "network", message: "offline" }, key: "sk-ant-api03-offline-xxxxxxxxxxxx", says: "Couldn’t reach Anthropic.", saved: false },
+  { name: "ok", keyCheck: null, key: "sk-ant-api03-works-xxxxxxxxxxxxxx", says: "API key saved.", saved: true },
 ];
 
 export default [
@@ -50,7 +51,7 @@ export default [
       const got = await page.evaluate((p) => {
         const input = document.querySelector("[data-key-input]");
         const r = input.getBoundingClientRect();
-        const pr = document.querySelector(p).getBoundingClientRect();
+        const pr = input.closest('[role="dialog"]').getBoundingClientRect();
         return { focused: document.activeElement === input, inView: r.top >= pr.top && r.bottom <= pr.bottom };
       }, PANEL);
       check(got.focused, "Open Settings from the key error focuses the key field", JSON.stringify(got));
@@ -71,6 +72,7 @@ export default [
     mock: { settings: NO_KEY, threads: {}, keyCheck: o.keyCheck },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await submitKey(page, o.key);
       await page.waitForSelector("[data-key-outcome]", { timeout: 5000 });
       await h.idle();
@@ -113,6 +115,7 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.waitForSelector("[data-model-select] option:nth-child(3)", { timeout: 5000 });
       const opts = await page.$$eval("[data-model-select] option", (os) => os.map((o) => [o.value, o.textContent]));
       console.log(`     options: ${JSON.stringify(opts)}`);
@@ -140,52 +143,51 @@ export default [
     },
   },
   {
-    // T2 / sam1 sam13 sam14: what is sent, when, the policy link, and where the files are.
-    name: "t2-disclosure",
+    name: "t2-provider-summary",
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const d = await page.$eval("[data-disclosure]", (el) => ({ text: el.innerText, href: el.querySelector('a[href*="anthropic.com/legal/privacy"]')?.href }));
-      for (const want of ["Nothing is sent until you send a message", "conversation so far", "files you attach", "files Phaethon opens", "MANUAL.md"]) {
-        check(d.text.includes(want), `Assistant says: ${want}`, d.text.slice(0, 200));
-      }
-      check(!!d.href, "it links Anthropic's privacy policy", d.href);
-      await page.$eval("[data-disclosure]", (el) => el.scrollIntoView({ block: "center" }));
+      const summary = await page.evaluate((panel) => {
+        const el = document.querySelector(panel);
+        return { rows: el.querySelectorAll("[data-provider-row]").length, add: !!el.querySelector("[data-provider-add]"), manage: !!el.querySelector('[data-provider-configure="anthropic"]'), fields: el.querySelectorAll("input, select").length, text: el.innerText };
+      }, PANEL);
+      check(summary.rows > 0 && summary.add && summary.manage && summary.fields === 0, "Assistant lists providers and their setup actions", JSON.stringify(summary));
+      check(!/privacy policy|subscription|Nothing is sent|What is sent/.test(summary.text), "the provider list omits policy tutorials", summary.text);
       await park(page);
       await h.shot("agent");
-      await page.$$eval("[data-disclosure] button", (bs) => bs[0].click());
-      await page.waitForFunction(() => document.activeElement?.hasAttribute("data-files-heading"), { timeout: 3000 });
+      await h.click('[data-testid="settings-tab-about"]');
+      await h.idle();
       const tab = await page.evaluate(() => document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent);
-      check(tab === "About", "Where they are goes to About, focused on Your files and privacy", tab);
-      // The file paths are folded under "Where the files are" (the Conversations menu's Delete comes first).
-      await page.$eval("[data-about-delete] summary", (s) => s.click());
+      check(tab === "About", "the About tab opens file locations", tab);
       const about = await panelText(page);
-      for (const want of ["not encrypted", "sync too", "read in every space", ".phaethon/thread.json", ".phaethon/threads/", "Command-Shift-full stop"]) {
-        check(about.includes(want), `About says: ${want}`);
+      for (const want of [SETTINGS.vaultPath, "MANUAL.md applies to every space.", "spaces/<space>/.phaethon/", "spaces/<space>/attachments/"]) {
+        check(about.includes(want), `About lists: ${want}`);
       }
+      check(!/privacy policy|Deleting a conversation|keeps its own copy/.test(about), "About keeps file locations concise", about);
       await park(page);
     },
   },
   {
-    name: "t2-disclosure-cli",
+    name: "t2-cli-summary",
     sizes: [[1100, 720]],
     themes: ["light"],
     mock: { settings: { ...SETTINGS, backend: "claude-cli" }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const text = await page.$eval("[data-disclosure]", (el) => el.innerText);
-      check(text.includes("Claude Code sends your messages") && !text.includes("MANUAL.md"), "with Claude Code it says what Claude Code sends", text.slice(0, 160));
-      const model = await panelText(page);
-      check(model.includes("Claude Code uses its own default model. A space can name another one"), "the model row says Claude Code chooses unless a space names one");
-      // Sam: Claude Code's own history isn't deleted by Phaethon, and Assistant and About both say so.
-      check(/keeps its own copy of each conversation.*doesn’t delete that copy/s.test(text), "with Claude Code it says Claude Code keeps its own copy, which Phaethon doesn't delete", text);
-      await page.$eval("[data-disclosure]", (el) => el.scrollIntoView({ block: "center" }));
+      const text = await page.$eval('[data-provider-row="claude-cli"]', (el) => el.innerText);
+      check(text.includes("Claude Code") && text.includes("Default"), "the Claude Code row identifies the current default", text);
+      await openProviderConfiguration(page, "claude-cli");
+      const setup = await page.$eval(providerPopup, (el) => el.innerText);
+      check(setup.includes("Sign in to Claude Code in a terminal") && setup.includes("Models are chosen in each space."), "Claude setup gives the sign-in action and model location", setup);
+      check(!/privacy policy|keeps its own copy|subscription/.test(setup) && !(await page.$(`${providerPopup} [data-key-input]`)), "Claude setup omits policy tutorials and API-key fields", setup);
+      check((await calls(page, "settings_set_backend")).length === 0, "managing Claude Code does not switch assistants");
       await park(page);
       await h.shot("agent");
-      await page.$$eval("[data-disclosure] button", (bs) => bs[0].click());
-      await page.waitForFunction(() => document.activeElement?.hasAttribute("data-files-heading"), { timeout: 3000 });
-      const cli = await page.$eval("[data-about-cli-history]", (p) => p.textContent.replace(/\s+/g, " "));
-      check(cli.startsWith("You use Claude Code, which also keeps its own copy") && cli.includes("Phaethon doesn’t delete that copy"), "About says the same, for someone using Claude Code", cli);
+      await closeProviderPopup(page, { keyboard: true });
+      await h.click('[data-testid="settings-tab-about"]');
+      await h.idle();
+      const about = await panelText(page);
+      check(about.includes("MANUAL.md") && !/keeps its own copy|privacy policy/.test(about), "About shows files without a CLI-history tutorial", about);
     },
   },
   {
@@ -320,6 +322,7 @@ export default [
       // Remove / Keep key: default size and well apart.
       await page.$eval('[data-testid="settings-tab-agent"]', (el) => el.click());
       await h.idle();
+      await openProviderConfiguration(page, "anthropic");
       await page.$$eval('[role="dialog"] button', (bs) => bs.find((b) => b.textContent.trim() === "Remove saved key…")?.click());
       await h.idle();
       const pair = await page.$$eval('[role="dialog"] [role="group"] button', (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()));

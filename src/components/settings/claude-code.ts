@@ -2,10 +2,8 @@
  * Claude Code as the assistant: whether it is installed, and switching to it
  * only when it is. Shared by Settings › Assistant and the first-run card.
  *
- * `claude_cli_status` only looks for the `claude` command. It never reads or
- * reports anything about the person's sign-in (Anthropic's subscription rule,
- * CLAUDE.md), so "installed" is all Phaethon can say; signing in stays in
- * Claude Code.
+ * `claude_cli_status` checks installation, not sign-in. Authentication stays
+ * in Claude Code.
  */
 import { invoke } from "@tauri-apps/api/core";
 
@@ -16,7 +14,7 @@ export const CLAUDE_CODE_INSTALL_URL = "https://docs.anthropic.com/en/docs/claud
 
 /** What to say when it is missing: what happened, then the way on. */
 export const CLAUDE_CODE_MISSING =
-  "Claude Code isn’t installed on this computer. To use it, install Claude Code from Anthropic and sign in to it, then try again. Until then, Phaethon answers using an Anthropic API key.";
+  "Claude Code isn’t installed. Install it, sign in, then try again.";
 
 /**
  * Whether the `claude` command is on this computer. Resolves null when the

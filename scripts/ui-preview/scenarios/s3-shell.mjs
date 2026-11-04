@@ -161,14 +161,12 @@ export default [
       check(await waitActive(page, `cancel:${yesterday}`), "focus is on Cancel (the safe choice)", await active(page));
       const named = await page.$eval(`[data-delete-confirm="${yesterday}"]`, (g) => ({ role: g.getAttribute("role"), label: document.getElementById(g.getAttribute("aria-labelledby"))?.textContent }));
       check(named.role === "group" && named.label === confirmText, "the confirm is a group named by its question", JSON.stringify(named));
-      // Sam: it says which one (when, how long) and what was sent stays sent; the group is described by when.
+      // The timestamp identifies this conversation; the group is described by it.
       const more = await page.$eval(`[data-delete-confirm="${yesterday}"]`, (g) => ({
         stamp: g.querySelector("[data-delete-stamp]")?.textContent,
-        stays: g.querySelector("[data-delete-stays]")?.textContent.replace(/\s+/g, " "),
         described: (g.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" | "),
       }));
       check(/^Yesterday at .+ · 2 messages$/.test(more.stamp ?? ""), "the confirm says when it was last used", JSON.stringify(more));
-      check(more.stays === "What was already sent to Anthropic isn’t affected.", "the confirm says what was sent to Anthropic isn't affected", JSON.stringify(more));
       check(more.described.includes("Yesterday at"), "the group is described by when it was used", more.described);
       check((await calls(page, "thread_forget")).length + (await calls(page, "thread_clear")).length === 0, "nothing is removed before confirming");
       await h.idle(); // past the menu's open animation

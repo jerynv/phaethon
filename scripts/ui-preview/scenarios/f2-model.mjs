@@ -3,10 +3,11 @@
 //   f2-saved         a model saved in a space's file shows on load; Use the default goes back to it
 //   f2-running       a change while a reply runs is saved and said, and never stops the reply
 //   f2-palette       ⌘K › Change model… and Use the default model, by keyboard only
-//   f2-cli           Claude Code answers: no picker, the palette and Settings say Claude Code picks its own model
+//   f2-cli           Claude Code models stay separate; its Manage popup points to each space's model control
 //   f2-settings      Settings › Assistant: Default model, and the spaces with their own model with a way back
 //   f2-fit           at 640x480 (and with --scale 2) the picker, Send and the open menu fit
-import { SETTINGS, check, openSettings, park, PANEL } from "../audit-fixtures.mjs";
+import { SETTINGS, check, openSettings, park } from "../audit-fixtures.mjs";
+import { closeProviderPopup, openProviderConfiguration, providerPopup } from "../provider-flow.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const shown = '[data-space-pane][data-shown]';
@@ -111,8 +112,10 @@ export default [
       check(p.text === "Opus 5.5" && /the default$/.test(p.label), "the button shows the default again", JSON.stringify(p));
       // A new default in Settings is followed by a space on the default.
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.select("[data-model-select]", "claude-sonnet-5-5");
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "settings_set_model"), { timeout: 3000 });
+      await closeProviderPopup(page);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
       await page.waitForFunction((sel) => document.querySelector(sel)?.dataset.model === "claude-sonnet-5-5", { timeout: 3000 }, picker).catch(() => {});
@@ -198,8 +201,10 @@ export default [
       check(await shellSaid(page, "School now uses Claude Code · Opus."), "choosing Opus says so", await shellStatus(page));
       check((await calls(page, "space_model_set")).at(-1)?.model === "claude:opus", "saved as claude:opus", JSON.stringify(await calls(page, "space_model_set")));
       await openSettings(page, h, "agent");
-      const text = await page.$eval(PANEL, (e) => e.innerText);
-      check(/Chosen by Claude Code/.test(text) && /A space can name another one/.test(text), "Settings says Claude Code chooses unless a space names one", text.slice(0, 300));
+      await openProviderConfiguration(page, "claude-cli");
+      const text = await page.$eval(providerPopup, (e) => e.innerText);
+      check(/Models are chosen in each space/.test(text), "Claude Code configuration points to each space's model control", text);
+      check(!(await page.$(`${providerPopup} [data-model-select]`)), "Claude Code configuration does not change the API provider's model");
       await park(page);
     },
   },
@@ -209,11 +214,12 @@ export default [
     mock: { settings: SETTINGS, threads: {}, spaceModels: { work: "claude-sonnet-5-5", school: "claude-haiku-5-5" } },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "anthropic");
       await page.waitForSelector("[data-own-models]", { timeout: 3000 });
       const label = await page.$eval("[data-model-select]", (s) => s.labels?.[0]?.textContent);
       check(label === "Default model", "the setting is the Default model", label);
       const desc = await page.$eval("[data-model-select]", (s) => document.getElementById(s.getAttribute("aria-describedby"))?.textContent ?? "");
-      check(/A space can choose its own/.test(desc), "and says a space can choose its own", desc);
+      check(/Each space can choose another model beside Send/.test(desc), "the default model description points to per-space choices", desc);
       const rows = await page.$$eval("[data-own-model]", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
       check(rows.length === 2 && /School: Claude Haiku 5\.5/.test(rows[0]) && /Work: Claude Sonnet 5\.5/.test(rows[1]), "it lists each space with its own model", JSON.stringify(rows));
       await page.$eval("[data-own-models]", (e) => e.scrollIntoView({ block: "center" }));

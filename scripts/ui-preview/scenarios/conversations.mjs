@@ -271,12 +271,11 @@ export default [
       await h.click("[data-new-conversation]");
       await h.waitText("Start a conversation in School");
       expect((await calls(page, "thread_new")).length === 1, "thread_new not called for the CLI backend");
-      // Its delete confirm says Claude Code's own copy stays.
+      // Deleting a CLI conversation uses the same named confirmation.
       await openMenu(page, h);
       await h.click(`[data-delete-thread="${String(now - 9 * DAY)}"]`);
-      await page.waitForSelector("[data-delete-stays]", { timeout: 3000 });
-      const stays = await page.$eval("[data-delete-stays]", (e) => e.textContent);
-      expect(stays.includes("Claude Code’s own copy stays in its folder"), `the confirm doesn't say Claude Code keeps its copy: ${stays}`);
+      await page.waitForSelector(`[data-delete-confirm="${String(now - 9 * DAY)}"]`, { timeout: 3000 });
+      expect((await calls(page, "thread_forget")).length === 0, "opening the confirmation deleted a conversation");
       await h.idle();
     },
   },

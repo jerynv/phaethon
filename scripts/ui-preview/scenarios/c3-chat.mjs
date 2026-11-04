@@ -72,30 +72,31 @@ const firstRun = (name, scale) => ({
     const s = await page.evaluate((LOG) => {
       const log = document.querySelector(LOG);
       const firstHeading = log.querySelector("h1, h2, h3");
-      const facts = document.querySelector("[data-setup-facts]");
+      const card = document.querySelector("[data-setup-card]");
       return {
         empty: !!log.querySelector("[data-empty-state]"),
         generic: log.innerText.includes("Start a conversation"),
         first: firstHeading?.textContent,
-        factsFolded: !!facts && !facts.closest("details").open,
-        summary: facts?.closest("details").querySelector("summary").textContent.trim(),
+        tutorial: !!card.querySelector("details") || /subscription|few dollars|spending limit|never syncs/.test(card.textContent),
+        connect: card.querySelector('button[type="submit"]')?.textContent.trim(),
+        cli: card.querySelector("[data-setup-cli]")?.textContent.trim(),
         scrollTop: log.scrollTop,
       };
     }, LOG);
     check(!s.empty && !s.generic, "the generic empty-state text is gone while the setup card shows", JSON.stringify(s));
-    check(s.first?.startsWith("Set up Phaethon"), "the setup card's heading is the first thing in the conversation", s.first);
-    check(s.factsFolded && s.summary === "What is an API key?", "the facts are folded into “What is an API key?”", JSON.stringify(s));
+    check(s.first?.startsWith("Connect an assistant"), "the setup card's heading is the first thing in the conversation", s.first);
+    check(!s.tutorial && s.connect === "Connect" && s.cli === "Use Claude Code", "setup shows connection actions without an account tutorial", JSON.stringify(s));
     const field = await inLog(page, "[data-setup-key]");
     const save = await inLog(page, '[data-setup-card] button[type="submit"]');
-    // Where the conversation has room for the card down to Check and save, all of it shows at once. In a window
+    // Where the conversation has room for the card down to Connect, all of it shows at once. In a window
     // too short for that (640x480 at 200% text leaves the conversation about 84 px), it can't: there each one
     // must come whole into view when it is reached by keyboard.
     const room = field.logBottom - field.logTop >= save.bottom - field.logTop;
     if (room) {
       check(field.inside && s.scrollTop === 0, "the key field is in view without scrolling", JSON.stringify(field));
-      check(save.inside, "Check and save is in view too", JSON.stringify(save));
+      check(save.inside, "Connect is in view too", JSON.stringify(save));
     } else {
-      for (const [sel, what] of [["[data-setup-key]", "the key field"], ['[data-setup-card] button[type="submit"]', "Check and save"]]) {
+      for (const [sel, what] of [["[data-setup-key]", "the key field"], ['[data-setup-card] button[type="submit"]', "Connect"]]) {
         await page.evaluate(() => document.activeElement?.blur());
         await h.focusVia(sel);
         await h.idle();
@@ -339,7 +340,7 @@ const ROUND3 = [
       await page.keyboard.press("Enter");
       await h.waitText("Done.");
       const after = await page.evaluate(() => document.querySelector("[data-setup-done]")?.textContent);
-      check(!after.includes("waiting above"), "once sent, the setup card no longer says the message is waiting", after);
+      check(after === "Message sent.", "once sent, the setup card confirms the message was sent", after);
     },
   },
   {
@@ -380,7 +381,7 @@ const ROUND3 = [
         const link = box?.querySelector("a");
         return { box: !!box, href: link?.getAttribute("href"), text: link?.textContent, red: !!card.querySelector(".text-danger-ink") };
       });
-      check(s.box && s.href === "https://docs.anthropic.com/en/docs/claude-code/setup" && s.text.startsWith("How to install Claude Code"), "it links to how to install Claude Code, as Settings does", JSON.stringify(s));
+      check(s.box && s.href === "https://docs.anthropic.com/en/docs/claude-code/setup" && s.text === "Install Claude Code (opens in your browser)", "it links to install Claude Code, as Settings does", JSON.stringify(s));
       check(!s.red, "shown as a warning, not a red error", JSON.stringify(s));
       check((await calls(page, "settings_set_backend")).length === 0, "and nothing was switched");
       await h.shot("missing");
@@ -627,7 +628,7 @@ export default [
       await page.click("[data-setup-recheck]");
       await page.waitForSelector("[data-setup-recheck-result]", { timeout: 5000 });
       const still = await page.$eval("[data-setup-recheck-result]", (e) => e.textContent);
-      check(still.includes("still no credit"), "Check again says when there is still no credit", still);
+      check(still === "No credit yet. Try again shortly.", "Check again says when there is still no credit", still);
       await mock(page, { keyCheck: { ok: true, message: "This key works." } });
       await page.click("[data-setup-recheck]");
       await page.waitForSelector("[data-setup-done]", { timeout: 5000 });

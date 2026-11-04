@@ -6,7 +6,8 @@
 //   f10-space        a space picks another provider's model from its menu, and any model through Another model…
 //   f10-palette      ⌘K › Change model… lists provider · model and chooses one by keyboard only
 //   f10-fit          at 640x480 (and with --scale 2) the provider settings and the model chooser fit
-import { SETTINGS, check, openSettings, park, PANEL } from "../audit-fixtures.mjs";
+import { SETTINGS, check, openSettings, park } from "../audit-fixtures.mjs";
+import { closeProviderPopup, openProviderConfiguration, providerPopup, useProviderDefault } from "../provider-flow.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const shown = "[data-space-pane][data-shown]";
@@ -22,6 +23,21 @@ const shellStatus = (page) => page.evaluate(() => document.querySelector("[data-
 const searchStatus = (page) => page.$eval("[data-model-search-status]", (e) => e.textContent);
 const activeOption = (page) =>
   page.$eval("[data-model-query]", (i) => document.getElementById(i.getAttribute("aria-activedescendant") ?? "")?.dataset.modelChoice ?? null);
+const popupGeometry = (page) => page.$eval(providerPopup, (dialog) => {
+  const rect = (element) => element.getBoundingClientRect().toJSON();
+  const viewport = dialog.querySelector('[data-provider-popup-body] .ui-scroll-area-viewport');
+  return {
+    popup: rect(dialog),
+    header: rect(dialog.querySelector('[data-slot="dialog-header"]')),
+    footer: rect(dialog.querySelector('[data-slot="dialog-footer"]')),
+    viewport: rect(viewport),
+    modelList: rect(dialog.querySelector('[data-model-search] [role="listbox"]')),
+    buttons: [...dialog.querySelectorAll('[data-slot="dialog-footer"] button')].map(rect),
+    scrollTop: viewport.scrollTop,
+    scrolls: viewport.scrollHeight > viewport.clientHeight,
+    window: { width: innerWidth, height: innerHeight },
+  };
+});
 
 // A long list, as OpenRouter's is.
 const OPENROUTER = [
@@ -38,7 +54,8 @@ const OLLAMA = [
 const PROV = (over = {}) => ({ provider: "anthropic", keys: {}, models: {}, urls: {}, running: {}, lists: { openrouter: OPENROUTER, ollama: OLLAMA }, ...over });
 
 async function choose(page, value) {
-  await page.select("[data-provider-select]", value);
+  await openProviderConfiguration(page, value);
+  await useProviderDefault(page, value);
   await page.waitForFunction((v) => window.__calls.some(([c, a]) => c === "settings_set_provider" && a.provider === v), { timeout: 3000 }, value);
 }
 
@@ -57,16 +74,20 @@ export default [
     mock: { settings: SETTINGS, threads: {}, prov: PROV() },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const label = await page.$eval("[data-provider-select]", (s) => s.labels?.[0]?.textContent);
-      check(label === "Provider", "the provider select has a visible label", label);
-      const groups = await page.$$eval("[data-provider-select] optgroup", (gs) => gs.map((g) => `${g.label}: ${[...g.children].map((o) => o.textContent).join(", ")}`));
-      check(groups.length === 3 && /Ollama \(on this computer\)/.test(groups[1]) && /OpenRouter/.test(groups[0]), "services, on this computer, other", JSON.stringify(groups));
+      check(!!(await page.$("[data-provider-add]")), "Add provider opens configuration");
+      check(!(await page.$("[data-provider-select]")), "provider management has no select that changes the default");
+      await page.click("[data-provider-add]");
+      await page.waitForSelector("[data-provider-catalog]", { timeout: 3000 });
+      const catalog = await page.$$eval("[data-provider-catalog-select]", (buttons) => buttons.map((button) => button.dataset.providerCatalogSelect));
+      check(["anthropic", "openrouter", "openai", "ollama", "custom", "claude-cli", "codex-cli", "gemini-cli"].every((id) => catalog.includes(id)), "Add provider offers hosted, local, custom and CLI configuration", JSON.stringify(catalog));
+      await closeProviderPopup(page);
       await choose(page, "openrouter");
-      check(await settingsSaid(page, "Phaethon now answers with OpenRouter."), "choosing OpenRouter is said", await settingsStatus(page));
+      check(await settingsSaid(page, "Now using OpenRouter."), "choosing OpenRouter is said", await settingsStatus(page));
       await page.waitForSelector("[data-model-search=openrouter]", { timeout: 3000 });
-      const text = await page.$eval(PANEL, (e) => e.innerText);
-      check(/OpenRouter API key/.test(text) && /openrouter\.ai/.test(text), "it asks for an OpenRouter key and says where to make one", text.slice(0, 600));
-      check(/What is sent to OpenRouter/.test(text) && /passes it on to the company that runs the model/.test(text), "the disclosure names OpenRouter", "");
+      const text = await page.$eval(providerPopup, (e) => e.innerText);
+      const keyLink = await page.$eval(`${providerPopup} a`, (a) => a.href);
+      check(/OpenRouter API key/.test(text) && /openrouter\.ai/.test(keyLink), "the popup asks for OpenRouter's key and links to it", text.slice(0, 600));
+      check(!/What is sent to|passes it on to the company/.test(text), "configuration omits the removed disclosure paragraphs");
 
       // Another provider's key: refused before anything is sent or saved.
       await page.type("[data-key-input]", "sk-ant-api03-this-is-anthropics");
@@ -87,7 +108,7 @@ export default [
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "api_key_set"), { timeout: 3000 });
       const set = (await calls(page, "api_key_set")).at(-1);
       check(set.provider === "openrouter" && set.key === "sk-or-v1-0123456789abcdef", "the key is saved for OpenRouter", JSON.stringify(set));
-      check(await settingsSaid(page, "Your key works. It’s saved in this computer’s password store (Keychain)."), "and that is said", await settingsStatus(page));
+      check(await settingsSaid(page, "API key saved."), "saving the key is said", await settingsStatus(page));
       await page.waitForFunction(() => /A key is saved/.test(document.querySelector("[data-key-input]")?.closest("form")?.textContent ?? ""), { timeout: 3000 });
 
       // The list: long, so only the first 50 show, and typing narrows it.
@@ -95,7 +116,7 @@ export default [
       check(/The first 50 are shown/.test(await searchStatus(page)), "a long list says only the first 50 show", await searchStatus(page));
       check((await page.$$("[data-model-search] [role=option]")).length === 50, "and shows 50");
       const none = await page.$eval("[data-provider-model]", (e) => e.textContent);
-      check(/No model is chosen for OpenRouter yet/.test(none), "no model is chosen yet, said plainly", none);
+      check(/Choose a default model, or enter its name/.test(none), "no model is chosen yet, said plainly", none);
       await page.focus("[data-model-query]");
       await page.keyboard.type("sonnet");
       await page.waitForFunction(() => /1 match/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
@@ -111,7 +132,7 @@ export default [
       check(await settingsSaid(page, "The default model is now OpenRouter · Anthropic: Claude Sonnet 5."), "and says so", await settingsStatus(page));
       await page.waitForFunction(() => document.querySelector("[data-provider-model]")?.dataset.providerModel === "anthropic/claude-sonnet-5", { timeout: 3000 });
       const inUse = await page.$eval("[data-provider-model]", (e) => e.textContent);
-      check(/Phaethon answers with OpenRouter · Anthropic: Claude Sonnet 5/.test(inUse), "what is in use is shown", inUse);
+      check(/Default: OpenRouter · Anthropic: Claude Sonnet 5/.test(inUse), "the configured default model is shown", inUse);
 
       // A model the list doesn't have: typed, then used as it is.
       await page.click("[data-model-query]", { clickCount: 3 });
@@ -126,11 +147,15 @@ export default [
       await page.keyboard.type("x");
       await page.keyboard.press("Escape");
       await new Promise((r) => setTimeout(r, 400));
-      const after = await page.evaluate(() => [document.querySelector("[data-model-query]")?.value, document.querySelector('[role="dialog"]')?.dataset.state]);
-      check(after[0] === "" && after[1] === "open", "Escape clears the search first, without closing Settings", JSON.stringify(after));
+      const after = await page.evaluate(() => [document.querySelector("[data-model-query]")?.value, !!document.querySelector("[data-provider-popup]")]);
+      check(after[0] === "" && after[1], "Escape clears the search first, without closing configuration", JSON.stringify(after));
+      const configuration = await page.$(providerPopup);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction((dialog) => !dialog.isConnected, { timeout: 3000 }, configuration);
+      check(!!(await page.$('[role="dialog"]')), "closing provider configuration returns to Settings");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 3000 }).catch(() => {});
-      check(!(await page.$('[role="dialog"]')), "a second Escape closes Settings");
+      check(!(await page.$('[role="dialog"]')), "the next Escape closes Settings");
     },
   },
   {
@@ -139,12 +164,13 @@ export default [
     mock: { settings: SETTINGS, threads: {}, prov: PROV({ provider: "ollama" }) },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "ollama");
       await page.waitForSelector('[data-provider-status="stopped"]', { timeout: 3000 });
       const st = await page.$eval("[data-provider-status]", (e) => e.textContent);
       check(/Ollama isn’t running at http:\/\/127\.0\.0\.1:11434\. Open it, then check again\./.test(st), "says Ollama isn’t running, where, and what to do", st);
       check(!(await page.$("[data-key-input]")), "no key is asked for a model on this computer");
-      const text = await page.$eval(PANEL, (e) => e.innerText);
-      check(/Where Ollama runs/.test(text) && /runs on this computer, so none of this leaves it/.test(text), "it says where Ollama runs and that nothing leaves the computer", text.slice(0, 900));
+      const text = await page.$eval(providerPopup, (e) => e.innerText);
+      check(/Where Ollama answers/.test(text) && !/What is sent to/.test(text), "the popup gives Ollama's address without the removed disclosure", text.slice(0, 900));
       const ms = await searchStatus(page);
       check(/Ollama isn’t running/.test(ms) && /Type a model’s name/.test(ms), "the model list says why it is empty and that a name can be typed", ms);
       const url = await page.$eval("[data-provider-url]", (e) => [e.value, e.labels?.[0]?.textContent]);
@@ -167,6 +193,7 @@ export default [
     mock: { settings: SETTINGS, threads: {}, prov: PROV({ provider: "ollama" }) },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "ollama");
       await page.waitForSelector('[data-provider-status="stopped"]', { timeout: 3000 });
       await page.evaluate(() => (window.__MOCK__.prov.running.ollama = true));
       await page.click("[data-provider-check]");
@@ -174,9 +201,9 @@ export default [
       check(await settingsSaid(page, "Ollama is running, with 2 models."), "Check again says it is running, with its models", await settingsStatus(page));
       const f = await page.evaluate(() => document.activeElement?.hasAttribute("data-provider-check"));
       check(f, "focus stays on Check again");
-      // The list was empty while it wasn't running; choosing the provider again reads it.
-      await page.select("[data-provider-select]", "openrouter");
-      await page.select("[data-provider-select]", "ollama");
+      // Reopening configuration refreshes the list without changing the default.
+      await closeProviderPopup(page);
+      await openProviderConfiguration(page, "ollama");
       await page.waitForFunction(() => /2 models/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
       await page.click('[data-model-choice="qwen3:8b"]');
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "settings_set_provider_model"), { timeout: 3000 });
@@ -286,20 +313,58 @@ export default [
     name: "f10-fit",
     sizes: [[640, 480], [1100, 720]],
     sizesRequired: true,
-    mock: { settings: SETTINGS, threads: {}, prov: PROV({ provider: "custom", keys: {}, urls: { custom: "https://llm.example.com/v1" }, lists: { custom: OLLAMA } }) },
+    mock: { settings: SETTINGS, threads: {}, prov: PROV({ provider: "custom", keys: {}, urls: { custom: "https://llm.example.com/v1" }, lists: { custom: OPENROUTER } }) },
     async run(page, h) {
       await openSettings(page, h, "agent");
+      await openProviderConfiguration(page, "custom");
       await page.waitForSelector("[data-provider-url]", { timeout: 3000 });
       await h.idle();
-      const over = await page.$eval(PANEL, (p) => p.scrollWidth - p.clientWidth);
-      check(over <= 0, "Settings › Assistant doesn't scroll sideways", `${over}`);
-      const text = await page.$eval(PANEL, (e) => e.innerText);
-      check(/Your server’s address/.test(text) && /Only if your server asks for one/.test(text) && /sent only to llm\.example\.com/.test(text), "your own server: its address, and a key only if it asks, sent only there", text.slice(0, 1200));
+      const over = await page.$eval(providerPopup, (p) => p.scrollWidth - p.clientWidth);
+      check(over <= 0, "provider configuration doesn't scroll sideways", `${over}`);
+      const text = await page.$eval(providerPopup, (e) => e.innerText);
+      check(/Your server’s address/.test(text) && /Add a key only if your server requires one/.test(text) && !/What is sent to/.test(text), "custom configuration offers an address and optional key without disclosure paragraphs", text.slice(0, 1200));
       await page.$eval("[data-model-search]", (e) => e.scrollIntoView({ block: "center" }));
       await park(page);
       await h.shot("custom");
       const targets = await page.$$eval("[data-model-search] [role=option], [data-provider-check], [data-provider-url-save]", (els) => els.map((e) => e.getBoundingClientRect().height));
       check(targets.every((t) => t >= 24), "targets are at least 24px tall", JSON.stringify(targets));
+      const layout = await page.$eval('[data-model-search] [role="listbox"]', (list) => {
+        const rows = [...list.querySelectorAll('[role="option"]')];
+        const bad = rows.flatMap((row, index) => {
+          const bounds = row.getBoundingClientRect();
+          const text = row.lastElementChild.getBoundingClientRect();
+          const next = rows[index + 1]?.getBoundingClientRect();
+          return text.top < bounds.top - 1 || text.bottom > bounds.bottom + 1 || (next && text.bottom > next.top + 1)
+            ? [{ model: row.dataset.modelChoice, rowHeight: bounds.height, textHeight: text.height }]
+            : [];
+        });
+        return { count: rows.length, scrolls: list.scrollHeight > list.clientHeight, bad };
+      });
+      check(layout.count === 50 && layout.scrolls, "the long model list scrolls instead of compressing its 50 rows", JSON.stringify(layout));
+      check(layout.bad.length === 0, "model titles and identifiers fit their rows without overlapping the next option", JSON.stringify(layout.bad.slice(0, 3)));
+      await page.$eval('[data-provider-popup-body] .ui-scroll-area-viewport', (viewport) => {
+        viewport.scrollTop = 0;
+      });
+      await h.idle();
+      const beforeScroll = await popupGeometry(page);
+      await page.$eval('[data-provider-popup-body] .ui-scroll-area-viewport', (viewport) => {
+        viewport.scrollTop = viewport.scrollHeight;
+      });
+      await h.idle();
+      const afterScroll = await popupGeometry(page);
+      check(afterScroll.scrolls && afterScroll.scrollTop > beforeScroll.scrollTop + 1, "the provider body scrolls from its beginning to its end");
+      check(["header", "footer"].every((part) => Math.abs(beforeScroll[part].top - afterScroll[part].top) <= 1 && Math.abs(beforeScroll[part].bottom - afterScroll[part].bottom) <= 1), "provider header and footer stay fixed while the body scrolls");
+      for (const geometry of [beforeScroll, afterScroll]) {
+        const { popup, header, footer, viewport, modelList, buttons, window } = geometry;
+        const inside = (bounds, container) => bounds.top >= container.top - 1 && bounds.bottom <= container.bottom + 1 && bounds.left >= container.left - 1 && bounds.right <= container.right + 1;
+        const screen = { top: 0, left: 0, right: window.width, bottom: window.height };
+        check([header, footer, ...buttons].every((bounds) => inside(bounds, popup) && inside(bounds, screen)) && buttons.every((bounds) => inside(bounds, footer)), "provider header, footer and action buttons remain visible inside the popup");
+        check(header.bottom <= viewport.top + 1 && viewport.bottom <= footer.top + 1, "the provider scroll viewport stays between its header and footer");
+        const visibleModelTop = Math.max(modelList.top, viewport.top);
+        const visibleModelBottom = Math.min(modelList.bottom, viewport.bottom);
+        check(visibleModelBottom <= visibleModelTop || (header.bottom <= visibleModelTop + 1 && visibleModelBottom <= footer.top + 1), "the visible model list does not overlap provider header or footer");
+      }
+      check(Math.max(afterScroll.modelList.top, afterScroll.viewport.top) < Math.min(afterScroll.modelList.bottom, afterScroll.viewport.bottom), "the model list remains reachable at the end of the provider body");
     },
   },
 ];

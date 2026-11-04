@@ -1,10 +1,11 @@
 import { Input } from "@/components/ui/input";
 import { Card, NativeSelect } from "vic-ui";
-import { RadioGroup } from "radix-ui";
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -12,7 +13,6 @@ import {
   cancelCliSignIn,
   CLI_INFO,
   clearApiKey,
-  cliOf,
   isCliBackend,
   listModels,
   providerStatus,
@@ -27,16 +27,15 @@ import {
   type CliBackend,
   type CliSignIn,
   type ModelInfo,
+  type ProviderId,
   type ProviderInfo,
   type ServerStatus,
   type Settings,
 } from "@/lib/backend";
 import { changedText, loadCliModels, modelName, setSpaceModel, toRef, useModels } from "@/lib/space-model";
 import { useSpaces } from "@/lib/spaces";
-import { modCap } from "@/components/shell/shortcuts";
 
 import {
-  ANTHROPIC_PRIVACY_URL,
   CONSOLE_BILLING_URL,
   CONSOLE_KEYS_URL,
   DEFAULT_MODEL,
@@ -48,64 +47,27 @@ import {
   readableModel,
   type KeyOutcome,
 } from "./api-key";
-import { CLAUDE_CODE_INSTALL_URL, CLAUDE_CODE_MISSING, checkClaudeCode } from "./claude-code";
+import { CLAUDE_CODE_MISSING, checkClaudeCode } from "./claude-code";
 import { ModelSearch } from "./model-search";
-import { SectionHeader, SettingGroup, SettingRow, radioArrowKeys } from "./controls";
-import { useSettingsNav, useStatus } from "./status";
+import { SectionHeader, SettingGroup, SettingRow } from "./controls";
+import { useStatus } from "./status";
 
-const BACKENDS: { value: Backend; label: string; hint: string }[] = [
-  {
-    value: "phaethon",
-    label: "Phaethon’s own assistant",
-    hint: "Answers with the model provider you choose below: Anthropic, OpenAI, OpenRouter, a model on this computer, and more. Phaethon only sees the space you’re in, and asks before it changes any file.",
-  },
-  {
-    value: "claude-cli",
-    label: "Claude Code on this computer",
-    hint: "Uses the Claude Code app you installed and signed into yourself, on your own Claude plan. It can read your files but can’t change them yet.",
-  },
-  {
-    value: "codex-cli",
-    label: "Codex on this computer",
-    hint: "Uses OpenAI’s Codex that you installed and signed into yourself, on your own ChatGPT plan or OpenAI account. It can read your files but can’t change them.",
-  },
-  {
-    value: "gemini-cli",
-    label: "Gemini CLI on this computer",
-    hint: "Uses Google’s Gemini CLI that you installed and signed into yourself, with your own Google account or Gemini API key. It can read your files but can’t change them.",
-  },
-];
-
-/** What to say when a CLI other than Claude Code is missing: what happened, then the way on. */
+const CLI_BACKENDS: CliBackend[] = ["claude-cli", "codex-cli", "gemini-cli"];
 const cliMissingText = (b: CliBackend) =>
-  b === "claude-cli"
-    ? CLAUDE_CODE_MISSING
-    : `${CLI_INFO[b].name} isn’t installed on this computer. To use it, install ${CLI_INFO[b].name} from ${CLI_INFO[b].company}, then choose it again and sign in to it here.`;
-
-/** The CLIs Phaethon runs with a setup of their own for the Phaethon folder, signed in to here. */
+  b === "claude-cli" ? CLAUDE_CODE_MISSING : `${CLI_INFO[b].name} is not installed. Install it, then try again.`;
 type OwnHomeBackend = Exclude<CliBackend, "claude-cli">;
 const isOwnHome = (b: Backend): b is OwnHomeBackend => isCliBackend(b) && b !== "claude-cli";
-/** Each one's global instructions file, which its own setup here keeps out of every space. */
-const OWN_FILE: Record<OwnHomeBackend, string> = { "codex-cli": "AGENTS.md", "gemini-cli": "GEMINI.md" };
 
-/** OpenCode: looked for, not used yet. */
-const OPENCODE_URL = "https://opencode.ai";
-
-/** "Installed, signed in" and the like, for a CLI's choice. Nothing while unknown. */
 function cliStatusText(s: AgentCliStatus | undefined): string {
-  if (!s) return "";
-  if (!s.installed) return "Not installed on this computer.";
-  if (s.ownHome) {
-    if (s.loggedIn === true) return "Installed and signed in for this Phaethon folder.";
-    if (s.loggedIn === false) return "Installed, not signed in for this Phaethon folder yet.";
-    return "Installed. Phaethon can’t tell whether you’re signed in for this Phaethon folder until you sign in here or send a message.";
-  }
-  if (s.loggedIn === true) return "Installed and signed in.";
-  if (s.loggedIn === false) return `Installed, not signed in: run ${s.loginCommand} in a terminal.`;
-  return s.id === "claude"
-    ? "Installed. Phaethon doesn’t check whether you’re signed in."
-    : `Installed. Phaethon can’t tell whether you’re signed in until you send a message; to sign in, run ${s.loginCommand} in a terminal.`;
+  if (!s) return "Checking installation…";
+  if (!s.installed) return "Not installed";
+  if (s.loggedIn === true) return "Signed in";
+  if (s.loggedIn === false) return "Sign-in required";
+  return "Installed";
 }
+
+export type AgentFocusRequest = { target: "key" | "model"; n: number; closeSettingsOnClose: boolean };
+type ProviderPopup = { kind: "catalog" } | { kind: "provider"; id: ProviderId } | { kind: "cli"; backend: CliBackend };
 
 /** Links that leave Phaethon: underlined, and say they open in the browser. */
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
@@ -117,97 +79,106 @@ export function ExternalLink({ href, children }: { href: string; children: React
   );
 }
 
-/**
- * Which assistant answers, the Anthropic API key, the model, and what is sent
- * to Anthropic. The key field is write-only: once saved it goes to the
- * system's password store and is never shown again.
- *
- * Keyboard: the assistant choice is a radio group (arrows move and choose).
- * The key is a form: Enter checks and saves. Remove saved key asks first,
- * inline: focus moves to "Keep key", and either answer puts focus somewhere
- * that still exists. The model is a native select.
+/** Provider rows and focused setup dialogs follow T3 Code's ProviderSettingsPanel,
+ * ProviderInstanceCard, and AddProviderInstanceDialog (MIT, https://github.com/pingdotgg/t3code).
+ * Phaethon keeps one configuration per service; managing a row never selects it as the default.
  */
 export function AgentSection({
-  headingId,
-  settings,
-  loadError,
-  retryLoad,
-  act,
+  headingId, settings, loadError, retryLoad, act, focusRequest, onRequestedProviderClose,
 }: {
   headingId: string;
   settings: Settings | null;
-  /** Why the settings could not be read, if they could not. */
   loadError: string;
-  /** Reads the settings again; resolves true once they loaded. */
   retryLoad: () => Promise<boolean>;
-  /**
-   * Run a change, then reload settings and announce `done`. Errors go to
-   * `onError` when given (shown at the field), otherwise to the window banner.
-   */
+  focusRequest?: AgentFocusRequest | null;
+  onRequestedProviderClose?: (n: number) => void;
   act: (work: () => Promise<void>, done: string, onError?: (message: string) => void, reloadThread?: boolean) => Promise<boolean>;
 }) {
   const { say } = useStatus();
   const [retrying, setRetrying] = useState(false);
-  const provider = settings ? chosenProvider(settings) : ANTHROPIC_INFO;
-  /** The backend last asked for, so one key press never sends two changes. */
-  const backendAsked = useRef<Backend | null>(null);
-  const backendTitle = useId();
-  /** A CLI was chosen but isn't installed: say so under the choices, and stay where we are. */
+  const [popup, setPopup] = useState<ProviderPopup | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const [changingDefault, setChangingDefault] = useState(false);
   const [cliMissing, setCliMissing] = useState<CliBackend | null>(null);
-  /** Each CLI's status (installed, signed in where the CLI can say); null until known or from an older core. */
   const [clis, setClis] = useState<AgentCliStatus[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    agentClis().then(
-      (c) => live && setClis(c),
-      () => {},
-    );
-    return () => {
-      live = false;
+  const backendAsked = useRef<Backend | null>(null);
+  const popupTitleRef = useRef<HTMLHeadingElement>(null);
+  const popupContentRef = useRef<HTMLDivElement>(null);
+  const handledFocusRequest = useRef<number | null>(null);
+  const requestedPopup = useRef<AgentFocusRequest | null>(null);
+  const pendingProviderFocus = useRef<{ providerId: ProviderId; selector: string } | null>(null);
+  const previousPopup = useRef<ProviderPopup | null>(null);
+  const closingToChat = useRef(false);
+  const provider = settings ? chosenProvider(settings) : ANTHROPIC_INFO;
+  const providers = settings?.providers?.length ? settings.providers : [{ ...ANTHROPIC_INFO, hasKey: settings?.hasAnthropicKey ?? false, model: settings?.model ?? null, ready: settings?.hasAnthropicKey ?? false }];
+  const statusOf = (b: CliBackend) => clis?.find((c) => c.id === CLI_INFO[b].id);
+  const refreshClis = () => agentClis().then((c) => setClis(c), () => {});
+
+  useEffect(() => { void refreshClis(); }, [settings?.backend]);
+  useEffect(() => { setActionError(""); }, [popup]);
+  useLayoutEffect(() => {
+    if (!focusRequest || !settings || handledFocusRequest.current === focusRequest.n) return;
+    handledFocusRequest.current = focusRequest.n;
+    requestedPopup.current = focusRequest;
+    const target = chosenProvider(settings);
+    pendingProviderFocus.current = {
+      providerId: target.id,
+      selector: focusRequest.target === "key" && target.key !== "none" ?
+        "[data-key-input]" : "[data-model-select], [data-model-query]",
     };
-  }, [settings?.backend]);
-  // Each time Settings opens (or the assistant changes), the answering CLI's model list is asked again.
+    setPopup((current) => current?.kind === "provider" && current.id === target.id ?
+      current : { kind: "provider", id: target.id });
+  }, [focusRequest, settings]);
+
+  function focusRequestedProviderField() {
+    const pending = pendingProviderFocus.current;
+    if (!pending || popup?.kind !== "provider" || popup.id !== pending.providerId) return false;
+    const field = popupContentRef.current?.querySelector<HTMLElement>(pending.selector);
+    if (!field) return false;
+    pendingProviderFocus.current = null;
+    field.focus();
+    field.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+
+  useLayoutEffect(() => {
+    const changed = previousPopup.current !== popup;
+    previousPopup.current = popup;
+    if (focusRequestedProviderField()) return;
+    if (changed && popup && !pendingProviderFocus.current) popupTitleRef.current?.focus();
+  }, [popup, settings, focusRequest]);
   useEffect(() => {
     if (settings && isCliBackend(settings.backend)) void loadCliModels(CLI_INFO[settings.backend].id, true);
   }, [settings?.backend]);
-  // The note appears under the choices, perhaps below the fold: bring it into view.
-  useEffect(() => {
-    if (cliMissing) requestAnimationFrame(() => document.querySelector("[data-cli-missing]")?.scrollIntoView({ block: "nearest" }));
-  }, [cliMissing]);
-  const statusOf = (b: Backend) => (isCliBackend(b) ? clis?.find((c) => c.id === CLI_INFO[b].id) : undefined);
-  const refreshClis = () =>
-    agentClis().then(
-      (c) => setClis(c),
-      () => {},
-    );
-  const opencode = clis?.find((c) => c.id === "opencode");
 
-  function chooseBackend(v: string) {
-    const b = BACKENDS.find((x) => x.value === v);
-    if (!b || backendAsked.current === b.value) return;
-    backendAsked.current = b.value;
+  function chooseBackend(backend: CliBackend) {
+    if (backendAsked.current || changingDefault) return;
+    backendAsked.current = backend;
+    setChangingDefault(true);
+    setActionError("");
     setCliMissing(null);
     void (async () => {
-      // A CLI: check it is on this computer before switching to it.
-      if (b.value === "claude-cli") {
-        const status = await checkClaudeCode();
-        if (status && !status.installed) {
-          setCliMissing("claude-cli");
-          say(CLAUDE_CODE_MISSING);
-          return;
-        }
-      } else if (isCliBackend(b.value)) {
-        const status = (await agentClis().catch(() => null))?.find((c) => c.id === CLI_INFO[b.value as CliBackend].id);
-        if (status && !status.installed) {
-          setCliMissing(b.value);
-          say(cliMissingText(b.value));
-          return;
-        }
+      const status = backend === "claude-cli"
+        ? await checkClaudeCode()
+        : (await agentClis().catch(() => null))?.find((c) => c.id === CLI_INFO[backend].id);
+      if (status && !status.installed) {
+        setCliMissing(backend);
+        say(cliMissingText(backend));
+        return;
       }
-      await act(() => setBackend(b.value), `Now using ${b.label}.`, undefined, true);
-    })().finally(() => {
-      backendAsked.current = null;
-    });
+      await act(() => setBackend(backend), `Now using ${CLI_INFO[backend].name}.`, setActionError, true);
+    })().finally(() => { backendAsked.current = null; setChangingDefault(false); });
+  }
+
+  function useProvider(p: ProviderInfo) {
+    if (changingDefault) return;
+    setChangingDefault(true);
+    setActionError("");
+    void act(async () => {
+      await setProvider(p.id);
+      if (settings?.backend !== "phaethon") await setBackend("phaethon");
+    }, `Now using ${p.name}.`, setActionError, settings?.backend !== "phaethon").finally(() => setChangingDefault(false));
   }
 
   async function retry() {
@@ -215,161 +186,256 @@ export function AgentSection({
     setRetrying(true);
     const ok = await retryLoad();
     setRetrying(false);
-    if (ok) {
-      say("Settings loaded.");
-      requestAnimationFrame(() => document.getElementById(headingId)?.focus());
-    } else {
-      say("Settings still could not be loaded.");
-    }
+    say(ok ? "Settings loaded." : "Settings still could not be loaded.");
+    if (ok) requestAnimationFrame(() => document.getElementById(headingId)?.focus());
+  }
+
+  const activeName = settings && isCliBackend(settings.backend) ? CLI_INFO[settings.backend].name : provider.name;
+  const configuredProviders = providers.filter((p) =>
+    p.hasKey || p.ready || (p.id !== "anthropic" && p.model !== null) ||
+    (p.editableBase && p.baseUrl !== p.defaultBaseUrl) ||
+    (settings?.backend === "phaethon" && provider.id === p.id),
+  );
+  const configuredClis = CLI_BACKENDS.filter((b) => statusOf(b)?.installed || settings?.backend === b);
+  const editingProvider = popup?.kind === "provider" ? providers.find((p) => p.id === popup.id) : undefined;
+  const editingCli = popup?.kind === "cli" ? popup.backend : undefined;
+  const editingIsDefault = editingProvider ? settings?.backend === "phaethon" && provider.id === editingProvider.id : editingCli === settings?.backend;
+
+  function missingCli(backend: CliBackend) {
+    return (
+      <p data-cli-missing={backend} role="status" className="text-sm text-warning-ink">
+        {cliMissingText(backend)}{" "}
+        <ExternalLink href={CLI_INFO[backend].installUrl}>Install {CLI_INFO[backend].name}</ExternalLink>
+      </p>
+    );
+  }
+
+  function closePopup() {
+    const requested = requestedPopup.current;
+    requestedPopup.current = null;
+    pendingProviderFocus.current = null;
+    closingToChat.current = requested?.closeSettingsOnClose ?? false;
+    setPopup(null);
+    setCliMissing(null);
+    if (requested) onRequestedProviderClose?.(requested.n);
   }
 
   return (
     <>
       <SectionHeader
-        id={headingId}
-        title="Assistant"
-        description="Which assistant answers in your spaces, and what it needs. This applies to every space, though a space can choose its own model."
+        id={headingId} title="Assistant" description="Manage providers and choose your default assistant."
+        action={settings && (
+          <Button variant="outline" size="sm" data-provider-add="" onClick={() => setPopup({ kind: "catalog" })}>
+            <Icon name="plus" />Add provider
+          </Button>
+        )}
       />
-      {!settings ? (
-        loadError ? (
-          <LoadProblem raw={loadError}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-disabled={retrying || undefined}
-              onClick={() => void retry()}
-              className="aria-disabled:cursor-progress"
-            >
-              <Icon name="retry" />
-              {retrying ? "Trying again…" : "Try again"}
-            </Button>
-          </LoadProblem>
-        ) : (
-          <p className="text-base text-ink-secondary" role="status">
-            Loading your assistant settings…
-          </p>
-        )
+      {!settings ? loadError ? (
+        <LoadProblem raw={loadError}>
+          <Button type="button" variant="outline" size="sm" aria-disabled={retrying || undefined} onClick={() => void retry()}>
+            <Icon name="retry" />
+            {retrying ? "Trying again…" : "Try again"}
+          </Button>
+        </LoadProblem>
+      ) : (
+        <p className="text-base text-ink-secondary" role="status">Loading assistant settings…</p>
       ) : (
         <>
-          <SettingGroup title="Which assistant answers" titleId={backendTitle} bare>
+          <SettingGroup title="Default assistant">
+            <SettingRow
+              label={activeName}
+              description={isCliBackend(settings.backend) ? "Uses its own default model." :
+                provider.model || provider.id === "anthropic" ?
+                  modelName(toRef(provider.id, provider.model ?? settings.model)) : "Choose a default model."}
+            >
+              <Button
+                variant="outline" size="sm" className="self-end" data-assistant-default-manage=""
+                onClick={() => setPopup(isCliBackend(settings.backend) ?
+                  { kind: "cli", backend: settings.backend } : { kind: "provider", id: provider.id })}
+              >
+                Manage
+              </Button>
+            </SettingRow>
+          </SettingGroup>
+          <SettingGroup title="Providers" bare>
             <Card plain className="overflow-hidden rounded-lg p-0!">
-              <RadioGroup.Root
-                aria-labelledby={backendTitle}
-                value={settings.backend}
-                onValueChange={chooseBackend}
-                onKeyDownCapture={radioArrowKeys(chooseBackend)}
-                className="flex flex-col divide-y divide-line"
-              >
-                {BACKENDS.map((b) => (
-                  <RadioGroup.Item
-                    key={b.value}
-                    value={b.value}
-                    data-backend={b.value}
-                    // Named by its title alone; the hint is the description, so it is said once.
-                    aria-labelledby={`${backendTitle}-${b.value}-name`}
-                    aria-describedby={[`${backendTitle}-${b.value}`, statusOf(b.value) && `${backendTitle}-${b.value}-status`].filter(Boolean).join(" ")}
-                    className={cn(
-                      "group flex w-full min-w-0 items-start gap-3 px-4 py-3 text-start transition-colors duration-(--ph-duration-fast) hover:bg-hover focus-visible:-outline-offset-2",
-                      "data-[state=checked]:bg-selected",
-                    )}
-                  >
-                    <span className="mt-0.5 grid size-(--ph-icon-size) shrink-0 place-items-center rounded-full border border-ink-tertiary group-data-[state=checked]:border-ink">
-                      <RadioGroup.Indicator className="size-[50%] rounded-full bg-ink" />
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span id={`${backendTitle}-${b.value}-name`} className="text-base font-medium text-ink">
-                        {b.label}
-                      </span>
-                      <span id={`${backendTitle}-${b.value}`} className="text-xs text-ink-secondary">
-                        {b.hint}
-                      </span>
-                      {statusOf(b.value) && (
-                        <span
-                          id={`${backendTitle}-${b.value}-status`}
-                          data-cli-status={statusOf(b.value)!.installed ? (statusOf(b.value)!.loggedIn === false ? "signed-out" : "installed") : "missing"}
-                          className="mt-0.5 flex items-start gap-1.5 text-xs text-ink-secondary"
-                        >
-                          <Icon
-                            name={!statusOf(b.value)!.installed || statusOf(b.value)!.loggedIn === false ? "warning" : "check"}
-                            className="mt-0.5 size-(--ph-icon-size-sm) shrink-0"
-                          />
-                          <span className="min-w-0 wrap-anywhere">{cliStatusText(statusOf(b.value))}</span>
-                        </span>
+              <div className="divide-y divide-line">
+                {configuredProviders.map((p) => {
+                  const active = settings.backend === "phaethon" && provider.id === p.id;
+                  return (
+                    <div key={p.id} data-provider-row={p.id} className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-3">
+                      <Icon name={p.local ? "tool" : "agent"} className="shrink-0 text-ink-secondary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-ink">
+                          {p.name}
+                          {active && <span className="ms-2 text-xs font-normal text-ink-secondary">Default</span>}
+                        </p>
+                        <p className="text-xs text-ink-secondary" data-provider-readiness={p.ready ? "configured" : "needs-setup"}>
+                          {p.ready ? "Configured" : "Needs setup"}
+                        </p>
+                      </div>
+                      {!active && (
+                        <Button variant="ghost" size="sm" data-provider-default={p.id} disabled={changingDefault} onClick={() => useProvider(p)}>
+                          Use as default
+                        </Button>
                       )}
-                    </span>
-                  </RadioGroup.Item>
+                      <Button variant="outline" size="sm" data-provider-configure={p.id} onClick={() => setPopup({ kind: "provider", id: p.id })}>
+                        Manage
+                      </Button>
+                    </div>
+                  );
+                })}
+                {configuredClis.map((b) => (
+                  <div key={b} data-provider-row={b} className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-3">
+                    <Icon name="tool" className="shrink-0 text-ink-secondary" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink">
+                        {CLI_INFO[b].name}
+                        {settings.backend === b && <span className="ms-2 text-xs font-normal text-ink-secondary">Default</span>}
+                      </p>
+                      <p
+                        className="text-xs text-ink-secondary"
+                        data-cli-status={!statusOf(b) ? "checking" : !statusOf(b)?.installed ? "missing" :
+                          statusOf(b)?.loggedIn === false ? "signed-out" : "installed"}
+                      >
+                        {cliStatusText(statusOf(b))}
+                      </p>
+                    </div>
+                    {settings.backend !== b && (
+                      <Button variant="ghost" size="sm" data-backend={b} disabled={changingDefault} onClick={() => chooseBackend(b)}>
+                        Use as default
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline" size="sm" data-provider-configure={b}
+                      onClick={() => { setCliMissing(null); setPopup({ kind: "cli", backend: b }); }}
+                    >
+                      Manage
+                    </Button>
+                  </div>
                 ))}
-              </RadioGroup.Root>
-            </Card>
-            {cliMissing && (
-              // Said once through the status line when it appears; shown here until another choice is made.
-              <div data-cli-missing={cliMissing} className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">
-                <Icon name="warning" className="mt-0.5 shrink-0" />
-                <p className="min-w-0">
-                  {cliMissingText(cliMissing)}{" "}
-                  <ExternalLink href={cliMissing === "claude-cli" ? CLAUDE_CODE_INSTALL_URL : CLI_INFO[cliMissing].installUrl}>
-                    How to install {CLI_INFO[cliMissing].name}
-                  </ExternalLink>
-                </p>
               </div>
-            )}
-            <p data-cli-can="" className="text-sm text-ink-secondary">
-              Claude Code, Codex and Gemini CLI read a space’s files and the course folders it can see, but can’t change anything, ask to
-              read another space, or carry on a stopped reply. They see each course whole: letting a space see only some parts of a course
-              (files but not grades, say) works only with Phaethon’s own assistant.
-            </p>
-            {opencode && (
-              <p data-opencode={opencode.installed ? "installed" : "missing"} className="flex items-start gap-2 text-sm text-ink-secondary">
-                <Icon name="info" className="mt-0.5 shrink-0" />
-                <span className="min-w-0">
-                  {opencode.installed ? (
-                    "OpenCode is on this computer, but Phaethon can’t answer through it yet."
-                  ) : (
-                    <>
-                      OpenCode isn’t installed, and Phaethon can’t answer through it yet.{" "}
-                      <ExternalLink href={OPENCODE_URL}>How to install OpenCode</ExternalLink>
-                    </>
-                  )}
-                </span>
-              </p>
-            )}
+            </Card>
           </SettingGroup>
-
-          {isOwnHome(settings.backend) && statusOf(settings.backend)?.installed !== false && (
-            <CliSignInGroup key={settings.backend} backend={settings.backend} onSignedIn={refreshClis} />
-          )}
-
-          {settings.backend === "phaethon" && <ProviderChoice settings={settings} act={act} />}
-
-          {provider.id === "anthropic" || settings.backend !== "phaethon" ? (
-            <SettingGroup title="Anthropic API key" description="Only needed when Phaethon answers.">
-              <KeyForm hasKey={settings.hasAnthropicKey} act={act} />
-            </SettingGroup>
-          ) : (
-            <ProviderSetup key={provider.id} provider={provider} act={act} />
-          )}
-
-          <SettingGroup title="Which model answers">
-            {isCliBackend(settings.backend) ? (
-              <SettingRow
-                label="Model"
-                description={`${CLI_INFO[settings.backend].name} uses its own default model. A space can name another one: use the model button beside Send, or Change model in ${modCap()} K.`}
-              >
-                <span className="text-base text-ink-secondary" data-cli-model-default="">
-                  Chosen by {CLI_INFO[settings.backend].name}
-                </span>
-              </SettingRow>
-            ) : provider.id === "anthropic" ? (
-              <ModelPicker current={settings.model} act={act} />
-            ) : (
-              <ProviderModel key={provider.id} provider={provider} act={act} />
-            )}
-          </SettingGroup>
-
-          <SentDisclosure backend={settings.backend} provider={provider} />
+          {cliMissing && !popup && missingCli(cliMissing)}
+          {actionError && !popup && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
         </>
       )}
+      <Dialog open={popup !== null} onOpenChange={(open) => { if (!open && !signingIn) closePopup(); }}>
+        <DialogContent
+          ref={popupContentRef}
+          className="flex flex-col overflow-hidden"
+          showCloseButton={!signingIn} data-provider-popup={popup?.kind}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            if (focusRequestedProviderField()) return;
+            if (!popupContentRef.current?.contains(document.activeElement)) popupTitleRef.current?.focus();
+          }}
+          onCloseAutoFocus={(e) => {
+            if (closingToChat.current) e.preventDefault();
+            closingToChat.current = false;
+          }}
+          onEscapeKeyDown={(e) => { if (signingIn) e.preventDefault(); }}
+          onInteractOutside={(e) => { if (signingIn) e.preventDefault(); }}
+        >
+          <DialogHeader className="shrink-0">
+            <DialogTitle ref={popupTitleRef} tabIndex={-1}>
+              {popup?.kind === "catalog" ? "Add provider" : editingProvider?.name ?? (editingCli ? CLI_INFO[editingCli].name : "Provider")}
+            </DialogTitle>
+            <DialogDescription>
+              {popup?.kind === "catalog" ? "Choose a provider to configure." :
+                editingCli ? "Manage this assistant’s setup." : "Configure your connection and default model."}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea
+            data-provider-popup-body=""
+            className="flex min-h-0 flex-auto flex-col [&>.ui-scroll-area-viewport]:min-h-0 [&>.ui-scroll-area-viewport]:h-auto [&>.ui-scroll-area-viewport]:flex-auto [&>.ui-scroll-area-viewport]:scroll-py-4"
+          >
+            <div className="space-y-4 p-1">
+              {popup?.kind === "catalog" ? (
+                <div className="flex flex-col gap-4" data-provider-catalog="">
+                  {PROVIDER_GROUPS.filter((g) => providers.some(g.test)).map((g) => (
+                    <div key={g.label}>
+                      <p className="mb-2 text-xs font-medium text-ink-secondary">{g.label}</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {providers.filter(g.test).map((p) => (
+                          <Button
+                            key={p.id} variant="outline" className="[&>.ui-button-face]:justify-start" data-provider-catalog-select={p.id}
+                            onClick={() => setPopup({ kind: "provider", id: p.id })}
+                          >
+                            {p.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-ink-secondary">Coding assistants</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {CLI_BACKENDS.map((b) => (
+                        <Button
+                          key={b} variant="outline" className="[&>.ui-button-face]:justify-start" data-provider-catalog-select={b}
+                          onClick={() => { setCliMissing(null); setPopup({ kind: "cli", backend: b }); }}
+                        >
+                          {CLI_INFO[b].name}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : editingProvider ? (
+                <div className="flex flex-col gap-4" data-provider-configuration={editingProvider.id}>
+                  {editingProvider.id === "anthropic" ? (
+                    <SettingGroup title="API key">
+                      <KeyForm hasKey={editingProvider.hasKey} act={act} provider={editingProvider} />
+                    </SettingGroup>
+                  ) : <ProviderSetup provider={editingProvider} act={act} />}
+                  <SettingGroup title="Model">
+                    {editingProvider.id === "anthropic" ?
+                      <ModelPicker current={settings?.model ?? DEFAULT_MODEL} act={act} /> :
+                      <ProviderModel provider={editingProvider} act={act} />}
+                  </SettingGroup>
+                </div>
+              ) : editingCli ? (
+                <div className="flex flex-col gap-4" data-provider-configuration={editingCli}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-ink-secondary">{cliStatusText(statusOf(editingCli))}</p>
+                    <Button variant="ghost" size="sm" data-provider-refresh="" disabled={signingIn} onClick={() => void refreshClis()}>
+                      <Icon name="retry" />Check again
+                    </Button>
+                  </div>
+                  {statusOf(editingCli)?.installed === false || cliMissing === editingCli ? missingCli(editingCli) :
+                    isOwnHome(editingCli) ? (
+                      <CliSignInGroup key={editingCli} backend={editingCli} signedIn={statusOf(editingCli)?.loggedIn === true} onSignedIn={refreshClis} onWaitingChange={setSigningIn} />
+                    ) : (
+                      <p className="text-sm text-ink-secondary">
+                        Sign in to Claude Code in a terminal with <code>claude</code>, then return here.
+                      </p>
+                    )}
+                  <p className="text-sm text-ink-secondary" data-cli-model-default="">Models are chosen in each space.</p>
+                </div>
+              ) : null}
+              {actionError && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
+            </div>
+          </ScrollArea>
+          <DialogFooter className="shrink-0 flex-row flex-wrap">
+            {popup?.kind !== "catalog" && (
+              <Button variant="ghost" disabled={signingIn} onClick={() => { setCliMissing(null); setPopup({ kind: "catalog" }); }}>
+                All providers
+              </Button>
+            )}
+            {popup?.kind !== "catalog" && !editingIsDefault && (
+              <Button
+                variant="outline" disabled={signingIn || changingDefault} data-backend={editingCli ?? "phaethon"} data-provider-default={editingProvider?.id}
+                onClick={() => { if (editingProvider) useProvider(editingProvider); else if (editingCli) chooseBackend(editingCli); }}
+              >
+                Use as default
+              </Button>
+            )}
+            <Button disabled={signingIn} onClick={closePopup}>{popup?.kind === "catalog" ? "Cancel" : "Done"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -380,7 +446,7 @@ export function AgentSection({
  * twice); Stop signing in sits beside it and, as it goes, hands focus back to the sign-in button. The
  * outcome is said through the status line and stays shown.
  */
-function CliSignInGroup({ backend, onSignedIn }: { backend: OwnHomeBackend; onSignedIn: () => void }) {
+function CliSignInGroup({ backend, signedIn, onSignedIn, onWaitingChange }: { backend: OwnHomeBackend; signedIn: boolean; onSignedIn: () => void; onWaitingChange: (waiting: boolean) => void }) {
   const cli = CLI_INFO[backend];
   const id = cli.id as "codex" | "gemini";
   const { say } = useStatus();
@@ -401,6 +467,7 @@ function CliSignInGroup({ backend, onSignedIn }: { backend: OwnHomeBackend; onSi
   async function start() {
     if (waiting) return;
     setWaiting(true);
+    onWaitingChange(true);
     setOutcome(null);
     say(`Opening ${cli.name}’s sign-in in your browser. Come back here when you’ve signed in.`);
     const out: CliSignIn = await signInCli(id).catch((e: unknown) => ({
@@ -411,18 +478,18 @@ function CliSignInGroup({ backend, onSignedIn }: { backend: OwnHomeBackend; onSi
     // Stop signing in goes away with the wait: focus on it moves to the sign-in button.
     if (document.activeElement === stopRef.current) startRef.current?.focus();
     setWaiting(false);
+    onWaitingChange(false);
     setOutcome(out);
     say(out.message);
     if (out.status === "signedIn") onSignedIn();
   }
 
   return (
-    <SettingGroup title={`Signing in to ${cli.name}`}>
+    <SettingGroup title="Account">
       <div data-cli-sign-in={id} className="flex flex-col gap-3 px-4 py-3.5">
-        <p id={descId} className="text-sm text-ink-secondary">
-          Phaethon gives {cli.name} a setup of its own for this Phaethon folder, apart from the one in your home folder, so the{" "}
-          {OWN_FILE[backend]}, settings and hooks you made for {cli.name} yourself never reach your spaces. So you sign in to {cli.name} once
-          more here, with {cli.name}’s own sign-in in your browser. Phaethon never sees your password or what {cli.name} saves.
+        <p id={descId} className={cn("text-sm text-ink-secondary", signedIn && !waiting && "sr-only")}>
+          {waiting ? "Finish signing in in your browser." : signedIn ?
+            `Change your ${cli.name} account in your browser.` : `Sign in to ${cli.name} in your browser to connect it here.`}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -435,11 +502,11 @@ function CliSignInGroup({ backend, onSignedIn }: { backend: OwnHomeBackend; onSi
             onClick={() => void start()}
             className="aria-disabled:cursor-progress"
           >
-            {waiting ? "Waiting for you to sign in in your browser…" : `Sign in to ${cli.name} for this Phaethon folder`}
+            {waiting ? "Waiting for browser sign-in…" : signedIn ? "Change account" : `Sign in to ${cli.name}`}
           </Button>
           {waiting && (
             <Button ref={stopRef} type="button" variant="ghost" data-cli-sign-in-stop="" onClick={() => void cancelCliSignIn(id).catch(() => false)}>
-              Stop signing in
+              Cancel
             </Button>
           )}
         </div>
@@ -485,66 +552,6 @@ const PROVIDER_GROUPS: { label: string; test: (p: ProviderInfo) => boolean }[] =
   { label: "On this computer", test: (p) => p.local },
   { label: "Other", test: (p) => p.id === "custom" },
 ];
-
-/** Which provider runs the model: a native select, saved on change. */
-function ProviderChoice({ settings, act }: { settings: Settings; act: Parameters<typeof AgentSection>[0]["act"] }) {
-  const selectId = useId();
-  const descId = useId();
-  const list = settings.providers?.length ? settings.providers : [ANTHROPIC_INFO];
-  const current = settings.provider ?? "anthropic";
-  return (
-    <SettingGroup title="Model provider">
-      <SettingRow
-        label="Provider"
-        htmlFor={selectId}
-        description="Who runs the model that writes Phaethon’s replies. Each service needs its own account and API key; a model on this computer needs neither, and nothing you send leaves the computer."
-        descriptionId={descId}
-      >
-        <NativeSelect
-          id={selectId}
-          data-provider-select=""
-          value={current}
-          aria-describedby={descId}
-          onChange={(e) => {
-            const p = list.find((x) => x.id === e.target.value);
-            if (p) void act(() => setProvider(p.id), `Phaethon now answers with ${p.name}.`, undefined, false);
-          }}
-          className="w-full"
-        >
-          {PROVIDER_GROUPS.map((g) => (
-            <optgroup key={g.label} label={g.label}>
-              {list.filter(g.test).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.local ? " (on this computer)" : ""}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </NativeSelect>
-      </SettingRow>
-    </SettingGroup>
-  );
-}
-
-/** Whether an address is this computer's own (mirrors providers.rs `is_loopback`). */
-const isLoopback = (url: string) => {
-  try {
-    const h = new URL(url).hostname;
-    return h === "localhost" || h === "[::1]" || /^127\./.test(h);
-  } catch {
-    return false;
-  }
-};
-
-/** `https://openrouter.ai/settings/keys` → `openrouter.ai`. */
-const hostOf = (url: string) => {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-};
 
 /** A provider other than Anthropic: its address (servers on this computer and one's own), whether it runs, and its key. */
 function ProviderSetup({ provider, act }: { provider: ProviderInfo; act: Parameters<typeof AgentSection>[0]["act"] }) {
@@ -696,10 +703,10 @@ function ProviderModel({ provider, act }: { provider: ProviderInfo; act: Paramet
         <p id={inUseId} data-provider-model={current ?? ""} className="text-base text-ink">
           {current ? (
             <>
-              Phaethon answers with <span className="font-medium">{modelName(toRef(provider.id, current))}</span>.
+              Default: <span className="font-medium">{modelName(toRef(provider.id, current))}</span>.
             </>
           ) : (
-            `No model is chosen for ${provider.id === "custom" ? "your server" : provider.name} yet. Choose one below, or type its name.`
+            "Choose a default model, or enter its name."
           )}
         </p>
         <ModelSearch
@@ -712,8 +719,7 @@ function ProviderModel({ provider, act }: { provider: ProviderInfo; act: Paramet
           }}
         />
         <p className="text-sm text-ink-secondary">
-          A space can choose its own model, from any provider you’ve set up: use the model button beside Send, or Change model in {modCap()}{" "}
-          K.
+          Each space can choose another model beside Send.
         </p>
       </div>
       <OwnModels />
@@ -796,32 +802,7 @@ function KeyForm({
     <form onSubmit={submit} className="flex flex-col gap-3 px-4 py-3.5">
       <div id={keyHintId} className="flex items-start gap-2 text-sm text-ink-secondary">
         <Icon name={hasKey ? "lock" : "key"} className="mt-0.5 shrink-0 text-ink-tertiary" />
-        {hasKey ? (
-          <p className="min-w-0">A key is saved in {KEY_STORE}. Phaethon never shows it again; paste a new one to replace it.</p>
-        ) : provider.id === "custom" ? (
-          <p className="min-w-0">
-            If your server asks for a key, paste it here. It’s sent only to {hostOf(provider.baseUrl) || "your server’s address"}, and kept in{" "}
-            {KEY_STORE}, never in your Phaethon folder. If the address changes, save the key again.
-          </p>
-        ) : provider.id !== "anthropic" ? (
-          <p className="min-w-0">
-            The key comes from {provider.name}: a pay-as-you-go account with them, separate from any chat subscription. Create a key at{" "}
-            <ExternalLink href={provider.keysUrl}>{hostOf(provider.keysUrl)}</ExternalLink>, then paste it here. It’s sent only to{" "}
-            {provider.name}, and kept in {KEY_STORE}, never in your Phaethon folder, so it never syncs.
-          </p>
-        ) : (
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <p>
-              The key comes from Anthropic, the company that makes Claude. It’s a separate pay-as-you-go account: a ChatGPT or Claude.ai
-              subscription doesn’t include one. Light use usually costs a few dollars a month, and you can set a spending limit in the
-              Anthropic console.
-            </p>
-            <p>
-              Create a key at <ExternalLink href={CONSOLE_KEYS_URL}>console.anthropic.com</ExternalLink>, then paste it here. It starts with
-              sk-ant-. It’s kept in {KEY_STORE}, never in your Phaethon folder, so it never syncs.
-            </p>
-          </div>
-        )}
+        <p className="min-w-0">{hasKey ? "A key is saved. Paste a new key to replace it." : provider.key === "optional" ? "Add a key only if your server requires one." : <>Paste your {provider.name} API key. {provider.keysUrl && <ExternalLink href={provider.keysUrl}>Get API key</ExternalLink>}</>}</p>
       </div>
       <div className="flex flex-col gap-1.5">
         <label htmlFor={keyId} className="text-base font-medium text-ink">
@@ -975,8 +956,7 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
       htmlFor={selectId}
       description={
         <>
-          Which Claude model writes Phaethon’s replies. Larger models handle harder questions and cost more per message; smaller ones are
-          faster and cheaper. A space can choose its own: use the model button beside Send, or Change model in {modCap()} K.
+          Each space can choose another model beside Send.
           {listFailed && " Phaethon couldn’t fetch the full list just now, so only the default is shown."}
         </>
       }
@@ -1057,87 +1037,6 @@ function OwnModels() {
         ))}
       </ul>
     </div>
-  );
-}
-
-/** What leaves this computer, when, and where the rules for it are. */
-function SentDisclosure({ backend, provider }: { backend: Backend; provider: ProviderInfo }) {
-  const { go } = useSettingsNav();
-  // A CLI always sends to its own company, whichever provider Phaethon's own assistant would use.
-  const cli = cliOf(backend);
-  const p = backend === "phaethon" ? provider : ANTHROPIC_INFO;
-  const anthropic = cli ? cli.id === "claude" : p.id === "anthropic";
-  const here = !cli && p.local && isLoopback(p.baseUrl);
-  const to = p.id === "custom" ? `your server (${hostOf(p.baseUrl) || "no address yet"})` : p.name;
-  return (
-    <SettingGroup title={cli ? `What is sent to ${cli.company}` : here ? `What ${p.name} gets` : `What is sent to ${p.id === "custom" ? "your server" : p.name}`}>
-      <div data-disclosure="" className="flex flex-col gap-2.5 px-4 py-3.5 text-sm text-ink-secondary">
-        {backend === "phaethon" ? (
-          <>
-            <p className="text-base text-ink">
-              {here
-                ? `${p.name} runs on this computer, so none of this leaves it. With every message, Phaethon gives ${p.name}:`
-                : `Nothing is sent until you send a message. Then, with every message, Phaethon sends ${to}:`}
-            </p>
-            <ul className="flex list-disc flex-col gap-1 ps-5">
-              <li>your message and the conversation so far in that space</li>
-              <li>any files you attach</li>
-              <li>the files Phaethon opens to answer you, in that space or in another space you let it read</li>
-              <li>the names of your other spaces, and the folders and files you’ve let this space read in them</li>
-              <li>
-                your MANUAL.md, a note in your Phaethon folder where you tell the assistant how you like it to work. It’s read in every space.
-              </li>
-            </ul>
-            <p>
-              Anything Phaethon reads from another space is saved in this space’s conversation, in this space’s folder, and syncs with it.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-base text-ink">
-              {cli?.name} sends your messages, and the files it reads to answer, to {cli?.company} under {cli?.account}, with every message.
-            </p>
-            {isOwnHome(backend) && cli ? (
-              <>
-                <p data-cli-history="">
-                  {cli.name} also keeps its own copy of each conversation, in its setup for this Phaethon folder (in Phaethon’s own app data,
-                  not your home folder). Deleting a conversation in Phaethon doesn’t delete that copy.
-                </p>
-                <p data-cli-own-setup="">
-                  Your own {OWN_FILE[backend]} and {cli.name} settings and hooks in the {cli.folder} folder in your home folder aren’t sent and
-                  don’t run here: {cli.name} uses a setup of its own for this Phaethon folder.
-                </p>
-              </>
-            ) : (
-              <p data-cli-history="">
-                {cli?.name} also keeps its own copy of each conversation, usually in the hidden {cli?.folder} folder in your home folder.
-                Deleting a conversation in Phaethon doesn’t delete that copy.
-              </p>
-            )}
-          </>
-        )}
-        {cli && cli.id !== "claude" ? (
-          <p>
-            How long {cli.company} keeps it and what they may use it for is in {cli.company}’s own privacy policy.
-          </p>
-        ) : anthropic ? (
-          <p>
-            How long Anthropic keeps it and what they may use it for is in{" "}
-            <ExternalLink href={ANTHROPIC_PRIVACY_URL}>Anthropic’s privacy policy</ExternalLink>.
-          </p>
-        ) : p.id === "openrouter" ? (
-          <p>OpenRouter passes it on to the company that runs the model you chose. How long each keeps it, and what they may use it for, is in their own privacy policies.</p>
-        ) : p.local || p.id === "custom" ? null : (
-          <p>How long {p.name} keeps it and what they may use it for is in {p.name}’s own privacy policy.</p>
-        )}
-        <p>
-          Your conversations also stay on this computer as plain files.{" "}
-          <Button type="button" variant="link" className="h-auto min-h-0 align-baseline text-sm underline decoration-1 hover:decoration-2" onClick={() => go("about", "[data-files-heading]")}>
-            Where they are and how to delete them
-          </Button>
-        </p>
-      </div>
-    </SettingGroup>
   );
 }
 

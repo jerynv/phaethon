@@ -5,6 +5,7 @@ import { openCourseImport, useSitesVersion } from "@/components/lms/import-store
 import { connectionName, isSignedOut, whenText } from "@/components/lms/sites";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
+import { WorkspacePage } from "@/components/ui/workspace-page";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { lmsGrades, lmsGradesRefresh, timeOf, type CourseGrades, type GradeItem } from "@/lib/grades-api";
@@ -120,7 +121,7 @@ export function GradesView({ space }: { space: Space }) {
 
   return (
     <section aria-labelledby={headingId} data-grades-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
-      <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 pt-6 pb-10">
+      <WorkspacePage>
         <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 flex-col gap-0.5">
             <h2 id={headingId} className="text-xl font-semibold text-ink">
@@ -195,7 +196,7 @@ export function GradesView({ space }: { space: Space }) {
         ) : (
           courses.map((c) => <CourseCard key={`${c.connection}:${c.courseId}`} space={space.id} course={c} />)
         )}
-      </div>
+      </WorkspacePage>
     </section>
   );
 }
@@ -237,7 +238,7 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
   const updated = timeOf(course.updated);
 
   return (
-    <section aria-labelledby={`${id}-h`} className="flex flex-col gap-4 rounded-xl border border-line bg-raised p-5 shadow-sm" data-grades-course={course.courseId}>
+    <section aria-labelledby={`${id}-h`} className="flex flex-col gap-4 border-t border-line pt-5" data-grades-course={course.courseId}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-1 basis-60 flex-col gap-1">
           <h3 id={`${id}-h`} className="text-lg font-semibold text-ink wrap-break-word">
@@ -269,9 +270,9 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
       {course.groups.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <h4 className="text-sm font-semibold text-ink-secondary">{calc.usesWeights ? "How it’s weighted" : "Groups (counted by points)"}</h4>
-          <ul className="flex flex-wrap gap-2" data-grades-groups="">
+          <ul className="flex flex-wrap gap-x-6 gap-y-2" data-grades-groups="">
             {calc.groups.map((g) => (
-              <li key={g.name} className="flex min-w-0 flex-col rounded-lg border border-line bg-surface px-3 py-2">
+              <li key={g.name} className="flex min-w-0 flex-col">
                 <span className="text-base font-medium text-ink wrap-break-word">{g.name}</span>
                 <span className="text-sm text-ink-secondary">
                   {g.weight != null ? `${num(g.weight)}% of the grade` : calc.usesWeights ? "Not weighted" : "By points"}
@@ -314,7 +315,7 @@ function ItemsTable({ course, captionId }: { course: CourseGrades; captionId: st
   const byGroup = [...groups, ...new Set(course.items.map((i) => i.group ?? "").filter((g) => !groups.includes(g)))];
   return (
     // A data table may scroll sideways in a narrow window (WCAG 1.4.10 allows it for tables); the region is focusable so the keyboard can scroll it.
-    <div role="region" aria-labelledby={`${captionId} ${captionId}-items`} tabIndex={0} className="overflow-x-auto rounded-lg border border-line">
+    <div role="region" aria-labelledby={`${captionId} ${captionId}-items`} tabIndex={0} className="overflow-x-auto border-y border-line">
       <table className="w-full min-w-[calc(34rem*var(--ph-ui-scale))] border-collapse text-base" data-grades-items="">
         <caption id={`${captionId}-items`} className="sr-only">
           Assignments and scores

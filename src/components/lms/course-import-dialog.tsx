@@ -7,7 +7,7 @@ import { announce } from "@/components/shell/announcer";
 import { showInLabel } from "@/components/shell/space-actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTitle } from "@/components/ui/dialog";
-import { fieldClasses, Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import {
   enterAdvances,
   ReviewList,
@@ -794,8 +794,8 @@ function SchoolSearch({
           School
         </label>
         <div className="relative">
-          <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-ink-secondary" />
-          <input
+          <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 z-10 -translate-y-1/2 text-ink-secondary" />
+          <Input
             ref={fieldRef}
             id={id}
             role="combobox"
@@ -817,7 +817,7 @@ function SchoolSearch({
               if (error) setError("");
             }}
             onKeyDown={onKeyDown}
-            className={cn(fieldClasses, "min-h-(--ph-control-height-lg) ps-[calc(var(--ph-icon-size)+var(--ph-space)*4)] pe-2.5")}
+            className="w-full [&_.ui-field-input]:ps-[calc(var(--ph-icon-size)+var(--ph-space)*4)]"
           />
         </div>
         {/* Always in the page, so the listbox the field controls exists; empty while nothing is listed. */}

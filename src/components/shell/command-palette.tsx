@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -206,7 +207,7 @@ export function CommandPalette({
         {/* Padded all round, so the focus ring around the field fits inside the panel (which clips). */}
         <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
           <Icon name="search" className="shrink-0 text-ink-secondary" />
-          <input
+          <Input
             role="combobox"
             aria-expanded="true"
             aria-controls={listId}
@@ -224,7 +225,7 @@ export function CommandPalette({
             }}
             onKeyDown={onKeyDown}
             placeholder="Go to a space, or type a command…"
-            className="min-h-(--ph-control-height-lg) min-w-0 flex-1 rounded-sm bg-transparent py-1.5 text-md text-ink outline-none placeholder:text-ink-secondary"
+            className="min-w-0 flex-1"
           />
           <Keys keys={["Esc"]} className="max-sm:hidden" />
         </div>

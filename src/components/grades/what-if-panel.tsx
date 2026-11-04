@@ -1,8 +1,9 @@
+import { NativeSelect } from "vic-ui";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
-import { fieldClasses, Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import type { CourseGrades } from "@/lib/grades-api";
 import { cn } from "@/lib/utils";
@@ -175,22 +176,22 @@ export function WhatIf({ space, course, input, sitePercent }: { space: string; c
             </p>
             <div className="flex flex-wrap items-center gap-2 text-base text-ink" role="group" aria-labelledby={`${id}-need`}>
               <label htmlFor={`${id}-target`}>For</label>
-              <select id={`${id}-target`} value={t.target} onChange={(e) => update({ target: e.target.value })} className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto px-2")} data-what-if-target="">
+              <NativeSelect id={`${id}-target`} value={t.target} onChange={(e) => update({ target: e.target.value })} className="w-auto" data-what-if-target="">
                 {LETTERS.filter(([l]) => l !== "F").map(([l, min]) => (
                   <option key={l} value={l}>
                     {l} ({min}%)
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
               <label htmlFor={`${id}-on`}>on</label>
-              <select id={`${id}-on`} value={t.on} onChange={(e) => update({ on: e.target.value })} className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto max-w-full px-2")} data-what-if-on="">
+              <NativeSelect id={`${id}-on`} value={t.on} onChange={(e) => update({ on: e.target.value })} className="w-auto max-w-full" data-what-if-on="">
                 {open.map((i) => (
                   <option key={i.key} value={i.key}>
                     {i.title}
                   </option>
                 ))}
                 <option value={FINAL}>A final exam not listed (set above)</option>
-              </select>
+              </NativeSelect>
             </div>
             <output className="text-base font-medium text-ink" data-what-if-answer="">
               {needText}

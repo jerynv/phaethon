@@ -45,6 +45,7 @@ pub fn base_url() -> String {
 pub(crate) fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("http client builds")
 }
@@ -114,6 +115,9 @@ impl Provider for Anthropic {
                     ));
                 }
             };
+            if resp.status().is_redirection() {
+                return Err(ProviderError::new(ErrorKind::BadRequest, "Anthropic redirected the request to another address. The request was not forwarded."));
+            }
             let status = resp.status().as_u16();
             if resp.status().is_success() {
                 break resp;
@@ -539,6 +543,51 @@ fn echo_safe(blocks: Vec<Value>) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn redirects_never_forward_the_key_or_request() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        for status in [301, 302, 303, 307, 308] {
+            let target = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base_url = format!("http://{}", origin.local_addr().unwrap());
+            let location = format!("http://{}/v1/messages", target.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = origin.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0; 8192];
+                loop {
+                    let n = socket.read(&mut buf).await.unwrap();
+                    assert_ne!(n, 0);
+                    request.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&request);
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let len: usize = text[..end].lines().find_map(|line| {
+                            line.to_lowercase().strip_prefix("content-length:").map(|n| n.trim().parse().unwrap())
+                        }).unwrap();
+                        if request.len() >= end + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                socket.write_all(format!("HTTP/1.1 {status} Redirect\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n").as_bytes()).await.unwrap();
+                String::from_utf8(request).unwrap()
+            });
+            let provider = Anthropic { http: client(), key: "sk-test-secret".into(), model: DEFAULT_MODEL.into(), effort: DEFAULT_EFFORT.into(), base_url };
+            let messages = [json!({"role": "user", "content": "private request"})];
+            let tools = json!([]);
+            let result = tokio::time::timeout(Duration::from_secs(3), provider.turn(
+                ModelRequest { system: "s", messages: &messages, tools: &tools }, &mut |_| {},
+            )).await.unwrap();
+            assert_eq!(result.unwrap_err().kind, ErrorKind::BadRequest, "redirect {status}");
+            let request = server.await.unwrap();
+            assert!(request.to_lowercase().contains("x-api-key: sk-test-secret"));
+            assert!(request.contains("private request"));
+            assert!(tokio::time::timeout(Duration::from_millis(100), target.accept()).await.is_err(), "redirect {status} forwarded the request");
+        }
+    }
 
     #[test]
     fn a_call_without_tools_sends_no_tools_field() {

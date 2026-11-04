@@ -107,6 +107,7 @@ export default [
         await page.keyboard.press("Space");
       }
       await page.keyboard.press("Enter");
+      await page.waitForSelector("[data-field-error]", { timeout: 5000 });
       check((await page.$eval("[data-field-error]", (e) => e.textContent)).includes("at least one kind"), "no kind of question: said in words");
       await page.focus('[data-quiz-kind="cloze"]');
       await page.keyboard.press("Space");

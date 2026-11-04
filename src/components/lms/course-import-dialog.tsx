@@ -1,3 +1,4 @@
+import { Checkbox } from "vic-ui";
 import { RadioGroup } from "radix-ui";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -7,7 +8,7 @@ import { announce } from "@/components/shell/announcer";
 import { showInLabel } from "@/components/shell/space-actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTitle } from "@/components/ui/dialog";
-import { fieldClasses, Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import {
   enterAdvances,
   ReviewList,
@@ -794,8 +795,8 @@ function SchoolSearch({
           School
         </label>
         <div className="relative">
-          <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-ink-secondary" />
-          <input
+          <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 z-10 -translate-y-1/2 text-ink-secondary" />
+          <Input
             ref={fieldRef}
             id={id}
             role="combobox"
@@ -817,7 +818,7 @@ function SchoolSearch({
               if (error) setError("");
             }}
             onKeyDown={onKeyDown}
-            className={cn(fieldClasses, "min-h-(--ph-control-height-lg) ps-[calc(var(--ph-icon-size)+var(--ph-space)*4)] pe-2.5")}
+            className="w-full ps-[calc(var(--ph-icon-size)+var(--ph-space)*4)]"
           />
         </div>
         {/* Always in the page, so the listbox the field controls exists; empty while nothing is listed. */}
@@ -1167,8 +1168,7 @@ function ViewersStep({
             {spaces.map((s) => (
               <li key={s.id}>
                 <label className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink" data-import-viewer={s.id}>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={viewers.has(s.id)}
                     onChange={(e) => {
                       const next = new Set(viewers);
@@ -1177,7 +1177,6 @@ function ViewersStep({
                       onViewers(next);
                       setError("");
                     }}
-                    className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
                   />
                   {s.name}
                   {s.id === space && <span className="text-sm text-ink-secondary">(this space)</span>}
@@ -1320,11 +1319,9 @@ function CourseGroup({
           {courses.map((c) => (
             <li key={c.id}>
               <label className="flex min-h-(--ph-control-height-lg) cursor-default items-start gap-3 px-3.5 py-2.5 hover:bg-hover" data-course={c.id}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={chosen.has(c.id)}
                   onChange={(e) => onToggle(c.id, e.target.checked)}
-                  className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
                 />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="font-medium wrap-break-word text-ink">{c.name}</span>

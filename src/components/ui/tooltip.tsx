@@ -8,6 +8,7 @@ import { Tooltip as TooltipPrimitive } from "radix-ui"
  * pointer over a toolbar does not flash labels), then instant while moving
  * between neighbours. Callers may still pass their own delayDuration.
  */
+// Keep the compound Radix API and aria-label overrides used for spoken shortcuts.
 function TooltipProvider({
   delayDuration = 350,
   skipDelayDuration = 250,
@@ -48,7 +49,7 @@ function TooltipContent({
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-50 w-fit max-w-(--ph-measure) origin-(--radix-tooltip-content-transform-origin) rounded-sm bg-ink px-2 py-1 text-xs leading-snug font-medium text-balance text-ink-inverse shadow",
+          "ui-tooltip relative! inset-auto! z-50 w-fit max-w-(--ph-measure) origin-(--radix-tooltip-content-transform-origin) text-balance",
           "animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           className
@@ -62,10 +63,8 @@ function TooltipContent({
 }
 
 /*
- * A tooltip for an icon button that already has its name (aria-label). It
- * shows the name for sighted people on hover and focus. Radix always adds the
- * tooltip as the button's description while it is open, so the spoken text is
- * `spoken` (a shortcut, or what the button leads to), never the name again.
+ * Keep the visible name separate from the shortcut spoken as its description.
+ * The compound adapter preserves caller refs, slots and Radix event composition.
  */
 function IconTip({ label, spoken, children, side = "top" }: { label: string; spoken: string; children: React.ReactElement; side?: React.ComponentProps<typeof TooltipPrimitive.Content>["side"] }) {
   return (

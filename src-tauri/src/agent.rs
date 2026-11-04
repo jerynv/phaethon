@@ -731,10 +731,16 @@ async fn drive(
     let pid = child.id();
     runs.set_pid(space_id, pid);
 
+    let mut cancelled = false;
     if let Some(mut stdin) = child.stdin.take() {
         // A write error here means the CLI already exited; its exit status says why.
-        let _ = stdin.write_all(stdin_text.as_bytes()).await;
-        let _ = stdin.shutdown().await;
+        tokio::select! {
+            _ = async {
+                let _ = stdin.write_all(stdin_text.as_bytes()).await;
+                let _ = stdin.shutdown().await;
+            } => {},
+            _ = &mut *cancel_rx => cancelled = true,
+        }
     }
 
     // Keep the last part of stderr for error messages; never forward it raw.
@@ -750,8 +756,7 @@ async fn drive(
 
     let mut parser = Parser::new(cli, req.space_dir, req.add_dirs.clone());
     let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-    let mut cancelled = false;
-    loop {
+    while !cancelled {
         tokio::select! {
             line = lines.next_line() => match line {
                 Ok(Some(line)) => {
@@ -771,7 +776,16 @@ async fn drive(
         }
     }
 
-    if cancelled {
+    let status = if cancelled {
+        None
+    } else {
+        tokio::select! {
+            biased;
+            _ = &mut *cancel_rx => { cancelled = true; None },
+            status = child.wait() => status.ok(),
+        }
+    };
+    let status = if cancelled {
         if let Some(pid) = pid {
             signal_group(pid, Signal::Term);
         }
@@ -784,9 +798,11 @@ async fn drive(
             }
             let _ = child.kill().await;
         }
-    }
-    // Always reap the child so it never lingers as a zombie.
-    let status = child.wait().await.ok();
+        // Always reap the child so it never lingers as a zombie.
+        child.wait().await.ok()
+    } else {
+        status
+    };
     runs.set_pid(space_id, None);
     let stderr = match stderr_task {
         Some(t) => t.await.unwrap_or_default(),

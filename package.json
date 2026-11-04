@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check:design": "node scripts/check-design.mjs",
-    "test": "node --test scripts/unit/ && pnpm build && node scripts/ui-preview/shoot.mjs --engine chromium --sizes 1100x720 --themes light --out ui-shots"
+    "test": "node --test scripts/unit/ && pnpm build && node scripts/ui-preview/shoot.mjs --engine chromium --sizes 1100x720 --themes light --out ui-shots --no-screenshots"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.26",
@@ -35,6 +35,7 @@
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.3.3",
     "tw-shimmer": "^0.4.13",
+    "vic-ui": "file:vendor/vic-ui-a9764da.tgz",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

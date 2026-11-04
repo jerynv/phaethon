@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "vic-ui/tokens.css";
+@import "vic-ui/components.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "tw-shimmer";
@@ -13,6 +15,7 @@
 @import "@fontsource/opendyslexic/700-italic.css";
 @import "@fontsource-variable/lexend";
 @import "./styles/tokens.css";
+@import "./styles/vic-ui.css";
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));

@@ -126,7 +126,10 @@ echo '{"type":"result","status":"success","stats":{}}'
 fn fake(root: &Path, name: &str, body: &str) -> PathBuf {
     fs::create_dir_all(root).unwrap();
     let bin = root.join(name);
-    fs::write(&bin, format!("#!/bin/sh\nd='{}'\n{body}", root.display())).unwrap();
+    fs::write(&bin, format!("#!/bin/sh\nd='{}'\n\
+if [ -f \"$d/block-stdin\" ]; then touch \"$d/ready\"; exec sleep 30; fi\n\
+if [ -f \"$d/close-stdout\" ]; then cat > /dev/null; exec 1>&-; touch \"$d/ready\"; exec sleep 30; fi\n\
+{body}", root.display())).unwrap();
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
     bin
 }
@@ -381,6 +384,35 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
         assert_eq!(listed.note, None);
         assert_eq!(fs::read_to_string(f.root.join("models-home")).unwrap(), f.home().to_str().unwrap());
     }
+    // Stop also works while stdin is blocked and after stdout has closed.
+    for flag in ["block-stdin", "close-stdout"] {
+        fs::write(f.root.join(flag), "").unwrap();
+        let ready = f.root.join("ready");
+        let canceller = f.runs.clone();
+        let watcher = std::thread::spawn(move || {
+            let start = Instant::now();
+            while !ready.exists() {
+                assert!(start.elapsed() < Duration::from_secs(20), "the fake never became ready");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::thread::sleep(Duration::from_millis(200));
+            let pid = canceller.running_pid("school").unwrap();
+            assert!(canceller.cancel("school"));
+            pid
+        });
+        let started = Instant::now();
+        let prompt = if flag == "block-stdin" { "x".repeat(1024 * 1024) } else { "hello".into() };
+        let events = f.send(&prompt);
+        let pid = watcher.join().unwrap();
+        assert!(started.elapsed() < Duration::from_secs(10), "{flag} did not stop promptly");
+        assert!(events.contains(&AgentEvent::Cancelled), "{flag}: {events:?}");
+        assert!(f.runs.running_pid("school").is_none());
+        // SAFETY: signal 0 only checks whether the group still exists.
+        assert_ne!(unsafe { libc_killpg(pid) }, 0, "{flag}: the CLI's process group is gone");
+        fs::remove_file(f.root.join(flag)).unwrap();
+        fs::remove_file(f.root.join("ready")).unwrap();
+    }
+
     fs::remove_dir_all(&f.root).unwrap();
 }
 

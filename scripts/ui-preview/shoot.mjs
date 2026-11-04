@@ -19,6 +19,8 @@
 //   --contrast         Increase contrast on (mock appearance)          -> -contrast
 //   --motion reduce    prefers-reduced-motion: reduce                  -> -motion-reduce
 //   --forced-colors    forced-colors: active                           -> -forced
+//   --shard 1/4        run one equal partition of selected scenarios
+//   --no-screenshots   exercise scenarios and accessibility without image capture
 // Audit:
 //   --axe              run axe-core (WCAG 2.0/2.1/2.2 A and AA) after each shot,
 //                      merge into <out>/axe.json, print a count per shot.
@@ -128,7 +130,13 @@ const scenarioDir = arg("scenarios", null) ?? join(here, "scenarios");
 for (const f of readdirSync(scenarioDir).sort()) {
   if (f.endsWith(".mjs")) scenarios.push(...(await import(join(scenarioDir, f))).default);
 }
-const chosen = scenarios.filter((s) => (!only?.length || only.includes(s.name)) && (!match?.length || match.some((m) => s.name.startsWith(m))));
+const selected = scenarios.filter((s) => (!only?.length || only.includes(s.name)) && (!match?.length || match.some((m) => s.name.startsWith(m))));
+
+const shard = arg("shard", "1/1").split("/").map(Number);
+if (shard.length !== 2 || !shard.every(Number.isInteger) || shard[0] < 1 || shard[1] < shard[0]) {
+  throw new Error("--shard must be an index/count pair, such as 1/4");
+}
+const chosen = selected.filter((_, index) => index % shard[1] === shard[0] - 1);
 
 const mockJs = readFileSync(join(here, "mock-ipc.js"), "utf8");
 const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png" };
@@ -223,7 +231,7 @@ for (const s of chosen) {
           shot: async (label) => {
             const n = `${s.name}--${label}${suffix}`;
             await settle(page);
-            await page.screenshot({ path: join(out, `${n}.png`) });
+            if (!flag("no-screenshots")) await page.screenshot({ path: join(out, `${n}.png`) });
             shots++;
             console.log(`ok   ${n}`);
             await runAxe(page, n);
@@ -231,13 +239,13 @@ for (const s of chosen) {
         };
         await s.run(page, helpers);
         await settle(page);
-        await page.screenshot({ path: join(out, `${name}.png`) });
+        if (!flag("no-screenshots")) await page.screenshot({ path: join(out, `${name}.png`) });
         shots++;
         console.log(`ok   ${name}${errors.length ? `  (page errors: ${errors.join(" | ").slice(0, 300)})` : ""}`);
         await runAxe(page, name);
       } catch (e) {
         failed++;
-        await page.screenshot({ path: join(out, `${name}-FAILED.png`) }).catch(() => {});
+        if (!flag("no-screenshots")) await page.screenshot({ path: join(out, `${name}-FAILED.png`) }).catch(() => {});
         console.log(`FAIL ${name}: ${e.message}${errors.length ? `  (page errors: ${errors.join(" | ").slice(0, 300)})` : ""}`);
       }
       await page.close();
@@ -254,8 +262,9 @@ if (axe) {
   for (const r of Object.values(axeResults)) if (Array.isArray(r)) for (const v of r) byRule[v.id] = (byRule[v.id] ?? 0) + v.nodes.length;
   console.log(`axe totals by rule (nodes): ${JSON.stringify(byRule)}`);
 }
-console.log(`${shots} screenshot(s), ${failed} failed scenario run(s)`);
+console.log(`${shots} ${flag("no-screenshots") ? "checkpoint(s), no screenshots" : "screenshot(s)"}, ${failed} failed scenario run(s)`);
 if (engine === "chromium") await browser.close();
 else await browser.disconnect();
 server.close();
-process.exit(failed ? 1 : 0);
+const accessibilityFailed = axe && Object.values(axeResults).some((r) => !Array.isArray(r) || r.length > 0);
+process.exit(failed || accessibilityFailed ? 1 : 0);

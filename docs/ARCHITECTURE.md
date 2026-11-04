@@ -106,10 +106,26 @@ The vault is a folder, so sync is whatever moves folders:
 
 ```
 Tauri shell (Rust core, src-tauri/)
-  ├── WebView: React UI (src/) — assistant-ui thread, shadcn/ui components
+  ├── WebView: React UI (src/) — assistant-ui thread, Vic UI components
   ├── Vault service: reads/writes vault files, validates paths
   ├── Secrets service: OS keychain, namespaced vault/space
   └── Agent supervisor: spawns `claude` CLI per space (cwd + CLAUDE_CONFIG_DIR), or calls API with BYO key
 ```
 
 Current state: the WebView and the agent supervisor exist. Spaces are the valid folders under `<vault>/spaces/` (`spaces.rs`), with name, description and hue in `<space>/.phaethon/space.json` (School and Work default to the Sky and Clay accent presets; a saved hue always wins); they can be created and edited, not deleted, and renaming never changes the folder. Inside the desktop app each space talks to the vault's backend (`src/runtime/agent-adapter.ts`); in a plain browser (`pnpm dev`) there is no IPC, so the UI falls back to the echo adapter (`src/runtime/echo-adapter.ts`). Each space gets its own assistant-ui runtime instance, and leaving a space stops any reply still running there. The saved thread is reloaded on start and on space switch, with either backend.
+
+## November 2026 stack review and UI migration
+
+Keep the current hybrid: Rust owns native operations and enforcement; React and TypeScript own the interface. Rust is justified for the OS keychain, scoped filesystem access, process-group supervision, platform OCR and the Tauri host. Moving the existing backend would add migration and packaging work without improving the Vic UI integration. The substantial LMS and study modules are mostly HTTP/JSON/business logic: their existence in Rust is not, by itself, a reason to build every future feature there.
+
+The costs to address separately are the large command-registration module, manually mirrored IPC types, provider messages coupled to one API shape, and unexercised platform-specific paths. Generated IPC types and domain-sized command modules would improve this architecture without changing languages. The accompanying audit fixes reject dangling symlinks and aliases into protected state, refuse credential-bearing redirects, require an explicit study answer-verification verdict, and preserve cancellation while a CLI blocks on stdin or closes stdout before exiting.
+
+The shared controls now consume Vic UI. Phaethon contributes native Input, TextareaControl, NativeSelect, Radio, Disclosure and Skeleton exports to that library, plus the mixed checkbox state. The bundled archive in `vendor/` records its source commit and excludes unrelated pending library edits. Appearance synchronizes Vic’s `data-mode` with the existing theme, reading font, contrast, motion, target-size and text-scale settings.
+
+Radix remains the behavioral layer for compound dialogs, tooltips, menus, scrolling, custom sliders and swatch radios where Phaethon depends on cancellation hooks, focus restoration or its keyboard model. Their surfaces use the shared tokens; migrating their controllers is not necessary to share the design system. Assistant-ui still owns the composer and chat runtime, and the app owns domain-specific quiz, LMS and approval behavior. Native file input and the Markdown renderer’s generic input fallback remain native by design.
+
+`pnpm test` exercises the UI without generating images. The scenario runner also accepts `--shard 1/4` through `--shard 4/4` for parallel coverage; `--axe` returns a failing exit status on violations or audit errors. Screenshots remain opt-in by omitting `--no-screenshots` when invoking the runner directly.
+
+Chat layout also uses two patterns inspected in T3 Code at `7f6f47b`: a single timestamp/action row under user messages, and a composer without an exterior shadow in dark mode. These are independently applied layout patterns; no T3 component implementation is copied.
+
+The audit also identified work beyond this pass: bounded provider header/body waits, collision-resistant LMS connection IDs with migration of saved connections, Windows descendant-process cleanup, and platform-specific OCR/LaTeX and release test coverage. The filesystem resolver still uses check-then-open calls, so preventing concurrent symlink replacement requires a separate descriptor-based access change.

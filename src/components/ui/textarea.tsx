@@ -1,17 +1,7 @@
-// Adapted from shadcn/ui (MIT, https://github.com/shadcn-ui/ui), restyled onto Phaethon tokens.
-import * as React from "react"
-import { cn } from "cn"
+import type { ComponentProps } from "react";
+import { TextareaControl } from "vic-ui";
+import { cn } from "@/lib/utils";
 
-import { fieldClasses } from "@/components/ui/input"
-
-function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
-  return (
-    <textarea
-      data-slot="textarea"
-      className={cn(fieldClasses, "flex field-sizing-content min-h-[calc(var(--ph-control-height)*2)] px-2.5 py-1.5 leading-normal", className)}
-      {...props}
-    />
-  )
+export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
+  return <TextareaControl {...props} data-slot="textarea" className={cn("min-h-[calc(var(--ph-control-height)*2)]", className)} />;
 }
-
-export { Textarea }

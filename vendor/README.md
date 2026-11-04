@@ -1,0 +1,3 @@
+The Vic UI archive is built from `jerynv/vic-ui` commit `a9764da`, including the native fields, radio, select, disclosure and skeleton used by Phaethon. It excludes that checkout’s unrelated pending edits. The package and lockfile use a checked-in archive so a clean Phaethon checkout builds without a sibling repository or access to an unpublished commit.
+
+To update it, export the chosen Vic UI commit with `git archive` to a temporary directory, install its dependencies, run `npm run build`, then `npm pack --ignore-scripts --pack-destination` pointing at this directory. Name the archive with its source commit, update Phaethon’s `vic-ui` dependency, and run `pnpm install` and `pnpm test`. Keep Vic UI’s MIT licence and third-party notices inside the archive.

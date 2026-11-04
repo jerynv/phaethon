@@ -1,4 +1,5 @@
-import { Switch } from "radix-ui";
+import { Input } from "@/components/ui/input";
+import { Switch } from "vic-ui";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -194,7 +195,7 @@ export function SearchDialog({
         </DialogDescription>
         <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
           <Icon name="search" className="shrink-0 text-ink-secondary" />
-          <input
+          <Input
             ref={inputRef}
             role="combobox"
             aria-expanded={options.length > 0}
@@ -213,13 +214,13 @@ export function SearchDialog({
             }}
             onKeyDown={onKeyDown}
             placeholder={`Search conversations in ${scopeText}…`}
-            className="min-h-(--ph-control-height-lg) min-w-0 flex-1 rounded-sm bg-transparent py-1.5 text-md text-ink outline-none placeholder:text-ink-secondary"
+            className="min-w-0 flex-1"
           />
           <Keys keys={["Esc"]} className="max-sm:hidden" />
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line px-4 py-1.5">
           <div className="flex items-center gap-2">
-            <Switch.Root
+            <Switch
               id={switchId}
               data-switch=""
               data-search-all=""
@@ -228,13 +229,7 @@ export function SearchDialog({
                 setAllSpaces(on);
                 setActive(0);
               }}
-              className={cn(
-                "inline-flex h-(--ph-switch-height) w-(--ph-switch-width) shrink-0 cursor-pointer items-center rounded-full border border-transparent px-0.5 transition-colors duration-(--ph-duration-fast)",
-                "bg-ink-tertiary data-[state=checked]:bg-accent-fill disabled:cursor-default disabled:opacity-60",
-              )}
-            >
-              <Switch.Thumb data-switch-thumb="" className="block size-(--ph-switch-thumb) rounded-full bg-raised shadow-sm transition-transform duration-(--ph-duration-fast) data-[state=checked]:translate-x-(--ph-switch-travel)" />
-            </Switch.Root>
+            />
             <label htmlFor={switchId} className="cursor-pointer text-sm text-ink">
               All spaces
             </label>

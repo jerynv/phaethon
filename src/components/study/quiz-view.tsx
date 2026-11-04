@@ -1,3 +1,4 @@
+import { Checkbox, Radio } from "vic-ui";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -444,8 +445,7 @@ function QuestionField({
         <div role="radiogroup" aria-labelledby={`${id}-prompt`} className="flex flex-col gap-1">
           {choices.map((c, i) => (
             <label key={i} className="flex min-h-(--ph-control-height) cursor-default items-start gap-2.5 rounded-md px-2 py-1 text-base text-ink hover:bg-hover has-checked:bg-selected">
-              <input
-                type="radio"
+              <Radio
                 // A choice that is only math has its words as its name (the drawn formula alone may give none).
                 aria-label={mathOnly(c) ? `${q.kind === "truefalse" ? "" : `${choiceLetter(i)}. `}${mathAsText(c)}` : undefined}
                 name={`${id}-q`}
@@ -459,7 +459,6 @@ function QuestionField({
                   e.preventDefault();
                   onChange("");
                 }}
-                className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
               />
               {q.kind !== "truefalse" && <Letter i={i} />}
               <span className="min-w-0 wrap-break-word">
@@ -474,12 +473,10 @@ function QuestionField({
             const list = Array.isArray(value) ? value : [];
             return (
               <label key={i} className="flex min-h-(--ph-control-height) cursor-default items-start gap-2.5 rounded-md px-2 py-1 text-base text-ink hover:bg-hover has-checked:bg-selected">
-                <input
-                  type="checkbox"
+                <Checkbox
                   aria-label={mathOnly(c) ? `${choiceLetter(i)}. ${mathAsText(c)}` : undefined}
                   checked={list.includes(c)}
                   onChange={(e) => onChange(e.target.checked ? [...list, c] : list.filter((x) => x !== c))}
-                  className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
                 />
                 <Letter i={i} />
                 <span className="min-w-0 wrap-break-word">

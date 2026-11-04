@@ -33,3 +33,7 @@
 :root {
   --ph-sidebar-item-gap: calc(var(--ph-space) * 1.5 * var(--ph-target-boost, 1));
 }
+
+/* T3 Code’s ComposerSurface keeps its dark surface defined by the rim alone.
+   Reference: https://github.com/pingdotgg/t3code/blob/7f6f47b/apps/web/src/components/chat/ComposerSurface.tsx */
+[data-mode="dark"] [data-composer] { box-shadow: none; }

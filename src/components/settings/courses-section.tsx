@@ -1,3 +1,4 @@
+import { Checkbox } from "vic-ui";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { openCourseImport, sitesChanged, useRun, useSitesVersion } from "@/components/lms/import-store";
@@ -360,8 +361,7 @@ function AccessGrid({
                   </th>
                   {COURSE_PARTS.map((p, i) => (
                     <td key={p.part} role="gridcell" className="px-1 py-1 text-center">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         aria-label={`${s.name}: ${p.label}`}
                         checked={parts.includes(p.part)}
                         tabIndex={stop(r, i + 2)}
@@ -369,7 +369,6 @@ function AccessGrid({
                         onChange={(e) => toggle(s, p.part, e.target.checked)}
                         data-cell={`${r}:${i + 2}`}
                         data-access-part={p.part}
-                        className="size-(--ph-target-min) align-middle accent-accent-fill"
                       />
                     </td>
                   ))}

@@ -15,10 +15,10 @@
 
 :root {
   /* ---- Colour dials ---- */
-  --ph-neutral-h: 80; /* warm paper */
-  --ph-neutral-c: 0.006;
-  --ph-ink-h: 255; /* ink leans slightly cool against warm paper */
-  --ph-ink-c: 0.014;
+  --ph-neutral-h: 80; /* adjustable surface hue */
+  --ph-neutral-c: 0;
+  --ph-ink-h: 255; /* adjustable ink hue */
+  --ph-ink-c: 0;
   --ph-accent-h: 168; /* soft sea-green */
   --ph-accent-c: 0.075;
   --ph-danger-h: 25;
@@ -154,23 +154,23 @@
   color-scheme: light;
 
   /* Surfaces: paper, from the page out to raised layers. */
-  --ph-bg: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h));
-  --ph-surface: oklch(0.968 calc(var(--ph-neutral-c) * 1.3) var(--ph-neutral-h));
-  --ph-surface-sunken: oklch(0.952 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
-  --ph-raised: oklch(0.995 calc(var(--ph-neutral-c) * 0.5) var(--ph-neutral-h));
-  --ph-hover: oklch(0.935 calc(var(--ph-neutral-c) * 1.6) var(--ph-neutral-h));
+  --ph-bg: oklch(from var(--bg-canvas) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-surface: oklch(from var(--bg-base) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-surface-sunken: oklch(from var(--bg-recessed) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-raised: oklch(from var(--bg-elevated) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-hover: var(--fill-hover);
   /* The user's own messages. */
-  --ph-bubble: oklch(0.955 calc(var(--ph-neutral-c) * 1.6) var(--ph-neutral-h));
-  --ph-selected: oklch(0.915 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-bubble: oklch(from var(--bg-tint) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-selected: var(--fill-chosen);
 
   /* Ink. Secondary stays >= 4.5:1 on every surface above. */
-  --ph-ink: oklch(0.25 var(--ph-ink-c) var(--ph-ink-h));
-  --ph-ink-secondary: oklch(0.45 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
-  --ph-ink-tertiary: oklch(0.56 calc(var(--ph-ink-c) * 0.6) var(--ph-ink-h)); /* large text and icons only */
-  --ph-ink-inverse: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-ink: oklch(from var(--fg) l var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink-secondary: oklch(from var(--fg-subtle) l var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink-tertiary: light-dark(oklch(0.52 var(--ph-ink-c) var(--ph-ink-h)), oklch(0.7 var(--ph-ink-c) var(--ph-ink-h))); /* large text and icons only */
+  --ph-ink-inverse: oklch(from var(--fg-inverse) l var(--ph-ink-c) var(--ph-ink-h));
 
-  --ph-line: oklch(0.905 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
-  --ph-line-strong: oklch(0.82 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-line: var(--line);
+  --ph-line-strong: light-dark(oklch(0.62 var(--ph-neutral-c) var(--ph-neutral-h)), oklch(0.6 var(--ph-neutral-c) var(--ph-neutral-h)));
 
   /* Accent: fills carry white text at >= 4.5:1. */
   --ph-accent: oklch(0.5 var(--ph-accent-c) var(--ph-accent-h));
@@ -180,19 +180,19 @@
   --ph-accent-soft-ink: oklch(0.36 var(--ph-accent-c) var(--ph-accent-h));
 
   --ph-danger: oklch(0.52 var(--ph-danger-c) var(--ph-danger-h));
-  --ph-danger-soft: oklch(0.95 0.03 var(--ph-danger-h));
-  --ph-danger-ink: oklch(0.42 var(--ph-danger-c) var(--ph-danger-h));
-  --ph-warning-soft: oklch(0.95 0.045 var(--ph-warning-h));
-  --ph-warning-ink: oklch(0.42 0.09 var(--ph-warning-h));
-  --ph-success-soft: oklch(0.95 0.035 var(--ph-success-h));
-  --ph-success-ink: oklch(0.4 0.08 var(--ph-success-h));
+  --ph-danger-soft: var(--tone-danger-tint);
+  --ph-danger-ink: var(--tone-danger-ink);
+  --ph-warning-soft: var(--tone-caution-tint);
+  --ph-warning-ink: var(--tone-caution-ink);
+  --ph-success-soft: var(--tone-settled-tint);
+  --ph-success-ink: var(--tone-settled-ink);
 
   /* Focus: >= 3:1 against every surface (WCAG 2.4.13 / 1.4.11). */
   --ph-focus: oklch(0.5 0.14 var(--ph-accent-h));
   --ph-selection: oklch(0.88 0.06 var(--ph-accent-h));
   --ph-overlay: oklch(0.2 0.01 var(--ph-ink-h) / 35%);
   --ph-scrim: oklch(0.985 var(--ph-neutral-c) var(--ph-neutral-h) / 92%);
-  --ph-scrollbar: oklch(0.8 calc(var(--ph-neutral-c) * 2) var(--ph-neutral-h));
+  --ph-scrollbar: var(--scroll-thumb);
 
   /* A PDF page or a compiled figure is paper in both themes; its text selection is translucent over the drawing. */
   --ph-pdf-paper: oklch(1 0 0);
@@ -203,21 +203,21 @@
 .dark {
   color-scheme: dark;
 
-  --ph-bg: oklch(0.2 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
-  --ph-surface: oklch(0.225 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
-  --ph-surface-sunken: oklch(0.185 calc(var(--ph-ink-c) * 0.7) var(--ph-ink-h));
-  --ph-raised: oklch(0.255 calc(var(--ph-ink-c) * 0.8) var(--ph-ink-h));
-  --ph-hover: oklch(0.28 calc(var(--ph-ink-c) * 0.9) var(--ph-ink-h));
-  --ph-bubble: oklch(0.285 var(--ph-ink-c) var(--ph-ink-h));
-  --ph-selected: oklch(0.31 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-bg: oklch(from var(--bg-canvas) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-surface: oklch(from var(--bg-base) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-surface-sunken: oklch(from var(--bg-recessed) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-raised: oklch(from var(--bg-elevated) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-hover: var(--fill-hover);
+  --ph-bubble: oklch(from var(--bg-tint) l var(--ph-neutral-c) var(--ph-neutral-h));
+  --ph-selected: var(--fill-chosen);
 
-  --ph-ink: oklch(0.93 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
-  --ph-ink-secondary: oklch(0.76 calc(var(--ph-neutral-c) * 1.5) var(--ph-neutral-h));
-  --ph-ink-tertiary: oklch(0.64 var(--ph-neutral-c) var(--ph-neutral-h));
-  --ph-ink-inverse: oklch(0.2 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink: oklch(from var(--fg) l var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink-secondary: oklch(from var(--fg-subtle) l var(--ph-ink-c) var(--ph-ink-h));
+  --ph-ink-tertiary: light-dark(oklch(0.52 var(--ph-ink-c) var(--ph-ink-h)), oklch(0.7 var(--ph-ink-c) var(--ph-ink-h)));
+  --ph-ink-inverse: oklch(from var(--fg-inverse) l var(--ph-ink-c) var(--ph-ink-h));
 
-  --ph-line: oklch(0.3 var(--ph-ink-c) var(--ph-ink-h));
-  --ph-line-strong: oklch(0.4 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-line: var(--line);
+  --ph-line-strong: light-dark(oklch(0.62 var(--ph-neutral-c) var(--ph-neutral-h)), oklch(0.6 var(--ph-neutral-c) var(--ph-neutral-h)));
 
   --ph-accent: oklch(0.74 var(--ph-accent-c) var(--ph-accent-h));
   --ph-accent-hover: oklch(0.79 var(--ph-accent-c) var(--ph-accent-h));
@@ -226,18 +226,18 @@
   --ph-accent-soft-ink: oklch(0.86 calc(var(--ph-accent-c) * 0.8) var(--ph-accent-h));
 
   --ph-danger: oklch(0.72 var(--ph-danger-c) var(--ph-danger-h));
-  --ph-danger-soft: oklch(0.28 0.05 var(--ph-danger-h));
-  --ph-danger-ink: oklch(0.82 0.09 var(--ph-danger-h));
-  --ph-warning-soft: oklch(0.29 0.04 var(--ph-warning-h));
-  --ph-warning-ink: oklch(0.86 0.08 var(--ph-warning-h));
-  --ph-success-soft: oklch(0.28 0.04 var(--ph-success-h));
-  --ph-success-ink: oklch(0.84 0.07 var(--ph-success-h));
+  --ph-danger-soft: var(--tone-danger-tint);
+  --ph-danger-ink: var(--tone-danger-ink);
+  --ph-warning-soft: var(--tone-caution-tint);
+  --ph-warning-ink: var(--tone-caution-ink);
+  --ph-success-soft: var(--tone-settled-tint);
+  --ph-success-ink: var(--tone-settled-ink);
 
   --ph-focus: oklch(0.8 0.12 var(--ph-accent-h));
   --ph-selection: oklch(0.4 0.07 var(--ph-accent-h));
   --ph-overlay: oklch(0.08 0.01 var(--ph-ink-h) / 55%);
   --ph-scrim: oklch(0.2 0.01 var(--ph-ink-h) / 92%);
-  --ph-scrollbar: oklch(0.38 var(--ph-ink-c) var(--ph-ink-h));
+  --ph-scrollbar: var(--scroll-thumb);
   --ph-shadow-color: oklch(0.05 0.01 var(--ph-ink-h) / 35%);
 }
 

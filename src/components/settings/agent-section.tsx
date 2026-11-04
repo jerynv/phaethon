@@ -1,3 +1,5 @@
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "vic-ui";
 import { RadioGroup } from "radix-ui";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -496,7 +498,7 @@ function ProviderChoice({ settings, act }: { settings: Settings; act: Parameters
         description="Who runs the model that writes Phaethon’s replies. Each service needs its own account and API key; a model on this computer needs neither, and nothing you send leaves the computer."
         descriptionId={descId}
       >
-        <select
+        <NativeSelect
           id={selectId}
           data-provider-select=""
           value={current}
@@ -505,7 +507,7 @@ function ProviderChoice({ settings, act }: { settings: Settings; act: Parameters
             const p = list.find((x) => x.id === e.target.value);
             if (p) void act(() => setProvider(p.id), `Phaethon now answers with ${p.name}.`, undefined, false);
           }}
-          className="min-h-(--ph-control-height-lg) w-full rounded-md border border-line-strong bg-raised px-2.5 text-base text-ink shadow-sm hover:bg-hover"
+          className="w-full"
         >
           {PROVIDER_GROUPS.map((g) => (
             <optgroup key={g.label} label={g.label}>
@@ -517,7 +519,7 @@ function ProviderChoice({ settings, act }: { settings: Settings; act: Parameters
               ))}
             </optgroup>
           ))}
-        </select>
+        </NativeSelect>
       </SettingRow>
     </SettingGroup>
   );
@@ -625,7 +627,7 @@ function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameter
             : "Your server’s address for OpenAI-style requests, often ending in /v1, for example https://llm.example.com/v1."}
         </p>
         <div className="flex flex-wrap gap-2">
-          <input
+          <Input
             id={inputId}
             data-provider-url=""
             type="url"
@@ -639,7 +641,7 @@ function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameter
             }}
             aria-describedby={[hintId, error && errorId].filter(Boolean).join(" ")}
             aria-invalid={error ? true : undefined}
-            className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink aria-invalid:border-danger"
+            className="min-w-(--ph-settings-label-min) flex-1 font-mono"
           />
           <Button type="submit" className="min-h-(--ph-control-height-lg)" data-provider-url-save="">
             Save
@@ -824,7 +826,7 @@ function KeyForm({
           {hasKey ? "New API key" : "API key"}
         </label>
         <div className="flex flex-wrap gap-2">
-          <input
+          <Input
             ref={inputRef}
             id={keyId}
             data-key-input=""
@@ -839,7 +841,7 @@ function KeyForm({
             }}
             aria-describedby={describedBy}
             aria-invalid={bad ? true : undefined}
-            className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink read-only:text-ink-secondary aria-invalid:border-danger"
+            className="min-w-(--ph-settings-label-min) flex-1 font-mono"
           />
           <Button type="submit" aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
             {saving ? "Checking…" : "Check and save"}
@@ -978,14 +980,14 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
       }
       descriptionId={descId}
     >
-      <select
+      <NativeSelect
         id={selectId}
         data-model-select=""
         value={value}
         onChange={(e) => choose(e.target.value)}
         aria-describedby={descId}
         aria-busy={models === null || undefined}
-        className="min-h-(--ph-control-height-lg) w-full rounded-md border border-line-strong bg-raised px-2.5 text-base text-ink shadow-sm hover:bg-hover"
+        className="w-full"
       >
         <option value={DEFAULT_OPTION}>Default (recommended): {nameOf(DEFAULT_MODEL)}</option>
         {others.map((m) => (
@@ -993,7 +995,7 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
             {m.name}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </SettingRow>
     <OwnModels />
     </>

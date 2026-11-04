@@ -1,8 +1,8 @@
+import { Checkbox, NativeSelect } from "vic-ui";
 import { useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
-import { fieldClasses } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 
@@ -85,10 +85,10 @@ export function FocusTimer({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
           {(["focus", "short", "long"] as const).map((k) => (
             <label key={k} className="flex items-center gap-1.5">
               {k === "focus" ? "Focus" : k === "short" ? "Short break" : "Long break"}
-              <select
+              <NativeSelect
                 value={t.settings[k]}
                 onChange={(e) => setSettings({ [k]: Number(e.target.value) })}
-                className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto px-2")}
+                className="w-auto"
                 data-focus-setting={k}
               >
                 {[...new Set([...CHOICES[k], t.settings[k]])]
@@ -98,16 +98,14 @@ export function FocusTimer({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
                       {m} min
                     </option>
                   ))}
-              </select>
+              </NativeSelect>
             </label>
           ))}
         </div>
         <label className="flex min-h-(--ph-target-min) items-center gap-2 text-base text-ink">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={t.settings.sound}
             onChange={(e) => setSettings({ sound: e.target.checked })}
-            className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
             data-focus-sound=""
           />
           Play a sound when a focus session or break ends

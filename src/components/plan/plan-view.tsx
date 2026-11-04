@@ -1,10 +1,11 @@
+import { Checkbox, NativeSelect } from "vic-ui";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
-import { fieldClasses, Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
@@ -167,12 +168,11 @@ function SessionRow({ space, s, done, onToggle, focus }: { space: string; s: Ses
   const id = useId();
   return (
     <li className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2" data-plan-session={s.id}>
-      <input
+      <Checkbox
         id={id}
-        type="checkbox"
+
         checked={done}
         onChange={(e) => onToggle(s, e.target.checked)}
-        className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
       />
       <div className="flex min-w-0 flex-1 basis-48 flex-col">
         <label htmlFor={id} className={cn("text-base font-medium text-ink wrap-break-word", done && "text-ink-secondary line-through")}>
@@ -331,14 +331,14 @@ function Exams({ space, exams, courses, onChange }: { space: Space; exams: Exam[
           {courses.length > 0 && (
             <label className="flex min-w-0 flex-col gap-1 text-base text-ink">
               Course
-              <select value={course} onChange={(e) => setCourse(e.target.value)} className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto max-w-full px-2")} data-exam-course="">
+              <NativeSelect value={course} onChange={(e) => setCourse(e.target.value)} className="w-auto max-w-full" data-exam-course="">
                 <option value="">Not tied to a course</option>
                 {courses.map((c) => (
                   <option key={c.folder} value={c.folder}>
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           )}
           <Button type="submit" data-exam-add="">
@@ -442,8 +442,7 @@ function Schedule({
             const only = on && st.studyDays.length === 1;
             return (
               <label key={d} className="flex min-h-(--ph-target-min) items-center gap-1.5 text-base text-ink">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={on}
                   aria-disabled={only || undefined}
                   onChange={(e) => {
@@ -453,7 +452,6 @@ function Schedule({
                     }
                     onState({ ...st, studyDays: e.target.checked ? [...st.studyDays, d] : st.studyDays.filter((x) => x !== d) });
                   }}
-                  className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
                   data-plan-day={d}
                 />
                 {WEEKDAYS[d]}
@@ -465,18 +463,18 @@ function Schedule({
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-base text-ink">
         <label className="flex items-center gap-1.5">
           At most
-          <select value={st.sessionsPerDay} onChange={(e) => onState({ ...st, sessionsPerDay: Number(e.target.value) })} className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto px-2")} data-plan-per-day="">
+          <NativeSelect value={st.sessionsPerDay} onChange={(e) => onState({ ...st, sessionsPerDay: Number(e.target.value) })} className="w-auto" data-plan-per-day="">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
             ))}
-          </select>
+          </NativeSelect>
           sessions a day
         </label>
         <label className="flex items-center gap-1.5">
           of
-          <select value={st.sessionMinutes} onChange={(e) => onState({ ...st, sessionMinutes: Number(e.target.value) })} className={cn(fieldClasses, "min-h-(--ph-control-height) w-auto px-2")}>
+          <NativeSelect value={st.sessionMinutes} onChange={(e) => onState({ ...st, sessionMinutes: Number(e.target.value) })} className="w-auto">
             {[...new Set([15, 25, 30, 45, 60, 90, st.sessionMinutes])]
               .sort((a, b) => a - b)
               .map((n) => (
@@ -484,7 +482,7 @@ function Schedule({
                   {n} minutes
                 </option>
               ))}
-          </select>
+          </NativeSelect>
         </label>
       </div>
       {plan.unplaced.length > 0 && (

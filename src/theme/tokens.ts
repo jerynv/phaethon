@@ -178,7 +178,7 @@ export const TOKENS: readonly TokenSpec[] = [
     min: 0,
     max: 0.02,
     step: 0.001,
-    default: 0.006,
+    default: 0,
     format: (v) => (v === 0 ? "None (grey)" : `${Math.round((v / 0.02) * 100)}%`),
   },
 

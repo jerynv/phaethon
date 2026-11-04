@@ -390,7 +390,7 @@ pub fn clean_rel(rel: &str) -> Result<PathBuf, String> {
     if clean
         .components()
         .next()
-        .is_some_and(|c| c.as_os_str() == STATE_DIR)
+        .is_some_and(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(STATE_DIR))
     {
         return Err(format!("\"{rel}\" is Phaethon's own state and cannot be used by tools"));
     }
@@ -407,17 +407,29 @@ pub fn resolve(space: &Path, rel: &str, must_exist: bool) -> Result<PathBuf, Str
     let clean = clean_rel(rel)?;
     let full = root.join(&clean);
     let mut existing = full.as_path();
-    while !existing.exists() {
-        if must_exist {
-            return Err(format!("\"{rel}\" does not exist"));
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !must_exist => {
+                existing = existing.parent().unwrap_or(&root);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(format!("\"{rel}\" does not exist"));
+            }
+            Err(e) => return Err(format!("cannot open \"{rel}\": {e}")),
         }
-        existing = existing.parent().unwrap_or(&root);
     }
     let real = existing
         .canonicalize()
         .map_err(|e| format!("cannot open \"{rel}\": {e}"))?;
     if !real.starts_with(&root) {
         return Err(format!("\"{rel}\" leads outside this space"));
+    }
+    if real.strip_prefix(&root).ok().and_then(|p| p.components().next())
+        .is_some_and(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(STATE_DIR))
+        || root.join(STATE_DIR).canonicalize().is_ok_and(|state| real.starts_with(state))
+    {
+        return Err(format!("\"{rel}\" is Phaethon's own state and cannot be used by tools"));
     }
     // Rebuild from the checked ancestor so no unchecked symlink is followed.
     // (Joining an empty remainder would add a trailing slash and break files.)
@@ -704,6 +716,30 @@ mod tests {
             let out = run(&s, &Call::Search { query: "marmalade".into(), path: String::new() }).unwrap();
             assert!(out.starts_with("No lines contain"), "{out}");
         }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn state_aliases_and_dangling_links_are_refused() {
+        use std::os::unix::fs::symlink;
+        let dir = space("state-aliases");
+        let s = dir.join("space");
+        symlink(s.join(STATE_DIR), s.join("alias")).unwrap();
+        for path in ["alias/session", ".PHAETHON/session"] {
+            assert!(run(&s, &Call::Read { path: path.into() }).is_err(), "{path}");
+            assert!(crate::viewer::view(&s, &Default::default(), path).is_err(), "{path}");
+        }
+        for path in ["alias/new.txt", ".PHAETHON/new.txt"] {
+            assert!(run(&s, &Call::Write { path: path.into(), contents: "bad".into() }).is_err(), "{path}");
+        }
+        let outside = dir.join("outside-new.txt");
+        symlink(&outside, s.join("dangling.txt")).unwrap();
+        assert!(run(&s, &Call::Write { path: "dangling.txt".into(), contents: "bad".into() }).is_err());
+        assert!(!outside.exists());
+        symlink(dir.join("missing-folder"), s.join("dangling-dir")).unwrap();
+        assert!(run(&s, &Call::Write { path: "dangling-dir/new.txt".into(), contents: "bad".into() }).is_err());
+        assert!(!dir.join("missing-folder/new.txt").exists());
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { Icon } from "@/icons";
@@ -135,8 +136,8 @@ export function ModelSearch({
         {label}
       </label>
       <div className="relative flex items-center">
-        <Icon name="search" className="pointer-events-none absolute start-2.5 text-ink-tertiary" />
-        <input
+        <Icon name="search" className="pointer-events-none absolute start-2.5 z-10 text-ink-tertiary" />
+        <Input
           ref={inputRef}
           id={inputId}
           data-model-query=""
@@ -154,7 +155,7 @@ export function ModelSearch({
           onKeyDown={onKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          className="min-h-(--ph-control-height-lg) w-full rounded-md border border-line-strong bg-bg py-1.5 ps-9 pe-3 text-base text-ink placeholder:text-ink-tertiary"
+          className="w-full ps-9"
         />
       </div>
       <div id={statusId} role="status" className="text-sm text-ink-secondary" data-model-search-status="">

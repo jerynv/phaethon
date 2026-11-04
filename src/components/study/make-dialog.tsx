@@ -1,3 +1,4 @@
+import { Checkbox, Radio } from "vic-ui";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { openCourseImport } from "@/components/lms/import-store";
@@ -636,8 +637,7 @@ function MakeFlow({
           <div className="flex flex-col gap-0.5">
             {choices.map((c) => (
               <label key={c.value} className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink">
-                <input
-                  type="radio"
+                <Radio
                   name={`${id}-exam`}
                   value={c.value}
                   checked={examChoice === c.value}
@@ -647,7 +647,6 @@ function MakeFlow({
                   }}
                   aria-describedby={examChoice === c.value ? `${id}-exam-scope` : undefined}
                   data-exam-choice={c.value === OTHER ? "other" : c.value}
-                  className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
                 />
                 <span>
                   {c.label}
@@ -704,15 +703,13 @@ function MakeFlow({
                   return (
                     <li key={c.folder} className="rounded-lg border border-line bg-raised px-3 py-2" data-source-course={c.folder}>
                       <label className="flex min-h-(--ph-target-min) cursor-default items-start gap-2.5">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={whole}
                           ref={(el) => {
                             if (el) el.indeterminate = some;
                           }}
                           onChange={(e) => toggleCourse(c, e.target.checked)}
                           aria-invalid={errors.sources ? true : undefined}
-                          className="mt-[calc((1lh-var(--ph-icon-size))/2)] size-(--ph-icon-size) shrink-0 accent-accent-fill"
                         />
                         <span className="min-w-0 font-medium wrap-break-word text-ink">{c.name}</span>
                       </label>
@@ -720,12 +717,10 @@ function MakeFlow({
                         {COURSE_PARTS.map((p) => (
                           <li key={p.part}>
                             <label className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink-secondary">
-                              <input
-                                type="checkbox"
+                              <Checkbox
                                 checked={whole || chosen.has(`${c.folder}/${p.part}`)}
                                 onChange={(e) => togglePart(c, p.part, e.target.checked)}
                                 data-source-part={p.part}
-                                className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
                               />
                               {p.label}
                             </label>
@@ -751,8 +746,7 @@ function MakeFlow({
             <div className="flex flex-wrap gap-x-5 gap-y-1">
               {KINDS.map((k) => (
                 <label key={k.id} className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={kinds.has(k.id)}
                     onChange={(e) => {
                       const n = new Set(kinds);
@@ -762,7 +756,6 @@ function MakeFlow({
                     }}
                     aria-invalid={errors.kinds ? true : undefined}
                     data-quiz-kind={k.id}
-                    className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
                   />
                   {k.label}
                 </label>
@@ -775,14 +768,12 @@ function MakeFlow({
             <div className="flex flex-wrap gap-x-5 gap-y-1">
               {DIFFICULTY.map((d) => (
                 <label key={d.id} className="flex min-h-(--ph-target-min) cursor-default items-center gap-2 text-base text-ink">
-                  <input
-                    type="radio"
+                  <Radio
                     name={`${id}-difficulty`}
                     value={d.id}
                     checked={difficulty === d.id}
                     onChange={() => change(setDifficulty)(d.id)}
                     data-difficulty={d.id}
-                    className="size-(--ph-icon-size) shrink-0 accent-accent-fill"
                   />
                   <span>
                     {d.label} <span className="text-ink-secondary">({d.hint})</span>

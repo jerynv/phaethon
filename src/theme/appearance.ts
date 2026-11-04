@@ -63,6 +63,8 @@ function apply(a: Appearance) {
   const root = document.documentElement;
   const e = effective(a);
   root.classList.toggle("dark", e.dark);
+  root.dataset.mode = e.dark ? "dark" : "light";
+  root.toggleAttribute("data-custom-accent", "--ph-accent-h" in a.tokens || "--ph-accent-c" in a.tokens);
   root.dataset.themePref = a.theme;
   if (a.readingFont && a.readingFont !== "atkinson") root.dataset.font = a.readingFont;
   else delete root.dataset.font;

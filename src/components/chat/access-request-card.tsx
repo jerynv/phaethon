@@ -1,3 +1,4 @@
+import { Checkbox } from "vic-ui";
 import { useAuiState } from "@assistant-ui/react";
 import { useContext, useId, useRef, useState, useEffect } from "react";
 
@@ -229,15 +230,14 @@ export function AccessRequestCard() {
             htmlFor={keepId}
             className="flex min-h-(--ph-target-min) w-fit cursor-default items-start gap-2.5 text-base text-ink"
           >
-            <input
+            <Checkbox
               id={keepId}
-              type="checkbox"
+
               checked={keep}
               disabled={busy}
               onChange={(e) => setKeep(e.currentTarget.checked)}
               aria-describedby={keepNoteId}
               data-access-keep=""
-              className="mt-0.5 size-(--ph-icon-size) shrink-0 accent-(--ph-accent)"
             />
             <span className="min-w-0 wrap-anywhere">
               Always allow {asker} to read{" "}

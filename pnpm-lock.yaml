@@ -77,6 +77,9 @@ importers:
       tw-shimmer:
         specifier: ^0.4.13
         version: 0.4.13(tailwindcss@4.3.3)
+      vic-ui:
+        specifier: file:vendor/vic-ui-a9764da.tgz
+        version: file:vendor/vic-ui-a9764da.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       zustand:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)
@@ -3844,6 +3847,14 @@ packages:
 
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
+
+  vic-ui@file:vendor/vic-ui-a9764da.tgz:
+    resolution: {integrity: sha512-u/sYYtcN/WVvKmZrfc1W9CUVzSb0L/LBZ2LrWNwUlMfsU5KLChkHzDowHReDGUbx56Wfj0NhaMf+hqeSdEPDgQ==, tarball: file:vendor/vic-ui-a9764da.tgz}
+    version: 0.1.0
+    engines: {node: '>=22'}
+    peerDependencies:
+      react: ^19.0.0
+      react-dom: ^19.0.0
 
   vite@8.3.4:
     resolution: {integrity: sha512-IftLE8phJhdNRIGNEV4JCCvfNScoZQVfcXaN8TQropWGJtOHcu+iAB9pHcuGvmEb/kddw0LBe/jS8ztdC6xdiQ==}
@@ -8129,6 +8140,12 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
+
+  vic-ui@file:vendor/vic-ui-a9764da.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+    dependencies:
+      '@floating-ui/dom': 1.8.0
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
 
   vite@8.3.4(@types/node@26.6.5)(jiti@2.7.0):
     dependencies:

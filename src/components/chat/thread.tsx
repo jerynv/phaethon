@@ -136,8 +136,11 @@ function UserMessage() {
           <MessagePrimitive.Parts components={USER_PARTS} />
         </div>
       )}
-      <MessageTime role="user" />
-      <EditAction />
+      {/* Compact metadata row, following T3 Code’s TimelineUserMessageRow layout. */}
+      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 tabular-nums">
+        <MessageTime role="user" />
+        <EditAction />
+      </div>
     </MessagePrimitive.Root>
   );
 }

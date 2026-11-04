@@ -1,3 +1,5 @@
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "vic-ui";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -394,7 +396,7 @@ function CliModelDialog({
             For example {example}. Your {cli.name} plan decides which models you can use.
           </p>
           <div className="flex flex-wrap gap-2">
-            <input
+            <Input
               id={inputId}
               data-cli-model-input=""
               autoComplete="off"
@@ -406,7 +408,7 @@ function CliModelDialog({
               }}
               aria-describedby={[hintId, error && errorId].filter(Boolean).join(" ")}
               aria-invalid={error ? true : undefined}
-              className="min-h-(--ph-control-height-lg) min-w-0 flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink aria-invalid:border-danger"
+              className="min-w-0 flex-1 font-mono"
             />
             <Button type="submit" className="min-h-(--ph-control-height-lg)" data-cli-model-save="">
               Use this model
@@ -459,12 +461,12 @@ function OtherModelDialog({
           <label htmlFor={selectId} className="text-base font-medium text-ink">
             Provider
           </label>
-          <select
+          <NativeSelect
             id={selectId}
             data-other-provider=""
             value={info.id}
             onChange={(e) => setProvider(e.target.value as ProviderId)}
-            className="min-h-(--ph-control-height-lg) w-full rounded-md border border-line-strong bg-raised px-2.5 text-base text-ink shadow-sm hover:bg-hover"
+            className="w-full"
           >
             {providers.map((p) => (
               <option key={p.id} value={p.id}>
@@ -472,7 +474,7 @@ function OtherModelDialog({
                 {p.local ? " (on this computer)" : ""}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <ModelSearch
           key={info.id}

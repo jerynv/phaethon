@@ -1,0 +1,70 @@
+/* Vic UI owns control surfaces. Phaethon keeps its reading and access preferences. */
+:root, :root[data-mode] {
+  --font-sans: var(--ph-font-sans);
+  --font-display: var(--ph-font-sans);
+  --font-code: var(--ph-font-mono);
+  --text-tag: var(--ph-text-xs);
+  --text-meta: var(--ph-text-sm);
+  --text-ui: var(--ph-text-base);
+  --text-read: var(--ph-text-md);
+  --text-lead: var(--ph-text-lg);
+  --control-h: max(var(--ph-target-min), calc(32px * var(--ph-ui-scale)));
+  --control-h-sm: max(var(--ph-target-min), calc(28px * var(--ph-ui-scale)));
+  --radius-mark: var(--ph-radius-xs);
+  --radius-row: var(--ph-radius-sm);
+  --radius-control: var(--ph-radius);
+  --radius-field: var(--ph-radius);
+  --radius-button: var(--ph-radius);
+  --radius-float: var(--ph-radius-lg);
+  --radius-panel: var(--ph-radius-xl);
+  --ph-shadow-sm: var(--shadow-raise);
+  --ph-shadow: var(--shadow-raise);
+  --ph-shadow-lg: var(--shadow-float);
+  /* Placeholder text is readable on the field surface, including at small text sizes. */
+  --fg-subtle: light-dark(oklch(0.45 0 0), oklch(0.78 0 0));
+  --fg-placeholder: var(--fg-subtle);
+}
+
+/* A user-selected reading face must also reach fields, menus and overlays. */
+.ui-field, .ui-textarea, .ui-native-select, .ui-button { font-family: var(--ph-font-sans); }
+.ui-switch { min-inline-size: var(--ph-target-min); min-block-size: var(--ph-target-min); }
+:root[data-contrast="more"] {
+  --fg-subtle: var(--ph-ink-secondary);
+  --fg-placeholder: var(--ph-ink-secondary);
+  --line: var(--ph-line-strong);
+  --focus: var(--ph-focus);
+}
+
+.ui-check-box { inline-size: max(var(--ph-target-min), var(--ph-icon-size)); block-size: max(var(--ph-target-min), var(--ph-icon-size)); }
+.ui-radio-dot { min-inline-size: max(var(--ph-target-min), var(--ph-icon-size)); min-block-size: max(var(--ph-target-min), var(--ph-icon-size)); }
+@media (forced-colors: active) {
+  .ui-switch { border: 1px solid ButtonText; }
+  .ui-switch-knob { background: ButtonText; }
+  .ui-switch[aria-checked="true"] { background: Highlight; forced-color-adjust: none; }
+  .ui-switch[aria-checked="true"] .ui-switch-knob { background: HighlightText; }
+  .ui-check-box input { border: 1px solid ButtonText; }
+  .ui-check-box input:checked { background: Highlight; forced-color-adjust: none; }
+  .ui-check-tick { color: HighlightText; forced-color-adjust: none; }
+}
+
+/* User colour choices extend to library fields and committing controls. */
+:root, :root[data-mode] {
+  --field-fill: light-dark(oklch(0.948 var(--ph-neutral-c) var(--ph-neutral-h)), oklch(0.235 var(--ph-neutral-c) var(--ph-neutral-h)));
+  --field-fill-hover: light-dark(oklch(0.925 var(--ph-neutral-c) var(--ph-neutral-h)), oklch(0.265 var(--ph-neutral-c) var(--ph-neutral-h)));
+  --focus: var(--ph-focus);
+}
+:root[data-custom-accent] {
+  --ink-face-top: var(--ph-accent);
+  --ink-face-bottom: var(--ph-accent);
+  --ink-face-top-hover: var(--ph-accent-hover);
+  --ink-face-bottom-hover: var(--ph-accent-hover);
+  --ink-face-top-press: var(--ph-accent-hover);
+  --ink-face-bottom-press: var(--ph-accent-hover);
+  --ink-words: var(--ph-ink-inverse);
+}
+:root[data-custom-accent] .ui-switch[aria-checked="true"] { background: var(--ph-accent); }
+:root[data-contrast="more"] :is(.ui-check-box input:not(:checked), .ui-radio-dot:not(:checked), .ui-switch) { border: 1px solid var(--ph-line-strong); }
+.ui-native-select { min-inline-size: var(--ph-target-min); }
+@media (forced-colors: active) {
+  .ui-radio-dot { appearance: auto; accent-color: Highlight; border: 1px solid ButtonText; }
+}

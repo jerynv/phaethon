@@ -70,7 +70,7 @@ function focusShows(el: Element | null): boolean {
  * Space switcher. Every item is a native button (Tab reaches each one);
  * ArrowUp/ArrowDown/Home/End also move focus within the list and on to "New
  * space" at its end. The current space is marked with aria-current and shown
- * in its own hue.
+ * selected; each space's hue lives only in its dot.
  *
  * Spaces are listed most recently used first (src/lib/spaces.ts). The order
  * holds still while the pointer is over the sidebar, keyboard focus is in it
@@ -92,8 +92,11 @@ function focusShows(el: Element | null): boolean {
  * The name never gives way to that state: when both do not fit on one line,
  * the state moves to a line of its own under the name.
  *
- * The items stand apart (a gap that grows with Larger click targets), so a
- * slip off one never lands on its neighbour's edge.
+ * Rows are one line: the dot, the name and what the space is doing. Only the
+ * current space shows its description under the name; on the others it is
+ * still part of the accessible name, just not drawn. A hairline gap (wider
+ * with Larger click targets) keeps a slip off one row from landing on the
+ * next one's edge.
  *
  * A vault with no spaces says so above "New space".
  */
@@ -226,9 +229,10 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
         data-shell-chrome=""
         data-overlay={over ? "" : undefined}
         className={cn(
-          "flex w-(--ph-sidebar-width) shrink-0 flex-col bg-surface text-ink",
+          // A plain divider to the pane, as a desktop sidebar has; the title bar's leading cluster continues it upward.
+          "flex w-(--ph-sidebar-width) shrink-0 flex-col border-e border-line bg-surface text-ink forced-colors:border-[CanvasText]",
           overlay &&
-            "absolute inset-y-0 start-0 z-30 max-w-[calc(100%-var(--ph-space)*12)] rounded-e-lg border-e border-t border-line shadow-lg forced-colors:border-[CanvasText]",
+            "absolute inset-y-0 start-0 z-30 max-w-[calc(100%-var(--ph-space)*12)] rounded-e-lg border-t shadow-lg",
         )}
       >
         <h2 id="spaces-heading" className="px-4 pt-2 text-xs font-medium text-ink-secondary">
@@ -265,7 +269,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
             </button>
           </div>
         </ScrollArea>
-        {footer && <div className="px-2 pt-1 pb-2">{footer}</div>}
+        {footer && <div className="border-t border-line p-2 forced-colors:border-[CanvasText]">{footer}</div>}
       </nav>
       <SpaceActionNotice />
     </>
@@ -351,12 +355,11 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
             data-space-status={doing ? (doing.urgent ? "needs-you" : "running") : undefined}
             style={spaceHueStyle(space.hue)}
             className={cn(
-              // Two rows: the dot centres on the name's first line, the description sits under the name.
+              // The dot centres on the name's first line; the current space's description sits under the name.
               // The end keeps room for the More button, so it never covers the name.
-              "grid w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-start gap-x-2.5 rounded-md py-1.5 ps-2 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
+              "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-2 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
               "transition-colors duration-(--ph-duration-fast)",
-              // In a background window the selection greys, as macOS does.
-              active ? "bg-space-tint group-data-[inactive]/app:bg-selected" : "hover:bg-hover active:bg-selected",
+              active ? "bg-selected forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]" : "hover:bg-hover active:bg-selected",
               menuOpen && !active && "bg-hover",
             )}
           >
@@ -368,7 +371,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
                 Its place is always laid out, as wide as its widest state and unseen while idle, so a reply
                 starting or a card waiting never rewraps the row and the spaces below never move. */}
             <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span data-space-name="" className={cn("max-w-full min-w-0 truncate text-base text-ink", active ? "font-semibold" : "font-medium")}>
+              <span data-space-name="" className={cn("max-w-full min-w-0 truncate text-base text-ink", active ? "font-medium" : "font-normal")}>
                 {/* Spoken as one piece of text, so no stray space lands before a comma. */}
                 <span aria-hidden="true">{space.name}</span>
                 <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : ""}${space.description ? "," : ""}`}</span>
@@ -399,7 +402,10 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
                 })}
               </span>
             </span>
-            {space.description && <span className="col-start-2 truncate text-xs text-ink-secondary">{space.description}</span>}
+            {/* Drawn on the current space only; elsewhere it is still read, as the end of the space's name. */}
+            {space.description && (
+              <span className={active ? "col-start-2 truncate text-xs text-ink-secondary" : "sr-only"}>{space.description}</span>
+            )}
           </button>
           <button
             ref={moreRef}

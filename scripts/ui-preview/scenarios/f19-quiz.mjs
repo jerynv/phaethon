@@ -15,6 +15,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const C = "courses/CSCI-C 241 Fall 2026 (All Sections)";
 const NOTES = `${C}/files/Notes/Lecture Notes.pdf`;
 const PATH = "study/quizzes/Test 1 review.json";
@@ -59,8 +60,8 @@ async function pick(page, q, i) {
 }
 
 async function openQuiz(page) {
-  await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-  await page.click(`${SHOWN} [data-view-tab="study"]`);
+  await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+  await page.click(`${NAV} [data-view-tab="study"]`);
   await page.waitForSelector(`${SHOWN} [data-take-quiz="${PATH}"]`, { timeout: 3000 });
   await page.click(`${SHOWN} [data-take-quiz="${PATH}"]`);
   await page.waitForSelector("[data-quiz-form]", { timeout: 3000 });

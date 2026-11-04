@@ -4,6 +4,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const M301 = "courses/MATH-M 301 Fall 2026";
 const BLOCK = { kind: "quiz", title: "Eigenvalues practice", focus: "eigenvalues", count: 3, kinds: ["choice", "truefalse"], difficulty: "exam", sources: [M301] };
 const REPLY = `Here’s what I’ll put together: three questions on eigenvalues.\n\n\`\`\`phaethon-study\n${JSON.stringify(BLOCK)}\n\`\`\``;
@@ -12,15 +13,15 @@ const QUIZ = [
   { id: "q2", kind: "truefalse", prompt: "An eigenvector can be the zero vector.", choices: ["true", "false"], answer: "false", explanation: "Eigenvectors are nonzero." },
 ];
 const boxes = (page) =>
-  page.evaluate((S) => {
+  page.evaluate((S, N) => {
     const r = (el) => (el ? [...Object.values(el.getBoundingClientRect().toJSON())].slice(0, 4).map((n) => Math.round(n * 100) / 100) : null);
     const pane = document.querySelector(S);
     return JSON.stringify({
-      header: r(pane.querySelector("[data-space-header]")),
-      switcher: r(pane.querySelector("[data-view-switcher]")),
+      header: r(document.querySelector(`${N} [data-conversations-bar]`)),
+      switcher: r(document.querySelector(`${N} [data-view-switcher]`)),
       panel: r(pane.querySelector("[role=tabpanel][data-view-shown]")),
     });
-  }, SHOWN);
+  }, SHOWN, NAV);
 const waitFor = (page, fn, arg, timeout = 8000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
 
 export default [
@@ -36,8 +37,9 @@ export default [
       await page.waitForSelector(`${SHOWN} [data-study-action-make]`, { timeout: 6000 });
       await page.mouse.move(2, 400);
       const chat = await boxes(page);
+      check(Object.values(JSON.parse(chat)).every(Boolean), "the navigation controls and panel have boxes", chat);
       await page.click(`${SHOWN} [data-study-action-make]`);
-      const opened = await waitFor(page, (S) => document.querySelector(`${S} [data-view-tab="study"]`)?.getAttribute("aria-selected") === "true" && !!document.querySelector(`${S} [data-quiz-form]`), SHOWN);
+      const opened = await waitFor(page, ([S, N]) => document.querySelector(`${N} [data-view-tab="study"]`)?.getAttribute("aria-selected") === "true" && !!document.querySelector(`${S} [data-quiz-form]`), [SHOWN, NAV]);
       check(opened, "the quiz opens in Study");
       await h.idle();
       await page.mouse.move(2, 400);
@@ -45,7 +47,7 @@ export default [
       console.log(`     f14 generate: chat ${chat} -> study ${study}`);
       check(study === chat, "Study opens without moving the header, the switcher or the panel", `${chat} -> ${study}`);
       await h.shot("study");
-      await page.click(`${SHOWN} [data-view-tab="chat"]`);
+      await page.click(`${NAV} [data-view-tab="chat"]`);
       await h.idle();
       await page.mouse.move(2, 400);
       check((await boxes(page)) === chat, "and Chat is where it was");

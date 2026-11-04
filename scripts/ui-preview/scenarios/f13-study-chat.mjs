@@ -9,6 +9,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const CARD = `${SHOWN} [data-study-action]`;
 const waitFor = (page, fn, arg, timeout = 5000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
 const stateIs = (page, s) => waitFor(page, (s) => document.querySelector("[data-space-pane][data-shown] [data-study-action]")?.getAttribute("data-study-action") === s, s);
@@ -180,7 +181,7 @@ export default [
       check(running.role === "status" && running.stop && running.focus, "progress is said politely, Stop takes focus", JSON.stringify(running));
       await h.shot("running");
       // Done: Study shows the quiz, focus on the first question.
-      const opened = await waitFor(page, (S) => document.querySelector(`${S} [data-view-tab="study"]`)?.getAttribute("aria-selected") === "true" && !!document.querySelector(`${S} [data-quiz-form]`), SHOWN, 8000);
+      const opened = await waitFor(page, ([S, N]) => document.querySelector(`${N} [data-view-tab="study"]`)?.getAttribute("aria-selected") === "true" && !!document.querySelector(`${S} [data-quiz-form]`), [SHOWN, NAV], 8000);
       check(opened, "when it is made, Study opens on the quiz");
       await waitFor(page, () => document.activeElement?.closest("[data-question]")?.getAttribute("data-question") === "q1");
       const q = await page.evaluate(() => ({
@@ -210,7 +211,7 @@ export default [
       check(st.makes[0].question === QUESTION && st.makes[0].reply.includes("6 questions") && st.makes[0].reply.includes("phaethon-study"), "the question and the reply go along as context", JSON.stringify(st.makes[0]).slice(0, 200));
       await h.shot("quiz");
       // Back in Chat the card offers Open quiz, and it opens the same quiz without making another.
-      await page.click(`${SHOWN} [data-view-tab="chat"]`);
+      await page.click(`${NAV} [data-view-tab="chat"]`);
       check(await stateIs(page, "done"), "the card shows it was made", await cardState(page));
       const label = await page.evaluate((C) => document.querySelector(`${C} [data-study-action-open]`)?.textContent.trim(), CARD);
       check(label === "Open quiz", "the card offers Open quiz", label);
@@ -303,8 +304,8 @@ export default [
       },
     }),
     async run(page, h) {
-      await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-      await page.click(`${SHOWN} [data-view-tab="study"]`);
+      await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+      await page.click(`${NAV} [data-view-tab="study"]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
       await page.waitForSelector(`${SHOWN} [data-quiz-form] .katex`, { timeout: 4000 });

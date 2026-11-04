@@ -7,6 +7,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter((c) => c[0] === cmd).map((c) => c[1]), cmd);
 const chord = async (page, keys) => {
@@ -29,8 +30,8 @@ const tabTo = async (page, sel, max = 60) => {
 };
 const status = (page, sel) => page.evaluate((s) => document.querySelector(s)?.textContent ?? "", sel);
 const openStudy = async (page) => {
-  await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-  await page.click(`${SHOWN} [data-view-tab="study"]`);
+  await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+  await page.click(`${NAV} [data-view-tab="study"]`);
   await page.waitForSelector(`${SHOWN} [data-study-hub]`, { timeout: 3000 });
 };
 
@@ -99,9 +100,9 @@ export default [
     async run(page, h) {
       await openStudy(page);
       await h.waitText("cards due today");
-      const hub = await page.evaluate((S) => {
+      const hub = await page.evaluate((S, N) => {
         const root = document.querySelector(`${S} [data-study-hub]`);
-        const tab = document.querySelector(`${S} [data-view-tab="study"]`);
+        const tab = document.querySelector(`${N} [data-view-tab="study"]`);
         const panel = document.getElementById(tab.getAttribute("aria-controls"));
         return {
           due: root.querySelector("[data-due-count]")?.textContent,
@@ -112,7 +113,7 @@ export default [
           panelOk: panel?.getAttribute("role") === "tabpanel" && panel.contains(root),
           chatHidden: document.querySelector(`${S} [data-space-view="chat"]`)?.inert,
         };
-      }, SHOWN);
+      }, SHOWN, NAV);
       check(hub.due === "3 cards due today", "the hub says how many cards are due", hub.due);
       check(hub.streak?.includes("3 days in a row"), "the streak is in words", hub.streak);
       check(hub.decks.length === 2 && hub.decks[0].includes("40% known") && hub.decks[0].includes("3 due · 3 new · 5 cards"), "a deck row has mastery in words and its counts", hub.decks[0]);
@@ -130,20 +131,21 @@ export default [
       const COMPOSER = "[data-composer-input]";
       await page.waitForSelector(COMPOSER, { timeout: 5000 });
       // Arrow keys move along the tabs and show each view.
-      await page.focus(`${SHOWN} [data-view-tab="chat"]`);
-      await page.keyboard.press("ArrowRight");
+      const forward = await page.$eval(`${NAV} [data-view-switcher]`, (el) => el.getAttribute("aria-orientation") === "vertical" ? "ArrowDown" : "ArrowRight");
+      await page.focus(`${NAV} [data-view-tab="chat"]`);
+      await page.keyboard.press(forward);
       await waitFor(page, () => document.activeElement?.getAttribute("data-view-tab") === "study");
       let at = await page.evaluate(() => document.activeElement?.getAttribute("data-view-tab"));
-      check(at === "study" && !!(await page.$(`${SHOWN} [data-study-hub]`)), "ArrowRight goes to Study and shows it", at);
+      check(at === "study" && !!(await page.$(`${SHOWN} [data-study-hub]`)), `${forward} goes to Study and shows it`, at);
       await page.keyboard.press("End");
       await waitFor(page, () => document.activeElement?.getAttribute("data-view-tab") === "plan");
       at = await page.evaluate(() => document.activeElement?.getAttribute("data-view-tab"));
       check(at === "plan", "End goes to Plan", at);
-      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press(forward);
       await waitFor(page, () => document.activeElement?.getAttribute("data-view-tab") === "chat");
       at = await page.evaluate(() => document.activeElement?.getAttribute("data-view-tab"));
-      check(at === "chat", "ArrowRight from the last wraps to Chat", at);
-      const roving = await page.evaluate((S) => [...document.querySelectorAll(`${S} [role=tab]`)].map((t) => t.tabIndex).join(","), SHOWN);
+      check(at === "chat", `${forward} from the last wraps to Chat`, at);
+      const roving = await page.evaluate((S) => [...document.querySelectorAll(`${S} [role=tab]`)].map((t) => t.tabIndex).join(","), NAV);
       check(roving === "0,-1,-1,-1", "only the selected tab is in the Tab order", roving);
       // Option+Cmd+2: Study, its heading takes focus.
       await page.focus(COMPOSER);
@@ -163,7 +165,7 @@ export default [
       check(await waitFor(page, () => document.activeElement?.matches("[data-study-hub] h2")), "Open Study shows Study with its heading focused");
       // Cmd+N from Study goes back to Chat and starts a new conversation there.
       await chord(page, ["Meta", "n"]);
-      check(await waitFor(page, (S) => document.querySelector(`${S} [data-view-tab="chat"]`)?.getAttribute("aria-selected") === "true", SHOWN), "Cmd+N from Study goes back to Chat");
+      check(await waitFor(page, (S) => document.querySelector(`${S} [data-view-tab="chat"]`)?.getAttribute("aria-selected") === "true", NAV), "Cmd+N from Study goes back to Chat");
       // The shortcuts sheet lists the view shortcut.
       await chord(page, ["Meta", "/"]);
       await h.waitText("Chat, Study, Grades or Plan");

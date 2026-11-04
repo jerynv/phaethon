@@ -8,6 +8,7 @@
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
+const NAV = ":is(#spaces-sidebar:not([hidden]), [data-space-pane][data-shown])";
 const D = "[data-make-dialog]";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const waitFor = (page, fn, arg, timeout = 4000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
@@ -62,8 +63,8 @@ const tabTo = async (page, sel, max = 40) => {
   throw new Error(`Tab never reached ${sel}`);
 };
 async function openMake(page, kind) {
-  await page.waitForSelector(`${SHOWN} [data-view-tab="study"]`, { timeout: 5000 });
-  await page.click(`${SHOWN} [data-view-tab="study"]`);
+  await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
+  await page.click(`${NAV} [data-view-tab="study"]`);
   await page.waitForSelector(`${SHOWN} [data-study-hub] [data-make="${kind}"]`, { timeout: 5000 });
   await page.focus(`${SHOWN} [data-study-hub] [data-make="${kind}"]`);
   await page.keyboard.press("Enter");

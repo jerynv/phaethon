@@ -538,7 +538,7 @@ export default function App() {
       {/* data-inactive: the window lost focus, so the chrome and the sidebar selection dim, as native windows do. */}
       <div
         data-inactive={focused ? undefined : ""}
-        className="group/app flex h-dvh flex-col overflow-hidden bg-surface text-ink"
+        className="group/app flex h-dvh flex-col overflow-hidden bg-bg text-ink"
       >
         <a
           href="#main"
@@ -580,15 +580,7 @@ export default function App() {
             aria-labelledby="space-title"
             // Behind the overlaid sidebar the conversation is out of reach until it closes.
             inert={overlay}
-            className={cn(
-              "relative me-(--ph-pane-inset) mb-(--ph-pane-inset) flex min-w-0 flex-1 flex-col overflow-hidden",
-              "rounded-lg border border-line bg-bg shadow-sm",
-              // A short fade under the pane's top edge, so scrolled text eases out instead of being
-              // sliced. Not over a focused conversation log, whose ring must show whole.
-              "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-4 before:bg-linear-to-b before:from-bg before:to-transparent",
-              "forced-colors:before:hidden has-[[role=log]:focus-visible]:before:hidden",
-              !sidebar.docked && "ms-(--ph-pane-inset)",
-            )}
+            className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-bg"
           >
             {mounted.map((s) => {
               const shown = s.id === active?.id;

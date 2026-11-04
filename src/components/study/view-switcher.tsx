@@ -36,7 +36,7 @@ export function ViewSwitcher({ space, spaceName, view }: { space: string; spaceN
       aria-label={`${spaceName} views`}
       data-view-switcher=""
       onKeyDown={onKey}
-      className="flex shrink-0 items-center gap-0.5 rounded-lg bg-surface-sunken p-0.5 forced-colors:border forced-colors:border-[CanvasText]"
+      className="flex shrink-0 items-center gap-0.5"
     >
       {VIEWS.map((v) => {
         const selected = v.id === view;
@@ -55,10 +55,11 @@ export function ViewSwitcher({ space, spaceName, view }: { space: string; spaceN
                 data-view-tab={v.id}
                 onClick={() => setSpaceView(space, v.id)}
                 className={cn(
-                  "min-h-(--ph-control-height-sm) cursor-default rounded-md px-2.5 py-0.5 text-base leading-tight font-medium select-none",
+                  // Quiet text tabs, selected as a sidebar row is: no track, no raised chip.
+                  "min-h-(--ph-control-height-sm) cursor-default rounded-md border border-transparent px-2 py-0.5 text-base leading-tight font-medium select-none",
                   "transition-[color,background-color] duration-(--ph-duration-fast) ease-out",
                   selected
-                    ? "bg-raised text-ink shadow-sm forced-colors:border-2 forced-colors:border-[Highlight]"
+                    ? "bg-selected text-ink forced-colors:border-[Highlight]"
                     : "text-ink-secondary hover:bg-hover hover:text-ink",
                 )}
               >

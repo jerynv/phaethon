@@ -321,16 +321,13 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
 
   return (
     <div data-space-pane={space.id} className="relative flex min-h-0 flex-1 flex-col">
-      {/* The space's header: its views, then which conversation, on one row while there is room. It has one
-          geometry in every view: outside Chat the conversations bar keeps its place (and its state), out of
-          sight and inert, so switching views never moves the switcher or the view below it. */}
+      {/* The space's header, under the title bar's space name: its views, then which conversation, on one row
+          while there is room, closed by a hairline. It has one geometry in every view: outside Chat the
+          conversations bar keeps its place (and its state), out of sight and inert, so switching views never
+          moves the switcher or the view below it. */}
       <div
         data-space-header=""
-        className={cn(
-          "relative z-20 flex shrink-0 flex-wrap items-center gap-x-2 bg-bg ps-2",
-          "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:to-transparent",
-          "forced-colors:after:hidden [main:has([role=log]:focus-visible)_&]:after:hidden [&_[data-conversations-bar]]:after:hidden",
-        )}
+        className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-line bg-bg px-2 forced-colors:border-[CanvasText]"
       >
         <div className="py-1.5">
           <ViewSwitcher space={space.id} spaceName={space.name} view={view} />
@@ -347,7 +344,7 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
           </p>
           {/* The bar's notes (a refused switch, what a Clear kept) show here, at the top of the conversation,
               not in the header, so they never change the height of the header. */}
-          <div ref={setNotes} data-conversations-notes="" className="relative z-20 shrink-0 bg-bg" />
+          <div ref={setNotes} data-conversations-notes="" className="shrink-0 bg-bg" />
           {body}
         </>,
         rootRef,

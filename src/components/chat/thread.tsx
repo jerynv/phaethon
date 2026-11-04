@@ -55,6 +55,7 @@ import { RecordPart, announcesRecord, recordText } from "./receipts";
 import { CHAT_ACTION_LANGUAGES } from "./chat-actions";
 import { useFullAccess } from "@/lib/full-access";
 import { STUDY_ACTION_LANGUAGES } from "./study-action";
+import { setSpaceView } from "@/components/study/space-view";
 
 const Nothing = () => null;
 // A reply's ```phaethon-study block is drawn as a card with Generate (study-action.tsx),
@@ -126,7 +127,7 @@ function UserMessage() {
       role="article"
       aria-labelledby={headingId}
       data-role="user"
-      className="flex flex-col items-end gap-2"
+      className="group/message flex flex-col items-end gap-2"
     >
       <MessageHeading id={headingId}>You said</MessageHeading>
       <MessageAttachments />
@@ -299,7 +300,10 @@ function ReplyActions() {
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
-      className="flex flex-wrap items-center gap-2"
+      className={cn(
+        "flex flex-wrap items-center gap-2 transition-opacity duration-(--ph-duration-fast)",
+        !isLast && "opacity-0 group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
+      )}
       data-reply-actions=""
     >
       {hasText && (
@@ -440,7 +444,7 @@ function AssistantMessage() {
       role="article"
       aria-labelledby={headingId}
       data-role="assistant"
-      className="relative flex flex-col items-start gap-3"
+      className="group/message relative flex flex-col items-start gap-3"
     >
       <MessageHeading id={headingId}>Phaethon replied</MessageHeading>
       {hasContent && (
@@ -618,12 +622,6 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
       data-empty-state=""
       className="group/empty mx-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-4 text-center"
     >
-      <span
-        aria-hidden="true"
-        className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] shrink-0 items-center justify-center rounded-full bg-space-tint text-ink-secondary"
-      >
-        <Icon name="space" className="size-(--ph-icon-size-lg)" />
-      </span>
       <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
       <p className="max-w-md text-md text-ink-secondary" data-empty-reach="">
         {cli && full ? (
@@ -652,6 +650,16 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
         )}
       </p>
       <CoursesSuggestion spaceId={spaceId} />
+      <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Learning tools">
+        <Button type="button" variant="outline" size="sm" data-workspace-shortcut="study" onClick={() => setSpaceView(spaceId, "study", true)}>
+          <Icon name="book" />
+          Review flashcards
+        </Button>
+        <Button type="button" variant="outline" size="sm" data-workspace-shortcut="plan" onClick={() => setSpaceView(spaceId, "plan", true)}>
+          <Icon name="check" />
+          Plan your study
+        </Button>
+      </div>
     </div>
   );
 }
@@ -819,7 +827,7 @@ export function Thread({
               <div
                 className={cn(
                   "mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pb-4 has-[[data-empty-state]]:justify-center-safe",
-                  setupShown && isEmpty ? "pt-4" : "pt-8",
+                  setupShown && isEmpty ? "pt-4" : "pt-6",
                 )}
               >
                 {/* First run: the setup card leads, in place of the generic empty state. */}
@@ -828,7 +836,7 @@ export function Thread({
                     <EmptyState spaceId={spaceId} spaceName={spaceName} cli={cli} />
                   </AuiIf>
                 )}
-                <div className="flex flex-col gap-[calc(var(--ph-space)*7)] empty:hidden">
+                <div className="flex flex-col gap-6 empty:hidden">
                   <ThreadPrimitive.Messages>
                     {({ message }) =>
                       message.composer.isEditing ? (

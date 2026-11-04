@@ -32,6 +32,7 @@ import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elemen
 import { CoursesSuggestion } from "@/components/lms/courses-suggestion";
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
+import { WorkspaceEmpty } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { useComposeRequests } from "@/lib/compose";
 import { cliOf } from "@/lib/backend";
@@ -107,7 +108,7 @@ function EditAction() {
   const known = useKnownIndex(pane?.threadIndex ?? null, id);
   if (!known) return null;
   return (
-    <ActionBarPrimitive.Root hideWhenRunning className="flex justify-end">
+    <ActionBarPrimitive.Root hideWhenRunning className="flex justify-end opacity-0 transition-opacity duration-(--ph-duration-fast) group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
       <ActionBarPrimitive.Edit asChild>
         <Button type="button" variant="ghost" size="xs" className="text-ink-secondary hover:text-ink" data-edit-message={id}>
           <Icon name="edit" />
@@ -127,13 +128,13 @@ function UserMessage() {
       role="article"
       aria-labelledby={headingId}
       data-role="user"
-      className="group/message flex flex-col items-end gap-2"
+      className="group/message flex flex-col items-end gap-1"
     >
       <MessageHeading id={headingId}>You said</MessageHeading>
       <MessageAttachments />
       {hasText && (
-        // A transparent border: forced-colours mode draws it, so the bubble keeps its boundary.
-        <div className="max-w-(--ph-message-max-width) min-w-0 rounded-xl rounded-ee-sm border border-transparent bg-bubble px-4 py-2.5 text-md text-ink wrap-break-word">
+        // Forced colours preserve a boundary when backgrounds disappear.
+        <div className="max-w-(--ph-message-max-width) min-w-0 rounded-(--ph-composer-radius) border border-transparent bg-bubble p-3 text-md text-ink wrap-break-word">
           <MessagePrimitive.Parts components={USER_PARTS} />
         </div>
       )}
@@ -184,7 +185,7 @@ function UserEditComposer() {
       <MessageHeading id={headingId}>Editing your message</MessageHeading>
       <ComposerPrimitive.Root
         aria-label="Edit your message"
-        className="flex w-full max-w-(--ph-message-max-width) flex-col gap-2 rounded-xl border border-ink-tertiary bg-raised p-2 shadow"
+        className="flex w-full max-w-(--ph-message-max-width) flex-col gap-2 rounded-(--ph-composer-radius) border border-ink-tertiary bg-raised p-2 shadow"
       >
         <ComposerPrimitive.Input
           ref={inputRef}
@@ -301,7 +302,7 @@ function ReplyActions() {
     <ActionBarPrimitive.Root
       hideWhenRunning
       className={cn(
-        "flex flex-wrap items-center gap-2 transition-opacity duration-(--ph-duration-fast)",
+        "-ms-1.5 flex flex-wrap items-center gap-1 transition-opacity duration-(--ph-duration-fast) [&_.ui-button-face]:gap-1 [&_.ui-button-face]:px-1.5",
         !isLast && "opacity-0 group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
       )}
       data-reply-actions=""
@@ -309,7 +310,7 @@ function ReplyActions() {
       {hasText && (
         <ActionBarPrimitive.Copy asChild>
           {/* The visible label says what it copies, so voice control and the spoken name agree. */}
-          <Button type="button" variant="ghost" size="xs" className="-ms-2 text-ink-secondary hover:text-ink" data-copy-reply="">
+          <Button type="button" variant="ghost" size="xs" className="text-ink-secondary hover:text-ink" data-copy-reply="">
             <Icon name={copied ? "check" : "copy"} className="size-(--ph-icon-size-sm)" />
             {copied ? "Copied reply" : "Copy reply"}
           </Button>
@@ -444,7 +445,7 @@ function AssistantMessage() {
       role="article"
       aria-labelledby={headingId}
       data-role="assistant"
-      className="group/message relative flex flex-col items-start gap-3"
+      className="group/message relative flex flex-col items-start gap-2"
     >
       <MessageHeading id={headingId}>Phaethon replied</MessageHeading>
       {hasContent && (
@@ -618,12 +619,11 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
   return (
     // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
     // starts at the top and scrolls, never clipped above the log.
-    <div
+    <WorkspaceEmpty
       data-empty-state=""
-      className="group/empty mx-auto flex max-w-(--ph-measure) flex-col items-center gap-2 px-4 py-4 text-center"
-    >
-      <h2 className="text-xl font-semibold text-ink">Start a conversation in {spaceName}</h2>
-      <p className="max-w-md text-md text-ink-secondary" data-empty-reach="">
+      className="group/empty w-full"
+      title={<span role="heading" aria-level={2}>Start a conversation in {spaceName}</span>}
+      description={<span className="block max-w-prose" data-empty-reach="">
         {cli && full ? (
           // Full access (full_access.rs): no walls, so none are promised.
           <>
@@ -648,19 +648,20 @@ function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: s
             reads another space.
           </>
         )}
-      </p>
+      </span>}
+    >
       <CoursesSuggestion spaceId={spaceId} />
-      <div className="mt-3 flex flex-wrap justify-center gap-2" aria-label="Learning tools">
-        <Button type="button" variant="outline" size="sm" data-workspace-shortcut="study" onClick={() => setSpaceView(spaceId, "study", true)}>
+      <div className="flex flex-wrap items-center gap-2" aria-label="Learning tools">
+        <Button type="button" variant="link" size="sm" data-workspace-shortcut="study" onClick={() => setSpaceView(spaceId, "study", true)}>
           <Icon name="book" />
           Review flashcards
         </Button>
-        <Button type="button" variant="outline" size="sm" data-workspace-shortcut="plan" onClick={() => setSpaceView(spaceId, "plan", true)}>
+        <Button type="button" variant="link" size="sm" data-workspace-shortcut="plan" onClick={() => setSpaceView(spaceId, "plan", true)}>
           <Icon name="check" />
           Plan your study
         </Button>
       </div>
-    </div>
+    </WorkspaceEmpty>
   );
 }
 
@@ -826,7 +827,7 @@ export function Thread({
               <ViewportBridge onStore={keepViewport} />
               <div
                 className={cn(
-                  "mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-6 pb-4 has-[[data-empty-state]]:justify-center-safe",
+                  "mx-auto flex w-full max-w-(--ph-thread-width) flex-1 flex-col px-(--ph-thread-gutter) pb-4 has-[[data-empty-state]]:justify-center-safe",
                   setupShown && isEmpty ? "pt-4" : "pt-6",
                 )}
               >

@@ -3,6 +3,7 @@ import { useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
+import { WorkspaceSection } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +16,7 @@ const CHOICES: Record<Exclude<keyof TimerSettings, "sound">, number[]> = {
 };
 
 /**
- * The focus timer's card: the time left in the phase (role "timer", not read
+ * The focus timer: the time left in the phase (role "timer", not read
  * out every second), start or pause, skip, reset, and its lengths and sound.
  * Phase changes are announced by the store, wherever you are in the app.
  */
@@ -24,20 +25,19 @@ export function FocusTimer({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
   const id = useId();
   const left = remaining(t);
   const total = minutesOf(t.settings, t.phase) * 60_000;
-  const H = headingLevel === 2 ? "h2" : "h3";
   const fresh = !t.running && left === total;
   const onBreak = t.phase !== "focus";
 
   return (
-    <section aria-labelledby={`${id}-h`} className="flex flex-col gap-3 rounded-xl border border-line bg-raised p-5 shadow-sm" data-focus-timer="">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <H id={`${id}-h`} className="text-lg font-semibold text-ink">
-          Focus timer
-        </H>
-        <p className="text-sm text-ink-secondary" data-focus-rounds="">
+    <WorkspaceSection
+      title="Focus timer"
+      titleId={`${id}-h`}
+      headingAs={headingLevel === 2 ? "h2" : "h3"}
+      data-focus-timer=""
+      actions={<p className="text-sm text-ink-secondary" data-focus-rounds="">
           {t.rounds === 0 ? "No focus sessions done yet" : `${t.rounds} focus session${t.rounds === 1 ? "" : "s"} done`}
-        </p>
-      </div>
+      </p>}
+    >
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <div className="flex flex-col">
           <p className={cn("text-sm font-semibold", onBreak ? "text-success-ink" : "text-accent-ink")} data-focus-phase={t.phase}>
@@ -53,12 +53,12 @@ export function FocusTimer({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {t.running ? (
-            <Button type="button" onClick={pause} data-focus-toggle="pause">
+            <Button type="button" variant="outline" onClick={pause} data-focus-toggle="pause">
               <Icon name="pause" />
               Pause
             </Button>
           ) : (
-            <Button type="button" onClick={() => start()} data-focus-toggle="start">
+            <Button type="button" variant="outline" onClick={() => start()} data-focus-toggle="start">
               <Icon name="play" />
               {fresh ? (onBreak ? "Start break" : "Start focus") : "Resume"}
             </Button>
@@ -112,6 +112,6 @@ export function FocusTimer({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
         </label>
         <p className="text-sm text-ink-secondary">Every fourth break is a long one. The timer keeps going while you use the rest of Phaethon, and says when a phase ends.</p>
       </Details>
-    </section>
+    </WorkspaceSection>
   );
 }

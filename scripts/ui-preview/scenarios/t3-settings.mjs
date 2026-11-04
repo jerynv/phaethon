@@ -3,6 +3,7 @@
 //   t3-undo           Remove in Settings › Spaces has Undo, kept until Settings closes (jordan3)
 //   t3-incoming       each space lists which other spaces can read it (sam3)
 //   t3-radios         the assistant radios are named by their title alone (maya N3)
+//   t3-bounded        Settings leaves the workspace visible and its footer entry aligns left
 //   t3-words          MANUAL.md and the .phaethon folders explained in plain words (linda9)
 //   t3-cli-missing    Claude Code not installed: say how to install, don't switch (linda6)
 //   t3-cli-installed  installed: the radio switches as before
@@ -35,6 +36,40 @@ const sliderBy = (page, label) =>
 const CAL = { id: "g-cal", from: "work", path: "calendar", created: "2026-10-09T15:20:00Z", scope: "always" };
 
 export default [
+  {
+    name: "t3-bounded",
+    sizes: [[1100, 720], [640, 480]],
+    sizesRequired: true,
+    themes: ["light", "dark"],
+    mock: { settings: SETTINGS, threads: {} },
+    async run(page, h) {
+      await page.waitForSelector('[data-testid="open-settings"]');
+      const sidebar = await page.$eval('[data-testid="open-settings"]', (button) => ({ id: button.closest('nav').id, visible: button.getClientRects().length > 0 }));
+      if (!sidebar.visible) await h.click(`button[aria-controls="${sidebar.id}"]`);
+      const footer = await page.$eval('[data-testid="open-settings"]', (button) => {
+        const face = button.querySelector('.ui-button-face');
+        const icon = button.querySelector('svg');
+        return { justify: getComputedStyle(face).justifyContent, inset: icon.getBoundingClientRect().left - button.getBoundingClientRect().left, iconWidth: icon.getBoundingClientRect().width };
+      });
+      check(footer.justify === "flex-start" && footer.inset <= footer.iconWidth + 2, "the Settings entry aligns its Vic face and icon to the navigation rail", JSON.stringify(footer));
+      await page.click('[data-testid="open-settings"]');
+      await page.waitForSelector('[role="dialog"] h3');
+      await h.idle();
+      const bounds = await page.evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"]').getBoundingClientRect();
+        const close = document.querySelector('[aria-label="Close settings"]').getBoundingClientRect();
+        const panel = document.querySelector('[role="dialog"] [role="tabpanel"]:not([hidden])');
+        return { left: dialog.left, top: dialog.top, right: dialog.right, bottom: dialog.bottom, width: dialog.width, height: dialog.height, viewport: [innerWidth, innerHeight], scale: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ph-ui-scale')), closeIn: close.left >= dialog.left && close.top >= dialog.top && close.right <= dialog.right && close.bottom <= dialog.bottom, scrollable: panel.scrollHeight > panel.clientHeight && panel.clientHeight > 100 };
+      });
+      check(bounds.left >= 15 && bounds.top >= 15 && bounds.right <= bounds.viewport[0] - 15 && bounds.bottom <= bounds.viewport[1] - 15, "Settings leaves a visible workspace margin on every side", JSON.stringify(bounds));
+      check(bounds.width <= 960 * bounds.scale && bounds.height <= 700 * bounds.scale, "Settings stays within its desktop size limits at the chosen text size", JSON.stringify(bounds));
+      check(bounds.closeIn && bounds.scrollable, "Close stays visible while the Settings content scrolls", JSON.stringify(bounds));
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+      await page.waitForFunction(() => document.activeElement === document.querySelector('[data-testid="open-settings"]'));
+      check(await page.$eval('[data-testid="open-settings"]', (button) => document.activeElement === button), "Escape returns focus to the Settings entry");
+    },
+  },
   {
     name: "t3-undo",
     sizes: [[1100, 720]],

@@ -1,9 +1,10 @@
 import { AlertDialog } from "radix-ui";
+import { DialogSurface, DialogHeading, DialogActions } from "vic-ui";
 import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -115,16 +116,18 @@ export function WizardDialogContent({
         </Button>
         <AlertDialog.Root open={asking} onOpenChange={setAsking}>
           <AlertDialog.Portal>
-            <AlertDialog.Overlay className="fixed inset-0 z-50 bg-(--ph-overlay)" />
-            <AlertDialog.Content
+            <AlertDialog.Overlay className="fixed inset-0 z-50 bg-(--ph-overlay) data-[state=closed]:pointer-events-none!" />
+            <DialogSurface asChild><AlertDialog.Content
               onCloseAutoFocus={(e) => discarding.current && e.preventDefault()}
               data-wizard-discard=""
-              className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-var(--ph-space)*8)] max-w-(--ph-measure) -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-xl border border-line bg-raised p-5 text-ink shadow-lg outline-none"
+              className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-var(--ph-space)*8)] max-w-(--ph-measure) -translate-x-1/2 -translate-y-1/2 flex-col gap-3 m-0! p-5! outline-none"
             >
-              <AlertDialog.Title className="text-lg leading-tight font-semibold">{discard.title}</AlertDialog.Title>
-              <AlertDialog.Description className="text-base text-ink-secondary">{discard.body}</AlertDialog.Description>
+              <DialogHeading className="p-0!">
+              <AlertDialog.Title className="ui-dialog-title">{discard.title}</AlertDialog.Title>
+              <AlertDialog.Description className="ui-dialog-description">{discard.body}</AlertDialog.Description>
+              </DialogHeading>
               {/* Radix puts focus on Keep going: Enter or Escape never discards by accident. */}
-              <div className="flex flex-wrap justify-end gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*4))] gap-y-2 pt-1">
+              <DialogActions className="-mx-5 -mb-5 mt-1 gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*4))] gap-y-2 px-5! py-3!">
                 <AlertDialog.Cancel asChild>
                   <Button type="button" variant="outline" data-wizard-keep="">
                     Keep going
@@ -141,8 +144,8 @@ export function WizardDialogContent({
                     Discard
                   </Button>
                 </AlertDialog.Action>
-              </div>
-            </AlertDialog.Content>
+              </DialogActions>
+            </AlertDialog.Content></DialogSurface>
           </AlertDialog.Portal>
         </AlertDialog.Root>
       </DialogContent>
@@ -203,12 +206,12 @@ export function WizardHeader({
   const at = steps.findIndex((s) => s.id === current);
   const labelId = useId();
   const first = useRef(true);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (first.current) {
       first.current = false;
       return;
     }
-    if (autoFocus) requestAnimationFrame(() => titleRef.current?.focus());
+    if (autoFocus) titleRef.current?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, titleRef]);
   const numbered = at >= 0 && steps.length > 1;

@@ -11,7 +11,7 @@ export const ICON_NAMES = [
   // files and media
   "file", "file-text", "file-plus", "image", "image-off", "video", "audio", "folder", "folder-plus", "book",
   // agent
-  "thinking", "tool", "agent", "spinner", "voice", "mic", "phone",
+  "thinking", "tool", "agent", "chat", "new-chat", "spinner", "voice", "mic", "phone",
   // feedback and state
   "info", "warning", "error", "success", "shield", "lock", "key", "link",
   "thumbs-up", "thumbs-down",

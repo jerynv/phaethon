@@ -96,10 +96,11 @@ export default [
         return {
           inset: header.getBoundingClientRect().left - panel.getBoundingClientRect().left,
           align: getComputedStyle(header).textAlign,
-          fillsWindow: Math.abs(dialog.left) < 1 && Math.abs(dialog.top) < 1 && Math.abs(dialog.width - innerWidth) < 1 && Math.abs(dialog.height - innerHeight) < 1,
+          marginX: Math.min(dialog.left, innerWidth - dialog.right),
+          marginY: Math.min(dialog.top, innerHeight - dialog.bottom),
         };
       });
-      check(position.fillsWindow, "settings uses the full window", position);
+      check(position.marginX >= 12 && position.marginY >= 12, "settings stays in a bounded panel with room around it", position);
       check(position.inset >= 12 && position.inset <= 40 && position.align !== "center", "settings content begins at a consistent left inset", position);
     },
   },

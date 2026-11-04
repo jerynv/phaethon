@@ -259,7 +259,7 @@ export function SpacePane({ space, reloadKey, onConversationChosen }: { space: S
     );
   } else if ("error" in loaded) {
     body = (
-      <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-8">
+      <div className="mx-auto w-full max-w-(--ph-thread-width) px-(--ph-thread-gutter) pt-8">
         <div className="flex items-start gap-3 rounded-lg border border-transparent bg-danger-soft px-4 py-3 text-base text-ink">
           <Icon name="error" className="mt-0.5 text-danger-ink" />
           <div className="flex min-w-0 flex-1 flex-col gap-2">

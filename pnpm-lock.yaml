@@ -81,8 +81,8 @@ importers:
         specifier: ^0.4.13
         version: 0.4.13(tailwindcss@4.3.3)
       vic-ui:
-        specifier: file:vendor/vic-ui-a9764da.tgz
-        version: file:vendor/vic-ui-a9764da.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: file:vendor/vic-ui-f156af1.tgz
+        version: file:vendor/vic-ui-f156af1.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       zustand:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)
@@ -3856,8 +3856,8 @@ packages:
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
 
-  vic-ui@file:vendor/vic-ui-a9764da.tgz:
-    resolution: {integrity: sha512-u/sYYtcN/WVvKmZrfc1W9CUVzSb0L/LBZ2LrWNwUlMfsU5KLChkHzDowHReDGUbx56Wfj0NhaMf+hqeSdEPDgQ==, tarball: file:vendor/vic-ui-a9764da.tgz}
+  vic-ui@file:vendor/vic-ui-f156af1.tgz:
+    resolution: {integrity: sha512-AtT+Ud505c6lHijN75PL7RCwhaF/3LU5G0oYipfF5RDJjKjDhhBuMSdihDAL1/TShAc6Yy8OZ6UimuypGuvHmg==, tarball: file:vendor/vic-ui-f156af1.tgz}
     version: 0.1.0
     engines: {node: '>=22'}
     peerDependencies:
@@ -8153,7 +8153,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vic-ui@file:vendor/vic-ui-a9764da.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
+  vic-ui@file:vendor/vic-ui-f156af1.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:
       '@floating-ui/dom': 1.8.0
       react: 19.3.0

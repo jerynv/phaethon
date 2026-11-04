@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "vic-ui";
-import { DropdownMenu } from "radix-ui";
+import { DropdownMenu } from "@/components/ui/menu";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { ModelSearch } from "@/components/settings/model-search";
@@ -570,7 +570,7 @@ function anthropicHint(id: string): string | undefined {
 }
 
 const MENU =
-  "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(19rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-xl border border-line bg-raised p-1.5 text-ink shadow-lg outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
+  "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(19rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
 const GROUP_LABEL = "px-2.5 pt-2 pb-1 text-sm font-medium text-ink-secondary";
 
 function Separator() {

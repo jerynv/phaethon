@@ -342,7 +342,7 @@ function Frame({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("mx-auto flex w-full flex-col gap-4 px-6 py-5", wide ? "max-w-(--ph-thread-width)" : "max-w-(--ph-measure)")}>
+    <div className={cn("mx-auto flex w-full flex-col gap-4 px-(--ph-thread-gutter) py-5", wide ? "max-w-(--ph-thread-width)" : "max-w-(--ph-measure)")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 ref={headingRef} tabIndex={-1} className="min-w-0 text-xl font-semibold wrap-break-word text-ink" data-view-focus="">
           {title}

@@ -324,7 +324,7 @@ export const TOKENS: readonly TokenSpec[] = [
     step: 1,
     default: 0,
     format: (v) => (v ? "On" : "Off"),
-    derive: (v): Record<string, string> => (v ? { "--ph-thread-width": "var(--ph-thread-width-wide)" } : {}),
+    derive: (v): Record<string, string> => (v ? { "--ph-thread-width": "var(--ph-thread-width-wide)", "--ph-measure": "100%" } : {}),
   },
   {
     name: "--ph-icon-stroke",

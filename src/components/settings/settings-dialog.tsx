@@ -1,5 +1,6 @@
 import { Dialog, Tabs } from "radix-ui";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { DialogSurface } from "vic-ui";
 
 import { Button } from "@/components/ui/button";
 import { IconTip } from "@/components/ui/tooltip";
@@ -52,7 +53,7 @@ function canTakeFocus(el: HTMLElement | null): el is HTMLElement {
 
 /**
  * The settings window: a list of sections on the left, the chosen section on
- * the right (the macOS System Settings pattern). A modal Radix dialog: Escape
+ * the right, bounded above the workspace. A modal Radix dialog: Escape
  * closes it and focus returns to the trigger. Sections are a vertical tab
  * list: Up/Down move between them, Tab moves into the page.
  *
@@ -287,15 +288,15 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         <Button
           variant="ghost"
           data-testid="open-settings"
-          className="h-auto min-h-(--ph-control-height-lg) w-full justify-start gap-2.5 px-2.5 text-base font-normal text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink"
+          className="h-auto min-h-(--ph-control-height) w-full text-base font-normal text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2.5 [&>.ui-button-face]:px-2 [&_svg]:size-(--ph-icon-size-sm)"
         >
           <Icon name="settings" />
           Settings
         </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-(--ph-overlay) duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-        <Dialog.Content
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-(--ph-overlay) duration-(--ph-duration) data-[state=closed]:pointer-events-none! data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <DialogSurface asChild><Dialog.Content
           ref={contentRef}
           aria-describedby={descId}
           // Radix hides the background with aria-hidden only; say it is modal too.
@@ -310,7 +311,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
             if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
           }}
           className={cn(
-            "fixed inset-0 z-50 flex h-dvh w-full overflow-clip bg-bg text-ink outline-none",
+            "fixed top-1/2 left-1/2 z-50 m-0! flex h-[min(var(--ph-settings-height),calc(100dvh-48px))] w-[min(var(--ph-settings-width),calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-clip p-0! text-ink outline-none max-sm:h-[min(var(--ph-settings-height),calc(100dvh-32px))] max-sm:w-[calc(100%-32px)]",
             "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           )}
         >
@@ -320,15 +321,15 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                 value={section}
                 onValueChange={choose}
                 orientation="vertical"
-                className="flex min-w-0 flex-1 max-md:flex-col"
+                className="flex min-h-0 min-w-0 flex-1 max-md:flex-col"
               >
                 {/* Below 768 px the section list sits above the page and wraps, so no section hides off-screen.
                     It is kept compact there (title beside the tabs, no icons, shorter tabs), so at a large
                     text size the page keeps most of the height. */}
-                <div className="flex w-(--ph-settings-nav-width) shrink-0 flex-col border-r border-line bg-surface max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:border-r-0 max-md:border-b max-md:py-1.5 max-md:ps-3 max-md:pe-(--ph-settings-close-room)">
-                  <Dialog.Title className="px-5 pt-5 pb-1 text-lg font-semibold text-ink max-md:p-0 max-md:ps-1.5">Settings</Dialog.Title>
-                  <Dialog.Description id={descId} className="px-5 pb-4 text-sm text-ink-secondary max-md:sr-only">Changes apply as you make them and are saved in your Phaethon folder.</Dialog.Description>
-                  <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2.5 max-md:flex-row max-md:flex-wrap max-md:px-0">
+                <div className="flex min-h-0 w-(--ph-settings-nav-width) shrink-0 flex-col overflow-y-auto border-e border-line bg-surface max-md:max-h-[45%] max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:border-e-0 max-md:border-b max-md:py-1 max-md:ps-3 max-md:pe-(--ph-settings-close-room)">
+                  <Dialog.Title className="px-4 pt-5 pb-5 text-base font-semibold text-ink max-md:p-0 max-md:ps-1">Settings</Dialog.Title>
+                  <Dialog.Description id={descId} className="sr-only">Changes apply as you make them and are saved in your Phaethon folder.</Dialog.Description>
+                  <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2 max-md:flex-row max-md:flex-wrap max-md:px-0">
                     {SECTIONS.map((s) => (
                       <Tabs.Trigger
                         key={s.id}
@@ -337,25 +338,25 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                         // Radix activates on mousedown; click also covers pointer tools that send only clicks.
                         onClick={() => choose(s.id)}
                         className={cn(
-                          "flex min-h-(--ph-control-height-lg) shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-base text-ink-secondary transition-colors duration-(--ph-duration-fast)",
+                          "flex min-h-(--ph-control-height) shrink-0 items-center gap-2.5 rounded-md px-2 text-start text-base text-ink-secondary transition-colors duration-(--ph-duration-fast)",
                           "max-md:min-h-(--ph-control-height-sm) max-md:px-2 max-md:[&_svg]:hidden",
                           "hover:bg-hover hover:text-ink",
-                          "data-[state=active]:bg-selected data-[state=active]:font-medium data-[state=active]:text-ink data-[state=active]:[&_svg]:text-accent-ink",
+                          "data-[state=active]:bg-selected data-[state=active]:font-medium data-[state=active]:text-ink",
                         )}
                       >
-                        <Icon name={s.icon} />
+                        <Icon name={s.icon} className="size-(--ph-icon-size-sm)" />
                         {s.label}
                       </Tabs.Trigger>
                     ))}
                   </Tabs.List>
-                  <div className="mt-auto flex flex-col gap-1.5 px-5 pt-4 pb-5 text-sm text-ink-secondary max-md:hidden">
+                  <div className="mt-auto flex flex-col gap-1.5 px-4 pt-4 pb-4 text-xs text-ink-secondary max-md:hidden">
                     <SaveIndicator />
                   </div>
                 </div>
 
                 <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                   {error && (
-                    <div role="alert" className="ms-8 me-(--ph-settings-close-room) mt-5 flex max-md:me-8 items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-ink">
+                    <div role="alert" className="ms-6 me-(--ph-settings-close-room) mt-5 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-ink">
                       <Icon name="error" className="mt-0.5" />
                       <span className="min-w-0 flex-1">{error}</span>
                       <Button
@@ -378,7 +379,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       // A tab stop (Radix), so the page scrolls by keyboard. Keep its ring inside the panel.
                       className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:[outline-offset:calc(-1*(var(--ph-focus-width)+var(--ph-focus-offset)))]! data-[state=inactive]:hidden"
                     >
-                      <div className="flex max-w-(--ph-settings-content-width) flex-col gap-7 px-8 pt-6 pb-10 max-sm:px-6">
+                      <div className="flex w-full max-w-(--ph-settings-content-width) flex-col gap-6 px-6 pt-6 pb-8 max-sm:px-4">
                         {pages[s.id]}
                       </div>
                     </Tabs.Content>
@@ -400,7 +401,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
               </Dialog.Close>
             </IconTip>
           </StatusContext.Provider>
-        </Dialog.Content>
+        </Dialog.Content></DialogSurface>
       </Dialog.Portal>
     </Dialog.Root>
   );

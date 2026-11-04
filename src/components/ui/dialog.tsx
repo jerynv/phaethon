@@ -2,6 +2,7 @@
 import * as React from "react"
 import { cn } from "cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
+import { DialogSurface, DialogHeading, DialogActions } from "vic-ui"
 
 import { Button } from "@/components/ui/button"
 import { Icon } from "@/icons"
@@ -41,7 +42,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-(--ph-overlay)",
+        "fixed inset-0 z-50 bg-(--ph-overlay) data-[state=closed]:pointer-events-none!",
         "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
       )}
@@ -61,11 +62,11 @@ function DialogContent({
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
-      <DialogPrimitive.Content
+      <DialogSurface asChild><DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-var(--ph-space)*8)] w-[calc(100%-var(--ph-space)*8)] max-w-(--ph-dialog-width) -translate-x-1/2 -translate-y-1/2",
-          "ui-dialog ui-dialog-frame gap-4 overflow-y-auto m-0! p-5! outline-none",
+          "ui-dialog-frame gap-4 overflow-y-auto m-0! p-5! outline-none",
           "duration-(--ph-duration) ease-out data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",
           className
         )}
@@ -85,16 +86,16 @@ function DialogContent({
             </Button>
           </DialogPrimitive.Close>
         )}
-      </DialogPrimitive.Content>
+      </DialogPrimitive.Content></DialogSurface>
     </DialogPortal>
   )
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div
+    <DialogHeading
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-1 pe-[calc(var(--ph-control-height)+var(--ph-space)*2)] text-start", className)}
+      className={cn("p-0! pe-[calc(var(--ph-control-height)+var(--ph-space)*2)]! text-start", className)}
       {...props}
     />
   )
@@ -109,10 +110,10 @@ function DialogFooter({
   showCloseButton?: boolean
 }) {
   return (
-    <div
+    <DialogActions
       data-slot="dialog-footer"
       className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        "-mx-5 -mb-5 mt-1 flex-col-reverse px-5! py-3! sm:flex-row",
         className
       )}
       {...props}
@@ -123,7 +124,7 @@ function DialogFooter({
           <Button variant="outline">Close</Button>
         </DialogPrimitive.Close>
       )}
-    </div>
+    </DialogActions>
   )
 }
 

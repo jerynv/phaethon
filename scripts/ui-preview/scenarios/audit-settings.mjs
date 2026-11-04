@@ -817,14 +817,14 @@ export default [
         const got = await page.evaluate((p) => {
           const header = document.querySelector(`${p} [data-section-header]`);
           const desc = header.querySelector("p");
-          const action = header.lastElementChild;
+          const action = header.querySelector("button");
           const em = parseFloat(getComputedStyle(desc).fontSize);
           const hw = header.getBoundingClientRect().width;
           return {
             header: Math.round(hw),
             desc: Math.round(desc.getBoundingClientRect().width),
             want: Math.round(Math.min(24 * em, hw)),
-            actionBelow: action.getBoundingClientRect().top >= desc.getBoundingClientRect().bottom - 1,
+            actionBelow: !!action && action.getBoundingClientRect().top >= desc.getBoundingClientRect().bottom - 1,
             lines: Math.round(desc.getBoundingClientRect().height / parseFloat(getComputedStyle(desc).lineHeight)),
           };
         }, PANEL);

@@ -1,12 +1,12 @@
 import { Checkbox, NativeSelect } from "vic-ui";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { WorkspacePage } from "@/components/ui/workspace-page";
+import { WorkspacePage, WorkspacePageHeader, WorkspaceSection } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
@@ -113,12 +113,12 @@ export function PlanView({ space }: { space: Space }) {
   return (
     <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <WorkspacePage>
-        <header className="flex flex-col gap-0.5">
-          <h2 id={headingId} className="text-xl font-semibold text-ink">
-            Study plan
-          </h2>
-          <p className="text-sm text-ink-secondary">For {space.name}: from your exams and what’s due in your imported courses.</p>
-        </header>
+        <WorkspacePageHeader
+          title="Study plan"
+          description={<>For {space.name}: from your exams and what’s due in your imported courses.</>}
+          headingProps={{ id: headingId }}
+          actions={<Button type="button" onClick={() => void save()} data-plan-save=""><Icon name="download" />Save as plan.md</Button>}
+        />
         {error && (
           <div role="alert" className="flex flex-col items-start gap-2 rounded-lg bg-danger-soft px-4 py-3 text-base text-danger-ink">
             <p className="flex items-start gap-2">
@@ -142,24 +142,9 @@ export function PlanView({ space }: { space: Space }) {
           done={done}
           onState={(s) => void saveState(s)}
           onToggle={toggleDone}
-          onSave={() => void save()}
           saved={saved}
         />
       </WorkspacePage>
-    </section>
-  );
-}
-
-function Card({ title, id, children, extra, data }: { title: string; id: string; children: ReactNode; extra?: ReactNode; data: string }) {
-  return (
-    <section aria-labelledby={id} className="flex flex-col gap-3 border-t border-line pt-5" {...{ [`data-plan-${data}`]: "" }}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id={id} className="text-lg font-semibold text-ink">
-          {title}
-        </h3>
-        {extra}
-      </div>
-      {children}
     </section>
   );
 }
@@ -211,11 +196,11 @@ function Today({ space, sessions, due, done, onToggle, loading }: { space: strin
   const id = useId();
   const left = sessions.filter((s) => !done.has(s.id)).length;
   return (
-    <Card
+    <WorkspaceSection
       title="Today"
-      id={id}
-      data="today"
-      extra={sessions.length > 0 && <p className="text-sm text-ink-secondary">{left === 0 ? "All done" : `${left} of ${sessions.length} left`}</p>}
+      titleId={id}
+      data-plan-today=""
+      actions={sessions.length > 0 && <p className="text-sm text-ink-secondary">{left === 0 ? "All done" : `${left} of ${sessions.length} left`}</p>}
     >
       {loading ? (
         <p className="text-base text-ink-secondary">Loading…</p>
@@ -238,7 +223,7 @@ function Today({ space, sessions, due, done, onToggle, loading }: { space: strin
           )}
         </>
       )}
-    </Card>
+    </WorkspaceSection>
   );
 }
 
@@ -295,7 +280,7 @@ function Exams({ space, exams, courses, onChange }: { space: Space; exams: Exam[
   const err = (f: "title" | "date") => (problem?.field === f ? `${id}-err` : undefined);
 
   return (
-    <Card title="Exams" id={id} data="exams">
+    <WorkspaceSection title="Exams" titleId={id} data-plan-exams="">
       {exams.length === 0 ? (
         <p className="text-base text-ink-secondary">No exams yet. Add one and the schedule spreads review sessions before it.</p>
       ) : (
@@ -354,7 +339,7 @@ function Exams({ space, exams, courses, onChange }: { space: Space; exams: Exam[
           </p>
         )}
       </form>
-    </Card>
+    </WorkspaceSection>
   );
 }
 
@@ -363,7 +348,7 @@ function ComingUp({ space, items }: { space: string; items: Upcoming[] | null })
   const hidden = hiddenCourses(useCourseReach(space), ["overview", "assignments"]);
   const shown = (items ?? []).slice(0, 12);
   return (
-    <Card title="Coming up in your courses" id={id} data="upcoming">
+    <WorkspaceSection title="Coming up in your courses" titleId={id} data-plan-upcoming="">
       {items === null ? (
         <p className="text-base text-ink-secondary">Loading…</p>
       ) : shown.length === 0 && hidden ? (
@@ -389,7 +374,7 @@ function ComingUp({ space, items }: { space: string; items: Upcoming[] | null })
         </ul>
       )}
       {items && items.length > shown.length && <p className="text-sm text-ink-secondary">And {items.length - shown.length} more later.</p>}
-    </Card>
+    </WorkspaceSection>
   );
 }
 
@@ -400,7 +385,6 @@ function Schedule({
   done,
   onState,
   onToggle,
-  onSave,
   saved,
 }: {
   space: string;
@@ -409,18 +393,17 @@ function Schedule({
   done: Set<string>;
   onState: (s: PlanState) => void;
   onToggle: (s: Session, on: boolean) => void;
-  onSave: () => void;
   saved: string;
 }) {
   const id = useId();
   const [all, setAll] = useState(false);
   const days = all ? plan.days : plan.days.slice(0, 7);
   return (
-    <Card
+    <WorkspaceSection
       title="Schedule"
-      id={id}
-      data="schedule"
-      extra={
+      titleId={id}
+      data-plan-schedule=""
+      actions={
         <div className="flex flex-wrap items-center gap-2">
           {saved && (
             <Button type="button" variant="ghost" size="sm" onClick={() => void openFile(space, saved)} data-plan-open="">
@@ -428,10 +411,6 @@ function Schedule({
               Open plan.md
             </Button>
           )}
-          <Button type="button" variant="outline" size="sm" onClick={onSave} data-plan-save="">
-            <Icon name="download" />
-            Save as plan.md
-          </Button>
         </div>
       }
     >
@@ -518,6 +497,6 @@ function Schedule({
           </Button>
         </div>
       )}
-    </Card>
+    </WorkspaceSection>
   );
 }

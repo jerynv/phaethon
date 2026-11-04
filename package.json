@@ -36,7 +36,7 @@
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.3.3",
     "tw-shimmer": "^0.4.13",
-    "vic-ui": "file:vendor/vic-ui-a9764da.tgz",
+    "vic-ui": "file:vendor/vic-ui-f156af1.tgz",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

@@ -5,7 +5,7 @@ import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/
 import { openCourseImport, useRun, useSitesVersion } from "@/components/lms/import-store";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
-import { WorkspacePage } from "@/components/ui/workspace-page";
+import { WorkspaceEmpty, WorkspacePage, WorkspacePageHeader, WorkspaceSection } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { studyOverview, type Attempt, type DeckSummary, type Quiz, type QuizSummary } from "@/lib/study";
 import type { Space } from "@/lib/spaces";
@@ -202,7 +202,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
     const { decks, quizzes, due, streakDays } = overview;
     body = (
       <>
-        <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-4 rounded-xl bg-accent-soft px-5 py-5">
+        <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-4 py-1">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <p className="text-lg font-semibold text-ink" data-due-count="">
               {due === 0 ? "Nothing due today" : `${plural(due, "card")} due today`}
@@ -223,14 +223,11 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
           </Button>
         </section>
 
-        <section aria-labelledby={`decks-${space.id}`} className="flex flex-col gap-2">
-          <h3 id={`decks-${space.id}`} className="text-md font-semibold text-ink">
-            Flashcards
-          </h3>
+        <WorkspaceSection title="Flashcards" titleId={`decks-${space.id}`}>
           {decks.length === 0 ? (
             <p className="text-base text-ink-secondary">No decks yet. Make flashcards from your courses to start.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-line border-y border-line" data-deck-list="">
+            <ul className="flex flex-col divide-y divide-line" data-deck-list="">
               {decks.map((d) => (
                 <DeckRow
                   key={d.path}
@@ -241,37 +238,31 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
               ))}
             </ul>
           )}
-        </section>
+        </WorkspaceSection>
 
-        <section aria-labelledby={`quizzes-${space.id}`} className="flex flex-col gap-2">
-          <h3 id={`quizzes-${space.id}`} className="text-md font-semibold text-ink">
-            Quizzes
-          </h3>
+        <WorkspaceSection title="Quizzes" titleId={`quizzes-${space.id}`}>
           {quizzes.length === 0 ? (
             <p className="text-base text-ink-secondary">No quizzes yet. Make one to practise for a test.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-line border-y border-line" data-quiz-list="">
+            <ul className="flex flex-col divide-y divide-line" data-quiz-list="">
               {quizzes.map((q) => (
                 <QuizRow key={q.path} space={space.id} quiz={q} onTake={() => setScreen({ at: "quiz", path: q.path })} />
               ))}
             </ul>
           )}
-        </section>
+        </WorkspaceSection>
       </>
     );
   }
 
   return (
     <WorkspacePage data-study-hub={space.id}>
-      <div className="flex min-h-(--ph-control-height) flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold text-ink" data-view-focus="">
-            Study
-          </h2>
-          <p className="text-sm text-ink-secondary">Review flashcards and practise with quizzes from your courses.</p>
-        </div>
-        {overview && (overview.decks.length > 0 || overview.quizzes.length > 0) && (
-          <div className="flex flex-wrap gap-2">
+      <WorkspacePageHeader
+        title="Study"
+        description="Review flashcards and practise with quizzes from your courses."
+        headingProps={{ ref: headingRef, tabIndex: -1, "data-view-focus": "" }}
+        actions={overview && (overview.decks.length > 0 || overview.quizzes.length > 0) && (
+          <>
             <Button type="button" variant="outline" onClick={() => openMake("deck")} data-make="deck">
               <Icon name="plus" />
               Make flashcards…
@@ -280,9 +271,9 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
               <Icon name="plus" />
               Make a quiz…
             </Button>
-          </div>
+          </>
         )}
-      </div>
+      />
       {body}
       {dialog}
     </WorkspacePage>
@@ -292,21 +283,11 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
 function Empty({ space, hasCourses, loading, onMake }: { space: Space; hasCourses: boolean; loading: boolean; onMake: (k: MakeKind) => void }) {
   const hidden = hiddenCourses(useCourseReach(space.id));
   return (
-    <div className="flex flex-col items-center gap-3 px-2 py-8 text-center" data-study-empty="">
-      <span className="grid size-[calc(var(--ph-icon-size-lg)*2.5)] place-items-center rounded-full bg-accent-soft text-accent-soft-ink">
-        <Icon name="book" className="size-(--ph-icon-size-lg)" />
-      </span>
-      <p className="text-lg font-semibold text-ink">Turn your courses into flashcards and practice quizzes</p>
-      <p className="max-w-(--ph-measure) text-base text-ink-secondary">
-        Phaethon reads your syllabus, assignments and course files and makes cards and questions from them. Each card comes back just
-        before you’d forget it, and a quiz tells you what to study next.
-      </p>
-      {!loading && !hasCourses && hidden && <NoCourseAccess why={hidden} />}
-      {!loading && !hasCourses && !hidden && (
-        <p className="max-w-(--ph-measure) text-base text-ink-secondary">There are no courses in {space.name} yet: import them first.</p>
-      )}
-      <div className="flex flex-wrap justify-center gap-2">
-        {!loading && !hasCourses && hidden ? null : !loading && !hasCourses ? (
+    <div data-study-empty="">
+      <WorkspaceEmpty
+        title="Turn your courses into flashcards and practice quizzes"
+        line={!loading && !hasCourses && !hidden ? `Import courses into ${space.name} to make flashcards and quizzes from your course files.` : "Make flashcards and quizzes from your syllabus, assignments and course files."}
+        action={!loading && !hasCourses && hidden ? null : !loading && !hasCourses ? (
           <Button type="button" onClick={() => openCourseImport({ space: space.id })} data-empty-import="">
             <Icon name="book" />
             Import courses…
@@ -323,7 +304,8 @@ function Empty({ space, hasCourses, loading, onMake }: { space: Space; hasCourse
             </Button>
           </>
         )}
-      </div>
+      />
+      {!loading && !hasCourses && hidden && <NoCourseAccess why={hidden} />}
     </div>
   );
 }
@@ -334,7 +316,7 @@ function DeckRow({ deck, onOpen, onStudy }: { deck: DeckSummary; onOpen: () => v
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-deck-row={deck.path}>
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1">
-        <Button type="button" variant="link" className="h-auto justify-start text-start text-md font-semibold text-ink" onClick={onOpen} data-open-deck={deck.path}>
+        <Button type="button" variant="link" className="h-auto justify-start text-start text-md font-semibold text-ink [&>.ui-button-face]:justify-start [&>.ui-button-face]:px-0" onClick={onOpen} data-open-deck={deck.path}>
           {deck.title}
         </Button>
         {deck.course && <p className="text-sm wrap-break-word text-ink-secondary">{deck.course}</p>}

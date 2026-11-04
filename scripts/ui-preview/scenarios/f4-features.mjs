@@ -84,6 +84,8 @@ const widths = (page) =>
     return {
       column: Math.round(column.getBoundingClientRect().width),
       composer: Math.round(composer.getBoundingClientRect().width),
+      input: Math.round(document.querySelector("[data-composer]").getBoundingClientRect().width),
+      prose: Math.round(document.querySelector('[data-role="assistant"] .aui-md')?.getBoundingClientRect().width ?? 0),
       main: Math.round(main.getBoundingClientRect().width),
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
@@ -200,8 +202,8 @@ export default [
       await page.waitForSelector(COMPOSER, { timeout: 5000 });
       const w = page.viewport().width;
       const before = await widths(page);
-      // 58rem fits beside the sidebar only at the usual text size (at 200% it fills the pane anyway).
-      const fits = await page.evaluate(() => 58 * parseFloat(getComputedStyle(document.documentElement).fontSize) < document.getElementById("main").clientWidth * 0.75);
+      // The comfortable lane can fill the pane at larger text sizes.
+      const fits = await page.evaluate(() => 736 * parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ph-text-scale")) < document.getElementById("main").clientWidth * 0.75);
       if (w >= 1600 && fits) check(before.column < before.main * 0.75, "off: the column keeps a comfortable line length", JSON.stringify(before));
       await page.focus(COMPOSER);
       await chord(page, ["Meta", "Shift", "l"]);
@@ -234,12 +236,16 @@ export default [
     name: "f4-wide-persisted",
     sizes: [[1600, 1000], [640, 480]],
     sizesRequired: true,
-    mock: { settings: { ...SETTINGS, appearance: { tokens: { "--ph-wide-reading": 1 } } }, threads: { school: SCHOOL_NOW } },
+    mock: {
+      settings: { ...SETTINGS, appearance: { readingFont: "atkinson", reduceMotion: "on", tokens: { "--ph-wide-reading": 1, "--ph-accent-h": 240, "--ph-focus-width": "2px" } } },
+      threads: { school: [SCHOOL_NOW[0], { ...SCHOOL_NOW[1], text: SCHOOL_NOW[1].text + " Review the recursion notes, then work through the practice questions before checking each answer against the source material.".repeat(8) }] },
+    },
     async run(page, h) {
       await page.waitForSelector(COMPOSER, { timeout: 5000 });
       await sleep(300);
       const w = await widths(page);
       check(w.column >= w.main * 0.9 && !w.overflow, "a saved Wide reading applies at start", JSON.stringify(w));
+      check(w.prose >= w.input - 24, "saved Wide reading gives replies the same content lane as the message box", JSON.stringify(w));
       // Settings › Accessibility shows it on.
       await chord(page, ["Meta", ","]);
       await page.waitForSelector('[role="dialog"]', { timeout: 3000 });

@@ -57,11 +57,7 @@ export function middleEllipsis(name: string, max = 32): string {
 }
 
 /** Draft images stay thumbnail-sized; sent images have room to read their contents. */
-function Thumb({ icon, draft }: { icon: IconName; draft: boolean }) {
-  const space = useContext(SpaceIdContext);
-  const src = useAttachmentSrc(space);
-  const [brokenSrc, setBrokenSrc] = useState<string>();
-  const image = icon === "image";
+function Thumb({ icon, draft, src, image, onError }: { icon: IconName; draft: boolean; src?: string; image: boolean; onError: () => void }) {
   return (
     <span
       aria-hidden="true"
@@ -70,12 +66,12 @@ function Thumb({ icon, draft }: { icon: IconName; draft: boolean }) {
         image ? (draft ? "h-20 w-24" : "min-h-20 max-w-64") : "size-10",
       )}
     >
-      {src && brokenSrc !== src ? (
+      {src && image ? (
         <img
           src={src}
           alt=""
           className={cn("object-contain", draft ? "size-full" : "h-auto max-h-64 w-auto min-w-24 max-w-full")}
-          onError={() => setBrokenSrc(src)}
+          onError={onError}
         />
       ) : (
         <Icon name={icon} />
@@ -131,7 +127,9 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
   const short = middleEllipsis(name);
   const removable = !!onRemoved;
   const icon = iconFor(type, mediaType);
-  const image = icon === "image" && !failed;
+  const src = useAttachmentSrc(space);
+  const [brokenSrc, setBrokenSrc] = useState<string>();
+  const image = icon === "image" && !failed && !!src && src !== brokenSrc;
 
   async function remove(e: React.MouseEvent<HTMLButtonElement>) {
     const li = e.currentTarget.closest("li");
@@ -155,7 +153,7 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
         <ChipBody
           view={source ? () => open(source) : undefined}
           image={image}
-          thumb={<Thumb icon={failed ? "file" : icon} draft={removable} />}
+          thumb={<Thumb icon={failed ? "file" : icon} draft={removable} src={src} image={image} onError={() => setBrokenSrc(src)} />}
         >
           <span className={cn("truncate", image ? "text-xs text-ink-secondary" : "text-sm font-medium text-ink")} title={name}>
             <span aria-hidden="true">{short}</span>
@@ -426,8 +424,12 @@ export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
 
 /** Files sent with a user message; saved image previews are read through the space's file API. */
 export function MessageAttachments() {
+  const imageCount = useAuiState((s) => s.message.attachments?.filter((a) => a.type === "image" || a.contentType?.startsWith("image/")).length ?? 0);
   return (
-    <ul aria-label="Files sent" className="flex max-w-(--ph-message-max-width) flex-wrap items-start justify-end gap-2 empty:hidden">
+    <ul aria-label="Files sent" className={cn(
+      "items-start gap-2 empty:hidden",
+      imageCount > 1 ? "grid w-full max-w-(--ph-media-gallery-width) grid-cols-2" : "flex max-w-(--ph-message-max-width) flex-wrap justify-end",
+    )}>
       <MessagePrimitive.Attachments>{() => <AttachmentChip />}</MessagePrimitive.Attachments>
     </ul>
   );

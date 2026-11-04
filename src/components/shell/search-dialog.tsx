@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { Switch } from "radix-ui";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
@@ -194,7 +195,7 @@ export function SearchDialog({
         </DialogDescription>
         <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
           <Icon name="search" className="shrink-0 text-ink-secondary" />
-          <input
+          <Input
             ref={inputRef}
             role="combobox"
             aria-expanded={options.length > 0}
@@ -213,7 +214,7 @@ export function SearchDialog({
             }}
             onKeyDown={onKeyDown}
             placeholder={`Search conversations in ${scopeText}…`}
-            className="min-h-(--ph-control-height-lg) min-w-0 flex-1 rounded-sm bg-transparent py-1.5 text-md text-ink outline-none placeholder:text-ink-secondary"
+            className="min-w-0 flex-1"
           />
           <Keys keys={["Esc"]} className="max-sm:hidden" />
         </div>

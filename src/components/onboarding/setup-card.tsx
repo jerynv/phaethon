@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import {
@@ -301,7 +302,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
               Paste your Anthropic API key
             </label>
             <div className="flex flex-wrap gap-2">
-              <input
+              <Input
                 ref={inputRef}
                 id={keyId}
                 data-setup-key=""
@@ -316,7 +317,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
                 }}
                 aria-describedby={[hintId, outcome && outcomeId].filter(Boolean).join(" ")}
                 aria-invalid={bad ? true : undefined}
-                className="min-h-(--ph-control-height-lg) min-w-(--ph-settings-label-min) flex-1 rounded-md border border-line-strong bg-bg px-3 py-1.5 font-mono text-base text-ink read-only:text-ink-secondary aria-invalid:border-danger"
+                className="min-w-(--ph-settings-label-min) flex-1 font-mono"
               />
               <Button type="submit" aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
                 {saving ? "Checking…" : "Check and save"}

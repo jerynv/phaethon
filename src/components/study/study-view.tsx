@@ -5,6 +5,7 @@ import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/
 import { openCourseImport, useRun, useSitesVersion } from "@/components/lms/import-store";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
+import { WorkspacePage } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { studyOverview, type Attempt, type DeckSummary, type Quiz, type QuizSummary } from "@/lib/study";
 import type { Space } from "@/lib/spaces";
@@ -201,9 +202,9 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
     const { decks, quizzes, due, streakDays } = overview;
     body = (
       <>
-        <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-line bg-raised px-5 py-4 shadow-sm forced-colors:border-[CanvasText]">
+        <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-4 rounded-xl bg-accent-soft px-5 py-5">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <p className="text-2xl font-semibold text-ink" data-due-count="">
+            <p className="text-lg font-semibold text-ink" data-due-count="">
               {due === 0 ? "Nothing due today" : `${plural(due, "card")} due today`}
             </p>
             <p className="text-base text-ink-secondary" data-streak="">
@@ -229,7 +230,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
           {decks.length === 0 ? (
             <p className="text-base text-ink-secondary">No decks yet. Make flashcards from your courses to start.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised" data-deck-list="">
+            <ul className="flex flex-col divide-y divide-line border-y border-line" data-deck-list="">
               {decks.map((d) => (
                 <DeckRow
                   key={d.path}
@@ -249,7 +250,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
           {quizzes.length === 0 ? (
             <p className="text-base text-ink-secondary">No quizzes yet. Make one to practise for a test.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised" data-quiz-list="">
+            <ul className="flex flex-col divide-y divide-line border-y border-line" data-quiz-list="">
               {quizzes.map((q) => (
                 <QuizRow key={q.path} space={space.id} quiz={q} onTake={() => setScreen({ at: "quiz", path: q.path })} />
               ))}
@@ -261,11 +262,14 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 pt-6 pb-5" data-study-hub={space.id}>
+    <WorkspacePage data-study-hub={space.id}>
       <div className="flex min-h-(--ph-control-height) flex-wrap items-start justify-between gap-x-4 gap-y-2">
-        <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold text-ink" data-view-focus="">
-          Study
-        </h2>
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold text-ink" data-view-focus="">
+            Study
+          </h2>
+          <p className="text-sm text-ink-secondary">Review flashcards and practise with quizzes from your courses.</p>
+        </div>
         {overview && (overview.decks.length > 0 || overview.quizzes.length > 0) && (
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" onClick={() => openMake("deck")} data-make="deck">
@@ -281,7 +285,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
       </div>
       {body}
       {dialog}
-    </div>
+    </WorkspacePage>
   );
 }
 
@@ -328,7 +332,7 @@ function DeckRow({ deck, onOpen, onStudy }: { deck: DeckSummary; onOpen: () => v
   const m = Math.round(deck.mastery * 100);
   const counts = [deck.due ? `${deck.due} due` : "none due", deck.new ? `${deck.new} new` : "", plural(deck.cards, "card")].filter(Boolean).join(" · ");
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3" data-deck-row={deck.path}>
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-deck-row={deck.path}>
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1">
         <Button type="button" variant="link" className="h-auto justify-start text-start text-md font-semibold text-ink" onClick={onOpen} data-open-deck={deck.path}>
           {deck.title}
@@ -346,7 +350,7 @@ function DeckRow({ deck, onOpen, onStudy }: { deck: DeckSummary; onOpen: () => v
       </div>
       <Button
         type="button"
-        variant={deck.due ? "default" : "outline"}
+        variant="outline"
         size="sm"
         disabled={deck.cards === 0}
         onClick={onStudy}
@@ -370,7 +374,7 @@ function QuizRow({ space, quiz, onTake }: { space: string; quiz: QuizSummary; on
         ? `Last score ${percent(quiz.lastScore)}${quiz.lastTaken ? ` · ${relativeDate(quiz.lastTaken)}` : ""}`
         : "Not taken yet";
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3" data-quiz-row={quiz.path}>
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-quiz-row={quiz.path}>
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
         <p className="text-md font-semibold wrap-break-word text-ink">{quiz.title}</p>
         <p className="text-sm text-ink-secondary">

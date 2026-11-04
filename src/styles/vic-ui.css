@@ -65,6 +65,9 @@
 :root[data-custom-accent] .ui-switch[aria-checked="true"] { background: var(--ph-accent); }
 :root[data-contrast="more"] :is(.ui-check-box input:not(:checked), .ui-radio-dot:not(:checked), .ui-switch) { border: 1px solid var(--ph-line-strong); }
 .ui-native-select { min-inline-size: var(--ph-target-min); }
+/* Closing tooltips release their positioning box so fading text cannot block a control. */
+[data-slot="tooltip-content"][data-state="closed"],
+[data-radix-popper-content-wrapper]:has(> [data-slot="tooltip-content"][data-state="closed"]) { pointer-events: none; }
 @media (forced-colors: active) {
   .ui-radio-dot { appearance: auto; accent-color: Highlight; border: 1px solid ButtonText; }
 }

@@ -32,10 +32,29 @@ export default [
           scopedRead: window.__calls.some(([command, args]) => command === "file_bytes" && args.space === "school" && args.path === path),
           files: document.querySelectorAll('[aria-label="Files sent"] li').length,
           images: document.querySelectorAll('[aria-label="Files sent"] img').length,
+          fallbackHeight: document.querySelectorAll('[aria-label="Files sent"] li')[1].getBoundingClientRect().height,
         };
       }, savedImagePath);
       check(restored.scopedRead && restored.fit === "contain" && restored.width >= 96, "saved attachments restore a proportional preview through the space-scoped file API", restored);
-      check(restored.files === 2 && restored.images === 1, "a missing saved image retains its file card without a broken image", restored);
+      check(restored.files === 2 && restored.images === 1 && restored.fallbackHeight <= 64, "a missing saved image retains a compact file card without a broken image or empty preview frame", restored);
+    },
+  },
+  {
+    name: "workspace-learning-shortcuts",
+    mock: { threads: {} },
+    async run(page, h) {
+      await page.waitForSelector('[data-workspace-shortcut="study"]');
+      const idle = await page.$eval("[data-composer-hint]", (hint) => hint.textContent.trim());
+      check(idle === "", "routine keyboard instructions do not compete with the composer controls");
+      check(await page.$eval('[data-tutor-mode="school"]', (button) => button.textContent.includes("Tutor")), "the tutoring control has a visible label");
+      await page.click('[data-workspace-shortcut="study"]');
+      await page.waitForFunction(() => document.querySelector('[data-space-view="study"][data-view-shown] [data-view-focus]') === document.activeElement);
+      check(true, "the learning shortcut opens Study and places focus in the view");
+      await h.click('[data-view-tab="chat"]');
+      await page.waitForSelector('[data-space-view="chat"][data-view-shown] [data-workspace-shortcut="plan"]');
+      await page.click('[data-workspace-shortcut="plan"]');
+      await page.waitForFunction(() => !!document.querySelector('[data-space-view="plan"][data-view-shown] [data-plan-view]'));
+      check(true, "the planning shortcut opens the existing study plan");
     },
   },
   {

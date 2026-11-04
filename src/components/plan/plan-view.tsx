@@ -6,6 +6,7 @@ import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { WorkspacePage } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
@@ -111,7 +112,7 @@ export function PlanView({ space }: { space: Space }) {
 
   return (
     <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
-      <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-5 px-6 pt-6 pb-10">
+      <WorkspacePage>
         <header className="flex flex-col gap-0.5">
           <h2 id={headingId} className="text-xl font-semibold text-ink">
             Study plan
@@ -132,8 +133,8 @@ export function PlanView({ space }: { space: Space }) {
         )}
         <Today space={space.id} sessions={todays} due={dueToday} done={done} onToggle={toggleDone} loading={upcoming === null} />
         <FocusTimer />
-        <Exams space={space} exams={exams} courses={courses} onChange={setExams} />
         <ComingUp space={space.id} items={upcoming} />
+        <Exams space={space} exams={exams} courses={courses} onChange={setExams} />
         <Schedule
           space={space.id}
           plan={plan}
@@ -144,14 +145,14 @@ export function PlanView({ space }: { space: Space }) {
           onSave={() => void save()}
           saved={saved}
         />
-      </div>
+      </WorkspacePage>
     </section>
   );
 }
 
 function Card({ title, id, children, extra, data }: { title: string; id: string; children: ReactNode; extra?: ReactNode; data: string }) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-3 rounded-xl border border-line bg-raised p-5 shadow-sm" {...{ [`data-plan-${data}`]: "" }}>
+    <section aria-labelledby={id} className="flex flex-col gap-3 border-t border-line pt-5" {...{ [`data-plan-${data}`]: "" }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id={id} className="text-lg font-semibold text-ink">
           {title}

@@ -18,7 +18,7 @@ const text = (page, sel) => page.$eval(sel, (e) => e.innerText.replace(/\s+/g, "
 
 /** Show a space's view with its tab in the space's view switcher. */
 async function openView(page, view) {
-  await page.click(`${shown} [data-view-tab="${view}"]`);
+  await page.click(`:is(#spaces-sidebar:not([hidden]), ${shown}) [data-view-tab="${view}"]`);
   await page.waitForSelector(`${shown} [data-${view}-view]`, { timeout: 5000 });
 }
 
@@ -249,7 +249,7 @@ export default [
       const btn = `${shown} [data-tutor-mode]`;
       await page.waitForSelector(btn, { timeout: 5000 });
       let b = await page.$eval(btn, (e) => ({ label: e.getAttribute("aria-label"), mode: e.dataset.mode, text: e.textContent.trim() }));
-      check(b.mode === "normal" && b.label === "Tutor mode in School: Normal" && b.text === "", "normal: a quiet icon button with its name", JSON.stringify(b));
+      check(b.mode === "normal" && b.label === "Tutor mode in School: Normal" && b.text === "Tutor", "normal: the tutoring control identifies itself with a visible label", JSON.stringify(b));
       await page.click(btn);
       await page.waitForSelector("[data-tutor-menu] [role=menuitemradio]", { timeout: 3000 });
       await h.idle();

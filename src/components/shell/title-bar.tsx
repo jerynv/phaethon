@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import { useSpaceView, viewLabel } from "@/components/study/space-view";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
+import { useConversations } from "@/lib/conversation-nav";
 import { openSettings } from "@/lib/open-settings";
 import { platform } from "@/lib/platform";
 import type { Space } from "@/lib/spaces";
@@ -106,6 +108,38 @@ function BarButton({
 }
 
 /**
+ * Where you are, after the space's name: the open conversation's title in Chat
+ * (when it was last used is in the sidebar's row), the view's name elsewhere. One
+ * trail in one place, so the space's header below holds only its controls.
+ * The shape follows T3 Code's WorkspaceBreadcrumb (apps/web/src/components/
+ * WorkspaceBreadcrumb.tsx, MIT): an ordered list, separators unspoken, the
+ * last item aria-current.
+ */
+function Trail({ space }: { space: Space }) {
+  const view = useSpaceView(space.id);
+  const current = useConversations(space.id)?.threads.find((t) => t.current);
+  if (view !== "chat") {
+    return (
+      <li aria-current="page" className="min-w-0 truncate text-md leading-tight font-medium text-ink" data-breadcrumb-view={view}>
+        {viewLabel(view)}
+      </li>
+    );
+  }
+  if (!current || current.messages === 0) {
+    return (
+      <li aria-current="page" className="min-w-0 truncate text-md leading-tight font-medium text-ink">
+        New conversation
+      </li>
+    );
+  }
+  return (
+    <li aria-current="page" data-conversation-current="" className="min-w-0 truncate text-md leading-tight font-medium text-ink" title={current.title}>
+      {current.title}
+    </li>
+  );
+}
+
+/**
  * The window's title bar, drawn by Phaethon. On macOS the system window buttons
  * sit inside it (tauri.macos.conf.json); on Windows and Linux it carries our
  * own controls at the trailing edge. The whole bar drags the window and a
@@ -162,6 +196,7 @@ export function TitleBar({
           aria-expanded={sidebarOpen}
           onClick={onToggleSidebar}
         />
+        {sidebarDocked && !words && <span className="min-w-0 truncate text-base font-medium text-ink-secondary">Phaethon</span>}
         {/* With the sidebar not docked, its Settings entry is out of reach; this one stands in for it. */}
         {showSettings && (
           <BarButton
@@ -178,12 +213,26 @@ export function TitleBar({
 
       <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarDocked ? "ps-4" : "ps-1")}>
         {space && <SpaceMark hue={space.hue} />}
-        <h1
-          id="space-title"
-          className="max-w-full shrink-0 truncate text-md leading-tight font-semibold text-ink group-data-[inactive]/titlebar:text-ink-secondary"
-        >
-          {space ? space.name : emptyTitle}
-        </h1>
+        <nav aria-label="Where you are" className="flex min-w-0 shrink items-center">
+          <ol className="m-0 flex min-w-0 list-none items-baseline gap-2 p-0">
+            <li className="flex min-w-0 max-w-40 shrink items-center">
+              <h1
+                id="space-title"
+                className="max-w-full truncate text-md leading-tight font-normal text-ink-secondary"
+              >
+                {space ? space.name : emptyTitle}
+              </h1>
+            </li>
+            {space && (
+              <>
+                <li aria-hidden="true" className="shrink-0 text-md leading-tight text-ink-tertiary">
+                  /
+                </li>
+                <Trail space={space} />
+              </>
+            )}
+          </ol>
+        </nav>
         {space && <GrantsChip space={space} direction="out" />}
         {space && <GrantsChip space={space} direction="in" />}
       </div>

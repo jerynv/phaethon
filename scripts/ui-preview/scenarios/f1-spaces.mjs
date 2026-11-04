@@ -167,10 +167,12 @@ export default [
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("ArrowDown");
       check((await focused(page)) === "space:work", "ArrowDown from More goes to the next space", await focused(page));
-      // Tab still steps space by space (More is skipped).
+      await page.keyboard.press("ArrowUp");
+      check((await focused(page)) === "space:school", "ArrowUp goes back to the previous space", await focused(page));
+      // Tab enters the current space's tools; More remains outside the Tab order.
       await page.focus(space("school"));
       await page.keyboard.press("Tab");
-      check((await focused(page)) === "space:work", "Tab goes from School straight to Work", await focused(page));
+      check(await page.evaluate(() => document.activeElement?.matches('#spaces-sidebar [data-sidebar-conversations="school"] [data-view-tab="chat"][aria-selected="true"]')), "Tab enters School’s selected Chat tool");
     },
   },
   {

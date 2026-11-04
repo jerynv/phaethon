@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { GradesView } from "@/components/grades/grades-view";
 import { SetupCard } from "@/components/onboarding/setup-card";
 import { PlanView } from "@/components/plan/plan-view";
-import { panelId, tabId, useSpaceView, type SpaceView } from "@/components/study/space-view";
+import { panelId, setSpaceView, tabId, useSpaceView, type SpaceView } from "@/components/study/space-view";
 import { StudyView } from "@/components/study/study-view";
 import { ViewSwitcher } from "@/components/study/view-switcher";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from 
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { useConversationHost } from "@/lib/conversation-nav";
 import { useOpenRequests } from "@/lib/open-conversation";
 import { createAgentAdapter, savedAttachmentId, type AgentMessageCustom } from "@/runtime/agent-adapter";
 import { attachmentAdapter } from "@/runtime/attachments";
@@ -156,7 +157,7 @@ type Loaded =
  * failed load, where New conversation is a way out); the conversation below it
  * is remounted for each one.
  */
-export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: number }) {
+export function SpacePane({ space, reloadKey, onConversationChosen }: { space: Space; reloadKey: number; onConversationChosen?: () => void }) {
   // Bumped by "Try again" after a failed load.
   const [attempt, setAttempt] = useState(0);
   // Bumped when New conversation, or opening a saved one, changes the current conversation.
@@ -175,6 +176,9 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
   const rootRef = useRef<HTMLDivElement>(null);
   // Where the conversations bar puts its notes: the top of the conversation.
   const [notes, setNotes] = useState<HTMLDivElement | null>(null);
+  // Where the bar's controls go: the docked sidebar's place for them, or this pane's compact header.
+  const sidebarHost = useConversationHost(space.id);
+  const [fallbackHost, setFallbackHost] = useState<HTMLDivElement | null>(null);
   const shown =useCallback(() => paneShown({ rootRef } as Pane), []);
   // After a switch, the composer takes focus once the new conversation is mounted.
   const focusNext = useRef(false);
@@ -183,12 +187,18 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
     focusNext.current = false;
     focusPaneComposer({ rootRef, inputRef: { current: rootRef.current?.querySelector("textarea") ?? null } } as Pane);
   }, []);
+  const showConversation = useCallback(() => {
+    onConversationChosen?.();
+    setSpaceView(space.id, "chat", true);
+  }, [space.id, onConversationChosen]);
   const onSwitched = useCallback((message: string) => {
+    // A conversation opened or started from Study, Grades or Plan (the sidebar, Cmd+N) shows in Chat.
+    showConversation();
     focusNext.current = true;
     setConversation((n) => n + 1);
     setSaid("");
     requestAnimationFrame(() => setSaid(message));
-  }, []);
+  }, [showConversation]);
   // Search conversations opens a conversation here and shows the message it found.
   // The bar is remounted then, so it shows the conversation now open.
   const opened = useOpenRequests(space.id, running, onSwitched, rootRef);
@@ -321,21 +331,21 @@ export function SpacePane({ space, reloadKey }: { space: Space; reloadKey: numbe
 
   return (
     <div data-space-pane={space.id} className="relative flex min-h-0 flex-1 flex-col">
-      {/* The space's header, under the title bar's space name: its views, then which conversation, on one row
-          while there is room, closed by a hairline. It has one geometry in every view: outside Chat the
-          conversations bar keeps its place (and its state), out of sight and inert, so switching views never
-          moves the switcher or the view below it. */}
-      <div
-        data-space-header=""
-        className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-line bg-bg px-2 forced-colors:border-[CanvasText]"
-      >
-        <div className="py-1.5">
-          <ViewSwitcher space={space.id} spaceName={space.name} view={view} />
+      {/* While the sidebar is hidden, a compact header holds what it otherwise shows under the space: the views,
+          then the conversations bar’s controls. With the sidebar showing, the pane starts with the view itself. */}
+      {!sidebarHost && (
+        <div
+          data-space-header=""
+          className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-line bg-bg px-2 forced-colors:border-[CanvasText]"
+        >
+          <div className="py-1.5">
+            <ViewSwitcher space={space.id} spaceName={space.name} view={view} />
+          </div>
+          <div ref={setFallbackHost} className="min-w-0 flex-1" data-conversations-host="" />
         </div>
-        <div className={cn("min-w-0 flex-1 basis-80", view !== "chat" && "invisible")} inert={view !== "chat"} data-conversations-slot="">
-          <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} shown={shown} notes={notes} />
-        </div>
-      </div>
+      )}
+      {/* Mounted in every view and wherever its controls are drawn, so its state and its Cmd+N stay. */}
+      <ConversationsBar key={opened} space={space} running={running} onSwitched={onSwitched} onCurrentChosen={showConversation} shown={shown} notes={notes} host={sidebarHost ?? fallbackHost} />
       {panel(
         "chat",
         <>

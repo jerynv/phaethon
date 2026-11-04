@@ -13,6 +13,7 @@ import { CommandPalette, ShortcutsSheet, type Command } from "@/components/shell
 import { NewSpaceDialog } from "@/components/shell/new-space-dialog";
 import { SearchDialog } from "@/components/shell/search-dialog";
 import { addToSpace } from "@/components/shell/space-actions";
+import { getConversations } from "@/lib/conversation-nav";
 import { digitOf, isModChord, isModShiftChord, modAria, modCap, shortcutById, viewChord, viewDigitOf } from "@/components/shell/shortcuts";
 import { Sidebar } from "@/components/shell/sidebar";
 import { focusView, getSpaceView, requestStudy, setSpaceView, VIEWS } from "@/components/study/space-view";
@@ -60,15 +61,14 @@ function focusShownConversation(id: string) {
 }
 
 /**
- * New conversation in the shown space: its conversations bar's button does the work (and refuses while a
- * reply runs). From Study, Grades or Plan it goes back to Chat first (the bar shows only there).
+ * New conversation in the shown space: its conversations bar does the work (and refuses while a reply
+ * runs), through the shared state it publishes. From Study, Grades or Plan it goes back to Chat first.
  */
 function newConversationInShown() {
   const id = document.querySelector<HTMLElement>("[data-space-pane][data-shown]")?.dataset.spacePane;
-  const click = () => document.querySelector<HTMLElement>("[data-space-pane][data-shown] [data-new-conversation]")?.click();
-  if (!id || getSpaceView(id) === "chat") return click();
-  setSpaceView(id, "chat");
-  requestAnimationFrame(() => requestAnimationFrame(click));
+  if (!id) return;
+  if (getSpaceView(id) !== "chat") setSpaceView(id, "chat");
+  getConversations(id)?.startNew();
 }
 
 /** Focus is nowhere useful: on the page itself, or on something now hidden or inert. */
@@ -572,6 +572,8 @@ export default function App() {
             onNewSpace={openNewSpace}
             onSelect={chooseSpace}
             onDismiss={sidebarNarrow ? dismissSidebar : undefined}
+            onSearch={() => setSearchOpen(true)}
+            searchShortcut={shortcutById("search")}
             footer={hasSettings ? <SettingsDialog onChanged={() => setReloadKey((k) => k + 1)} /> : null}
           />
           <main
@@ -595,7 +597,7 @@ export default function App() {
                   inert={!shown}
                   className={cn("flex min-h-0 min-w-0 flex-1 flex-col", !shown && "invisible absolute inset-0")}
                 >
-                  <SpacePane space={s} reloadKey={reloadKey} />
+                  <SpacePane space={s} reloadKey={reloadKey} onConversationChosen={sidebarNarrow ? dismissSidebar : undefined} />
                 </div>
               );
             })}

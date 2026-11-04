@@ -1,15 +1,21 @@
 import { ContextMenu } from "radix-ui";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { relativeDate } from "@/components/chat/conversations-bar";
 import { openCourseImport } from "@/components/lms/import-store";
+import { setSpaceView, useSpaceView } from "@/components/study/space-view";
+import { ViewSwitcher } from "@/components/study/view-switcher";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Icon } from "@/icons";
 import { useSpaceActivity, type SpaceActivity } from "@/lib/activity";
+import type { ThreadSummary } from "@/lib/backend";
+import { setConversationHost, useConversations } from "@/lib/conversation-nav";
 import { openSettings } from "@/lib/open-settings";
 import { holdSpaceOrder, markSpaceUsed, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+import { Keys } from "./command-palette";
 import { addToSpace, exportSpace, showInLabel, showSpaceFolder, SpaceActionNotice } from "./space-actions";
 import { spaceHueStyle, SpaceMark } from "./space-mark";
 
@@ -34,7 +40,14 @@ type Props = {
   onNewSpace: () => void;
   /** The list is still loading: no empty-state line yet. */
   loading?: boolean;
+  /** Opens Search conversations (the same dialog as its shortcut). */
+  onSearch?: () => void;
+  /** Search's shortcut, shown beside it (keys as drawn, and as aria-keyshortcuts). */
+  searchShortcut?: { keys: string[]; aria?: string };
 };
+
+/** How many of the current space's conversations the sidebar lists; the rest are in its Conversations menu. */
+const RECENT = 6;
 
 const NEEDS_YOU = { shown: "Needs you", spoken: "needs your answer", urgent: true };
 const ANSWERING = { shown: "Answering…", spoken: "answering", urgent: false };
@@ -100,7 +113,7 @@ function focusShows(el: Element | null): boolean {
  *
  * A vault with no spaces says so above "New space".
  */
-export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false, footer, onDismiss, onNewSpace, loading }: Props) {
+export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false, footer, onDismiss, onNewSpace, loading, onSearch, searchShortcut }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const activity = useSpaceActivity();
@@ -140,7 +153,12 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    const items = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("[data-space-id], [data-new-space]") ?? []);
+    // Arrows move space by space; inside the current space's section (its views, its conversations) Tab moves,
+    // and the views' tab list handles its own arrows.
+    if (e.defaultPrevented || (e.target as Element).closest("[data-sidebar-conversations]")) return;
+    const items = Array.from(
+      listRef.current?.querySelectorAll<HTMLButtonElement>("[data-space-id], [data-new-space]") ?? [],
+    );
     const at = document.activeElement as HTMLElement | null;
     // On a More button, the arrows move from its space.
     const from = at?.closest("li")?.querySelector<HTMLButtonElement>("[data-space-id]") ?? at;
@@ -235,7 +253,30 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
             "absolute inset-y-0 start-0 z-30 max-w-[calc(100%-var(--ph-space)*12)] rounded-e-lg border-t shadow-lg",
         )}
       >
-        <h2 id="spaces-heading" className="px-4 pt-2 text-xs font-medium text-ink-secondary">
+        {onSearch && (
+          <div className="px-2 pt-2">
+            <button
+              type="button"
+              data-sidebar-search=""
+              aria-label="Search conversations"
+              onClick={onSearch}
+              aria-keyshortcuts={searchShortcut?.aria}
+              className={cn(
+                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
+                "text-base text-ink-secondary transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
+              )}
+            >
+              <Icon name="search" className="size-(--ph-icon-size-sm) justify-self-center" />
+              <span className="truncate">Search</span>
+              {searchShortcut && (
+                <span aria-hidden="true">
+                  <Keys keys={searchShortcut.keys} className="text-ink-secondary [&_kbd]:border-0 [&_kbd]:bg-transparent [&_kbd]:px-0" />
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+        <h2 id="spaces-heading" className="px-4 pt-3 text-xs font-medium text-ink-secondary">
           Spaces
         </h2>
         <ScrollArea className="min-h-0 flex-1">
@@ -244,13 +285,15 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
             {!loading && spaces.length === 0 && <p className="px-2 py-1.5 text-sm text-ink-secondary">No spaces yet.</p>}
             <ul className="flex flex-col gap-(--ph-sidebar-item-gap) empty:hidden">
               {spaces.map((space) => (
-                <SpaceItem
+                <SpaceEntry
                   key={space.id}
                   space={space}
                   active={space.id === activeId}
                   doing={activityWords(activity[space.id])}
                   onSelect={onSelect}
                   holdForMenu={holdForMenu}
+                  onChosen={onDismiss}
+                  shown={open}
                 />
               ))}
             </ul>
@@ -273,6 +316,106 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
       </nav>
       <SpaceActionNotice />
     </>
+  );
+}
+
+/** A space, and under the current one (while the sidebar shows) its views and recent conversations. */
+function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }) {
+  const { onChosen, shown, ...item } = props;
+  return (
+    <>
+      <SpaceItem {...item} />
+      {props.active && shown && <SpaceConversations space={props.space} onChosen={onChosen} />}
+    </>
+  );
+}
+
+const threadRow = cn(
+  "grid min-h-(--ph-control-height-sm) w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-md py-1 ps-2 pe-2 text-start text-sm",
+  "transition-colors duration-(--ph-duration-fast)",
+);
+
+/**
+ * Under the current space: its views (Chat, Study, Grades, Plan), then its
+ * conversations. The section's header is the space's own conversations bar,
+ * drawn here (src/lib/conversation-nav.ts): its Conversations menu (every
+ * conversation, with Delete, Clear and Find earlier) and New conversation.
+ * Below it, the newest conversations, the open one marked aria-current, each
+ * with when it was last used. A row opens through the same bar, so a switch
+ * asked for while a reply runs is refused there with its alert, as from the
+ * menu. While the sidebar is hidden, the space's pane shows the views and the
+ * bar in a compact header instead.
+ *
+ * Rows follow T3 Code's SidebarThreadRow and the section header its
+ * SidebarThreadHeader (apps/web/src/components/sidebar/, MIT): one line, the
+ * title truncating before the stamp; actions in the header, not per row.
+ */
+function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () => void }) {
+  const nav = useConversations(space.id);
+  const view = useSpaceView(space.id);
+  const threads = nav?.threads ?? [];
+  const shown = threads.slice(0, RECENT);
+  // The bar's controls land here; gone with this section, they go back to the pane.
+  const host = useCallback((el: HTMLDivElement | null) => setConversationHost(space.id, el), [space.id]);
+
+  function open(t: ThreadSummary) {
+    if (!nav) return;
+    setSpaceView(space.id, "chat", t.current);
+    onChosen?.();
+    if (!t.current) nav.open(t);
+  }
+
+  const label = (t: ThreadSummary) => (t.current && t.messages === 0 ? "New conversation" : t.title);
+
+  return (
+    <li data-sidebar-conversations={space.id} className="flex flex-col gap-1 ps-[calc(var(--ph-space-mark-size)+var(--ph-space)*2.5)] pt-0.5 pb-1">
+      <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" />
+      <div ref={host} data-conversations-host="" className="pt-1" />
+      {threads.length === 0 && (!nav || nav.status === "loading") && <p role="status" className="ps-2 text-sm text-ink-secondary">Loading conversations…</p>}
+      {nav?.status === "ready" && threads.length === 0 && <p className="ps-2 text-sm text-ink-secondary">No conversations yet.</p>}
+      {nav?.status === "error" && <p className="ps-2 text-sm text-danger-ink">Conversations couldn’t be loaded. Open the Conversations menu to try again.</p>}
+      <ul aria-label={`Recent conversations in ${space.name}`} className="flex flex-col gap-(--ph-sidebar-item-gap) empty:hidden">
+        {shown.map((t) => (
+          <li key={t.id}>
+            <button
+              type="button"
+              data-sidebar-thread={t.id}
+              disabled={nav?.working}
+              aria-current={t.current ? "page" : undefined}
+              onClick={() => open(t)}
+              className={cn(
+                threadRow,
+                t.current && view === "chat"
+                  ? "bg-selected text-ink forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]"
+                  : "text-ink-secondary hover:bg-hover hover:text-ink active:bg-selected",
+              )}
+            >
+              <span className={cn("min-w-0 truncate", t.current && "font-medium text-ink")}>{label(t)}</span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-ink-secondary">
+                {t.current && nav?.running ? (
+                  <>
+                    <Icon name="spinner" className="size-(--ph-icon-size-sm) motion-safe:animate-spin" />
+                    <span className="sr-only">, answering</span>
+                  </>
+                ) : (
+                  !t.current && (
+                    <>
+                      <span className="sr-only">, </span>
+                      {relativeDate(t.updated)}
+                    </>
+                  )
+                )}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {threads.length > RECENT && (
+        <button type="button" data-sidebar-history-all="" onClick={() => nav?.showAll()} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-start text-xs text-ink-secondary hover:bg-hover hover:text-ink">
+          Show all {threads.length} conversations
+        </button>
+      )}
+    </li>
   );
 }
 

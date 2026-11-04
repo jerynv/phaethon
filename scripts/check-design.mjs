@@ -2,9 +2,8 @@
 // Design rules no reviewer should have to catch by eye. Fails the build when
 // source code (src/ by default, or the paths given) breaks one:
 //   1. colours are oklch()/oklab() only: no hex, rgb(), hsl()
-//   2. no lucide-react: Phaethon draws its own icons (src/icons)
-//   3. no raw Tailwind palette colours (text-red-500 ...): use token colours
-//   4. no hard-coded px/rem sizes in class names (w-[12px] ...): use a token,
+//   2. no raw Tailwind palette colours (text-red-500 ...): use token colours
+//   3. no hard-coded px/rem sizes in class names (w-[12px] ...): use a token,
 //      e.g. w-(--ph-sidebar-width)
 // A line can opt out with `design-check-ignore: <reason>`.
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -17,7 +16,6 @@ const palette =
 const rules = [
   { name: "hex colour", re: /(?<![\w&])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b(?![\w-])/ },
   { name: "rgb()/hsl() colour", re: /\b(?:rgba?|hsla?)\(/ },
-  { name: "lucide-react import", re: /from\s+["']lucide-react["']/ },
   { name: "raw Tailwind palette colour", re: new RegExp(`(?<![\\w-])(?:[a-z]+:)*(?:bg|text|border|ring|fill|stroke|from|to|via|outline|decoration|divide|placeholder|caret|accent|shadow)-(?:${palette})-\\d{2,3}(?:/\\d+)?\\b|(?<![\\w-])(?:bg|text|border|fill|stroke)-(?:white|black)\\b`) },
   { name: "hard-coded size in a class", re: /(?<![\w-])[a-z-]+-\[-?\d+(?:\.\d+)?(?:px|rem|em)\]/ },
   // UI copy uses the typographic apostrophe (don’t, Phaethon’s); .ts/.tsx, comments skipped.

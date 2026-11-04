@@ -142,13 +142,14 @@ export function TitleBar({
       data-tauri-drag-region="deep"
       data-shell-chrome=""
       data-inactive={inactive ? "" : undefined}
-      className="group/titlebar flex h-(--ph-titlebar-room) shrink-0 items-center bg-surface"
+      className="group/titlebar flex h-(--ph-titlebar-room) shrink-0 items-center bg-bg"
     >
-      {/* Leading cluster: as wide as the sidebar when it is docked, so the title lines up with the pane below. */}
+      {/* Leading cluster. With the sidebar docked it is the top of the sidebar's column (same width, surface
+          and divider), so the sidebar runs the window’s full height and the title starts where the pane does. */}
       <div
         className={cn(
           "flex h-full min-w-0 shrink-0 items-center gap-1 ps-(--ph-titlebar-inset-start) pe-2",
-          sidebarDocked && "w-(--ph-sidebar-width)",
+          sidebarDocked && "w-(--ph-sidebar-width) border-e border-line bg-surface forced-colors:border-[CanvasText]",
         )}
       >
         <BarButton
@@ -175,7 +176,7 @@ export function TitleBar({
         )}
       </div>
 
-      <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarDocked ? "ps-(--ph-pane-inset)" : "ps-1")}>
+      <div className={cn("flex h-full min-w-0 flex-1 items-center gap-2", sidebarDocked ? "ps-4" : "ps-1")}>
         {space && <SpaceMark hue={space.hue} />}
         <h1
           id="space-title"

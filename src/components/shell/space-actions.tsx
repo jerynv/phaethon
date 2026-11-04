@@ -229,7 +229,7 @@ export function SpaceActionNotice() {
       data-space-action-notice={n.kind}
       onKeyDown={onKeyDown}
       className={cn(
-        "fixed start-(--ph-pane-inset) bottom-[calc(var(--ph-notice-lift)+var(--ph-pane-inset))] z-40 flex w-88 max-w-[calc(100%-var(--ph-pane-inset)*2)] items-start gap-2.5",
+        "fixed start-(--ph-notice-inset) bottom-[calc(var(--ph-notice-lift)+var(--ph-notice-inset))] z-40 flex w-88 max-w-[calc(100%-var(--ph-notice-inset)*2)] items-start gap-2.5",
         "rounded-lg border border-line bg-raised px-3.5 py-3 text-base text-ink shadow-lg forced-colors:border-[CanvasText]",
       )}
     >

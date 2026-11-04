@@ -90,7 +90,7 @@
   --ph-icon-size-sm: calc(14px * var(--ph-ui-scale));
   --ph-icon-size: calc(16px * var(--ph-ui-scale));
   --ph-icon-size-lg: calc(20px * var(--ph-ui-scale));
-  --ph-icon-stroke: 1.5;
+  --ph-icon-stroke: 2;
 
   /* ---- Layout ---- */
   --ph-titlebar-height: calc(40px * max(1, var(--ph-ui-scale)));
@@ -115,8 +115,8 @@
   /* A provider's model list in Settings and the space's model chooser (rem: it grows with the text). */
   --ph-model-list-max-height: 16rem;
   --ph-chip-name-width: 12rem;
-  /* The main pane sits inset from the window chrome by this much. */
-  --ph-pane-inset: calc(var(--ph-space) * 2);
+  /* Floating notices keep this distance from window edges. */
+  --ph-notice-inset: calc(var(--ph-space) * 2);
   /* Fluent caption buttons (Windows/Linux): 46px wide, full title bar height. */
   --ph-window-control-width: calc(46px * max(1, var(--ph-ui-scale)));
   /* The dot beside a space's name. */

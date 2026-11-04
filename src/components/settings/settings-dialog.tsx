@@ -84,17 +84,14 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   /** A space whose details Settings › Spaces opens (the sidebar's Edit name and colour…); `n` makes a repeat a new request. */
   const [editSpace, setEditSpace] = useState<{ id: string; n: number } | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
-  /** The window's size, measured when it opens and kept while it is open (see frozenRef). */
-  const [frozen, setFrozen] = useState<{ width: number; height: number } | null>(null);
   /** Background elements this window made inert, to restore on close. */
   const madeInert = useRef<HTMLElement[]>([]);
 
   /**
    * On mount of the window: make everything behind it inert (no focus, no
    * pointer, hidden from screen readers' virtual cursor; Radix only sets
-   * aria-hidden, which VoiceOver's cursor and live regions ignore), and fix its
-   * size so a text-size change or a switch of page never makes it jump. A
-   * changed window size measures again. On unmount: undo both.
+   * aria-hidden, which VoiceOver's cursor and live regions ignore). On unmount,
+   * restore those elements.
    */
   const contentRef = useCallback((node: HTMLDivElement | null) => {
     content.current = node;
@@ -104,31 +101,11 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         el.inert = true;
         madeInert.current.push(el);
       }
-      setFrozen({ width: node.offsetWidth, height: node.offsetHeight });
     } else {
       for (const el of madeInert.current) el.inert = false;
       madeInert.current = [];
-      setFrozen(null);
     }
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    let frame = 0;
-    const onResize = () => {
-      cancelAnimationFrame(frame);
-      setFrozen(null);
-      frame = requestAnimationFrame(() => {
-        const node = content.current;
-        if (node) setFrozen({ width: node.offsetWidth, height: node.offsetHeight });
-      });
-    };
-    window.addEventListener("resize", onResize);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("resize", onResize);
-    };
-  }, [open]);
 
   const load = useCallback(async () => {
     try {
@@ -323,7 +300,6 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
           aria-describedby={descId}
           // Radix hides the background with aria-hidden only; say it is modal too.
           aria-modal="true"
-          style={frozen ? { width: frozen.width, height: frozen.height } : undefined}
           onOpenAutoFocus={onOpenAutoFocus}
           onCloseAutoFocus={onCloseAutoFocus}
           // Only Escape and Close close it: a click just outside (a tremor, a missed target) does nothing.
@@ -334,8 +310,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
             if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
           }}
           className={cn(
-            "fixed top-1/2 left-1/2 z-50 flex h-(--ph-settings-height) w-(--ph-settings-width) -translate-x-1/2 -translate-y-1/2 overflow-clip rounded-xl border border-line bg-bg text-ink shadow-lg outline-none",
-            "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",
+            "fixed inset-0 z-50 flex h-dvh w-full overflow-clip bg-bg text-ink outline-none",
+            "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           )}
         >
           <StatusContext.Provider value={statusApi}>
@@ -350,7 +326,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                     It is kept compact there (title beside the tabs, no icons, shorter tabs), so at a large
                     text size the page keeps most of the height. */}
                 <div className="flex w-(--ph-settings-nav-width) shrink-0 flex-col border-r border-line bg-surface max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:border-r-0 max-md:border-b max-md:py-1.5 max-md:ps-3 max-md:pe-(--ph-settings-close-room)">
-                  <Dialog.Title className="px-5 pt-5 pb-3 text-lg font-semibold text-ink max-md:p-0 max-md:ps-1.5">Settings</Dialog.Title>
+                  <Dialog.Title className="px-5 pt-5 pb-1 text-lg font-semibold text-ink max-md:p-0 max-md:ps-1.5">Settings</Dialog.Title>
+                  <Dialog.Description id={descId} className="px-5 pb-4 text-sm text-ink-secondary max-md:sr-only">Changes apply as you make them and are saved in your Phaethon folder.</Dialog.Description>
                   <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2.5 max-md:flex-row max-md:flex-wrap max-md:px-0">
                     {SECTIONS.map((s) => (
                       <Tabs.Trigger
@@ -372,7 +349,6 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                     ))}
                   </Tabs.List>
                   <div className="mt-auto flex flex-col gap-1.5 px-5 pt-4 pb-5 text-sm text-ink-secondary max-md:hidden">
-                    <Dialog.Description id={descId}>Changes apply as you make them and are saved in your Phaethon folder.</Dialog.Description>
                     <SaveIndicator />
                   </div>
                 </div>
@@ -399,12 +375,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       key={s.id}
                       value={s.id}
                       aria-labelledby={ids[s.id]}
-                      // A tab stop (Radix), so the page scrolls by keyboard. Its ring is drawn inside
-                      // the panel: outside, the nav border and the window's rounded edge clip it.
+                      // A tab stop (Radix), so the page scrolls by keyboard. Keep its ring inside the panel.
                       className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:[outline-offset:calc(-1*(var(--ph-focus-width)+var(--ph-focus-offset)))]! data-[state=inactive]:hidden"
                     >
-                      {/* Starts below the Close button, so a page's Reset never sits under it. */}
-                      <div className="mx-auto flex max-w-(--ph-settings-content-width) flex-col gap-7 px-8 pt-(--ph-settings-close-room) pb-10 max-md:pt-6">
+                      <div className="flex max-w-(--ph-settings-content-width) flex-col gap-7 px-8 pt-6 pb-10 max-sm:px-6">
                         {pages[s.id]}
                       </div>
                     </Tabs.Content>

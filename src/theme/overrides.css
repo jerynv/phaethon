@@ -9,19 +9,14 @@
 :root {
   /* Reading-font cards wrap to fewer columns before they get cramped. */
   --ph-font-card-min: 15rem; /* rem already follows the text size */
-  /* Every length follows --ph-ui-scale (the text size dial), so at a larger
-     text size the window, its columns and its controls grow with the text and
-     nothing spills (WCAG 1.4.4). The window itself is capped by the viewport. */
-  --ph-settings-width: min(calc(806px * var(--ph-ui-scale)), calc(100vw - var(--ph-space) * 8));
-  --ph-settings-height: min(calc(572px * var(--ph-ui-scale)), calc(100dvh - var(--ph-space) * 8));
+  /* Columns and controls follow text size; the settings page fills the viewport. */
   --ph-settings-nav-width: calc(176px * var(--ph-ui-scale));
   --ph-settings-content-width: calc(598px * var(--ph-ui-scale));
   --ph-settings-control-width: calc(234px * var(--ph-ui-scale));
   /* Below this a label and its control stack; capped so a narrow window at
      a large text size still fits one column. */
   --ph-settings-label-min: min(calc(169px * var(--ph-ui-scale)), 100%);
-  /* The Close button sits in the window's top-right corner, outside the page
-     flow; pages start below it and banners stop short of it. */
+  /* Reserve the top-right Close button’s room in the compact header and banners. */
   --ph-settings-close-inset: calc(var(--ph-space) * 3);
   --ph-settings-close-room: calc(var(--ph-settings-close-inset) + var(--ph-control-height-sm) + var(--ph-space) * 2);
   /* Larger click targets (Settings › Accessibility) sets --ph-target-min to

@@ -1554,7 +1554,7 @@ function ImportNotice({ run, onShow, onDismiss }: { run: Run; onShow: () => void
       aria-label={running ? "Importing courses" : "Import finished"}
       data-import-notice={running ? "running" : "done"}
       className={cn(
-        "fixed start-(--ph-pane-inset) bottom-(--ph-pane-inset) z-40 flex w-[calc(var(--ph-sidebar-width)-var(--ph-pane-inset))] max-w-[calc(100%-var(--ph-pane-inset)*2)] items-start gap-2.5",
+        "fixed start-(--ph-notice-inset) bottom-(--ph-notice-inset) z-40 flex w-[calc(var(--ph-sidebar-width)-var(--ph-notice-inset))] max-w-[calc(100%-var(--ph-notice-inset)*2)] items-start gap-2.5",
         "rounded-lg border border-line bg-raised px-3.5 py-3 text-base text-ink shadow-lg forced-colors:border-[CanvasText]",
       )}
     >

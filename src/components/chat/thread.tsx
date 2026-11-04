@@ -276,8 +276,7 @@ function ReplyActions() {
   const knownParent = useKnownIndex(pane?.threadIndex ?? null, parentId);
   const announce = useAnnounce();
   const was = useRef(false);
-  // Regenerate replaces the reply you may be reading, so it asks first (a slip off Copy must not
-  // replace anything): "Keep this reply" takes focus, "Replace it" sits at the far end.
+  // Regenerate asks first, with focus on "Keep this reply".
   const id = useId();
   const [confirming, setConfirming] = useState(false);
   const keepRef = useRef<HTMLButtonElement>(null);
@@ -300,8 +299,7 @@ function ReplyActions() {
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
-      // Copy and Regenerate sit at least a whole target apart (more with Larger click targets).
-      className="flex flex-wrap items-center gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2"
+      className="flex flex-wrap items-center gap-2"
       data-reply-actions=""
     >
       {hasText && (
@@ -354,7 +352,7 @@ function ReplyActions() {
           <p id={`${id}-regen-q`} className="text-sm text-ink">
             Replace this reply with a new one? This one is kept in past conversations.
           </p>
-          <span className="flex flex-wrap items-center gap-x-[max(var(--ph-target-min),calc(var(--ph-space)*8))] gap-y-2">
+          <span className="flex flex-wrap items-center gap-2">
             <Button ref={keepRef} type="button" variant="outline" size="xs" data-regenerate-keep="" onClick={keep}>
               Keep this reply
             </Button>

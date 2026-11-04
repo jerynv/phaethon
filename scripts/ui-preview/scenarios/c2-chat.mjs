@@ -946,7 +946,7 @@ export default [
         empty: !!document.querySelector("[data-empty-state]"),
         heading: document.querySelector('[role="log"] h2')?.textContent,
       }));
-      check(!s.empty && s.heading?.startsWith("Set up Phaethon"), "with no key the setup card takes the empty state's place and leads", JSON.stringify(s));
+      check(!s.empty && s.heading?.startsWith("Connect an assistant"), "with no key the setup card takes the empty state's place and leads", JSON.stringify(s));
       const asked = await calls(page, "settings_get");
       check(asked.length >= 1, "the pane read the settings to decide");
     },
@@ -974,7 +974,7 @@ export default [
         work: !!document.querySelector('[data-space-pane="work"] [data-setup-card]'),
         focus: document.activeElement?.hasAttribute("data-composer-input"),
       }));
-      check(s.school, "the card that saved the key stays to say it worked");
+      check(s.school, "the card that saved the key stays to confirm it was saved");
       check(!s.work, "Work, kept open in the background, puts its card away", JSON.stringify(s));
       check(s.focus, "focus moves to the message box");
       await h.shot("saved");

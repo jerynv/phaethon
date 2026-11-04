@@ -7,7 +7,6 @@ import { checkApiKey, setApiKey, type KeyProblem, type ProviderId } from "@/lib/
 
 export const CONSOLE_KEYS_URL = "https://console.anthropic.com/settings/keys";
 export const CONSOLE_BILLING_URL = "https://console.anthropic.com/settings/billing";
-export const ANTHROPIC_PRIVACY_URL = "https://www.anthropic.com/legal/privacy";
 
 /** Where the key lives, in words a non-technical person knows. */
 export const KEY_STORE = "this computer’s password store (Keychain)";
@@ -34,25 +33,25 @@ export const isSaved = (o: KeyOutcome) => o.kind === "saved" || o.kind === "no-c
 
 /** What to say for each outcome. One or two short sentences, the way out last. */
 export function outcomeText(o: KeyOutcome): string {
-  if (o.kind === "saved") return `Your key works. It’s saved in ${KEY_STORE}.`;
+  if (o.kind === "saved") return "API key saved.";
   if (o.kind === "no-credit")
-    return "Your key is saved, but your Anthropic account has no credit yet, so Phaethon can’t answer. Add credit under Billing in the Anthropic console; nothing else needs changing here.";
+    return "API key saved. Add Anthropic API credit to continue.";
   switch (o.problem) {
     case "empty":
       return "Paste your key first. It starts with sk-ant-.";
     case "format":
-      return "That doesn’t look like an Anthropic API key, so it wasn’t saved. A key starts with sk-ant- and is one long line. Copy it again from the Anthropic console.";
+      return "Use an Anthropic key starting with sk-ant-. It wasn’t saved.";
     case "rejected":
-      return "Anthropic didn’t accept this key, so it wasn’t saved. It may have a typo or have been deleted. Create a new key in the Anthropic console and paste it here.";
+      return "Anthropic rejected this key. It wasn’t saved.";
     case "network":
-      return "Phaethon couldn’t reach Anthropic to check this key, so it wasn’t saved. Check your internet connection and try again, or save it without checking.";
+      return "Couldn’t reach Anthropic. Retry or save without checking.";
     case "unchecked":
-      return "Phaethon couldn’t check this key, so it wasn’t saved. Try again, or save it without checking.";
+      return "Couldn’t check this key. Retry or save without checking.";
     case "billing":
       // Only when billing comes back with ok: false and the save then failed.
-      return "Your Anthropic account has no credit yet. Add credit under Billing in the Anthropic console.";
+      return "Add Anthropic API credit to continue.";
     case "not-saved":
-      return `The key works, but it couldn’t be saved in ${KEY_STORE}.${o.detail ? ` ${o.detail}` : ""}`;
+      return `Couldn’t save the API key.${o.detail ? ` ${o.detail}` : ""}`;
   }
 }
 
@@ -63,8 +62,8 @@ export function outcomeText(o: KeyOutcome): string {
 export function outcomeTextFor(o: KeyOutcome, provider: { id: ProviderId; name: string }): string {
   if (provider.id === "anthropic") return outcomeText(o);
   const name = provider.id === "custom" ? "your server" : provider.name;
-  if (o.kind === "saved") return `Your key works. It’s saved in ${KEY_STORE}.`;
-  if (o.kind === "no-credit") return `Your key is saved, but your ${provider.name} account has no credit yet, so Phaethon can’t answer. Add credit with ${provider.name}; nothing else needs changing here.`;
+  if (o.kind === "saved") return "API key saved.";
+  if (o.kind === "no-credit") return `API key saved. Add ${provider.name} API credit to continue.`;
   switch (o.problem) {
     case "empty":
       return "Paste your key first.";
@@ -72,13 +71,13 @@ export function outcomeTextFor(o: KeyOutcome, provider: { id: ProviderId; name: 
     case "rejected":
       return `${o.detail ?? `${provider.name} didn’t accept this key.`} It wasn’t saved.`;
     case "network":
-      return `Phaethon couldn’t reach ${name} to check this key, so it wasn’t saved. Check your connection and try again, or save it without checking.`;
+      return `Couldn’t reach ${name}. Retry or save without checking.`;
     case "unchecked":
-      return "Phaethon couldn’t check this key, so it wasn’t saved. Try again, or save it without checking.";
+      return "Couldn’t check this key. Retry or save without checking.";
     case "billing":
-      return `Your ${provider.name} account has no credit yet. Add credit with ${provider.name}.`;
+      return `Add ${provider.name} API credit to continue.`;
     case "not-saved":
-      return `The key couldn’t be saved in ${KEY_STORE}.${o.detail ? ` ${o.detail}` : ""}`;
+      return `Couldn’t save the API key.${o.detail ? ` ${o.detail}` : ""}`;
   }
 }
 

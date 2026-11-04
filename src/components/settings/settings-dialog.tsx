@@ -12,7 +12,7 @@ import { flushAppearance, useSaveState } from "@/theme";
 
 import { AboutSection } from "./about-section";
 import { AccessibilitySection } from "./accessibility-section";
-import { AgentSection } from "./agent-section";
+import { AgentSection, type AgentFocusRequest } from "./agent-section";
 import { AppearanceSection } from "./appearance-section";
 import { CoursesSection } from "./courses-section";
 import { SpacesSection } from "./spaces-section";
@@ -82,6 +82,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   const returnTo = useRef<HTMLElement | null | undefined>(undefined);
   /** A field to focus once the page has it (the key field after a key error). */
   const pendingFocus = useRef<string | null>(null);
+  const [agentFocusRequest, setAgentFocusRequest] = useState<AgentFocusRequest | null>(null);
+  const agentFocusSequence = useRef(0);
   /** A space whose details Settings › Spaces opens (the sidebar's Edit name and colour…); `n` makes a repeat a new request. */
   const [editSpace, setEditSpace] = useState<{ id: string; n: number } | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
@@ -122,7 +124,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
 
   useEffect(() => {
     // A request to open a space's details is for that opening only.
-    if (!open) setEditSpace(null);
+    if (!open) {
+      setEditSpace(null);
+      setAgentFocusRequest(null);
+    }
     if (!open) return;
     setStatus("");
     setError("");
@@ -149,6 +154,11 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   }, [open, settings]);
 
   function onOpenAutoFocus(e: Event) {
+    if (agentFocusRequest && section === "agent") {
+      e.preventDefault();
+      if (!settings) document.getElementById(ids.agent)?.focus();
+      return;
+    }
     if (!pendingFocus.current) return; // Radix focuses the first control
     // Until the field exists, the page heading holds focus (inside the window, never behind it).
     e.preventDefault();
@@ -170,7 +180,17 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
       }
       // Opened on the Assistant page by a key error: land on the key field itself.
       const focus = detail?.focus ?? (wanted === "agent" ? "key" : undefined);
-      pendingFocus.current = focus && focus !== "heading" ? FOCUS_SELECTOR[focus] : null;
+      if ((wanted === "agent" || wanted === undefined) && focus && focus !== "heading") {
+        if (wanted === undefined) {
+          lastSection = "agent";
+          setSection("agent");
+        }
+        setAgentFocusRequest({ target: focus, n: ++agentFocusSequence.current, closeSettingsOnClose: !isOpen.current });
+        pendingFocus.current = null;
+      } else {
+        setAgentFocusRequest(null);
+        pendingFocus.current = focus && focus !== "heading" ? FOCUS_SELECTOR[focus] : null;
+      }
       // A space's Edit name and colour…: its details open and its name field takes focus.
       const space = detail?.space;
       if (wanted === "spaces" && space) {
@@ -237,6 +257,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
 
   const choose = useCallback((id: string) => {
     if (!isSection(id)) return;
+    setAgentFocusRequest(null);
     lastSection = id;
     setSection(id);
     setError("");
@@ -246,6 +267,10 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
     () => ({
       go: (id, focus) => {
         choose(id);
+        if (id === "agent" && (focus === FOCUS_SELECTOR.key || focus === FOCUS_SELECTOR.model)) {
+          setAgentFocusRequest({ target: focus === FOCUS_SELECTOR.key ? "key" : "model", n: ++agentFocusSequence.current, closeSettingsOnClose: false });
+          return;
+        }
         // The new page mounts on the next render; focus once it has painted.
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
@@ -273,8 +298,14 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
     (canTakeFocus(target) ? target : fallback)?.focus();
   }
 
+  function onRequestedProviderClose(n: number) {
+    if (agentFocusRequest?.n !== n) return;
+    setAgentFocusRequest(null);
+    if (agentFocusRequest.closeSettingsOnClose) onOpenChange(false);
+  }
+
   const pages: Record<SectionId, ReactNode> = {
-    agent: <AgentSection headingId={ids.agent} settings={settings} loadError={loadError} retryLoad={load} act={act} />,
+    agent: <AgentSection headingId={ids.agent} settings={settings} loadError={loadError} retryLoad={load} act={act} focusRequest={agentFocusRequest} onRequestedProviderClose={onRequestedProviderClose} />,
     appearance: <AppearanceSection headingId={ids.appearance} />,
     accessibility: <AccessibilitySection headingId={ids.accessibility} />,
     spaces: <SpacesSection headingId={ids.spaces} editSpace={editSpace} />,
@@ -311,7 +342,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
             if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
           }}
           className={cn(
-            "fixed top-1/2 left-1/2 z-50 m-0! flex h-[min(var(--ph-settings-height),calc(100dvh-48px))] w-[min(var(--ph-settings-width),calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-clip p-0! text-ink outline-none max-sm:h-[min(var(--ph-settings-height),calc(100dvh-32px))] max-sm:w-[calc(100%-32px)]",
+            "fixed top-1/2 left-1/2 z-50 m-0! flex h-[min(var(--ph-settings-height),calc(100dvh-48px))] max-h-none! w-[min(var(--ph-settings-width),calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-clip p-0! text-ink outline-none max-sm:h-[min(var(--ph-settings-height),calc(100dvh-32px))] max-sm:w-[calc(100%-32px)]",
             "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           )}
         >

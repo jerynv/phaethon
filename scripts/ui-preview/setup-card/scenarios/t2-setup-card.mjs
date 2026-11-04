@@ -65,27 +65,26 @@ export default [
         const card = document.querySelector(sel);
         return {
           name: document.getElementById(card.getAttribute("aria-labelledby"))?.textContent,
-          // textContent: the facts are inside the folded "What is an API key?" section.
           text: card.textContent,
+          details: !!card.querySelector("details"),
           link: card.querySelector('a[href="https://console.anthropic.com/settings/keys"]')?.textContent,
           label: document.querySelector("[data-setup-key]").labels?.[0]?.textContent,
+          connect: card.querySelector('button[type="submit"]')?.textContent.trim(),
           cli: !!card.querySelector("[data-setup-cli]"),
         };
       }, CARD);
-      check(c.name === "Set up Phaethon to answer in School", "the card is a region named by its heading", c.name);
-      for (const want of ["API key", "separate account", "ChatGPT or Claude.ai subscription", "few dollars a month", "spending limit", "never syncs", "No key yet?", "What is an API key?"]) {
-        check(c.text.includes(want), `it says: ${want}`);
-      }
-      check(c.link?.startsWith("console.anthropic.com"), "it links straight to the API keys page", c.link);
-      check(c.label === "Paste your Anthropic API key", "the field has a visible label", c.label);
-      check(c.cli, "Use Claude Code instead is offered");
+      check(c.name === "Connect an assistant for School", "the card is a region named by its heading", c.name);
+      check(!c.details && !/subscription|few dollars|spending limit|never syncs/.test(c.text), "setup omits account tutorials and disclosures", c.text);
+      check(c.link === "Create an API key (opens in your browser)", "it links straight to the API keys page", c.link);
+      check(c.label === "Anthropic API key", "the field has a visible label", c.label);
+      check(c.connect === "Connect" && c.cli, "Connect and Use Claude Code are offered");
       await page.focus("[data-setup-key]");
       await h.shot("field-focused");
     },
   },
-  bad("format", null, "Linda1959!", "doesn’t look like an Anthropic API key"),
-  bad("rejected", { ok: false, problem: "rejected", message: "invalid x-api-key" }, "sk-ant-api03-deleted-xxxxxxxxxxxx", "Anthropic didn’t accept this key"),
-  bad("network", { ok: false, problem: "network", message: "offline" }, "sk-ant-api03-offline-xxxxxxxxxxxx", "couldn’t reach Anthropic"),
+  bad("format", null, "Linda1959!", "Use an Anthropic key starting with sk-ant-."),
+  bad("rejected", { ok: false, problem: "rejected", message: "invalid x-api-key" }, "sk-ant-api03-deleted-xxxxxxxxxxxx", "Anthropic rejected this key."),
+  bad("network", { ok: false, problem: "network", message: "offline" }, "sk-ant-api03-offline-xxxxxxxxxxxx", "Couldn’t reach Anthropic."),
   {
     name: "t2-setup-card-billing",
     sizes: [[1100, 720]],
@@ -106,8 +105,8 @@ export default [
         focus: document.activeElement?.tagName,
       }));
       console.log(`     billing: ${JSON.stringify(got)}`);
-      check(got.heading === "One more step: add credit" && got.text.includes("no credit yet") && !!got.link, "a key with no credit: the card says only to add credit, with the Billing link", JSON.stringify(got));
-      check(got.said.includes("no credit yet") && got.focus === "H2", "it is said aloud and focus is on the card's heading", JSON.stringify(got));
+      check(got.heading === "Add credit" && got.text.includes("Add credit to your Anthropic account") && got.link === "Open Billing (opens in your browser)", "a key with no credit offers the Billing link", JSON.stringify(got));
+      check(got.said.includes("Add Anthropic API credit") && got.focus === "H2", "it is said aloud and focus is on the card's heading", JSON.stringify(got));
       check((await calls(page, "api_key_set")).length === 1, "the key is saved (no need to paste it again after adding credit)");
       check((await page.evaluate(() => window.__changed)).join() === "key", "the settings-changed event says the key changed");
     },
@@ -133,8 +132,8 @@ export default [
       const order = (await page.evaluate(() => window.__calls.map(([c]) => c))).filter((c) => c.startsWith("api_key"));
       console.log(`     ok: ${JSON.stringify({ ...got, order })}`);
       check(order.join() === "api_key_check,api_key_set", "checked, then saved", order.join());
-      check(got.heading === "You’re set up" && got.done.includes("Type your first message"), "the card says what to do next", JSON.stringify(got));
-      check(got.said.includes("Your key works"), "and says it aloud", got.said);
+      check(got.heading === "API key saved" && got.done.includes("Type your first message"), "the card says what to do next", JSON.stringify(got));
+      check(got.said === "API key saved.", "and says it aloud", got.said);
       check(got.focus, "focus moves to the message box");
       check(got.changed.join() === "key", "the settings-changed event fired for the key", got.changed.join());
     },
@@ -151,12 +150,13 @@ export default [
       await new Promise((r) => setTimeout(r, 300));
       const sets = await calls(page, "settings_set_backend");
       const got = await page.evaluate(() => ({
+        heading: document.querySelector("[data-setup-card] h2")?.textContent,
         done: document.querySelector("[data-setup-done]")?.textContent,
         focus: document.activeElement?.hasAttribute("data-composer-input"),
         changed: window.__changed,
       }));
-      check(sets.length === 1 && sets[0].backend === "claude-cli", "Use Claude Code instead switches the backend", JSON.stringify(sets));
-      check(got.done.includes("Claude Code") && got.focus, "the card says so and focus moves to the message box", JSON.stringify(got));
+      check(sets.length === 1 && sets[0].backend === "claude-cli", "Use Claude Code switches the backend", JSON.stringify(sets));
+      check(got.heading === "Claude Code selected" && got.done.includes("Send a message") && got.focus, "the card confirms the selection and focus moves to the message box", JSON.stringify(got));
       check(got.changed.join() === "backend", "the settings-changed event fired for the backend", got.changed.join());
       check((await calls(page, "api_key_set")).length === 0, "no key is saved");
     },

@@ -2,18 +2,19 @@
 // thing it names happens in the page.
 //   t3-undo           Remove in Settings › Spaces has Undo, kept until Settings closes (jordan3)
 //   t3-incoming       each space lists which other spaces can read it (sam3)
-//   t3-radios         the assistant radios are named by their title alone (maya N3)
+//   t3-provider-controls  compact provider actions have clear accessible names
 //   t3-bounded        Settings leaves the workspace visible and its footer entry aligns left
-//   t3-words          MANUAL.md and the .phaethon folders explained in plain words (linda9)
+//   t3-words          MANUAL.md and application folders are easy to find
 //   t3-cli-missing    Claude Code not installed: say how to install, don't switch (linda6)
-//   t3-cli-installed  installed: the radio switches as before
+//   t3-cli-installed  installed: an explicit default action switches assistants
 //   t3-word-spacing   a word-spacing control; Text comes first in Appearance (priya15, N5)
 //   t3-slider-click   a click on a track steps toward it, never jumps (jordan5); Close has a tooltip
 //   t3-compact        at 760x560 and 200% the header and tabs take at most a quarter of the height (tomas6)
-//   t3-disclosure     space names, granted folders, and what is saved where (sam14)
-//   t3-about-delete   About leads with the menu's Delete; the hidden files are folded (linda r3)
+//   t3-provider-setup  keyboard setup leaves the current default unchanged
+//   t3-about-files    About lists file locations and copies the instructions path
 //   t3-space-folder   a space's folder in plain words, not "Folder: spaces/school" (linda r3)
 import { SETTINGS, check, openSettings, openSpaceDetails, park, PANEL } from "../audit-fixtures.mjs";
+import { openProviderConfiguration, closeProviderPopup, providerPopup, useProviderDefault } from "../provider-flow.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const css = (page, name) => page.evaluate((n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(), name);
@@ -54,6 +55,7 @@ export default [
       check(footer.justify === "flex-start" && footer.inset <= footer.iconWidth + 2, "the Settings entry aligns its Vic face and icon to the navigation rail", JSON.stringify(footer));
       await page.click('[data-testid="open-settings"]');
       await page.waitForSelector('[role="dialog"] h3');
+      await h.click('[data-testid="settings-tab-appearance"]');
       await h.idle();
       const bounds = await page.evaluate(() => {
         const dialog = document.querySelector('[role="dialog"]').getBoundingClientRect();
@@ -140,20 +142,20 @@ export default [
     },
   },
   {
-    name: "t3-radios",
+    name: "t3-provider-controls",
     sizes: [[1100, 720]],
     themes: ["light"],
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const radios = await page.$$('[role="dialog"] [data-backend]');
-      check(radios.length === 4, "four assistant choices", `${radios.length}`);
-      for (const r of radios) {
-        const ax = await page.accessibility.snapshot({ root: r, interestingOnly: false });
-        const desc = await r.evaluate((el) => (el.getAttribute("aria-describedby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent ?? "").join(" ").trim());
-        console.log(`     radio: name "${ax?.name}" | description "${desc.slice(0, 60)}…"`);
-        check(!!ax?.name && !!desc && !ax.name.includes(desc.slice(0, 20)), "the radio's name is its title only; the description is said once", `${ax?.name}`);
+      await page.waitForSelector('[data-provider-row="claude-cli"]');
+      const actions = await page.$$(`${PANEL} [data-provider-configure], ${PANEL} [data-provider-default], ${PANEL} [data-backend], ${PANEL} [data-provider-add]`);
+      check(actions.length >= 4, "configured providers expose management and default actions", `${actions.length}`);
+      for (const action of actions) {
+        const ax = await page.accessibility.snapshot({ root: action, interestingOnly: false });
+        check(ax?.role === "button" && ["Manage", "Use as default", "Add provider"].includes(ax.name), "each provider action has a short accessible name", JSON.stringify(ax));
       }
+      check((await page.$$(`${PANEL} [role="radio"]`)).length === 0, "provider setup uses explicit actions");
     },
   },
   {
@@ -163,13 +165,12 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const d = await page.$eval("[data-disclosure]", (el) => el.innerText);
-      check(/MANUAL\.md, a note in your Phaethon folder/.test(d), "Assistant says what MANUAL.md is", d);
+      check(!!(await page.$('[data-provider-configure="anthropic"]')), "Assistant exposes provider setup directly");
       await h.click('[data-testid="settings-tab-about"]');
       await h.idle();
       const about = await panelText(page);
-      check(/folders named \.phaethon/.test(about) && /hidden/.test(about), "About says in a plain sentence what the .phaethon folders are", about.slice(0, 600));
-      check(/MANUAL\.md/.test(about) && /how you like it to work/.test(about), "About explains MANUAL.md");
+      check(about.includes("spaces/<space>/.phaethon/") && about.includes("spaces/<space>/attachments/"), "About lists conversation and attachment folders", about);
+      check(about.includes("MANUAL.md applies to every space.") && about.includes(`${SETTINGS.vaultPath}/MANUAL.md`), "About identifies the shared instructions file", about);
       await page.$eval("[data-files-heading]", (el) => el.scrollIntoView({ block: "start" }));
       await park(page);
     },
@@ -181,23 +182,24 @@ export default [
     mock: { settings: SETTINGS, threads: {}, claudeCli: { installed: false } },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.click('[role="dialog"] [data-backend="claude-cli"]');
+      await openProviderConfiguration(page, "claude-cli");
+      await useProviderDefault(page, "claude-cli");
       await page.waitForSelector("[data-cli-missing]", { timeout: 3000 });
       await h.idle();
       const asked = await calls(page, "claude_cli_status");
       const set = await calls(page, "settings_set_backend");
       check(asked.length >= 1, "it checks whether Claude Code is installed first", `${asked.length}`);
       check(set.length === 0, "and does not switch when it isn't", JSON.stringify(set));
-      const checkedNow = await page.$eval('[role="dialog"] [data-backend][data-state="checked"]', (el) => el.getAttribute("data-backend"));
-      check(checkedNow === "phaethon", "the choice stays on Phaethon", checkedNow);
+      const current = await page.$eval('[data-provider-row="anthropic"]', (el) => el.textContent);
+      check(current.includes("Default"), "Anthropic remains the default", current);
       const msg = await page.$eval("[data-cli-missing]", (el) => ({ text: el.innerText, link: el.querySelector("a")?.href ?? "" }));
-      check(/isn’t installed on this computer/.test(msg.text) && /install/i.test(msg.text) && msg.link.startsWith("https://"), "it says Claude Code isn't installed and how to install it", JSON.stringify(msg));
+      check(/isn’t installed/.test(msg.text) && /install/i.test(msg.text) && msg.link.startsWith("https://"), "it says Claude Code isn't installed and how to install it", JSON.stringify(msg));
       check(/isn’t installed/.test(await status(page)), "and says so in the status line", await status(page));
       await park(page);
     },
   },
   {
-    // The first-run card's "Use Claude Code instead" uses the same check (setup-card.tsx calls switchToClaudeCode).
+    // The first-run card uses the same installation check.
     name: "t3-cli-missing-setup",
     sizes: [[1100, 720]],
     themes: ["light"],
@@ -206,7 +208,7 @@ export default [
       await page.waitForSelector("[data-setup-cli]", { timeout: 5000 });
       await page.$eval("[data-setup-cli]", (el) => el.scrollIntoView({ block: "center" }));
       await page.click("[data-setup-cli]");
-      await page.waitForFunction(() => /isn’t installed on this computer/.test(document.body.innerText), { timeout: 3000 });
+      await page.waitForFunction(() => /isn’t installed/.test(document.body.innerText), { timeout: 3000 });
       await h.idle();
       const set = await calls(page, "settings_set_backend");
       check(set.length === 0, "the setup card does not switch when Claude Code isn't installed", JSON.stringify(set));
@@ -223,7 +225,8 @@ export default [
     mock: { settings: SETTINGS, threads: {}, claudeCli: { installed: true, path: "/usr/local/bin/claude" } },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.click('[role="dialog"] [data-backend="claude-cli"]');
+      await openProviderConfiguration(page, "claude-cli");
+      await useProviderDefault(page, "claude-cli");
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "settings_set_backend"), { timeout: 3000 });
       await h.idle();
       const set = await calls(page, "settings_set_backend");
@@ -338,45 +341,45 @@ export default [
     },
   },
   {
-    name: "t3-disclosure",
+    name: "t3-provider-setup",
     sizes: [[1100, 720]],
     themes: ["light"],
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const d = await page.$eval("[data-disclosure]", (el) => el.innerText);
-      check(/names of your other spaces/.test(d), "the disclosure says the names of other spaces are sent", d);
-      check(/folders and files you’ve let (it|this space) read/.test(d), "and the folders and files you've granted", d);
-      check(/saved in this space’s conversation/.test(d), "and that what is read from another space is saved in this space's conversation", d);
-      await page.$eval("[data-disclosure]", (el) => el.scrollIntoView({ block: "center" }));
+      await openProviderConfiguration(page, "anthropic", { keyboard: true, catalog: true });
+      const setup = await page.$eval(providerPopup, (el) => ({ text: el.innerText, key: !!el.querySelector("[data-key-input]"), model: !!el.querySelector("[data-model-select]") }));
+      check(setup.key && setup.model, "keyboard provider selection opens its key and model controls", JSON.stringify(setup));
+      check(!/privacy policy|subscription|What is sent/.test(setup.text), "setup keeps its copy focused on configuration", setup.text);
+      check((await calls(page, "settings_set_backend")).length === 0 && (await calls(page, "settings_set_provider")).length === 0, "opening setup leaves the default unchanged");
       await park(page);
+      await closeProviderPopup(page, { keyboard: true });
       await h.click('[data-testid="settings-tab-about"]');
       await h.idle();
       const about = await panelText(page);
-      check(/read from another space/.test(about) && /conversation/.test(about), "About's privacy notes say it too", about.slice(0, 400));
+      check(about.includes("Files") && !/privacy policy|Deleting a conversation|keeps its own copy/.test(about), "About exposes files without policy tutorials", about);
     },
   },
   {
-    // Linda: About leads with the Conversations menu's Delete; the hidden-folder steps are a folded fallback.
-    name: "t3-about-delete",
+    name: "t3-about-files",
     sizes: [[1100, 720]],
     themes: ["light"],
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "about");
-      const shown = await page.$eval("[data-about-delete]", (el) => el.innerText);
-      check(/^Deleting a conversation\s+To delete a conversation, open Conversations at the top of the space and choose Delete/.test(shown), "it starts with the Conversations menu's Delete", shown.slice(0, 200));
-      check(!/Command-Shift|thread\.json/.test(shown), "the hidden files and Finder keys are not on show", shown);
-      check(/attachments folder/.test(shown) && /Anthropic/.test(shown), "it says attachments stay and what was sent to Anthropic", shown);
-      check(/If you use Claude Code, Codex or Gemini CLI, it also keeps its own copy/.test(shown), "it says a CLI keeps its own copy", shown);
-      await page.$eval("[data-about-delete]", (el) => el.scrollIntoView({ block: "center" }));
+      const shown = await page.$eval("[data-about-files]", (el) => ({ text: el.innerText, details: !!el.querySelector("details") }));
+      check(shown.text.includes(SETTINGS.vaultPath) && shown.text.includes("spaces/<space>/.phaethon/") && shown.text.includes("spaces/<space>/attachments/"), "file locations are directly visible", JSON.stringify(shown));
+      check(!shown.details && !/privacy policy|Deleting a conversation|keeps its own copy/.test(shown.text), "file locations need no disclosure or tutorial", JSON.stringify(shown));
+      await page.$eval("[data-about-files]", (el) => el.scrollIntoView({ block: "center" }));
       await park(page);
-      await h.shot("folded");
-      await page.focus("[data-about-delete] summary");
+      await h.shot("file-paths");
+      const copyInstructions = await page.evaluateHandle(() => [...document.querySelectorAll("[data-about-files] [data-setting-row]")].find((row) => row.textContent.includes("Instructions"))?.querySelector("button"));
+      await copyInstructions.focus();
       await page.keyboard.press("Enter");
       await h.idle();
-      const open = await page.$eval("[data-about-delete]", (el) => el.innerText);
-      check(/Where the files are/.test(open) && /\.phaethon\/thread\.json/.test(open) && /Command-Shift-full stop/.test(open), "Where the files are opens from the keyboard and lists them", open);
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      check(copied === `${SETTINGS.vaultPath}/MANUAL.md`, "the instructions path copies from the keyboard", copied);
+      check((await status(page)).includes("Path of MANUAL.md copied."), "copying the instructions path is announced", await status(page));
       await park(page);
     },
   },

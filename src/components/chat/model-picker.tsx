@@ -132,7 +132,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
           onCloseAutoFocus={(e) => other && e.preventDefault()}
         >
-          <MenuHeader spaceName={spaceName} note={running ? "Applies from your next message. The reply now running keeps its model." : "Applies from your next message."} />
+          <MenuHeader spaceName={spaceName} note={running ? "Applies from your next message. The reply now running keeps its model." : undefined} />
           {error && <MenuError error={error} />}
           <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)}>
             <ModelItem value={DEFAULT} title="Default" hint={`${defaultName}, as set in Settings`} spoken={`Use the default, ${defaultName}`} />
@@ -283,7 +283,7 @@ function CliModelPicker({
           >
             <MenuHeader
               spaceName={spaceName}
-              note={`${cli.name} answers here. ${running ? "A change applies from your next message; the reply now running keeps its model." : "A change applies from your next message."}`}
+              note={running ? `${cli.name} · Applies from your next message. The reply now running keeps its model.` : cli.name}
             />
             {error && <MenuError error={error} />}
             <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)}>
@@ -372,8 +372,7 @@ function CliModelDialog({
         <DialogHeader>
           <DialogTitle>Model in {spaceName}</DialogTitle>
           <DialogDescription>
-            {cli.name} answers with this model here, from your next message. For a model {cli.name}’s list doesn’t show, type its name as{" "}
-            {cli.name} knows it.
+            Enter a model name for {cli.name}.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -393,7 +392,7 @@ function CliModelDialog({
             Model name
           </label>
           <p id={hintId} className="text-sm text-ink-secondary">
-            For example {example}. Your {cli.name} plan decides which models you can use.
+            For example {example}.
           </p>
           <div className="flex flex-wrap gap-2">
             <Input
@@ -578,13 +577,13 @@ function Separator() {
 }
 
 /** "Model" over the space's name, and when a change takes effect. */
-function MenuHeader({ spaceName, note }: { spaceName: string; note: string }) {
+function MenuHeader({ spaceName, note }: { spaceName: string; note?: string }) {
   return (
     <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
       <DropdownMenu.Label className="text-base font-semibold text-ink">Model in {spaceName}</DropdownMenu.Label>
-      <p className="text-sm text-ink-secondary" data-model-note="">
+      {note && <p className="text-sm text-ink-secondary" data-model-note="">
         {note}
-      </p>
+      </p>}
     </div>
   );
 }

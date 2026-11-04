@@ -1,10 +1,9 @@
 import { Input } from "@/components/ui/input";
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import {
   CONSOLE_BILLING_URL,
   CONSOLE_KEYS_URL,
-  KEY_STORE,
   canSaveUnchecked,
   checkAndSave,
   outcomeText,
@@ -18,8 +17,7 @@ import {
   switchToClaudeCode,
 } from "@/components/settings/claude-code";
 import { Button } from "@/components/ui/button";
-import { Details } from "@/components/ui/details";
-import { Icon, type IconName } from "@/icons";
+import { Icon } from "@/icons";
 import { checkApiKey } from "@/lib/backend";
 import type { Space } from "@/lib/spaces";
 
@@ -76,12 +74,7 @@ function focusSendAgain(error: HTMLElement, fallback: HTMLElement | null) {
 }
 
 /**
- * First-run setup, shown in a space's empty conversation while Phaethon's own
- * assistant has no API key. Written for someone who has never heard of an API
- * key: what it is, that it is a separate pay-as-you-go Anthropic account (not
- * ChatGPT, not a Claude.ai subscription), roughly what it costs, where to get
- * one, then a field that checks the key before saving it. The other way in,
- * Claude Code, is offered second and quieter.
+ * First-run setup: check and save an API key, or select Claude Code.
  *
  * Keyboard and screen readers: a region named by its heading; the key field is
  * a form (Enter checks and saves); the result is said in a polite status line
@@ -170,12 +163,12 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
       if (r.ok) {
         creditKey.current = "";
         setPhase("saved");
-        said = "Your account has credit now. Phaethon is ready to answer.";
+        said = "Credit available. Send a message to continue.";
         const error = waitingKeyError(sectionRef.current);
         if (error) focusSendAgain(error, headingRef.current);
         else focusComposer(headingRef.current);
       } else if (r.problem === "billing") {
-        said = "There’s still no credit on this account. A new payment can take a few minutes to arrive; check again shortly.";
+        said = "No credit yet. Try again shortly.";
       } else {
         said = `Phaethon couldn’t check the key just now. ${r.message}`;
       }
@@ -201,7 +194,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
       onResult?.();
       await switchToClaudeCode();
       setPhase("cli");
-      announce("Phaethon now uses Claude Code on this computer.");
+      announce("Claude Code selected.");
       focusComposer(headingRef.current);
     } catch (e) {
       if (e instanceof ClaudeCodeMissing) {
@@ -233,12 +226,14 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className="self-start rounded-xs text-xl font-semibold text-ink">
             {phase === "setup" ? (
               <>
-                Set up Phaethon<span className="sr-only"> to answer in {space.name}</span>
+                Connect an assistant<span className="sr-only"> for {space.name}</span>
               </>
             ) : phase === "credit" ? (
-              "One more step: add credit"
+              "Add credit"
+            ) : phase === "cli" ? (
+              "Claude Code selected"
             ) : (
-              "You’re set up"
+              "API key saved"
             )}
           </h2>
         </div>
@@ -246,23 +241,20 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
 
       {phase === "saved" && (
         <p data-setup-done="" className="text-ink">
-          Your key works and is saved in {KEY_STORE}.{" "}
           {waiting === "waiting"
-            ? "Your message is waiting above: press Send again to send it."
+            ? "Press Send again on your message above."
             : waiting === "none"
               ? "Type your first message in the box below."
-              : ""}
+              : "Message sent."}
         </p>
       )}
       {phase === "credit" && (
         <div data-setup-credit="" className="flex flex-col gap-2">
           <p>
-            Your key is saved, but your Anthropic account has no credit yet, so Phaethon can’t answer. Add credit under Billing in the
-            Anthropic console; nothing else needs changing here.{" "}
-            {waiting === "waiting" ? "Then press Send again on your message above." : waiting === "none" ? "Then type your first message below." : ""}
+            Your key is saved. Add credit to your Anthropic account to continue.
           </p>
           <p>
-            <ExternalLink href={CONSOLE_BILLING_URL}>Open Billing in the Anthropic console</ExternalLink>
+            <ExternalLink href={CONSOLE_BILLING_URL}>Open Billing</ExternalLink>
           </p>
           {creditKey.current && (
             <div className="flex flex-col items-start gap-1.5">
@@ -288,18 +280,15 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
       )}
       {phase === "cli" && (
         <p data-setup-done="" className="text-ink">
-            Phaethon now uses Claude Code on this computer. Type your first message below. If Claude Code isn’t installed or signed in yet,
-            Phaethon will say how to do that when you send it.
+          Send a message to continue.
         </p>
       )}
 
       {phase === "setup" && (
         <>
-          {/* The key field comes first, so it is in view even in a small window at large text; where to
-              get a key follows, and what an API key is (and what it costs) is folded underneath. */}
           <form onSubmit={submit} className="flex flex-col gap-2">
             <label htmlFor={keyId} className="font-medium text-ink">
-              Paste your Anthropic API key
+              Anthropic API key
             </label>
             <div className="flex flex-wrap gap-2">
               <Input
@@ -320,11 +309,11 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
                 className="min-w-(--ph-settings-label-min) flex-1 font-mono"
               />
               <Button type="submit" aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
-                {saving ? "Checking…" : "Check and save"}
+                {saving ? "Checking…" : "Connect"}
               </Button>
             </div>
             <p id={hintId} className="text-sm text-ink-secondary">
-              It starts with sk-ant-. Phaethon checks it with Anthropic before saving it.
+              Starts with sk-ant-. <ExternalLink href={CONSOLE_KEYS_URL}>Create an API key</ExternalLink>
             </p>
             {outcome && <KeyOutcomeLine id={outcomeId} outcome={outcome} />}
             {canSaveUnchecked(outcome) && (
@@ -334,41 +323,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
             )}
           </form>
 
-          <div className="flex flex-col gap-1" data-setup-get="">
-            <h3 className="font-semibold text-ink">No key yet?</h3>
-            <p className="text-ink-secondary">
-              Sign in at <ExternalLink href={CONSOLE_KEYS_URL}>console.anthropic.com</ExternalLink>, add some credit under Billing, then
-              choose Create Key, copy it and paste it above.
-            </p>
-          </div>
-
-          <Details summary="What is an API key?" className="text-md">
-            <div data-setup-facts="" className="flex flex-col gap-2 text-ink-secondary">
-              <p>
-                Phaethon writes its replies with Claude, an AI made by Anthropic. To use it, Phaethon needs an API key: a long code, like a
-                password, from your own Anthropic account.
-              </p>
-              <ul className="flex flex-col gap-2">
-                <Fact icon="info">
-                  <strong className="font-semibold text-ink">A separate account.</strong> A ChatGPT or Claude.ai subscription doesn’t include
-                  an API key.
-                </Fact>
-                <Fact icon="key">
-                  <strong className="font-semibold text-ink">Pay as you go.</strong> Light use usually costs a few dollars a month. You can set
-                  a spending limit in the Anthropic console.
-                </Fact>
-                <Fact icon="lock">
-                  <strong className="font-semibold text-ink">Kept on this computer.</strong> Your key stays in {KEY_STORE} and never syncs.
-                </Fact>
-              </ul>
-            </div>
-          </Details>
-
           <div className="flex flex-col items-start gap-2 border-t border-line pt-4">
-            <p className="text-sm text-ink-secondary">
-              Already use Claude Code on this computer? Phaethon can answer through it instead, with your Claude plan and no API key. It can
-              read your files but can’t change them yet.
-            </p>
             <Button
               type="button"
               variant="outline"
@@ -377,14 +332,14 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
               onClick={() => void useClaudeCode()}
               className="aria-disabled:cursor-progress"
             >
-              {switching ? "Switching…" : "Use Claude Code instead"}
+              {switching ? "Switching…" : "Use Claude Code"}
             </Button>
             {cliMissing ? (
               // Not an alarm: nothing went wrong, Claude Code just isn't here yet. The same words and link as Settings.
               <div data-cli-missing="" className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">
                 <Icon name="warning" className="mt-0.5 shrink-0" />
                 <p className="min-w-0">
-                  {CLAUDE_CODE_MISSING} <ExternalLink href={CLAUDE_CODE_INSTALL_URL}>How to install Claude Code</ExternalLink>
+                  {CLAUDE_CODE_MISSING} <ExternalLink href={CLAUDE_CODE_INSTALL_URL}>Install Claude Code</ExternalLink>
                 </p>
               </div>
             ) : (
@@ -403,14 +358,5 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
         {said}
       </p>
     </section>
-  );
-}
-
-function Fact({ icon, children }: { icon: IconName; children: ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <Icon name={icon} className="mt-0.5 shrink-0 text-ink-tertiary" />
-      <span className="min-w-0">{children}</span>
-    </li>
   );
 }

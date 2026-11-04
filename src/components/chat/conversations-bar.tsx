@@ -502,38 +502,29 @@ export function ConversationsBar({
   return (
     <div
       data-conversations-bar=""
-      // Above the pane's top fade (App's main::before), with its own fade under it so scrolled text
-      // eases out below the row. No fade while the log has focus: its ring must show whole.
-      className={cn(
-        "relative z-20 shrink-0 bg-bg",
-        "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-4 after:bg-linear-to-b after:from-bg after:to-transparent",
-        "forced-colors:after:hidden [main:has([role=log]:focus-visible)_&]:after:hidden",
-      )}
+      className="shrink-0 bg-bg"
     >
-      {/* Padded below too, so a focused button's ring is never under the fade. */}
       {/* Wraps when its buttons don't fit beside the views (large text in a narrow window) instead of spilling over them;
           the title (flex-1, from nothing) gives way first. */}
-      <div className="flex flex-wrap items-center justify-end gap-1 px-2 py-1.5">
-        {/* Which conversation this is: its title (cut to fit, whole on hover) and when it was last used.
-            No words while it is empty ("New conversation" here read as a second button beside the real one), only its room. */}
+      <div className="flex flex-wrap items-center justify-end gap-1 py-1.5">
+        {/* Which conversation this is, on one line: its title (cut to fit, whole on hover), then, quieter, when it
+            was last used, which gives way first. No words while it is empty ("New conversation" here read as a
+            second button beside the real one), only its room. */}
         {current && current.messages > 0 ? (
-          // Title over date, each cut to fit on its own line: a long date (large text, a wide reading font)
-          // can never run into the Conversations button.
-          <p data-conversation-current="" className="flex min-w-0 flex-1 flex-col ps-2 text-sm leading-snug text-ink-secondary">
-            <span className="min-w-0 truncate font-medium text-ink" title={current.title}>
+          <p data-conversation-current="" className="flex min-w-0 flex-1 items-baseline gap-2 text-sm text-ink-secondary">
+            <span className="min-w-0 shrink truncate font-medium text-ink" title={current.title}>
               {current.title}
             </span>
-            <span className="min-w-0 truncate text-xs">
+            <span className="min-w-0 shrink-[4] truncate text-xs">
               <span className="sr-only">, </span>
               {relativeDate(current.updated)}
             </span>
           </p>
         ) : (
-          // The same two lines, empty and unseen: the bar is as tall with a title as without one, so the
-          // first message (or a new conversation) never moves the conversation below.
-          <p aria-hidden="true" className="invisible flex min-w-0 flex-1 flex-col ps-2 text-sm leading-snug">
-            <span>{" "}</span>
-            <span className="text-xs">{" "}</span>
+          // An empty, unseen line: the bar is as tall with a title as without one, so the first message (or a
+          // new conversation) never moves the conversation below.
+          <p aria-hidden="true" className="invisible min-w-0 flex-1 text-sm">
+            {" "}
           </p>
         )}
         <DropdownMenu.Root open={open} onOpenChange={(o) => (o || stage.stage !== "clearing") && setOpen(o)} modal={false}>

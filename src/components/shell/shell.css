@@ -29,9 +29,10 @@
   --ph-titlebar-room: max(var(--ph-titlebar-height), calc(var(--ph-target-min) + var(--ph-space) * 2));
 }
 
-/* Between the sidebar's spaces: never edge to edge, wider with Larger click targets. */
+/* Between the sidebar's rows: a hairline (2px), so rows read as one list but never touch. With Larger click
+   targets (boost 1.5) it opens to 7px, so a slip off one row never lands on the next one's edge. */
 :root {
-  --ph-sidebar-item-gap: calc(var(--ph-space) * 1.5 * var(--ph-target-boost, 1));
+  --ph-sidebar-item-gap: calc(var(--ph-space) * (0.5 + (var(--ph-target-boost, 1) - 1) * 2.5));
 }
 
 /* T3 Code’s ComposerSurface keeps its dark surface defined by the rim alone.

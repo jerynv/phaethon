@@ -1,5 +1,5 @@
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "vic-ui";
+import { Card, NativeSelect } from "vic-ui";
 import { RadioGroup } from "radix-ui";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -253,53 +253,55 @@ export function AgentSection({
       ) : (
         <>
           <SettingGroup title="Which assistant answers" titleId={backendTitle} bare>
-            <RadioGroup.Root
-              aria-labelledby={backendTitle}
-              value={settings.backend}
-              onValueChange={chooseBackend}
-              onKeyDownCapture={radioArrowKeys(chooseBackend)}
-              className="flex flex-col gap-2"
-            >
-              {BACKENDS.map((b) => (
-                <RadioGroup.Item
-                  key={b.value}
-                  value={b.value}
-                  data-backend={b.value}
-                  // Named by its title alone; the hint is the description, so it is said once.
-                  aria-labelledby={`${backendTitle}-${b.value}-name`}
-                  aria-describedby={[`${backendTitle}-${b.value}`, statusOf(b.value) && `${backendTitle}-${b.value}-status`].filter(Boolean).join(" ")}
-                  className={cn(
-                    "group flex w-full min-w-0 items-start gap-3 rounded-lg border border-line-strong bg-raised px-4 py-3 text-left shadow-sm transition-colors duration-(--ph-duration-fast) hover:bg-hover",
-                    "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft",
-                  )}
-                >
-                  <span className="mt-0.5 grid size-(--ph-icon-size) shrink-0 place-items-center rounded-full border-2 border-ink-tertiary group-data-[state=checked]:border-accent-fill">
-                    <RadioGroup.Indicator className="size-[50%] rounded-full bg-accent-fill" />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span id={`${backendTitle}-${b.value}-name`} className="text-base font-medium text-ink">
-                      {b.label}
-                    </span>
-                    <span id={`${backendTitle}-${b.value}`} className="text-sm text-ink-secondary group-data-[state=checked]:text-accent-soft-ink">
-                      {b.hint}
-                    </span>
-                    {statusOf(b.value) && (
-                      <span
-                        id={`${backendTitle}-${b.value}-status`}
-                        data-cli-status={statusOf(b.value)!.installed ? (statusOf(b.value)!.loggedIn === false ? "signed-out" : "installed") : "missing"}
-                        className="mt-0.5 flex items-start gap-1.5 text-sm font-medium text-ink group-data-[state=checked]:text-accent-soft-ink"
-                      >
-                        <Icon
-                          name={!statusOf(b.value)!.installed || statusOf(b.value)!.loggedIn === false ? "warning" : "check"}
-                          className="mt-0.5 size-(--ph-icon-size-sm) shrink-0"
-                        />
-                        <span className="min-w-0 wrap-anywhere">{cliStatusText(statusOf(b.value))}</span>
-                      </span>
+            <Card plain className="overflow-hidden rounded-lg p-0!">
+              <RadioGroup.Root
+                aria-labelledby={backendTitle}
+                value={settings.backend}
+                onValueChange={chooseBackend}
+                onKeyDownCapture={radioArrowKeys(chooseBackend)}
+                className="flex flex-col divide-y divide-line"
+              >
+                {BACKENDS.map((b) => (
+                  <RadioGroup.Item
+                    key={b.value}
+                    value={b.value}
+                    data-backend={b.value}
+                    // Named by its title alone; the hint is the description, so it is said once.
+                    aria-labelledby={`${backendTitle}-${b.value}-name`}
+                    aria-describedby={[`${backendTitle}-${b.value}`, statusOf(b.value) && `${backendTitle}-${b.value}-status`].filter(Boolean).join(" ")}
+                    className={cn(
+                      "group flex w-full min-w-0 items-start gap-3 px-4 py-3 text-start transition-colors duration-(--ph-duration-fast) hover:bg-hover focus-visible:-outline-offset-2",
+                      "data-[state=checked]:bg-selected",
                     )}
-                  </span>
-                </RadioGroup.Item>
-              ))}
-            </RadioGroup.Root>
+                  >
+                    <span className="mt-0.5 grid size-(--ph-icon-size) shrink-0 place-items-center rounded-full border border-ink-tertiary group-data-[state=checked]:border-ink">
+                      <RadioGroup.Indicator className="size-[50%] rounded-full bg-ink" />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span id={`${backendTitle}-${b.value}-name`} className="text-base font-medium text-ink">
+                        {b.label}
+                      </span>
+                      <span id={`${backendTitle}-${b.value}`} className="text-xs text-ink-secondary">
+                        {b.hint}
+                      </span>
+                      {statusOf(b.value) && (
+                        <span
+                          id={`${backendTitle}-${b.value}-status`}
+                          data-cli-status={statusOf(b.value)!.installed ? (statusOf(b.value)!.loggedIn === false ? "signed-out" : "installed") : "missing"}
+                          className="mt-0.5 flex items-start gap-1.5 text-xs text-ink-secondary"
+                        >
+                          <Icon
+                            name={!statusOf(b.value)!.installed || statusOf(b.value)!.loggedIn === false ? "warning" : "check"}
+                            className="mt-0.5 size-(--ph-icon-size-sm) shrink-0"
+                          />
+                          <span className="min-w-0 wrap-anywhere">{cliStatusText(statusOf(b.value))}</span>
+                        </span>
+                      )}
+                    </span>
+                  </RadioGroup.Item>
+                ))}
+              </RadioGroup.Root>
+            </Card>
             {cliMissing && (
               // Said once through the status line when it appears; shown here until another choice is made.
               <div data-cli-missing={cliMissing} className="flex items-start gap-2 rounded-md bg-warning-soft px-3.5 py-3 text-sm text-warning-ink">

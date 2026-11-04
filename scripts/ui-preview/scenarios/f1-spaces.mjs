@@ -112,6 +112,7 @@ export default [
       check(opened.school === "true" && opened.work === "false" && opened.focus === "school:name", "with School's details open and focus on its name; Work stays folded", JSON.stringify(opened));
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-space-id") === "school", { timeout: 3000 });
       check((await focused(page)) === "space:school", "closing Settings puts focus back on School", await focused(page));
       // The More button opens the same menu with a click.
       await page.hover(space("work"));

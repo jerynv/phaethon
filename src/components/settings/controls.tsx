@@ -13,6 +13,7 @@ import { Card, Switch } from "vic-ui";
 import { Fragment, useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { WorkspacePageHeader } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -40,17 +41,18 @@ export function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    // A plain div, not <header>: inside the dialog a header would be an unnamed banner landmark on every page.
-    <div data-section-header="" className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-      {/* At least ~24 em wide (it grows with the text size): when the action no longer fits beside it, the action wraps below instead of squeezing the description. */}
-      <div className="flex min-w-0 flex-[1_1_24em] flex-col gap-1 text-base">
-        {/* Focusable from script only: moving to a section from another page lands here. */}
-        <h3 id={id} tabIndex={-1} className="self-start rounded-xs text-xl font-semibold text-ink">
-          {title}
-        </h3>
-        <p className="max-w-(--ph-measure) text-base text-ink-secondary">{description}</p>
-      </div>
-      {action}
+    <div data-section-header="">
+      <WorkspacePageHeader
+        as="div"
+        title={title}
+        description={description}
+        actions={action}
+        textClassName="min-w-[min(24em,100%)] basis-[min(24em,100%)] text-sm"
+        actionsClassName="max-w-full"
+        headingAs="h3"
+        size="section"
+        headingProps={{ id, tabIndex: -1, className: "self-start rounded-xs pe-(--ph-settings-close-room) max-md:pe-0" }}
+      />
     </div>
   );
 }
@@ -80,12 +82,12 @@ export function SettingGroup({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-0.5 px-1">
-        <h4 id={id} className="text-md font-semibold text-ink">
+        <h4 id={id} className="text-base font-medium text-ink">
           {title}
         </h4>
-        {description && <p className="text-sm text-ink-secondary">{description}</p>}
+        {description && <p className="text-xs text-ink-secondary">{description}</p>}
       </div>
-      {bare ? children : <Card plain className="flex flex-col divide-y divide-line p-0!">{children}</Card>}
+      {bare ? children : <Card plain className="flex flex-col divide-y divide-line rounded-lg p-0!">{children}</Card>}
     </div>
   );
 }
@@ -117,13 +119,13 @@ export function SettingRow({
 }) {
   const LabelTag = htmlFor ? "label" : "span";
   return (
-    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-3 px-4 py-3.5", stacked ? "flex-col" : "flex-wrap items-start")}>
+    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-3 px-4 py-3", stacked ? "flex-col" : "flex-wrap items-start")}>
       <div className="flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5">
         <LabelTag id={labelId} htmlFor={htmlFor} className="text-base font-medium text-ink">
           {label}
         </LabelTag>
         {description && (
-          <p id={descriptionId} className="max-w-(--ph-measure) text-sm text-ink-secondary">
+          <p id={descriptionId} className="max-w-(--ph-measure) text-xs text-ink-secondary">
             {description}
           </p>
         )}
@@ -462,15 +464,15 @@ export function SwitchRow({
   const descId = useId();
   const statusId = useId();
   return (
-    <div className="flex items-start gap-6 px-4 py-3.5">
+    <div className="flex items-start gap-6 px-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <label htmlFor={id} className="cursor-pointer text-base font-medium text-ink">
           {label}
         </label>
-        <p id={descId} className="max-w-(--ph-measure) text-sm text-ink-secondary">
+        <p id={descId} className="max-w-(--ph-measure) text-xs text-ink-secondary">
           {description}
         </p>
-        <p id={statusId} className="flex items-center gap-1.5 text-sm text-ink-secondary">
+        <p id={statusId} className="flex items-center gap-1.5 text-xs text-ink-secondary">
           <Icon name="info" className="size-(--ph-icon-size-sm) text-ink-tertiary" />
           {status}
         </p>

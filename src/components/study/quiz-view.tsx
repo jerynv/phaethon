@@ -835,7 +835,7 @@ const MD = {
 
 function Shell({ onBack, children }: { onBack: () => void; children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-4 px-6 py-5">
+    <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-4 px-(--ph-thread-gutter) py-5">
       <div>
         <Button type="button" variant="ghost" size="sm" className="-ms-2" onClick={onBack} data-back-to-study="">
           <Icon name="chevron-left" />

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { DropdownMenu } from "radix-ui";
+import { DropdownMenu } from "@/components/ui/menu";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { announce } from "@/components/shell/announcer";
@@ -165,7 +165,7 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
           collisionPadding={8}
           aria-label={`Tutor mode in ${spaceName}`}
           data-tutor-menu=""
-          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
+          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
         >
           <DropdownMenu.Label className="px-2.5 pt-1.5 text-sm font-semibold text-ink-secondary">Tutor mode in {spaceName}</DropdownMenu.Label>
           <p className="px-2.5 pb-1.5 text-sm text-ink-secondary">

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { DropdownMenu } from "radix-ui";
+import { DropdownMenu } from "@/components/ui/menu";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -566,7 +566,7 @@ export function ConversationsBar({
               variant="ghost"
               size="sm"
               data-conversations-trigger=""
-              className={inSidebar ? "min-w-0 text-xs! font-medium text-ink-secondary hover:text-ink" : undefined}
+              className={inSidebar ? "min-w-0 text-sm! font-medium text-ink-secondary hover:text-ink" : undefined}
             >
               Conversations
               <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
@@ -598,7 +598,7 @@ export function ConversationsBar({
               }}
               className={cn(
                 // 22rem at the default text size, growing with it; never wider or taller than the room.
-                "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none",
+                "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none",
                 "origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
                 // An exit animation too: without one Radix keeps the closed menu mounted, and its
                 // outside-click layer then dismisses the next open at once.
@@ -864,7 +864,7 @@ export function ConversationsBar({
               data-new-conversation=""
               onClick={() => void startNew()}
             >
-              <Icon name={inSidebar ? "edit" : "plus"} />
+              <Icon name={inSidebar ? "new-chat" : "plus"} />
               {!inSidebar && "New conversation"}
             </Button>
           </TooltipTrigger>
@@ -880,7 +880,7 @@ export function ConversationsBar({
       {inNotes(
         <>
       {problem && (
-        <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-2">
+        <div className="mx-auto w-full max-w-(--ph-thread-width) px-(--ph-thread-gutter) pt-2">
           <div
             role="alert"
             data-conversations-problem=""
@@ -903,7 +903,7 @@ export function ConversationsBar({
       )}
       {kept && (
         // What the last Clear kept, until dismissed. Already announced, so not a live region.
-        <div className="mx-auto w-full max-w-(--ph-thread-width) px-6 pt-2">
+        <div className="mx-auto w-full max-w-(--ph-thread-width) px-(--ph-thread-gutter) pt-2">
           <div data-kept-note="" className="flex flex-col gap-2 rounded-lg border border-line bg-surface-sunken py-2 ps-3 pe-1 text-base text-ink">
             <div className="flex items-start gap-2.5">
               <Icon name="check" className="mt-0.5 shrink-0 text-success-ink" />

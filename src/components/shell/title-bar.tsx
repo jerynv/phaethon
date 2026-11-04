@@ -120,20 +120,20 @@ function Trail({ space }: { space: Space }) {
   const current = useConversations(space.id)?.threads.find((t) => t.current);
   if (view !== "chat") {
     return (
-      <li aria-current="page" className="min-w-0 truncate text-md leading-tight font-medium text-ink" data-breadcrumb-view={view}>
+      <li aria-current="page" className="min-w-0 truncate text-base leading-tight font-medium text-ink" data-breadcrumb-view={view}>
         {viewLabel(view)}
       </li>
     );
   }
   if (!current || current.messages === 0) {
     return (
-      <li aria-current="page" className="min-w-0 truncate text-md leading-tight font-medium text-ink">
+      <li aria-current="page" className="min-w-0 truncate text-base leading-tight font-medium text-ink">
         New conversation
       </li>
     );
   }
   return (
-    <li aria-current="page" data-conversation-current="" className="min-w-0 truncate text-md leading-tight font-medium text-ink" title={current.title}>
+    <li aria-current="page" data-conversation-current="" className="min-w-0 truncate text-base leading-tight font-medium text-ink" title={current.title}>
       {current.title}
     </li>
   );
@@ -182,7 +182,7 @@ export function TitleBar({
           and divider), so the sidebar runs the window’s full height and the title starts where the pane does. */}
       <div
         className={cn(
-          "flex h-full min-w-0 shrink-0 items-center gap-1 ps-(--ph-titlebar-inset-start) pe-2",
+          "flex h-full min-w-0 shrink-0 items-center gap-2 ps-(--ph-titlebar-inset-start) pe-2",
           sidebarDocked && "w-(--ph-sidebar-width) border-e border-line bg-surface forced-colors:border-[CanvasText]",
         )}
       >
@@ -196,7 +196,7 @@ export function TitleBar({
           aria-expanded={sidebarOpen}
           onClick={onToggleSidebar}
         />
-        {sidebarDocked && !words && <span className="min-w-0 truncate text-base font-medium text-ink-secondary">Phaethon</span>}
+        {sidebarDocked && !words && <span className="min-w-0 truncate text-base font-medium text-ink">Phaethon</span>}
         {/* With the sidebar not docked, its Settings entry is out of reach; this one stands in for it. */}
         {showSettings && (
           <BarButton
@@ -218,14 +218,14 @@ export function TitleBar({
             <li className="flex min-w-0 max-w-40 shrink items-center">
               <h1
                 id="space-title"
-                className="max-w-full truncate text-md leading-tight font-normal text-ink-secondary"
+                className="max-w-full truncate text-base leading-tight font-normal text-ink-secondary"
               >
                 {space ? space.name : emptyTitle}
               </h1>
             </li>
             {space && (
               <>
-                <li aria-hidden="true" className="shrink-0 text-md leading-tight text-ink-tertiary">
+                <li aria-hidden="true" className="shrink-0 text-base leading-tight text-ink-tertiary">
                   /
                 </li>
                 <Trail space={space} />

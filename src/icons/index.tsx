@@ -4,8 +4,8 @@ import {
   ChevronLeft, ChevronRight, ChevronUp, CircleAlert, CircleCheck, Copy, Download,
   Ellipsis, File, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, Image,
   ImageOff, Info, KeyRound, Link, LoaderCircle, LockKeyhole, Maximize2, Mic, Minus,
-  Moon, PanelLeft, Paperclip, Pause, Pencil, Phone, Play, Plus, RotateCcw, Search,
-  Settings2, ShieldCheck, Square, Sun, SunMoon, ThumbsDown, ThumbsUp, Trash2,
+  MessageSquare, Moon, PanelLeft, Paperclip, Pause, Pencil, Phone, Play, Plus, RotateCcw, Search,
+  Settings2, ShieldCheck, Square, SquarePen, Sun, SunMoon, ThumbsDown, ThumbsUp, Trash2,
   TriangleAlert, UserRound, Video, Volume2, Wrench, X, BookOpen, type LucideIcon,
 } from "lucide-react";
 
@@ -33,7 +33,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   file: File, "file-text": FileText, "file-plus": FilePlus2, image: Image,
   "image-off": ImageOff, video: Video, audio: AudioLines, folder: Folder,
   "folder-plus": FolderPlus, book: BookOpen, thinking: Brain, tool: Wrench,
-  agent: Bot, spinner: LoaderCircle, voice: Volume2, mic: Mic, phone: Phone,
+  agent: Bot, chat: MessageSquare, "new-chat": SquarePen, spinner: LoaderCircle, voice: Volume2, mic: Mic, phone: Phone,
   info: Info, warning: TriangleAlert, error: CircleAlert, success: CircleCheck,
   shield: ShieldCheck, lock: LockKeyhole, key: KeyRound, link: Link,
   "thumbs-up": ThumbsUp, "thumbs-down": ThumbsDown, settings: Settings2,

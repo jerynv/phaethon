@@ -9,10 +9,12 @@
 :root {
   /* Reading-font cards wrap to fewer columns before they get cramped. */
   --ph-font-card-min: 15rem; /* rem already follows the text size */
-  /* Columns and controls follow text size; the settings page fills the viewport. */
-  --ph-settings-nav-width: calc(176px * var(--ph-ui-scale));
-  --ph-settings-content-width: calc(598px * var(--ph-ui-scale));
-  --ph-settings-control-width: calc(234px * var(--ph-ui-scale));
+  /* A bounded settings window; its columns and controls follow text size. */
+  --ph-settings-width: 880px;
+  --ph-settings-height: 580px;
+  --ph-settings-nav-width: calc(208px * var(--ph-ui-scale));
+  --ph-settings-content-width: calc(752px * var(--ph-ui-scale));
+  --ph-settings-control-width: calc(208px * var(--ph-ui-scale));
   /* Below this a label and its control stack; capped so a narrow window at
      a large text size still fits one column. */
   --ph-settings-label-min: min(calc(169px * var(--ph-ui-scale)), 100%);

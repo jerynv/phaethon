@@ -89,7 +89,7 @@ export default [
         const hidden = await page.$eval("#spaces-sidebar", (sidebar) => sidebar.hidden);
         if (hidden) await page.click('button[aria-controls="spaces-sidebar"]');
         await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-sidebar-thread][aria-current="page"]', { timeout: 3000 });
-        const selected = await page.$$eval('#spaces-sidebar [data-sidebar-thread][aria-current="page"]', (rows) => rows.map((row) => row.firstElementChild.textContent));
+        const selected = await page.$$eval('#spaces-sidebar [data-sidebar-thread][aria-current="page"]', (rows) => rows.map((row) => row.querySelector('[data-sidebar-thread-title]').textContent));
         check(selected.length === 1 && selected[0] === title, "exactly one sidebar row names the current conversation", JSON.stringify(selected));
         if (hidden) {
           await page.click('button[aria-controls="spaces-sidebar"]');

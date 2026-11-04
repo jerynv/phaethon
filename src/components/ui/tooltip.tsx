@@ -2,6 +2,7 @@
 import * as React from "react"
 import { cn } from "cn"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
+import { TooltipSurface } from "vic-ui"
 
 /*
  * Small and quick: a short wait before the first tooltip (so passing the
@@ -44,12 +45,12 @@ function TooltipContent({
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
   return (
     <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Content
+      <TooltipSurface asChild><TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "ui-tooltip relative! inset-auto! z-50 w-fit max-w-(--ph-measure) origin-(--radix-tooltip-content-transform-origin) text-balance",
+          "relative! inset-auto! z-50 w-fit max-w-(--ph-measure) origin-(--radix-tooltip-content-transform-origin) text-balance",
           "animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
           "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           className
@@ -57,7 +58,7 @@ function TooltipContent({
         {...props}
       >
         {children}
-      </TooltipPrimitive.Content>
+      </TooltipPrimitive.Content></TooltipSurface>
     </TooltipPrimitive.Portal>
   )
 }

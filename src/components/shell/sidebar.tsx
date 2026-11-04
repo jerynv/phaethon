@@ -1,4 +1,4 @@
-import { ContextMenu } from "radix-ui";
+import { ContextMenu } from "@/components/ui/menu";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { relativeDate } from "@/components/chat/conversations-bar";
@@ -129,6 +129,21 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
     }
   }, [activity]);
 
+  // Switching spaces replaces the hovered view list. Listen on the stable nav itself:
+  // React synthesizes leave from pointerout, which can lose that removed child.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const enter = () => holdSpaceOrder("pointer", true);
+    const leave = () => holdSpaceOrder("pointer", false);
+    nav.addEventListener("pointerenter", enter);
+    nav.addEventListener("pointerleave", leave);
+    return () => {
+      nav.removeEventListener("pointerenter", enter);
+      nav.removeEventListener("pointerleave", leave);
+    };
+  }, []);
+
   // A hidden sidebar holds nothing.
   useEffect(() => {
     if (open) return;
@@ -235,9 +250,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
         ref={navRef}
         id={id}
         onKeyDown={onNavKeyDown}
-        // While pointed at or focused from the keyboard, the order holds still.
-        onPointerEnter={() => holdSpaceOrder("pointer", true)}
-        onPointerLeave={() => holdSpaceOrder("pointer", false)}
+        // Keyboard focus holds the order too; pointer boundaries use native listeners above.
         onFocus={(e) => holdSpaceOrder("focus", focusShows(e.target))}
         onBlur={(e) => {
           if (!navRef.current?.contains(e.relatedTarget as Node | null)) holdSpaceOrder("focus", false);
@@ -262,7 +275,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
               onClick={onSearch}
               aria-keyshortcuts={searchShortcut?.aria}
               className={cn(
-                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
+                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
                 "text-base text-ink-secondary transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
@@ -270,7 +283,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
               <span className="truncate">Search</span>
               {searchShortcut && (
                 <span aria-hidden="true">
-                  <Keys keys={searchShortcut.keys} className="text-ink-secondary [&_kbd]:border-0 [&_kbd]:bg-transparent [&_kbd]:px-0" />
+                  <Keys keys={searchShortcut.keys} className="gap-0.5 text-xs text-ink-tertiary [&_kbd]:min-w-0 [&_kbd]:border-0 [&_kbd]:bg-transparent [&_kbd]:px-0" />
                 </span>
               )}
             </button>
@@ -303,7 +316,7 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
               data-new-space=""
               onClick={onNewSpace}
               className={cn(
-                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
+                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
                 "text-base text-ink-secondary transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
@@ -331,7 +344,7 @@ function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }
 }
 
 const threadRow = cn(
-  "grid min-h-(--ph-control-height-sm) w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-md py-1 ps-2 pe-2 text-start text-sm",
+  "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start text-base",
   "transition-colors duration-(--ph-duration-fast)",
 );
 
@@ -341,14 +354,14 @@ const threadRow = cn(
  * drawn here (src/lib/conversation-nav.ts): its Conversations menu (every
  * conversation, with Delete, Clear and Find earlier) and New conversation.
  * Below it, the newest conversations, the open one marked aria-current, each
- * with when it was last used. A row opens through the same bar, so a switch
+ * with when it was last used in its accessible name. A row opens through the same bar, so a switch
  * asked for while a reply runs is refused there with its alert, as from the
  * menu. While the sidebar is hidden, the space's pane shows the views and the
  * bar in a compact header instead.
  *
  * Rows follow T3 Code's SidebarThreadRow and the section header its
  * SidebarThreadHeader (apps/web/src/components/sidebar/, MIT): one line, the
- * title truncating before the stamp; actions in the header, not per row.
+ * title taking the row; actions in the header, not per row.
  */
 function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () => void }) {
   const nav = useConversations(space.id);
@@ -368,9 +381,9 @@ function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () =
   const label = (t: ThreadSummary) => (t.current && t.messages === 0 ? "New conversation" : t.title);
 
   return (
-    <li data-sidebar-conversations={space.id} className="flex flex-col gap-1 ps-[calc(var(--ph-space-mark-size)+var(--ph-space)*2.5)] pt-0.5 pb-1">
-      <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" />
-      <div ref={host} data-conversations-host="" className="pt-1" />
+    <li data-sidebar-conversations={space.id} className="flex flex-col gap-1 pt-0.5 pb-2">
+      <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} />
+      <div ref={host} data-conversations-host="" className="pt-3" />
       {threads.length === 0 && (!nav || nav.status === "loading") && <p role="status" className="ps-2 text-sm text-ink-secondary">Loading conversations…</p>}
       {nav?.status === "ready" && threads.length === 0 && <p className="ps-2 text-sm text-ink-secondary">No conversations yet.</p>}
       {nav?.status === "error" && <p className="ps-2 text-sm text-danger-ink">Conversations couldn’t be loaded. Open the Conversations menu to try again.</p>}
@@ -390,7 +403,8 @@ function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () =
                   : "text-ink-secondary hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
-              <span className={cn("min-w-0 truncate", t.current && "font-medium text-ink")}>{label(t)}</span>
+              <Icon name="chat" className="size-(--ph-icon-size-sm) text-ink-tertiary" />
+              <span data-sidebar-thread-title="" className={cn("min-w-0 truncate", t.current && "font-medium text-ink")}>{label(t)}</span>
               <span className="flex shrink-0 items-center gap-1 text-xs text-ink-secondary">
                 {t.current && nav?.running ? (
                   <>
@@ -399,10 +413,7 @@ function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () =
                   </>
                 ) : (
                   !t.current && (
-                    <>
-                      <span className="sr-only">, </span>
-                      {relativeDate(t.updated)}
-                    </>
+                    <span className="sr-only">, {relativeDate(t.updated)}</span>
                   )
                 )}
               </span>
@@ -490,7 +501,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
             aria-current={active ? "page" : undefined}
             aria-keyshortcuts="Shift+F10"
             // Named by its own text, each part once: "School, needs your answer, Courses, deadlines…".
-            // (Not an aria-label: the description it shows belongs in the name too, WCAG 2.5.3.)
+            // Keep the description available to assistive technology without a second visual line.
             onClick={() => onSelect(space.id)}
             onKeyDown={onButtonKeyDown}
             data-space-hue=""
@@ -498,16 +509,17 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
             data-space-status={doing ? (doing.urgent ? "needs-you" : "running") : undefined}
             style={spaceHueStyle(space.hue)}
             className={cn(
-              // The dot centres on the name's first line; the current space's description sits under the name.
+              // The space is parent context; the selected destination is one of its views or threads.
               // The end keeps room for the More button, so it never covers the name.
-              "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-space-mark-size)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-2 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
+              "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-2 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
               "transition-colors duration-(--ph-duration-fast)",
-              active ? "bg-selected forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]" : "hover:bg-hover active:bg-selected",
-              menuOpen && !active && "bg-hover",
+              "hover:bg-hover active:bg-selected",
+              active && "forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]",
+              menuOpen && "bg-hover",
             )}
           >
             {/* One line tall, so the dot centres on the name at any text size. */}
-            <span className="flex h-[1lh] items-center text-base">
+            <span className="flex h-[1lh] items-center justify-center text-base">
               <SpaceMark hue={space.hue} />
             </span>
             {/* The name and what the space is doing share a line while both fit; otherwise the state wraps below.
@@ -545,9 +557,9 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
                 })}
               </span>
             </span>
-            {/* Drawn on the current space only; elsewhere it is still read, as the end of the space's name. */}
+            {/* Keep the description in the accessible name without a second visual line. */}
             {space.description && (
-              <span className={active ? "col-start-2 truncate text-xs text-ink-secondary" : "sr-only"}>{space.description}</span>
+              <span className="sr-only">{space.description}</span>
             )}
           </button>
           <button
@@ -593,7 +605,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
             if (run) requestAnimationFrame(run);
           }}
           className={cn(
-            "z-50 flex max-h-(--radix-context-menu-content-available-height) min-w-56 max-w-(--radix-context-menu-content-available-width) flex-col overflow-y-auto rounded-lg border border-line bg-raised p-1 text-ink shadow-lg outline-none",
+            "z-50 flex max-h-(--radix-context-menu-content-available-height) min-w-56 max-w-(--radix-context-menu-content-available-width) flex-col overflow-y-auto outline-none",
             "forced-colors:border-[CanvasText]",
             "origin-(--radix-context-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",

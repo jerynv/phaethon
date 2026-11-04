@@ -1,4 +1,4 @@
-import { Popover } from "radix-ui";
+import { Popover } from "@/components/ui/menu";
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -363,7 +363,7 @@ export function GrantsChip({ space, direction = "out" }: { space: Space; directi
           className={cn(
             // As wide as 320px at the default text size, growing with it; never wider or taller than the room.
             // The list scrolls first; if even the heading and footer do not fit (very large text), the whole panel scrolls.
-            "z-50 flex max-h-(--radix-popover-content-available-height) w-[calc(320px*var(--ph-ui-scale))] max-w-(--radix-popover-content-available-width) flex-col overflow-y-auto rounded-lg border border-line bg-raised text-ink shadow-lg outline-none",
+            "z-50 flex max-h-(--radix-popover-content-available-height) w-[calc(320px*var(--ph-ui-scale))] max-w-(--radix-popover-content-available-width) flex-col overflow-y-auto outline-none",
             "origin-(--radix-popover-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
           )}

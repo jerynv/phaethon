@@ -1,5 +1,5 @@
 import { ComposerPrimitive, useAui, useAuiState } from "@assistant-ui/react";
-import { DropdownMenu } from "radix-ui";
+import { DropdownMenu } from "@/components/ui/menu";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -152,7 +152,7 @@ function AddMenu({ onAttach, space }: { onAttach: () => void; space?: string }) 
             if (adding.current) e.preventDefault();
             adding.current = false;
           }}
-          className="z-50 min-w-[min(20rem,calc(100vw-var(--ph-space)*8))] rounded-lg border border-line bg-raised p-1 text-ink shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
+          className="z-50 min-w-[min(20rem,calc(100vw-var(--ph-space)*8))] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
         >
           <DropdownMenu.Item onSelect={onAttach} className={itemClass}>
             <Icon name="attach" className="mt-0.5 text-ink-secondary" />
@@ -257,6 +257,7 @@ export function Composer({
   const hintId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
   const isRunning = useAuiState((s) => s.thread.isRunning);
+  const isEmpty = useAuiState((s) => !s.composer.text.trim() && s.composer.attachments.length === 0);
   const waiting = useAuiState((s) => {
     const last = s.thread.messages[s.thread.messages.length - 1];
     if (last?.status?.type !== "running") return false;
@@ -314,7 +315,7 @@ export function Composer({
   return (
     // Never more than about 40% of the window: what is inside (problems, files, the text) gives
     // way first, each scrolling in its own box, so the conversation always keeps the rest.
-    <div className="mx-auto flex max-h-[40dvh] w-full max-w-(--ph-thread-width) flex-col px-6 pt-2 pb-4" data-composer-wrap="">
+    <div className="mx-auto flex max-h-[40dvh] min-h-0 w-full max-w-(--ph-thread-width) flex-col px-(--ph-thread-gutter) pt-2 pb-4" data-composer-wrap="">
       <FullAccessBanner space={spaceId} onOff={() => inputRef.current?.focus()} />
       <AttachProblems problems={problems} onDismiss={clearProblems} />
       <ComposerPrimitive.Root
@@ -327,8 +328,8 @@ export function Composer({
         }}
         className={cn(
           // T3's ComposerSurface groups input and controls on one quiet surface.
-          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 transition-colors focus-within:border-focus",
-          dragging ? "border-focus bg-accent-soft" : "border-line-strong",
+          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow-(--ph-composer-shadow) transition-colors focus-within:border-focus",
+          dragging ? "border-focus bg-accent-soft" : "border-(--ph-composer-rim)",
         )}
       >
         <ComposerAttachments tray={tray} />
@@ -360,11 +361,11 @@ export function Composer({
           rows={1}
           // At most 7 whole lines, and never more than about a fifth of the window (rounded down to whole
           // lines), so a long message never pushes the conversation away; it scrolls by whole lines.
-          // It never shrinks below that (at least 2 whole lines once written): files fold away first.
+          // Two whole lines remain visible at rest; attachments give up space first.
           // Scrolled text is clipped at the padding, so no half line shows above or below the whole ones
           // (focus is drawn on the composer's frame, so nothing else is clipped).
           // Forced colours: the placeholder is GrayText, the system colour for hint text (not a mapped author colour).
-          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full shrink-0 resize-none rounded-md [clip-path:inset(calc(var(--ph-space)*1.5)_0)] bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
+          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-[calc(2lh+var(--ph-space)*3)] w-full shrink-0 resize-none rounded-md [clip-path:inset(calc(var(--ph-space)*1.5)_0)] bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
         />
         {/* One short hint; every key is in the Shortcuts sheet. */}
         <span id={hintId} className="sr-only">
@@ -398,8 +399,12 @@ export function Composer({
           </p>
           {jump}
           <span aria-hidden="true" className="hidden flex-1 group-has-[[data-jump-latest]]/toolbar:block" />
-          {pane && <TutorModePicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />}
-          {pane && <ModelPicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />}
+          {pane && (
+            <div className="flex min-w-0 items-center gap-0.5">
+              <TutorModePicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />
+              <ModelPicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />
+            </div>
+          )}
           {isRunning ? (
             <IconTip label="Stop reply" spoken="Escape">
               <ComposerPrimitive.Cancel
@@ -428,8 +433,8 @@ export function Composer({
                 <Button
                   type="submit"
                   size="icon"
-                  // Nothing to send yet: a quiet outlined button at full opacity, not a washed-out fill.
-                  className="rounded-full disabled:border-line-strong disabled:bg-surface disabled:text-ink-secondary disabled:opacity-100 disabled:shadow-none"
+                  variant={isEmpty ? "outline" : "default"}
+                  className="rounded-full disabled:bg-surface disabled:text-ink-secondary disabled:opacity-100"
                   aria-label="Send message"
                 >
                   <Icon name="send" />

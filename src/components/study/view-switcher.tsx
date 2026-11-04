@@ -3,9 +3,12 @@ import type { KeyboardEvent } from "react";
 import { Keys, spokenKeys } from "@/components/shell/command-palette";
 import { viewChord } from "@/components/shell/shortcuts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
 
 import { panelId, setSpaceView, tabId, VIEWS, type SpaceView } from "./space-view";
+
+const viewIcons: Record<SpaceView, IconName> = { chat: "chat", study: "book", grades: "success", plan: "file-text" };
 
 /**
  * Chat, Study, Grades, Plan: a tab list, under the current space in the
@@ -19,11 +22,13 @@ export function ViewSwitcher({
   spaceName,
   view,
   orientation = "horizontal",
+  currentConversationShown = false,
 }: {
   space: string;
   spaceName: string;
   view: SpaceView;
   orientation?: "horizontal" | "vertical";
+  currentConversationShown?: boolean;
 }) {
   const vertical = orientation === "vertical";
   const go = (v: SpaceView) => {
@@ -54,6 +59,7 @@ export function ViewSwitcher({
     >
       {VIEWS.map((v) => {
         const selected = v.id === view;
+        const filled = selected && !(vertical && v.id === "chat" && currentConversationShown);
         const chord = viewChord(v.digit);
         return (
           <Tooltip key={v.id}>
@@ -69,15 +75,16 @@ export function ViewSwitcher({
                 data-view-tab={v.id}
                 onClick={() => setSpaceView(space, v.id)}
                 className={cn(
-                  // Quiet text tabs, selected as a sidebar row is: no track, no raised chip.
-                  "min-h-(--ph-control-height-sm) cursor-default rounded-md border border-transparent px-2 py-0.5 leading-tight select-none",
-                  vertical ? "w-full text-start text-sm" : "text-base font-medium",
+                  // One selected destination: the current thread stands in for its Chat parent.
+                  "min-h-(--ph-control-height) cursor-default rounded-md border border-transparent px-2 py-1 leading-tight select-none",
+                  vertical ? "flex w-full items-center gap-2.5 text-start text-base" : "text-base font-medium",
                   "transition-[color,background-color] duration-(--ph-duration-fast) ease-out",
-                  selected
+                  filled
                     ? "bg-selected text-ink forced-colors:border-[Highlight]"
-                    : "text-ink-secondary hover:bg-hover hover:text-ink",
+                    : selected ? "text-ink hover:bg-hover" : "text-ink-secondary hover:bg-hover hover:text-ink",
                 )}
               >
+                {vertical && <Icon name={viewIcons[v.id]} className="size-(--ph-icon-size-sm)" />}
                 {v.label}
               </button>
             </TooltipTrigger>

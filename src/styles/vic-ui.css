@@ -21,7 +21,7 @@
   --ph-shadow: var(--shadow-raise);
   --ph-shadow-lg: var(--shadow-float);
   /* Placeholder text is readable on the field surface, including at small text sizes. */
-  --fg-subtle: light-dark(oklch(0.45 0 0), oklch(0.78 0 0));
+  --fg-subtle: light-dark(oklch(0.45 0 0), oklch(0.708 0 0));
   --fg-placeholder: var(--fg-subtle);
 }
 
@@ -33,11 +33,14 @@
   --fg-placeholder: var(--ph-ink-secondary);
   --line: var(--ph-line-strong);
   --focus: var(--ph-focus);
+  --ph-composer-rim: var(--ph-line-strong);
+  --ph-composer-shadow: none;
 }
 
 .ui-check-box { inline-size: max(var(--ph-target-min), var(--ph-icon-size)); block-size: max(var(--ph-target-min), var(--ph-icon-size)); }
 .ui-radio-dot { min-inline-size: max(var(--ph-target-min), var(--ph-icon-size)); min-block-size: max(var(--ph-target-min), var(--ph-icon-size)); }
 @media (forced-colors: active) {
+  :root { --ph-composer-rim: CanvasText; --ph-composer-shadow: none; }
   .ui-switch { border: 1px solid ButtonText; }
   .ui-switch-knob { background: ButtonText; }
   .ui-switch[aria-checked="true"] { background: Highlight; forced-color-adjust: none; }

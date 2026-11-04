@@ -321,10 +321,10 @@ function Table({ className, ...props }: ComponentProps<"table">) {
         <table
           className={cn(
             "border-collapse text-base",
-            // Wrapped between words (hyphenated where the language allows), never mid-word;
+            // Prose wraps between words without automatic hyphenation;
             // only long unbroken tokens (code, links) may break anywhere.
             wrap &&
-              "[&_a]:wrap-anywhere [&_code]:wrap-anywhere [&_td]:break-words [&_td]:hyphens-auto [&_th]:break-words [&_th]:hyphens-auto",
+              "[&_a]:wrap-anywhere [&_code]:wrap-anywhere [&_td]:wrap-normal [&_td]:hyphens-none [&_th]:wrap-normal [&_th]:hyphens-none",
             className,
           )}
           {...props}

@@ -202,6 +202,8 @@ export default [
       check(m.modal === "true", "the dialog has aria-modal=true", JSON.stringify(m));
       check(m.rootInert, "the app behind it is inert", JSON.stringify(m));
       const before = await rect(page, '[role="dialog"]');
+      const viewport = page.viewport();
+      check(before.left >= 16 && before.top >= 16 && before.right <= viewport.width - 16 && before.bottom <= viewport.height - 16, "Settings keeps a visible margin around every side", JSON.stringify(before));
       // A click just outside the window (6 px off its left edge) does nothing.
       await page.mouse.click(before.left - 6, before.top + 40);
       await h.idle();
@@ -218,6 +220,7 @@ export default [
         await h.idle();
         const r = await rect(page, '[role="dialog"]');
         check(Math.abs(r.width - before.width) < 1 && Math.abs(r.height - before.height) < 1, `on ${tab} the window is still ${Math.round(before.width)}x${Math.round(before.height)}`, `${r.width}x${r.height}`);
+        check(Math.abs(r.left - before.left) < 1 && Math.abs(r.top - before.top) < 1, `on ${tab} the window keeps its position`, JSON.stringify(r));
       }
       await h.shot("largest-text");
       await page.keyboard.press("Escape");

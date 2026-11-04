@@ -5,7 +5,7 @@ import { openCourseImport, useSitesVersion } from "@/components/lms/import-store
 import { connectionName, isSignedOut, whenText } from "@/components/lms/sites";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
-import { WorkspacePage } from "@/components/ui/workspace-page";
+import { WorkspaceEmpty, WorkspacePage, WorkspacePageHeader } from "@/components/ui/workspace-page";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { lmsGrades, lmsGradesRefresh, timeOf, type CourseGrades, type GradeItem } from "@/lib/grades-api";
@@ -122,19 +122,15 @@ export function GradesView({ space }: { space: Space }) {
   return (
     <section aria-labelledby={headingId} data-grades-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <WorkspacePage>
-        <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h2 id={headingId} className="text-xl font-semibold text-ink">
-              Grades
-            </h2>
-            <p className="text-sm text-ink-secondary">From the courses {space.name} can see. Phaethon only reads them: nothing changes on your course site.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {connIds.map((id) => (
+        <WorkspacePageHeader
+          title="Grades"
+          description={<>From the courses {space.name} can see. Phaethon only reads them: nothing changes on your course site.</>}
+          headingProps={{ id: headingId }}
+          actions={connIds.map((id) => (
               <Button
                 key={id}
                 type="button"
-                variant="outline"
+                variant={connIds.length === 1 ? "default" : "outline"}
                 data-grades-refresh={id}
                 disabled={!!refresh}
                 aria-describedby={refresh?.connection === id ? `${headingId}-progress` : undefined}
@@ -143,9 +139,8 @@ export function GradesView({ space }: { space: Space }) {
                 <Icon name={refresh?.connection === id ? "spinner" : "retry"} className={refresh?.connection === id ? "motion-safe:animate-spin" : undefined} />
                 {connIds.length > 1 ? `Refresh grades from ${school(id)}` : "Refresh grades"}
               </Button>
-            ))}
-          </div>
-        </header>
+          ))}
+        />
         <p id={`${headingId}-progress`} role="status" className={cn("text-sm text-ink-secondary", !refresh && !said && "sr-only")} data-grades-status="">
           {refresh ? `Reading your grades from ${school(refresh.connection)}… ${refresh.total ? `${Math.min(refresh.done + 1, refresh.total)} of ${refresh.total} courses` : ""}` : said}
         </p>
@@ -185,14 +180,12 @@ export function GradesView({ space }: { space: Space }) {
         ) : courses.length === 0 && hidden ? (
           <NoCourseAccess why={hidden} part="grades" />
         ) : courses.length === 0 ? (
-          <div className="flex flex-col items-start gap-3 rounded-lg border border-line bg-surface px-5 py-4" data-grades-empty="">
-            <p className="text-md font-medium text-ink">No grades here yet</p>
-            <p className="text-base text-ink-secondary">Grades come from your school’s course site. Import your courses, and their grades show here.</p>
-            <Button type="button" onClick={() => openCourseImport({ space: space.id })}>
-              <Icon name="book" />
-              Import courses…
-            </Button>
-          </div>
+          <WorkspaceEmpty
+            data-grades-empty=""
+            title="No grades here yet"
+            line="Import your courses to see their grades here."
+            action={<Button type="button" onClick={() => openCourseImport({ space: space.id })}><Icon name="book" />Import courses…</Button>}
+          />
         ) : (
           courses.map((c) => <CourseCard key={`${c.connection}:${c.courseId}`} space={space.id} course={c} />)
         )}
@@ -239,14 +232,13 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
 
   return (
     <section aria-labelledby={`${id}-h`} className="flex flex-col gap-4 border-t border-line pt-5" data-grades-course={course.courseId}>
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="flex min-w-0 flex-1 basis-60 flex-col gap-1">
-          <h3 id={`${id}-h`} className="text-lg font-semibold text-ink wrap-break-word">
-            {course.course}
-          </h3>
-          {updated != null && <p className="text-sm text-ink-secondary">Updated {whenText(updated)}</p>}
-        </div>
-        <div className="flex flex-col items-end gap-0.5 text-end" data-grades-current="">
+      <WorkspacePageHeader
+        title={course.course}
+        description={updated != null ? `Updated ${whenText(updated)}` : undefined}
+        headingAs="h3"
+        headingProps={{ id: `${id}-h` }}
+        size="section"
+        actions={<div className="flex flex-col items-end gap-0.5 text-end" data-grades-current="">
           <p className="text-2xl font-semibold text-ink tabular-nums">
             {percent != null ? pct(percent) : "No grade yet"}
             {letter && <span className="text-xl text-ink-secondary"> {letter}</span>}
@@ -258,8 +250,8 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
               {moved.delta > 0 ? "Up" : "Down"} {pct(Math.abs(moved.delta)).replace("%", "")} points after {moved.since}
             </p>
           )}
-        </div>
-      </div>
+        </div>}
+      />
 
       {course.note && (
         <p className="text-sm text-ink-secondary" data-grades-note="">

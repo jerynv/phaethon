@@ -6,6 +6,9 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { Button } from "@/components/ui/button"
 import { Icon } from "@/icons"
 
+// Retain Radix: wizards depend on cancellable outside/Escape events, nested
+// AlertDialog focus restoration and compound asChild triggers. Vic owns the surface.
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -62,7 +65,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-var(--ph-space)*8)] w-[calc(100%-var(--ph-space)*8)] max-w-(--ph-dialog-width) -translate-x-1/2 -translate-y-1/2",
-          "gap-4 overflow-y-auto rounded-xl border border-line bg-raised p-5 text-ink shadow-lg outline-none",
+          "ui-dialog ui-dialog-frame gap-4 overflow-y-auto m-0! p-5! outline-none",
           "duration-(--ph-duration) ease-out data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]",
           className
         )}
@@ -131,7 +134,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-tight font-semibold text-ink", className)}
+      className={cn("ui-dialog-title", className)}
       {...props}
     />
   )
@@ -144,7 +147,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-base text-ink-secondary", className)}
+      className={cn("ui-dialog-description", className)}
       {...props}
     />
   )

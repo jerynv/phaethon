@@ -178,6 +178,7 @@ export function DeckEditor({
         </label>
         <Textarea
           id={`${id}-front`}
+          placeholder="What is a power set?"
           autoFocus
           value={editing.front}
           onChange={(e) => setEditing({ ...editing, front: e.target.value })}
@@ -190,7 +191,7 @@ export function DeckEditor({
         <label htmlFor={`${id}-back`} className="text-sm font-medium text-ink">
           Back
         </label>
-        <Textarea id={`${id}-back`} value={editing.back} onChange={(e) => setEditing({ ...editing, back: e.target.value })} data-edit-back="" />
+        <Textarea id={`${id}-back`} placeholder="The set of all subsets of a set." value={editing.back} onChange={(e) => setEditing({ ...editing, back: e.target.value })} data-edit-back="" />
         <div className="flex flex-wrap justify-end gap-2">
           <Button
             type="button"
@@ -293,6 +294,7 @@ export function DeckEditor({
           <Input
             id={`${id}-search`}
             type="search"
+            placeholder="Find a question or answer…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-describedby={`${id}-count`}

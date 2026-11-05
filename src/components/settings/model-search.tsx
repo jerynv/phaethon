@@ -132,9 +132,10 @@ export function ModelSearch({
 
   return (
     <div className="flex flex-col gap-2" data-model-search={provider.id}>
-      <label htmlFor={inputId} className="text-base font-medium text-ink">
-        {label}
-      </label>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <label htmlFor={inputId} className="text-base font-medium text-ink">{label}</label>
+        <span data-model-selection="" className="text-xs text-ink-secondary">{current ? "Selected" : "Not selected"}</span>
+      </div>
       <div className="relative flex items-center">
         <Icon name="search" className="pointer-events-none absolute start-2.5 z-10 text-ink-tertiary" />
         <Input

@@ -150,10 +150,10 @@ export default [
       await openSettings(page, h, "agent");
       await page.waitForSelector('[data-provider-row="claude-cli"]');
       const actions = await page.$$(`${PANEL} [data-provider-configure], ${PANEL} [data-provider-default], ${PANEL} [data-backend], ${PANEL} [data-provider-add]`);
-      check(actions.length >= 4, "configured providers expose management and default actions", `${actions.length}`);
+      check(actions.length >= 4, "configured providers expose one management action each and Add provider", `${actions.length}`);
       for (const action of actions) {
         const ax = await page.accessibility.snapshot({ root: action, interestingOnly: false });
-        check(ax?.role === "button" && ["Manage", "Use as default", "Add provider"].includes(ax.name), "each provider action has a short accessible name", JSON.stringify(ax));
+        check(ax?.role === "button" && ["Manage Anthropic", "Manage Claude Code", "Manage Codex", "Manage Gemini CLI", "Add provider"].includes(ax.name), "each provider action names its provider without the row's status prose", JSON.stringify({ role: ax?.role, name: ax?.name }));
       }
       check((await page.$$(`${PANEL} [role="radio"]`)).length === 0, "provider setup uses explicit actions");
     },

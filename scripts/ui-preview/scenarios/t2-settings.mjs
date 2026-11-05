@@ -149,9 +149,17 @@ export default [
       await openSettings(page, h, "agent");
       const summary = await page.evaluate((panel) => {
         const el = document.querySelector(panel);
-        return { rows: el.querySelectorAll("[data-provider-row]").length, add: !!el.querySelector("[data-provider-add]"), manage: !!el.querySelector('[data-provider-configure="anthropic"]'), fields: el.querySelectorAll("input, select").length, text: el.innerText };
+        const rows = [...el.querySelectorAll("[data-provider-row]")];
+        return { rows: rows.length, add: !!el.querySelector("[data-provider-add]"), manage: !!el.querySelector('[data-provider-configure="anthropic"]'), fields: el.querySelectorAll("input, select").length, text: el.innerText,
+          defaultFirst: rows[0]?.hasAttribute("data-provider-default-row"), defaults: el.querySelectorAll("[data-provider-default-row]").length,
+          branded: rows.every((row) => row.querySelector("[data-provider-logo]") && row.querySelectorAll("button").length === 1),
+          masks: [...el.querySelectorAll("[data-provider-monochrome]")].map((mark) => getComputedStyle(mark).maskImage),
+          inlineSwitch: !!el.querySelector("[data-provider-default], [data-backend], [data-assistant-default-manage]"),
+        };
       }, PANEL);
       check(summary.rows > 0 && summary.add && summary.manage && summary.fields === 0, "Assistant lists providers and their setup actions", JSON.stringify(summary));
+      check(summary.defaultFirst && summary.defaults === 1 && summary.branded && !summary.inlineSwitch, "one branded row per provider, default first, with one configuration action", JSON.stringify(summary));
+      check(summary.masks.length > 0 && summary.masks.every((mask) => mask !== "none"), "monochrome brand artwork has a valid mask instead of a solid square", JSON.stringify(summary.masks.map((mask) => mask.slice(0, 50))));
       check(!/privacy policy|subscription|Nothing is sent|What is sent/.test(summary.text), "the provider list omits policy tutorials", summary.text);
       await park(page);
       await h.shot("agent");

@@ -3,6 +3,7 @@ import { Card, NativeSelect } from "vic-ui";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ProviderLogo } from "@/components/provider-logo";
 import { Details } from "@/components/ui/details";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -49,7 +50,7 @@ import {
 } from "./api-key";
 import { CLAUDE_CODE_MISSING, checkClaudeCode } from "./claude-code";
 import { ModelSearch } from "./model-search";
-import { SectionHeader, SettingGroup, SettingRow } from "./controls";
+import { SectionHeader, SettingGroup } from "./controls";
 import { useStatus } from "./status";
 
 const CLI_BACKENDS: CliBackend[] = ["claude-cli", "codex-cli", "gemini-cli"];
@@ -68,6 +69,34 @@ function cliStatusText(s: AgentCliStatus | undefined): string {
 
 export type AgentFocusRequest = { target: "key" | "model"; n: number; closeSettingsOnClose: boolean };
 type ProviderPopup = { kind: "catalog" } | { kind: "provider"; id: ProviderId } | { kind: "cli"; backend: CliBackend };
+
+function ProviderRow({ id, name, current, children, onConfigure }: {
+  id: ProviderId | CliBackend;
+  name: string;
+  current: boolean;
+  children: ReactNode;
+  onConfigure: () => void;
+}) {
+  return (
+    <div data-provider-row={id} data-provider-default-row={current || undefined}>
+      <Button
+        variant="ghost" data-provider-configure={id} aria-label={`Manage ${name}`} onClick={onConfigure}
+        className={cn(
+          "w-full rounded-none text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-4 [&>.ui-button-face]:py-2.5",
+          current && "[&>.ui-button-face]:bg-selected",
+        )}
+      >
+        <ProviderLogo provider={id} className="size-7 shrink-0" />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-base font-medium leading-snug text-ink">{name}</span>
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-normal leading-snug text-ink-secondary">{children}</span>
+        </span>
+        {current && <span className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-secondary">Default</span>}
+        <Icon name="chevron-right" className="shrink-0 text-ink-tertiary" />
+      </Button>
+    </div>
+  );
+}
 
 /** Links that leave Phaethon: underlined, and say they open in the browser. */
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
@@ -95,6 +124,7 @@ export function AgentSection({
   act: (work: () => Promise<void>, done: string, onError?: (message: string) => void, reloadThread?: boolean) => Promise<boolean>;
 }) {
   const { say } = useStatus();
+  const setupHintId = useId();
   const [retrying, setRetrying] = useState(false);
   const [popup, setPopup] = useState<ProviderPopup | null>(null);
   const [signingIn, setSigningIn] = useState(false);
@@ -172,7 +202,7 @@ export function AgentSection({
   }
 
   function useProvider(p: ProviderInfo) {
-    if (changingDefault) return;
+    if (changingDefault || !p.ready || !(p.model ?? (p.id === "anthropic" ? settings?.model ?? DEFAULT_MODEL : null))) return;
     setChangingDefault(true);
     setActionError("");
     void act(async () => {
@@ -190,9 +220,8 @@ export function AgentSection({
     if (ok) requestAnimationFrame(() => document.getElementById(headingId)?.focus());
   }
 
-  const activeName = settings && isCliBackend(settings.backend) ? CLI_INFO[settings.backend].name : provider.name;
   const configuredProviders = providers.filter((p) =>
-    p.hasKey || p.ready || (p.id !== "anthropic" && p.model !== null) ||
+    p.hasKey || (p.id !== "anthropic" && p.model !== null) ||
     (p.editableBase && p.baseUrl !== p.defaultBaseUrl) ||
     (settings?.backend === "phaethon" && provider.id === p.id),
   );
@@ -200,6 +229,14 @@ export function AgentSection({
   const editingProvider = popup?.kind === "provider" ? providers.find((p) => p.id === popup.id) : undefined;
   const editingCli = popup?.kind === "cli" ? popup.backend : undefined;
   const editingIsDefault = editingProvider ? settings?.backend === "phaethon" && provider.id === editingProvider.id : editingCli === settings?.backend;
+  const setupRequirement = !editingProvider ? "" : !editingProvider.ready ?
+    editingProvider.key === "required" && !editingProvider.hasKey ? "Add an API key first." : "Save a server URL first." :
+    !(editingProvider.model ?? (editingProvider.id === "anthropic" ? settings?.model ?? DEFAULT_MODEL : null)) ? "Choose a model first." : "";
+  const defaultId = settings && isCliBackend(settings.backend) ? settings.backend : provider.id;
+  const providerRows = [
+    ...configuredProviders.map((p) => ({ id: p.id, provider: p, backend: null })),
+    ...configuredClis.map((b) => ({ id: b, provider: null, backend: b })),
+  ].sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId));
 
   function missingCli(backend: CliBackend) {
     return (
@@ -223,7 +260,7 @@ export function AgentSection({
   return (
     <>
       <SectionHeader
-        id={headingId} title="Assistant" description="Manage providers and choose your default assistant."
+        id={headingId} title="Assistant" description="Choose who answers in your spaces."
         action={settings && (
           <Button variant="outline" size="sm" data-provider-add="" onClick={() => setPopup({ kind: "catalog" })}>
             <Icon name="plus" />Add provider
@@ -241,79 +278,27 @@ export function AgentSection({
         <p className="text-base text-ink-secondary" role="status">Loading assistant settings…</p>
       ) : (
         <>
-          <SettingGroup title="Default assistant">
-            <SettingRow
-              label={activeName}
-              description={isCliBackend(settings.backend) ? "Uses its own default model." :
-                provider.model || provider.id === "anthropic" ?
-                  modelName(toRef(provider.id, provider.model ?? settings.model)) : "Choose a default model."}
-            >
-              <Button
-                variant="outline" size="sm" className="self-end" data-assistant-default-manage=""
-                onClick={() => setPopup(isCliBackend(settings.backend) ?
-                  { kind: "cli", backend: settings.backend } : { kind: "provider", id: provider.id })}
-              >
-                Manage
-              </Button>
-            </SettingRow>
-          </SettingGroup>
           <SettingGroup title="Providers" bare>
             <Card plain className="overflow-hidden rounded-lg p-0!">
               <div className="divide-y divide-line">
-                {configuredProviders.map((p) => {
-                  const active = settings.backend === "phaethon" && provider.id === p.id;
+                {providerRows.map((row) => {
+                  const p = row.provider;
+                  const b = row.backend;
+                  const model = p && (p.model ?? (p.id === "anthropic" ? settings.model : null));
                   return (
-                    <div key={p.id} data-provider-row={p.id} className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-3">
-                      <Icon name={p.local ? "tool" : "agent"} className="shrink-0 text-ink-secondary" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-ink">
-                          {p.name}
-                          {active && <span className="ms-2 text-xs font-normal text-ink-secondary">Default</span>}
-                        </p>
-                        <p className="text-xs text-ink-secondary" data-provider-readiness={p.ready ? "configured" : "needs-setup"}>
-                          {p.ready ? "Configured" : "Needs setup"}
-                        </p>
-                      </div>
-                      {!active && (
-                        <Button variant="ghost" size="sm" data-provider-default={p.id} disabled={changingDefault} onClick={() => useProvider(p)}>
-                          Use as default
-                        </Button>
-                      )}
-                      <Button variant="outline" size="sm" data-provider-configure={p.id} onClick={() => setPopup({ kind: "provider", id: p.id })}>
-                        Manage
-                      </Button>
-                    </div>
+                    <ProviderRow
+                      key={row.id} id={row.id} name={p?.name ?? CLI_INFO[b!].name} current={row.id === defaultId}
+                      onConfigure={() => { setCliMissing(null); setPopup(p ? { kind: "provider", id: p.id } : { kind: "cli", backend: b! }); }}
+                    >
+                      {p ? <>
+                        {model && <><span>{modelName(toRef(p.id, model))}</span><span aria-hidden="true">·</span></>}
+                        <span data-provider-readiness={p.ready ? "configured" : "needs-setup"}>{p.ready ? "Configured" : "Needs setup"}</span>
+                      </> : <span data-cli-status={!statusOf(b!) ? "checking" : !statusOf(b!)?.installed ? "missing" : statusOf(b!)?.loggedIn === false ? "signed-out" : "installed"}>
+                        {cliStatusText(statusOf(b!))}
+                      </span>}
+                    </ProviderRow>
                   );
                 })}
-                {configuredClis.map((b) => (
-                  <div key={b} data-provider-row={b} className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-3">
-                    <Icon name="tool" className="shrink-0 text-ink-secondary" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-ink">
-                        {CLI_INFO[b].name}
-                        {settings.backend === b && <span className="ms-2 text-xs font-normal text-ink-secondary">Default</span>}
-                      </p>
-                      <p
-                        className="text-xs text-ink-secondary"
-                        data-cli-status={!statusOf(b) ? "checking" : !statusOf(b)?.installed ? "missing" :
-                          statusOf(b)?.loggedIn === false ? "signed-out" : "installed"}
-                      >
-                        {cliStatusText(statusOf(b))}
-                      </p>
-                    </div>
-                    {settings.backend !== b && (
-                      <Button variant="ghost" size="sm" data-backend={b} disabled={changingDefault} onClick={() => chooseBackend(b)}>
-                        Use as default
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline" size="sm" data-provider-configure={b}
-                      onClick={() => { setCliMissing(null); setPopup({ kind: "cli", backend: b }); }}
-                    >
-                      Manage
-                    </Button>
-                  </div>
-                ))}
               </div>
             </Card>
           </SettingGroup>
@@ -339,13 +324,21 @@ export function AgentSection({
           onInteractOutside={(e) => { if (signingIn) e.preventDefault(); }}
         >
           <DialogHeader className="shrink-0">
-            <DialogTitle ref={popupTitleRef} tabIndex={-1}>
-              {popup?.kind === "catalog" ? "Add provider" : editingProvider?.name ?? (editingCli ? CLI_INFO[editingCli].name : "Provider")}
-            </DialogTitle>
-            <DialogDescription>
-              {popup?.kind === "catalog" ? "Choose a provider to configure." :
-                editingCli ? "Manage this assistant’s setup." : "Configure your connection and default model."}
-            </DialogDescription>
+            <div className="flex items-center gap-3">
+              {(editingProvider || editingCli) && <ProviderLogo provider={editingProvider?.id ?? editingCli!} className="size-9" />}
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <DialogTitle ref={popupTitleRef} tabIndex={-1}>
+                  {popup?.kind === "catalog" ? "Add provider" : editingProvider?.name ?? (editingCli ? CLI_INFO[editingCli].name : "Provider")}
+                </DialogTitle>
+                <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>{popup?.kind === "catalog" ? "Choose a service or coding assistant." : editingCli ? cliStatusText(statusOf(editingCli)) :
+                    editingProvider?.local ? "Local connection" : editingProvider?.hasKey ? "API key saved" : "API connection"}</span>
+                  {editingCli && <Button variant="ghost" size="xs" data-provider-refresh="" disabled={signingIn} onClick={() => void refreshClis()}>
+                    <Icon name="retry" />Check again
+                  </Button>}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           <ScrollArea
             data-provider-popup-body=""
@@ -353,17 +346,19 @@ export function AgentSection({
           >
             <div className="space-y-4 p-1">
               {popup?.kind === "catalog" ? (
-                <div className="flex flex-col gap-4" data-provider-catalog="">
+                <div className="flex flex-col gap-6" data-provider-catalog="">
                   {PROVIDER_GROUPS.filter((g) => providers.some(g.test)).map((g) => (
                     <div key={g.label}>
                       <p className="mb-2 text-xs font-medium text-ink-secondary">{g.label}</p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {providers.filter(g.test).map((p) => (
                           <Button
-                            key={p.id} variant="outline" className="[&>.ui-button-face]:justify-start" data-provider-catalog-select={p.id}
+                            key={p.id} variant="outline" className="text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2.5" data-provider-catalog-select={p.id}
                             onClick={() => setPopup({ kind: "provider", id: p.id })}
                           >
-                            {p.name}
+                            <ProviderLogo provider={p.id} className="size-6" />
+                            <span className="min-w-0 flex-1 text-base font-medium">{p.name}</span>
+                            {providerRows.some((row) => row.id === p.id) && <Icon name="check" className="text-ink-tertiary" />}
                           </Button>
                         ))}
                       </div>
@@ -374,36 +369,30 @@ export function AgentSection({
                     <div className="grid gap-2 sm:grid-cols-2">
                       {CLI_BACKENDS.map((b) => (
                         <Button
-                          key={b} variant="outline" className="[&>.ui-button-face]:justify-start" data-provider-catalog-select={b}
+                          key={b} variant="outline" className="text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2.5" data-provider-catalog-select={b}
                           onClick={() => { setCliMissing(null); setPopup({ kind: "cli", backend: b }); }}
                         >
-                          {CLI_INFO[b].name}
+                          <ProviderLogo provider={b} className="size-6" />
+                          <span className="min-w-0 flex-1 text-base font-medium">{CLI_INFO[b].name}</span>
+                          {providerRows.some((row) => row.id === b) && <Icon name="check" className="text-ink-tertiary" />}
                         </Button>
                       ))}
                     </div>
                   </div>
                 </div>
               ) : editingProvider ? (
-                <div className="flex flex-col gap-4" data-provider-configuration={editingProvider.id}>
+                <div className="flex flex-col gap-6" data-provider-configuration={editingProvider.id}>
                   {editingProvider.id === "anthropic" ? (
-                    <SettingGroup title="API key">
-                      <KeyForm hasKey={editingProvider.hasKey} act={act} provider={editingProvider} />
-                    </SettingGroup>
+                    <KeyForm hasKey={editingProvider.hasKey} act={act} provider={editingProvider} />
                   ) : <ProviderSetup provider={editingProvider} act={act} />}
-                  <SettingGroup title="Model">
+                  <div className="border-t border-line pt-6">
                     {editingProvider.id === "anthropic" ?
                       <ModelPicker current={settings?.model ?? DEFAULT_MODEL} act={act} /> :
                       <ProviderModel provider={editingProvider} act={act} />}
-                  </SettingGroup>
+                  </div>
                 </div>
               ) : editingCli ? (
                 <div className="flex flex-col gap-4" data-provider-configuration={editingCli}>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-ink-secondary">{cliStatusText(statusOf(editingCli))}</p>
-                    <Button variant="ghost" size="sm" data-provider-refresh="" disabled={signingIn} onClick={() => void refreshClis()}>
-                      <Icon name="retry" />Check again
-                    </Button>
-                  </div>
                   {statusOf(editingCli)?.installed === false || cliMissing === editingCli ? missingCli(editingCli) :
                     isOwnHome(editingCli) ? (
                       <CliSignInGroup key={editingCli} backend={editingCli} signedIn={statusOf(editingCli)?.loggedIn === true} onSignedIn={refreshClis} onWaitingChange={setSigningIn} />
@@ -419,6 +408,7 @@ export function AgentSection({
             </div>
           </ScrollArea>
           <DialogFooter className="shrink-0 flex-row flex-wrap">
+            {setupRequirement && !editingIsDefault && <p id={setupHintId} data-provider-requirement="" className="basis-full text-sm text-ink-secondary">{setupRequirement}</p>}
             {popup?.kind !== "catalog" && (
               <Button variant="ghost" disabled={signingIn} onClick={() => { setCliMissing(null); setPopup({ kind: "catalog" }); }}>
                 All providers
@@ -426,13 +416,15 @@ export function AgentSection({
             )}
             {popup?.kind !== "catalog" && !editingIsDefault && (
               <Button
-                variant="outline" disabled={signingIn || changingDefault} data-backend={editingCli ?? "phaethon"} data-provider-default={editingProvider?.id}
+                variant={(editingProvider?.ready && !setupRequirement) || (editingCli && statusOf(editingCli)?.loggedIn === true) ? "default" : "outline"}
+                disabled={signingIn || changingDefault || !!setupRequirement} aria-describedby={setupRequirement ? setupHintId : undefined}
+                data-backend={editingCli ?? "phaethon"} data-provider-default={editingProvider?.id}
                 onClick={() => { if (editingProvider) useProvider(editingProvider); else if (editingCli) chooseBackend(editingCli); }}
               >
                 Use as default
               </Button>
             )}
-            <Button disabled={signingIn} onClick={closePopup}>{popup?.kind === "catalog" ? "Cancel" : "Done"}</Button>
+            <Button variant="outline" disabled={signingIn} onClick={closePopup}>{popup?.kind === "catalog" ? "Cancel" : "Done"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -485,8 +477,8 @@ function CliSignInGroup({ backend, signedIn, onSignedIn, onWaitingChange }: { ba
   }
 
   return (
-    <SettingGroup title="Account">
-      <div data-cli-sign-in={id} className="flex flex-col gap-3 px-4 py-3.5">
+    <SettingGroup title="Account" bare>
+      <div data-cli-sign-in={id} className="flex flex-col gap-3">
         <p id={descId} className={cn("text-sm text-ink-secondary", signedIn && !waiting && "sr-only")}>
           {waiting ? "Finish signing in in your browser." : signedIn ?
             `Change your ${cli.name} account in your browser.` : `Sign in to ${cli.name} in your browser to connect it here.`}
@@ -495,7 +487,7 @@ function CliSignInGroup({ backend, signedIn, onSignedIn, onWaitingChange }: { ba
           <Button
             ref={startRef}
             type="button"
-            variant="outline"
+            variant={signedIn ? "outline" : "default"}
             data-cli-sign-in-start=""
             aria-describedby={descId}
             aria-disabled={waiting || undefined}
@@ -558,17 +550,10 @@ function ProviderSetup({ provider, act }: { provider: ProviderInfo; act: Paramet
   return (
     <>
       {provider.editableBase && (
-        <SettingGroup title={provider.local ? `Where ${provider.name} runs` : "Your server’s address"}>
-          <AddressForm provider={provider} act={act} />
-        </SettingGroup>
+        <AddressForm provider={provider} act={act} />
       )}
       {provider.key !== "none" && (
-        <SettingGroup
-          title={provider.id === "custom" ? "API key" : `${provider.name} API key`}
-          description={provider.id === "custom" ? "Only if your server asks for one." : undefined}
-        >
-          <KeyForm hasKey={provider.hasKey} act={act} provider={provider} />
-        </SettingGroup>
+        <KeyForm hasKey={provider.hasKey} act={act} provider={provider} />
       )}
     </>
   );
@@ -620,7 +605,7 @@ function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameter
   return (
     <form
       noValidate
-      className="flex flex-col gap-3 px-4 py-3.5"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         void save(draft.trim() || null);
@@ -628,17 +613,16 @@ function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameter
     >
       <div className="flex flex-col gap-1.5">
         <label htmlFor={inputId} className="text-base font-medium text-ink">
-          Address
+          Server URL
         </label>
         <p id={hintId} className="text-sm text-ink-secondary">
-          {provider.local
-            ? `Where ${provider.name} answers. Usually ${provider.defaultBaseUrl}; change it only if you set ${provider.name} up differently.`
-            : "Your server’s address for OpenAI-style requests, often ending in /v1, for example https://llm.example.com/v1."}
+          {provider.local ? `Connect to your ${provider.name} server.` : "OpenAI-compatible endpoint."}
         </p>
         <div className="flex flex-wrap gap-2">
           <Input
             id={inputId}
             data-provider-url=""
+            placeholder={provider.defaultBaseUrl || "https://llm.example.com/v1"}
             type="url"
             inputMode="url"
             autoComplete="off"
@@ -699,16 +683,12 @@ function ProviderModel({ provider, act }: { provider: ProviderInfo; act: Paramet
   const current = provider.model;
   return (
     <>
-      <div className="flex flex-col gap-3 px-4 py-3.5">
-        <p id={inUseId} data-provider-model={current ?? ""} className="text-base text-ink">
-          {current ? (
+      <div className="flex flex-col gap-3">
+        {current && <p id={inUseId} data-provider-model={current} className="text-sm text-ink-secondary">
             <>
               Default: <span className="font-medium">{modelName(toRef(provider.id, current))}</span>.
             </>
-          ) : (
-            "Choose a default model, or enter its name."
-          )}
-        </p>
+        </p>}
         <ModelSearch
           provider={provider}
           current={current}
@@ -718,9 +698,6 @@ function ProviderModel({ provider, act }: { provider: ProviderInfo; act: Paramet
             void act(() => setProviderModel(provider.id, id), `The default model is now ${provider.name} · ${name}.`);
           }}
         />
-        <p className="text-sm text-ink-secondary">
-          Each space can choose another model beside Send.
-        </p>
       </div>
       <OwnModels />
     </>
@@ -799,11 +776,7 @@ function KeyForm({
   const describedBy = [keyHintId, outcome && outcomeId].filter(Boolean).join(" ");
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3 px-4 py-3.5">
-      <div id={keyHintId} className="flex items-start gap-2 text-sm text-ink-secondary">
-        <Icon name={hasKey ? "lock" : "key"} className="mt-0.5 shrink-0 text-ink-tertiary" />
-        <p className="min-w-0">{hasKey ? "A key is saved. Paste a new key to replace it." : provider.key === "optional" ? "Add a key only if your server requires one." : <>Paste your {provider.name} API key. {provider.keysUrl && <ExternalLink href={provider.keysUrl}>Get API key</ExternalLink>}</>}</p>
-      </div>
+    <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <label htmlFor={keyId} className="text-base font-medium text-ink">
           {hasKey ? "New API key" : "API key"}
@@ -813,6 +786,7 @@ function KeyForm({
             ref={inputRef}
             id={keyId}
             data-key-input=""
+            placeholder={provider.keyPrefix ? `${provider.keyPrefix}…` : `Paste your ${provider.name} API key`}
             type="password"
             autoComplete="off"
             spellCheck={false}
@@ -826,10 +800,14 @@ function KeyForm({
             aria-invalid={bad ? true : undefined}
             className="min-w-(--ph-settings-label-min) flex-1 font-mono"
           />
-          <Button type="submit" aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
+          <Button type="submit" variant={hasKey && !keyDraft ? "outline" : "default"} aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
             {saving ? "Checking…" : "Check and save"}
           </Button>
         </div>
+        <p id={keyHintId} className="text-sm text-ink-secondary">
+          {hasKey ? "A key is saved. Paste a new key to replace it." : provider.key === "optional" ? "Add a key only if your server requires one." :
+            <>{provider.name} API key. {provider.keysUrl && <ExternalLink href={provider.keysUrl}>Get API key</ExternalLink>}</>}
+        </p>
         {outcome && <KeyOutcomeLine id={outcomeId} outcome={outcome} provider={provider} />}
         {canSaveUnchecked(outcome) && (
           <Button type="button" variant="outline" className="self-start" onClick={() => void save(true)}>
@@ -950,18 +928,8 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
 
   return (
     <>
-    <SettingRow
-      stacked
-      label="Default model"
-      htmlFor={selectId}
-      description={
-        <>
-          Each space can choose another model beside Send.
-          {listFailed && " Phaethon couldn’t fetch the full list just now, so only the default is shown."}
-        </>
-      }
-      descriptionId={descId}
-    >
+    <div data-setting-row="" className="flex flex-col gap-1.5">
+      <label htmlFor={selectId} className="text-base font-medium text-ink">Default model</label>
       <NativeSelect
         id={selectId}
         data-model-select=""
@@ -978,7 +946,11 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
           </option>
         ))}
       </NativeSelect>
-    </SettingRow>
+      <p id={descId} className="text-sm text-ink-secondary">
+        Used unless a space has its own model.
+        {listFailed && " Couldn’t load models; showing the default."}
+      </p>
+    </div>
     <OwnModels />
     </>
   );
@@ -1013,7 +985,7 @@ function OwnModels() {
   }
 
   return (
-    <div className="flex flex-col gap-2 px-4 py-3.5" data-own-models="">
+    <div className="mt-4 flex flex-col gap-2 border-t border-line pt-4" data-own-models="">
       <p id={titleId} className="text-base font-medium text-ink">
         Spaces with their own model
       </p>

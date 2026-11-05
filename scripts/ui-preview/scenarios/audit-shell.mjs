@@ -178,7 +178,7 @@ export default [
   {
     name: "audit-shell-sidebar",
     sizes: WIDE,
-    mock: { settings: SETTINGS, threads: { school: CONVERSATION, work: WORK_THREAD } },
+    mock: { settings: { ...SETTINGS, appearance: { tokens: { "--ph-focus-rings": 1 } } }, threads: { school: CONVERSATION, work: WORK_THREAD } },
     async run(page, h) {
       await h.idle();
       await showSidebar(page);

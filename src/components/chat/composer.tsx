@@ -328,7 +328,7 @@ export function Composer({
         }}
         className={cn(
           // T3's ComposerSurface groups input and controls on one quiet surface.
-          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow-(--ph-composer-shadow) transition-colors focus-within:border-focus",
+          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow-(--ph-composer-shadow) transition-colors",
           dragging ? "border-focus bg-accent-soft" : "border-(--ph-composer-rim)",
         )}
       >

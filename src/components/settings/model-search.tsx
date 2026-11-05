@@ -185,7 +185,7 @@ export function ModelSearch({
                 onMouseMove={() => i !== at && setActive(i)}
                 className={cn(
                   "grid min-h-(--ph-target-min) shrink-0 cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 rounded-sm px-2 py-1.5",
-                  i === at && focused && "bg-hover outline-2 -outline-offset-2 outline-accent-fill forced-colors:outline-[Highlight]",
+                  i === at && focused && "bg-hover",
                 )}
               >
                 <span className="flex h-[1lh] items-center">{inUse && <Icon name="check" className="text-accent-ink" />}</span>

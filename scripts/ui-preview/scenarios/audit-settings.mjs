@@ -428,7 +428,7 @@ export default [
     mock: {
       settings: {
         ...SETTINGS,
-        appearance: { increaseContrast: "on", reduceMotion: "on", tokens: { "--ph-focus-width": "4px", "--ph-tracking-normal": "0.05em", "--ph-leading-normal": 1.9, "--ph-icon-stroke": 2.25 } },
+        appearance: { increaseContrast: "on", reduceMotion: "on", tokens: { "--ph-focus-rings": 1, "--ph-focus-width": "4px", "--ph-tracking-normal": "0.05em", "--ph-leading-normal": 1.9, "--ph-icon-stroke": 2.25 } },
       },
       threads: {},
     },
@@ -760,7 +760,7 @@ export default [
     // list's border and the window's rounded corners.
     name: "audit-settings-panel-focus",
     sizes: [[1100, 720], [640, 480]],
-    mock: { settings: SETTINGS, threads: {} },
+    mock: { settings: { ...SETTINGS, appearance: { tokens: { "--ph-focus-rings": 1 } } }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "appearance");
       await page.focus('[data-testid="settings-tab-appearance"]');

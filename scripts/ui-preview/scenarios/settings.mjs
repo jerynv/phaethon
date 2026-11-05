@@ -47,7 +47,7 @@ export default [
   },
   {
     name: "settings-accessibility",
-    mock: { settings: { ...settings, appearance: { increaseContrast: "on", tokens: { "--ph-focus-width": "4px", "--ph-tracking-normal": "0.03em" } } } },
+    mock: { settings: { ...settings, appearance: { increaseContrast: "on", tokens: { "--ph-focus-rings": 1, "--ph-focus-width": "4px", "--ph-tracking-normal": "0.03em" } } } },
     run: (page, h) => open(page, h, "accessibility"),
   },
   {

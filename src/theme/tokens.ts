@@ -245,6 +245,18 @@ export const TOKENS: readonly TokenSpec[] = [
 
   // ---- Accessibility ----
   {
+    name: "--ph-focus-rings",
+    label: "Show focus rings",
+    description: "Outline the active control.",
+    group: "Accessibility",
+    kind: "number",
+    min: 0,
+    max: 1,
+    step: 1,
+    default: 0,
+    format: (v) => (v ? "On" : "Off"),
+  },
+  {
     name: "--ph-focus-width",
     label: "Focus ring thickness",
     description: "The outline that shows which control the keyboard is on.",

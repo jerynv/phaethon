@@ -51,7 +51,7 @@ export type ModelsState = {
 };
 
 export type CliId = "claude" | "codex" | "gemini";
-export type CliModelsState = { status: "loading" | "ready" | "error"; models: readonly CliModelInfo[]; note?: string };
+export type CliModelsState = { status: "loading" | "ready" | "error"; models: readonly CliModelInfo[]; note?: string; defaultModel?: string };
 
 /** Mirrors the presets' names in src-tauri/src/providers.rs. */
 export const PROVIDER_NAMES: Readonly<Record<ProviderId, string>> = {
@@ -122,10 +122,10 @@ export async function loadCliModels(cli: CliId, force = false): Promise<CliModel
   const had = state.cliModels[cli];
   if (had && (had.status === "loading" || (!force && had.status === "ready"))) return had;
   if (!inTauri()) return undefined;
-  set({ cliModels: { ...state.cliModels, [cli]: { status: "loading", models: had?.models ?? [], note: had?.note } } });
+  set({ cliModels: { ...state.cliModels, [cli]: { ...had, status: "loading", models: had?.models ?? [], note: had?.note } } });
   try {
     const out = await listCliModels(cli);
-    set({ cliModels: { ...state.cliModels, [cli]: { status: "ready", models: out.models, note: out.note } } });
+    set({ cliModels: { ...state.cliModels, [cli]: { status: "ready", models: out.models, note: out.note, defaultModel: out.defaultModel } } });
   } catch (e) {
     set({ cliModels: { ...state.cliModels, [cli]: { status: "error", models: had?.models ?? [], note: `Phaethon couldn’t ask for the list: ${String(e)}` } } });
   }
@@ -134,7 +134,7 @@ export async function loadCliModels(cli: CliId, force = false): Promise<CliModel
 
 /** The name a CLI gives one of its models ("GPT-6.1-Sol"), or the id while unknown. */
 export function cliModelName(cli: CliId, model: string, s: ModelsState = state): string {
-  return s.cliModels[cli]?.models.find((m) => m.id === model)?.name ?? model;
+  return s.cliModels[cli]?.models.find((m) => m.id === model || m.aliases?.includes(model))?.name ?? model;
 }
 
 /** The reference for `model` of `provider`, as the core saves it. */
@@ -207,7 +207,7 @@ export function modelName(ref: string, models: readonly ModelInfo[] = state.mode
   const cli = splitCliRef(ref);
   if (cli) return `${cli.name} · ${cliModelName(CLI_INFO[cli.backend].id, cli.model)}`;
   const { provider, model } = splitRef(ref);
-  if (provider === "anthropic") return models.find((m) => m.id === model)?.name ?? readableModel(model);
+  if (provider === "anthropic") return models.find((m) => m.id === model || m.aliases?.includes(model))?.name ?? readableModel(model);
   return `${providerName(provider)} · ${state.names[ref] ?? model}`;
 }
 

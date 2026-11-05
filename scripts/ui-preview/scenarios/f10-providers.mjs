@@ -106,10 +106,10 @@ export default [
       check(await settingsSaid(page, "API key saved."), "saving the key is said", await settingsStatus(page));
       await page.waitForFunction(() => /A key is saved/.test(document.querySelector("[data-key-input]")?.closest("form")?.textContent ?? ""), { timeout: 3000 });
 
-      // The list: long, so only the first 50 show, and typing narrows it.
+      // Every available model stays reachable; typing narrows the full catalog.
       await page.waitForFunction(() => /120 models/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
-      check(/The first 50 are shown/.test(await searchStatus(page)), "a long list says only the first 50 show", await searchStatus(page));
-      check((await page.$$("[data-model-search] [role=option]")).length === 50, "and shows 50");
+      check((await searchStatus(page)).trim() === "120 models.", "a long list gives its concise count without a tutorial", await searchStatus(page));
+      check((await page.$$("[data-model-search] [role=option]")).length === 120, "all 120 models remain reachable in the scrollable list");
       const none = await page.$eval("[data-model-query]", (e) => ({ value: e.value, placeholder: e.placeholder, label: e.labels?.[0]?.textContent }));
       check(none.value === "" && none.placeholder && none.label === "Default model" && !(await page.$("[data-provider-model]")), "an unconfigured model has an empty labelled search with a format cue", JSON.stringify(none));
       await page.focus("[data-model-query]");
@@ -134,7 +134,7 @@ export default [
       // A model the list doesn't have: typed, then used as it is.
       await page.click("[data-model-query]", { clickCount: 3 });
       await page.keyboard.type("my-org/private-model");
-      await page.waitForFunction(() => /Press Enter to use it/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
+      await page.waitForFunction(() => document.getElementById(document.querySelector("[data-model-query]")?.getAttribute("aria-activedescendant"))?.dataset.modelChoice === "__free__", { timeout: 3000 });
       check((await activeOption(page)) === "__free__", "with nothing listed matching, the typed name is offered first", await activeOption(page));
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => window.__calls.filter(([c]) => c === "settings_set_provider_model").length === 2, { timeout: 3000 });
@@ -169,7 +169,7 @@ export default [
       const text = await page.$eval(providerPopup, (e) => e.innerText);
       check(/Connect to your Ollama server/.test(text) && !/What is sent to/.test(text), "the popup gives Ollama's address without the removed disclosure", text.slice(0, 900));
       const ms = await searchStatus(page);
-      check(/Ollama isn’t running/.test(ms) && /Type a model’s name/.test(ms), "the model list says why it is empty and that a name can be typed", ms);
+      check(/Ollama isn’t running/.test(ms) && !/Type a model’s name/.test(ms), "the model list retains its actual failure without an input tutorial", ms);
       const url = await page.$eval("[data-provider-url]", (e) => [e.value, e.labels?.[0]?.textContent]);
       check(url[0] === "http://127.0.0.1:11434/v1" && url[1] === "Server URL", "the usual address is shown, labelled", JSON.stringify(url));
       // A bad address is refused at the field.
@@ -340,7 +340,7 @@ export default [
         });
         return { count: rows.length, scrolls: list.scrollHeight > list.clientHeight, bad };
       });
-      check(layout.count === 50 && layout.scrolls, "the long model list scrolls instead of compressing its 50 rows", JSON.stringify(layout));
+      check(layout.count === 120 && layout.scrolls, "the full model list scrolls instead of compressing its rows", JSON.stringify(layout));
       check(layout.bad.length === 0, "model titles and identifiers fit their rows without overlapping the next option", JSON.stringify(layout.bad.slice(0, 3)));
       await page.$eval('[data-provider-popup-body] .ui-scroll-area-viewport', (viewport) => {
         viewport.scrollTop = 0;

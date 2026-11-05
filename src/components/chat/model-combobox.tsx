@@ -11,10 +11,10 @@ export type PickerOption = { value: string; model: string; name: string; provide
  * Combobox parts. The host filters once and keeps provider/footer layout outside
  * the list. Async selection and the enclosing popover remain host-owned.
  */
-export function ModelCombobox({ options, query, onQueryChange, onChoose, favorites, onFavorite, searchRef, onFocusProviders, onRequestClose, busy, loading, children }: {
+export function ModelCombobox({ options, query, onQueryChange, onChoose, favorites, onFavorite, searchRef, onFocusProviders, onRequestClose, onFocusEffort, busy, loading, children }: {
   options: PickerOption[]; query: string; onQueryChange: (value: string) => void; onChoose: (option: PickerOption) => void;
   favorites: Set<string>; onFavorite: (key: string) => void; searchRef: React.RefObject<HTMLInputElement | null>;
-  onFocusProviders: () => void; onRequestClose?: () => void; busy: boolean; loading: boolean; children?: ReactNode;
+  onFocusProviders: () => void; onRequestClose?: () => void; onFocusEffort?: (option: PickerOption) => void; busy: boolean; loading: boolean; children?: ReactNode;
 }) {
   const filtered = useMemo(() => {
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -33,7 +33,12 @@ export function ModelCombobox({ options, query, onQueryChange, onChoose, favorit
         <ComboboxSearch ref={searchRef} aria-label="Search models" placeholder="Search models…" autoComplete="off"
           onKeyDown={event => {
             if (busy || event.nativeEvent.isComposing || event.keyCode === 229) return;
-            if (event.key === "ArrowLeft" && !query && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+            if (event.key === "ArrowRight" && event.currentTarget.selectionStart === query.length && event.currentTarget.selectionEnd === query.length && onFocusEffort) {
+              const activeId = event.currentTarget.getAttribute("aria-activedescendant");
+              const key = activeId ? document.getElementById(activeId)?.getAttribute("data-picker-value") : null;
+              const option = filtered.find(item => item.value === key);
+              if (option) { event.preventDefault(); onFocusEffort(option); }
+            } else if (event.key === "ArrowLeft" && !query && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
               event.preventDefault(); onFocusProviders();
             } else if (event.altKey && event.code === "KeyF" && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
               const activeId = event.currentTarget.getAttribute("aria-activedescendant");

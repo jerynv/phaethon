@@ -543,6 +543,12 @@ async fn turn(
         emit(AgentEvent::error(ErrorCode::Cli, gemini::OWN_SETTINGS_MESSAGE));
         return None;
     }
+    // Capture once before launch; even a stale-session retry keeps this turn's
+    // reasoning when the person changes the next message's setting.
+    let reasoning = match crate::space_model::get_reasoning(req.space_dir, cli.id(), req.model.as_deref().filter(|model| is_valid_cli_model(model))) {
+        Ok(reasoning) => reasoning,
+        Err(message) => { storage(emit, message); return None; }
+    };
     let mut msgs = match thread::load(req.space_dir) {
         Ok(m) => m,
         Err(e) => {
@@ -567,7 +573,7 @@ async fn turn(
     let mut text = String::new();
     let (stopped, session_id) = loop {
         let prompt = cli_prompt(&ask, &msgs, resume.is_none());
-        match drive(runs, space_id, cli, req, resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text).await {
+        match drive(runs, space_id, cli, req, reasoning.as_deref(), resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text).await {
             // The session is gone (deleted, or made on another machine or in another folder):
             // start afresh, with the conversation so far.
             Attempt::StaleSession => {
@@ -655,7 +661,7 @@ impl Parser {
 const FULL_ACCESS_NOTE: &str = "# Full access\n\nThe user turned on full access for this space: you may read and change files anywhere on this computer, run any command and use the internet, without asking. Do only what the user asked, and say in your reply exactly which files you changed or created (full paths) and which commands you ran that changed anything.";
 
 /// The arguments and stdin for one run of `cli`, or why it can't run.
-fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>, prompt: &str) -> Result<(Vec<String>, String), String> {
+fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, reasoning: Option<&str>, resume: Option<&str>, prompt: &str) -> Result<(Vec<String>, String), String> {
     let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
     let model = req.model.as_deref().filter(|m| is_valid_cli_model(m));
     let mode = crate::tutor_mode::prompt_section(req.space_dir);
@@ -673,7 +679,7 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
     // How to offer a quiz or flashcards from the chat, before the tutor mode (which shapes every answer).
     let mode = Some(crate::study::chat::with_prompt(mode.as_deref()));
     let mode = if req.full_access { mode.map(|m| format!("{FULL_ACCESS_NOTE}\n\n{m}")) } else { mode };
-    Ok(match cli {
+    let (mut args, stdin) = match cli {
         Cli::Claude => {
             let mut args = if req.full_access { claude::cli_args_full(resume) } else { cli_args(resume, &dirs) };
             // The space's own model for Claude Code (an alias its help gives, or a full name).
@@ -689,7 +695,25 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, resume: Option<&str>,
             let policy = gemini::policy_file(false).map_err(|e| format!("Phaethon couldn’t prepare Gemini CLI’s read-only rules: {e}"))?;
             (gemini::cli_args(&policy, &dirs, model, resume), gemini::prompt(mode.as_deref(), prompt))
         }
-    })
+    };
+    reasoning_args(cli, &mut args, reasoning)?;
+    Ok((args, stdin))
+}
+
+/// Literal argv only: no shell expansion and no changes to the CLI's config.
+pub(crate) fn reasoning_args(cli: Cli, args: &mut Vec<String>, reasoning: Option<&str>) -> Result<(), String> {
+    let Some(reasoning) = reasoning else { return Ok(()) };
+    if !crate::space_model::valid_reasoning(cli.id(), reasoning) {
+        return Err("That assistant does not support this reasoning level.".into());
+    }
+    match cli {
+        Cli::Claude => args.extend(["--effort".into(), reasoning.into()]),
+        // Keep config before `resume` and the final stdin marker. Both Codex
+        // permission modes start with `exec`.
+        Cli::Codex => { args.splice(1..1, ["-c".into(), format!("model_reasoning_effort=\"{reasoning}\"")]); }
+        Cli::Gemini => unreachable!("Gemini has no published CLI reasoning flag"),
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)] // one run's inputs, each needed
@@ -698,6 +722,7 @@ async fn drive(
     space_id: &str,
     cli: Cli,
     req: &TurnRequest<'_>,
+    reasoning: Option<&str>,
     resume: Option<&str>,
     prompt: &str,
     cancel_rx: &mut oneshot::Receiver<()>,
@@ -716,7 +741,7 @@ async fn drive(
         fail(emit, ErrorCode::MissingCli, cli.missing_message().into());
         return Attempt::NotStarted;
     };
-    let (args, stdin_text) = match invocation(cli, &bin, req, resume, prompt) {
+    let (args, stdin_text) = match invocation(cli, &bin, req, reasoning, resume, prompt) {
         Ok(i) => i,
         Err(message) => {
             fail(emit, ErrorCode::Cli, message);
@@ -1079,6 +1104,32 @@ mod tests {
         assert_eq!(parse_codex_login("Logged in using ChatGPT\n"), Some(true));
         assert_eq!(parse_codex_login("Not logged in\n"), Some(false));
         assert_eq!(parse_codex_login("Error loading configuration"), None);
+    }
+
+    #[test]
+    fn reasoning_arguments_are_real_and_preserve_both_permission_modes_and_resume() {
+        let path = Path::new("/tmp/phaethon-reasoning-args");
+        for mut args in [claude::cli_args(Some("session"), &[]), claude::cli_args_full(Some("session"))] {
+            let original = args.clone();
+            reasoning_args(Cli::Claude, &mut args, None).unwrap();
+            assert_eq!(args, original, "Default leaves the CLI's own choice alone");
+            reasoning_args(Cli::Claude, &mut args, Some("xhigh")).unwrap();
+            assert_eq!(&args[..original.len()], original);
+            assert_eq!(&args[original.len()..], ["--effort", "xhigh"]);
+        }
+        for mut args in [codex::cli_args(path, path, &[], Some("resume"), None, Some("session")), codex::cli_args_full(path, Some("resume"), None, Some("session"))] {
+            let original = args.clone();
+            reasoning_args(Cli::Codex, &mut args, None).unwrap();
+            assert_eq!(args, original);
+            reasoning_args(Cli::Codex, &mut args, Some("ultra")).unwrap();
+            assert_eq!(&args[..3], ["exec", "-c", "model_reasoning_effort=\"ultra\""]);
+            assert_eq!(&args[3..], &original[1..], "permission flags, model named resume and actual resume tail are intact");
+        }
+        let mut args = vec!["exec".into(), "-".into()];
+        let original = args.clone();
+        assert!(reasoning_args(Cli::Codex, &mut args, Some("high; touch /tmp/nope")).is_err());
+        assert!(reasoning_args(Cli::Gemini, &mut args, Some("high")).is_err());
+        assert_eq!(args, original, "unsupported input adds no arguments");
     }
 
     #[test]

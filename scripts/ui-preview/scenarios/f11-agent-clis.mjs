@@ -124,7 +124,7 @@ export default [
       const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-cli-model-input"));
       check(focused, "the name field has focus", String(focused));
       const desc = await page.$eval("[data-cli-model-dialog]", (d) => d.textContent);
-      check(/Enter a model name for Codex/.test(desc) && /For example gpt-5\.5/.test(desc), "the manual model field names Codex and gives an example", desc);
+      check(/Codex model in School/.test(desc) && !/For example/.test(desc) && await page.$eval("[data-cli-model-input]", input => !!input.placeholder), "custom model identifies its provider and uses the placeholder instead of tutorial paragraphs", desc);
       // A name that could be read as a flag is refused, at the field.
       // Typed once the menu has finished closing, as a person would.
       await page.waitForFunction(() => !document.querySelector("[data-model-menu]"), { timeout: 3000 });
@@ -134,7 +134,7 @@ export default [
       check(typed[0] === "--yolo", "the name is typed into the field", JSON.stringify(typed));
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-cli-model-dialog] [role=alert]", { timeout: 3000 });
-      const err = await page.$eval("[data-cli-model-input]", (i) => [i.getAttribute("aria-invalid"), document.getElementById(i.getAttribute("aria-describedby").split(" ")[1])?.textContent]);
+      const err = await page.$eval("[data-cli-model-input]", (i) => [i.getAttribute("aria-invalid"), i.getAttribute("aria-describedby").split(" ").map(id => document.getElementById(id)?.textContent ?? "").join(" ")]);
       check(err[0] === "true" && /isn’t a model name Phaethon can pass on/.test(err[1] ?? ""), "the refusal is at the field and described by it", JSON.stringify(err));
       await park(page);
       await h.shot("refused");
@@ -169,8 +169,7 @@ export default [
       await h.idle();
       const items = await page.$$eval("[data-model-menu] [data-model-option]", (els) => els.map((e) => e.textContent.trim()));
       check(JSON.stringify(items.slice(1, 5)) === JSON.stringify(["Auto", "Pro", "Flash", "Flash-Lite"]), "Gemini CLI's own menu's choices", JSON.stringify(items));
-      const note = await page.$eval("[data-cli-models-note]", (p) => p.textContent);
-      check(/Gemini CLI can’t list its models: these are the choices its own model menu offers/.test(note), "with a note in words that it can't list them", note);
+      check(!(await page.$("[data-cli-models-note]")), "successful model lists have no help-parser explanation");
       await park(page);
       await h.shot("gemini");
     },

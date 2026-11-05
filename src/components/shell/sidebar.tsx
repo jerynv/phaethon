@@ -340,16 +340,17 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
 function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }) {
   const { onChosen, shown, ...item } = props;
   const [expanded, setExpanded] = useState(props.active);
+  const [hasUnread, setHasUnread] = useState(false);
   useEffect(() => {
     if (props.active) setExpanded(true);
   }, [props.active]);
   return (
     <li data-space-section={props.space.id} className="mt-2 list-none first:mt-0">
-      <SpaceItem {...item} expanded={expanded} onToggle={() => setExpanded((value) => !value)} onNewChosen={onChosen}
+      <SpaceItem {...item} unread={hasUnread} expanded={expanded} onToggle={() => setExpanded((value) => !value)} onNewChosen={onChosen}
         onSelect={(id) => { setExpanded(true); props.onSelect(id); }} />
-      {expanded && shown && <ul className="ms-4 ps-1" id={`space-children-${props.space.id}`}>
-        <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} />
-      </ul>}
+      <ul hidden={!expanded || !shown} className="ms-4 ps-1" id={`space-children-${props.space.id}`}>
+        <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} shown={expanded && shown} onUnreadChange={setHasUnread} />
+      </ul>
     </li>
   );
 }
@@ -374,11 +375,13 @@ const threadRow = cn(
  * SidebarThreadHeader (apps/web/src/components/sidebar/, MIT): one line, the
  * title taking the row; actions in the header, not per row.
  */
-function SpaceConversations({ space, active, onSelect, onChosen }: { space: Space; active: boolean; onSelect: (id: string) => void; onChosen?: () => void }) {
+function SpaceConversations({ space, active, onSelect, onChosen, shown: visible, onUnreadChange }: { space: Space; active: boolean; onSelect: (id: string) => void; onChosen?: () => void; shown: boolean; onUnreadChange: (unread: boolean) => void }) {
   const nav = useConversations(space.id);
   const rowActivity = useSpaceActivity()[space.id];
   const [hasDraft, setHasDraft] = useState(false);
-  const [unread, setUnread] = useState(false);
+  const [unread, setUnread] = useState<ReadonlySet<string>>(() => new Set());
+  const currentId = nav?.threads.find(thread => thread.current)?.id;
+  useEffect(() => onUnreadChange(unread.size > 0), [unread, onUnreadChange]);
   const wasRunning = useRef(false);
   useEffect(() => {
     const read = () => { try { setHasDraft(!!localStorage.getItem(`phaethon:draft:${space.id}`)?.trim()); } catch { setHasDraft(false); } };
@@ -388,17 +391,25 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
   const view = useSpaceView(space.id);
   useEffect(() => {
     const seen = () => active && view === "chat" && document.hasFocus() && !document.querySelector('[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]');
-    if (wasRunning.current && !nav?.running && !seen()) setUnread(true);
-    if (seen()) setUnread(false);
-    wasRunning.current = !!nav?.running;
-    const acknowledge = () => { if (seen()) setUnread(false); };
-    window.addEventListener("focus", acknowledge); document.addEventListener("focusin", acknowledge);
-    return () => { window.removeEventListener("focus", acknowledge); document.removeEventListener("focusin", acknowledge); };
-  }, [nav?.running, active, view]);
+    const finished = wasRunning.current && !nav?.running;
+    const acknowledge = () => {
+      setUnread(previous => {
+        const next = new Set(previous);
+        if (currentId && next.delete("$pending")) next.add(currentId);
+        if (finished && !seen()) next.add(currentId ?? "$pending");
+        if (seen()) { if (currentId) next.delete(currentId); next.delete("$pending"); }
+        return next.size === previous.size && [...next].every(id => previous.has(id)) ? previous : next;
+      });
+    };
+    acknowledge(); wasRunning.current = !!nav?.running;
+    const focus = () => { if (seen()) setUnread(previous => { const next = new Set(previous); if (currentId) next.delete(currentId); next.delete("$pending"); return next.size === previous.size ? previous : next; }); };
+    window.addEventListener("focus", focus); document.addEventListener("focusin", focus);
+    return () => { window.removeEventListener("focus", focus); document.removeEventListener("focusin", focus); };
+  }, [nav?.running, active, view, currentId]);
   const [fallback, setFallback] = useState<{ status: "loading" | "ready" | "error"; threads: ThreadSummary[] }>({ status: "loading", threads: [] });
   const [pending, setPending] = useState<"new" | "history" | null>(null);
   useEffect(() => {
-    if (nav) return;
+    if (nav || !visible) return;
     let live = true;
     if (!inTauri()) setFallback({ status: "ready", threads: [] });
     else void listThreads(space.id).then(
@@ -406,7 +417,7 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
       () => live && setFallback({ status: "error", threads: [] }),
     );
     return () => { live = false; };
-  }, [space.id, !!nav]);
+  }, [space.id, !!nav, visible]);
   useEffect(() => {
     if (!nav || !pending) return;
     setPending(null);
@@ -420,7 +431,7 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
   const host = useCallback((el: HTMLDivElement | null) => setConversationHost(space.id, el), [space.id]);
 
   function open(t: ThreadSummary) {
-    setUnread(false);
+    setUnread(previous => { const next = new Set(previous); next.delete(t.id); if (t.current) next.delete("$pending"); return next; });
     onSelect(space.id);
     setSpaceView(space.id, "chat", t.current);
     onChosen?.();
@@ -437,7 +448,7 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
       if ((event.target as Element).closest("[data-view-tab]")) onSelect(space.id);
     }}>
       {active && supportsEducation(space) && <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} />}
-      {active ? <div ref={host} data-conversations-host="" className="pt-1" /> : <div className="flex items-center justify-between pt-1">
+      {active ? visible && <div ref={host} data-conversations-host="" className="pt-1" /> : <div className="flex items-center justify-between pt-1">
         <button type="button" data-sidebar-history-all={threads.length > RECENT ? "" : undefined} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink"
           onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }}>Conversations</button>
       </div>}
@@ -460,13 +471,13 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
                   : "text-ink-secondary hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
-              <Icon data-thread-state={t.current && rowActivity?.needsYou ? "needs-you" : t.current && nav?.running ? "running" : t.current && unread ? "unread" : t.current && hasDraft ? "draft" : "idle"}
-                name={t.current && rowActivity?.needsYou ? "warning" : t.current && nav?.running ? "spinner" : t.current && unread ? "success" : t.current && hasDraft ? "edit" : "chat"}
-                className={cn("size-(--ph-icon-size-sm)", t.current && rowActivity?.needsYou ? "text-warning-ink" : t.current && nav?.running ? "text-accent-soft-ink motion-safe:animate-spin" : t.current && unread ? "text-accent-soft-ink" : "text-ink-tertiary")} />
+              <Icon data-thread-state={t.current && rowActivity?.needsYou ? "needs-you" : t.current && nav?.running ? "running" : (unread.has(t.id) || (t.current && unread.has("$pending"))) ? "unread" : t.current && hasDraft ? "draft" : "idle"}
+                name={t.current && rowActivity?.needsYou ? "warning" : t.current && nav?.running ? "spinner" : (unread.has(t.id) || (t.current && unread.has("$pending"))) ? "success" : t.current && hasDraft ? "edit" : "chat"}
+                className={cn("size-(--ph-icon-size-sm)", t.current && rowActivity?.needsYou ? "text-warning-ink" : t.current && nav?.running ? "text-accent-soft-ink motion-safe:animate-spin" : (unread.has(t.id) || (t.current && unread.has("$pending"))) ? "text-accent-soft-ink" : "text-ink-tertiary")} />
               <span data-sidebar-thread-title="" className={cn("min-w-0 truncate", t.current && active && "font-medium text-ink")}>{label(t)}</span>
               <span className="flex shrink-0 items-center gap-1 text-xs text-ink-secondary">
                 {t.current && hasDraft && !nav?.running && <span className="sr-only">, draft</span>}
-                {t.current && unread && !nav?.running && <span className="sr-only">, unread</span>}
+                {(unread.has(t.id) || (t.current && unread.has("$pending"))) && !nav?.running && <span className="sr-only">, unread</span>}
                 {t.current && nav?.running ? (
                   <>
                     <span className="sr-only">, answering</span>
@@ -499,7 +510,7 @@ const itemClass =
   "flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 text-base text-ink outline-none select-none data-highlighted:bg-hover data-disabled:opacity-45";
 
 /** One space in the list, with its menu. */
-function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onToggle, onNewChosen }: ItemProps & { expanded: boolean; onToggle: () => void; onNewChosen?: () => void }) {
+function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onToggle, onNewChosen, unread }: ItemProps & { unread?: boolean; expanded: boolean; onToggle: () => void; onNewChosen?: () => void }) {
   const conversations = useConversations(space.id);
   const pendingNew = useRef(false);
   useEffect(() => {
@@ -575,7 +586,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onTo
             onKeyDown={onButtonKeyDown}
             data-space-hue=""
             data-space-id={space.id}
-            data-space-status={doing ? (doing.urgent ? "needs-you" : "running") : undefined}
+            data-space-status={doing ? (doing.urgent ? "needs-you" : "running") : unread ? "unread" : undefined}
             style={spaceHueStyle(space.hue)}
             className={cn(
               // The space is parent context; the selected destination is one of its views or threads.
@@ -588,15 +599,16 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onTo
             )}
           >
             {/* One line tall, so the dot centres on the name at any text size. */}
-            <span className="flex h-[1lh] items-center justify-center text-sm">
+            <span className="relative flex h-[1lh] items-center justify-center text-sm">
               <Icon name={expanded ? "space" : "folder"} className="size-4 text-space-mark" />
+              {unread && !doing && <span data-space-unread="" aria-hidden="true" className="absolute end-0 top-0 size-1.5 rounded-full bg-accent-ink" />}
             </span>
             {/* The name truncates before the compact activity icon; starting a reply never adds a line. */}
             <span className="flex min-w-0 items-center gap-2">
               <span data-space-name="" className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                 {/* Spoken as one piece of text, so no stray space lands before a comma. */}
                 <span aria-hidden="true">{space.name}</span>
-                <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : ""}${space.description ? "," : ""}`}</span>
+                <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : unread ? ", unread" : ""}${space.description ? "," : ""}`}</span>
               </span>
               {doing && <span aria-hidden="true" data-space-activity="" className={cn("shrink-0", doing.urgent ? "text-warning-ink" : "text-accent-soft-ink")}><Icon name={doing.urgent ? "warning" : "spinner"} className={cn("size-3", !doing.urgent && "motion-safe:animate-spin")} /></span>}
             </span>

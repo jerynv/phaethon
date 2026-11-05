@@ -838,7 +838,7 @@ mod tests {
         let dir = root.join("spaces/s").canonicalize().unwrap();
         let v = vis(&dir);
         let bin = crate::agent::find_claude().expect("claude is installed");
-        let m = super::super::model::CliModel { bin, cwd: dir.clone(), config_dir: None };
+        let m = super::super::model::CliModel { bin, cwd: dir.clone(), config_dir: None, model: None, reasoning: None };
         let block = format!(r#"{{"kind":"quiz","title":"{exam} practice test","exam":"{exam}","count":{count},"kinds":["choice","multi","truefalse","short","cloze"],"difficulty":"exam","sources":["courses/{folder}"]}}"#);
         let question = format!("Can you make me a practice test for {exam}?");
         let reply = format!("I'll make a {count}-question practice test for {exam} from your course materials.\n\n```phaethon-study\n{block}\n```");

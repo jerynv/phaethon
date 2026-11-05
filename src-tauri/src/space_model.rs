@@ -139,6 +139,80 @@ pub fn list_cli(vault: &Vault, cli: &str) -> Result<BTreeMap<String, String>, St
         .collect())
 }
 
+// Reasoning stays separate for each CLI and model. The reserved default key
+// cannot collide with a valid CLI model id.
+const REASONING_FIELD: &str = "cliReasoning";
+const DEFAULT_REASONING_MODEL: &str = "$default";
+
+fn reasoning_key<'a>(cli: &str, model: Option<&'a str>) -> Result<&'a str, String> {
+    if !crate::agent::Cli::ALL.iter().any(|item| item.id() == cli) {
+        return Err("Unknown assistant.".into());
+    }
+    match model {
+        Some(model) if crate::agent::is_valid_cli_model(model) => Ok(model),
+        Some(_) => Err("Invalid model name.".into()),
+        None => Ok(DEFAULT_REASONING_MODEL),
+    }
+}
+
+/// Validate only values the underlying CLI flag accepts. IPC additionally
+/// checks the requested model's published capability before saving.
+pub(crate) fn valid_reasoning(cli: &str, effort: &str) -> bool {
+    match cli {
+        "claude" => matches!(effort, "low" | "medium" | "high" | "xhigh" | "max"),
+        "codex" => matches!(effort, "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"),
+        _ => false,
+    }
+}
+
+fn reasoning_meta(dir: &Path) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    match read_meta_raw(dir) {
+        Ok(Some(serde_json::Value::Object(meta))) => Ok(meta),
+        Ok(None) => Ok(serde_json::Map::new()),
+        _ => Err("This space’s settings file can’t be read; reasoning was not changed.".into()),
+    }
+}
+
+/// The saved override for a particular CLI/model. A malformed file is an
+/// error rather than permission to silently replace its contents.
+pub fn get_reasoning(dir: &Path, cli: &str, model: Option<&str>) -> Result<Option<String>, String> {
+    let key = reasoning_key(cli, model)?;
+    let meta = reasoning_meta(dir)?;
+    let Some(all) = meta.get(REASONING_FIELD) else { return Ok(None) };
+    let all = all.as_object().ok_or("Invalid saved reasoning settings.")?;
+    let Some(models) = all.get(cli) else { return Ok(None) };
+    let models = models.as_object().ok_or("Invalid saved reasoning settings.")?;
+    let Some(effort) = models.get(key) else { return Ok(None) };
+    let effort = effort.as_str().filter(|effort| valid_reasoning(cli, effort)).ok_or("Invalid saved reasoning level.")?;
+    Ok(Some(effort.into()))
+}
+
+pub fn set_reasoning(vault: &Vault, id: &str, cli: &str, model: Option<&str>, effort: Option<&str>) -> Result<(), String> {
+    let key = reasoning_key(cli, model)?;
+    if effort.is_some_and(|effort| !valid_reasoning(cli, effort)) {
+        return Err("That assistant does not support this reasoning level.".into());
+    }
+    let dir = vault.space_dir(id)?;
+    let mut meta = reasoning_meta(&dir)?;
+    let mut all = match meta.remove(REASONING_FIELD) {
+        None => serde_json::Map::new(),
+        Some(serde_json::Value::Object(all)) => all,
+        Some(_) => return Err("Invalid saved reasoning settings; nothing was changed.".into()),
+    };
+    let mut models = match all.remove(cli) {
+        None => serde_json::Map::new(),
+        Some(serde_json::Value::Object(models)) => models,
+        Some(_) => return Err("Invalid saved reasoning settings; nothing was changed.".into()),
+    };
+    match effort {
+        Some(effort) => { models.insert(key.into(), effort.into()); }
+        None => { models.remove(key); }
+    }
+    if !models.is_empty() { all.insert(cli.into(), models.into()); }
+    if !all.is_empty() { meta.insert(REASONING_FIELD.into(), all.into()); }
+    write_meta(&dir, &meta).map_err(|error| format!("Reasoning could not be saved: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +230,60 @@ mod tests {
 
     fn saved(root: &Path, id: &str) -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(root.join("spaces").join(id).join(".phaethon/space.json")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn reasoning_is_separate_for_each_cli_model_space_and_default() {
+        let (root, vault) = temp_vault("reasoning-isolation");
+        let school = vault.space_dir("school").unwrap();
+        let work = vault.space_dir("work").unwrap();
+        set_reasoning(&vault, "school", "claude", Some("claude-opus-5-5"), Some("max")).unwrap();
+        set_reasoning(&vault, "school", "claude", Some("claude-sonnet-5-5"), Some("low")).unwrap();
+        set_reasoning(&vault, "school", "claude", None, Some("medium")).unwrap();
+        set_reasoning(&vault, "school", "codex", Some("gpt-6.1-sol"), Some("ultra")).unwrap();
+        assert_eq!(get_reasoning(&school, "claude", Some("claude-opus-5-5")).unwrap().as_deref(), Some("max"));
+        assert_eq!(get_reasoning(&school, "claude", Some("claude-sonnet-5-5")).unwrap().as_deref(), Some("low"));
+        assert_eq!(get_reasoning(&school, "claude", None).unwrap().as_deref(), Some("medium"));
+        assert_eq!(get_reasoning(&school, "codex", Some("gpt-6.1-sol")).unwrap().as_deref(), Some("ultra"));
+        assert_eq!(get_reasoning(&work, "claude", Some("claude-opus-5-5")).unwrap(), None);
+        assert_eq!(get_reasoning(&school, "claude", Some("gpt-6.1-sol")).unwrap(), None);
+        set(&vault, "school", Some("claude-haiku-5-5")).unwrap();
+        set_reasoning(&vault, "school", "claude", Some("claude-opus-5-5"), None).unwrap();
+        assert_eq!(get_reasoning(&school, "claude", Some("claude-opus-5-5")).unwrap(), None);
+        assert_eq!(get_reasoning(&school, "claude", None).unwrap().as_deref(), Some("medium"));
+        assert_eq!(saved(&root, "school")["model"], "claude-haiku-5-5");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reasoning_rejects_invalid_values_and_preserves_corrupt_or_unrelated_metadata() {
+        let (root, vault) = temp_vault("reasoning-validation");
+        let dir = vault.space_dir("school").unwrap();
+        let path = meta_file(&dir);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"name":"School","future":[1]}"#).unwrap();
+        for (cli, model, effort) in [
+            ("unknown", Some("model"), "high"),
+            ("gemini", Some("pro"), "high"),
+            ("claude", Some("--flag"), "high"),
+            ("claude", Some("claude-opus-5-5"), "ultra"),
+            ("codex", Some("gpt-6.1-sol"), "high\n--yolo"),
+        ] {
+            assert!(set_reasoning(&vault, "school", cli, model, Some(effort)).is_err());
+            assert_eq!(saved(&root, "school"), json!({"name":"School","future":[1]}));
+        }
+        set_reasoning(&vault, "school", "claude", Some("claude-opus-5-5"), Some("high")).unwrap();
+        set_reasoning(&vault, "school", "claude", Some("claude-opus-5-5"), None).unwrap();
+        assert_eq!(saved(&root, "school"), json!({"name":"School","future":[1]}));
+        for corrupt in ["not json", "[]", r#"{"cliReasoning":null}"#, r#"{"cliReasoning":{"claude":[]}}"#] {
+            fs::write(&path, corrupt).unwrap();
+            assert!(set_reasoning(&vault, "school", "claude", None, Some("high")).is_err());
+            assert!(get_reasoning(&dir, "claude", None).is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), corrupt);
+        }
+        fs::write(&path, r#"{"cliReasoning":{"claude":{"$default":"--oops"}}}"#).unwrap();
+        assert!(get_reasoning(&dir, "claude", None).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

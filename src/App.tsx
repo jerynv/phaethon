@@ -16,7 +16,7 @@ import { addToSpace } from "@/components/shell/space-actions";
 import { getConversations } from "@/lib/conversation-nav";
 import { digitOf, isModChord, isModShiftChord, modAria, modCap, shortcutById, viewChord, viewDigitOf } from "@/components/shell/shortcuts";
 import { Sidebar } from "@/components/shell/sidebar";
-import { focusView, getSpaceView, requestStudy, setSpaceView, VIEWS } from "@/components/study/space-view";
+import { focusView, getSpaceView, requestStudy, setSpaceView, visibleViews, VIEWS } from "@/components/study/space-view";
 import { TitleBar, useWindowFocused } from "@/components/shell/title-bar";
 import { useSidebar } from "@/components/shell/use-sidebar";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ import { requestCompose } from "@/lib/compose";
 import { requestOpenConversation } from "@/lib/open-conversation";
 import { NEW_SPACE_EVENT } from "@/lib/chat-actions";
 import { openSettings } from "@/lib/open-settings";
-import { refreshSpaces, setActiveSpaceId, useSpaces, type Space } from "@/lib/spaces";
+import { refreshSpaces, setActiveSpaceId, supportsEducation, useSpaces, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { isWideReading, toggleWideReading, useAppearance } from "@/theme";
@@ -382,7 +382,7 @@ export default function App() {
         run: newConversationInShown,
       });
       list.push(...modelCommands);
-      for (const v of VIEWS) {
+      for (const v of visibleViews(active.id)) {
         list.push({
           id: `view:${v.id}`,
           group: "Actions",
@@ -399,7 +399,7 @@ export default function App() {
           run: () => setSpaceView(active.id, v.id, true),
         });
       }
-      list.push(
+      if (supportsEducation(active)) list.push(
         {
           id: "study-due",
           group: "Actions",

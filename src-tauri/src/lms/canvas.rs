@@ -26,8 +26,8 @@ use url::Url;
 const SESSION_COOKIES: [&str; 2] = ["_normandy_session", "canvas_session"];
 /// Pages of results followed for one list, at 100 a page.
 const MAX_PAGES: usize = 100;
-/// Files fetched one by one because a module or a link names them.
-const MAX_REFERENCED: usize = 300;
+/// Same order of work as a complete100-page list, not a silent300-file prefix.
+const MAX_REFERENCED: usize = MAX_PAGES * 100;
 
 pub fn login_url(base: &Url) -> Url {
     base.join("/login").unwrap_or_else(|_| base.clone())
@@ -115,8 +115,10 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
 
     // Files, with their folder paths.
     let mut folders = HashMap::new();
-    if let Ok(list) = get_all(s, &api(s, &["courses", cid, "folders"], &[("per_page", "100")])).await {
-        folders = folder_paths(&list);
+    match get_all(s, &api(s, &["courses", cid, "folders"], &[("per_page", "100")])).await {
+        Ok(list) => folders = folder_paths(&list),
+        Err(e @ LmsError::Incomplete(_)) => return Err(e),
+        _ => {}
     }
     let mut files = Files::default();
     if tabs.open("files") {
@@ -201,8 +203,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
     for (_, items) in &modules {
         for item in items {
             match item {
-                Item::File(id, title) if !files.has(id) && files.fetched < MAX_REFERENCED => {
-                    files.fetched += 1;
+                Item::File(id, title) if files.request(id)? => {
                     let r = get_one(s, &api(s, &["courses", cid, "files", id], &[])).await;
                     if let Some(v) = part(s, r, &format!("File “{title}”"), &mut c.skipped).await? {
                         files.add(s, cid, &v, &folders, &mut c.skipped);
@@ -242,10 +243,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
         }
     }
     for (in_course, id) in wanted {
-        if files.fetched >= MAX_REFERENCED {
-            break;
-        }
-        files.fetched += 1;
+        if !files.request(&id)? { continue }
         let url = if in_course { api(s, &["courses", cid, "files", &id], &[]) } else { api(s, &["files", &id], &[]) };
         let r = get_one(s, &url).await;
         if let Some(v) = part(s, r, &format!("A linked file (number {id})"), &mut c.skipped).await? {
@@ -315,7 +313,7 @@ async fn part<T>(s: &Session, r: Result<T, LmsError>, what: &str, skipped: &mut 
             }
             None
         }
-        Err(e @ LmsError::Network(_)) => return Err(e),
+        Err(e @ (LmsError::Network(_) | LmsError::Incomplete(_))) => return Err(e),
         Err(LmsError::Forbidden(_) | LmsError::NotFound(_)) => None,
         Err(e) => Some(e.to_string()),
     };
@@ -389,17 +387,26 @@ fn announcement_from(v: &Value) -> Option<Announcement> {
 #[derive(Default)]
 struct Files {
     list: Vec<RemoteFile>,
-    ids: Vec<String>,
-    fetched: usize,
+    ids: HashMap<String, usize>,
+    requested: HashSet<String>,
 }
 
 impl Files {
+    fn request(&mut self, id: &str) -> Result<bool, LmsError> {
+        if self.has(id) || self.requested.contains(id) { return Ok(false) }
+        if self.requested.len() >= MAX_REFERENCED {
+            return Err(LmsError::Incomplete(format!("Canvas references more than {MAX_REFERENCED} distinct files. The file list is incomplete; the import was not marked complete.")));
+        }
+        self.requested.insert(id.to_string());
+        Ok(true)
+    }
+
     fn has(&self, id: &str) -> bool {
-        self.ids.iter().any(|i| i == id)
+        self.ids.contains_key(id)
     }
 
     fn name(&self, id: &str) -> Option<String> {
-        self.ids.iter().position(|i| i == id).map(|n| self.list[n].name.clone())
+        self.ids.get(id).map(|&n| self.list[n].name.clone())
     }
 
     fn add(&mut self, s: &Session, cid: &str, v: &Value, folders: &HashMap<String, Option<String>>, skipped: &mut Vec<String>) {
@@ -431,7 +438,7 @@ impl Files {
             aliases.push(p);
         }
         let folder = id_str(&v["folder_id"]).and_then(|f| folders.get(&f).cloned()).flatten();
-        self.ids.push(id);
+        self.ids.insert(id, self.list.len());
         self.list.push(RemoteFile {
             name: name.to_string(),
             folder,
@@ -1163,5 +1170,90 @@ mod pagination_integrity_tests {
             assert!(matches!(error, LmsError::Incomplete(_)));
             assert_eq!(requests.lock().unwrap().len(), if cycle { 1 } else { MAX_PAGES });
         }
+    }
+}
+
+#[cfg(test)]
+mod referenced_file_integrity_tests {
+    use super::*;
+    use crate::lms::{fake, Kind, Site};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn module_and_html_references_beyond_three_hundred_are_all_discovered() {
+        for linked in [false, true] {
+            let (base, requests) = fake::serve(Arc::new(move |target| {
+                let path = target.split('?').next().unwrap_or(target);
+                match path {
+                    "/api/v1/courses/1001" => {
+                        let html = if linked { (1..=350).map(|id| format!("<a href='/courses/1001/files/{id}/download'>File{id}</a>")).collect::<String>() } else { String::new() };
+                        fake::json(serde_json::json!({"syllabus_body":html}).to_string())
+                    }
+                    "/api/v1/courses/1001/tabs" => fake::json(r#"[{"id":"modules"},{"id":"syllabus"}]"#),
+                    "/api/v1/courses/1001/folders" => fake::json("[]"),
+                    "/api/v1/courses/1001/modules" => {
+                        let items: Vec<_> = if linked { vec![] } else { (1..=350).chain(1..=10).map(|id| serde_json::json!({"type":"File","content_id":id,"title":format!("File{id}")})).collect() };
+                        fake::json(serde_json::json!([{"name":"All readings","items":items}]).to_string())
+                    }
+                    _ if path.starts_with("/courses/1001/files/") && path.ends_with("/download") => fake::Reply { status: 200, ctype: "text/plain", headers: vec![], body: "0123456789".into() },
+                    _ if path.starts_with("/api/v1/courses/1001/files/") => {
+                        let id = path.rsplit('/').next().unwrap().parse::<u64>().unwrap();
+                        fake::json(serde_json::json!({"id":id,"display_name":format!("file{id}.txt"),"size":10,"updated_at":"2026-11-01T00:00:00Z"}).to_string())
+                    }
+                    _ => fake::status(404),
+                }
+            })).await;
+            let session = Session::new(Site::for_test(Kind::Canvas, &base), Credential { cookies: vec![], csrf: None });
+            let content = content(&session, "1001").await.unwrap();
+            assert_eq!(content.files.len(), 350, "linked={linked}");
+            assert!(content.files.iter().any(|f| f.name == "file350.txt"));
+            assert_eq!(requests.lock().unwrap().iter().filter(|r| r.target.starts_with("/api/v1/courses/1001/files/")).count(), 350);
+            assert!(!content.skipped.iter().any(|s| s.contains("too many") || s.contains("incomplete")));
+            if !linked {
+                let root = std::env::temp_dir().join(format!("phaethon-many-module-files-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+                std::fs::create_dir_all(&root).unwrap();
+                let course = Course { id: "1001".into(), name: "All module files".into(), code: None, term: None, current: true };
+                let opts = crate::lms::import::Options::default();
+                let imported = crate::lms::import::import_course(&session, &root, &course, content.clone(), None, &[], &opts, &mut |_, _, _| {}).await.unwrap();
+                assert_eq!(imported.downloaded, 350);
+                assert_eq!(imported.state.files.len(), 350);
+                assert!(!imported.state.partial);
+                let file = root.join(&imported.state.folder).join(&imported.state.files.values().next().unwrap().path);
+                let modified = std::fs::metadata(&file).unwrap().modified().unwrap();
+                let before = requests.lock().unwrap().iter().filter(|r| r.target.starts_with("/courses/1001/files/")).count();
+                let again = crate::lms::import::import_course(&session, &root, &course, content, Some(&imported.state), &[], &opts, &mut |_, _, _| {}).await.unwrap();
+                assert_eq!(again.downloaded, 0);
+                assert_eq!(again.unchanged, 350);
+                assert_eq!(again.state.files.len(), 350);
+                assert_eq!(std::fs::metadata(&file).unwrap().modified().unwrap(), modified);
+                assert_eq!(requests.lock().unwrap().iter().filter(|r| r.target.starts_with("/courses/1001/files/")).count(), before);
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn reference_budget_is_explicit_and_counts_unique_requests_only() {
+        let mut files = Files::default();
+        for id in 0..MAX_REFERENCED { assert!(files.request(&id.to_string()).unwrap()); }
+        assert!(!files.request("0").unwrap());
+        assert!(matches!(files.request("one-too-many"), Err(LmsError::Incomplete(_))));
+        assert_eq!(files.requested.len(), MAX_REFERENCED);
+    }
+
+    #[tokio::test]
+    async fn incomplete_file_listing_is_not_downgraded_to_a_skipped_course_section() {
+        let (base, _) = fake::serve(Arc::new(|target| {
+            let path = target.split('?').next().unwrap_or(target);
+            match path {
+                "/api/v1/courses/1001" => fake::json("{}"),
+                "/api/v1/courses/1001/tabs" => fake::json(r#"[{"id":"files"}]"#),
+                "/api/v1/courses/1001/folders" => fake::json("[]"),
+                "/api/v1/courses/1001/files" => { let mut reply = fake::json("[]"); reply.headers.push(("Link", format!("<{target}>; rel=\"next\""))); reply }
+                _ => fake::status(404),
+            }
+        })).await;
+        let session = Session::new(Site::for_test(Kind::Canvas, &base), Credential { cookies: vec![], csrf: None });
+        assert!(matches!(content(&session, "1001").await, Err(LmsError::Incomplete(_))));
     }
 }

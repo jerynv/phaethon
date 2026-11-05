@@ -31,7 +31,7 @@ fn makes_cards_from_a_course_file_with_the_real_cli() {
     let visible = access::visible(&vault, "school");
 
     let bin = phaethon_lib::agent::find_claude().expect("claude is installed");
-    let model = CliModel { bin, cwd: space.clone(), config_dir: None };
+    let model = CliModel { bin, cwd: space.clone(), config_dir: None, model: None, reasoning: None };
     let emit = |e: StudyEvent| eprintln!("{e:?}");
     let opts = DeckOptions { count: 8, ..Default::default() };
     let started = std::time::Instant::now();

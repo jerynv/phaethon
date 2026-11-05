@@ -6,8 +6,6 @@ import { listModels, type ModelInfo, type ProviderInfo } from "@/lib/backend";
 import { rememberNames } from "@/lib/space-model";
 import { cn } from "@/lib/utils";
 
-/** Most models listed at once; typing narrows a long list (OpenRouter's has hundreds). */
-const SHOWN = 50;
 /** A model name as the core accepts it (providers.rs `is_valid_compat_model`). */
 const MODEL_ID = /^(?![-./:])(?!.*\.\.)[A-Za-z0-9._:/@+-]{1,200}$/;
 const FREE = "__free__";
@@ -71,7 +69,7 @@ export function ModelSearch({
   const typed = query.trim();
   const offerTyped = MODEL_ID.test(typed) && !(models ?? []).some((m) => m.id === typed);
   const options: { value: string; title: string; detail?: string }[] = [
-    ...matches.slice(0, SHOWN).map((m) => ({ value: m.id, title: m.name, detail: m.name !== m.id ? m.id : undefined })),
+    ...matches.map((m) => ({ value: m.id, title: m.name, detail: m.name !== m.id ? m.id : undefined })),
     ...(offerTyped ? [{ value: FREE, title: `Use “${typed}”`, detail: "as the model’s name" }] : []),
   ];
   const at = Math.min(active, Math.max(0, options.length - 1));
@@ -117,17 +115,15 @@ export function ModelSearch({
   const status = loading
     ? `Getting the models ${name} offers…`
     : problem
-      ? `${problem} Type a model’s name above to use it.`
+      ? problem
       : !models.length && !typed
-        ? `${name} listed no models. Type a model’s name above to use it.`
+        ? "No models listed."
         : !typed
-          ? models.length > SHOWN
-            ? `${models.length} models. The first ${SHOWN} are shown; type to find others.`
-            : `${models.length} model${models.length === 1 ? "" : "s"}.`
+          ? `${models.length} model${models.length === 1 ? "" : "s"}.`
           : matches.length
-            ? `${matches.length} match “${typed}”${matches.length > SHOWN ? `; the first ${SHOWN} are shown` : ""}.`
+            ? `${matches.length} match “${typed}”.`
             : offerTyped
-              ? `No listed model matches “${typed}”. Press Enter to use it as the model’s name.`
+              ? `No listed model matches “${typed}”.`
               : `No model matches “${typed}”.`;
 
   return (

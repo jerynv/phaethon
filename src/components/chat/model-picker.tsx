@@ -8,7 +8,7 @@ import { ProviderLogo } from "@/components/provider-logo";
 import { announce } from "@/components/shell/announcer";
 import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover } from "@/components/ui/menu";
 import { IconTip } from "@/components/ui/tooltip";
@@ -17,6 +17,7 @@ import { agentInstances, cliOf, listModels, selectAgentInstance, setBackend, SET
 import { changedText, choosableProviders, cliModelName, loadCliModels, modelGroups, modelName, modelOf, refreshModels, rememberNames, setSpaceModel, splitCliRef, splitRef, toRef, useModels, type ModelsState } from "@/lib/space-model";
 import type { Space } from "@/lib/spaces";
 
+import { ReasoningColumn, effortLabel, type ReasoningTarget } from "./reasoning-column";
 import { AccessPicker } from "./access-picker";
 import { ModelCombobox, type PickerOption } from "./model-combobox";
 import "./model-picker.css";
@@ -37,7 +38,7 @@ function loadInstances() {
 }
 
 type ProviderEntry = { id: string; name: string; logo: ProviderId | CliBackend; cli?: "claude" | "codex" | "gemini"; api?: ProviderId; available: boolean; source?: "system" | "managed"; models: readonly ModelInfo[] };
-type Catalog = { loading: boolean; models: readonly ModelInfo[]; note?: string };
+type Catalog = { loading: boolean; models: readonly ModelInfo[]; note?: string; defaultModel?: string };
 
 /** Actual T3 ProviderModelPicker/ModelPickerContent/ModelPickerSidebar composition (MIT):
  * a provider rail, pinned editable combobox, compact model rows and a separate footer.
@@ -54,6 +55,8 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   const [favorites, setFavorites] = useState<Set<string>>(readFavorites);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [effortTarget, setEffortTarget] = useState<ReasoningTarget | null>(null);
+  const [currentEffort, setCurrentEffort] = useState<string | null>(null);
   const [manual, setManual] = useState<ProviderEntry | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -64,7 +67,10 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   const current = modelOf(s, spaceId);
   const ownCli = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
   const activeKey = activeCli ? activeInstance?.config.id ?? activeCli.id : `api:${splitRef(current.id).provider}`;
-  const activeName = activeCli ? ownCli ? cliModelName(activeCli.id, ownCli.model, s) : `${activeCli.name} default` : shortName(modelName(current.id, s.models));
+  const activeCatalog = activeCli ? catalogs[activeInstance?.config.id ?? activeCli.id] ?? s.cliModels[activeCli.id] : undefined;
+  const resolvedActive = ownCli?.model ?? activeCatalog?.defaultModel;
+  const activeInfo = activeCatalog?.models.find(item => item.id === resolvedActive || item.aliases?.includes(resolvedActive ?? ""));
+  const activeName = activeInfo?.name ?? (activeCli ? ownCli ? cliModelName(activeCli.id, ownCli.model, s) : `${activeCli.name} default` : shortName(modelName(current.id, s.models)));
   const activeLogo = activeCli ? `${activeCli.id}-cli` as CliBackend : splitRef(current.id).provider;
   const siblingAccounts = activeCli ? instances.filter(item => item.config.cli === activeCli.id) : [];
   const accountNumber = siblingAccounts.findIndex(item => item.config.id === activeInstance?.config.id) + 1;
@@ -84,7 +90,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
     return () => window.removeEventListener(OPEN_MODEL_PICKER_EVENT, show);
   }, [spaceId]);
   useEffect(() => {
-    if (!open) { setQuery(""); browsed.current = false; return; }
+    if (!open) { setQuery(""); setEffortTarget(null); browsed.current = false; return; }
     setRail(activeKey); setError(""); setFavorites(readFavorites());
     let active = true;
     void loadInstances().then(items => { if (active) { setInstances(items); if (!browsed.current) setRail(items.find(item => item.selected && item.config.cli === activeCli?.id)?.config.id ?? activeKey); } }, () => {});
@@ -108,7 +114,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       await loadCliModels(entry.cli, force); return;
     }
     if (entry.api === "anthropic") return;
-    putCatalog(entry.id, { loading: true, models: catalogRef.current[entry.id]?.models ?? (entry.id === activeKey ? entry.models : []) });
+    putCatalog(entry.id, { ...catalogRef.current[entry.id], loading: true, defaultModel: catalogRef.current[entry.id]?.defaultModel ?? (entry.cli && entry.id === activeKey ? s.cliModels[entry.cli]?.defaultModel : undefined), models: catalogRef.current[entry.id]?.models ?? (entry.id === activeKey ? entry.models : []) });
     try {
       let result: CliModelList;
       if (entry.cli) result = await invoke<CliModelList>("agent_instance_models", { id: entry.id });
@@ -117,7 +123,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
         rememberNames(entry.api!, models);
         result = { models: models.map(model => ({ ...model, id: toRef(entry.api!, model.id) })) };
       }
-      putCatalog(entry.id, { loading: false, models: result.models, note: result.note });
+      putCatalog(entry.id, { loading: false, models: result.models, note: result.note, defaultModel: result.defaultModel });
     } catch (reason) { putCatalog(entry.id, { loading: false, models: [], note: String(reason) }); }
   }
   const searching = !!query.trim();
@@ -135,21 +141,41 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       return next;
     });
   }
-  function browse(id: string) { browsed.current = true; setRail(id); setQuery(""); searchRef.current?.focus(); }
+  function browse(id: string) { setEffortTarget(null); browsed.current = true; setRail(id); setQuery(""); searchRef.current?.focus(); }
   function focusProvider() { (providersRef.current?.querySelector('[aria-pressed="true"]') ?? providersRef.current?.querySelector("button:not(:disabled)"))?.scrollIntoView({ block: "nearest" }); providersRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus(); }
   const options = entries.flatMap<PickerOption>(entry => {
     if (!entry.available) return [];
     const known = catalogs[entry.id]?.models ?? (entry.cli && entry.id !== activeKey ? [] : entry.models);
     const list = [...known];
     const own = entry.id === activeKey ? entry.cli ? ownCli?.model : current.own ? current.id : null : null;
-    if (own && !list.some(model => model.id === own)) list.push({ id: own, name: entry.cli ? cliModelName(entry.cli, own, s) : modelName(own, s.models) });
+    if (own && !list.some(model => model.id === own || model.aliases?.includes(own))) list.push({ id: own, name: entry.cli ? cliModelName(entry.cli, own, s) : modelName(own, s.models) });
     const rows = [{ id: DEFAULT, name: "Default" }, ...list];
-    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <ProviderLogo provider={entry.logo} className="size-4" />, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : model.id === own), detail: model.id === DEFAULT ? entry.cli ? entry.name : modelName(s.defaultModel, s.models) : undefined }));
+    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <ProviderLogo provider={entry.logo} className="size-4" />, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : (model.id === own || !!model.aliases?.includes(own ?? ""))), detail: model.id === DEFAULT ? entry.cli ? (catalogs[entry.id]?.models.find(item => item.id === catalogs[entry.id]?.defaultModel)?.name ?? entry.name) : modelName(s.defaultModel, s.models) : undefined }));
   });
   const shownOptions = searching ? options : rail === "favorites" ? options.filter(option => favorites.has(option.value)) : options.filter(option => option.provider === selected?.id);
-  const pickerHeight = Math.min(386, Math.max(220, 54 + (entries.length + 1) * 38, 82 + Math.max(4, ...entries.map(entry => (catalogs[entry.id]?.models ?? entry.models).length + 1)) * 32));
+  const pickerHeight = Math.min(386, Math.max(220, effortTarget ? 88 + (effortTarget.levels.length + 1) * 32 : 0, 54 + (entries.length + 1) * 38, 82 + Math.max(4, ...entries.map(entry => (catalogs[entry.id]?.models ?? entry.models).length + 1)) * 32));
   const selectedCatalog = selected ? catalogs[selected.id] ?? (selected.cli && selected.id === activeKey ? s.cliModels[selected.cli] : undefined) : undefined;
   const loading = !!selectedCatalog && ("status" in selectedCatalog ? selectedCatalog.status === "loading" : selectedCatalog.loading);
+
+  function reasoningFor(entry: ProviderEntry, model: string, focus: boolean): ReasoningTarget | null {
+    if (!entry.cli) return null;
+    const catalog = catalogs[entry.id] ?? (entry.id === activeKey ? s.cliModels[entry.cli] : undefined);
+    const resolved = model === DEFAULT ? catalog?.defaultModel : model;
+    const info = catalog?.models.find(item => item.id === resolved || item.aliases?.includes(resolved ?? ""));
+    if (!info?.reasoningEfforts?.length) return null;
+    return { account: entry.id, cli: entry.cli, model: model === DEFAULT ? null : model, name: info.name, levels: info.reasoningEfforts, focus };
+  }
+  useEffect(() => {
+    let active = true;
+    setCurrentEffort(null);
+    if (activeCli) void invoke<string | null>("space_reasoning_get", { space: spaceId, cli: activeCli.id, model: ownCli?.model ?? null }).then(value => { if (active) setCurrentEffort(value); }, () => {});
+    return () => { active = false; };
+  }, [spaceId, activeCli?.id, ownCli?.model]);
+  useEffect(() => {
+    if (!open || effortTarget || selected?.id !== activeKey) return;
+    const target = selected && reasoningFor(selected, ownCli?.model ?? DEFAULT, false);
+    if (target) setEffortTarget(target);
+  }, [open, catalogs, s.cliModels, activeKey, selected?.id, effortTarget]);
 
   async function choose(entry: ProviderEntry, model: string): Promise<string> {
     if (busy) return "A model change is already being saved.";
@@ -162,7 +188,9 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       await setSpaceModel(spaceId, model === DEFAULT ? null : entry.cli ? `${entry.cli}:${model}` : model);
       const changed = entry.cli ? model === DEFAULT ? `${spaceName} now uses ${cliOf(`${entry.cli}-cli`)!.name}’s own default model.` : `${spaceName} now uses ${cliOf(`${entry.cli}-cli`)!.name} · ${cliModelName(entry.cli, model, s)}.` : changedText(spaceName, model === DEFAULT ? null : model, s);
       announce(changed + (running ? " The reply now running keeps its model." : ""));
-      setOpen(false); return "";
+      const target = reasoningFor(entry, model, true);
+      if (target) { setRail(entry.id); setEffortTarget(target); } else setOpen(false);
+      return "";
     } catch (reason) {
       let message = String(reason);
       if (switching) {
@@ -177,10 +205,10 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
     <Popover.Root open={open} onOpenChange={setOpen}>
       <IconTip label={label} spoken="Choose provider and model"><Popover.Trigger asChild>
         <Button ref={triggerRef} type="button" variant="ghost" size="sm" aria-label={label} data-model-picker={spaceId} data-model={s.backend === "phaethon" ? current.id : current.own ? current.id : ""} className="min-w-0 shrink px-2 text-sm font-normal text-ink-secondary">
-          <span className="relative inline-flex"><ProviderLogo provider={activeLogo} className="size-4" />{siblingAccounts.length > 1 && accountNumber > 0 && <span className="ph-model-account-badge" aria-hidden="true">{accountNumber}</span>}</span><span className="truncate">{siblingAccounts.length > 1 && activeInstance ? `${activeInstance.config.name.replace(/^(Codex|Claude Code|Gemini CLI)\s*[·:—-]?\s*/i, "").trim() || activeInstance.config.name} · ${ownCli ? activeName : "Default"}` : activeName}</span><Icon name="chevron-down" className="size-3 text-ink-tertiary" />
+          <span className="relative inline-flex"><ProviderLogo provider={activeLogo} className="size-4" />{siblingAccounts.length > 1 && accountNumber > 0 && <span className="ph-model-account-badge" aria-hidden="true">{accountNumber}</span>}</span><span className="truncate">{siblingAccounts.length > 1 && activeInstance ? `${activeInstance.config.name.replace(/^(Codex|Claude Code|Gemini CLI)\s*[·:—-]?\s*/i, "").trim() || activeInstance.config.name} · ${activeName}` : activeName}</span>{currentEffort && <span data-composer-effort="" className="shrink-0 text-ink-tertiary">{effortLabel(currentEffort)}</span>}<Icon name="chevron-down" className="size-3 text-ink-tertiary" />
         </Button>
       </Popover.Trigger></IconTip>
-      <Popover.Portal><Popover.Content side="top" align="end" sideOffset={7} collisionPadding={8} className="ph-model-picker" style={{ height: `min(${pickerHeight}px, calc(100dvh - 16px))` }} data-model-menu="" aria-label={`Model in ${spaceName}`}
+      <Popover.Portal><Popover.Content side="top" align="end" sideOffset={7} collisionPadding={8} className="ph-model-picker" data-has-effort={!!effortTarget} style={{ height: `min(${pickerHeight}px, calc(100dvh - 16px))` }} data-model-menu="" aria-label={`Model in ${spaceName}`}
         onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }} onCloseAutoFocus={event => { if (manual) event.preventDefault(); }}>
         <div className="ph-model-picker-content" data-model-picker-content="">
           <div ref={providersRef} role="toolbar" aria-label="Providers" aria-orientation="vertical" className="ph-model-providers" data-model-picker-sidebar=""
@@ -196,10 +224,11 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
               {entry.cli && entries.filter(item => item.cli === entry.cli).length > 1 && <span className="ph-model-account-badge" aria-hidden="true">{entries.filter(item => item.cli === entry.cli).findIndex(item => item.id === entry.id) + 1}</span>}
             </button>)}
           </div>
-          <ModelCombobox options={shownOptions} query={query} onQueryChange={setQuery} onChoose={option => { const entry = entries.find(item => item.id === option.provider); if (entry) void choose(entry, option.model); }} favorites={favorites} onFavorite={toggleFavorite} searchRef={searchRef} onFocusProviders={focusProvider} onRequestClose={() => setOpen(false)} busy={busy} loading={loading}>
-            {selectedCatalog?.note && <p className="ph-model-note" data-cli-models-note={loading ? "loading" : "ready"}>{selectedCatalog.note}</p>}
+          <ModelCombobox options={shownOptions} query={query} onQueryChange={setQuery} onChoose={option => { const entry = entries.find(item => item.id === option.provider); if (entry) void choose(entry, option.model); }} favorites={favorites} onFavorite={toggleFavorite} searchRef={searchRef} onFocusProviders={focusProvider} onRequestClose={() => setOpen(false)} onFocusEffort={option => { const entry = entries.find(item => item.id === option.provider); if (entry && reasoningFor(entry, option.model, true)) void choose(entry, option.model); }} busy={busy} loading={loading}>
+            {selectedCatalog?.note && !selectedCatalog.models.length && <p className="ph-model-note" data-cli-models-note={loading ? "loading" : "ready"}>{selectedCatalog.note}</p>}
             {error && <p role="alert" className="ph-model-error">{error}</p>}
           </ModelCombobox>
+          {effortTarget && <ReasoningColumn key={`${effortTarget.account}:${effortTarget.model ?? "default"}`} target={effortTarget} spaceId={spaceId} busy={busy} onBusyChange={setBusy} onSaved={setCurrentEffort} onRequestClose={() => setOpen(false)} onBack={() => searchRef.current?.focus()} />}
         </div>
         <div className="ph-model-footer"><AccessPicker spaceId={spaceId} /><div className="ph-model-footer-actions">
           <IconTip label="Refresh models" spoken="Refresh models"><Button type="button" variant="ghost" size="icon-xs" aria-label="Refresh models" data-model-option="__refresh__" disabled={loading || busy || !selected} onClick={() => selected && void loadCatalog(selected, true)}><Icon name="retry" className={loading ? "size-3.5 animate-spin" : "size-3.5"} /></Button></IconTip>
@@ -228,17 +257,13 @@ function CliModelDialog({
   const [draft, setDraft] = useState(current);
   const [error, setError] = useState("");
   const inputId = useId();
-  const hintId = useId();
   const errorId = useId();
   const example = cli.id === "codex" ? "gpt-5.5" : cli.id === "claude" ? "claude-sonnet-5-5" : "gemini-2.5-pro";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent data-cli-model-dialog="">
+      <DialogContent data-cli-model-dialog="" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>Model in {spaceName}</DialogTitle>
-          <DialogDescription>
-            Enter a model name for {cli.name}.
-          </DialogDescription>
+          <DialogTitle>{cli.name} model in {spaceName}</DialogTitle>
         </DialogHeader>
         <form
           noValidate
@@ -247,7 +272,7 @@ function CliModelDialog({
             e.preventDefault();
             const m = draft.trim();
             if (!m) {
-              setError("Type a model’s name, or close this to keep the model as it is.");
+              setError("Enter a model name.");
               return;
             }
             void onChoose(m).then((problem) => (problem ? setError(problem) : onClose()));
@@ -256,9 +281,6 @@ function CliModelDialog({
           <label htmlFor={inputId} className="text-base font-medium text-ink">
             Model name
           </label>
-          <p id={hintId} className="text-sm text-ink-secondary">
-            For example {example}.
-          </p>
           <div className="flex flex-wrap gap-2">
             <Input
               id={inputId}
@@ -271,7 +293,7 @@ function CliModelDialog({
                 setDraft(e.target.value);
                 if (error) setError("");
               }}
-              aria-describedby={[hintId, error && errorId].filter(Boolean).join(" ")}
+              aria-describedby={error ? errorId : undefined}
               aria-invalid={error ? true : undefined}
               className="min-w-0 flex-1 font-mono"
             />

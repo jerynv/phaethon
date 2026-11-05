@@ -1,7 +1,7 @@
 //! With Claude Code answering, a space's tutor mode reaches the CLI through
 //! `--append-system-prompt` (after how to offer a quiz from the chat), and
 //! normal mode adds no mode; a space's own model for it goes as `--model`,
-//! and its model menu lists the aliases its help gives. Uses a fake CLI
+//! and its model menu uses canonical initialize metadata. Uses a fake CLI
 //! that records its arguments; never the real one.
 #![cfg(unix)]
 
@@ -20,14 +20,17 @@ fn the_spaces_mode_is_appended_to_claude_codes_system_prompt() {
     vault.ensure_initialized().unwrap();
     let args_file = root.join("args.txt");
     let fake = root.join("claude");
-    fs::write(
-        &fake,
-        format!(
-            "#!/bin/sh\nif [ \"$1\" = --help ]; then cat <<'EOF'\n  --model <model>                       Model for the current session. Provide\n                                        an alias for the latest model (e.g.\n                                        'fable', 'opus', or 'sonnet') or a\n                                        model's full name.\n  -n, --name <name>                     Set a display name\nEOF\nexit 0; fi\nfor a in \"$@\"; do printf '%s\\n--next--\\n' \"$a\"; done > '{}'\ncat > /dev/null\necho '{{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\"}}'\n",
-            args_file.display()
-        ),
-    )
-    .unwrap();
+    let script = r#"#!/bin/sh
+if [ "$2" = --input-format ]; then
+  IFS= read -r request
+  echo '{"type":"control_response","response":{"subtype":"success","request_id":"phaethon-models","response":{"models":[{"value":"default","resolvedModel":"claude-opus-5-5"},{"value":"opus","displayName":"Opus 5.5","resolvedModel":"claude-opus-5-5","supportsEffort":true,"supportedEffortLevels":["low","medium","high"]}]}}}'
+  exit 0
+fi
+for a in "$@"; do printf '%s\n--next--\n' "$a"; done > '@ARGS@'
+cat > /dev/null
+echo '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
+"#;
+    fs::write(&fake, script.replace("@ARGS@", &args_file.to_string_lossy())).unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
     // Debug builds honour this override (see agent::find_claude).
     unsafe { std::env::set_var("PHAETHON_CLAUDE_BIN", &fake) };
@@ -72,9 +75,14 @@ fn the_spaces_mode_is_appended_to_claude_codes_system_prompt() {
     // A name that could be read as a flag never reaches it.
     assert!(!turn_with("work", Some("--dangerously-skip-permissions")).iter().any(|a| a == "--model" || a.contains("dangerously")));
 
-    // Its model menu: the aliases its help gives, said to be no more than that.
+    // Discovery uses the actual initialize contract and canonical names, not help aliases.
     let listed = tauri::async_runtime::block_on(agent::models::list(agent::Cli::Claude, None));
-    assert_eq!(listed.models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["fable", "opus", "sonnet"]);
-    assert!(listed.note.unwrap().starts_with("Claude Code can’t list its models"));
+    assert_eq!(listed.models.len(), 1);
+    assert_eq!(listed.models[0].id, "claude-opus-5-5");
+    assert_eq!(listed.models[0].name, "Claude Opus 5.5");
+    assert_eq!(listed.models[0].aliases, ["opus"]);
+    assert_eq!(listed.models[0].reasoning_efforts, ["low", "medium", "high"]);
+    assert_eq!(listed.default_model.as_deref(), Some("claude-opus-5-5"));
+    assert!(listed.note.is_none());
     fs::remove_dir_all(&root).unwrap();
 }

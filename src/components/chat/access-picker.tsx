@@ -1,3 +1,4 @@
+import { Badge } from "vic-ui";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -45,14 +46,14 @@ export function AccessPicker({ spaceId, nested = false }: { spaceId: string; nes
     <DropdownMenu.SubTrigger data-access-picker="" aria-label={`Access: ${full ? "Full access" : "Space access"}`} disabled={busy}
       className="flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink-secondary outline-none data-highlighted:bg-hover">
       <Icon name={full ? "shield" : "lock"} className={full ? "size-3.5 text-danger-ink" : "size-3.5"} />
-      <span className="flex-1">{full ? "Full access" : "Space access"}</span><Icon name="chevron-right" className="size-3" />
+      <Badge tone={full ? "danger" : "neutral"} className={full ? "border-transparent bg-danger-soft" : "border-transparent"}>{full ? "Full access" : "Space access"}</Badge><Icon name="chevron-right" className="size-3" />
     </DropdownMenu.SubTrigger>
     <DropdownMenu.Portal><DropdownMenu.SubContent data-access-menu="" className="z-50 w-72 max-w-[calc(100vw-1rem)]">{choices}</DropdownMenu.SubContent></DropdownMenu.Portal>
   </DropdownMenu.Sub>;
   return <DropdownMenu.Root modal={false}>
     <DropdownMenu.Trigger asChild><Button type="button" variant="ghost" size="xs" data-access-picker="" aria-disabled={busy} aria-busy={busy}
       aria-label={`Access: ${full ? "Full access" : "Space access"}`} className={full ? "text-danger-ink" : "text-ink-secondary"}>
-      <Icon name={full ? "shield" : "lock"} className={full ? "size-3.5 text-danger-ink" : "size-3.5 text-ink-secondary"} /><span>{full ? "Full access" : "Space access"}</span><Icon name="chevron-down" className="size-3" />
+      <Icon name={full ? "shield" : "lock"} className={full ? "size-3.5 text-danger-ink" : "size-3.5 text-ink-secondary"} /><Badge tone={full ? "danger" : "neutral"} dot={full} className={full ? "border-transparent bg-danger-soft" : "border-transparent"}>{full ? "Full access" : "Space access"}</Badge><Icon name="chevron-down" className="size-3" />
     </Button></DropdownMenu.Trigger>
     <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={6} data-access-menu="" className="z-50 w-72">{choices}</DropdownMenu.Content></DropdownMenu.Portal>
   </DropdownMenu.Root>;

@@ -286,6 +286,29 @@
         case "export_show":
           if (!M.exported) throw "There’s no export to show yet.";
           return;
+        case "space_workspace_get":
+          return M.workspaceLocations?.[args.id] ?? { path: `${M.settings.vaultPath ?? "/Vault"}/spaces/${args.id}`, kind: "managed", available: true };
+        case "workspace_choose": {
+          if (M.workspacePickError) throw M.workspacePickError;
+          const picked = M.workspacePicks?.shift() ?? null;
+          if (!picked) return null;
+          const choice = { ...picked, token: args.token, name: picked.name ?? picked.path.split("/").pop() };
+          (M.pendingWorkspaceChoices ??= {})[args.token] = choice;
+          return choice;
+        }
+        case "space_workspace_bind": {
+          if (M.workspaceBindError) throw M.workspaceBindError;
+          const choice = M.pendingWorkspaceChoices?.[args.token];
+          if (!choice) throw "Choose the folder again.";
+          if (!M.spaces.some(space => space.id === args.id)) throw "Space unavailable.";
+          const result = { path: choice.path, kind: "folder", available: true };
+          (M.workspaceLocations ??= {})[args.id] = result;
+          delete M.pendingWorkspaceChoices[args.token];
+          return result;
+        }
+        case "space_workspace_clear":
+          if (M.workspaceLocations) delete M.workspaceLocations[args.id];
+          return { path: `${M.settings.vaultPath ?? "/Vault"}/spaces/${args.id}`, kind: "managed", available: true };
         case "space_create": {
           // As src-tauri/src/spaces.rs: a slug of the name, made unique with -2, -3...
           const name = (args.name ?? "").trim();
@@ -1306,7 +1329,7 @@
               const t = squeeze(text);
               const at = t.indexOf(q);
               if (at < 0) return { found: false, path, name, why: "Those words aren’t in that file." };
-              return { found: true, path, name, at: S.citeAt?.[path], before: t.slice(Math.max(0, at - 80), at), passage: q, after: t.slice(at + q.length, at + q.length + 80) };
+              return { found: true, path, name, at: S.citeAt?.[path], page: S.citePage?.[path], before: t.slice(Math.max(0, at - 80), at), passage: q, after: t.slice(at + q.length, at + q.length + 80) };
             });
           }
           if (cmd === "study_scope_state") {

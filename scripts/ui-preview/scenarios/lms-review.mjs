@@ -45,7 +45,7 @@ export default [
    await sites(page);await page.click('[data-sites-import]');await page.waitForSelector('[data-kind="canvas"]');await page.click('[data-kind="canvas"]');
    const state=await page.$eval('[data-kind="canvas"]',choice=>{
     const indicator=choice.querySelector('.lms-site-selected');const rect=indicator?.getBoundingClientRect();const style=indicator&&getComputedStyle(indicator);const root=getComputedStyle(document.documentElement);const title=document.querySelector('[data-step-title]');
-    return {checked:choice.getAttribute('aria-checked'),forced:matchMedia('(forced-colors: active)').matches,indicatorWidth:rect?.width,indicatorHeight:rect?.height,indicatorOpacity:style?.opacity,indicatorColor:style?.color,title:parseFloat(getComputedStyle(title).fontSize),scale:Number(root.getPropertyValue('--ph-text-scale'))||1};
+    return {checked:String(choice.querySelector('input[type="radio"]')?.checked),forced:matchMedia('(forced-colors: active)').matches,indicatorWidth:rect?.width,indicatorHeight:rect?.height,indicatorOpacity:style?.opacity,indicatorColor:style?.color,title:parseFloat(getComputedStyle(title).fontSize),scale:Number(root.getPropertyValue('--ph-text-scale'))||1};
    });
    check(state.checked==='true'&&state.indicatorWidth>0&&state.indicatorHeight>0&&state.indicatorOpacity!=='0','chosen site has a visible check independent of its background and focus ring',JSON.stringify(state));
    check(state.title>=19*state.scale-0.5,'site-choice heading follows text scale',JSON.stringify(state));

@@ -1,6 +1,6 @@
 import { Select } from "vic-ui";
 import { LogOut } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { ProviderLogo } from "@/components/provider-logo";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ const status = (view: AgentInstanceView) => !view.installed ? "Not installed" : 
 export type AgentInstanceRequest = { cli: AgentCli; n: number; closeSettingsOnClose?: boolean; create?: boolean };
 
 /** Ports T3 Code's ProviderInstanceCard and ProviderSettingsForm into the Vic settings rows. */
-export function AgentInstances({ act, request, backendVersion, onRequestedClose, onBusyChange }: { act: Parameters<typeof AgentSection>[0]["act"]; request: AgentInstanceRequest | null; backendVersion: Backend; onRequestedClose?: (n: number) => void; onBusyChange?: (busy: boolean) => void }) {
+export function AgentInstances({ act, request, backendVersion, onRequestedClose, onBusyChange, serviceRows, serviceDetail, onInstanceSelected }: { act: Parameters<typeof AgentSection>[0]["act"]; request: AgentInstanceRequest | null; backendVersion: Backend; onRequestedClose?: (n: number) => void; onBusyChange?: (busy: boolean) => void; serviceRows?: ReactNode; serviceDetail?: ReactNode; onInstanceSelected?: () => void }) {
   const { say } = useStatus();
   const [instances, setInstances] = useState<AgentInstanceView[]>([]);
   const [error, setError] = useState("");
@@ -158,13 +158,14 @@ export function AgentInstances({ act, request, backendVersion, onRequestedClose,
     {(newInstance || requestedPopup.current?.closeSettingsOnClose) && <Button variant="ghost" size="sm" disabled={busy || waiting} onClick={close}>{newInstance ? "Cancel" : "Done"}</Button>}
   </>;
   return <>
-    <SettingGroup title="Coding assistants">
-      <div className="provider-master-detail" data-agent-instances="" data-detail-open={detailOpen && !newInstance}>
+    <SettingGroup title="Connections">
+      <div className="provider-master-detail" data-agent-instances="" data-detail-open={!!serviceDetail || (detailOpen && !newInstance)}>
         <div className="provider-instance-list">
+          {serviceRows}
           {instances.map((instance) => {
             const key = instance.config.id === instance.config.cli ? backend(instance.config.cli) : instance.config.id;
-            const selected = current?.config.id === instance.config.id;
-            return <button type="button" key={instance.config.id} data-provider-row={key} data-provider-configure={key} data-agent-instance={instance.config.id} aria-label={`Manage ${instance.config.name}`} aria-pressed={selected} disabled={waiting || busy} onClick={() => edit(instance.config)} className="provider-instance-row">
+            const selected = !serviceDetail && current?.config.id === instance.config.id;
+            return <button type="button" key={instance.config.id} data-provider-row={key} data-provider-configure={key} data-agent-instance={instance.config.id} aria-label={`Manage ${instance.config.name}`} aria-pressed={selected} disabled={waiting || busy} onClick={() => { onInstanceSelected?.(); edit(instance.config); }} className="provider-instance-row">
               <ProviderLogo provider={backend(instance.config.cli)} className="size-5 shrink-0" />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="flex min-w-0 items-center gap-2"><span className="truncate text-sm font-normal text-ink">{instance.config.name}</span>{instance.selected && <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-2xs font-normal text-accent-ink">Default</span>}</span><span data-cli-status={!instance.installed ? "missing" : instance.loggedIn === false ? "signed-out" : "installed"} className="truncate text-xs text-ink-secondary">{status(instance)}</span></span>
             </button>;
@@ -172,11 +173,11 @@ export function AgentInstances({ act, request, backendVersion, onRequestedClose,
           {!instances.length && <p role="status" className="p-3 text-xs text-ink-secondary">Loading connections…</p>}
         </div>
         <div className="provider-instance-detail" data-provider-detail="">
-          {current && draft ? <div data-agent-instance-popup="" data-provider-popup="cli" className="flex min-w-0 flex-col gap-4">
+          {serviceDetail ?? (current && draft ? <div data-agent-instance-popup="" data-provider-popup="cli" className="flex min-w-0 flex-col gap-4">
             <div className="flex items-center gap-2"><Button variant="ghost" size="icon-xs" className="provider-detail-back" aria-label="Back to connections" disabled={busy || waiting} onClick={() => setDetailOpen(false)}><Icon name="chevron-left" /></Button><ProviderLogo provider={backend(draft.cli)} className="size-5" /><h4 className="min-w-0 truncate text-sm font-normal text-ink">{draft.name}</h4></div>
             {fields}
             <div data-slot="dialog-footer" className="flex flex-wrap items-center gap-2 pt-1">{actions}</div>
-          </div> : <p className="text-xs text-ink-secondary">Select a connection.</p>}
+          </div> : <p className="text-xs text-ink-secondary">Select a connection.</p>)}
         </div>
       </div>
       {error && !draft && <p role="alert" className="p-3 text-xs text-danger-ink">{error}</p>}

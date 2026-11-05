@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, createContext, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { DelimitedPreview, FilePreviewStatus, FilePreviewToolbar, ImagePreview, TextPreview } from "vic-ui";
 
 import { RichMarkdown } from "@/components/assistant-ui/elements/markdown-text";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/icons";
-import { fileBytes, fileView, imageType, kindOfFile, type FileView, type ViewKind } from "@/lib/files";
+import { fileBytes, fileView, imageType, isByteKind, kindOfFile, previewByteLimit, type FileView, type ViewKind } from "@/lib/files";
 import { latexCompile, latexPdf, latexSave, type LatexOutcome } from "@/lib/latex";
 import { cn } from "@/lib/utils";
 import { formatBytes, typeLabel } from "@/runtime/attachments";
@@ -20,7 +20,7 @@ import { openSpaceFile } from "@/runtime/records";
 /** What the viewer shows. */
 export type ViewSource =
   /** A file in a space, or a course the space may see (read through the core's walls). */
-  | { kind: "space"; space: string; path: string; anchor?: string; headingIndex?: number }
+  | { kind: "space"; space: string; path: string; anchor?: string; headingIndex?: number; page?: number; textPath?: string }
   /** Bytes already here: a file being attached, or one just sent. */
   | { kind: "bytes"; name: string; mediaType?: string; size?: number; load: () => Promise<ArrayBuffer> }
   /** A LaTeX document (or figure) from a reply, compiled to a PDF. `space` lets it be saved. */
@@ -55,18 +55,23 @@ function useLoaded(source: ViewSource, compileTex: boolean, attempt: number): Lo
         }
         if (source.kind === "space") {
           const view = await fileView(source.space, source.path);
-          const wantsBytes = (view.kind === "pdf" || view.kind === "image") && !view.tooBig;
+          if (isByteKind(view.kind) && view.size > previewByteLimit(view.kind)) view.tooBig = true;
+          const wantsBytes = isByteKind(view.kind) && !view.tooBig;
           done({ state: "file", view, bytes: wantsBytes ? await fileBytes(source.space, source.path) : null });
           return;
         }
-        const bytes = await source.load();
         const kind: ViewKind = kindOfFile(source.name, source.mediaType);
-        const big = (kind === "text" || kind === "markdown" || kind === "tex") && bytes.byteLength > 1024 * 1024;
+        if (source.size != null && isByteKind(kind) && source.size > previewByteLimit(kind)) {
+          done({ state: "file", view: { path: source.name, name: source.name, kind, size: source.size, mediaType: source.mediaType ?? "", text: null, language: null, tooBig: true }, bytes: null });
+          return;
+        }
+        const bytes = await source.load();
+        const big = isByteKind(kind) ? bytes.byteLength > previewByteLimit(kind) : (kind === "text" || kind === "markdown" || kind === "tex") && bytes.byteLength > 1024 * 1024;
         const text = (kind === "text" || kind === "markdown" || kind === "tex") && !big ? new TextDecoder().decode(bytes) : null;
         done({
           state: "file",
           view: { path: source.name, name: source.name, kind, size: bytes.byteLength, mediaType: source.mediaType ?? "", text, language: null, tooBig: big },
-          bytes: kind === "pdf" || kind === "image" ? bytes : null,
+          bytes: isByteKind(kind) && !big ? bytes : null,
         });
       } catch (e) {
         done({ state: "error", message: String(e instanceof Error ? e.message : e) });
@@ -102,6 +107,36 @@ function CodeView({ text, language, label }: { text: string; language: string | 
 function ImageView({ bytes, name, mediaType }: { bytes: ArrayBuffer; name: string; mediaType: string }) {
   const input = useMemo(() => new Uint8Array(bytes), [bytes]);
   return <ImagePreview input={input} alt={name} mimeType={imageType(name, mediaType)} className="min-h-0 flex-1" />;
+}
+
+class PreviewBoundary extends Component<{ children: ReactNode; onRetry: () => void }, { message: string }> {
+  state = { message: "" };
+  static getDerivedStateFromError(error: unknown) { return { message: error instanceof Error ? error.message : String(error) }; }
+  render() {
+    return this.state.message ? <FilePreviewStatus status="error" title="Couldn’t load preview" message={this.state.message} onRetry={this.props.onRetry} /> : this.props.children;
+  }
+}
+
+/** Optional modules are loaded only after the host has admitted and read these bytes. */
+function OfficeMediaView({ view, bytes, onRetry }: { view: FileView; bytes: ArrayBuffer; onRetry: () => void }) {
+  const input = useMemo(() => new Uint8Array(bytes), [bytes]);
+  // A fresh mounted attempt also retries a rejected lazy chunk, preserving the rest of the app.
+  const views = useMemo(() => ({
+    Docx: lazy(() => import("vic-ui/preview/docx").then(module => ({ default: module.DocxPreview }))),
+    Xlsx: lazy(() => import("vic-ui/preview/office").then(module => ({ default: module.XlsxPreview }))),
+    Pptx: lazy(() => import("vic-ui/preview/office").then(module => ({ default: module.PptxPreview }))),
+    Audio: lazy(() => import("vic-ui/preview/media").then(module => ({ default: module.AudioPreview }))),
+    Video: lazy(() => import("vic-ui/preview/media").then(module => ({ default: module.VideoPreview }))),
+  }), []);
+  const props = { input, title: view.name, maxBytes: previewByteLimit(view.kind), className: "min-h-0 flex-1" };
+  const mediaType = view.mediaType && view.mediaType !== "application/octet-stream" ? view.mediaType : undefined;
+  return <PreviewBoundary onRetry={onRetry}><Suspense fallback={<FilePreviewStatus status="loading" title="Opening preview" />}>
+    {view.kind === "docx" && <views.Docx {...props} />}
+    {view.kind === "spreadsheet" && <views.Xlsx {...props} />}
+    {view.kind === "slides" && <views.Pptx {...props} />}
+    {view.kind === "audio" && <views.Audio {...props} mimeType={mediaType} />}
+    {view.kind === "video" && <views.Video {...props} mimeType={mediaType} />}
+  </Suspense></PreviewBoundary>;
 }
 
 function DataView({ view }: { view: FileView }) {
@@ -161,9 +196,15 @@ function Body({ source, loaded, base, onCompile, onRetry }: { source: ViewSource
   }
   switch (view.kind) {
     case "pdf":
-      return bytes ? <PdfView data={bytes} label={view.name} className="min-h-0 flex-1" /> : null;
+      return bytes ? <PdfView data={bytes} label={view.name} initialPage={source.kind === "space" ? source.page : undefined} className="min-h-0 flex-1" /> : null;
     case "image":
       return bytes ? <ImageView bytes={bytes} name={view.name} mediaType={view.mediaType} /> : null;
+    case "docx":
+    case "spreadsheet":
+    case "slides":
+    case "audio":
+    case "video":
+      return bytes ? <OfficeMediaView view={view} bytes={bytes} onRetry={onRetry} /> : null;
     case "markdown":
       return (
         <div tabIndex={0} role="region" aria-label={view.name} className="min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-bg px-5 py-4" data-viewer-markdown="">
@@ -310,7 +351,10 @@ function ViewerContent({ source, returnTo }: { source: ViewSource; returnTo?: HT
   // A .tex file from the space can be compiled and shown as its PDF.
   const [compileTex, setCompileTex] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const loaded = useLoaded(source, compileTex, attempt);
+  const [textMode, setTextMode] = useState(false);
+  const renderedSource = useMemo<ViewSource>(() => source.kind === "space" && source.textPath && textMode
+    ? { kind: "space", space: source.space, path: source.textPath } : source, [source, textMode]);
+  const loaded = useLoaded(renderedSource, compileTex, attempt);
   const contentRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (source.kind !== "space" || (!source.anchor && source.headingIndex === undefined) || loaded.state !== "file" || loaded.view.kind !== "markdown") return;
@@ -352,11 +396,15 @@ function ViewerContent({ source, returnTo }: { source: ViewSource; returnTo?: HT
     >
       <DialogHeader>
         <DialogTitle className="wrap-anywhere">{title}</DialogTitle>
-        <DialogDescription className="text-sm wrap-anywhere">{describe(source, loaded)}</DialogDescription>
+        <DialogDescription className="text-sm wrap-anywhere">{describe(renderedSource, loaded)}</DialogDescription>
       </DialogHeader>
       <div className="flex min-h-0 flex-1 flex-col" data-viewer-body="">
-        <Body source={source} loaded={loaded} base={base} onCompile={() => setCompileTex(true)} onRetry={() => setAttempt((n) => n + 1)} />
+        <Body source={renderedSource} loaded={loaded} base={textMode && source.kind === "space" && source.textPath ? dirOf(source.textPath) : base} onCompile={() => setCompileTex(true)} onRetry={() => setAttempt((n) => n + 1)} />
       </div>
+      {source.kind === "space" && source.textPath && <div className="flex items-center gap-1" role="group" aria-label="Preview format" data-preview-format="">
+        <Button type="button" variant="ghost" size="sm" aria-pressed={!textMode} onClick={() => setTextMode(false)}>Document</Button>
+        <Button type="button" variant="ghost" size="sm" aria-pressed={textMode} data-preview-text="" onClick={() => setTextMode(true)}>Extracted text</Button>
+      </div>}
       <Actions source={source} loaded={loaded} />
     </DialogContent>
   );
@@ -383,17 +431,18 @@ export function useFileViewer(): { open: (source: ViewSource) => void; viewer: R
 export function SpaceFileLink({
   space,
   path,
+  page,
   children,
   className,
   ...rest
-}: { space: string; path: string; children?: ReactNode; className?: string } & Omit<React.ComponentProps<"button">, "onClick" | "type">) {
+}: { space: string; path: string; page?: number; children?: ReactNode; className?: string } & Omit<React.ComponentProps<"button">, "onClick" | "type">) {
   const { open, viewer } = useFileViewer();
   return (
     <>
       <button
         type="button"
         className={cn("cursor-pointer text-start text-accent-ink underline decoration-1 underline-offset-2 hover:decoration-2", className)}
-        onClick={() => open({ kind: "space", space, path })}
+        onClick={() => open({ kind: "space", space, path, page })}
         data-view-file={path}
         {...rest}
       >

@@ -23,12 +23,14 @@ export function ViewSwitcher({
   view,
   orientation = "horizontal",
   currentConversationShown = false,
+  onChosen,
 }: {
   space: string;
   spaceName: string;
   view: SpaceView;
   orientation?: "horizontal" | "vertical";
   currentConversationShown?: boolean;
+  onChosen?: () => void;
 }) {
   const views = visibleViews(space);
   const vertical = orientation === "vertical";
@@ -74,7 +76,7 @@ export function ViewSwitcher({
                 aria-keyshortcuts={chord.aria}
                 tabIndex={selected ? 0 : -1}
                 data-view-tab={v.id}
-                onClick={() => setSpaceView(space, v.id)}
+                onClick={() => { setSpaceView(space, v.id); onChosen?.(); }}
                 className={cn(
                   // One selected destination: the current thread stands in for its Chat parent.
                   "min-h-(--ph-control-height) cursor-default rounded-md border border-transparent px-2 py-1 leading-tight select-none",

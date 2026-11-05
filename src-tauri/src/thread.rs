@@ -56,10 +56,30 @@ pub enum ReadTool {
     Search,
 }
 
+/// Compact execution metadata; arguments and command output are never stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolCategory { Read, List, Search, Command, Write, Other }
+
+/// Only observed terminal states are persisted. Missing results stay explicit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolStatus { Success, Failed, Cancelled, Incomplete }
+
 /// One entry in the conversation record, as saved and as sent to the UI.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Record {
+    Tool {
+        id: String,
+        category: ToolCategory,
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+        status: ToolStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
     /// The user's answer to a write.
     Approval { path: String, action: WriteAction, allowed: bool },
     /// The user's answer to a request to read part of another space.
@@ -1068,6 +1088,7 @@ mod tests {
     #[test]
     fn records_have_the_contract_shape() {
         let cases = [
+            (Record::Tool { id: "codex:item1".into(), category: ToolCategory::Command, label: "Running command".into(), target: None, status: ToolStatus::Failed, detail: Some("Exit code 1".into()) }, json!({"kind":"tool", "id":"codex:item1", "category":"command", "label":"Running command", "status":"failed", "detail":"Exit code 1"})),
             (approval(true), json!({"kind": "approval", "path": "plan.md", "action": "create", "allowed": true})),
             (
                 Record::Access { space: "work".into(), path: "calendar".into(), answer: AccessAnswer::Always },

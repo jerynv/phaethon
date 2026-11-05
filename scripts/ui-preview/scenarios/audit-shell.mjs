@@ -61,7 +61,7 @@ const platform = (p) => ({
     // (720px at the default text size) moves with the text size, as the sidebar's width does.
     const { width } = page.viewport();
     const { hidden, scale } = await page.evaluate(() => ({
-      hidden: document.getElementById("spaces-sidebar")?.hidden,
+      hidden: (document.getElementById("spaces-sidebar")?.hidden ?? true),
       scale: Math.max(1, parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--ph-text-scale")) || 1),
     }));
     const narrow = width <= 720 * scale;
@@ -146,7 +146,7 @@ export default [
       if (await docked(page)) check(!before, "no title bar Settings button while the docked sidebar (with its own) shows");
       else check(before, "in a small window the title bar's Settings stays, the sidebar over the conversation or not");
       await page.click('button[aria-controls="spaces-sidebar"]');
-      await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+      await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true), { timeout: 5000 });
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
       const name = await page.evaluate(() => {
         const b = document.querySelector('header [data-testid="titlebar-settings"]');
@@ -195,7 +195,7 @@ export default [
       await park(page);
       // N-005: a narrow window hides its sidebar again once a space is chosen; reopen it for the rest.
       if (narrow) {
-        const after = await page.evaluate(() => ({ hidden: document.getElementById("spaces-sidebar").hidden, focus: document.activeElement?.id }));
+        const after = await page.evaluate(() => ({ hidden: (document.getElementById("spaces-sidebar")?.hidden ?? true), focus: document.activeElement?.id }));
         check(after.hidden && after.focus === "main", "in a narrow window, choosing a space hides the sidebar and focuses the conversation", JSON.stringify(after));
         await showSidebar(page);
         await park(page);
@@ -207,7 +207,7 @@ export default [
       // A-008: the scroll viewport clips, so the ring (width + offset) must fit inside it on every side.
       const room = await page.evaluate(() => {
         const b = document.querySelector("#spaces-sidebar li:nth-child(1) button").getBoundingClientRect();
-        const v = document.querySelector('#spaces-sidebar [data-slot="scroll-area-viewport"]').getBoundingClientRect();
+        const v = document.querySelector('#spaces-sidebar [data-sidebar="viewport"]').getBoundingClientRect();
         const cs = getComputedStyle(document.documentElement);
         const ring = parseFloat(cs.getPropertyValue("--ph-focus-width")) + parseFloat(cs.getPropertyValue("--ph-focus-offset"));
         return { ring, top: b.top - v.top, left: b.left - v.left, right: v.right - b.right };
@@ -237,7 +237,7 @@ export default [
       await page.waitForSelector('[data-slot="tooltip-content"]', { timeout: 3000 });
       await h.shot("open-sidebar-tooltip");
       await page.click('button[aria-controls="spaces-sidebar"]');
-      await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+      await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true), { timeout: 5000 });
       await park(page);
       await h.idle();
       await h.shot("collapsed");
@@ -441,7 +441,7 @@ export default [
       const before = narrow ? await page.evaluate(dotsIn) : null;
       if (narrow) {
         await page.click('button[aria-controls="spaces-sidebar"]');
-        await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+        await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true), { timeout: 5000 });
       }
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });

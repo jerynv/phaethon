@@ -58,7 +58,7 @@ export default [
       check(got.inView, "the key field is scrolled into view", JSON.stringify(got));
       // Only the page scrolls to it: the window itself (title, section list) never shifts.
       const shifted = await page.evaluate(() => {
-        const d = document.querySelector('[role="dialog"]');
+        const d = document.querySelector('[role="dialog"]:has([data-settings-header])');
         return [d.scrollTop, ...[...d.querySelectorAll("*")].filter((e) => e.scrollTop > 0 && !e.matches('[role="tabpanel"]')).map((e) => e.className.slice(0, 40))];
       });
       check(shifted.length === 1 && shifted[0] === 0, "the window's frame is not scrolled", JSON.stringify(shifted));
@@ -206,7 +206,7 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "appearance");
       const m = await page.evaluate(() => ({
-        modal: document.querySelector('[role="dialog"]').getAttribute("aria-modal"),
+        modal: document.querySelector('[role="dialog"]:has([data-settings-header])').getAttribute("aria-modal"),
         rootInert: document.getElementById("root").inert,
       }));
       check(m.modal === "true", "the dialog has aria-modal=true", JSON.stringify(m));
@@ -234,7 +234,7 @@ export default [
       }
       await h.shot("largest-text");
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"]:has([data-settings-header])'), { timeout: 5000 });
       await h.idle();
       const after = await page.evaluate(() => ({ rootInert: document.getElementById("root").inert, focus: document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName, sidebarShown: !!document.querySelector('#spaces-sidebar:not([hidden]) [data-testid="open-settings"]') }));
       check(!after.rootInert, "closing makes the app usable again", JSON.stringify(after));
@@ -283,9 +283,9 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "accessibility");
-      const thumbs = await page.$$eval('[role="slider"]', (ts) => ts.map((t) => {
-        const target = t.getBoundingClientRect();
-        const visible = t.querySelector('[data-slider-thumb-visual]').getBoundingClientRect();
+      const thumbs = await page.$$eval('input[type="range"]', (ts) => ts.map((t) => {
+        const target = t.closest(".ui-slider-thumb").getBoundingClientRect();
+        const visible = t.closest('.ui-slider-thumb').querySelector('.ui-slider-thumb-visual').getBoundingClientRect();
         return { target: [target.width, target.height], visible: [visible.width, visible.height] };
       }));
       check(thumbs.length > 0 && thumbs.every(({ target: [w, hh] }) => w >= 24 && hh >= 24), "every slider has a transparent target of at least 24x24", JSON.stringify(thumbs));
@@ -297,26 +297,26 @@ export default [
       });
       check(labelAlignment <= 6, "Text size aligns with its slider and value rather than the preset block", String(labelAlignment));
       await h.shot("default-targets");
-      const slider = await page.waitForSelector('[role="slider"]');
+      const slider = await page.waitForSelector('input[type="range"]');
       await slider.evaluate((element) => element.scrollIntoView({ block: "center" }));
       const hit = await slider.evaluate((element) => {
-        const box = element.getBoundingClientRect();
+        const box = element.closest(".ui-slider-thumb").getBoundingClientRect();
         const x = box.left + 2;
         const y = box.top + box.height / 2;
-        return { x, y, own: document.elementFromPoint(x, y)?.closest('[role="slider"]') === element, value: element.getAttribute('aria-valuenow') };
+        return { x, y, own: document.elementFromPoint(x, y)?.closest('.ui-slider-thumb') === element.closest('.ui-slider-thumb'), value: element.value };
       });
       check(hit.own, "the transparent area outside the small visible circle receives pointer input", JSON.stringify(hit));
       await page.mouse.click(hit.x, hit.y);
-      check(await slider.evaluate((element, value) => document.activeElement === element && element.getAttribute('aria-valuenow') === value, hit.value), "clicking the transparent thumb area focuses without stepping the value");
+      check(await slider.evaluate((element, value) => document.activeElement === element && element.value === value, hit.value), "clicking the transparent thumb area focuses without stepping the value");
       await page.keyboard.press("ArrowRight");
-      check(await slider.evaluate((element, value) => element.getAttribute('aria-valuenow') !== value, hit.value), "the same thumb remains operable with arrow keys");
+      check(await slider.evaluate((element, value) => element.value !== value, hit.value), "the same thumb remains operable with arrow keys");
       await page.keyboard.press("ArrowLeft");
       const presets = await page.$$eval("[data-preset]", (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()));
       const gaps = presets.slice(1).map((r, i) => (Math.abs(r.top - presets[i].top) < 2 ? r.left - presets[i].right : 99));
       check(gaps.every((g) => g >= 4), "text-size presets are at least 4px apart", JSON.stringify(gaps));
       check(presets.every((r) => r.height >= 28), "and at least 28px tall", JSON.stringify(presets.map((r) => r.height)));
       // Letter spacing goes slightly below zero.
-      const spacing = await page.evaluateHandle(() => [...document.querySelectorAll('[role="slider"]')].find((t) => (t.getAttribute("aria-labelledby") ?? "").split(" ").some((id) => document.getElementById(id)?.textContent === "Letter spacing")));
+      const spacing = await page.evaluateHandle(() => [...document.querySelectorAll('input[type="range"]')].find((t) => (t.getAttribute("aria-labelledby") ?? "").split(" ").some((id) => document.getElementById(id)?.textContent === "Letter spacing")));
       await spacing.focus();
       await page.keyboard.press("Home");
       await h.idle();
@@ -334,8 +334,8 @@ export default [
         target: getComputedStyle(document.documentElement).getPropertyValue("--ph-target-min").trim(),
         close: document.querySelector('[aria-label="Close settings"]').getBoundingClientRect().toJSON(),
         tab: document.querySelector('[data-testid="settings-tab-agent"]').getBoundingClientRect().height,
-        thumb: document.querySelector('[role="slider"]').getBoundingClientRect().width,
-        visibleThumb: document.querySelector('[data-slider-thumb-visual]').getBoundingClientRect().width,
+        thumb: document.querySelector('input[type="range"]').getBoundingClientRect().width,
+        visibleThumb: document.querySelector('[data-token="--ph-text-scale"] .ui-slider-thumb-visual').getBoundingClientRect().width,
       }));
       console.log(`     larger targets: ${JSON.stringify(big)}`);
       check(big.target === "44px", "Larger click targets sets --ph-target-min to 44px", big.target);
@@ -372,7 +372,7 @@ export default [
         await page.$eval(`[data-testid="settings-tab-${tab}"]`, (el) => el.click());
         await h.idle();
         const text = await page.evaluate(() => {
-          const d = document.querySelector('[role="dialog"]');
+          const d = document.querySelector('[role="dialog"]:has([data-settings-header])');
           const labels = [...d.querySelectorAll("[aria-label]")].map((e) => e.getAttribute("aria-label"));
           return `${d.innerText}\n${labels.join("\n")}`;
         });

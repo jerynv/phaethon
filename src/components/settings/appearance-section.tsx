@@ -1,4 +1,4 @@
-import { RadioGroup } from "radix-ui";
+import { Radio } from "vic-ui";
 import { useId, type CSSProperties } from "react";
 
 import { Details } from "@/components/ui/details";
@@ -18,7 +18,7 @@ import {
   type ThemePref,
 } from "@/theme";
 
-import { DefaultOrReset, HUE_TRACK, HueSwatches, SettingGroup, SettingRow, TokenRow, TokenSlider, radioArrowKeys } from "./controls";
+import { DefaultOrReset, HUE_TRACK, HueSwatches, SettingGroup, SettingRow, TokenRow, TokenSlider } from "./controls";
 import { ReadingFontRow } from "./accessibility-section";
 import { SectionReset } from "./section-reset";
 import { useSettingsNav } from "./status";
@@ -99,7 +99,7 @@ function TextSizeLink() {
         size="sm"
         // Wraps rather than spilling when the text is large and the column narrow.
         className="h-auto min-h-(--ph-control-height-sm) max-w-full self-start py-1 text-left whitespace-normal"
-        onClick={() => go("accessibility", '[data-token="--ph-text-scale"] [role="slider"]')}
+        onClick={() => go("accessibility", '[data-token="--ph-text-scale"] input[type="range"]')}
       >
         {spec.format(value)}
         <Icon name="chevron-right" />
@@ -158,46 +158,24 @@ function ThemeRow() {
   const statusId = useId();
   return (
     <div className="flex flex-col gap-3">
-      <RadioGroup.Root
-        aria-label="Theme"
-        aria-describedby={statusId}
-        value={a.theme}
-        onValueChange={(v) => setAppearance((p) => ({ ...p, theme: v as ThemePref }))}
-        onKeyDownCapture={radioArrowKeys((v) => setAppearance((p) => ({ ...p, theme: v as ThemePref })))}
-        orientation="horizontal"
-        loop
-        className="grid grid-cols-3 gap-2.5"
-      >
+      <fieldset role="radiogroup" aria-label="Theme" aria-describedby={statusId} className="m-0 grid min-w-0 grid-cols-3 gap-2.5 border-0 p-0">
         {THEMES.map((t) => (
-          <RadioGroup.Item
-            key={t.value}
-            value={t.value}
-            data-theme-card=""
-            className={cn(
-              "group flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-transparent p-1 pb-2 text-left transition-colors duration-(--ph-duration-fast) hover:bg-hover",
-              "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft/30",
-            )}
-          >
+          <label key={t.value} data-theme-card="" data-state={a.theme === t.value ? "checked" : "unchecked"}
+            className={cn("group relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg border border-line bg-transparent p-1 pb-2 text-left transition-colors duration-(--ph-duration-fast) hover:bg-hover",
+              "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft/30")}>
+            <Radio name={statusId} value={t.value} checked={a.theme === t.value} aria-label={t.label} className="sr-only!"
+              onChange={() => setAppearance((p) => ({ ...p, theme: t.value }))} />
             <span data-theme-preview="" className="flex aspect-[5/2] w-full overflow-hidden rounded-md" aria-hidden="true">
-              {t.value === "system" ? (
-                <>
-                  <MiniWindow theme="light" />
-                  <MiniWindow theme="dark" />
-                </>
-              ) : (
-                <MiniWindow theme={t.value} />
-              )}
+              {t.value === "system" ? <><MiniWindow theme="light" /><MiniWindow theme="dark" /></> : <MiniWindow theme={t.value} />}
             </span>
-            <span className="flex items-start gap-1.5 px-1 text-sm text-ink-secondary group-data-[state=checked]:font-medium group-data-[state=checked]:text-ink">
+            <span className="flex items-start gap-1.5 px-1 text-sm font-normal text-ink-secondary group-data-[state=checked]:text-ink">
               <Icon name={t.icon} className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
               <span className="min-w-0 flex-1 wrap-break-word">{t.label}</span>
-              <RadioGroup.Indicator className="mt-0.5 shrink-0 text-accent-ink">
-                <Icon name="check" className="size-(--ph-icon-size-sm)" />
-              </RadioGroup.Indicator>
+              {a.theme === t.value && <Icon name="check" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0 text-accent-ink" />}
             </span>
-          </RadioGroup.Item>
+          </label>
         ))}
-      </RadioGroup.Root>
+      </fieldset>
       <p id={statusId} className="sr-only">
         {a.theme === "system"
           ? `Your system is using ${sys.dark ? "dark" : "light"} mode right now, so Phaethon is too.`

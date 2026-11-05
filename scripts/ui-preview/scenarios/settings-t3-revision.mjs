@@ -58,7 +58,7 @@ export default [
       await page.$$eval(`${PANEL} summary`, (items) => { const advanced = items.find((item) => item.textContent.includes("Advanced appearance")); advanced.click(); advanced.scrollIntoView({ block: "start" }); });
       const disclosureGap = await page.$eval(`${PANEL} details[open]`, (details) => details.querySelector("h4").getBoundingClientRect().top - details.querySelector("summary").getBoundingClientRect().bottom);
       check(disclosureGap >= 0 && disclosureGap <= 24, "advanced controls start directly below their disclosure", String(disclosureGap));
-      const sliders = await page.$$eval(`${PANEL} [data-slider-track]`, (items) => items.map((item) => item.getBoundingClientRect().height));
+      const sliders = await page.$$eval(`${PANEL} .ui-slider-track`, (items) => items.map((item) => item.getBoundingClientRect().height));
       check(sliders.every((height) => height <= 5), "appearance tracks stay visually thin", JSON.stringify(sliders));
       await h.shot("advanced");
     },

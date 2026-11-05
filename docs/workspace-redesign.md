@@ -1,5 +1,113 @@
 # Personal workspace redesign
 
+## R5 installed and verified
+
+The original task remained authorized throughout. Root incorrectly treated the user's frustrated status question as a request to stop, then resumed when corrected. The R5 implementation and automated verification are now complete. Full Chromium coverage passes **980 checkpoints / 0 failed scenarios** on the exact installed frontend, across four sections (224/266/246/244). Results: `/tmp/phaethon-r5-ui-results.json`; logs `/tmp/phaethon-r5-complete-1-confirm.log` and `/tmp/phaethon-r5-complete-{2,3,4}.log`. The two failures in the first resumed section were old explicit-ARIA-role assertions for Vic's native range input; exact focus, value persistence and reset checks now pass, followed by the complete section rerun. No application behavior was changed to satisfy those assertions.
+
+The current app is installed at `/Applications/Phaethon.app` and running (PID2791 at final verification). Signed source and installed executable both SHA256 `7c22a50c6caf9c8785f372c76684bbf65d717d2fb1c5f3925aedd0449adefd28`; root `dist` is identical to immutable `/tmp/phaethon-r5-delivery-dist`. Root inspected the actual native WKWebView image: visible 1100×720 with conversation/sidebar/composer, 88 buttons, prototype not frozen. Signature, process and hash rechecked after the complete UI run. Prior bundle remains at `~/Library/Application Support/Phaethon App Backups/20261105-054517/Phaethon.app`. Personal vault/preferences/conversations remain intact. Native proof `/tmp/phaethon-r5-native-proof.json`; install log `/tmp/phaethon-r5-install.log`. The native image stays private outside Git. No Phaethon push/publication.
+
+Native `cargo test --tests -- --test-threads=1` passes **546 tests / 0 failures / 21 ignored** across 20 executables (`/tmp/phaethon-r5-native-all-confirm.log`). JavaScript units 35/0, TypeScript/design/Vite/diff and strict actual-package Bundler/NodeNext checks passed. No Rust/application source changed during the resumed verification. Default-parallel Vision OCR previously failed twice; isolation and serial tests passed, source diagnosis found no proven app race, so no speculative mutex/retry was introduced.
+
+Actual Vic `7de0c2c` is consumed from `vendor/vic-ui-7de0c2c.tgz` (SHA256 `2788b337e419101cf4944994b815752a88cc488edc7ec32fa2e11a26524089ce`), with explicit lazy `docx-preview@0.4.1`. All 137 prior root exports are preserved, 142 total; optional Office/media imports and strict typed usage pass (`/tmp/phaethon-r5-package-proof.json`). Sidebar/Radio/Combobox/Slider/Settings parts replace the corresponding parallel implementations; host account/permission/loading/persistence policy remains app-owned. Twenty-four actual Office/media fixture checkpoints pass under native CSP. Optional parsers remain out of startup, and font assets emit as self URLs. Vendor and architecture records now describe the actual installed release.
+
+Representative UI evidence includes 15 wide/light and 15 narrow/dark general-page captures, all passing; root inspected the output. Focused both-theme/narrow provider, sidebar, course, PDF and controls checks are retained in `/tmp/phaethon-r5-*` logs. The complete run above adds full regression coverage; it is not a design score or proof of every live integration.
+
+Remaining evidence limits: real new-account authentication, signed-in LMS identity/Keychain use, the physical native folder picker, native Office/media interaction and actual microphone recognition have not been exercised. Office limits remain explicit: XLSX stored values, PPTX extracted text, native codecs. The next checks for those paths require the corresponding real user interaction; no unresolved application defect was established by the final fixture suite. Earlier parallel Vision test failures remain documented. No Calendar sync, second speech engine or embedding runtime is claimed.
+
+All implementation workers and owned browser/server/build processes finished. The installed app intentionally remains running. Pre-existing untracked `CLAUDE.md` is untouched. The requested adoption receipt was delivered to the Vic owner (message `message:mcp:ee70a756-e8be-4ab6-b04a-643610c05e22:thread-send:ea12836d-ec7d-4c00-91a0-88098cd90103`); no additional library work was requested.
+
+### R5 request reconciliation
+
+User reopened **all missed requests from the earlier prompts**. Baseline `bdeaaf0`, branch `feat/vic-ui-migration`; R5 is installed and its complete integrated browser verification passes. Existing untracked `CLAUDE.md` is unrelated and untouched. Earlier sections are historical evidence, not a declaration that this reopened request is complete. Authorization persists for personal replacement, unlimited captures, larger changes, parallel workers and communication with Vic UI owner; no Phaethon push/publication.
+
+Acceptance is the literal original behavior, with a source and an observable check. `Baseline` retains the R2–R4 implementation evidence below; `R5` identifies the current integration and its focused evidence. The complete R5 suite passes 980 checkpoints with no failed scenarios. Optional examples do not silently become requirements, and fixture checks do not establish live account or microphone behavior.
+
+| Original request | State / acceptance |
+| --- | --- |
+| Decide whether Rust was appropriate | Baseline: ARCHITECTURE.md keeps native services in Rust and React/TS UI; no wholesale rewrite. |
+| Vic UI throughout; add missing reusable primitives upstream | R5: actual released Sidebar, Radio, Combobox, Slider and Settings parts adopted; optional preview renderers lazy-loaded. Archive, 142 exports, strict consumer types and native rendering verified. |
+| Real T3 source, multiple agents and provider council | R5: pinned reference 7f6f47b, distinct Codex/Claude Work audits, implementation workers and upstream component coordination completed. Findings addressed below; no invented final design score. |
+| Main chat without bubbled outer area | Baseline: thread/body shell and native R4 capture. |
+| Regular hierarchical sidebar with spaces and conversations | R5: actual Vic sidebar with T3 folder/thread hierarchy; desktop/mobile, expansion and preserved controller scenarios pass. |
+| Leading running/unread/draft states | R5: host conversation observers survive sidebar unmount; hidden-completion/unread and draft states covered by sidebar scenarios. |
+| Quiet New icon, smaller hover treatment, search at top | R5: representative wide/light and narrow/dark captures inspected; sidebar controls and search flows exercised. |
+| Settings cog, usage and updates in sidebar footer | Baseline: R3 quick actions. |
+| Sidebar clear of macOS traffic lights | R5: actual installed native snapshot inspected; shell renders below the native title-bar control region. |
+| One breadcrumb/title hierarchy, no Just now/date duplication | Baseline and R5 native/general-page inspection: a single location title; conversation action timestamps remain separate. |
+| No conversation/provider hover underlines | R5: row styles and provider/sidebar captures inspected; intended link styles retained. |
+| Compact conversation history, search/New always reachable | Baseline: 3000-history/50-DOM-row paging R2/R3 scenarios. |
+| Proper Vic command search surface | R5: Vic Command palette composition retained; nested palette/navigation keyboard and close behavior pass. |
+| Chat→Study no visible rebuild / lost state | Baseline: mounted view/overview preservation scenarios. |
+| Education opt-in at creation and per-space Settings | Baseline: R4 noneducation palette scenario also excludes commands. |
+| New-space flow that can grow | R5: two-step setup, Education option and approved native-folder choice; create/cancel/bind-failure/retry scenarios pass. |
+| Empty chat workspace start and folder/workspace choice like T3 | R5: searchable space chooser and real folder binding; all three CLI subprocess fixtures use the persisted chosen cwd. Native picker interaction remains unverified. |
+| Consistent Settings sizing/header/nav/Close placement | R5: upstream Settings layout/group/row/heading parts adopted; wide/narrow general pages inspected and bounded Settings/focus checks pass. |
+| T3 provider Manage, not Usage on account click | R5: API and CLI share inline connection list/detail; independent usage action. Mixed-account desktop/narrow and no-default-mutation checks pass. |
+| Multiple CLI subscriptions/accounts and executable/launch arguments | Baseline: R3 provider management/native capture tests. |
+| Hide empty API provider heading | Baseline: R3 settings scenario. |
+| Default flag, quiet normal-weight rows/buttons, thin Lucide icons | R5: general-page captures inspected; restrained shared weights and actual Lucide icons retained. |
+| Usage for all accounts at once, truthful Codex weekly/session | Baseline: correct selected account/buckets; real signed-in values remain account-dependent. |
+| Actual model names, reasoning and T3 rail/search/effort/access layout | Baseline: R4 metadata-only CLI probes and 48 focused checks; inspect remaining chooser gaps. |
+| No workhorse/old-generation/model help tutorials | Baseline: R4 removes successful-model notes and custom-ID tutorial. |
+| Appearance groups/section headings/compact Advanced | R5: upstream Settings groups and scalar Slider; general Appearance capture inspected, keyboard/save/reset checks pass. |
+| Vic font dropdown with actual face preview | Baseline: R3 font-family selected/options checks. |
+| Flat dark off switches, coordinated button inner/outer radii | Baseline: actual upstream release and flat adapter; off-state contrast checks R2/R3. |
+| Custom accent CTA legible; round send and solid red stop | Baseline: R3/R4 composer scenarios. |
+| Focus rings default off | Baseline: settings default; existing user setting preserved. |
+| Space editor explicit Save/Cancel, Enter not accidental autosave | Baseline: R3 editor scenarios. |
+| Stable scrollbar / no editor layout shift | Baseline: stable Settings scroll gutter. |
+| Full access concise colored tag within model/access picker | Baseline: R4 danger pill light/dark captures. |
+| Official IU/Canvas/Moodle/Blackboard marks, square aspect | Baseline: local marks including R4 official Blackboard asset. |
+| Compact connected-site rows that scale to several accounts | R5: current grouped list/detail course-site page included in representative captures; existing multi-site scenarios retained. |
+| Progressive Connect flow, overlay school search, no early URL lecture | Baseline: R3 LMS flow scenarios. |
+| Compact course checkboxes, bounded Past courses and selection actions | R5: bounded selection/import flows retained; current course-import scenarios exercise selections, past courses and cancellation. |
+| Same-account reconnect reuses connection and imported selections | Baseline: fake identity/reconnect and imported-selection tests; real identity/Keychain unverified. |
+| All selected courses, every page and file; never silent partial success | Baseline: R4 350-file real fake-HTTP import and explicit pagination limits. |
+| Hash verification / unchanged files neither downloaded nor rewritten | Baseline: native corruption/mtime/unchanged tests. |
+| Study-generated files belong to space, not imported LMS sources | Baseline: study model/output paths; full-access agent instructions are policy, not an OS wall. |
+| Accurate import loading, cancellation/resume, Settings reachable | Baseline: native cancellation/OCR process and UI background-progress checks. |
+| Compact import final step and bounded discard dialog | R5: current LMS progress/discard component and scenario evidence retained; complete suite includes and passes these flows. |
+| Imported originals clickable, no duplicated obvious image explanations | R5: permission-filtered course browser opens originals; Office files also offer separately authorized extracted text. |
+| Browse LMS modules/pages/assignments/files within app | R5: searchable category index opens original module headings with local item links; browse.rs and course-content.tsx preserve authorized course navigation. |
+| Rich REAL V-Client previews via Vic, not icon-only placeholders | R5: actual image/text/CSV plus lazy DOCX/XLSX/PPTX/audio/video integrated; 24 real-fixture browser checkpoints pass under native CSP. XLSX cached values, PPTX extracted text and native codecs remain explicit limits. |
+| Compact attachment rows/metadata, image previews with useful controls | Baseline: Vic image/text/CSV plus host PDF/Markdown; Office/media extension active. |
+| Useful agent tool states, icons/colors/details like T3 | R5: paired actual tool IDs and terminal outcomes persist through reload; native parser/fake CLI tests and browser live/failed/history scenarios pass. |
+| Softer Copy/Reply/Regenerate/time, appear on hover | R5: retained quiet action styles and hover/focus behavior; representative chat captures inspected. |
+| Jump-to-latest above composer, not in text | Baseline: capped-editor/Jump scenarios. |
+| Tutor modes compact with icons, no oversized popover | Baseline: R3 narrow composer menus. |
+| Study/Grades class-first, consistent title heights | R5: shared canonical course selection across Study/Grades/Plan, consistent course header; narrow both-theme course-selection checks pass. |
+| Plan useful information first; timer secondary | R5: selected week/day drives actual agenda; filtered Exams empty state fixed. General Plan captures inspected. Calendar sync was an example, not an implemented feature. |
+| Quiz one/all questions, flags and contextual AI help | Baseline: R3 quiz flow/persistence tests. |
+| Scope/provenance and figure sources optional and subtle | R5: existing folded Details/source disclosures retained; source/quiz scenarios included in complete verification. |
+| Handwriting/OCR and academic retrieval | R5: Vision/OCR child pipeline retained; ranked nearby multi-term academic search and page-aware citations added. Native ranking/access/bounds and PDF page/Find checks pass; real handwriting accuracy not newly measured. |
+| Voice input without auto-send | Baseline: native Dictation plus browser recognition; real recognition unverified. Whisper was an example, not a required second engine. |
+| Inspect each general page efficiently, not every possible state | R5: one batch of 15 wide/light and 15 narrow/dark general-page captures, all scenario assertions pass; representative output inspected by root. |
+| Install usable current app personally; prove native rendering | R5: installed source hash matches executable, signature verifies, running process and fresh actual WKWebView snapshot confirmed. Prior app retained as backup. |
+
+### R5 implementation evidence and remaining checks
+
+The source-only R5 council reports `/tmp/phaethon-r5-council-learning.md` and `/tmp/phaethon-r5-council-shell.md` identified the omissions below. Their initial scores describe the old baseline, not the integrated build. No third provider was available.
+
+| Confirmed omission | Implemented correction and observed evidence |
+| --- | --- |
+| Tool results disappeared | Native paired tool IDs and success/failed/cancelled/incomplete records persist; UI upserts and displays them across reload. Native parser/thread/fake-CLI cases and `walkthrough-r5-work-log`/reload checks pass. |
+| True folder start absent | Device-local approved folder bindings drive actual CLI cwd for all three providers; managed history remains in the vault. Native workspace/ACL/subprocess tests and UI create/cancel/retry checks pass. Actual OS picker interaction remains unverified. |
+| API Manage differed from CLI | Common inline Connections list/detail handles both kinds. Mixed-provider desktop/narrow, auth-cancel, save failure and unchanged default checks pass. |
+| Secondary model search and duplicate accounts | Actual Vic combobox owns keyboard/IME behavior; account badges and names distinguish merged rows. IME, 120-model reachability, exact-instance selection and rollback tests pass. |
+| Private Sidebar and transient controllers | Actual Vic Sidebar parts render the hierarchy; persistent observers and Settings controller live outside mobile presentation. Desktop, mobile, nested Escape, hidden completion and focus-return checks pass. |
+| Private Radio/Slider/Settings primitives | Released Vic Radio, scalar Slider and all four Settings parts are integrated. Actual packed archive preserves 137 old exports and provides 142 total; strict consumer types, keyboard/reset and representative geometry checks pass. |
+| Office/media unsupported | Host authorization/classification preserved; real optional Vic renderers plus imported text fallback integrated. Twenty-four browser checkpoints use actual format fixtures under native CSP; lazy loading and emitted font assets verified. |
+| Citations opened page 1 | Citation page metadata reaches the PDF viewer. Page 3, bounded 1001-page navigation, Find and focus return pass in 14 focused checkpoints. |
+| Course context and Plan inconsistency | Shared canonical course selection drives Study/Grades/Plan; filtered Exams empty state and agenda/week navigation fixed. Narrow both-theme checks pass. |
+| Literal academic grep | Ranked bounded multi-term search covers authorized text/OCR copies, with honest scan/output limits. Twenty-seven native tool checks include ranking, late best hits and access negatives. |
+| Dictation disabled during streaming | Voice edits the draft while Send remains guarded. Fake recognition verifies no second turn; real microphone recognition remains unverified. |
+
+All implementation workers completed and released ownership. Root owns the integrated working tree, preserving pre-existing untracked `CLAUDE.md`. The installed app is intentionally running. No new package, feature or review loop is needed to close this increment.
+
+Final check: four complete Chromium sections pass on immutable `/tmp/phaethon-r5-delivery-dist`, identical to root `dist` and the installed frontend. Results and exact logs are recorded above. Every runner exited and closed its own browser/server. Targeted Settings layout/provider checks pass 6 checkpoints; row Reset passes 10 and accent reset/save passes 1, followed by the complete regression run.
+
+Historical failed runs are retained: stage1 29 checkpoints/9 failed runs; first full run 913 checkpoints/40 failed runs. They exposed genuine nested-dialog lifecycle defects (fixed) and stale expectations for removed DOM/layout (migrated). Native final serial suite passes 546 tests with 21 ignored; default-parallel Vision test failures were not reproduced in isolation, and no speculative app fix was applied. Real new-account authentication, signed-in LMS identity/Keychain use, physical native media interaction and real dictation remain outside the fixture evidence.
+
 ## R4 correction installed: actual catalogs and full walkthrough gaps
 
 Baseline f45cf13 on feat/vic-ui-migration. The owner reopened the full walkthrough after finding the old Claude help-parser explanation and missing reasoning. The corrected app is installed at /Applications/Phaethon.app and left running (PID6291). SHA256 bf92aed79024ab160dc28b12b4b449ac80f00be5d9f91f2ce3d242908a56e799 matches the final signed source bundle. Previous app backup: ~/Library/Application Support/Phaethon App Backups/20261105-033719/Phaethon.app; original backup remains retained. Personal data preserved, untracked CLAUDE.md untouched, no Phaethon push/publication.

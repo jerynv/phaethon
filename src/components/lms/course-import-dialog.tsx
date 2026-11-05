@@ -1,13 +1,11 @@
-import { Checkbox, MenuSurface, PopoverSurface, Skeleton } from "vic-ui";
+import { Radio, Checkbox, MenuSurface, PopoverSurface, Skeleton } from "vic-ui";
 import { CourseSiteMark } from "@/components/settings/course-site-mark";
 import { MaterialFiles } from "./material-files";
 import { CourseContentBrowser } from "./course-content";
 import "./lms.css";
-import { RadioGroup } from "radix-ui";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { radioArrowKeys } from "@/components/settings/controls";
 import { announce } from "@/components/shell/announcer";
 import { showInLabel } from "@/components/shell/space-actions";
 import { Button } from "@/components/ui/button";
@@ -466,13 +464,13 @@ function KindStep({
   const [error, setError] = useState("");
   const groupLabel = useId();
   const errId = useId();
-  const groupRef = useRef<HTMLDivElement>(null);
+  const groupRef = useRef<HTMLFieldSetElement>(null);
 
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!kind) {
       setError("Choose a course site.");
-      groupRef.current?.querySelector<HTMLElement>('[role="radio"]')?.focus();
+      groupRef.current?.querySelector<HTMLElement>('input[type="radio"]')?.focus();
       return;
     }
     onNext(kind);
@@ -506,46 +504,15 @@ function KindStep({
           </h3>
         </div>
       )}
-      <RadioGroup.Root
-        ref={groupRef}
-        aria-labelledby={connections?.length ? groupLabel : undefined}
-        aria-label={connections?.length ? undefined : "Course site"}
-        aria-describedby={error ? errId : undefined}
-        aria-required="true"
-        value={kind ?? ""}
-        onValueChange={(v) => {
-          setKind(v as LmsKind);
-          setError("");
-        }}
-        onKeyDownCapture={radioArrowKeys((v) => {
-          setKind(v as LmsKind);
-          setError("");
-        })}
-        loop
-        className="grid grid-cols-2 gap-2"
-      >
-        {KINDS.map((k) => (
-          <RadioGroup.Item
-            key={k.kind}
-            value={k.kind}
-            data-kind={k.kind}
-            aria-labelledby={`${groupLabel}-${k.kind}`}
-                        className={cn(
-              "group flex min-h-16 w-full min-w-0 items-center gap-3 rounded-md bg-surface px-3 py-3 text-start transition-colors duration-(--ph-duration-fast) hover:bg-hover",
-              "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft",
-            )}
-          >
-            <CourseSiteMark connection={{ kind: k.kind, address: "" }} />
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span id={`${groupLabel}-${k.kind}`} className="text-md font-semibold text-ink">
-                {k.label}
-              </span>
-
-            </span>
-            <RadioGroup.Indicator className="lms-site-selected ms-auto flex size-4 shrink-0 items-center justify-center"><Icon name="check" className="size-full" /></RadioGroup.Indicator>
-          </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
+      <fieldset role="radiogroup" ref={groupRef} aria-labelledby={connections?.length ? groupLabel : undefined} aria-label={connections?.length ? undefined : "Course site"} aria-describedby={error ? errId : undefined} className="m-0 grid min-w-0 grid-cols-2 gap-2 border-0 p-0">
+        {KINDS.map((k) => <label key={k.kind} data-kind={k.kind} data-state={kind === k.kind ? "checked" : "unchecked"}
+          className="group relative flex min-h-16 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md bg-surface px-3 py-3 text-start transition-colors duration-(--ph-duration-fast) hover:bg-hover data-[state=checked]:bg-accent-soft">
+          <Radio name={groupLabel} value={k.kind} checked={kind === k.kind} required aria-labelledby={`${groupLabel}-${k.kind}`} className="sr-only!" onChange={() => { setKind(k.kind); setError(""); }} />
+          <CourseSiteMark connection={{ kind: k.kind, address: "" }} />
+          <span id={`${groupLabel}-${k.kind}`} className="min-w-0 flex-1 text-sm font-normal text-ink">{k.label}</span>
+          {kind === k.kind && <span className="lms-site-selected ms-auto flex size-4 shrink-0 items-center justify-center"><Icon name="check" className="size-full" /></span>}
+        </label>)}
+      </fieldset>
       {error && <FieldError id={errId}>{error}</FieldError>}
       </WizardBody>
       <Footer

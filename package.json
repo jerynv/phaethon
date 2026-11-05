@@ -22,6 +22,7 @@
     "@tauri-apps/api": "^2",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
+    "docx-preview": "0.4.1",
     "katex": "^0.19.0",
     "lucide-react": "0.564.0",
     "mermaid": "^12.1.0",
@@ -36,7 +37,7 @@
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.3.3",
     "tw-shimmer": "^0.4.13",
-    "vic-ui": "file:vendor/vic-ui-6deb7fc.tgz",
+    "vic-ui": "file:vendor/vic-ui-7de0c2c.tgz",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

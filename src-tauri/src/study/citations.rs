@@ -34,6 +34,9 @@ pub struct Checked {
     /// Where in the file: "§5.3", "#3".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub at: Option<String>,
+    /// One-based original PDF page, when its imported text copy has page markers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<u32>,
     /// The passage, with the text either side.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub before: String,
@@ -58,7 +61,7 @@ pub fn check(space: &Path, visible: &Visible, asked: &[Asked]) -> Vec<Checked> {
         .take(MAX)
         .map(|a| {
             let path = a.path.trim().trim_matches(['"', '\'', '`']).to_string();
-            let miss = |why: &str, path: String| Checked { found: false, name: name_of(&path), path, at: None, before: String::new(), passage: String::new(), after: String::new(), why: Some(why.to_string()) };
+            let miss = |why: &str, path: String| Checked { found: false, name: name_of(&path), path, at: None, page: None, before: String::new(), passage: String::new(), after: String::new(), why: Some(why.to_string()) };
             if let Some(why) = quote::unusable(&a.quote) {
                 return miss(&format!("The quote {why}."), path);
             }
@@ -80,7 +83,8 @@ pub fn check(space: &Path, visible: &Visible, asked: &[Asked]) -> Vec<Checked> {
                     let low = name.to_lowercase();
                     let problem_set = low.starts_with("hw") || low.contains("homework") || low.contains("review") || low.contains("problem set");
                     let (before, passage, after) = quote::context(&doc.text, f, AROUND);
-                    Checked { found: true, at: quote::locate(&doc.text, f.start, problem_set), name, path: doc.label, before, passage, after, why: None }
+                    let page = low.ends_with(".pdf").then(|| quote::page_at(&doc.text, f.start)).flatten().filter(|n| *n > 0);
+                    Checked { found: true, at: quote::locate(&doc.text, f.start, problem_set).or_else(|| page.map(|n| format!("p. {n}"))), page, name, path: doc.label, before, passage, after, why: None }
                 }
             }
         })
@@ -132,6 +136,23 @@ mod tests {
         }
         assert!(got[6].found, "the space's own files count");
         assert!(got[7].why.as_deref().unwrap().contains("too short"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn citations_keep_the_original_pdf_page_from_ocr_and_text_copies() {
+        let root = std::env::temp_dir().join(format!("phaethon-cite-page-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("spaces/s")).unwrap();
+        fs::create_dir_all(root.join("courses/C241/files")).unwrap();
+        fs::write(root.join("courses/C241/files/Notes.pdf"), "%PDF").unwrap();
+        fs::write(root.join("courses/C241/files/Notes.pdf.md"), "# Text of Notes.pdf\n\n## Page 1\n\nFirst page.\n\n## Page 2\n\nSecond page.\n\n## Page 3 (recognised from handwriting or a scan; may contain mistakes)\n\nEvery finite tree with n vertices has n minus one edges.\n").unwrap();
+        let visible = fixture(&root, "s", &[("C241", &[Part::Files])]);
+        let asked = [Asked { path: "courses/C241/files/Notes.pdf.md".into(), quote: "Every finite tree with n vertices has n minus one edges".into() }];
+        let result = check(&root.join("spaces/s"), &visible, &asked);
+        assert!(result[0].found);
+        assert_eq!(result[0].page, Some(3));
+        assert_eq!(result[0].path, "courses/C241/files/Notes.pdf");
         fs::remove_dir_all(root).unwrap();
     }
 }

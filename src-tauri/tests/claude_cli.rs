@@ -21,7 +21,7 @@ fn turn(runs: &Runs, space: &str, prompt: &str) -> (String, Vec<AgentEvent>) {
     tauri::async_runtime::block_on(agent::run_turn(
         runs,
         space,
-        TurnRequest {
+        TurnRequest { working_dir: None,
             space_dir: &dir,
             prompt,
             attachments: vec![],
@@ -110,7 +110,7 @@ fn cancel_kills_the_child_and_its_group() {
     tauri::async_runtime::block_on(agent::run_turn(
         &runs,
         "work",
-        TurnRequest {
+        TurnRequest { working_dir: None,
             space_dir: &dir,
             prompt: "Count from 1 to 300, one number per line, nothing else.",
             attachments: vec![],

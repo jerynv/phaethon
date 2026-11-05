@@ -33,15 +33,16 @@ import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elemen
 import { CoursesSuggestion } from "@/components/lms/courses-suggestion";
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu } from "@/components/ui/menu";
-import { NEW_SPACE_EVENT } from "@/lib/chat-actions";
+import { Details } from "@/components/ui/details";
+import { WorkspacePicker } from "@/components/shell/workspace-picker";
 import { WorkspaceEmpty } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { useComposeRequests } from "@/lib/compose";
-import { findSpace, supportsEducation, useActiveSpaceId, useSpaces } from "@/lib/spaces";
+import { findSpace, supportsEducation, useActiveSpaceId } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom, ContinueRun } from "@/runtime/agent-adapter";
-import { RECORD_PART, type RecordPartData } from "@/runtime/records";
+import { activityKind } from "@/runtime/activity-log";
+import { RECORD_PART, type RecordPartData, type ToolRecord } from "@/runtime/records";
 import { useKnownIndex } from "@/runtime/thread-index";
 
 import { AccessRequestCard } from "./access-request-card";
@@ -230,30 +231,45 @@ function ActivityLine() {
     return custom?.toolStatus;
   });
   const spaceId = useContext(SpaceIdContext);
+  const content = useAuiState((s) => s.message.content);
+  const activities = content.filter(isRecord).map((part) => (part.data as RecordPartData).record).filter((record): record is ToolRecord => record.kind === "tool");
+  const activityCount = activities.length;
+  const running = useAuiState((s) => s.message.status?.type === "running" && !waitingCard(s.message.metadata.custom as AgentMessageCustom | undefined));
+  const current = running ? activities.slice().reverse().find(activity => activity.status === "running") : undefined;
+  const currentLabel = toolStatus ?? (current ? [current.label, current.target].filter(Boolean).join(" ") : undefined);
   const thinking = useAuiState(
     (s) =>
       s.message.status?.type === "running" &&
       !waitingCard(s.message.metadata.custom as AgentMessageCustom | undefined) &&
       !s.message.content.some((p) => p.type === "text" && p.text !== ""),
   );
-  if (!toolStatus && !thinking) return null;
-  const { text, other } = toolStatus ? activityText(toolStatus, spaceId) : { text: "Thinking…", other: undefined };
+  if (!currentLabel && !thinking && !activities?.length) return null;
+  const { text, other } = currentLabel ? activityText(currentLabel, spaceId) : { text: "Thinking…", other: undefined };
   return (
-    <p className="flex min-w-0 max-w-full items-center gap-2 text-sm text-ink-secondary" data-activity>
-      {/* One mark: the other space's own dot when the work is there, else a softly pulsing dot. */}
+    <div className="flex min-w-0 flex-col gap-1" data-work-activity="">
+    {(currentLabel || thinking) && <p className="flex min-w-0 max-w-full items-center gap-2 text-sm text-ink-secondary" data-activity>
       {other ? (
         <span data-activity-space={other.id} className="contents" title={`In ${other.name}`}>
           <SpaceMark hue={other.hue} className="animate-pulse" />
         </span>
       ) : (
-        <span
-          aria-hidden="true"
-          className="size-(--ph-space-mark-size) shrink-0 animate-pulse rounded-full bg-accent-fill"
-        />
+        <span aria-hidden="true" className="inline-flex shrink-0 text-accent-ink">
+          <Icon name={currentLabel ? activityKind(currentLabel) : "thinking"} className="size-3.5 animate-pulse" />
+        </span>
       )}
-      {toolStatus && <span className="sr-only">Status: </span>}
+      {currentLabel && <span className="sr-only">Status: </span>}
       <span className="truncate">{text}</span>
-    </p>
+    </p>}
+    {!!activities?.length && <Details className="ph-work-log text-xs text-ink-secondary" data-work-log="" summary={`${activityCount} ${activityCount === 1 ? "activity" : "activities"}`}>
+      <ol className="flex max-h-52 flex-col gap-2 overflow-y-auto overscroll-contain py-1" aria-label="Tool activity">
+        {activities.map((activity) => <li key={activity.id} data-work-entry={activity.id} data-tool-state={activity.status} className="flex min-w-0 items-start gap-2">
+          <Icon name={activity.status === "running" ? "spinner" : activity.status === "failed" ? "error" : activity.status === "success" ? "check" : activityKind(activity.label)} className={cn("mt-0.5 size-3.5 shrink-0", activity.status === "running" ? "animate-spin text-accent-ink" : activity.status === "failed" ? "text-danger-ink" : activity.status === "success" ? "text-success-ink" : "text-ink-tertiary")} />
+          <span className="min-w-0 flex-1 whitespace-pre-wrap wrap-anywhere">{activityText(activity.label, spaceId).text}{activity.target && !activity.label.includes(activity.target) && <span className="ms-1 text-ink">{activity.target}</span>}{activity.detail && <span className="mt-0.5 block text-ink-tertiary">{activity.detail}</span>}</span>
+          <span className={cn("shrink-0", activity.status === "failed" ? "text-danger-ink" : "text-ink-tertiary")}>{({ running: "Running", success: "Done", failed: "Failed", cancelled: "Stopped", incomplete: "Incomplete" })[activity.status]}</span>
+        </li>)}
+      </ol>
+    </Details>}
+    </div>
   );
 }
 
@@ -592,19 +608,9 @@ function ReplyAnnouncer({ text, setText, cli }: { text: string; setText: (t: str
 /** The empty conversation offers useful destinations without explaining the shell. */
 function EmptyState({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
   const education = supportsEducation(spaceId);
-  const { spaces } = useSpaces();
   return (
     <WorkspaceEmpty data-empty-state="" className="ph-workspace-empty group/empty w-full"
-      title={<span role="heading" aria-level={2}>Start a conversation in {spaceName}</span>}>
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger asChild><Button type="button" variant="ghost" size="sm" data-empty-workspace="" aria-label={`Workspace: ${spaceName}`} className="self-start text-ink-secondary"><Icon name="space" className="size-4" />Workspace<Icon name="chevron-down" className="size-3" /></Button></DropdownMenu.Trigger>
-        <DropdownMenu.Portal><DropdownMenu.Content align="start" sideOffset={6} className="z-50 w-56 max-w-[calc(100vw-2rem)]" aria-label="Choose workspace">
-          {spaces.map((space) => <DropdownMenu.Item key={space.id} onSelect={() => window.dispatchEvent(new CustomEvent("phaethon:choose-space", { detail: space.id }))}
-            className="flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-highlighted:bg-hover" data-choose-workspace={space.id}><SpaceMark hue={space.hue} /><span className="min-w-0 flex-1 truncate">{space.name}</span>{space.id === spaceId && <Icon name="check" className="size-3.5 text-ink-secondary" />}</DropdownMenu.Item>)}
-          <DropdownMenu.Separator className="mx-1 my-1 h-px bg-line" />
-          <DropdownMenu.Item onSelect={() => window.dispatchEvent(new Event(NEW_SPACE_EVENT))} className="flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink-secondary outline-none data-highlighted:bg-hover"><Icon name="plus" className="size-3.5" />New space</DropdownMenu.Item>
-        </DropdownMenu.Content></DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      title={<span role="heading" aria-level={2}>Start in <WorkspacePicker spaceId={spaceId} spaceName={spaceName} /></span>}>
       {education && <>
         <CoursesSuggestion spaceId={spaceId} />
         <div className="flex flex-wrap items-center gap-2" aria-label="Learning tools">

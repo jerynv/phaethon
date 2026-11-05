@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{AgentEvent, Outcome, place};
+use super::{AgentEvent, Outcome, ToolEvents, ToolStatus, place};
 
 /// Tools the agent may use. Read-only for now: the agent can look at files in
 /// its space but cannot change them, run commands, or reach the network. Write
@@ -139,6 +139,7 @@ pub(super) struct StreamParser {
     session_id: Option<String>,
     emitted_text: bool,
     result: Option<Outcome>,
+    tools: ToolEvents,
 }
 
 impl StreamParser {
@@ -149,6 +150,7 @@ impl StreamParser {
             session_id: None,
             emitted_text: false,
             result: None,
+            tools: ToolEvents::default(),
         }
     }
 
@@ -161,15 +163,21 @@ impl StreamParser {
         }
         match v.get("type").and_then(Value::as_str) {
             Some("stream_event") => self.stream_event(&v["event"]),
-            Some("assistant") => v["message"]["content"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|b| b["type"] == "tool_use")
-                .map(|b| AgentEvent::Tool {
-                    label: tool_label(b, &self.space_dir, &self.granted),
-                })
-                .collect(),
+            Some("assistant") => {
+                let mut events = vec![];
+                for block in v["message"]["content"].as_array().into_iter().flatten().filter(|b| b["type"] == "tool_use") {
+                    events.extend(self.tools.start("claude", block["id"].as_str().unwrap_or(""), block["name"].as_str().unwrap_or(""), &block["input"], &self.space_dir, &self.granted, tool_label(block, &self.space_dir, &self.granted)));
+                }
+                events
+            }
+            Some("user") => {
+                let mut events = vec![];
+                for block in v["message"]["content"].as_array().into_iter().flatten().filter(|b| b["type"] == "tool_result") {
+                    let failed = block["is_error"].as_bool().unwrap_or(false);
+                    events.extend(self.tools.end("claude", block["tool_use_id"].as_str().unwrap_or(""), if failed { ToolStatus::Failed } else { ToolStatus::Success }, failed.then(|| "Tool reported an error".into())));
+                }
+                events
+            }
             Some("result") => {
                 let text = v
                     .get("result")
@@ -314,6 +322,7 @@ mod tests {
                 AgentEvent::Tool {
                     label: "Reading file notes.md".into()
                 },
+                AgentEvent::ToolStart { id: "claude:unpaired-1".into(), category: crate::thread::ToolCategory::Read, label: "Reading file".into(), target: Some("notes.md".into()) },
                 AgentEvent::Text {
                     delta: "\n\n".into()
                 },
@@ -348,7 +357,24 @@ mod tests {
         let mut p = StreamParser::new(Path::new("/vault/spaces/school"));
         p.granted = vec![("work/calendar".into(), dirs[0].clone())];
         let evs = p.feed(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/vault/spaces/work/calendar/oct.md"}}]}}"#);
-        assert_eq!(evs, vec![AgentEvent::Tool { label: "Reading work/calendar/oct.md".into() }]);
+        assert_eq!(evs, vec![
+            AgentEvent::Tool { label: "Reading work/calendar/oct.md".into() },
+            AgentEvent::ToolStart { id: "claude:unpaired-1".into(), category: crate::thread::ToolCategory::Read, label: "Reading file".into(), target: Some("work/calendar/oct.md".into()) },
+        ]);
+    }
+
+    #[test]
+    fn tool_results_pair_by_id_and_echoes_do_not_start_twice() {
+        let mut parser = StreamParser::new(Path::new("/vault/spaces/school"));
+        let start = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"read-1","name":"Read","input":{"file_path":"/vault/spaces/school/notes.md"}}]}}"#;
+        assert!(matches!(parser.feed(start).last(), Some(AgentEvent::ToolStart { id, .. }) if id == "claude:read-1"));
+        assert!(parser.feed(start).is_empty(), "the assistant echo is not a second execution");
+        assert!(matches!(parser.feed(r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Still looking"}}}"#).as_slice(), [AgentEvent::Text { .. }]));
+        let result = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"read-1","is_error":true,"content":"private full output"}]}}"#;
+        assert_eq!(parser.feed(result), vec![AgentEvent::ToolEnd { id: "claude:read-1".into(), status: ToolStatus::Failed, detail: Some("Tool reported an error".into()) }]);
+        assert!(parser.feed(result).is_empty(), "one terminal event per actual call");
+        parser.feed(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"read-2","name":"Read","input":{}}]}}"#);
+        assert_eq!(parser.feed(r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"read-2","content":"secret notes"}]}}"#), vec![AgentEvent::ToolEnd { id: "claude:read-2".into(), status: ToolStatus::Success, detail: None }]);
     }
 
     #[test]

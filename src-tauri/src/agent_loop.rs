@@ -223,6 +223,8 @@ async fn drive<P: Provider>(
     // "once" grants: this turn only, never written to disk.
     let mut once: Vec<Grant> = vec![];
     let mut page_images_read = 0;
+    let mut tool_log = crate::agent::ToolLog::default();
+    let mut tool_sequence = 0usize;
     // Re-read before each tool call, so a grant revoked mid-turn stops at once.
     let ctx = |once: &[Grant]| tools::Ctx {
         space: req.space_dir.to_path_buf(),
@@ -319,6 +321,12 @@ async fn drive<P: Provider>(
         for u in &uses {
             let id = u["id"].as_str().unwrap_or("").to_string();
             let name = u["name"].as_str().unwrap_or("");
+            tool_sequence += 1;
+            let activity_id = format!("phaethon:{tool_sequence}:{id}");
+            let started = !cancelled;
+            if started {
+                tool_log.emit(crate::agent::tool_start(activity_id.clone(), name, &u["input"], req.space_dir, &[]), emit);
+            }
             let mut images = vec![];
             let outcome: Result<String, String> = if cancelled {
                 Err("Not run: the user stopped the reply.".into())
@@ -443,6 +451,14 @@ Do not ask for it again in this conversation. Work without it, or tell the user 
                     },
                 }
             };
+            if started {
+                let status = if cancelled { thread::ToolStatus::Cancelled } else if outcome.is_ok() { thread::ToolStatus::Success } else { thread::ToolStatus::Failed };
+                let before = tool_log.records.len();
+                tool_log.emit(AgentEvent::ToolEnd { id: activity_id, status, detail: (status == thread::ToolStatus::Failed).then(|| "Tool reported an error".into()) }, emit);
+                if let Some(content) = msgs[reply]["content"].as_array_mut() {
+                    content.extend(tool_log.records[before..].iter().map(Record::to_block));
+                }
+            }
             results.push(match outcome {
                 Ok(text) if !images.is_empty() => {
                     page_images_read += 1;
@@ -709,10 +725,14 @@ mod tests {
             turn(json!([{"type": "text", "text": "Your exam is on Friday."}]), "end_turn"),
         ]);
         let events = run(&dir, &p, &Approvals::default(), "when is my exam?", |_| {});
+        let activity = Record::Tool { id: "phaethon:1:t1".into(), category: thread::ToolCategory::Read, label: "Reading file".into(), target: Some("a.md".into()), status: thread::ToolStatus::Success, detail: None };
         assert_eq!(
             events,
             vec![
+                AgentEvent::ToolStart { id: "phaethon:1:t1".into(), category: thread::ToolCategory::Read, label: "Reading file".into(), target: Some("a.md".into()) },
                 AgentEvent::Tool { label: "Reading file a.md".into() },
+                AgentEvent::ToolEnd { id: "phaethon:1:t1".into(), status: thread::ToolStatus::Success, detail: None },
+                AgentEvent::Record { record: activity.clone() },
                 AgentEvent::Text { delta: "Your exam is on Friday.".into() },
                 AgentEvent::End { session_id: None },
             ]
@@ -724,6 +744,7 @@ mod tests {
         let saved = thread::load(&dir.join("spaces/school")).unwrap();
         assert_eq!(saved.len(), 4);
         assert_eq!(thread::to_ui(&saved).len(), 2);
+        assert_eq!(thread::to_ui(&saved)[1].records, vec![activity], "completed same-space read survives reload");
         assert!(system_prompt(&dir, "school").contains("Call me J."));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -868,8 +889,8 @@ mod tests {
         events
     }
 
-    fn records_in(dir: &Path) -> Vec<Record> {
-        thread::records(&thread::load(&dir.join("spaces/school")).unwrap()).collect()
+    fn policy_records_in(dir: &Path) -> Vec<Record> {
+        thread::records(&thread::load(&dir.join("spaces/school")).unwrap()).filter(|record| !matches!(record, Record::Tool { .. })).collect()
     }
 
     #[test]
@@ -937,7 +958,7 @@ mod tests {
         assert!(serde_json::to_value(AgentEvent::error(ErrorCode::Billing, "x")).unwrap().get("retryAfterSecs").is_none());
         let saved = thread::load(&dir.join("spaces/school")).unwrap();
         assert_eq!(thread::to_ui(&saved)[1].text, "Working on");
-        assert!(records_in(&dir).is_empty(), "an error is not a stop");
+        assert!(policy_records_in(&dir).is_empty(), "an error is not a stop");
         for (kind, code) in [
             (ErrorKind::Billing, "billing"),
             (ErrorKind::Unavailable, "unavailable"),
@@ -994,9 +1015,9 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("spaces/school/a.md")).unwrap(), "exam on friday");
 
         // Both receipts are in the saved record, on their replies, and never sent to the model.
-        assert_eq!(records_in(&dir), vec![rec, Record::Approval { path: "a.md".into(), action: WriteAction::Replace, allowed: false }]);
+        assert_eq!(policy_records_in(&dir), vec![rec, Record::Approval { path: "a.md".into(), action: WriteAction::Replace, allowed: false }]);
         let ui = thread::to_ui(&thread::load(&dir.join("spaces/school")).unwrap());
-        assert_eq!(ui.iter().map(|m| m.records.len()).collect::<Vec<_>>(), vec![0, 1, 0, 1]);
+        assert_eq!(ui.iter().map(|m| m.records.len()).collect::<Vec<_>>(), vec![0, 2, 0, 2]);
         for request in p.seen.lock().unwrap().iter() {
             assert!(!serde_json::to_string(request).unwrap().contains("phaethon_record"));
         }
@@ -1318,7 +1339,8 @@ mod tests {
         assert!(!approvals.answer_access("school", "a1", AccessAnswer::Always), "nothing left waiting");
         assert!(!grants_file(&dir).exists());
         // Stopping is not a refusal: only the stop is recorded, so it can be asked again.
-        assert_eq!(records_in(&dir), vec![Record::Stopped]);
+        assert_eq!(policy_records_in(&dir), vec![Record::Stopped]);
+        assert!(thread::records(&thread::load(&dir.join("spaces/school")).unwrap()).any(|record| matches!(record, Record::Tool { status: thread::ToolStatus::Cancelled, .. })), "cancelled permission wait keeps a cancelled tool entry");
         assert!(events.contains(&AgentEvent::Record { record: Record::Stopped }));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1344,7 +1366,7 @@ mod tests {
         });
         let rec = Record::Access { space: "work".into(), path: "calendar".into(), answer: AccessAnswer::Deny };
         assert!(events.contains(&AgentEvent::Record { record: rec.clone() }));
-        assert_eq!(records_in(&dir), vec![rec]);
+        assert_eq!(policy_records_in(&dir), vec![rec]);
 
         // A "restart": fresh state, everything read back from disk. The same
         // path and a narrower one are refused without a question; the model is told plainly.
@@ -1352,7 +1374,7 @@ mod tests {
         let events = run(&dir, &p, &Approvals::default(), "try again", |e| {
             assert!(!matches!(e, AgentEvent::AccessRequest { .. }), "asked again: {e:?}");
         });
-        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Record { .. })));
+        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Record { record: Record::Access { .. } })));
         for n in [1, 2] {
             let r = last_result(&p, n);
             assert_eq!(r["is_error"], true);
@@ -1423,7 +1445,7 @@ mod tests {
         // The UI shows the new version only: the old receipt is in the archived copy.
         let ui = thread::to_ui(&thread::load(&space).unwrap());
         assert_eq!(ui.iter().map(|m| m.role).collect::<Vec<_>>(), ["user", "assistant"]);
-        assert!(ui[1].records.is_empty(), "{:?}", ui[1].records);
+        assert!(ui[1].records.iter().all(|record| matches!(record, Record::Tool { status: thread::ToolStatus::Failed, .. })), "denied calls remain failed work entries without carrying old permission receipts: {:?}", ui[1].records);
 
         // Edit the message: still declined.
         let index = ui[0].index;
@@ -1466,13 +1488,17 @@ mod tests {
         let live: Vec<Record> = events
             .iter()
             .filter_map(|e| match e {
-                AgentEvent::Record { record } => Some(record.clone()),
+                AgentEvent::Record { record: record @ Record::Read { .. } } => Some(record.clone()),
                 _ => None,
             })
             .collect();
-        // Refused reads (no grant) and reads in this space are not recorded.
+        // Cross-space access receipts still exclude refused and same-space
+        // reads; their actual execution states are separate Tool records.
         assert_eq!(live, expected);
-        assert_eq!(records_in(&dir), expected);
+        assert_eq!(policy_records_in(&dir), expected);
+        let tools: Vec<_> = thread::records(&thread::load(&dir.join("spaces/school")).unwrap()).filter(|record| matches!(record, Record::Tool { .. })).collect();
+        assert_eq!(tools.len(), 6, "same-space and denied calls retain their execution records too");
+        assert_eq!(tools.iter().filter(|record| matches!(record, Record::Tool { status: thread::ToolStatus::Failed, .. })).count(), 1, "the denied read must never become success");
         let json = serde_json::to_value(&expected[1]).unwrap();
         assert_eq!(json, json!({"kind": "read", "space": "work", "path": "calendar", "tool": "search", "query": "shift"}));
         assert!(serde_json::to_value(&expected[0]).unwrap().get("query").is_none());

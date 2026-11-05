@@ -153,7 +153,10 @@ const server = createServer((req, res) => {
   let p = join(dist, url.pathname === "/" ? "index.html" : url.pathname);
   if (!existsSync(p)) p = join(dist, "index.html");
   let body = readFileSync(p);
-  if (p.endsWith("index.html")) body = body.toString().replace("<head>", '<head><script src="/__mock.js"></script>');
+  if (p.endsWith("index.html")) {
+    body = body.toString().replace("<head>", '<head><script src="/__mock.js"></script>');
+    if (flag("native-csp")) res.setHeader("Content-Security-Policy", Object.entries(nativeConfig.app.security.csp).map(([directive, sources]) => `${directive} ${sources}`).join("; "));
+  }
   res.setHeader("content-type", types[extname(p)] ?? "application/octet-stream");
   res.end(body);
 });

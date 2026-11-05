@@ -12,6 +12,7 @@ import { studyOverview, type Attempt, type DeckSummary, type Quiz, type QuizSumm
 import type { Space } from "@/lib/spaces";
 import { draftCount } from "@/lib/quiz-answers";
 import { cn } from "@/lib/utils";
+import { useCourseSelection } from "@/lib/course-selection";
 
 import { DeckEditor } from "./deck-editor";
 import { CourseMaterials } from "./course-materials";
@@ -36,7 +37,6 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [courses, setCourses] = useState<CourseFolder[] | null>(null);
-  const [course, setCourse] = useState<string | null>(null);
   const [courseTab, setCourseTab] = useState("practice");
   const [screen, setScreen] = useState<Screen>({ at: "hub" });
   const [make, setMake] = useState<MakeRequest | null>(null);
@@ -46,6 +46,10 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   const returnTo = useRef<string | null>(null);
   const importEnded = useRun()?.status !== "running";
   const sitesChanged = useSitesVersion();
+  const courseContext = useCourseSelection(space.id, sitesChanged);
+  const course = courseContext.selected && (courseContext.selected.folder === "uncategorized" || courses?.some(c => c.folder === courseContext.selected?.folder)) ? courseContext.selected.folder : null;
+  const setCourse = (folder: string | null) => courseContext.select(folder ? { folder, name: courses?.find(c => c.folder === folder)?.name ?? "General study" } : null);
+  useEffect(() => setCourseTab("practice"), [courseContext.selected?.key]);
 
   const load = useCallback(() => {
     studyOverview(space.id).then(
@@ -261,7 +265,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   }
 
   return (
-    <WorkspacePage data-study-hub={space.id}>
+    <WorkspacePage data-study-hub={space.id} data-course-context={courseContext.selected?.key}>
       {course && <CourseBack onBack={() => { setCourseTab("practice"); setCourse(null); }} />}
       <WorkspacePageHeader
         title={course ? courses?.find((c) => c.folder === course)?.name ?? "General study" : "Study"}

@@ -7,9 +7,10 @@ import { useTutorModeCommands } from "@/components/chat/tutor-mode";
 import { SpacePane } from "@/components/chat/space-pane";
 import { CourseImport } from "@/components/lms/course-import-dialog";
 import { openCourseImport } from "@/components/lms/import-store";
-import { SettingsDialog } from "@/components/settings/settings-dialog";
+import { SettingsButton, SettingsDialog } from "@/components/settings/settings-dialog";
 import { announce } from "@/components/shell/announcer";
 import { CommandPalette, ShortcutsSheet, type Command } from "@/components/shell/command-palette";
+import { startWorkspaceFromFolder, type WorkspaceChoice } from "@/lib/workspace";
 import { NewSpaceDialog } from "@/components/shell/new-space-dialog";
 import { SearchDialog } from "@/components/shell/search-dialog";
 import { addToSpace } from "@/components/shell/space-actions";
@@ -33,7 +34,7 @@ import { cn } from "@/lib/utils";
 import { isWideReading, toggleWideReading, useAppearance } from "@/theme";
 
 /** A dialog that is open (one closing keeps focus until it is gone, and must not swallow shortcuts). */
-const OPEN_DIALOG = '[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]';
+const OPEN_DIALOG = '[role="dialog"]:not(#spaces-sidebar):not([data-state="closed"]), [role="alertdialog"], dialog[open]';
 
 const SIDEBAR_ID = "spaces-sidebar";
 const APP_NAME = "Phaethon";
@@ -329,13 +330,14 @@ export default function App() {
   // New space: a fresh form (new key) each time it opens. After creating, the
   // new space is chosen and its sidebar entry takes focus (the conversation
   // when the sidebar is hidden); after cancelling, focus goes back where it was.
-  const [newSpace, setNewSpace] = useState({ key: 0, open: false });
+  const [newSpace, setNewSpace] = useState<{ key: number; open: boolean; workspaceChoice?: WorkspaceChoice }>({ key: 0, open: false });
   const newSpaceOpener = useRef<HTMLElement | null>(null);
   const createdId = useRef<string | null>(null);
-  const openNewSpace = useCallback(() => {
+  const openNewSpace = useCallback((event?: Event | WorkspaceChoice) => {
     newSpaceOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     createdId.current = null;
-    setNewSpace((n) => ({ key: n.key + 1, open: true }));
+    const choice = event && "token" in event ? event : event instanceof CustomEvent ? event.detail?.workspaceChoice as WorkspaceChoice | undefined : undefined;
+    setNewSpace((n) => ({ key: n.key + 1, open: true, workspaceChoice: choice }));
   }, []);
   // New space… under a reply (chat-actions.tsx).
   useEffect(() => {
@@ -582,7 +584,7 @@ export default function App() {
             onDismiss={sidebarNarrow ? dismissSidebar : undefined}
             onSearch={() => setSearchOpen(true)}
             searchShortcut={shortcutById("search")}
-            footer={hasSettings ? <SettingsDialog onChanged={() => setReloadKey((k) => k + 1)} /> : null}
+            footer={hasSettings ? <SettingsButton /> : null}
           />
           <main
             id="main"
@@ -621,11 +623,13 @@ export default function App() {
             )}
           </main>
         </div>
+        {hasSettings && <SettingsDialog showTrigger={false} onChanged={() => setReloadKey((k) => k + 1)} />}
         <NewSpaceDialog
           key={newSpace.key}
           open={newSpace.open}
           onOpenChange={(open) => setNewSpace((n) => ({ ...n, open }))}
           existing={spaces}
+          initialWorkspace={newSpace.workspaceChoice}
           onCreated={(space) => {
             createdId.current = space.id;
             chooseSpace(space.id);
@@ -661,19 +665,18 @@ export default function App() {
 
 /** A vault with no spaces: what a space is, and the one thing to do. */
 function NoSpaces({ onNewSpace }: { onNewSpace: () => void }) {
+  const [error, setError] = useState("");
   return (
     <div data-no-spaces="" className="m-auto flex max-w-(--ph-measure) flex-col items-center gap-3 px-6 text-center">
       <span className="grid size-[calc(var(--ph-icon-size-lg)*2)] place-items-center rounded-full bg-accent-soft text-accent-soft-ink">
         <Icon name="space" className="size-(--ph-icon-size-lg)" />
       </span>
-      <h2 className="text-lg font-semibold text-ink">Make your first space</h2>
-      <p className="text-base text-ink-secondary">
-        A space is a separate place for one part of your life, like school or work. Each has its own files and its own conversation.
-      </p>
-      <Button type="button" onClick={onNewSpace}>
-        <Icon name="plus" />
-        New space
-      </Button>
+      <h2 className="text-xl font-medium text-ink">Where would you like to start?</h2>
+      <div className="flex items-center gap-2">
+        <Button type="button" onClick={() => void startWorkspaceFromFolder().catch(e => setError(String(e)))} data-start-folder=""><Icon name="folder-plus" />Open folder…</Button>
+        <Button type="button" variant="ghost" onClick={onNewSpace}><Icon name="plus" />New space</Button>
+      </div>
+      {error && <p role="alert" className="text-sm text-danger-ink">{error}</p>}
     </div>
   );
 }

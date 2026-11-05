@@ -108,7 +108,7 @@ export function CitationChip({ path, quote }: { path: string; quote: string }) {
           </DialogTitle>
           <DialogDescription>
             {state === "found"
-              ? "These words are in this file, as quoted."
+              ? got?.page ? `Page ${got.page}` : "Verified source"
               : state === "missing"
                 ? `Not found in your materials. ${got?.why ?? ""} Treat what it supports with care.`
                 : "Checking whether these words are in the file…"}
@@ -123,7 +123,7 @@ export function CitationChip({ path, quote }: { path: string; quote: string }) {
         )}
         {state === "found" && space && (
           <div>
-            <SpaceFileLink space={space} path={got!.path} className="inline-flex min-h-(--ph-target-min) items-center gap-1.5">
+            <SpaceFileLink space={space} path={got!.path} page={got?.page} className="inline-flex min-h-(--ph-target-min) items-center gap-1.5">
               <Icon name="file-text" />
               Open {name}
             </SpaceFileLink>
@@ -157,7 +157,7 @@ export function SourceLine({ space, cites, className }: { space: string; cites: 
           <div key={i} className="flex flex-col gap-1">
             <Passage passage={c.quote} />
             {c.source !== "from you" && (
-              <SpaceFileLink space={space} path={c.source} className="inline-flex min-h-(--ph-target-min) items-center gap-1.5 text-sm">
+              <SpaceFileLink space={space} path={c.source} page={c.picture ?? (c.at?.match(/^p\.\s*(\d+)$/)?.[1] ? Number(c.at.match(/^p\.\s*(\d+)$/)![1]) : undefined)} className="inline-flex min-h-(--ph-target-min) items-center gap-1.5 text-sm">
                 <Icon name="file-text" className="size-(--ph-icon-size-sm)" />
                 Open {citeName(c.source)}
               </SpaceFileLink>

@@ -180,7 +180,7 @@ export default [
       const q = await page.$eval('[data-delete-confirm="current"] p', (p) => p.textContent);
       check(q.endsWith("A new conversation starts in its place."), "clearing the open one says a new one starts", q);
       await h.click('[data-clear-button="current"]');
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       check(await paneSaid(page, "Cleared “What do I have due this week for C241?”. Kept 1 detail in School’s memory. A new conversation has started."), "the clear and the new start are said once", "");
       check((await calls(page, "thread_clear")).at(-1)?.id === "current", "the open one is cleared as \"current\"");

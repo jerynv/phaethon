@@ -22,7 +22,7 @@ const focused = (page) => page.evaluate(() => {
   const a = document.activeElement;
   return a ? `${a.tagName.toLowerCase()}${a.dataset.spaceId ? `[${a.dataset.spaceId}]` : ""}${a.id === "main" ? "#main" : ""}${a.dataset.spaceField ? `{${a.dataset.spaceField}}` : ""}` : "";
 });
-const narrow = (page) => page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden);
+const narrow = (page) => page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true));
 const showSidebar = async (page, h) => {
   if (await narrow(page)) {
     await h.click('button[aria-controls="spaces-sidebar"]');
@@ -70,7 +70,7 @@ export default [
       check((await focused(page)) === "input", "the name field has focus when the dialog opens", await focused(page));
       const named = await page.evaluate((d) => {
         const el = document.querySelector(d);
-        return { title: document.getElementById(el.getAttribute("aria-labelledby"))?.textContent, radios: el.querySelectorAll('[role="radio"]').length, checked: el.querySelector('[role="radio"][aria-checked="true"]')?.textContent };
+        return { title: document.getElementById(el.getAttribute("aria-labelledby"))?.textContent, radios: el.querySelectorAll('input[type="radio"]').length, checked: el.querySelector('input[type="radio"]:checked')?.labels?.[0]?.textContent.trim() };
       }, DIALOG);
       check(named.title === "New space" && named.radios === 8 && !!named.checked, "titled New space, eight colours, one chosen", JSON.stringify(named));
       check((await fitsWidth(page, DIALOG)) === "", "the dialog fits its width", await fitsWidth(page, DIALOG));
@@ -88,7 +88,7 @@ export default [
       check(await page.$eval(`${DIALOG} input[required]`, (input) => input.getAttribute("aria-invalid") === "true" && document.activeElement === input), "name validation focuses the field");
       await page.keyboard.type("Garden");
       await page.type(`${DIALOG} input:not([required])`, "Plants and seeds");
-      await page.evaluate((d) => [...document.querySelectorAll(`${d} [role="radio"]`)].find((r) => r.textContent === "Moss")?.click(), DIALOG);
+      await page.evaluate((d) => [...document.querySelectorAll(`${d} input[type="radio"]`)].find((r) => r.labels?.[0]?.textContent.trim() === "Moss")?.click(), DIALOG);
       await h.click(`${DIALOG} [data-next-space]`);
       check((await calls(page, "space_create")).length === 0, "Continue only advances to Workspace");
       check(await page.$eval('[data-new-space-education]', (control) => control.getAttribute("aria-checked") === "false"), "Education is opt-in");
@@ -116,7 +116,7 @@ export default [
       await page.keyboard.press("Tab");
       await page.keyboard.type("Weekend things");
       await page.keyboard.press("Tab");
-      check(await page.evaluate(() => document.activeElement?.getAttribute("role") === "radio"), "Tab reaches the colour choices");
+      check(await page.evaluate(() => document.activeElement?.matches('input[type="radio"]')), "Tab reaches the colour choices");
       await page.keyboard.press("ArrowRight");
       await h.focusVia(`${DIALOG} [data-next-space]`, 5);
       await page.keyboard.press("Enter");
@@ -166,7 +166,7 @@ export default [
       check(await page.$eval(`${work} [data-space-field="name"]`, (input) => input.getAttribute("aria-invalid") === "true"), "Save rejects an empty name");
       await page.keyboard.press("Escape");
       await retype(page, `${work} [data-space-field="description"]`, "Clients and invoices");
-      await page.evaluate((w) => [...document.querySelectorAll(`${w} [role="radio"]`)].find((radio) => radio.textContent === "Rose")?.click(), work);
+      await page.evaluate((w) => [...document.querySelectorAll(`${w} input[type="radio"]`)].find((radio) => radio.labels?.[0]?.textContent.trim() === "Rose")?.click(), work);
       await h.click(`${work} [data-space-save]`);
       await page.waitForFunction(() => window.__calls.filter(([command]) => command === "space_update").length === 2);
       const last = (await calls(page, "space_update")).at(-1);
@@ -181,7 +181,7 @@ export default [
     async run(page, h) {
       await openSpacesSettings(page, h);
       await openSpaceDetails(page);
-      const checked = await page.evaluate((p) => [...document.querySelectorAll(`${p} [data-space-row]`)].map((r) => `${r.dataset.spaceRow}:${r.querySelector('[role="radio"][aria-checked="true"]')?.textContent}`), PANEL);
+      const checked = await page.evaluate((p) => [...document.querySelectorAll(`${p} [data-space-row]`)].map((r) => `${r.dataset.spaceRow}:${r.querySelector('input[type="radio"]:checked')?.labels?.[0]?.textContent.trim()}`), PANEL);
       check(checked.join() === "school:Current,work:Clay", "a preset hue is chosen; any other shows as Current", checked.join());
       check((await fitsWidth(page, PANEL)) === "", "Settings > Spaces fits its width", await fitsWidth(page, PANEL));
     },
@@ -269,7 +269,7 @@ export default [
       check((await title(page)) === "No spaces yet", "the title says there are no spaces", await title(page));
       await h.idle();
       await h.shot("empty");
-      await h.click("[data-no-spaces] button");
+      await page.evaluate(() => [...document.querySelectorAll('[data-no-spaces] button')].find(button => button.textContent.includes('New space')).click());
       await page.waitForSelector(DIALOG, { timeout: 5000 });
       await page.keyboard.type("Home");
       await page.keyboard.press("Enter");
@@ -290,7 +290,7 @@ export default [
       await page.type(`${DIALOG} input[required]`, "Garden");
       await h.click(`${DIALOG} [data-next-space]`);
       await h.click(`${DIALOG} [data-create-space]`);
-      await page.waitForFunction(() => document.querySelector('[data-new-space-dialog] [role="alert"]')?.textContent.includes("Space created. Access could not be saved."));
+      await page.waitForFunction(() => document.querySelector('[data-new-space-dialog] [role="alert"]')?.textContent.includes("Space created. Setup could not be completed."));
       check((await calls(page, "space_create")).length === 1, "the space exists once before retrying its access save");
       await page.evaluate(() => delete window.__MOCK__.fail.full_access_set);
       await h.click(`${DIALOG} [data-create-space]`);

@@ -56,13 +56,17 @@ function packagesOf(roots: string[]): Set<string> {
  * (KaTeX, say) stays in its group.
  */
 const deps = Object.keys((JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "package.json"), "utf8")) as { dependencies: Record<string, string> }).dependencies);
-const LAZY = ["mermaid", "pdfjs-dist"];
+const LAZY = ["mermaid", "pdfjs-dist", "docx-preview"];
 const eager = packagesOf(deps.filter((d) => !LAZY.includes(d)));
 const lazyOnly = (root: string) => [...packagesOf([root])].filter((dir) => !eager.has(dir));
 const inPackages = (dirs: string[]) => (id: string) => dirs.some((d) => id.startsWith(d + path.sep));
 const LAZY_ONLY = inPackages(LAZY.flatMap(lazyOnly));
+// Vic is eager, but its optional preview entry points and DOCX peer must stay lazy.
+// The peer can also appear beside Vic in pnpm, so package reachability alone is insufficient.
+const DOCX_PACKAGES = inPackages([...packagesOf(["docx-preview"])]);
+const OPTIONAL_VIC = /[/\\]vic-ui[/\\]dist[/\\](?:preview-(?:docx|office|media)\.js|zip-[^/\\]+\.js)$/;
 /** A group's matcher, never taking code only a lazy library needs. */
-const eagerly = (re: RegExp) => (id: string) => re.test(id) && !LAZY_ONLY(id);
+const eagerly = (re: RegExp) => (id: string) => re.test(id) && !LAZY_ONLY(id) && !DOCX_PACKAGES(id) && !OPTIONAL_VIC.test(id);
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
@@ -73,6 +77,8 @@ export default defineConfig(() => ({
     },
   },
   build: {
+    // KaTeX has small fonts; emitting them keeps font-src self without data-font exceptions.
+    assetsInlineLimit: (filePath) => /\.(woff2?|ttf|otf)$/i.test(filePath) ? false : undefined,
     // The largest chunk is assistant-ui itself (~660 kB, needed for first
     // paint, loaded from disk). The limit sits just above it so growth anywhere
     // else still warns.

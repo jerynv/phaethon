@@ -291,7 +291,7 @@ export default [
     async run(page, h) {
       await page.waitForSelector(`${shown} [data-empty-state]`, { timeout: 5000 });
       const text = await page.$eval(`${shown} [data-empty-state]`, (empty) => empty.textContent);
-      check(text.includes("Start a conversation in School") && !text.includes("It can read and search"), "the empty workspace names the space without a permission essay", text);
+      check(text.includes("Start in School") && !text.includes("It can read and search"), "the empty workspace names the space without a permission essay", text);
       const label = await page.$eval(picker, (b) => b.textContent.trim());
       check(label === "Gemini CLI default", "the model button says Gemini CLI picks its own", label);
       await park(page);

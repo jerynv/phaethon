@@ -238,12 +238,13 @@ export default [
       check(await pdfDrawn(page), "View shows the compiled PDF in the app, its text laid over the page");
       const v = await page.evaluate(() => ({
         pages: document.querySelector("[data-pdf-pages]")?.textContent,
+        page: document.querySelector("[data-pdf-page-input]")?.value,
         sections: [...document.querySelectorAll("[data-pdf-page]")].map((s) => s.getAttribute("aria-label")),
         text: document.querySelector("[data-pdf-page='1'] .textLayer")?.textContent ?? "",
       }));
       const [title, desc] = await dialogNames(page);
       check(title === "M301 Linear Algebra: Exam Study Guide" && /LaTeX document as a PDF, made with pdfLaTeX/.test(desc ?? ""), "the viewer is named by the document and says what it shows", JSON.stringify([title, desc]));
-      check(v.pages === "3 pages" && v.sections[0] === "Page 1 of 3", "it says how many pages, and each page is named", JSON.stringify(v));
+      check(v.pages === "of 3" && v.page === "1" && v.sections[0] === "Page 1 of 3", "it says how many pages, and each page is named", JSON.stringify(v));
       check(v.text.includes("Vectors and linear combinations"), "the page's text is there to select and read", v.text.slice(0, 120));
       const compiled = await calls(page, "latex_compile");
       check(compiled.length === 1 && compiled[0].figure === false && compiled[0].source.includes("\\documentclass"), "the document was compiled once", JSON.stringify(compiled.map((c) => c.figure)));

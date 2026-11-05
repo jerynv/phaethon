@@ -1,7 +1,7 @@
 import { SETTINGS, check, openSettings } from "../audit-fixtures.mjs";
 import { closeProviderPopup, openProviderConfiguration, useProviderDefault } from "../provider-flow.mjs";
 
-const providerPopup = '[role="dialog"][data-provider-popup]';
+const providerPopup = '[data-provider-detail] [data-provider-popup]';
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([name]) => name === cmd).map(([, args]) => args), cmd);
 const prov = () => ({ provider: "anthropic", keys: {}, models: {}, urls: {}, lists: { openrouter: [{ id: "openai/gpt-5", name: "GPT-5" }] } });
 
@@ -36,7 +36,7 @@ export default [
       check(await page.$eval(`${providerPopup} [data-provider-default="openrouter"]`, (button) => button.disabled), "saving a key still requires choosing a model before activation");
       await page.click('[data-model-choice="openai/gpt-5"]');
       await page.waitForFunction(() => window.__MOCK__.prov.models.openrouter === "openai/gpt-5", { timeout: 3000 });
-      await page.waitForFunction(() => document.querySelector('[role="dialog"][data-provider-popup] [data-provider-default="openrouter"]')?.disabled === false, { timeout: 3000 });
+      await page.waitForFunction(() => document.querySelector('[data-provider-detail] [data-provider-popup] [data-provider-default="openrouter"]')?.disabled === false, { timeout: 3000 });
       check(await page.$eval("[data-model-selection]", (state) => state.textContent === "Selected"), "the selected model is explicit before activation");
       await assertDefault(page, "codex-cli", "anthropic");
       check((await calls(page, "settings_set_backend")).length === 0 && (await calls(page, "settings_set_provider")).length === 0, "adding a key and model never changes the default");

@@ -10,6 +10,7 @@ import { setFullAccess } from "@/lib/full-access";
 import { getSettings } from "@/lib/backend";
 import { createSpace, SPACE_DESCRIPTION_MAX, SPACE_NAME_MAX, type Space } from "@/lib/spaces";
 import { ACCENT_PRESETS } from "@/theme";
+import { bindWorkspace, chooseWorkspace, type WorkspaceChoice } from "@/lib/workspace";
 
 /** Soft hues a space can take: the accent presets, so names match Settings. */
 export const SPACE_HUES = ACCENT_PRESETS;
@@ -36,12 +37,14 @@ export function NewSpaceDialog({
   existing,
   onCreated,
   onCloseFocus,
+  initialWorkspace,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   existing: readonly Space[];
   onCreated: (space: Space) => void;
   onCloseFocus: (created: boolean) => void;
+  initialWorkspace?: WorkspaceChoice;
 }) {
   const nameId = useId();
   const nameErrorId = useId();
@@ -50,13 +53,15 @@ export function NewSpaceDialog({
   const accessId = useId();
   const [access, setAccess] = useState<"full" | "workspace">("full");
   const pendingCreated = useRef<Space | null>(null);
+  const workspaceBound = useRef(false);
+  const [workspace, setWorkspace] = useState<WorkspaceChoice | undefined>(initialWorkspace);
   const workspaceHeading = useRef<HTMLHeadingElement>(null);
   const [step, setStep] = useState<"details" | "workspace">("details");
   const [educationEnabled, setEducationEnabled] = useState(false);
   const [vaultPath, setVaultPath] = useState<string | null>(null);
   useEffect(() => { getSettings().then((settings) => setVaultPath(settings.vaultPath ?? null), () => {}); }, []);
   const nameRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialWorkspace?.name.slice(0, SPACE_NAME_MAX) ?? "");
   const [description, setDescription] = useState("");
   const [hue, setHue] = useState(() => freshHue(existing.map((s) => s.hue)));
   const [nameError, setNameError] = useState("");
@@ -86,6 +91,10 @@ export function NewSpaceDialog({
     try {
       const space = pendingCreated.current ?? await createSpace({ name: name.trim(), description: description.trim(), hue, educationEnabled });
       pendingCreated.current = space;
+      if (workspace && !workspaceBound.current) {
+        await bindWorkspace(space.id, workspace);
+        workspaceBound.current = true;
+      }
       await setFullAccess(space.id, access === "full");
       created.current = true;
       onCreated(space);
@@ -169,14 +178,14 @@ export function NewSpaceDialog({
             </div>
           <div hidden={step !== "workspace"} className="flex flex-col gap-4" data-new-space-workspace="">
             <div><h3 ref={workspaceHeading} tabIndex={-1} className="text-base font-medium text-ink outline-none">{name.trim()}</h3>{description.trim() && <p className="mt-1 text-sm text-ink-secondary">{description.trim()}</p>}</div>
-            <div className="flex items-center gap-3 rounded-lg border border-line px-3.5 py-3"><Icon name="folder" className="shrink-0 text-ink-tertiary" /><div className="min-w-0"><p className="text-sm font-medium text-ink">Workspace location</p><code className="mt-1 block text-xs wrap-anywhere text-ink-secondary">{vaultPath ? `${vaultPath}/spaces/` : "Phaethon/spaces/"}</code></div></div>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line px-3.5 py-3"><Icon name="folder" className="shrink-0 text-ink-tertiary" /><div className="min-w-0 flex-1"><p className="text-sm font-medium text-ink">Workspace folder</p><span data-new-workspace-path="" className="mt-1 block text-xs wrap-anywhere text-ink-secondary">{workspace?.path ?? (vaultPath ? `${vaultPath}/spaces/` : "Phaethon/spaces/")}</span></div><Button type="button" variant="ghost" size="sm" data-choose-workspace-folder="" disabled={busy || !!pendingCreated.current} onClick={async () => { setBusy(true); setError(""); try { const picked = await chooseWorkspace(); if (picked) setWorkspace(picked); } catch (e) { setError(String(e)); } finally { setBusy(false); } }}>{workspace ? "Change…" : "Choose folder…"}</Button>{workspace && !pendingCreated.current && <Button type="button" variant="ghost" size="icon-sm" aria-label="Use a managed workspace" onClick={() => setWorkspace(undefined)}><Icon name="close" /></Button>}</div>
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line px-3.5 py-3"><label htmlFor={accessId} className="min-w-0 flex-1 text-sm font-medium text-ink">Agent access</label><NativeSelect id={accessId} data-new-space-access="" className="max-w-full" value={access} onChange={(e) => setAccess(e.target.value as "full" | "workspace")}><option value="full">Full access</option><option value="workspace">Workspace only</option></NativeSelect></div>
             <div className="flex items-center gap-4 rounded-lg border border-line px-3.5 py-3"><div className="min-w-0 flex-1"><label htmlFor={educationId} className="text-sm font-medium text-ink">Education</label><p className="mt-0.5 text-xs text-ink-secondary">Study, grades and planning.</p></div><Switch look="flat" id={educationId} data-new-space-education="" checked={educationEnabled} onCheckedChange={setEducationEnabled} className="shrink-0" /></div>
           </div>
           {error && (
               <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-ink">
                 <Icon name="error" className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1">{pendingCreated.current ? "Space created. Access could not be saved." : "The space couldn’t be created."} {error}</span>
+                <span className="min-w-0 flex-1">{pendingCreated.current ? "Space created. Setup could not be completed." : "The space couldn’t be created."} {error}</span>
               </p>
             )}
             <DialogFooter>

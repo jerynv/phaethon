@@ -50,7 +50,7 @@ export default [
 
       // New conversation keeps it under Conversations.
       await h.click("[data-new-conversation]");
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await send(page, "Plan my week");
       check(await waitFor(page, () => document.body.innerText.includes("Plan my week")), "a second conversation starts");
       await idle(page);

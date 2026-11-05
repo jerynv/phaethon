@@ -79,3 +79,20 @@
 @media (forced-colors: active) {
   .ui-radio-dot { appearance: auto; accent-color: Highlight; border: 1px solid ButtonText; }
 }
+
+/* Host density and saved target preferences, with Vic owning layout and interaction. */
+.ui-settings-row-words { flex-basis: var(--ph-settings-label-min); }
+.ui-slider-control { min-block-size: var(--ph-slider-row); }
+.ui-slider-thumb { inline-size: max(24px, 1.5rem, var(--ph-target-min)); block-size: max(24px, 1.5rem, var(--ph-target-min)); }
+.ui-slider-fill { background: var(--ph-accent-fill); }
+.ph-settings-layout { min-height: 0; flex: 1; }
+.ph-settings-layout > .ui-settings-layout-grid { height: 100%; min-height: 0; gap: 0; grid-template-columns: minmax(0, var(--ph-settings-nav-width)) minmax(0, 1fr); }
+.ph-settings-layout .ui-settings-detail { min-height: 0; gap: 0; }
+.ph-settings-layout .ui-settings-navigation { min-height: 0; overflow-y: auto; border-inline-end: 1px solid var(--ph-line); background: var(--ph-surface); padding-block: 12px; }
+@container ui-settings (max-width: 44rem) {
+  .ph-settings-layout > .ui-settings-layout-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .ph-settings-layout .ui-settings-navigation { max-height: 120px; border-inline-end: 0; border-block-end: 1px solid var(--ph-line); padding: 2px 8px; }
+  .ph-settings-layout .ui-settings-navigation [role="tablist"] { flex-direction: row; flex-wrap: wrap; padding-inline: 0; }
+  .ph-settings-layout .ui-settings-navigation [role="tab"] { min-height: var(--ph-control-height-sm); padding-inline: 8px; }
+  .ph-settings-layout .ui-settings-navigation [role="tab"] svg { display: none; }
+}

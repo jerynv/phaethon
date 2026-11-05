@@ -1,6 +1,6 @@
 import { Dialog, Tabs } from "radix-ui";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { DialogSurface } from "vic-ui";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { DialogSurface, SettingsLayout } from "vic-ui";
 
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/icons";
@@ -51,6 +51,15 @@ function canTakeFocus(el: HTMLElement | null): el is HTMLElement {
   );
 }
 
+/** A transient sidebar/title-bar control; the event listener remains in the app shell. */
+export function SettingsButton(props: ComponentProps<typeof Button>) {
+  return <Button variant="ghost" size="icon-sm" aria-label="Settings" title="Settings" data-testid="open-settings"
+    className="text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink"
+    onClick={() => window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT))} {...props}>
+    <Icon name="settings" /><span className="sr-only">Settings</span>
+  </Button>;
+}
+
 /**
  * The settings window: a list of sections on the left, the chosen section on
  * the right, bounded above the workspace. A modal Radix dialog: Escape
@@ -64,7 +73,7 @@ function canTakeFocus(el: HTMLElement | null): el is HTMLElement {
  * Appearance and accessibility changes apply as they are made and save to the
  * vault after a short pause (src/theme). Agent changes save at once.
  */
-export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
+export function SettingsDialog({ onChanged, showTrigger = true }: { onChanged: () => void; showTrigger?: boolean }) {
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<SectionId>(lastSection);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -318,19 +327,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   return (
     <>
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Trigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Settings"
-          title="Settings"
-          data-testid="open-settings"
-          className="text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink"
-        >
-          <Icon name="settings" />
-          <span className="sr-only">Settings</span>
-        </Button>
-      </Dialog.Trigger>
+      {showTrigger && <Dialog.Trigger asChild><SettingsButton /></Dialog.Trigger>}
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-(--ph-overlay) duration-(--ph-duration) data-[state=closed]:pointer-events-none! data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <DialogSurface asChild><Dialog.Content
@@ -376,8 +373,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                 {/* Below 768 px the section list sits above the page and wraps, so no section hides off-screen.
                     It is kept compact there (title beside the tabs, no icons, shorter tabs), so at a large
                     text size the page keeps most of the height. */}
-                <div className="flex min-h-0 w-(--ph-settings-nav-width) shrink-0 flex-col overflow-y-auto border-e border-line bg-surface py-3 max-md:max-h-[35%] max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:border-e-0 max-md:border-b max-md:px-2 max-md:py-0.5">
-                  <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2 max-md:flex-row max-md:flex-wrap max-md:px-0">
+                <SettingsLayout className="ph-settings-layout" navigationLabel="Settings sections" navigation={
+                  <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2">
                     {SECTIONS.map((s) => (
                       <Tabs.Trigger
                         key={s.id}
@@ -388,7 +385,6 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                         onClick={() => choose(s.id)}
                         className={cn(
                           "flex min-h-(--ph-control-height) shrink-0 items-center gap-2.5 rounded-md px-2 text-start text-sm font-normal text-ink-secondary transition-colors duration-(--ph-duration-fast)",
-                          "max-md:min-h-(--ph-control-height-sm) max-md:px-2 max-md:[&_svg]:hidden",
                           "hover:bg-hover hover:text-ink",
                           "data-[state=active]:bg-selected data-[state=active]:font-medium data-[state=active]:text-ink",
                         )}
@@ -398,7 +394,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       </Tabs.Trigger>
                     ))}
                   </Tabs.List>
-                </div>
+                }>
+
 
                 <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                   {error && (
@@ -431,6 +428,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                     </Tabs.Content>
                   ))}
                 </div>
+                </SettingsLayout>
               </Tabs.Root>
 
               <p role="status" className="sr-only">

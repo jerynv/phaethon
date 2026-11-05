@@ -13,7 +13,7 @@ fn missing_binary_reports_install_hint() {
     tauri::async_runtime::block_on(agent::run_turn(
         &Runs::default(),
         "school",
-        TurnRequest {
+        TurnRequest { working_dir: None,
             space_dir: &dir,
             prompt: "hi",
             attachments: vec![],
@@ -47,7 +47,7 @@ fn missing_codex_or_gemini_names_that_cli() {
                 &Runs::default(),
                 "school",
                 cli,
-                TurnRequest { space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir, add_dirs: vec![], model: None, full_access: false },
+                TurnRequest { working_dir: None, space_dir: &dir, prompt: "hi", attachments: vec![], replace_from: None, config_dir, add_dirs: vec![], model: None, full_access: false },
                 |e| events.push(e),
             ));
             events

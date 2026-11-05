@@ -1,10 +1,9 @@
-import { Input } from "@/components/ui/input";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ComboboxEmpty, ComboboxItem, ComboboxList, ComboboxRoot, ComboboxSearch } from "vic-ui";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/icons";
 import { listModels, type ModelInfo, type ProviderInfo } from "@/lib/backend";
 import { rememberNames } from "@/lib/space-model";
-import { cn } from "@/lib/utils";
 
 /** A model name as the core accepts it (providers.rs `is_valid_compat_model`). */
 const MODEL_ID = /^(?![-./:])(?!.*\.\.)[A-Za-z0-9._:/@+-]{1,200}$/;
@@ -22,22 +21,20 @@ export function ModelSearch({
   current,
   onChoose,
   label,
+  onRequestClose,
 }: {
   provider: ProviderInfo;
   /** The model in use for this provider, marked in the list. */
   current: string | null;
   onChoose: (model: string, name: string) => void;
   label: string;
+  onRequestClose?: () => void;
 }) {
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [problem, setProblem] = useState("");
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const [focused, setFocused] = useState(false);
   const inputId = useId();
-  const listId = useId();
   const statusId = useId();
-  const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,29 +67,11 @@ export function ModelSearch({
   const offerTyped = MODEL_ID.test(typed) && !(models ?? []).some((m) => m.id === typed);
   const options: { value: string; title: string; detail?: string }[] = [
     ...matches.map((m) => ({ value: m.id, title: m.name, detail: m.name !== m.id ? m.id : undefined })),
-    ...(offerTyped ? [{ value: FREE, title: `Use “${typed}”`, detail: "as the model’s name" }] : []),
+    ...(offerTyped ? [{ value: FREE, title: `Use “${typed}”` }] : []),
   ];
-  const at = Math.min(active, Math.max(0, options.length - 1));
-  const optionId = (i: number) => `${listId}-o${i}`;
-
-  useEffect(() => setActive(0), [query]);
-  useEffect(() => {
-    listRef.current?.querySelector(`#${CSS.escape(optionId(at))}`)?.scrollIntoView({ block: "nearest" });
-  }, [at]);
-
   function choose(value: string) {
     if (value === FREE) onChoose(typed, typed);
     else onChoose(value, models?.find((m) => m.id === value)?.name ?? value);
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive(Math.max(0, Math.min(options.length - 1, at + (e.key === "ArrowDown" ? 1 : -1))));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (options[at]) choose(options[at].value);
-    }
   }
 
   // Escape clears the search first; a second Escape is the dialog's. The dialog listens
@@ -101,7 +80,7 @@ export function ModelSearch({
   queryRef.current = query;
   useEffect(() => {
     const onEscape = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape" || document.activeElement !== inputRef.current || !queryRef.current) return;
+      if (e.isComposing || e.keyCode === 229 || e.key !== "Escape" || document.activeElement !== inputRef.current || !queryRef.current) return;
       e.preventDefault();
       e.stopPropagation();
       setQuery("");
@@ -129,74 +108,28 @@ export function ModelSearch({
   return (
     <div className="flex flex-col gap-2" data-model-search={provider.id}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <label htmlFor={inputId} className="text-base font-medium text-ink">{label}</label>
+        <label htmlFor={inputId} className="text-sm font-normal text-ink">{label}</label>
         <span data-model-selection="" className="text-xs text-ink-secondary">{current ? "Selected" : "Not selected"}</span>
       </div>
-      <div className="relative flex items-center">
-        <Icon name="search" className="pointer-events-none absolute start-2.5 z-10 text-ink-tertiary" />
-        <Input
-          ref={inputRef}
-          id={inputId}
-          data-model-query=""
-          role="combobox"
-          aria-expanded={options.length > 0}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={options.length ? optionId(at) : undefined}
-          aria-describedby={statusId}
-          autoComplete="off"
-          spellCheck={false}
-          value={query}
-          placeholder="Search, or type a model’s name"
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          className="w-full ps-9"
-        />
-      </div>
-      <div id={statusId} role="status" className="text-sm text-ink-secondary" data-model-search-status="">
-        {status}
-      </div>
-      {options.length > 0 && (
-        <ul
-          ref={listRef}
-          id={listId}
-          role="listbox"
-          aria-label={`${name} models`}
-          className="flex max-h-(--ph-model-list-max-height) flex-col overflow-y-auto overscroll-contain rounded-md border border-line bg-raised p-1"
-        >
-          {options.map((o, i) => {
-            const inUse = o.value === current;
-            return (
-              <li
-                key={o.value}
-                id={optionId(i)}
-                role="option"
-                aria-selected={i === at}
-                data-model-choice={o.value === FREE ? FREE : o.value}
-                // The field keeps focus: a press chooses without moving it.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => choose(o.value)}
-                onMouseMove={() => i !== at && setActive(i)}
-                className={cn(
-                  "grid min-h-(--ph-target-min) shrink-0 cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 rounded-sm px-2 py-1.5",
-                  i === at && focused && "bg-hover",
-                )}
-              >
-                <span className="flex h-[1lh] items-center">{inUse && <Icon name="check" className="text-accent-ink" />}</span>
-                <span className="flex min-w-0 flex-col">
-                  <span className="text-base text-ink wrap-anywhere">
-                    {o.title}
-                    {inUse && <span className="sr-only"> (in use)</span>}
-                  </span>
-                  {o.detail && <span className="text-sm text-ink-secondary wrap-anywhere">{o.detail}</span>}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ComboboxRoot label={`${name} models`} items={options.map(option => ({ value: option.value, label: option.title }))}
+        value={current} query={query} onQueryChange={setQuery} defaultOpen closeOnSelect={false}
+        onValueChange={choose} onOpenChange={open => { if (!open) onRequestClose?.(); }}>
+        <div className="relative flex items-center">
+          <Icon name="search" className="pointer-events-none absolute start-2.5 z-10 size-3.5 text-ink-tertiary" />
+          <ComboboxSearch ref={inputRef} id={inputId} data-model-query="" aria-describedby={statusId}
+            autoComplete="off" spellCheck={false} placeholder="Search or enter a model name…" className="w-full ps-9!" />
+        </div>
+        <div id={statusId} role="status" className="py-2 text-xs text-ink-secondary" data-model-search-status="">{status}</div>
+        <ComboboxList aria-label={`${name} models`} className="max-h-(--ph-model-list-max-height)! overflow-y-auto overscroll-contain rounded-md bg-surface-sunken p-1!">
+          {options.map(option => <ComboboxItem key={option.value} value={option.value} data-model-choice={option.value}
+            className="flex min-h-8! items-center gap-2 rounded-sm px-2! py-1.5! text-sm! font-normal!">
+            <span className="min-w-0 flex-1 truncate text-ink" title={option.title}>{option.title}</span>
+            {option.detail && <span className="max-w-[45%] truncate text-xs text-ink-secondary" title={option.detail}>{option.detail}</span>}
+            {option.value === current && <Icon name="check" className="size-3.5 text-accent-ink" />}
+          </ComboboxItem>)}
+        </ComboboxList>
+        <ComboboxEmpty className="px-2 py-3 text-xs text-ink-secondary">{loading ? "Loading models…" : "No matching models"}</ComboboxEmpty>
+      </ComboboxRoot>
     </div>
   );
 }

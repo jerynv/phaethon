@@ -150,7 +150,9 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
     const own = entry.id === activeKey ? entry.cli ? ownCli?.model : current.own ? current.id : null : null;
     if (own && !list.some(model => model.id === own || model.aliases?.includes(own))) list.push({ id: own, name: entry.cli ? cliModelName(entry.cli, own, s) : modelName(own, s.models) });
     const rows = [{ id: DEFAULT, name: "Default" }, ...list];
-    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <ProviderLogo provider={entry.logo} className="size-4" />, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : (model.id === own || !!model.aliases?.includes(own ?? ""))), detail: model.id === DEFAULT ? entry.cli ? (catalogs[entry.id]?.models.find(item => item.id === catalogs[entry.id]?.defaultModel)?.name ?? entry.name) : modelName(s.defaultModel, s.models) : undefined }));
+    const siblings = entry.cli ? entries.filter(item => item.cli === entry.cli) : [];
+    const accountBadge = siblings.length > 1 ? siblings.findIndex(item => item.id === entry.id) + 1 : null;
+    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <span className="relative inline-flex" title={entry.name}><ProviderLogo provider={entry.logo} className="size-4" />{accountBadge && <span className="ph-model-account-badge" aria-hidden="true">{accountBadge}</span>}</span>, accountName: accountBadge && (searching || rail === "favorites") ? entry.name : undefined, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : (model.id === own || !!model.aliases?.includes(own ?? ""))), detail: model.id === DEFAULT ? entry.cli ? (catalogs[entry.id]?.models.find(item => item.id === catalogs[entry.id]?.defaultModel)?.name ?? entry.name) : modelName(s.defaultModel, s.models) : undefined }));
   });
   const shownOptions = searching ? options : rail === "favorites" ? options.filter(option => favorites.has(option.value)) : options.filter(option => option.provider === selected?.id);
   const pickerHeight = Math.min(386, Math.max(220, effortTarget ? 88 + (effortTarget.levels.length + 1) * 32 : 0, 54 + (entries.length + 1) * 38, 82 + Math.max(4, ...entries.map(entry => (catalogs[entry.id]?.models ?? entry.models).length + 1)) * 32));
@@ -369,6 +371,7 @@ function OtherModelDialog({
           provider={info}
           current={inUse}
           label="Model"
+          onRequestClose={onClose}
           onChoose={(id) => {
             void onChoose(toRef(info.id, id)).then((ok) => ok && onClose());
           }}

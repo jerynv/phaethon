@@ -1,4 +1,4 @@
-import {check} from '../audit-fixtures.mjs';
+import { showSidebar,check} from '../audit-fixtures.mjs';
 import {GENERAL_WORKSPACE_MOCK} from '../general-workspace.mjs';
 
 const shown='[data-space-pane][data-shown]';
@@ -12,11 +12,13 @@ export default [{
   name:'general-pages-r3',
   mock:GENERAL_WORKSPACE_MOCK,
   async run(page,h) {
+    await showSidebar(page);
     await page.waitForSelector(`${shown} [data-composer-input]`);
     check(await page.$eval('[data-testid="open-settings"] svg',e=>e.classList.contains('lucide-settings')), 'Settings uses the actual cog glyph');
     check(await page.$eval('[data-testid="open-settings"] svg',e=>parseFloat(getComputedStyle(e).strokeWidth)<=1.5), 'default icon lines are restrained');
     const hierarchy=await page.$eval('[data-space-item="school"]',root=>({name:root.querySelector('[data-space-name]').getBoundingClientRect().right,chevron:root.querySelector('[data-space-expand]').getBoundingClientRect().left,newButtons:root.querySelectorAll('[data-new-conversation]').length}));
     check(hierarchy.chevron>hierarchy.name && hierarchy.newButtons===1,'folder header has trailing expander and a single quiet New action',JSON.stringify(hierarchy));
+    if (page.viewport().width <= 720) await page.keyboard.press('Escape');
     await h.shot('chat');
     await h.click(`${shown} [data-model-picker]`);
     await page.waitForSelector('[data-model-picker-sidebar]');
@@ -25,6 +27,7 @@ export default [{
     await h.shot('models');
     await close(page,'[data-model-menu]');
 
+    await showSidebar(page);
     await h.click('[data-sidebar-usage]');
     await page.waitForFunction(()=>document.querySelector('[data-usage-account="codex-system"] [data-usage-window="Weekly"]'));
     check(await page.$$eval('[data-usage-account]',rows=>rows.length===5),'usage shows every connection together');
@@ -32,6 +35,7 @@ export default [{
     await h.shot('usage');
     await close(page,'[data-usage-dialog]');
 
+    await showSidebar(page);
     await h.click('[data-testid="open-settings"]');
     await page.waitForSelector('[data-agent-instances]');
     check(await page.$$eval('[data-settings-group] h4',headings=>!headings.some(e=>e.textContent==='API providers')),'empty API group is omitted');
@@ -56,8 +60,9 @@ export default [{
     }
     await close(page,settings);
     for(const view of ['study','grades','plan']) {
+      await showSidebar(page);
       await h.click(`#spaces-sidebar:not([hidden]) [data-view-tab="${view}"]`);
-      await page.waitForFunction(view=>document.querySelector(`#spaces-sidebar [data-view-tab="${view}"]`)?.getAttribute('aria-selected')==='true',{},view);
+      await page.waitForFunction(view=>{const node=document.querySelector(`[data-space-pane][data-shown] [data-${view==='study'?'study-hub':`${view}-view`}]`);return !!node?.getClientRects().length;}, {}, view);
       check(await fits(page),`${view} keeps its general page within the window`);
       await h.shot(view);
     }

@@ -54,7 +54,7 @@ const shownText = (page) =>
 
 const sliderIn = (page, label) =>
   page.evaluateHandle((label) => {
-    for (const t of document.querySelectorAll('[role="slider"]')) {
+    for (const t of document.querySelectorAll('input[type="range"]')) {
       const ids = (t.getAttribute("aria-labelledby") ?? "").split(" ");
       const text = ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ");
       if (text.includes(label)) return t;
@@ -102,7 +102,7 @@ export default [
           await h.idle();
         }
         const bad = await page.evaluate(() => {
-          const dialog = document.querySelector('[role="dialog"][data-provider-popup]') ?? document.querySelector('[role="dialog"]');
+          const dialog = document.querySelector('[role="dialog"][data-provider-popup]') ?? document.querySelector('[role="dialog"]:has([data-settings-header])');
           const d = dialog.getBoundingClientRect();
           const close = dialog.querySelector('button[aria-label="Close settings"], button[aria-label="Close"]').getBoundingClientRect();
           const out = [];
@@ -255,7 +255,7 @@ export default [
     mock: { settings: SETTINGS, threads: { school: CONVERSATION } },
     async run(page, h) {
       await openSettings(page, h, "appearance");
-      const cards = await page.$$('[role="radiogroup"][aria-label="Theme"] [role="radio"]');
+      const cards = await page.$$('[role="radiogroup"][aria-label="Theme"] [data-theme-card]');
       await cards[1].hover();
       await h.idle();
       await h.shot("light-hover");
@@ -281,12 +281,12 @@ export default [
       await openSettings(page, h, "appearance");
       // Tab from the section list into the page until a swatch has focus.
       await page.focus('[data-testid="settings-tab-appearance"]');
-      const swatch = '[role="radiogroup"][aria-label="Accent colour"] [role="radio"]';
+      const swatch = '[role="radiogroup"][aria-label="Accent colour"] input[type="radio"]';
       await page.keyboard.press("Tab");
       if (await page.evaluate(() => document.activeElement?.getAttribute("data-testid") === "settings-tab-appearance")) {
         // Obscura sometimes does not move focus on Tab; focus the chosen swatch as Tab would.
         console.log("     note: Tab did not move focus here (an Obscura quirk); focusing the chosen swatch directly");
-        await page.$eval(`${swatch}[aria-checked="true"]`, (el) => el.focus());
+        await page.$eval(`${swatch}:checked`, (el) => el.focus());
       } else {
         await h.focusVia(swatch);
       }
@@ -297,16 +297,16 @@ export default [
       await h.idle();
       await h.shot("swatch-focused");
       // In a short window the swatch can sit outside the scrolled page; bring it into view first.
-      await centre(await page.$(`${swatch}:nth-child(5)`));
+      await centre((await page.$$('[role="radiogroup"][aria-label="Accent colour"] [data-swatch-item]'))[4]);
       await h.idle();
-      await h.hover(`${swatch}:nth-child(5)`);
+      await (await page.$$('[role="radiogroup"][aria-label="Accent colour"] [data-swatch-item]'))[4].hover();
       await h.idle();
       await h.shot("swatch-hover");
       // A hue slider mid-drag: mouse down on the thumb, move, no release.
       const thumb = await sliderIn(page, "Custom hue");
       await centre(thumb);
       await h.idle();
-      const box = await thumb.boundingBox();
+      const box = await thumb.evaluate(t => { const r = t.closest(".ui-slider-thumb").getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; });
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       await page.mouse.down();
       await page.mouse.move(box.x + 120, box.y + box.height / 2, { steps: 6 });
@@ -336,8 +336,8 @@ export default [
       await h.shot("reset-hover");
       await page.click('button[aria-label^="Reset text size"]');
       await h.idle();
-      const f = await page.evaluate(() => document.activeElement?.getAttribute("role"));
-      check(f === "slider", "after a row's Reset, focus is on its slider", f);
+      await page.waitForFunction(() => document.activeElement === document.querySelector('[data-token="--ph-text-scale"] input[type="range"]'));
+      check(true, "after a row's Reset, focus is on its text size slider");
       await h.shot("after-row-reset");
       // Change two things, then reset the whole page: Undo reset appears.
       await page.keyboard.press("ArrowRight");
@@ -389,16 +389,15 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "appearance");
       const state = (sel) =>
-        page.evaluate((s) => [...document.querySelectorAll(s)].map((r) => `${r.textContent.trim()}:${r.getAttribute("aria-checked")}${r === document.activeElement ? "(focus)" : ""}`).join(" "), sel);
+        page.evaluate((s) => [...document.querySelectorAll(s)].map((r) => `${r.labels?.[0]?.textContent.trim()}:${r.checked}${r === document.activeElement ? "(focus)" : ""}`).join(" "), sel);
       for (const group of ["Theme", "Accent colour", "Surface tint"]) {
         if (group === "Surface tint") await page.$eval('details:has([aria-label="Surface tint"])', (details) => { details.open = true; });
-        const sel = `[role="radiogroup"][aria-label="${group}"] [role="radio"]`;
+        const sel = `[role="radiogroup"][aria-label="${group}"] input[type="radio"]`;
         if (!(await page.$(sel))) throw new Error(`no radio group "${group}"`);
-        // Radix keeps a roving tabindex: at most one radio is tabbable (before
-        // the group is first visited, the group element itself is the stop).
-        const tabStops = await page.evaluate((s) => [...document.querySelectorAll(s)].filter((r) => r.getAttribute("tabindex") === "0").length, sel);
-        check(tabStops <= 1, `${group}: at most one tabbable radio`, `${tabStops}`);
-        await page.evaluate((s) => ([...document.querySelectorAll(s)].find((r) => r.getAttribute("aria-checked") === "true") ?? document.querySelector(s)).focus(), sel);
+        await page.evaluate((s) => ([...document.querySelectorAll(s)].find(r => r.checked) ?? document.querySelector(s)).focus(), sel);
+        await page.keyboard.press("Tab");
+        check(!await page.$eval(`[role="radiogroup"][aria-label="${group}"]`, group => group.contains(document.activeElement)), `${group}: native radio group is one Tab stop`);
+        await page.evaluate((s) => ([...document.querySelectorAll(s)].find((r) => r.checked) ?? document.querySelector(s)).focus(), sel);
         for (const key of ["ArrowRight", "ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"]) {
           await page.keyboard.press(key);
           await h.idle();
@@ -411,11 +410,10 @@ export default [
         await h.idle();
         const last = await page.evaluate((s) => {
           const l = [...document.querySelectorAll(s)].at(-1);
-          return l === document.activeElement && l.getAttribute("aria-checked") === "true";
+          return l === document.activeElement && l.checked;
         }, sel);
         check(last, `${group}: ArrowLeft on the first wraps to the last and checks it`);
-        const after = await page.evaluate((s) => [...document.querySelectorAll(s)].filter((r) => r.getAttribute("tabindex") === "0").length, sel);
-        check(after === 1, `${group}: after moving, exactly one radio is tabbable`, `${after}`);
+        check(await page.$$eval(sel, radios => radios.filter(radio => radio.checked).length === 1), `${group}: after moving, exactly one native radio is chosen`);
         // One stop: Tab from the chosen radio leaves the group.
         await page.evaluate(() => (window.__beforeTab = document.activeElement));
         await page.keyboard.press("Tab");
@@ -628,14 +626,14 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "appearance");
-      const sliders = await page.evaluate((p) => document.querySelectorAll(`${p} [data-token="--ph-text-scale"] [role="slider"]`).length, PANEL);
+      const sliders = await page.evaluate((p) => document.querySelectorAll(`${p} [data-token="--ph-text-scale"] input[type="range"]`).length, PANEL);
       check(sliders === 0, "no text size slider on Appearance");
       await h.click('[data-token="--ph-text-scale-link"] button');
       await h.idle();
       const got = await page.evaluate(() => ({
         tab: document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent,
         row: document.activeElement?.closest("[data-token]")?.getAttribute("data-token"),
-        role: document.activeElement?.getAttribute("role"),
+        role: document.activeElement?.matches('input[type="range"]') ? "slider" : document.activeElement?.getAttribute("role"),
       }));
       check(got.tab === "Accessibility" && got.role === "slider" && got.row === "--ph-text-scale", "the link opens Accessibility on the text size slider", JSON.stringify(got));
     },
@@ -654,7 +652,7 @@ export default [
       const activeTab = () => page.evaluate(() => document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent);
       const close = async () => {
         await page.keyboard.press("Escape");
-        await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
+        await page.waitForFunction(() => !document.querySelector('[role="dialog"]:has([data-settings-header])'), { timeout: 5000 });
         await h.idle();
       };
       // 1. From a button that stays put: focus goes back to it.
@@ -805,7 +803,7 @@ export default [
         const width = parseFloat(cs.outlineWidth);
         const offset = parseFloat(cs.outlineOffset);
         const r = panel.getBoundingClientRect();
-        const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
+        const d = document.querySelector('[role="dialog"]:has([data-settings-header])').getBoundingClientRect();
         const nav = document.querySelector('[role="dialog"] [role="tablist"]').parentElement.getBoundingClientRect();
         return {
           focused: document.activeElement === panel,
@@ -839,7 +837,7 @@ export default [
         await page.$eval(`[data-testid="settings-tab-${tab}"]`, (el) => el.click());
         await h.idle();
         const got = await page.evaluate((p) => {
-          const frame = document.querySelector('[role="dialog"]').getBoundingClientRect();
+          const frame = document.querySelector('[role="dialog"]:has([data-settings-header])').getBoundingClientRect();
           const header = document.querySelector(`${p} [data-section-header]`).getBoundingClientRect();
           const close = document.querySelector('[aria-label="Close settings"]').getBoundingClientRect();
           return { headerRight: header.right, frameRight: frame.right, closeBottom: close.bottom, headerTop: header.top };

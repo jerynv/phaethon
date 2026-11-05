@@ -8,7 +8,7 @@ fn main() {
             "agent_instances_list", "agent_instance_save", "agent_instance_select", "agent_instance_sign_in", "agent_instance_sign_in_cancel", "agent_instance_remove", "agent_instance_sign_out", "agent_instance_usage",
             "thread_clear", "thread_forget", "thread_forget_preview", "cli_import_offered", "cli_import_run",
             "settings_get", "settings_set_backend", "api_key_set", "api_key_clear", "appearance_set",
-            "spaces_list", "space_create", "space_update",
+            "spaces_list", "space_workspace_get", "workspace_choose", "space_workspace_bind", "space_workspace_clear", "space_create", "space_update",
             "api_key_check", "models_list", "settings_set_model", "file_open",
             "space_model_get", "space_model_set", "space_models_list", "space_reasoning_get", "space_reasoning_set",
             "space_touch", "space_show", "space_add", "full_access_list", "full_access_set", "space_export", "export_show",

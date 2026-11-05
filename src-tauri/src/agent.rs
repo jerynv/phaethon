@@ -23,7 +23,7 @@ pub mod gemini;
 pub mod models;
 pub mod sign_in;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -37,7 +37,7 @@ use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use crate::grants::AccessAnswer;
-use crate::thread::{self, Record, WriteAction};
+use crate::thread::{self, Record, ToolCategory, ToolStatus, WriteAction};
 use crate::vault::Backend;
 use crate::{agent_loop, attachments, memory, vault};
 
@@ -52,6 +52,19 @@ pub enum AgentEvent {
     Text { delta: String },
     /// A human-readable description of a tool the agent is using.
     Tool { label: String },
+    ToolStart {
+        id: String,
+        category: ToolCategory,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
+    },
+    ToolEnd {
+        id: String,
+        status: ToolStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
     /// The turn failed; `message` is safe to show to the user.
     Error {
         code: ErrorCode,
@@ -103,6 +116,87 @@ impl AgentEvent {
     /// An error with no wait time.
     pub fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         AgentEvent::Error { code, message: message.into(), retry_after_secs: None }
+    }
+}
+
+fn short_tool_text(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).take(240).collect()
+}
+
+/// Shared CLI metadata boundary. No command arguments or tool output enter
+/// the durable work log; only the tool category and a user-visible file target.
+pub(super) fn tool_start(id: String, name: &str, input: &Value, space: &Path, granted: &[(String, PathBuf)]) -> AgentEvent {
+    let category = match name {
+        "Read" | "read_file" | "read_many_files" | "read_page" => ToolCategory::Read,
+        "list_files" | "list_directory" => ToolCategory::List,
+        "Grep" | "Glob" | "grep_search" | "glob" | "search_files" | "web_search" => ToolCategory::Search,
+        "Bash" | "run_shell_command" | "command_execution" => ToolCategory::Command,
+        "Write" | "Edit" | "MultiEdit" | "write_file" | "file_change" => ToolCategory::Write,
+        _ => ToolCategory::Other,
+    };
+    let label = match category {
+        ToolCategory::Read => "Reading file",
+        ToolCategory::List => "Listing files",
+        ToolCategory::Search => "Searching",
+        ToolCategory::Command => "Running command",
+        ToolCategory::Write => "Changing file",
+        ToolCategory::Other => "Using tool",
+    }.to_string();
+    let target = if category == ToolCategory::Command { None } else {
+        ["file_path", "absolute_path", "dir_path", "path"].into_iter()
+            .find_map(|key| input[key].as_str().filter(|value| !value.is_empty()))
+            .map(|path| short_tool_text(&shown_path(path, space, granted).0))
+    };
+    AgentEvent::ToolStart { id, category, label, target }
+}
+
+#[derive(Default)]
+pub(super) struct ToolEvents { seen: HashSet<String>, finished: HashSet<String>, next: usize }
+
+impl ToolEvents {
+    fn start(&mut self, cli: &str, raw: &str, name: &str, input: &Value, space: &Path, granted: &[(String, PathBuf)], label: String) -> Vec<AgentEvent> {
+        let raw = if raw.is_empty() { self.next += 1; format!("unpaired-{}", self.next) } else { short_tool_text(raw) };
+        let id = format!("{cli}:{raw}");
+        if !self.seen.insert(id.clone()) { return vec![]; }
+        vec![AgentEvent::Tool { label }, tool_start(id, name, input, space, granted)]
+    }
+
+    fn end(&mut self, cli: &str, raw: &str, status: ToolStatus, detail: Option<String>) -> Vec<AgentEvent> {
+        let id = format!("{cli}:{}", short_tool_text(raw));
+        if !self.seen.contains(&id) || !self.finished.insert(id.clone()) { return vec![]; }
+        vec![AgentEvent::ToolEnd { id, status, detail: detail.map(|detail| short_tool_text(&detail)) }]
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ToolLog {
+    active: HashMap<String, (ToolCategory, String, Option<String>)>,
+    pub(crate) records: Vec<Record>,
+}
+
+impl ToolLog {
+    pub(crate) fn emit(&mut self, event: AgentEvent, emit: &mut (impl FnMut(AgentEvent) + ?Sized)) {
+        let record = match &event {
+            AgentEvent::ToolStart { id, category, label, target } => {
+                self.active.entry(id.clone()).or_insert((*category, short_tool_text(label), target.as_deref().map(short_tool_text)));
+                None
+            }
+            AgentEvent::ToolEnd { id, status, detail } => self.active.remove(id).map(|(category, label, target)| Record::Tool {
+                id: id.clone(), category, label, target, status: *status, detail: detail.as_deref().map(short_tool_text),
+            }),
+            _ => None,
+        };
+        emit(event);
+        if let Some(record) = record {
+            self.records.push(record.clone());
+            emit(AgentEvent::Record { record });
+        }
+    }
+
+    pub(crate) fn close(&mut self, status: ToolStatus, emit: &mut (impl FnMut(AgentEvent) + ?Sized)) {
+        let mut ids: Vec<_> = self.active.keys().cloned().collect();
+        ids.sort();
+        for id in ids { self.emit(AgentEvent::ToolEnd { id, status, detail: None }, emit); }
     }
 }
 
@@ -276,6 +370,9 @@ pub fn is_valid_cli_model(name: &str) -> bool {
 
 /// Options for one turn.
 pub struct TurnRequest<'a> {
+    /// Device-local, picker-approved project root; `None` keeps managed space
+    /// files as the working folder. Never used for metadata or conversation IO.
+    pub working_dir: Option<PathBuf>,
     pub space_dir: &'a Path,
     /// What the user wrote, saved in the conversation as written.
     pub prompt: &'a str,
@@ -466,6 +563,11 @@ impl Runs {
         self.inner.lock().unwrap().get(space).and_then(|h| h.pid)
     }
 
+    /// Includes a claimed turn before its child is spawned (and API turns).
+    pub fn is_running(&self, space: &str) -> bool {
+        self.inner.lock().unwrap().contains_key(space)
+    }
+
     /// Ask the turn in `space` to stop. Returns false if nothing was running.
     pub fn cancel(&self, space: &str) -> bool {
         let tx = self
@@ -539,7 +641,11 @@ async fn turn(
     emit: &mut impl FnMut(AgentEvent),
 ) -> Option<String> {
     let storage = |emit: &mut dyn FnMut(AgentEvent), message: String| emit(AgentEvent::error(ErrorCode::Storage, message));
-    if cli == Cli::Gemini && gemini::has_own_settings(req.space_dir) {
+    let working_dir = match working_directory(req) {
+        Ok(dir) => dir,
+        Err(message) => { emit(AgentEvent::error(ErrorCode::Cli, message)); return None; }
+    };
+    if cli == Cli::Gemini && gemini::has_own_settings(working_dir) {
         emit(AgentEvent::error(ErrorCode::Cli, gemini::OWN_SETTINGS_MESSAGE));
         return None;
     }
@@ -567,29 +673,37 @@ async fn turn(
         }
     }
     let user = thread::stamped(thread::user_message(req.prompt, &req.attachments));
-    let ask = format!("{}{}", req.prompt, attachments::cli_note(&req.attachments));
+    let attachment_note = if working_dir != req.space_dir && !req.attachments.is_empty() {
+        let files = req.attachments.iter().filter_map(|file| file["path"].as_str()).map(|path| format!("- {}", req.space_dir.join(path).display())).collect::<Vec<_>>().join("\n");
+        format!("\n\nThe user attached these files in the managed Phaethon space context, not the project folder:\n{files}")
+    } else { attachments::cli_note(&req.attachments) };
+    let ask = format!("{}{attachment_note}", req.prompt);
     let instance_tag = instance_session_tag(cli, req.config_dir.as_deref());
     let mut resume = vault::read_cli_session(req.space_dir, instance_tag.as_deref().or(cli.session_tag()));
     let mut text = String::new();
-    let (stopped, session_id) = loop {
+    let mut tool_log = ToolLog::default();
+    let (stopped, failed, session_id) = loop {
         let prompt = cli_prompt(&ask, &msgs, resume.is_none());
-        match drive(runs, space_id, cli, req, reasoning.as_deref(), resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text).await {
+        match drive(runs, space_id, cli, req, reasoning.as_deref(), resume.as_deref(), &prompt, &mut cancel_rx, emit, &mut text, &mut tool_log).await {
             // The session is gone (deleted, or made on another machine or in another folder):
             // start afresh, with the conversation so far.
             Attempt::StaleSession => {
                 vault::clear_session(req.space_dir);
                 resume = None;
             }
-            Attempt::Done { session_id } => break (false, session_id),
-            Attempt::Stopped => break (true, resume),
-            Attempt::Failed => break (false, None),
+            Attempt::Done { session_id } => break (false, false, session_id),
+            Attempt::Stopped => break (true, false, resume),
+            Attempt::Failed => break (false, true, None),
             Attempt::NotStarted => return None,
         }
     };
+    tool_log.close(if stopped { ToolStatus::Cancelled } else if failed { ToolStatus::Failed } else { ToolStatus::Incomplete }, emit);
     // Recorded as Phaethon's own loop does: the question, then what came back
     // (a failed or stopped reply keeps what streamed).
     msgs.push(user);
-    msgs.extend(agent_loop::partial_reply(&[text], stopped).map(thread::stamped));
+    let mut reply = agent_loop::partial_reply(&[text], stopped).unwrap_or_else(|| serde_json::json!({"role":"assistant", "content":[]}));
+    reply["content"].as_array_mut().expect("reply content").extend(tool_log.records.iter().map(Record::to_block));
+    if !reply["content"].as_array().unwrap().is_empty() { msgs.push(thread::stamped(reply)); }
     if let Err(e) = thread::save(req.space_dir, &msgs) {
         storage(emit, format!("The reply couldn’t be saved in this space’s conversation: {e}"));
     }
@@ -660,9 +774,21 @@ impl Parser {
 /// Told to a CLI in a space with full access, so it says plainly what it did.
 const FULL_ACCESS_NOTE: &str = "# Full access\n\nThe user turned on full access for this space: you may read and change files anywhere on this computer, run any command and use the internet, without asking. Do only what the user asked, and say in your reply exactly which files you changed or created (full paths) and which commands you ran that changed anything.";
 
+fn working_directory<'a>(req: &'a TurnRequest<'_>) -> Result<&'a Path, String> {
+    let path = req.working_dir.as_deref().unwrap_or(req.space_dir);
+    let metadata = std::fs::symlink_metadata(path).map_err(|e| format!("The workspace folder is unavailable. Choose it again: {e}"))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() || (req.working_dir.is_some() && path.canonicalize().ok().as_deref() != Some(path)) {
+        return Err("The workspace folder changed or is unavailable. Choose it again.".into());
+    }
+    Ok(path)
+}
+
 /// The arguments and stdin for one run of `cli`, or why it can't run.
 fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, reasoning: Option<&str>, resume: Option<&str>, prompt: &str) -> Result<(Vec<String>, String), String> {
-    let dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
+    let working_dir = working_directory(req)?;
+    let external = working_dir != req.space_dir;
+    let mut dirs: Vec<PathBuf> = req.add_dirs.iter().map(|(_, p)| p.clone()).collect();
+    if external && !req.full_access && !dirs.iter().any(|dir| dir == req.space_dir) { dirs.push(req.space_dir.to_path_buf()); }
     let model = req.model.as_deref().filter(|m| is_valid_cli_model(m));
     let mode = crate::tutor_mode::prompt_section(req.space_dir);
     // What each course teaches and its exams cover, and how to cite them, before the tutor mode.
@@ -678,6 +804,11 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, reasoning: Option<&st
     let mode = crate::rich_output::with_instructions(mode); // what the chat can show, before the tutor mode
     // How to offer a quiz or flashcards from the chat, before the tutor mode (which shapes every answer).
     let mode = Some(crate::study::chat::with_prompt(mode.as_deref()));
+    let mode = if external {
+        let project = serde_json::to_string(&working_dir.to_string_lossy()).expect("path serializes");
+        let context = serde_json::to_string(&req.space_dir.to_string_lossy()).expect("path serializes");
+        Some(format!("# Workspace\n\nProject working folder: {project}\nPhaethon space context: {context}\nRelative project paths resolve under the project working folder. Saved message attachments and app-generated study, notes and practice belong to the Phaethon space context; use its absolute path to read or reference them. Keep Phaethon's conversation and internal metadata in that managed context, not in the project.\n\n{}", mode.unwrap_or_default()))
+    } else { mode };
     let mode = if req.full_access { mode.map(|m| format!("{FULL_ACCESS_NOTE}\n\n{m}")) } else { mode };
     let (mut args, stdin) = match cli {
         Cli::Claude => {
@@ -688,8 +819,8 @@ fn invocation(cli: Cli, bin: &Path, req: &TurnRequest<'_>, reasoning: Option<&st
             args.extend(mode.iter().flat_map(|m| ["--append-system-prompt".to_string(), m.clone()]));
             (args, prompt.to_string())
         }
-        Cli::Codex if req.full_access => (codex::cli_args_full(req.space_dir, model, mode.as_deref(), resume), prompt.to_string()),
-        Cli::Codex => (codex::cli_args(req.space_dir, bin, &dirs, model, mode.as_deref(), resume), prompt.to_string()),
+        Cli::Codex if req.full_access => (codex::cli_args_full(working_dir, model, mode.as_deref(), resume), prompt.to_string()),
+        Cli::Codex => (codex::cli_args(working_dir, bin, &dirs, model, mode.as_deref(), resume), prompt.to_string()),
         Cli::Gemini if req.full_access => (gemini::cli_args_full(vault::home_dir().as_deref(), model, resume), gemini::prompt(mode.as_deref(), prompt)),
         Cli::Gemini => {
             let policy = gemini::policy_file(false).map_err(|e| format!("Phaethon couldn’t prepare Gemini CLI’s read-only rules: {e}"))?;
@@ -728,6 +859,7 @@ async fn drive(
     cancel_rx: &mut oneshot::Receiver<()>,
     emit: &mut impl FnMut(AgentEvent),
     text: &mut String,
+    tool_log: &mut ToolLog,
 ) -> Attempt {
     let fail = |emit: &mut dyn FnMut(AgentEvent), code, message: String| {
         emit(AgentEvent::error(code, message));
@@ -748,7 +880,11 @@ async fn drive(
             return Attempt::NotStarted;
         }
     };
-    let mut cmd = command(cli, &bin, req.space_dir, req.config_dir.as_deref());
+    let working_dir = match working_directory(req) {
+        Ok(dir) => dir,
+        Err(message) => { fail(emit, ErrorCode::Cli, message); return Attempt::NotStarted; }
+    };
+    let mut cmd = command(cli, &bin, working_dir, req.config_dir.as_deref());
     cmd.args(args);
     if cli == Cli::Gemini {
         // Headless runs need a trusted folder; see gemini.rs for what keeps the space walled.
@@ -757,12 +893,16 @@ async fn drive(
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
+        Err(e) if working_directory(req).is_err() => {
+            fail(emit, ErrorCode::Cli, format!("The workspace folder is unavailable. Choose it again: {e}"));
+            return Attempt::NotStarted;
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             fail(emit, ErrorCode::MissingCli, cli.missing_message().into());
             return Attempt::NotStarted;
         }
         Err(e) => {
-            fail(emit, ErrorCode::Cli, format!("Could not start {}: {e}", cli.name()));
+            fail(emit, ErrorCode::Cli, format!("Could not start {} in its workspace: {e}", cli.name()));
             return Attempt::NotStarted;
         }
     };
@@ -792,7 +932,9 @@ async fn drive(
         })
     });
 
-    let mut parser = Parser::new(cli, req.space_dir, req.add_dirs.clone());
+    let mut label_dirs = req.add_dirs.clone();
+    if working_dir != req.space_dir { label_dirs.push((format!("Space {space_id}"), req.space_dir.to_path_buf())); }
+    let mut parser = Parser::new(cli, working_dir, label_dirs);
     let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
     while !cancelled {
         tokio::select! {
@@ -802,7 +944,7 @@ async fn drive(
                         if let AgentEvent::Text { delta } = &ev {
                             text.push_str(delta);
                         }
-                        emit(ev);
+                        tool_log.emit(ev, emit);
                     }
                 }
                 _ => break,
@@ -1061,6 +1203,22 @@ pub(crate) fn parse_codex_login(said: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_does_not_complete_tools_and_unmatched_starts_close_truthfully() {
+        for terminal in [ToolStatus::Cancelled, ToolStatus::Failed, ToolStatus::Incomplete] {
+            let mut log = ToolLog::default();
+            let mut events = vec![];
+            log.emit(tool_start("read-1".into(), "Read", &serde_json::json!({"file_path":"/vault/spaces/school/notes.md"}), Path::new("/vault/spaces/school"), &[]), &mut |event| events.push(event));
+            log.emit(AgentEvent::Text { delta: "Assistant text is not proof of tool success".into() }, &mut |event| events.push(event));
+            assert!(log.records.is_empty());
+            log.close(terminal, &mut |event| events.push(event));
+            assert_eq!(log.records, vec![Record::Tool { id: "read-1".into(), category: ToolCategory::Read, label: "Reading file".into(), target: Some("notes.md".into()), status: terminal, detail: None }]);
+            let count = events.len();
+            log.close(ToolStatus::Success, &mut |event| events.push(event));
+            assert_eq!(events.len(), count, "a completed call cannot be reclassified by turn success");
+        }
+    }
 
     #[test]
     fn cli_status_reports_only_an_executable_and_its_path() {

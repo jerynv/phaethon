@@ -940,7 +940,7 @@ export default [
       await sendClick(page, "Long task");
       await h.waitText("Working on it");
       // A narrow window (or large text) hides the sidebar: open it first, as a person would.
-      if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+      if (await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true))) {
         await page.click('button[aria-controls="spaces-sidebar"]');
         await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
       }
@@ -974,7 +974,7 @@ export default [
     mock: { settings: { ...SETTINGS, hasAnthropicKey: false }, threads: {} },
     async run(page, h) {
       const goTo = async (id) => {
-        if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) await page.click('button[aria-controls="spaces-sidebar"]');
+        if (await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true))) await page.click('button[aria-controls="spaces-sidebar"]');
         await page.click(`#spaces-sidebar [data-space-id="${id}"]`);
         await page.waitForSelector(`[data-space-pane="${id}"][data-shown] [data-setup-card]`, { timeout: 5000 });
       };

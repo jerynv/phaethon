@@ -97,7 +97,7 @@ export default [
     async run(page, h) {
       await h.waitText("Problem set 4");
       await clickNew(page);
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       expect(!(await page.evaluate(() => document.body.innerText.includes("Problem set 4"))), "old messages still shown");
       expect((await calls(page, "thread_new")).length === 1, "thread_new not called once");
@@ -162,7 +162,7 @@ export default [
       await page.keyboard.down("Meta");
       await page.keyboard.press("n");
       await page.keyboard.up("Meta");
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       expect((await calls(page, "thread_new")).length === 1, "Cmd+N did not start a new conversation");
       await h.idle();
@@ -181,7 +181,7 @@ export default [
       await page.keyboard.down("Control");
       await page.keyboard.press("n");
       await page.keyboard.up("Control");
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       expect((await calls(page, "thread_new")).length === 1, "Ctrl+N did not start a new conversation");
     },
   },
@@ -273,7 +273,7 @@ export default [
       await h.focusVia("[data-new-conversation]");
       await page.keyboard.up("Shift");
       await page.keyboard.press("Enter");
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       expect(await composerFocused(page), "composer not focused after New conversation");
       await page.waitForFunction(() => document.querySelector('[data-testid="conversation-status"]')?.textContent === "New conversation started.", { timeout: 2000 });
@@ -301,7 +301,7 @@ export default [
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       await menuGone(page);
       await clickNew(page);
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       expect((await calls(page, "thread_new")).length === 1, "thread_new not called for the CLI backend");
       // Deleting a CLI conversation uses the same named confirmation.
       await openMenu(page, h);

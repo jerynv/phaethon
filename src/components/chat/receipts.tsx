@@ -26,6 +26,8 @@ const where = (space: string, path: string) => {
 /** A record in words, as the status region says it ("Allowed: create plans/week6.md"). */
 export function recordText(r: ChatRecord): string {
   switch (r.kind) {
+    case "tool":
+      return `${r.label}: ${r.status}${r.detail ? `, ${r.detail}` : ""}`;
     case "approval":
       return `${r.allowed ? "Allowed" : "Not allowed"}: ${r.action} ${r.path}`;
     case "access":
@@ -110,6 +112,8 @@ export function RecordLine({ record }: { record: ChatRecord }) {
     <Icon name={icon} className={cn("size-(--ph-icon-size-sm) shrink-0", ok ? "text-success-ink" : "text-ink-secondary")} />
   );
   switch (record.kind) {
+    case "tool":
+      return null; // The work group renders these together, including after reload.
     case "approval":
       return (
         <p className={box} data-record="approval" data-allowed={record.allowed ? "true" : "false"}>

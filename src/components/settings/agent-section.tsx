@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "vic-ui";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ProviderLogo } from "@/components/provider-logo";
@@ -44,39 +44,12 @@ import {
 } from "./api-key";
 import { AgentInstances, type AgentInstanceRequest } from "./agent-instances";
 import { ModelSearch } from "./model-search";
-import { SectionHeader, SettingGroup } from "./controls";
+import { SectionHeader } from "./controls";
 import { useStatus } from "./status";
 
 const CLI_BACKENDS: CliBackend[] = ["claude-cli", "codex-cli", "gemini-cli"];
 export type AgentFocusRequest = { target: "key" | "model"; n: number; closeSettingsOnClose: boolean };
 type ProviderPopup = { kind: "catalog" } | { kind: "provider"; id: ProviderId };
-
-function ProviderRow({ id, name, current, children, onConfigure }: {
-  id: ProviderId | CliBackend;
-  name: string;
-  current: boolean;
-  children: ReactNode;
-  onConfigure: () => void;
-}) {
-  return (
-    <div data-provider-row={id} data-provider-default-row={current || undefined}>
-      <Button
-        variant="ghost" data-provider-configure={id} aria-label={`Manage ${name}`} onClick={onConfigure}
-        className={cn(
-          "w-full rounded-none text-start [&>.ui-button-face]:min-h-12 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2.5 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2",
-        )}
-      >
-        <ProviderLogo provider={id} className="size-5 shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-sm font-normal leading-snug text-ink">{name}</span>
-          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-normal leading-snug text-ink-secondary">{children}</span>
-        </span>
-        {current && <span className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-secondary">Default</span>}
-        <Icon name="chevron-right" className="shrink-0 text-ink-tertiary" />
-      </Button>
-    </div>
-  );
-}
 
 /** Links that leave Phaethon: underlined, and say they open in the browser. */
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
@@ -108,6 +81,9 @@ export function AgentSection({
   const setupHintId = useId();
   const [retrying, setRetrying] = useState(false);
   const [popup, setPopup] = useState<ProviderPopup | null>(null);
+  const [selectedApi, setSelectedApi] = useState<ProviderId | null>(null);
+  const [connectionBusy, setConnectionBusy] = useState(false);
+  const reportBusy = useCallback((busy: boolean) => { setConnectionBusy(busy); onBusyChange?.(busy); }, [onBusyChange]);
   const signingIn = false;
   const [instanceRequest, setInstanceRequest] = useState<AgentInstanceRequest | null>(null);
   const [actionError, setActionError] = useState("");
@@ -128,6 +104,7 @@ export function AgentSection({
     if (isCliBackend(settings.backend)) {
       pendingProviderFocus.current = null;
       setPopup(null);
+      setSelectedApi(null);
       setInstanceRequest({ cli: CLI_INFO[settings.backend].id, n: focusRequest.n, closeSettingsOnClose: focusRequest.closeSettingsOnClose });
       return;
     }
@@ -138,13 +115,14 @@ export function AgentSection({
       selector: focusRequest.target === "key" && target.key !== "none" ?
         "[data-key-input]" : "[data-model-select], [data-model-query]",
     };
+    setSelectedApi(target.id);
     setPopup((current) => current?.kind === "provider" && current.id === target.id ?
       current : { kind: "provider", id: target.id });
   }, [focusRequest, settings]);
 
   function focusRequestedProviderField() {
     const pending = pendingProviderFocus.current;
-    if (!pending || popup?.kind !== "provider" || popup.id !== pending.providerId) return false;
+    if (!pending || selectedApi !== pending.providerId) return false;
     const field = popupContentRef.current?.querySelector<HTMLElement>(pending.selector);
     if (!field) return false;
     pendingProviderFocus.current = null;
@@ -158,7 +136,7 @@ export function AgentSection({
     previousPopup.current = popup;
     if (focusRequestedProviderField()) return;
     if (changed && popup && !pendingProviderFocus.current) popupTitleRef.current?.focus();
-  }, [popup, settings, focusRequest]);
+  }, [popup, selectedApi, settings, focusRequest]);
   useEffect(() => {
     if (settings && isCliBackend(settings.backend)) void loadCliModels(CLI_INFO[settings.backend].id, true);
   }, [settings?.backend]);
@@ -185,7 +163,7 @@ export function AgentSection({
   const configuredProviders = providers.filter((p) =>
     p.hasKey || ((p.local || p.key === "none") && (p.model !== null || (p.editableBase && p.baseUrl !== p.defaultBaseUrl))),
   );
-  const editingProvider = popup?.kind === "provider" ? providers.find((p) => p.id === popup.id) : undefined;
+  const editingProvider = selectedApi ? providers.find((p) => p.id === selectedApi) : undefined;
   const editingIsDefault = editingProvider ? settings?.backend === "phaethon" && provider.id === editingProvider.id : false;
   const setupRequirement = !editingProvider ? "" : !editingProvider.ready ?
     editingProvider.key === "required" && !editingProvider.hasKey ? "Add an API key first." : "Save a server URL first." :
@@ -196,11 +174,13 @@ export function AgentSection({
   ].sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId));
 
   function closePopup() {
+    if (popup?.kind === "catalog") { setPopup(selectedApi ? { kind: "provider", id: selectedApi } : null); return; }
     const requested = requestedPopup.current;
     requestedPopup.current = null;
     pendingProviderFocus.current = null;
     closingToChat.current = requested?.closeSettingsOnClose ?? false;
     setPopup(null);
+    setSelectedApi(null);
     if (requested) onRequestedProviderClose?.(requested.n);
   }
 
@@ -209,7 +189,7 @@ export function AgentSection({
       <SectionHeader
         id={headingId} title="Providers"
         action={settings && (
-          <Button variant="ghost" size="icon-xs" data-provider-add="" aria-label="Add connection" title="Add connection" onClick={() => setPopup({ kind: "catalog" })}>
+          <Button variant="ghost" size="icon-xs" data-provider-add="" disabled={connectionBusy} aria-label="Add connection" title="Add connection" onClick={() => setPopup({ kind: "catalog" })}>
             <Icon name="plus" />
           </Button>
         )}
@@ -225,25 +205,37 @@ export function AgentSection({
         <p className="text-base text-ink-secondary" role="status">Loading assistant settings…</p>
       ) : (
         <>
-          {providerRows.length > 0 && <SettingGroup title="API providers">
-            <div className="overflow-hidden">
-              <div>
-                {providerRows.map((row) => {
-                  const p = row.provider;
-                  const model = p.model ?? (p.id === "anthropic" ? settings.model : null);
-                  return <ProviderRow key={p.id} id={p.id} name={p.name} current={p.id === defaultId} onConfigure={() => setPopup({ kind: "provider", id: p.id })}>
-                    {model && <><span>{modelName(toRef(p.id, model))}</span><span aria-hidden="true">·</span></>}
-                    <span data-provider-readiness={p.ready ? "configured" : "needs-setup"}>{p.ready ? "Configured" : "Needs setup"}</span>
-                  </ProviderRow>;
-                })}
+          <AgentInstances onBusyChange={reportBusy} act={act} request={instanceRequest} backendVersion={settings.backend} onRequestedClose={onRequestedProviderClose}
+            onInstanceSelected={() => { setSelectedApi(null); setPopup(null); pendingProviderFocus.current = null; }}
+            serviceRows={providerRows.map(({ provider: p }) => <button type="button" key={p.id} data-provider-row={p.id} data-provider-configure={p.id}
+              data-provider-default-row={p.id === defaultId || undefined} aria-label={`Manage ${p.name}`} aria-pressed={selectedApi === p.id} disabled={connectionBusy}
+              onClick={() => { setSelectedApi(p.id); setPopup({ kind: "provider", id: p.id }); }} className="provider-instance-row">
+              <ProviderLogo provider={p.id} className="size-5 shrink-0" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="flex min-w-0 items-center gap-2"><span className="truncate text-sm font-normal">{p.name}</span>
+                {p.id === defaultId && <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-2xs font-normal text-accent-ink">Default</span>}</span>
+                <span data-provider-readiness={p.ready ? "configured" : "needs-setup"} className="truncate text-xs text-ink-secondary">{p.model ? modelName(toRef(p.id, p.model)) : p.ready ? "Configured" : "Needs setup"}</span>
+              </span>
+            </button>)}
+            serviceDetail={editingProvider && <div ref={popupContentRef} data-provider-popup="provider" className="flex min-w-0 flex-col gap-4">
+              <div className="flex items-center gap-2"><Button variant="ghost" size="icon-xs" className="provider-detail-back" aria-label="Back to connections" onClick={closePopup}><Icon name="chevron-left" /></Button>
+                <ProviderLogo provider={editingProvider.id} className="size-5" /><h4 ref={popupTitleRef} tabIndex={-1} className="min-w-0 flex-1 truncate text-sm font-normal text-ink outline-none">{editingProvider.name}</h4>
               </div>
-            </div>
-          </SettingGroup>}
-          <AgentInstances onBusyChange={onBusyChange} act={act} request={instanceRequest} backendVersion={settings.backend} onRequestedClose={onRequestedProviderClose} />
+              <div key={editingProvider.id} className="flex flex-col gap-5" data-provider-configuration={editingProvider.id}>
+                {editingProvider.id === "anthropic" ? <KeyForm hasKey={editingProvider.hasKey} act={act} provider={editingProvider} /> : <ProviderSetup provider={editingProvider} act={act} />}
+                <div className="border-t border-line pt-4">{editingProvider.id === "anthropic" ? <ModelPicker current={settings.model ?? DEFAULT_MODEL} act={act} /> : <ProviderModel provider={editingProvider} act={act} />}</div>
+              </div>
+              {actionError && <p role="alert" className="text-xs text-danger-ink">{actionError}</p>}
+              <div data-slot="dialog-footer" className="flex flex-wrap items-center gap-2">
+                {!editingIsDefault && <Button size="sm" disabled={changingDefault || !!setupRequirement} aria-describedby={setupRequirement ? setupHintId : undefined}
+                  data-backend="phaethon" data-provider-default={editingProvider.id} onClick={() => useProvider(editingProvider)}>Use as default</Button>}
+                {requestedPopup.current && <Button variant="ghost" size="sm" onClick={closePopup}>Done</Button>}
+                {setupRequirement && !editingIsDefault && <p id={setupHintId} data-provider-requirement="" className="basis-full text-xs text-ink-secondary">{setupRequirement}</p>}
+              </div>
+            </div>} />
           {actionError && !popup && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
         </>
       )}
-      <Dialog open={popup !== null} onOpenChange={(open) => { if (!open && !signingIn) closePopup(); }}>
+      <Dialog open={popup?.kind === "catalog"} onOpenChange={(open) => { if (!open && !signingIn) closePopup(); }}>
         <DialogContent
           ref={popupContentRef}
           className="flex max-w-lg! flex-col overflow-hidden"
@@ -255,6 +247,10 @@ export function AgentSection({
           }}
           onCloseAutoFocus={(e) => {
             if (closingToChat.current) e.preventDefault();
+            if (selectedApi && popup?.kind === "provider") {
+              e.preventDefault();
+              requestAnimationFrame(() => { if (!focusRequestedProviderField()) popupTitleRef.current?.focus(); });
+            }
             closingToChat.current = false;
           }}
           onEscapeKeyDown={(e) => { if (signingIn) e.preventDefault(); }}
@@ -262,7 +258,7 @@ export function AgentSection({
         >
           <DialogHeader className="shrink-0">
             <div className="flex items-center gap-3">
-              {editingProvider && <ProviderLogo provider={editingProvider.id} className="size-9" />}
+              {popup?.kind !== "catalog" && editingProvider && <ProviderLogo provider={editingProvider.id} className="size-9" />}
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <DialogTitle ref={popupTitleRef} tabIndex={-1}>
                   {popup?.kind === "catalog" ? "Add connection" : editingProvider?.name ?? "Provider"}
@@ -287,7 +283,7 @@ export function AgentSection({
                         {providers.filter(g.test).map((p) => (
                           <Button
                             key={p.id} variant="ghost" className="w-full text-start [&>.ui-button-face]:w-full [&>.ui-button-face]:min-h-8 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2 [&>.ui-button-face]:px-2 [&>.ui-button-face]:py-1.5" data-provider-catalog-select={p.id}
-                            onClick={() => setPopup({ kind: "provider", id: p.id })}
+                            onClick={() => { setSelectedApi(p.id); setPopup({ kind: "provider", id: p.id }); }}
                           >
                             <ProviderLogo provider={p.id} className="size-4" />
                             <span className="min-w-0 flex-1 text-sm font-normal">{p.name}</span>
@@ -303,7 +299,7 @@ export function AgentSection({
                       {CLI_BACKENDS.map((b) => (
                         <Button
                           key={b} variant="ghost" className="w-full text-start [&>.ui-button-face]:w-full [&>.ui-button-face]:min-h-8 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2 [&>.ui-button-face]:px-2 [&>.ui-button-face]:py-1.5" data-provider-catalog-select={b}
-                          onClick={() => { setPopup(null); setInstanceRequest({ cli: CLI_INFO[b].id, n: Date.now(), create: true }); }}
+                          onClick={() => { setPopup(null); setSelectedApi(null); setInstanceRequest({ cli: CLI_INFO[b].id, n: Date.now(), create: true }); }}
                         >
                           <ProviderLogo provider={b} className="size-4" />
                           <span className="min-w-0 flex-1 text-sm font-normal">{CLI_INFO[b].name}</span>
@@ -312,39 +308,12 @@ export function AgentSection({
                     </div>
                   </div>
                 </div>
-              ) : editingProvider ? (
-                <div className="flex flex-col gap-6" data-provider-configuration={editingProvider.id}>
-                  {editingProvider.id === "anthropic" ? (
-                    <KeyForm hasKey={editingProvider.hasKey} act={act} provider={editingProvider} />
-                  ) : <ProviderSetup provider={editingProvider} act={act} />}
-                  <div className="border-t border-line pt-6">
-                    {editingProvider.id === "anthropic" ?
-                      <ModelPicker current={settings?.model ?? DEFAULT_MODEL} act={act} /> :
-                      <ProviderModel provider={editingProvider} act={act} />}
-                  </div>
-                </div>
               ) : null}
               {actionError && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
             </div>
           </ScrollArea>
           <DialogFooter className="shrink-0 flex-row flex-wrap">
-            {setupRequirement && !editingIsDefault && <p id={setupHintId} data-provider-requirement="" className="basis-full text-sm text-ink-secondary">{setupRequirement}</p>}
-            {popup?.kind !== "catalog" && (
-              <Button variant="ghost" disabled={signingIn} onClick={() => setPopup({ kind: "catalog" })}>
-                All providers
-              </Button>
-            )}
-            {popup?.kind !== "catalog" && !editingIsDefault && (
-              <Button
-                variant={editingProvider?.ready && !setupRequirement ? "default" : "outline"}
-                disabled={signingIn || changingDefault || !!setupRequirement} aria-describedby={setupRequirement ? setupHintId : undefined}
-                data-backend="phaethon" data-provider-default={editingProvider?.id}
-                onClick={() => { if (editingProvider) useProvider(editingProvider); }}
-              >
-                Use as default
-              </Button>
-            )}
-            <Button variant="outline" disabled={signingIn} onClick={closePopup}>{popup?.kind === "catalog" ? "Cancel" : "Done"}</Button>
+            <Button variant="outline" onClick={closePopup}>Cancel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -448,7 +417,7 @@ function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameter
       }}
     >
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={inputId} className="text-base font-medium text-ink">
+        <label htmlFor={inputId} className="text-sm font-normal text-ink">
           Server URL
         </label>
         <p id={hintId} className="text-sm text-ink-secondary">
@@ -470,9 +439,9 @@ function AddressForm({ provider, act }: { provider: ProviderInfo; act: Parameter
             }}
             aria-describedby={[hintId, error && errorId].filter(Boolean).join(" ")}
             aria-invalid={error ? true : undefined}
-            className="min-w-(--ph-settings-label-min) flex-1 font-mono"
+            className="min-w-0 flex-1 font-mono"
           />
-          <Button type="submit" className="min-h-(--ph-control-height-lg)" data-provider-url-save="">
+          <Button type="submit" size="sm" data-provider-url-save="">
             Save
           </Button>
         </div>
@@ -614,7 +583,7 @@ function KeyForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={keyId} className="text-base font-medium text-ink">
+        <label htmlFor={keyId} className="text-sm font-normal text-ink">
           {hasKey ? "New API key" : "API key"}
         </label>
         <div className="flex flex-wrap gap-2">
@@ -634,9 +603,9 @@ function KeyForm({
             }}
             aria-describedby={describedBy}
             aria-invalid={bad ? true : undefined}
-            className="min-w-(--ph-settings-label-min) flex-1 font-mono"
+            className="min-w-0 flex-1 font-mono"
           />
-          <Button type="submit" variant={hasKey && !keyDraft ? "outline" : "default"} aria-disabled={saving || undefined} className="min-h-(--ph-control-height-lg) aria-disabled:cursor-progress">
+          <Button type="submit" variant={hasKey && !keyDraft ? "outline" : "default"} aria-disabled={saving || undefined} size="sm" className="aria-disabled:cursor-progress">
             {saving ? "Checking…" : "Check and save"}
           </Button>
         </div>
@@ -765,7 +734,7 @@ function ModelPicker({ current, act }: { current: string; act: Parameters<typeof
   return (
     <>
     <div data-setting-row="" className="flex flex-col gap-1.5">
-      <label htmlFor={selectId} className="text-base font-medium text-ink">Default model</label>
+      <label htmlFor={selectId} className="text-sm font-normal text-ink">Default model</label>
       <NativeSelect
         id={selectId}
         data-model-select=""
@@ -822,7 +791,7 @@ function OwnModels() {
 
   return (
     <div className="mt-4 flex flex-col gap-2 border-t border-line pt-4" data-own-models="">
-      <p id={titleId} className="text-base font-medium text-ink">
+      <p id={titleId} className="text-sm font-normal text-ink">
         Spaces with their own model
       </p>
       <ul ref={listRef} aria-labelledby={titleId} className="flex flex-col gap-2">

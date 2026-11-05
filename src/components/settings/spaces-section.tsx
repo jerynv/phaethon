@@ -6,6 +6,7 @@ import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Input } from "@/components/ui/input";
+import { WorkspaceFolderSetting } from "./workspace-folder";
 import { Icon } from "@/icons";
 import { getSettings } from "@/lib/backend";
 import { setFullAccess, useFullAccess } from "@/lib/full-access";
@@ -472,6 +473,7 @@ function SpaceEditor({ space, onDirty }: { space: Space; onDirty: (dirty: boolea
         <label htmlFor={descId} className="text-sm font-normal text-ink">Description <span className="font-normal text-ink-tertiary">Optional</span></label>
         <Input id={descId} value={draft.description} placeholder="Projects, notes and plans" maxLength={SPACE_DESCRIPTION_MAX} autoComplete="off" data-space-field="description" data-dirty={dirty ? "" : undefined} onChange={(e) => { setDraft((d) => ({ ...d, description: e.target.value })); setSaved(false); }} onKeyDown={(e) => { if (e.key === "Escape" && dirty) { e.preventDefault(); e.stopPropagation(); reset(); } }} />
       </div>
+      <WorkspaceFolderSetting space={space.id} />
       <div className="flex flex-col gap-2"><span className="text-sm font-normal text-ink">Colour</span><HueSwatches label={`Colour, ${space.name}`} presets={presets} value={draft.hue} onPick={(hue) => { setDraft((d) => ({ ...d, hue })); setSaved(false); }} swatchColour={spaceSwatch} checkColour={spaceSwatchCheck} /></div>
       <div className="rounded-lg border border-line"><SwitchRow label="Education" description="Study, grades and planning for this space." checked={draft.educationEnabled} onChange={(educationEnabled) => { setDraft((d) => ({ ...d, educationEnabled })); setSaved(false); }} status={draft.educationEnabled ? "On" : "Off"} /></div>
       <div data-space-folder="" className="flex items-center gap-2 text-xs text-ink-secondary"><Icon name="folder" className="size-(--ph-icon-size-sm)" /><code className="min-w-0 wrap-anywhere">spaces/{space.id}/</code></div>

@@ -7,7 +7,7 @@ export function inTauri(): boolean {
 
 /**
  * Inside Tauri: forward a line to the terminal that launched the app. The Rust
- * command only prints in debug builds, so release builds drop it. Used for CSP
+ * command prints in debug builds or with PHAETHON_DIAGNOSTICS. Used for CSP
  * violation reports and startup checks. Never throws.
  */
 export async function devLog(message: string): Promise<void> {

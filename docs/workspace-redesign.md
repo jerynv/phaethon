@@ -1,10 +1,22 @@
 # Personal workspace redesign
 
+## Native startup correction verified
+
+The previous window/process check missed a real black-window defect: a native-only `Object.freeze(Object.prototype)` script threw in D3 before React. Temporary dependency patches exposed the same issue in Dayjs/diagram code and were removed. The app now uses the existing Tauri `freezePrototype:false` configuration without a manual override. This removes optional prototype hardening; CSP, command ACLs and native filesystem checks are unchanged. The official Vic archive, dependency versions and lockfile remain unchanged.
+
+The browser runner now reads the native configuration. The new `native-startup` scenario requires rendered controls and working Settings; a native unit test prevents an untested startup override. Final verification: **60 targeted Chromium checkpoints, 35 JavaScript tests and 481 native tests passed** (21 native probes ignored). The target flows cover boot, conversations, Settings, account management, palette density, course quiz and lazy Mermaid diagrams in light/dark at 1100×720 and 640×480. Full native coverage was rerun; the historical 840-checkpoint browser suite below was not repeated for this correction.
+
+The final rebuilt application replaced the intermediate repair, preserving data. Its own macOS WKWebView reports 75 controls, a visible 1100×720 root and an unfrozen prototype. A newly written native snapshot at `/tmp/phaethon-final-fixed-native.png` has the same pixels as the inspected working native capture: sidebar, conversation, composer and Settings are rendered. Signature and installed/built executable hashes match. This establishes native rendered content, beyond the earlier process/window check; it does not claim a complete native click-through.
+
+Logs: `/tmp/phaethon-compatible-native-build.log`, `/tmp/phaethon-compatible-native-bundle.log`, `/tmp/phaethon-boot-compatible-regression.log`, `/tmp/phaethon-boot-final-js-unit.log`, `/tmp/phaethon-boot-final-native-tests.log`, `/tmp/phaethon-final-fixed-native-startup.log`. Opt-in `PHAETHON_DIAGNOSTICS` and launcher-only `PHAETHON_SNAPSHOT_PATH` provide future native proof without screen-recording access. The screenshot remains outside the repository because it contains personal conversation data.
+
+All review workers finished; both reproduction servers and the preview tab are closed. The installed app is left running. No dependency patches or implementation work remain pending. If another black window occurs, capture the native diagnostics/image before interpreting process exit or window existence as success.
+
 Final checkpoint: 2026-11-04. Implemented on `feat/vic-ui-migration` from local baseline `a328e5c`. This revision is for personal use: no Phaethon changes were pushed or published. The pre-existing untracked root `CLAUDE.md` was left untouched.
 
 ## Result
 
-The redesigned app is installed at `/Applications/Phaethon.app` and its native 1100×720 window was observed on screen. The installed executable matches the tested bundle, SHA-256 `768a37e1281bed991550728711840ace51411b69c669b7644cd29513a0ed11cd`. Existing application data was preserved. The previous app is backed up at `~/Library/Application Support/Phaethon App Backups/20261104-215353/Phaethon.app`.
+The redesigned app is installed at `/Applications/Phaethon.app` and its native 1100×720 window was observed on screen. The installed executable matches the tested bundle, SHA-256 `d4016da1122a945c3fd5b6b160dce92a8b9cb7ade84e23b14f785eb418ea752b`. Existing application data was preserved. The previous app is backed up at `~/Library/Application Support/Phaethon App Backups/20261104-224719/Phaethon.app`.
 
 The application now consumes the released upstream Vic UI archive from `a2521a914b02d4c8acefccead2d04e44d300e489`. Its verified SHA-256 is `b109c04e29336e7da6c137a0b42d330d64bcb4ac05bfc52656a0f72316c6a028`. The private compatibility port, flat accent-face overrides and circular-button workaround are retired. Package provenance and update instructions are in `vendor/README.md`.
 
@@ -42,7 +54,7 @@ Keep the hybrid stack: Rust for native services, permissions, OCR and process su
 
 A live reduced-motion failure was reproduced before correction: the global 0.01ms transition rule created visibility transitions on retained panels and made composer focus fail. Both reduced-motion rules now use zero transition duration. The old rule failed all four focused variants; the corrected rule passed sixteen theme/size/provider variants. A real preview interaction then confirmed Quiz → AI help focuses the composer, includes source context and does not send automatically, with no experimental style or instrumentation.
 
-The first LaunchServices process exited without a diagnostic report. A subsequent direct launch of the installed executable stayed running with an on-screen window during the final check; no crash cause is inferred. If startup exits recur, inspect native startup/unified logs before reinstalling.
+The first LaunchServices process exited without a diagnostic report. A subsequent direct launch stayed running, but window existence did not establish rendering; the startup correction above supersedes that check. No crash cause is inferred. If startup exits recur, inspect native startup/unified logs before reinstalling.
 
 ## Design review
 

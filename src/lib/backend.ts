@@ -74,9 +74,9 @@ export type CliSignIn = {
  */
 export const signInCli = (cli: "codex" | "gemini") => invoke<CliSignIn>("agent_cli_sign_in", { cli });
 /** One model a CLI offers. Mirrors `CliModel` in src-tauri/src/agent/models.rs. */
-export type CliModelInfo = { id: string; name: string; description?: string };
+export type CliModelInfo = ModelInfo & { description?: string };
 /** A CLI's models, from the CLI itself; `note` says in words when it can't list them (or couldn't now). */
-export type CliModelList = { models: CliModelInfo[]; note?: string };
+export type CliModelList = { models: CliModelInfo[]; note?: string; defaultModel?: string };
 /** The models `cli` offers, asked of the CLI itself (listing only). */
 export const listCliModels = (cli: "claude" | "codex" | "gemini") => invoke<CliModelList>("agent_cli_models", { cli });
 
@@ -220,7 +220,7 @@ export const checkApiKey = (key: string, provider: ProviderId = "anthropic") =>
 
 /** A model Phaethon's own agent can use. `name` is for people ("Claude Opus 5.5"). */
 /** `sees`: whether it reads pictures, where the provider's list says (src-tauri/src/vision.rs). */
-export type ModelInfo = { id: string; name: string; sees?: "yes" | "no" | "unknown" };
+export type ModelInfo = { id: string; name: string; sees?: "yes" | "no" | "unknown"; aliases?: string[]; reasoningEfforts?: string[]; defaultReasoningEffort?: string };
 /**
  * Anthropic's: from Anthropic when a key works, a fixed list otherwise. Any
  * other provider's: its own list, or an error in words (a model can still be typed).

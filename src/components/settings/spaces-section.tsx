@@ -1,4 +1,4 @@
-import { NativeSelect } from "vic-ui";
+import { Badge, NativeSelect } from "vic-ui";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { SPACE_HUES, spaceSwatch, spaceSwatchCheck } from "@/components/shell/new-space-dialog";
@@ -334,7 +334,7 @@ function SpaceRow({ space, fileError, open, hidden, onEdit }: { space: Space; fi
           {notes && <p data-space-notes="" className="text-xs text-ink-secondary">{notes}</p>}
 
         </div>
-        <span data-space-full-access="" className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-xs text-ink-secondary">{fullAccess ? "Full access" : "Workspace"}</span>
+        <Badge data-space-full-access="" tone={fullAccess ? "danger" : "neutral"} dot={fullAccess} className={fullAccess ? "border-transparent bg-danger-soft" : "border-transparent"}>{fullAccess ? "Full access" : "Workspace"}</Badge>
         {space.educationEnabled && <span className="shrink-0 rounded-md bg-accent-soft px-2 py-0.5 text-xs text-accent-ink">Education</span>}
         <Button
           type="button"

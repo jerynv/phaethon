@@ -1,5 +1,40 @@
 # Personal workspace redesign
 
+## R4 correction installed: actual catalogs and full walkthrough gaps
+
+Baseline f45cf13 on feat/vic-ui-migration. The owner reopened the full walkthrough after finding the old Claude help-parser explanation and missing reasoning. The corrected app is installed at /Applications/Phaethon.app and left running (PID6291). SHA256 bf92aed79024ab160dc28b12b4b449ac80f00be5d9f91f2ce3d242908a56e799 matches the final signed source bundle. Previous app backup: ~/Library/Application Support/Phaethon App Backups/20261105-033719/Phaethon.app; original backup remains retained. Personal data preserved, untracked CLAUDE.md untouched, no Phaethon push/publication.
+
+### Full walkthrough reconciliation
+
+Independent read-only audit /tmp/phaethon-r4-walkthrough-gaps.md inspected all14brief areas and identified7concrete gaps. Source review is not behavioral proof. The corrections below have direct verification; the previously implemented general-page flows retain their R3 evidence rather than a fabricated10/10 claim.
+
+| Gap | Implemented correction and evidence |
+| --- | --- |
+| Claude help aliases and missing reasoning | Claude uses initialize control metadata: full canonical names, aliases, real default and model-specific native efforts. Codex uses paginated app-server model/list with actual default/efforts; debug metadata is fallback. Metadata-only live probes observed13Claude/8Codex entries, no user/model turn or account details logged. Version-filtered T3 manifest fallback retained for offline Claude. Successful catalogs have no explanation paragraphs. Reports /tmp/phaethon-r4-model-catalog-report.md and /tmp/phaethon-r4-reasoning-runtime-report.md. |
+| Study ignored the selection | Chat and Study resolve the perCLI/permodel preference, apply real Claude --effort / Codex model_reasoning_effort and preserve the captured setting through workflow/retry. Study text AND image calls retain their no-tools/read-only limits. FakeCLI tests cover construction→argv/payload, later setting changes, Default/reset and unsupported no-spawn. /tmp/phaethon-r4-study-selection-report.md. |
+| Silent import prefixes | Brightspace refuses absent/repeated/unsafe/capped continuation, including Dropbox pagination. Canvas no longer silently cuts referenced files at300. Actual350file fakeHTTP import/reimport yields350unchanged/0downloads and unchangedmtime; existing corruption/hash/cancel tests pass. Discovery limits remain200Brightspacepages/100Canvaspages/10kCanvasreferences, with explicit Incomplete above them rather than false completion. No persisted discovery cursor beyond those caps is claimed. /tmp/phaethon-r4-import-completeness-report.md. |
+| Education commands in Work | Palette view commands use visibleViews; due/quiz/deck commands require supportsEducation. Tests prove noneducation Work omits those actions, and saving Education enables them in both themes/widths. /tmp/phaethon-r4-education-confirm.log. |
+| Collapse erased unread | Conversation state observers remain mounted through folder/sidebar visibility; portal controls and lazy history follow visibility. Unread is keyed by conversation; collapsed folder marks it, repeated collapse preserves it, opening the actual conversation acknowledges it. New completion-while-collapsed scenario passes. This does not claim unread persistence across app restarts. |
+| Missing colored Full access pill and Blackboard mark | Vic Badge uses the semantic danger tint in the picker/Settings. Blackboard uses the exact local512PNG embedded in its official favicon SVG; URL/SHA provenance in assets/course-sites/sources.json. Actual decoded image and affected light/dark render inspected. |
+| Remaining tutorial copy | Removed custom-model instruction/example paragraphs and successful-list coaching; provider/context remain in title, example in placeholder, errors remain associated with field. Settings API search renders all matches rather than silently capping50. Tests exercise120models/search/custom entry. |
+
+### Final verification
+
+- Final complete Chromium suite:938checkpoints/0failed scenarios across4shards, immutable /tmp/phaethon-r4-delivery-dist. Totals/logs: /tmp/phaethon-r4-ui-results.json and /tmp/phaethon-r4-delivery-shard-{1,2,3,4}.log.
+- Native cargo test --tests:527passed/0failed/21ignored across19executables: /tmp/phaethon-r4-walkthrough-native-all.log. This includes the combined492library checks for Study, import and catalog/runtime changes.
+- JavaScript units35passed/0failed: /tmp/phaethon-r4-js-unit.log. TypeScript, Vite and design checks pass; git diff --check clean. Mechanical detector ran on the model scope and newly expanded App/Settings/sidebar scope with zero findings.
+- Focused model/persistence/keyboard cases48/0 on the delivery build: /tmp/phaethon-r4-delivery-targeted.log. They prove focus returns after async effort saving, Escape closes the actual picker, reopen restores the selection, and failed writes retain prior state.
+- Rendered reasoning12captures/0 and affected pill/logo6captures/0; root inspected desktop/narrow light/dark samples. /tmp/phaethon-r4-reasoning-confirm.log and /tmp/phaethon-r4-walkthrough-captures.log. Later fixes preserve resolved names during refresh, restore focus after save and remove obsolete success-list coaching; final complete suite checks those paths.
+- Final native signature/bundle hash/process and fresh WKWebView rendering inspected: /tmp/phaethon-r4-native-proof.json, /tmp/phaethon-r4-delivery-native-bundle.log, /tmp/phaethon-r4-install.log. Own WKWebView reports95buttons, visible1100x720 and unfrozen prototype. Root observed actual conversation, sidebar and resolved Codex model name. Native image remains outside Git because it contains personal conversation data.
+
+Initial failures remain in diagnostic logs; they are not claimed clean. They exposed invalid-model preference lookup changing the existing filter contract, lazy-expansion dependency, metadata-name loss during refresh and focus loss after async effort save. Each cause was corrected and affected flows rerun. One intermediate UI shard exited ENOENT when root rebuilt shared dist; it was discarded and the final suite uses an immutable build. Stale tests asserting removed tutorial copy/capped50rows were migrated while preserving error association, full catalog reachability, persistence and actual action assertions.
+
+### Evidence limits and cleanup
+
+No paid live inference turn at a selected effort was performed. Actual model metadata and installed-CLI contracts plus fakeCLI argv/payload tests establish propagation, not provider answer quality. New real-account browser auth, real signed-in LMS import/reimport/OCR cancellation and actual microphone recognition remain unverified. Prior known axe findings remain deferred; this is not a whole-app accessibility audit. Gemini retains its installed CLI menu aliases and exposes no invented native reasoning control. No Calendar sync, new RAG runtime, Office or media renderer is claimed.
+
+All workers and audit are complete/frozen. No owned preview tab/server remains. Final runner processes exited; the installed app intentionally stays running. Source references and failed/clean evidence are retained in /tmp reports. Further product feedback should be reproduced against this installed correction, with actual failures kept distinct from historical-content issues or untested live integrations.
+
 ## R3 correction installed: literal T3 structure and complete discrepancy coverage
 
 Baseline0e59501 on feat/vic-ui-migration. The owner rejected the prior adaptation: source references and passing tests did not satisfy the required T3 composition. Every item below is required. Preserve the untracked CLAUDE.md, personal data and the running installed app until a verified replacement is ready. Existing personal installation/>400line/capture/agent authorizations continue. Capture general pages in one bounded batch and one confirmation, not every possible state. No publication requested.

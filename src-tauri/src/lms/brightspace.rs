@@ -100,7 +100,7 @@ struct Paged<T> {
 #[serde(rename_all = "PascalCase", default)]
 struct PagingInfo {
     bookmark: Option<String>,
-    has_more_items: bool,
+    has_more_items: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -303,16 +303,24 @@ pub async fn courses(s: &Session) -> Result<Vec<Course>, LmsError> {
     let mut enrollments: Vec<Enrollment> = Vec::new();
     let mut seen = HashSet::new();
     let mut path = first.clone();
+    let mut complete = false;
     for _ in 0..MAX_PAGES {
         let page: Paged<Enrollment> = s.get_json(&path).await?;
         enrollments.extend(page.items);
-        let Some(info) = page.paging_info else { break };
-        match info.bookmark {
-            Some(b) if info.has_more_items && !b.is_empty() && seen.insert(b.clone()) => {
-                path = format!("{first}&bookmark={}", url::form_urlencoded::byte_serialize(b.as_bytes()).collect::<String>());
-            }
-            _ => break,
+        let info = page.paging_info.ok_or_else(|| LmsError::Incomplete("Brightspace omitted course pagination information. The course list is incomplete.".into()))?;
+        match info.has_more_items {
+            Some(false) => { complete = true; break }
+            Some(true) => {}
+            None => return Err(LmsError::Incomplete("Brightspace omitted whether more courses remain. The course list is incomplete.".into())),
         }
+        let bookmark = info.bookmark.filter(|b| !b.trim().is_empty()).ok_or_else(|| LmsError::Incomplete("Brightspace reported more courses without a bookmark. The course list is incomplete.".into()))?;
+        if !seen.insert(bookmark.clone()) {
+            return Err(LmsError::Incomplete("Brightspace repeated a course bookmark. The course list is incomplete.".into()));
+        }
+        path = format!("{first}&bookmark={}", url::form_urlencoded::byte_serialize(bookmark.as_bytes()).collect::<String>());
+    }
+    if !complete {
+        return Err(LmsError::Incomplete(format!("Brightspace exceeded {MAX_PAGES} course pages. The course list is incomplete.")));
     }
 
     let mut ids = HashSet::new();
@@ -434,7 +442,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
     // Assignments (dropbox folders).
     match s.get_json::<FolderList>(&api.le(ou, "/dropbox/folders/")).await {
         Ok(list) => {
-            for f in list.into_vec().into_iter().filter(|f| !f.is_hidden) {
+            for f in list.into_vec(s, &api.le(ou, "/dropbox/folders/")).await?.into_iter().filter(|f| !f.is_hidden) {
                 let mut html = f.custom_instructions.as_ref().and_then(RichText::to_html).unwrap_or_default();
                 for a in &f.attachments {
                     let url = join(base, &api.le(ou, &format!("/dropbox/folders/{}/attachments/{}", f.id, a.file_id)))?;
@@ -515,10 +523,12 @@ enum FolderList {
 }
 
 impl FolderList {
-    fn into_vec(self) -> Vec<DropboxFolder> {
+    async fn into_vec(self, s: &Session, first: &str) -> Result<Vec<DropboxFolder>, LmsError> {
         match self {
-            FolderList::List(v) => v,
-            FolderList::Paged(p) => p.objects,
+            FolderList::List(v) => Ok(v),
+            FolderList::Paged(p) if p.next.is_some() => objects(s, first).await,
+            // Some older versions return a nonpaginated Objects envelope.
+            FolderList::Paged(p) => Ok(p.objects),
         }
     }
 }
@@ -530,22 +540,31 @@ async fn objects<T: serde::de::DeserializeOwned + Default>(s: &Session, first: &
     let mut seen = HashSet::new();
     let mut path = first.to_string();
     for _ in 0..MAX_PAGES {
-        let page: ObjectPage<T> = s.get_json(&path).await?;
+        if !seen.insert(path.clone()) {
+            return Err(LmsError::Incomplete("Brightspace repeated a content page. The content list is incomplete.".into()));
+        }
+        let value: serde_json::Value = s.get_json(&path).await?;
+        let next = match value.get("Next") {
+            Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(next)) if !next.trim().is_empty() => Some(next.clone()),
+            _ => return Err(LmsError::Incomplete("Brightspace omitted a valid content continuation. The content list is incomplete.".into())),
+        };
+        let page: ObjectPage<T> = serde_json::from_value(value).map_err(|e| LmsError::Other(format!("Brightspace content couldn’t be read: {e}")))?;
         out.extend(page.objects);
-        let Some(next) = page.next.filter(|n| !n.is_empty() && seen.insert(n.clone())) else { break };
+        let Some(next) = next else { return Ok(out) };
         path = if next.starts_with('/') || next.contains("://") {
             match s.site.base.join(&next) {
                 Ok(u) if s.site.owns(&u) && u.path().starts_with("/d2l/api/") => {
                     u.query().map_or(u.path().to_string(), |q| format!("{}?{q}", u.path()))
                 }
-                _ => break,
+                _ => return Err(LmsError::Incomplete("Brightspace returned an invalid content continuation. The content list is incomplete.".into())),
             }
         } else {
             let sep = if first.contains('?') { '&' } else { '?' };
             format!("{first}{sep}bookmark={}", url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>())
         };
     }
-    Ok(out)
+    Err(LmsError::Incomplete(format!("Brightspace exceeded {MAX_PAGES} content pages. The content list is incomplete.")))
 }
 
 /// Walks the table of contents: each module with topics becomes a [`Module`]
@@ -635,7 +654,7 @@ fn push_file(c: &mut CourseContent, seen: &mut HashSet<Url>, f: RemoteFile) {
 /// SignedOut and network failures stop the whole read; anything else only skips a part.
 fn fatal(e: &LmsError) -> Result<(), LmsError> {
     match e {
-        LmsError::SignedOut | LmsError::Network(_) => Err(e.clone()),
+        LmsError::SignedOut | LmsError::Network(_) | LmsError::Incomplete(_) => Err(e.clone()),
         _ => Ok(()),
     }
 }
@@ -1237,6 +1256,28 @@ mod tests {
         assert!(at("https://school.brightspace.com/d2l/home", &[cookie("d2lSessionVal", "a"), cookie("d2lSecureSessionVal", "")]).is_none());
     }
 
+    #[tokio::test]
+    async fn incomplete_quiz_pagination_stops_the_course_instead_of_skipping_it() {
+        let mut routes = site_routes();
+        routes.insert(format!("{LE}/quizzes/"), json(r#"{"Objects":[],"Next":"repeat"}"#));
+        routes.insert(format!("{LE}/quizzes/?bookmark=repeat"), json(r#"{"Objects":[],"Next":"repeat"}"#));
+        let (base, _) = serve(routes).await;
+        let session = Session::new(Site::for_test(Kind::Brightspace, &base), Credential { cookies: vec![], csrf: None });
+        assert!(matches!(content(&session, "6606").await, Err(LmsError::Incomplete(_))));
+    }
+
+    #[tokio::test]
+    async fn paged_dropbox_folders_include_the_last_page() {
+        let mut routes = site_routes();
+        routes.insert(format!("{LE}/dropbox/folders/"), json(r#"{"Objects":[{"Id":1,"Name":"First"}],"Next":"second"}"#));
+        routes.insert(format!("{LE}/dropbox/folders/?bookmark=second"), json(r#"{"Objects":[{"Id":2,"Name":"Last"}],"Next":null}"#));
+        let (base, _) = serve(routes).await;
+        let session = Session::new(Site::for_test(Kind::Brightspace, &base), Credential { cookies: vec![], csrf: None });
+        let content = content(&session, "6606").await.unwrap();
+        assert!(content.assignments.iter().any(|a| a.title == "First"));
+        assert!(content.assignments.iter().any(|a| a.title == "Last"));
+    }
+
     #[test]
     fn names_from_titles_and_headers() {
         let at = Url::parse("https://s.example/content/enforced/1-X/Week1/3.1%20notes.pdf").unwrap();
@@ -1249,5 +1290,50 @@ mod tests {
         assert_eq!(disposition_name("inline"), None);
         assert!(after("2026-12-20T04:59:00.000Z", "2026-10-10T14:03:00Z"));
         assert!(!after("2025-05-10T03:59:00.000Z", "2026-10-10T14:03:00Z"));
+    }
+}
+
+#[cfg(test)]
+mod pagination_integrity_tests {
+    use super::*;
+    use crate::lms::{fake, Credential, Kind, Site};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn courses_refuse_repeated_missing_or_capped_bookmarks() {
+        for mode in ["cycle", "missing", "metadata", "more-metadata", "cap"] {
+            let (base, requests) = fake::serve(Arc::new(move |path| {
+                if path == "/d2l/api/versions/" { return fake::json(include_str!("../../tests/fixtures/brightspace/versions.json")) }
+                if path.ends_with("/users/whoami") { return fake::json(r#"{"Identifier":"fixture-user"}"#) }
+                if path.contains("/enrollments/myenrollments/") {
+                    if mode == "metadata" { return fake::json(r#"{"Items":[]}"#) }
+                    if mode == "more-metadata" { return fake::json(r#"{"Items":[],"PagingInfo":{"Bookmark":"next"}}"#) }
+                    let n = path.split("bookmark=").nth(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                    let bookmark = match mode { "missing" => serde_json::Value::Null, "cycle" => serde_json::json!("again"), _ => serde_json::json!((n + 1).to_string()) };
+                    return fake::json(serde_json::json!({"Items":[],"PagingInfo":{"HasMoreItems":true,"Bookmark":bookmark}}).to_string());
+                }
+                fake::status(404)
+            })).await;
+            let session = Session::new(Site::for_test(Kind::Brightspace, &base), Credential { cookies: vec![], csrf: None });
+            assert!(matches!(courses(&session).await, Err(LmsError::Incomplete(_))), "{mode}");
+            let count = requests.lock().unwrap().iter().filter(|r| r.target.contains("/enrollments/myenrollments/")).count();
+            assert_eq!(count, if mode == "cap" { MAX_PAGES } else if mode == "cycle" { 2 } else { 1 });
+        }
+    }
+
+    #[tokio::test]
+    async fn object_lists_refuse_repeated_missing_unsafe_or_capped_continuations() {
+        for mode in ["cycle", "missing", "empty", "unsafe", "cap", "complete"] {
+            let (base, requests) = fake::serve(Arc::new(move |path| {
+                if mode == "missing" { return fake::json(r#"{"Objects":[]}"#) }
+                let n = path.split("bookmark=").nth(1).and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                let next = match mode { "cycle" => serde_json::json!("again"), "empty" => serde_json::json!(""), "unsafe" => serde_json::json!("https://other.invalid/d2l/api/le/items"), "complete" => serde_json::Value::Null, _ => serde_json::json!((n + 1).to_string()) };
+                fake::json(serde_json::json!({"Objects":[],"Next":next}).to_string())
+            })).await;
+            let session = Session::new(Site::for_test(Kind::Brightspace, &base), Credential { cookies: vec![], csrf: None });
+            let result = objects::<serde_json::Value>(&session, "/d2l/api/le/1.82/6606/quizzes/").await;
+            if mode == "complete" { assert!(result.unwrap().is_empty()) } else { assert!(matches!(result, Err(LmsError::Incomplete(_))), "{mode}") }
+            assert_eq!(requests.lock().unwrap().len(), if mode == "cap" { MAX_PAGES } else if mode == "cycle" { 2 } else { 1 });
+        }
     }
 }

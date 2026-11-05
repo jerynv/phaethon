@@ -202,6 +202,14 @@
           else M.spaceModels[args.space] = args.model;
           return;
         }
+        case "space_reasoning_get":
+          return M.reasoning?.[args.space]?.[args.cli]?.[args.model ?? "$default"] ?? null;
+        case "space_reasoning_set": {
+          const values = ((M.reasoning ??= {})[args.space] ??= {})[args.cli] ??= {};
+          if (args.effort == null) delete values[args.model ?? "$default"];
+          else values[args.model ?? "$default"] = args.effort;
+          return;
+        }
         case "space_models_list": {
           const cli = cliWithModels();
           if (cli) return Object.fromEntries(Object.entries(M.cliModels?.[cli] ?? {}).map(([id, m]) => [id, `${cli}:${m}`]));

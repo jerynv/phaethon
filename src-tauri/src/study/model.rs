@@ -111,6 +111,9 @@ pub struct CliModel {
     pub cwd: PathBuf,
     /// Set only when the vault opts into an isolated CLI config.
     pub config_dir: Option<PathBuf>,
+    /// The space's chosen model and reasoning, captured together for this workflow.
+    pub model: Option<String>,
+    pub reasoning: Option<String>,
 }
 
 /// The arguments for a one-shot call: print mode, one JSON result, no tools
@@ -227,7 +230,12 @@ pub fn cli_message(user: &str, pictures: &[Picture]) -> String {
 }
 
 impl CliModel {
-    async fn ask(&self, args: Vec<String>, input: &str) -> Result<String, String> {
+    async fn ask(&self, mut args: Vec<String>, input: &str) -> Result<String, String> {
+        if let Some(model) = self.model.as_deref() {
+            if !agent::is_valid_cli_model(model) { return Err("Invalid model name.".into()); }
+            args.extend(["--model".into(), model.into()]);
+        }
+        agent::reasoning_args(agent::Cli::Claude, &mut args, self.reasoning.as_deref())?;
         let mut cmd = agent::command(agent::Cli::Claude, &self.bin, &self.cwd, self.config_dir.as_deref());
         cmd.args(args);
         let (stdout, stderr, status) = run_once(agent::Cli::Claude, cmd, input).await?;
@@ -275,13 +283,15 @@ pub struct OtherCliModel {
     pub config_dir: Option<PathBuf>,
     /// The space's own model for this CLI; its default when `None`.
     pub model: Option<String>,
+    pub reasoning: Option<String>,
 }
 
 impl OtherCliModel {
     /// The arguments for one question and what goes on stdin.
     pub fn invocation(&self, system: &str, user: &str) -> Result<(Vec<String>, String), String> {
-        let model = self.model.as_deref().filter(|m| agent::is_valid_cli_model(m));
-        Ok(match self.cli {
+        let model = self.model.as_deref();
+        if model.is_some_and(|model| !agent::is_valid_cli_model(model)) { return Err("Invalid model name.".into()); }
+        let (mut args, input) = match self.cli {
             agent::Cli::Codex => {
                 // Nothing readable but what Codex itself needs, and no shell at all.
                 let mut a = agent::codex::base_args(&self.cwd, &agent::codex::own_dirs(&self.bin), model);
@@ -301,7 +311,9 @@ impl OtherCliModel {
                 (agent::gemini::base_args(&policy, "json", model), format!("<instructions>\n{system}\n</instructions>\n\n{}", agent::gemini::prompt(None, user)))
             }
             agent::Cli::Claude => return Err("Claude Code is asked through CliModel.".into()),
-        })
+        };
+        agent::reasoning_args(self.cli, &mut args, self.reasoning.as_deref())?;
+        Ok((args, input))
     }
 }
 
@@ -461,30 +473,35 @@ pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&
     if let Some(cli) = agent::Cli::of(settings.backend) {
         crate::agent_instances::require_home(vault, isolated_config_root, &crate::agent_instances::selected(vault, cli))?;
     }
-    let cli = |_: &crate::vault::VaultSettings| {
-        if crate::agent_instances::require_home(vault, isolated_config_root, &crate::agent_instances::selected(vault, agent::Cli::Claude)).is_err() { return None; }
-        crate::agent_instances::binary(agent::Cli::Claude, cli_config_dir(vault, isolated_config_root, agent::Cli::Claude).as_deref()).map(|bin| CliModel {
-            bin,
-            cwd: space_dir.to_path_buf(),
-            config_dir: cli_config_dir(vault, isolated_config_root, agent::Cli::Claude),
-        })
+    let cli = || -> Result<Option<CliModel>, String> {
+        let assistant = agent::Cli::Claude;
+        if crate::agent_instances::require_home(vault, isolated_config_root, &crate::agent_instances::selected(vault, assistant)).is_err() { return Ok(None); }
+        let config_dir = cli_config_dir(vault, isolated_config_root, assistant);
+        let Some(bin) = crate::agent_instances::binary(assistant, config_dir.as_deref()) else { return Ok(None) };
+        let model = crate::space_model::get_cli(space_dir, assistant.id());
+        let reasoning = crate::space_model::get_reasoning(space_dir, assistant.id(), model.as_deref())?;
+        Ok(Some(CliModel { bin, cwd: space_dir.to_path_buf(), config_dir, model, reasoning }))
     };
     if settings.backend == Backend::ClaudeCli {
-        return cli(&settings).map(AnyModel::Cli).ok_or_else(|| agent::MISSING_CLI_MESSAGE.to_string());
+        return cli()?.map(AnyModel::Cli).ok_or_else(|| agent::MISSING_CLI_MESSAGE.to_string());
     }
     if let Some(other) = agent::Cli::of(settings.backend) {
-        let bin = crate::agent_instances::binary(other, cli_config_dir(vault, isolated_config_root, other).as_deref()).ok_or_else(|| other.missing_message().to_string())?;
+        let config_dir = cli_config_dir(vault, isolated_config_root, other);
+        let bin = crate::agent_instances::binary(other, config_dir.as_deref()).ok_or_else(|| other.missing_message().to_string())?;
+        let model = crate::space_model::get_cli(space_dir, other.id());
+        let reasoning = crate::space_model::get_reasoning(space_dir, other.id(), model.as_deref())?;
         return Ok(AnyModel::OtherCli(OtherCliModel {
             cli: other,
             bin,
             cwd: space_dir.to_path_buf(),
-            config_dir: cli_config_dir(vault, isolated_config_root, other),
-            model: crate::space_model::get_cli(space_dir, other.id()),
+            config_dir,
+            model,
+            reasoning,
         }));
     }
     match crate::providers::for_space(vault, space_dir) {
         Ok(p) => Ok(AnyModel::Api(ProviderModel(p, crate::vision::for_space(vault, space_dir).shown))),
-        Err(why) => cli(&settings).map(AnyModel::Cli).ok_or(why),
+        Err(why) => cli()?.map(AnyModel::Cli).ok_or(why),
     }
 }
 
@@ -717,6 +734,88 @@ pub mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn study_text_and_images_use_captured_model_and_reasoning_from_the_selected_connection() {
+        for (cli, selected_model, next_model, effort) in [
+            (agent::Cli::Claude, "claude-opus-5-5", "claude-sonnet-5-5", "max"),
+            (agent::Cli::Codex, "gpt-6.1-sol", "gpt-6-luna", "xhigh"),
+        ] {
+            let root = std::env::temp_dir().join(format!("phaethon-study-selection-{}-{}", cli.id(), std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            let vault = Vault::at(&root);
+            vault.ensure_initialized().unwrap();
+            let config = root.join("owned-cli-homes");
+            let bin = fake_cli(&root.join("fake"), r#"for a in "$@"; do printf '%s\n' "$a"; done > "$(dirname "$0")/args"
+cat > "$(dirname "$0")/stdin"
+for a in "$@"; do case "$a" in --image=*) cat "${a#--image=}" > "$(dirname "$0")/image";; esac; done
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"{\"ok\":true}"}}' '{"type":"result","subtype":"success","result":"{\"ok\":true}"}'"#);
+            let instance = crate::agent_instances::Instance { id: format!("{}-study", cli.id()), cli: cli.id().into(), name: "Study test".into(), binary: bin.to_string_lossy().into_owned(), args: vec![] };
+            crate::agent_instances::save(&vault, Some(&config), instance.clone()).unwrap();
+            crate::agent_instances::select(&vault, &instance.id).unwrap();
+            let cwd = vault.space_dir("school").unwrap();
+            crate::space_model::set_cli(&vault, "school", cli.id(), Some(selected_model)).unwrap();
+            crate::space_model::set_reasoning(&vault, "school", cli.id(), Some(selected_model), Some(effort)).unwrap();
+            let captured = for_space(&vault, &cwd, Some(&config)).unwrap();
+            // Changes for the next workflow do not alter a generation/grading
+            // operation or ask_json retry already holding this model.
+            crate::space_model::set_cli(&vault, "school", cli.id(), Some(next_model)).unwrap();
+            crate::space_model::set_reasoning(&vault, "school", cli.id(), Some(next_model), Some("low")).unwrap();
+            assert_eq!(block_on(captured.complete("Make a quiz.", "Study material.")).unwrap(), "{\"ok\":true}");
+            let read_args = || std::fs::read_to_string(root.join("fake/args")).unwrap();
+            let has = |args: &str, flag: &str, value: &str| args.lines().collect::<Vec<_>>().windows(2).any(|pair| pair == [flag, value]);
+            let check_selected = |args: &str| {
+                assert!(has(args, if cli == agent::Cli::Claude { "--model" } else { "-m" }, selected_model), "{args}");
+                if cli == agent::Cli::Claude {
+                    assert!(has(args, "--effort", effort) && has(args, "--tools", ""), "{args}");
+                    assert!(args.lines().any(|arg| arg == "--restricted"));
+                } else {
+                    assert!(has(args, "-c", &format!("model_reasoning_effort=\"{effort}\"")), "{args}");
+                    assert!(args.contains("approval_policy=\"never\"") && args.contains("--ephemeral") && args.contains("shell_tool"));
+                }
+                assert!(!args.contains("Study material.") && !args.contains("dangerously"), "prompt stays on stdin and study remains read-only");
+            };
+            check_selected(&read_args());
+            assert_eq!(std::fs::read_to_string(root.join("fake/stdin")).unwrap(), "Study material.");
+            let picture = Picture { label: "Original page 1".into(), mime: "image/png".into(), data: "aGk=".into() };
+            assert_eq!(block_on(captured.complete_seeing("Make a quiz.", "Read handwriting.", &[picture])).unwrap(), "{\"ok\":true}");
+            check_selected(&read_args());
+            let input = std::fs::read_to_string(root.join("fake/stdin")).unwrap();
+            assert!(input.contains("Read handwriting.") && input.contains("Original page 1"));
+            if cli == agent::Cli::Claude { assert!(input.contains("aGk=")); }
+            else { assert_eq!(std::fs::read(root.join("fake/image")).unwrap(), b"hi"); }
+            crate::space_model::set_cli(&vault, "school", cli.id(), None).unwrap();
+            crate::space_model::set_reasoning(&vault, "school", cli.id(), None, Some("high")).unwrap();
+            let default_with_reasoning = for_space(&vault, &cwd, Some(&config)).unwrap();
+            block_on(default_with_reasoning.complete("Grade the answer.", "Answer.")).unwrap();
+            let args = read_args();
+            assert!(!args.lines().any(|arg| matches!(arg, "--model" | "-m")));
+            if cli == agent::Cli::Claude { assert!(has(&args, "--effort", "high")); }
+            else { assert!(has(&args, "-c", "model_reasoning_effort=\"high\"")); }
+            crate::space_model::set_reasoning(&vault, "school", cli.id(), None, None).unwrap();
+            let default = for_space(&vault, &cwd, Some(&config)).unwrap();
+            block_on(default.complete("Grade the answer.", "Answer.")).unwrap();
+            let args = read_args();
+            assert!(!args.lines().any(|arg| matches!(arg, "--model" | "-m" | "--effort")) && !args.contains("model_reasoning_effort"), "Default is not replaced with a guessed explicit value: {args}");
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn study_rejects_unsupported_reasoning_without_spawning_a_process() {
+        let root = std::env::temp_dir().join(format!("phaethon-study-unsupported-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = fake_cli(&root, "touch \"$(dirname \"$0\")/called\"");
+        let model = CliModel { bin: bin.clone(), cwd: root.clone(), config_dir: None, model: Some("claude-opus-5-5".into()), reasoning: Some("ultra".into()) };
+        assert!(block_on(model.complete("s", "u")).unwrap_err().contains("does not support"));
+        assert!(!root.join("called").exists());
+        let other = OtherCliModel { cli: agent::Cli::Gemini, bin, cwd: root.clone(), config_dir: None, model: Some("pro".into()), reasoning: Some("high".into()) };
+        assert!(other.invocation("s", "u").unwrap_err().contains("does not support"));
+        assert!(!root.join("called").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_fake_cli_gets_the_question_on_stdin_and_its_answer_is_read() {
         let dir = std::env::temp_dir().join(format!("phaethon-study-cli-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -729,7 +828,7 @@ printf '%s' "${CLAUDECODE:-unset}" > "$(dirname "$0")/env"
 printf '{"type":"result","subtype":"success","is_error":false,"result":"```json\\n{\\"cards\\": []}\\n```"}'"#,
         );
         unsafe { std::env::set_var("CLAUDECODE", "1") };
-        let m = CliModel { bin, cwd: dir.clone(), config_dir: None };
+        let m = CliModel { bin, cwd: dir.clone(), config_dir: None, model: None, reasoning: None };
         let reply = block_on(m.complete("You make flashcards.", "Material: sets")).unwrap();
         assert_eq!(extract_json(&reply).unwrap(), json!({"cards": []}));
         assert_eq!(std::fs::read_to_string(dir.join("stdin")).unwrap(), "Material: sets");
@@ -739,12 +838,12 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"```json\
         assert_eq!(std::fs::read_to_string(dir.join("env")).unwrap(), "unset", "a parent session's variables are removed");
 
         let logged_out = fake_cli(&dir.join("out"), r#"cat >/dev/null; echo '{"type":"result","is_error":true,"result":"Not logged in · Please run /login"}'"#);
-        let m = CliModel { bin: logged_out, cwd: dir.clone(), config_dir: None };
+        let m = CliModel { bin: logged_out, cwd: dir.clone(), config_dir: None, model: None, reasoning: None };
         assert_eq!(block_on(m.complete("s", "u")).unwrap_err(), agent::NOT_LOGGED_IN_MESSAGE);
         let crashed = fake_cli(&dir.join("crash"), "cat >/dev/null; echo 'boom: something broke' >&2; exit 3");
-        let m = CliModel { bin: crashed, cwd: dir.clone(), config_dir: None };
+        let m = CliModel { bin: crashed, cwd: dir.clone(), config_dir: None, model: None, reasoning: None };
         assert_eq!(block_on(m.complete("s", "u")).unwrap_err(), "Claude Code stopped: boom: something broke");
-        let m = CliModel { bin: dir.join("missing"), cwd: dir.clone(), config_dir: None };
+        let m = CliModel { bin: dir.join("missing"), cwd: dir.clone(), config_dir: None, model: None, reasoning: None };
         assert_eq!(block_on(m.complete("s", "u")).unwrap_err(), agent::MISSING_CLI_MESSAGE);
         std::fs::remove_dir_all(&dir).unwrap();
     }

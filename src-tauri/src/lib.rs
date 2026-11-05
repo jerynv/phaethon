@@ -921,6 +921,41 @@ fn space_model_set(state: State<'_, AppState>, space: String, model: Option<Stri
     }
 }
 
+/// Per-model reasoning override. No override leaves the assistant's own default.
+#[tauri::command]
+fn space_reasoning_get(state: State<'_, AppState>, space: String, cli: String, model: Option<String>) -> Result<Option<String>, String> {
+    let dir = state.vault.space_dir(&space)?;
+    space_model::get_reasoning(&dir, &cli, model.as_deref())
+}
+
+/// Validate the current connection's real published capabilities before saving.
+#[tauri::command]
+async fn space_reasoning_set(state: State<'_, AppState>, space: String, cli: String, model: Option<String>, effort: Option<String>) -> Result<(), String> {
+    let assistant = agent_instances::cli(&cli)?;
+    state.vault.space_dir(&space)?;
+    if model.as_deref().is_some_and(|model| !agent::is_valid_cli_model(model)) {
+        return Err("Invalid model name.".into());
+    }
+    if let Some(effort) = effort.as_deref() {
+        if !space_model::valid_reasoning(&cli, effort) {
+            return Err("That assistant does not support this reasoning level.".into());
+        }
+        let instance = agent_instances::selected(&state.vault, assistant);
+        let home = agent_instances::require_home(&state.vault, state.isolated_config_root.as_deref(), &instance)?;
+        let catalog = agent::models::list(assistant, home.as_deref()).await;
+        if !model_supports_reasoning(&catalog, model.as_deref(), effort) {
+            return Err("This model does not report that reasoning level. Refresh its model list and retry.".into());
+        }
+    }
+    space_model::set_reasoning(&state.vault, &space, &cli, model.as_deref(), effort.as_deref())
+}
+
+fn model_supports_reasoning(catalog: &agent::models::CliModels, model: Option<&str>, effort: &str) -> bool {
+    let selected = model.or(catalog.default_model.as_deref());
+    selected.and_then(|id| catalog.models.iter().find(|item| item.id == id || item.aliases.iter().any(|alias| alias == id)))
+        .is_some_and(|item| item.reasoning_efforts.iter().any(|level| level == effort))
+}
+
 /// Every space that has its own model, by space id: for the CLI that answers
 /// now if it takes one (as `cli:model`), else Phaethon's own agent's.
 #[tauri::command]
@@ -1271,6 +1306,8 @@ pub fn run() {
             space_model_get,
             space_model_set,
             space_models_list,
+            space_reasoning_get,
+            space_reasoning_set,
             space_touch,
             space_show,
             space_export,
@@ -1395,5 +1432,28 @@ mod acl_tests {
             assert!(build.contains(&format!("\"{c}\"")), "{c} is not declared in build.rs");
             assert!(caps.contains(&format!("\"allow-{}\"", c.replace('_', "-"))), "{c} is not allowed in capabilities/default.json");
         }
+    }
+}
+
+#[cfg(test)]
+mod reasoning_capability_tests {
+    use super::*;
+
+    #[test]
+    fn reasoning_capabilities_resolve_aliases_defaults_and_reject_unadvertised_choices() {
+        let mut catalog = agent::models::CliModels {
+            models: vec![agent::models::CliModel {
+                id: "claude-opus-5-5".into(), name: "Claude Opus 5.5".into(), description: None,
+                aliases: vec!["opus".into()], reasoning_efforts: vec!["low".into(), "high".into()],
+                default_reasoning_effort: Some("high".into()),
+            }], note: None, default_model: Some("claude-opus-5-5".into()),
+        };
+        assert!(model_supports_reasoning(&catalog, Some("opus"), "high"));
+        assert!(model_supports_reasoning(&catalog, Some("claude-opus-5-5"), "low"));
+        assert!(model_supports_reasoning(&catalog, None, "high"));
+        assert!(!model_supports_reasoning(&catalog, Some("opus"), "max"));
+        assert!(!model_supports_reasoning(&catalog, Some("custom-model"), "high"));
+        catalog.default_model = None;
+        assert!(!model_supports_reasoning(&catalog, None, "high"), "an unknown default is never guessed from the first row");
     }
 }

@@ -4,5 +4,7 @@
   "canvas.svg": "https://raw.githubusercontent.com/instructure/canvas-lms/master/public/images/canvas-logo.svg",
   "canvas-mark.svg": "Square crop of canvas.svg official Canvas mark; same original paths.",
   "moodle-mark.svg": "Square crop of moodle.svg official Moodle M and cap; same original paths.",
-  "fallbacks": "Blackboard and Brightspace currently use labelled monograms; no third-party logo asset is represented as official."
+  "fallbacks": "Brightspace uses a labelled monogram.",
+  "blackboard-mark.png": "Exact embedded PNG from https://www.blackboard.com/icons/favicon.svg",
+  "blackboard-mark.png.sha256": "43531efbc524943c5a0e49f113099819eae6c8efe9a4b12b984166dc950c81eb"
 }

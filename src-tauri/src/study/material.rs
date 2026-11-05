@@ -373,7 +373,7 @@ mod tests {
         let bin = crate::agent::claude::find_claude().expect("claude");
         let cwd = std::env::temp_dir().join(format!("phaethon-vision-real-{}", std::process::id()));
         std::fs::create_dir_all(&cwd).unwrap();
-        let m = crate::study::model::CliModel { bin, cwd: cwd.clone(), config_dir: None };
+        let m = crate::study::model::CliModel { bin, cwd: cwd.clone(), config_dir: None, model: None, reasoning: None };
         let mut report = String::new();
         for item in spec.split(';').filter(|s| !s.trim().is_empty()) {
             let (pdf, page) = item.rsplit_once('|').unwrap();

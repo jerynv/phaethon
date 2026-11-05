@@ -76,15 +76,15 @@ export default [
     name: "provider-cli-default-failure-visible",
     sizes: [[1100, 720]],
     themes: ["light"],
-    mock: { settings: SETTINGS, threads: {}, prov: prov(), fail: { settings_set_backend: "Wait for the current reply to finish." } },
+    mock: { settings: SETTINGS, threads: {}, prov: prov(), fail: { agent_instance_select: "Wait for the current reply to finish." } },
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "codex-cli");
-      check((await calls(page, "settings_set_backend")).length === 0, "managing an inactive CLI does not select it");
+      check((await calls(page, "agent_instance_select")).length === 0, "managing an inactive CLI does not select it");
       await useProviderDefault(page, "codex-cli");
       await assertSwitchError(page, "Wait for the current reply to finish.");
       await assertDefault(page, "phaethon", "anthropic");
-      await page.evaluate(() => delete window.__MOCK__.fail.settings_set_backend);
+      await page.evaluate(() => delete window.__MOCK__.fail.agent_instance_select);
       await useProviderDefault(page, "codex-cli");
       await page.waitForFunction(() => window.__MOCK__.settings.backend === "codex-cli", { timeout: 3000 });
       check(!(await page.$(`${providerPopup} [role="alert"]`)), "CLI default selection can be retried in the same popup");

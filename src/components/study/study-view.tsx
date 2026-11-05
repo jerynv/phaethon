@@ -13,6 +13,7 @@ import { draftCount } from "@/lib/quiz-answers";
 import { cn } from "@/lib/utils";
 
 import { DeckEditor } from "./deck-editor";
+import { CourseBack, CourseGrid, courseMatches } from "./course-grid";
 import { MakeDialog, type Made, type MakeKind, type MakeRequest } from "./make-dialog";
 import { QuizView } from "./quiz-view";
 import { ReviewSession } from "./review-session";
@@ -28,18 +29,12 @@ type Screen =
   /** `arrived`: opened from the chat, just made; focus goes to its first question. */
   | { at: "quiz"; path: string; arrived?: number };
 
-/**
- * A space's Study view. The hub: what's due today and the streak, the decks
- * (how well each is known, due and new cards, course) and the quizzes (last
- * score), with Study everything due, Make flashcards and Make a quiz. From
- * there: a review session, a deck's cards, a quiz and its results. A space
- * with nothing to study yet gets an empty state that says what this is and
- * offers to import courses or make cards.
- */
+/** A course overview leading to its decks, quizzes and preserved study session. */
 export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [courses, setCourses] = useState<CourseFolder[] | null>(null);
+  const [course, setCourse] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ at: "hub" });
   const [make, setMake] = useState<MakeRequest | null>(null);
   const makeKey = useRef(1);
@@ -51,22 +46,23 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
 
   const load = useCallback(() => {
     studyOverview(space.id).then(
-      (o) => {
+      async (o) => {
+        const nextCourses = await courseFolders(space.id, [...o.decks.map((d) => d.course), ...o.quizzes.map((q) => q.course)]);
+        setCourses(nextCourses);
         setOverview(o);
         setError("");
-        void courseFolders(space.id, [...o.decks.map((d) => d.course), ...o.quizzes.map((q) => q.course)]).then(setCourses);
       },
       (e: unknown) => setError(plainError(e)),
     );
   }, [space.id]);
-  // Read again whenever it comes into view, and when an import ends (new courses).
+  // Keep the workspace warm across tabs; refresh only when its sources change.
   useEffect(() => {
-    if (shown) load();
-  }, [shown, load, importEnded, sitesChanged]);
+    load();
+  }, [load, importEnded, sitesChanged]);
 
   const openMake = useCallback((kind: MakeKind, from?: MakeRequest["fromAttempt"]) => {
-    setMake({ kind, key: makeKey.current++, fromAttempt: from });
-  }, []);
+    setMake({ kind, key: makeKey.current++, fromAttempt: from, course: course ?? undefined });
+  }, [course]);
 
   const goHub = useCallback(
     (focus: string | null = null) => {
@@ -196,36 +192,42 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
         Loading Study…
       </p>
     );
-  } else if (overview.decks.length === 0 && overview.quizzes.length === 0) {
-    body = <Empty space={space} hasCourses={(courses?.length ?? 0) > 0} loading={courses === null} onMake={openMake} />;
+  } else if (!course) {
+    const choices = [...(courses ?? [])];
+    if (overview.decks.some((d) => !d.course) || overview.quizzes.some((q) => !q.course)) choices.push({ name: "General study", folder: "uncategorized" });
+    body = choices.length ? <CourseGrid courses={choices.map((c) => {
+      const decks = overview.decks.filter((d) => courseMatches(d.course, c.folder, c.name));
+      const quizzes = overview.quizzes.filter((q) => courseMatches(q.course, c.folder, c.name));
+      const due = decks.reduce((n, d) => n + d.due, 0);
+      return { id: c.folder, name: c.name, detail: `${plural(decks.length, "deck")} · ${plural(quizzes.length, "quiz", "quizzes")}`, metric: due ? `${due} due` : undefined };
+    })} onOpen={setCourse} /> : <Empty space={space} hasCourses={false} loading={courses === null} onMake={openMake} />;
   } else {
-    const { decks, quizzes, due, streakDays } = overview;
+    const selected = courses?.find((c) => c.folder === course);
+    const decks = overview.decks.filter((d) => courseMatches(d.course, course, selected?.name ?? ""));
+    const quizzes = overview.quizzes.filter((q) => courseMatches(q.course, course, selected?.name ?? ""));
+    const due = decks.reduce((n, d) => n + d.due, 0);
     body = (
       <>
-        <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-4 py-1">
+        {decks.length > 0 && <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-4 py-1">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <p className="text-lg font-semibold text-ink" data-due-count="">
               {due === 0 ? "Nothing due today" : `${plural(due, "card")} due today`}
             </p>
-            <p className="text-base text-ink-secondary" data-streak="">
-              {streakDays > 0 ? `You’ve studied ${plural(streakDays, "day")} in a row.` : "Study today to start a streak."}
-            </p>
           </div>
-          <Button
+          {due > 0 && <Button
             type="button"
             size="lg"
-            disabled={due === 0}
-            onClick={() => setScreen({ at: "session", paths: null, title: "Everything due" })}
+            onClick={() => setScreen({ at: "session", paths: decks.map((d) => d.path), title: "Due cards" })}
             data-study-due=""
           >
             <Icon name="play" />
-            Study everything due
-          </Button>
-        </section>
+            Review due cards
+          </Button>}
+        </section>}
 
         <WorkspaceSection title="Flashcards" titleId={`decks-${space.id}`}>
           {decks.length === 0 ? (
-            <p className="text-base text-ink-secondary">No decks yet. Make flashcards from your courses to start.</p>
+            <p className="text-sm text-ink-secondary">No flashcards yet.</p>
           ) : (
             <ul className="flex flex-col divide-y divide-line" data-deck-list="">
               {decks.map((d) => (
@@ -242,7 +244,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
 
         <WorkspaceSection title="Quizzes" titleId={`quizzes-${space.id}`}>
           {quizzes.length === 0 ? (
-            <p className="text-base text-ink-secondary">No quizzes yet. Make one to practise for a test.</p>
+            <p className="text-sm text-ink-secondary">No quizzes yet.</p>
           ) : (
             <ul className="flex flex-col divide-y divide-line" data-quiz-list="">
               {quizzes.map((q) => (
@@ -257,11 +259,11 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
 
   return (
     <WorkspacePage data-study-hub={space.id}>
+      {course && <CourseBack onBack={() => setCourse(null)} />}
       <WorkspacePageHeader
-        title="Study"
-        description="Review flashcards and practise with quizzes from your courses."
+        title={course ? courses?.find((c) => c.folder === course)?.name ?? "General study" : "Study"}
         headingProps={{ ref: headingRef, tabIndex: -1, "data-view-focus": "" }}
-        actions={overview && (overview.decks.length > 0 || overview.quizzes.length > 0) && (
+        actions={overview && ((courses?.length ?? 0) > 0 || overview.decks.length > 0 || overview.quizzes.length > 0) && (
           <>
             <Button type="button" variant="outline" onClick={() => openMake("deck")} data-make="deck">
               <Icon name="plus" />
@@ -285,8 +287,7 @@ function Empty({ space, hasCourses, loading, onMake }: { space: Space; hasCourse
   return (
     <div data-study-empty="">
       <WorkspaceEmpty
-        title="Turn your courses into flashcards and practice quizzes"
-        line={!loading && !hasCourses && !hidden ? `Import courses into ${space.name} to make flashcards and quizzes from your course files.` : "Make flashcards and quizzes from your syllabus, assignments and course files."}
+        title="No courses yet"
         action={!loading && !hasCourses && hidden ? null : !loading && !hasCourses ? (
           <Button type="button" onClick={() => openCourseImport({ space: space.id })} data-empty-import="">
             <Icon name="book" />
@@ -351,7 +352,7 @@ function QuizRow({ space, quiz, onTake }: { space: string; quiz: QuizSummary; on
   const begun = draftCount(space, quiz.path);
   const last =
     begun > 0
-      ? `${begun} of ${quiz.questions} answered, not checked yet`
+      ? `Draft · ${begun}/${quiz.questions}`
       : quiz.lastScore != null
         ? `Last score ${percent(quiz.lastScore)}${quiz.lastTaken ? ` · ${relativeDate(quiz.lastTaken)}` : ""}`
         : "Not taken yet";

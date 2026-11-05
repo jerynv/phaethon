@@ -316,7 +316,8 @@ pub fn clean(text: &str) -> String {
 }
 
 /// Cut text into sections of about [`CHUNK`] characters, at paragraph or page
-/// breaks where it can, never inside a character.
+/// breaks where it can, never inside a character. A continuation keeps its
+/// PDF page heading, so image selection and citations still identify its page.
 pub fn chunks(text: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     let mut cur = String::new();
@@ -345,7 +346,17 @@ pub fn chunks(text: &str) -> Vec<String> {
     if !cur.trim().is_empty() {
         out.push(cur);
     }
-    out
+    let mut cursor = 0;
+    out.into_iter().map(|part| {
+        let Some(relative) = text[cursor..].find(&part) else { return part };
+        let at = cursor + relative;
+        cursor = at + part.len();
+        if part.starts_with("## Page ") {
+            return part;
+        }
+        let page = text[..at].lines().rev().find(|line| line.starts_with("## Page "));
+        page.map_or_else(|| part.clone(), |heading| format!("{heading}\n\n{part}"))
+    }).collect()
 }
 
 /// At most `allot` characters of `text`: all of it when it fits, else the
@@ -750,6 +761,24 @@ mod tests {
         let s = sample(&text, 5_000, &[]);
         assert!(s.len() <= 5_100);
         assert!(s.chars().all(|c| c == 'é' || "[…]\n".contains(c)));
+    }
+
+    #[test]
+    fn long_page_continuations_keep_their_pdf_page_for_images_and_citations() {
+        let text = format!("## Page 2 {}\n\n{}\n\n## Page 19 {}\n\n{}", crate::lms::text::RECOGNISED, "Repeated lecture paragraph. ".repeat(450), crate::lms::text::RECOGNISED, "A later handwritten relation is reflexive. ".repeat(300));
+        let parts = chunks(&text);
+        assert!(parts.len() > 4);
+        for part in &parts {
+            if part.contains("Repeated lecture paragraph") {
+                assert!(part.starts_with("## Page 2 "), "continuation lost page 2: {}", &part[..part.len().min(100)]);
+            }
+            if part.contains("A later handwritten relation") {
+                assert!(part.starts_with("## Page 19 "), "continuation lost page 19: {}", &part[..part.len().min(100)]);
+            }
+        }
+        let selected = sample(&text, 3_000, &["reflexive".into()]);
+        assert!(selected.contains("## Page 19 "));
+        assert!(selected.contains("reflexive"));
     }
 
     #[test]

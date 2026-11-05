@@ -152,7 +152,7 @@ export default [
         const rows = [...el.querySelectorAll("[data-provider-row]")];
         return { rows: rows.length, add: !!el.querySelector("[data-provider-add]"), manage: !!el.querySelector('[data-provider-configure="anthropic"]'), fields: el.querySelectorAll("input, select").length, text: el.innerText,
           defaultFirst: rows[0]?.hasAttribute("data-provider-default-row"), defaults: el.querySelectorAll("[data-provider-default-row]").length,
-          branded: rows.every((row) => row.querySelector("[data-provider-logo]") && row.querySelectorAll("button").length === 1),
+          branded: rows.every((row) => row.querySelector("[data-provider-logo]") && (row.matches("button") ? 1 : row.querySelectorAll("button").length) === 1),
           masks: [...el.querySelectorAll("[data-provider-monochrome]")].map((mark) => getComputedStyle(mark).maskImage),
           inlineSwitch: !!el.querySelector("[data-provider-default], [data-backend], [data-assistant-default-manage]"),
         };
@@ -168,7 +168,7 @@ export default [
       const tab = await page.evaluate(() => document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent);
       check(tab === "About", "the About tab opens file locations", tab);
       const about = await panelText(page);
-      for (const want of [SETTINGS.vaultPath, "MANUAL.md applies to every space.", "spaces/<space>/.phaethon/", "spaces/<space>/attachments/"]) {
+      for (const want of [SETTINGS.vaultPath, `${SETTINGS.vaultPath}/MANUAL.md`, "spaces/<space>/.phaethon/", "spaces/<space>/attachments/"]) {
         check(about.includes(want), `About lists: ${want}`);
       }
       check(!/privacy policy|Deleting a conversation|keeps its own copy/.test(about), "About keeps file locations concise", about);
@@ -186,7 +186,7 @@ export default [
       check(text.includes("Claude Code") && text.includes("Default"), "the Claude Code row identifies the current default", text);
       await openProviderConfiguration(page, "claude-cli");
       const setup = await page.$eval(providerPopup, (el) => el.innerText);
-      check(setup.includes("Sign in to Claude Code in a terminal") && setup.includes("Models are chosen in each space."), "Claude setup gives the sign-in action and model location", setup);
+      check(setup.includes("Sign in to Claude Code") && !!await page.$('[data-cli-sign-in="claude"] [data-cli-sign-in-start]') && !setup.includes("terminal"), "Claude setup gives its official browser sign-in action", setup);
       check(!/privacy policy|keeps its own copy|subscription/.test(setup) && !(await page.$(`${providerPopup} [data-key-input]`)), "Claude setup omits policy tutorials and API-key fields", setup);
       check((await calls(page, "settings_set_backend")).length === 0, "managing Claude Code does not switch assistants");
       await park(page);
@@ -255,7 +255,7 @@ export default [
         const found = await page.evaluate(() =>
           [...document.querySelectorAll('[role="dialog"] :is(header, footer, section[aria-labelledby], section[aria-label], aside, form[aria-label], form[aria-labelledby], [role="region"], [role="banner"], [role="complementary"])')].map((e) => e.outerHTML.slice(0, 80)),
         );
-        check(found.length === 0, `${tab}: no landmarks inside the window`, found.join(" | "));
+        check(found.length === 1 && found[0].startsWith('<header data-settings-header='), `${tab}: one dedicated header, no page-level landmarks inside the settings panel`, found.join(" | "));
       }
     },
   },
@@ -266,23 +266,13 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "appearance");
-      const cards = await page.$$eval(`${PANEL} [data-font-card]`, (cs) => cs.map((c) => c.getAttribute("data-font-card")));
-      check(cards.length === 4, "Appearance shows the four reading fonts", cards.join());
-      await page.focus(`${PANEL} [data-font-card="atkinson"]`);
-      await page.keyboard.press("ArrowRight");
-      await page.keyboard.press("ArrowRight");
+      const choices = await page.$$eval(`${PANEL} [data-reading-font] option`, (options) => options.map((option) => option.value));
+      check(choices.length === 4, "Appearance offers four reading fonts in one dropdown", choices.join());
+      await page.select(`${PANEL} [data-reading-font]`, "lexend");
       await h.idle();
-      const font = await page.evaluate(() => document.documentElement.dataset.font);
-      check(font === "lexend", "two arrows from Appearance choose Lexend for the whole app", font);
-      await page.$eval(`${PANEL} [data-font-card="lexend"]`, (el) => el.scrollIntoView({ block: "center" }));
-      await park(page);
-      await h.shot("appearance");
-      await page.$eval('[data-testid="settings-tab-accessibility"]', (el) => el.click());
-      await h.idle();
-      const a11y = await panelText(page);
-      check(!a11y.includes("More is coming"), "Accessibility no longer promises reading fonts that already exist");
-      const checked = await page.$eval(`${PANEL} [data-font-card][data-state="checked"]`, (c) => c.getAttribute("data-font-card"));
-      check(checked === "lexend", "Accessibility shows the same choice", checked);
+      check(await page.evaluate(() => document.documentElement.dataset.font === "lexend"), "choosing Lexend updates the whole app");
+      await h.click('[data-testid="settings-tab-accessibility"]');
+      check(await page.$eval(`${PANEL} [data-reading-font]`, (select) => select.value === "lexend"), "Accessibility keeps the same saved font choice");
     },
   },
   {

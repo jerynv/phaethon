@@ -19,6 +19,7 @@ export type Space = {
    * soft and keeps its contrast.
    */
   hue: number;
+  educationEnabled: boolean;
   /**
    * When the space was last used (opened, a message sent, a reply finished),
    * in milliseconds since 1970; null or missing when never. Kept by the core in
@@ -28,9 +29,9 @@ export type Space = {
 };
 
 /** What a new space starts with. Description and hue are optional. */
-export type NewSpace = { name: string; description?: string; hue?: number };
+export type NewSpace = { name: string; description?: string; hue?: number; educationEnabled?: boolean };
 /** Fields to change; the ones left out stay as they are. */
-export type SpacePatch = { name?: string; description?: string; hue?: number };
+export type SpacePatch = { name?: string; description?: string; hue?: number; educationEnabled?: boolean };
 
 /** Longest name and description the core accepts (src-tauri/src/spaces.rs). */
 export const SPACE_NAME_MAX = 60;
@@ -38,8 +39,8 @@ export const SPACE_DESCRIPTION_MAX = 160;
 
 /** Outside the desktop app (`pnpm dev`) there is no vault: these stand in, and changes stay in memory. */
 const FIXTURE: readonly Space[] = [
-  { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240 },
-  { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50 },
+  { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240, educationEnabled: true },
+  { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50, educationEnabled: false },
 ];
 
 export type SpacesState = {
@@ -148,18 +149,21 @@ export const getSpaces = (): readonly Space[] => state.spaces;
 /** A space by id, or undefined when this vault has no such space. */
 export const findSpace = (id: string): Space | undefined => state.spaces.find((s) => s.id === id);
 
+export const supportsEducation = (space: Space | string): boolean =>
+  (typeof space === "string" ? findSpace(space) : space)?.educationEnabled === true;
+
 /** Create a space; resolves with it (its id is derived from the name by the core). Rejects with a plain message. */
 export async function createSpace(input: NewSpace): Promise<Space> {
   let made: Space;
   if (inTauri()) {
-    made = await invoke<Space>("space_create", { name: input.name, description: input.description ?? null, hue: input.hue ?? null });
+    made = await invoke<Space>("space_create", { name: input.name, description: input.description ?? null, hue: input.hue ?? null, educationEnabled: input.educationEnabled ?? false });
   } else {
     const name = input.name.trim();
     if (!name) throw "A space needs a name.";
     const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "space";
     let id = base;
     for (let n = 2; data.spaces.some((s) => s.id === id); n++) id = `${base}-${n}`;
-    made = { id, name, description: input.description?.trim() ?? "", hue: input.hue ?? 168 };
+    made = { id, name, description: input.description?.trim() ?? "", hue: input.hue ?? 168, educationEnabled: input.educationEnabled ?? false };
     set({ ...data, spaces: [...data.spaces, made] });
   }
   await refreshSpaces();
@@ -170,7 +174,7 @@ export async function createSpace(input: NewSpace): Promise<Space> {
 export async function updateSpace(id: string, patch: SpacePatch): Promise<Space> {
   let saved: Space;
   if (inTauri()) {
-    saved = await invoke<Space>("space_update", { id, name: patch.name ?? null, description: patch.description ?? null, hue: patch.hue ?? null });
+    saved = await invoke<Space>("space_update", { id, name: patch.name ?? null, description: patch.description ?? null, hue: patch.hue ?? null, educationEnabled: patch.educationEnabled ?? null });
   } else {
     const old = findSpace(id);
     if (!old) throw `There is no space “${id}” in this vault.`;

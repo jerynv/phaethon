@@ -123,13 +123,13 @@ export default [
       const work = `${PANEL} [data-space-row="work"]`;
       const folded = await page.$eval(`${work} [data-space-summary]`, (el) => el.textContent);
       check(folded === "Read by School", "folded, Work's row says School reads it", folded);
-      await openSpaceDetails(page);
+      await openSpaceDetails(page, ["work"]);
       const text = await page.$eval(work, (el) => el.innerText);
       check(/School\sreads\scalendar/.test(text), "Work's row says School reads its calendar", text);
       const list = await page.$eval(work, (el) => el.querySelector('ul[aria-label^="Who can read"]')?.getAttribute("aria-label"));
       check(list === "Who can read Work", "as a list named Who can read Work", list);
       const school = await page.$eval(`${PANEL} [data-space-row="school"]`, (el) => el.innerText);
-      check(/No other space can read School/.test(school), "School's row says nothing reads it", school);
+      check(/No other space can read School/.test(school), "School's saved incoming state remains intact", school);
       await page.$eval(work, (el) => el.scrollIntoView({ block: "center" }));
       await park(page);
       await h.shot("work");
@@ -170,7 +170,7 @@ export default [
       await h.idle();
       const about = await panelText(page);
       check(about.includes("spaces/<space>/.phaethon/") && about.includes("spaces/<space>/attachments/"), "About lists conversation and attachment folders", about);
-      check(about.includes("MANUAL.md applies to every space.") && about.includes(`${SETTINGS.vaultPath}/MANUAL.md`), "About identifies the shared instructions file", about);
+      check(about.includes("Instructions") && about.includes(`${SETTINGS.vaultPath}/MANUAL.md`), "About identifies the shared instructions file without a tutorial", about);
       await page.$eval("[data-files-heading]", (el) => el.scrollIntoView({ block: "start" }));
       await park(page);
     },
@@ -183,18 +183,11 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "claude-cli");
-      await useProviderDefault(page, "claude-cli");
-      await page.waitForSelector("[data-cli-missing]", { timeout: 3000 });
-      await h.idle();
-      const asked = await calls(page, "claude_cli_status");
-      const set = await calls(page, "settings_set_backend");
-      check(asked.length >= 1, "it checks whether Claude Code is installed first", `${asked.length}`);
-      check(set.length === 0, "and does not switch when it isn't", JSON.stringify(set));
-      const current = await page.$eval('[data-provider-row="anthropic"]', (el) => el.textContent);
-      check(current.includes("Default"), "Anthropic remains the default", current);
-      const msg = await page.$eval("[data-cli-missing]", (el) => ({ text: el.innerText, link: el.querySelector("a")?.href ?? "" }));
-      check(/isn’t installed/.test(msg.text) && /install/i.test(msg.text) && msg.link.startsWith("https://"), "it says Claude Code isn't installed and how to install it", JSON.stringify(msg));
-      check(/isn’t installed/.test(await status(page)), "and says so in the status line", await status(page));
+      const unavailable = await page.$eval('[data-instance-select]', (button) => button.disabled);
+      check(unavailable, "a missing executable cannot become the default");
+      check((await calls(page, "agent_instance_select")).length === 0, "opening missing-assistant setup leaves the active provider unchanged");
+      const install = await page.$eval('[data-cli-missing="claude-cli"]', (link) => ({ text: link.textContent, href: link.href }));
+      check(install.text.includes("Install Claude Code") && install.href.startsWith("https://"), "the missing assistant offers its official installer", JSON.stringify(install));
       await park(page);
     },
   },
@@ -227,10 +220,9 @@ export default [
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "claude-cli");
       await useProviderDefault(page, "claude-cli");
-      await page.waitForFunction(() => window.__calls.some(([c]) => c === "settings_set_backend"), { timeout: 3000 });
-      await h.idle();
-      const set = await calls(page, "settings_set_backend");
-      check(set.length === 1 && set[0].backend === "claude-cli", "installed: it switches to Claude Code", JSON.stringify(set));
+      await page.waitForFunction(() => window.__calls.some(([command]) => command === "agent_instance_select"), { timeout: 3000 });
+      const set = await calls(page, "agent_instance_select");
+      check(set.length === 1 && set[0].id === "claude", "installed: the explicit default action selects legacy Claude", JSON.stringify(set));
       check(!(await page.$("[data-cli-missing]")), "with no install message");
     },
   },
@@ -241,8 +233,8 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "appearance");
       const groups = await page.$$eval(`${PANEL} h4`, (hs) => hs.map((x) => x.textContent));
-      check(groups[0] === "Text", "Text (with the reading font) is the first group in Appearance", groups.join());
-      const fontTop = await page.$eval(`${PANEL} [data-font-card]`, (el) => el.getBoundingClientRect().top);
+      check(groups[0] === "Theme" && groups.includes("Text"), "Appearance separates Theme and Text", groups.join());
+      const fontTop = await page.$eval(`${PANEL} [data-reading-font]`, (el) => el.getBoundingClientRect().top);
       check(fontTop < 720 * 0.6, "the reading font shows without scrolling", `${fontTop}`);
       await h.shot("appearance");
       await h.click('[data-testid="settings-tab-accessibility"]');
@@ -311,9 +303,8 @@ export default [
       check(dragged > 1.3, "dragging the thumb still moves it as far as you drag", `${dragged}`);
       // Close shows its name on hover.
       await h.hover('button[aria-label="Close settings"]');
-      await page.waitForSelector('[data-slot="tooltip-content"]', { timeout: 3000 });
-      const tip = await page.$eval('[data-slot="tooltip-content"]', (el) => el.textContent);
-      check(tip.startsWith("Close settings"), "Close shows a visible tooltip with its name", tip);
+      const tip = await page.$eval('button[aria-label="Close settings"]', (button) => button.title);
+      check(tip.startsWith("Close settings"), "Close keeps a native tooltip with its name and keyboard shortcut", tip);
       await h.idle();
       await h.shot("close-tip");
       await park(page);
@@ -392,10 +383,8 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "spaces");
       await openSpaceDetails(page);
-      const text = await panelText(page);
-      check(!/Folder: |spaces\/school/.test(text), "no \"Folder: spaces/school\" path", text.slice(0, 400));
-      const f = await page.$$eval("[data-space-folder]", (els) => els.map((e) => ({ text: e.textContent, mono: getComputedStyle(e).fontFamily.includes("Mono") })));
-      check(f[0]?.text === "Kept in the folder named “school”, inside the spaces folder of your Phaethon folder." && !f[0].mono, "it says where in plain words", JSON.stringify(f));
+      const folder = await page.$eval('[data-space-details="school"] [data-space-folder]', (element) => element.textContent);
+      check(folder === "spaces/school/", "the editor shows its real folder as one compact path", folder);
       await park(page);
     },
   },

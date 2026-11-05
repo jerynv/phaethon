@@ -81,11 +81,13 @@ export default [
     mock: MOCK,
     async run(page, h) {
       await openView(page, "grades");
+      await page.waitForSelector("[data-grades-view] [data-open-course]", { timeout: 5000 });
+      check((await page.$$("[data-grades-view] [data-open-course]")).length === 2, "a summary per imported course");
+      await page.click('[data-grades-view] [data-open-course="c1:101"]');
       await page.waitForSelector("[data-grades-course]", { timeout: 5000 });
-      const cards = await page.$$eval("[data-grades-course] h3", (els) => els.map((e) => e.textContent));
-      check(cards.length === 2 && cards[0] === "Discrete Structures for Computer Science", "a card per imported course", JSON.stringify(cards));
+      check((await page.$$("[data-grades-course]")).length === 1, "only the selected course is expanded");
       const current = await text(page, '[data-grades-course="101"] [data-grades-current]');
-      check(/71\.2% C-/.test(current) && /as your course site shows it/.test(current), "the course grade, percent and letter, from the site", current);
+      check(/71\.2% C-/.test(current) && /Course grade/.test(current), "the course grade, percent and letter, from the site", current);
       check(/(Up|Down) [\d.]+ points after Quiz 2/.test(current), "and which way the latest graded item moved it", current);
       const groups = await text(page, '[data-grades-course="101"] [data-grades-groups]');
       check(/Homework 30% of the grade · average/.test(groups) && /Exams 50% of the grade · nothing graded/.test(groups), "groups with weights and averages", groups);
@@ -128,6 +130,8 @@ export default [
     mock: MOCK,
     async run(page, h) {
       await openView(page, "grades");
+      await page.waitForSelector('[data-open-course="c1:101"]', { timeout: 5000 });
+      await page.click('[data-open-course="c1:101"]');
       await page.waitForSelector("[data-grades-refresh]", { timeout: 5000 });
       check((await text(page, "[data-grades-refresh]")) === "Refresh grades", "one course site: Refresh grades");
       await page.click("[data-grades-refresh]");
@@ -145,7 +149,7 @@ export default [
       await page.click("[data-grades-refresh]");
       await page.waitForSelector("[data-grades-signed-out]", { timeout: 5000 });
       check(await shellSaid(page, /signed out of Indiana University Bloomington/), "signed out is said", await shellStatus(page));
-      check((await page.$$("[data-grades-course]")).length === 2, "the saved grades stay");
+      check((await page.$$("[data-grades-course]")).length === 1, "the saved selected course stays");
       const focus = await page.evaluate(() => document.activeElement?.hasAttribute("data-grades-signin"));
       check(focus, "focus goes to Sign in again");
       await park(page);
@@ -174,6 +178,7 @@ export default [
         const d = new Date(Date.now() + 5 * 86400000);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       });
+      await page.$eval("[data-plan-exams]", (node) => { const details = node.closest("details"); if (!details.open) details.querySelector("summary").click(); });
       await page.focus("[data-exam-add]");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-plan-exams] [role="alert"]', { timeout: 3000 });
@@ -196,6 +201,7 @@ export default [
       check(perDay.every((n) => n <= 3), "never more than 3 a day", JSON.stringify(perDay));
 
       // Fewer sessions a day: still within the limit.
+      await page.$eval("[data-plan-per-day]", (node) => { const details = node.closest("details"); if (!details.open) details.querySelector("summary").click(); });
       await page.select("[data-plan-per-day]", "1");
       await page.waitForFunction(() => [...document.querySelectorAll("[data-plan-days] > li")].every((e) => e.querySelectorAll("[data-plan-session]").length <= 1), { timeout: 3000 });
       const st = await calls(page, "plan_state_set");
@@ -219,6 +225,7 @@ export default [
     mock: MOCK,
     async run(page, h) {
       await openView(page, "plan");
+      await page.click("[data-plan-timer]");
       await page.waitForSelector("[data-focus-timer]", { timeout: 5000 });
       check((await text(page, "[data-focus-clock]")).startsWith("25:00"), "25 minutes to start", await text(page, "[data-focus-clock]"));
       check(await page.$eval("[data-focus-clock]", (e) => e.getAttribute("role") === "timer" && e.getAttribute("aria-live") === "off"), "a timer that isn't read out every second");
@@ -229,6 +236,8 @@ export default [
       // Leave for Grades and come back: still running.
       await openView(page, "grades");
       await openView(page, "plan");
+      await page.click("[data-plan-timer]");
+      await page.waitForSelector('[data-focus-toggle="pause"]', { timeout: 3000 });
       check(await page.$('[data-focus-toggle="pause"]'), "it keeps running across views");
       await page.click("[data-focus-skip]");
       check(await shellSaid(page, /^Focus session done\. Take a 5-minute break\.$/), "the break is said politely", await shellStatus(page));
@@ -244,7 +253,10 @@ export default [
   {
     name: "f7-tutor",
     sizes: [[1100, 720]],
-    mock: { ...MOCK, tutorModes: { work: "cram" } },
+    mock: { ...MOCK, spaces: [
+      { id: "school", name: "School", description: "Courses", hue: 240, educationEnabled: true },
+      { id: "work", name: "Work", description: "Projects", hue: 50, educationEnabled: true },
+    ], tutorModes: { work: "cram" } },
     async run(page, h) {
       const btn = `${shown} [data-tutor-mode]`;
       await page.waitForSelector(btn, { timeout: 5000 });
@@ -279,7 +291,7 @@ export default [
       await page.keyboard.down("Meta");
       await page.keyboard.press("k");
       await page.keyboard.up("Meta");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("socratic");
       await h.idle();
       const first = await page.$eval('[role="option"]', (e) => e.textContent);

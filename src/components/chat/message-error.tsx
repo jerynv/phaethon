@@ -54,23 +54,13 @@ const RECOVERY: Record<string, Recovery> = {
   },
   missingCli: {
     title: "Claude Code isn’t installed",
-    body: (
-      <>
-        Install Claude Code, then run <InlineCode text="`claude`" /> once in a terminal to log in and send again. Or
-        switch to Phaethon’s own agent in Settings.
-      </>
-    ),
+    body: "Install Claude Code, then connect it in Settings › Assistant.",
     actions: ["settings", "retry"],
   },
   notLoggedIn: {
-    title: "Claude Code isn’t logged in",
-    body: (
-      <>
-        Run <InlineCode text="`claude`" /> once in a terminal and log in, then send again. Or switch to Phaethon’s own
-        agent in Settings.
-      </>
-    ),
-    actions: ["retry", "settings"],
+    title: "Claude Code isn’t signed in",
+    body: "Sign in to this connection in Settings › Assistant, then retry.",
+    actions: ["settings", "retry"],
   },
   busy: {
     // The earlier reply may not be on screen (another conversation, or one
@@ -177,21 +167,18 @@ function forProvider(r: Recovery, code: string | undefined, id: ProviderId, name
 }
 
 /**
- * The recovery when a CLI other than Claude Code answers: its name in the
- * words, how to install it, and signing in to it in Settings (Codex and Gemini
- * CLI run with a setup of their own for the Phaethon folder, so signing in in
- * a terminal would sign in the wrong one). The core's own message stays under
- * Details.
+ * Resolve recovery through the selected CLI connection. Its own diagnostic
+ * output stays under Details.
  */
 function forCli(r: Recovery, code: string | undefined, cli: ReturnType<typeof cliOf>): Recovery {
-  if (!cli || cli.id === "claude") return r;
+  if (!cli) return r;
   switch (code) {
     case "missingCli":
       return {
         title: `${cli.name} isn’t installed`,
         body: (
           <>
-            Install {cli.name}, then sign in to it in Settings › Assistant and send again. Or choose another assistant in Settings.
+            Install {cli.name}, then connect it in Settings › Assistant.
           </>
         ),
         actions: ["settings", "retry"],
@@ -199,7 +186,7 @@ function forCli(r: Recovery, code: string | undefined, cli: ReturnType<typeof cl
     case "notLoggedIn":
       return {
         title: `${cli.name} isn’t signed in`,
-        body: `Sign in to ${cli.name} for this Phaethon folder in Settings › Assistant, then send again. Or choose another assistant there.`,
+        body: `Sign in to ${cli.name} for this Phaethon folder in Settings › Assistant, then retry.`,
         actions: ["settings", "retry"],
       };
     case "cli":

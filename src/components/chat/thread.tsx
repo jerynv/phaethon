@@ -14,6 +14,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -35,14 +36,11 @@ import { Button } from "@/components/ui/button";
 import { WorkspaceEmpty } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { useComposeRequests } from "@/lib/compose";
-import { cliOf } from "@/lib/backend";
-import { grantLabel, isFileGrant, useGrants } from "@/lib/grants";
-import { findSpace } from "@/lib/spaces";
+import { findSpace, supportsEducation, useActiveSpaceId } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom, ContinueRun } from "@/runtime/agent-adapter";
 import { RECORD_PART, type RecordPartData } from "@/runtime/records";
 import { useKnownIndex } from "@/runtime/thread-index";
-import { useModels } from "@/lib/space-model";
 
 import { AccessRequestCard } from "./access-request-card";
 import { AnnounceContext, spokenReply, useAnnounce } from "./announce";
@@ -54,9 +52,8 @@ import { MessageTime } from "./message-time";
 import { focusPaneComposer, paneShown, usePane } from "./pane";
 import { RecordPart, announcesRecord, recordText } from "./receipts";
 import { CHAT_ACTION_LANGUAGES } from "./chat-actions";
-import { useFullAccess } from "@/lib/full-access";
 import { STUDY_ACTION_LANGUAGES } from "./study-action";
-import { setSpaceView } from "@/components/study/space-view";
+import { setSpaceView, useSpaceView } from "@/components/study/space-view";
 
 const Nothing = () => null;
 // A reply's ```phaethon-study block is drawn as a card with Generate (study-action.tsx),
@@ -108,7 +105,7 @@ function EditAction() {
   const known = useKnownIndex(pane?.threadIndex ?? null, id);
   if (!known) return null;
   return (
-    <ActionBarPrimitive.Root hideWhenRunning className="flex justify-end opacity-0 transition-opacity duration-(--ph-duration-fast) group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
+    <ActionBarPrimitive.Root hideWhenRunning className="flex justify-end">
       <ActionBarPrimitive.Edit asChild>
         <Button type="button" variant="ghost" size="xs" className="text-ink-secondary hover:text-ink" data-edit-message={id}>
           <Icon name="edit" />
@@ -139,7 +136,7 @@ function UserMessage() {
         </div>
       )}
       {/* Compact metadata row, following T3 Code’s TimelineUserMessageRow layout. */}
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 tabular-nums">
+      <div data-message-meta="" className="ph-message-meta flex flex-wrap items-center justify-end gap-1 tabular-nums">
         <MessageTime role="user" />
         <EditAction />
       </div>
@@ -259,8 +256,8 @@ function ActivityLine() {
 }
 
 /**
- * Under a finished reply, always visible (never only on hover): Copy, and on
- * the last reply Regenerate, or Send again when the reply was stopped (C9).
+ * Compact actions under a finished reply, revealed with the message's metadata
+ * on hover or focus. Stopped replies retain their immediately useful retry.
  * Shown only once the reply has finished, so Copy never takes a half reply.
  */
 function ReplyActions() {
@@ -302,8 +299,8 @@ function ReplyActions() {
     <ActionBarPrimitive.Root
       hideWhenRunning
       className={cn(
-        "-ms-1.5 flex flex-wrap items-center gap-1 transition-opacity duration-(--ph-duration-fast) [&_.ui-button-face]:gap-1 [&_.ui-button-face]:px-1.5",
-        !isLast && "opacity-0 group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
+        "-ms-1.5 flex flex-wrap items-center gap-0.5 [&_.ui-button-face]:gap-1 [&_.ui-button-face]:px-1.5",
+        !stopped && !confirming && "ph-message-meta",
       )}
       data-reply-actions=""
     >
@@ -463,8 +460,10 @@ function AssistantMessage() {
           Reply stopped.
         </p>
       )}
-      <MessageTime role="assistant" />
-      <ReplyActions />
+      <div data-message-meta="" className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <ReplyActions />
+        <span className="ph-message-meta"><MessageTime role="assistant" /></span>
+      </div>
     </MessagePrimitive.Root>
   );
 }
@@ -588,79 +587,23 @@ function ReplyAnnouncer({ text, setText, cli }: { text: string; setText: (t: str
   );
 }
 
-/**
- * What Phaethon may already read outside this space without asking: the
- * standing ("always") grants, as "Work / clients", at most two named.
- */
-function standingReads(state: ReturnType<typeof useGrants>["state"], foldersOnly = false): string | null {
-  if (state.status !== "ready") return null;
-  // Claude Code is given granted folders (and whole spaces) only, never single files.
-  const labels = state.grants
-    .filter((g) => g.scope === "always" && !(foldersOnly && isFileGrant(g.path)))
-    .map(grantLabel);
-  if (labels.length === 0) return null;
-  const named = labels.slice(0, 2);
-  const rest = labels.length - named.length;
-  const list = rest > 0 ? `${named.join(", ")} and ${rest} more` : named.join(" and ");
-  // "All of Work" reads naturally mid-sentence as "all of Work".
-  return list.replace(/^All of /, "all of ");
-}
-
-/**
- * Shown in a space with no conversation yet: where you are and what Phaethon
- * can see. True to the grants: when this space may already read part of
- * another, it says so instead of promising to ask.
- */
-function EmptyState({ spaceId, spaceName, cli }: { spaceId: string; spaceName: string; cli: boolean }) {
-  const { state } = useGrants(spaceId);
-  const reads = standingReads(state, cli);
-  const cliName = cliOf(useModels().backend)?.name ?? "Claude Code";
-  const full = useFullAccess(spaceId);
+/** The empty conversation offers useful destinations without explaining the shell. */
+function EmptyState({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
+  const education = supportsEducation(spaceId);
   return (
-    // Centred by its parent with safe centring: in a short window (640x480 with attachments) it
-    // starts at the top and scrolls, never clipped above the log.
-    <WorkspaceEmpty
-      data-empty-state=""
-      className="group/empty w-full"
-      title={<span role="heading" aria-level={2}>Start a conversation in {spaceName}</span>}
-      description={<span className="block max-w-prose" data-empty-reach="">
-        {cli && full ? (
-          // Full access (full_access.rs): no walls, so none are promised.
-          <>
-            {cliName} answers here, with full access: it can read and change anything on this Mac and use the internet,
-            without asking.
-          </>
-        ) : cli ? (
-          // A CLI here is read-only and has no way to ask (agent.rs): say what it can do, nothing more.
-          <>
-            {cliName} answers here. It can read and search the files in {spaceName}
-            {reads ? `, and ${reads} because you allowed that` : ""}. It can’t change any file, and it can’t ask to read
-            anything else.
-          </>
-        ) : reads ? (
-          <>
-            Phaethon can read and search the files in {spaceName}, and it can already read {reads}, because you
-            allowed that. It asks before it changes anything, or before it reads anything else in another space.
-          </>
-        ) : (
-          <>
-            Phaethon can read and search the files in {spaceName}. It asks before it changes anything, or before it
-            reads another space.
-          </>
-        )}
-      </span>}
-    >
-      <CoursesSuggestion spaceId={spaceId} />
-      <div className="flex flex-wrap items-center gap-2" aria-label="Learning tools">
-        <Button type="button" variant="link" size="sm" data-workspace-shortcut="study" onClick={() => setSpaceView(spaceId, "study", true)}>
-          <Icon name="book" />
-          Review flashcards
-        </Button>
-        <Button type="button" variant="link" size="sm" data-workspace-shortcut="plan" onClick={() => setSpaceView(spaceId, "plan", true)}>
-          <Icon name="check" />
-          Plan your study
-        </Button>
-      </div>
+    <WorkspaceEmpty data-empty-state="" className="group/empty w-full"
+      title={<span role="heading" aria-level={2}>Start a conversation in {spaceName}</span>}>
+      {education && <>
+        <CoursesSuggestion spaceId={spaceId} />
+        <div className="flex flex-wrap items-center gap-2" aria-label="Learning tools">
+          <Button type="button" variant="ghost" size="sm" data-workspace-shortcut="study" onClick={() => setSpaceView(spaceId, "study", true)}>
+            <Icon name="book" />Study
+          </Button>
+          <Button type="button" variant="ghost" size="sm" data-workspace-shortcut="plan" onClick={() => setSpaceView(spaceId, "plan", true)}>
+            <Icon name="check" />Plan
+          </Button>
+        </div>
+      </>}
     </WorkspaceEmpty>
   );
 }
@@ -715,6 +658,41 @@ function JumpToLatest({ store, logRef }: { store: ViewportStore | null; logRef: 
 
 const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
 
+/** A draft handoff focuses the committed input, rather than guessing a frame.
+ * Kept separate so observing composer text does not rerender the transcript. */
+function ComposeRequests({ spaceId, inputRef }: { spaceId: string; inputRef: RefObject<HTMLTextAreaElement | null> }) {
+  const aui = useAui();
+  const pane = usePane();
+  const view = useSpaceView(spaceId);
+  const activeSpace = useActiveSpaceId();
+  const text = useAuiState((state) => state.composer.text);
+  const [requested, setRequested] = useState<{ text: string; from: string | null } | null>(null);
+  const reachedChat = useRef(false);
+  useComposeRequests(spaceId, (value) => {
+    reachedChat.current = false;
+    setRequested({ text: value, from: activeSpace });
+    aui.composer().setText(value);
+  });
+  useLayoutEffect(() => {
+    if (!requested) return;
+    const shown = view === "chat" && paneShown(pane);
+    if (!shown) {
+      // Leaving the requested destination cancels the handoff. Returning later
+      // cannot let a stale request take focus from the user's current work.
+      if (reachedChat.current || (activeSpace !== requested.from && activeSpace !== spaceId)) setRequested(null);
+      return;
+    }
+    reachedChat.current = true;
+    const input = inputRef.current;
+    if (!input?.isConnected || text !== requested.text || input.value !== requested.text) return;
+    input.focus();
+    if (document.activeElement !== input) return;
+    input.setSelectionRange(input.value.length, input.value.length);
+    setRequested(null);
+  });
+  return null;
+}
+
 export function Thread({
   spaceId,
   spaceName,
@@ -736,17 +714,6 @@ export function Thread({
   const pane = usePane();
   const logRef = useRef<HTMLDivElement>(null);
   const stopFocused = useRef(false);
-  // Words put in the message box from elsewhere ("Ask about this course"): there to edit, never sent.
-  const aui = useAui();
-  useComposeRequests(spaceId, (text) => {
-    aui.composer().setText(text);
-    requestAnimationFrame(() => {
-      const input = inputRef.current;
-      if (!input) return;
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    });
-  });
   const isRunning = useAuiState((s) => s.thread.isRunning);
   // The empty state (and first-run setup card) reads from the top; only a conversation follows its end.
   const isEmpty = useAuiState((s) => s.thread.isEmpty);
@@ -834,7 +801,7 @@ export function Thread({
                 {/* First run: the setup card leads, in place of the generic empty state. */}
                 {!setupShown && (
                   <AuiIf condition={(s) => s.thread.isEmpty}>
-                    <EmptyState spaceId={spaceId} spaceName={spaceName} cli={cli} />
+                    <EmptyState spaceId={spaceId} spaceName={spaceName} />
                   </AuiIf>
                 )}
                 <div className="flex flex-col gap-6 empty:hidden">
@@ -873,6 +840,7 @@ export function Thread({
               dragging={dragging}
               jump={<JumpToLatest store={viewport} logRef={logRef} />}
             />
+            <ComposeRequests spaceId={spaceId} inputRef={inputRef} />
             {dragging && (
               <div
                 aria-hidden="true"

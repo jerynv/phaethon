@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { lmsConnections } from "@/lib/lms";
 import { inTauri } from "@/lib/tauri";
+import { supportsEducation } from "@/lib/spaces";
+import { Icon } from "@/icons";
 
 import { openCourseImport, useRun, useSitesVersion } from "./import-store";
 
@@ -12,12 +14,13 @@ import { openCourseImport, useRun, useSitesVersion } from "./import-store";
  * Nothing while the sites load, or once one is connected.
  */
 export function CoursesSuggestion({ spaceId }: { spaceId: string }) {
+  const education = supportsEducation(spaceId);
   const [none, setNone] = useState(false);
   // Looked at again when an import ends (a site may have been connected).
   const ended = useRun()?.status !== "running";
   const changed = useSitesVersion();
   useEffect(() => {
-    if (!inTauri()) return;
+    if (!inTauri() || !education) return;
     let live = true;
     lmsConnections().then(
       (cs) => live && setNone(cs.length === 0),
@@ -26,14 +29,13 @@ export function CoursesSuggestion({ spaceId }: { spaceId: string }) {
     return () => {
       live = false;
     };
-  }, [spaceId, ended, changed]);
-  if (!none) return null;
+  }, [spaceId, ended, changed, education]);
+  if (!none || !education) return null;
   return (
-    <p className="max-w-md text-base text-ink-secondary" data-courses-suggestion="">
-      Taking classes? Phaethon can bring in your courses from Canvas, Brightspace, Moodle or Blackboard.{" "}
-      <Button type="button" variant="link" className="inline-flex align-baseline" onClick={() => openCourseImport({ space: spaceId })}>
-        Import courses…
+    <div data-courses-suggestion="">
+      <Button type="button" variant="ghost" size="sm" onClick={() => openCourseImport({ space: spaceId })}>
+        <Icon name="book" />Import courses
       </Button>
-    </p>
+    </div>
   );
 }

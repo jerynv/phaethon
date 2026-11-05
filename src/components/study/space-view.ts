@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { supportsEducation } from "@/lib/spaces";
 
 /**
  * Which view each space shows: its conversation, Study, Grades or Plan. Kept
@@ -14,6 +15,8 @@ export const VIEWS: { id: SpaceView; label: string; digit: number }[] = [
   { id: "plan", label: "Plan", digit: 4 },
 ];
 
+export const visibleViews = (space: string) => supportsEducation(space) ? VIEWS : VIEWS.filter((v) => v.id === "chat");
+
 export const viewLabel = (v: SpaceView) => VIEWS.find((x) => x.id === v)?.label ?? v;
 export const tabId = (space: string, v: SpaceView) => `view-tab-${space}-${v}`;
 export const panelId = (space: string, v: SpaceView) => `view-panel-${space}-${v}`;
@@ -28,6 +31,7 @@ const emit = () => listeners.forEach((l) => l());
  * focus on the tab).
  */
 export function setSpaceView(space: string, view: SpaceView, focus = false): void {
+  if (view !== "chat" && !supportsEducation(space)) return;
   if (views.get(space) !== view) {
     views.set(space, view);
     emit();
@@ -35,7 +39,7 @@ export function setSpaceView(space: string, view: SpaceView, focus = false): voi
   if (focus) requestAnimationFrame(() => requestAnimationFrame(() => focusView(space, view)));
 }
 
-export const getSpaceView = (space: string): SpaceView => views.get(space) ?? "chat";
+export const getSpaceView = (space: string): SpaceView => supportsEducation(space) ? views.get(space) ?? "chat" : "chat";
 
 export function useSpaceView(space: string): SpaceView {
   return useSyncExternalStore(
@@ -73,6 +77,7 @@ const requestListeners = new Set<() => void>();
 
 /** Open Study in `space` and start making a deck or a quiz, a review of everything due, or open one by its path. */
 export function requestStudy(space: string, what: StudyRequest["what"], deck?: string, path?: string): void {
+  if (!supportsEducation(space)) return;
   request = { space, what, deck, path, key: nextKey++ };
   setSpaceView(space, "study");
   requestListeners.forEach((l) => l());

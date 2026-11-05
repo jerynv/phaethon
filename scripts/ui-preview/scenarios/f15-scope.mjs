@@ -178,11 +178,15 @@ export default [
     async run(page, h) {
       await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
       await page.click(`${NAV} [data-view-tab="study"]`);
+      await page.waitForSelector(`${SHOWN} [data-open-course]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-open-course]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
-      await page.waitForSelector(`${SHOWN} [data-grounding]`, { timeout: 4000 });
+      await page.waitForSelector(`${SHOWN} [data-quiz-form]`, { timeout: 4000 });
+      await page.click("[data-quiz-details]");
+      await page.waitForSelector("[data-quiz-details-content] [data-grounding]", { timeout: 4000 });
       const g = await page.evaluate((S) => {
-        const box = document.querySelector(`${S} [data-grounding]`);
+        const box = document.querySelector("[data-quiz-details-content] [data-grounding]");
         return {
           scope: box.querySelector("[data-scope-line]")?.innerText.replace(/\s+/g, " "),
           note: box.querySelector("[data-grounding-note]")?.innerText,
@@ -196,11 +200,13 @@ export default [
       check(g.fit, "nothing scrolls sideways");
       await h.shot("header");
       // Coverage and what the check left out.
-      await page.evaluate((S) => document.querySelectorAll(`${S} [data-grounding] details`).forEach((d) => (d.open = true)), SHOWN);
-      const cov = await page.evaluate((S) => ({ cov: document.querySelector(`${S} [data-coverage]`)?.innerText, dropped: document.querySelector(`${S} [data-dropped]`)?.innerText }), SHOWN);
+      await page.evaluate((S) => document.querySelectorAll("[data-quiz-details-content] [data-grounding] details").forEach((d) => (d.open = true)), SHOWN);
+      const cov = await page.evaluate((S) => ({ cov: document.querySelector("[data-quiz-details-content] [data-coverage]")?.innerText, dropped: document.querySelector("[data-quiz-details-content] [data-dropped]")?.innerText }), SHOWN);
       check(cov.cov.includes("Relations (4.1–4.4): none, its questions didn’t pass the check") && cov.cov.includes("Properties of functions (5.3): 2 questions"), "coverage says which topics got questions and why one got none", cov.cov);
       check(cov.dropped.includes("preimages are never defined"), "what was dropped is said with why", cov.dropped);
       await h.shot("details");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-quiz-details-content]"));
       // In the results, each question says where it comes from, the passage one fold below with the file a click on.
       await page.click(`${SHOWN} [data-quiz-submit]`);
       await page.waitForSelector(`${SHOWN} [data-submit-anyway]`, { timeout: 3000 });
@@ -292,6 +298,8 @@ export default [
     async run(page, h) {
       await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
       await page.click(`${NAV} [data-view-tab="study"]`);
+      await page.waitForSelector(`${SHOWN} [data-open-course]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-open-course]`);
       await page.waitForSelector(`${SHOWN} [data-study-deck-row]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-study-deck-row]`);
       await page.waitForSelector(`${SHOWN} [data-card-front]`, { timeout: 4000 });

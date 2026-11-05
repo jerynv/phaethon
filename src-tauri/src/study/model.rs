@@ -450,15 +450,7 @@ impl Model for AnyModel {
 /// Gemini CLI (see [`agent::Cli::own_home`]), for Claude Code when the vault
 /// keeps its setup apart (`isolateClaudeConfig`); `None` otherwise.
 pub fn cli_config_dir(vault: &Vault, root: Option<&Path>, cli: agent::Cli) -> Option<PathBuf> {
-    if !cli.own_home() && !vault.settings().isolate_claude_config {
-        return None;
-    }
-    let root = root?;
-    Some(match cli {
-        // Claude Code's predates the others and keeps its place.
-        agent::Cli::Claude => root.join(vault.name()),
-        other => root.join(format!("{}-{}", vault.name(), other.id())),
-    })
+    crate::agent_instances::home(vault, root, &crate::agent_instances::selected(vault, cli))
 }
 
 /// The model for `space_dir`: the vault's CLI when it uses one; Phaethon's
@@ -466,8 +458,12 @@ pub fn cli_config_dir(vault: &Vault, root: Option<&Path>, cli: agent::Cli) -> Op
 /// else Claude Code if it is installed; else why the provider can't answer.
 pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&Path>) -> Result<AnyModel, String> {
     let settings = vault.settings();
+    if let Some(cli) = agent::Cli::of(settings.backend) {
+        crate::agent_instances::require_home(vault, isolated_config_root, &crate::agent_instances::selected(vault, cli))?;
+    }
     let cli = |_: &crate::vault::VaultSettings| {
-        agent::find_claude().map(|bin| CliModel {
+        if crate::agent_instances::require_home(vault, isolated_config_root, &crate::agent_instances::selected(vault, agent::Cli::Claude)).is_err() { return None; }
+        crate::agent_instances::binary(agent::Cli::Claude, cli_config_dir(vault, isolated_config_root, agent::Cli::Claude).as_deref()).map(|bin| CliModel {
             bin,
             cwd: space_dir.to_path_buf(),
             config_dir: cli_config_dir(vault, isolated_config_root, agent::Cli::Claude),
@@ -477,7 +473,7 @@ pub fn for_space(vault: &Vault, space_dir: &Path, isolated_config_root: Option<&
         return cli(&settings).map(AnyModel::Cli).ok_or_else(|| agent::MISSING_CLI_MESSAGE.to_string());
     }
     if let Some(other) = agent::Cli::of(settings.backend) {
-        let bin = other.find().ok_or_else(|| other.missing_message().to_string())?;
+        let bin = crate::agent_instances::binary(other, cli_config_dir(vault, isolated_config_root, other).as_deref()).ok_or_else(|| other.missing_message().to_string())?;
         return Ok(AnyModel::OtherCli(OtherCliModel {
             cli: other,
             bin,

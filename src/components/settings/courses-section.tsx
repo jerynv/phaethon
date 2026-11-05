@@ -5,6 +5,7 @@ import { openCourseImport, sitesChanged, useRun, useSitesVersion } from "@/compo
 import { connectionName, hostOf, kindLabel, plural, whenText } from "@/components/lms/sites";
 import { MaterialLines } from "@/components/study/material-note";
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import {
   COURSE_PARTS,
@@ -21,6 +22,7 @@ import { useActiveSpaceId, useSpaces, type Space } from "@/lib/spaces";
 
 import { SectionHeader, SettingGroup } from "./controls";
 import { useStatus } from "./status";
+import { CourseSiteMark } from "./course-site-mark";
 
 /**
  * Settings › Course sites, for the whole vault: the course sites connected
@@ -57,7 +59,7 @@ export function CoursesSection({ headingId }: { headingId: string }) {
       <SectionHeader
         id={headingId}
         title="Course sites"
-        description="The school course sites (Canvas, Brightspace, Moodle, Blackboard) your courses come from. One sign-in serves all your spaces, kept in your keychain on this computer, and you choose which spaces see which courses. Phaethon only reads from a course site: it never changes anything there."
+        action={<Button ref={importRef} type="button" size="sm" data-sites-import="" onClick={() => openCourseImport({ space: active })}><Icon name="plus" />Connect site</Button>}
       />
       {error ? (
         <p role="alert" className="flex items-start gap-2 px-1 text-sm text-danger-ink">
@@ -74,18 +76,11 @@ export function CoursesSection({ headingId }: { headingId: string }) {
               {list.map((c) => (
                 <SiteRow key={c.id} space={active} connection={c} onSignedOut={load} />
               ))}
-              <div className="px-4 py-3">
-                <Button ref={importRef} type="button" variant="outline" size="sm" data-sites-import="" onClick={() => openCourseImport({ space: active })}>
-                  <Icon name="plus" />
-                  {list.length ? "Connect another course site…" : "Import courses…"}
-                </Button>
-              </div>
             </div>
           </SettingGroup>
           {access.courses.length > 0 && (
             <SettingGroup
-              title="Who can see each course"
-              description="Check what each space can see. The assistant in a space reads only what’s checked for it, and so do its study, grades and plan views."
+              title="Course access"
               bare
             >
               {access.problems.length > 0 && (
@@ -150,28 +145,24 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
   }
 
   return (
-    <div className="flex flex-col gap-2.5 px-4 py-3.5" data-site-row={c.id} data-signed-in={c.signedIn ? "" : undefined}>
-      <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-3 px-3.5 py-3" data-site-row={c.id} data-signed-in={c.signedIn ? "" : undefined}>
+      <div className="flex items-center gap-3"><CourseSiteMark connection={c} /><div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <h5 id={nameId} className="text-base font-medium wrap-anywhere text-ink">
           {name}
         </h5>
         <p className="text-sm wrap-anywhere text-ink-secondary">
           {kindLabel(c.kind)} · {hostOf(c.address)}
         </p>
-        <p className="flex items-center gap-1.5 text-sm text-ink" data-site-status="">
+        <p className="flex items-center gap-1.5 text-xs text-ink-secondary" data-site-status="">
           <Icon name={c.signedIn ? "success" : "warning"} className={c.signedIn ? "size-(--ph-icon-size-sm) text-success-ink" : "size-(--ph-icon-size-sm) text-warning-ink"} />
-          {c.signedIn ? "Signed in" : "Signed out: sign in again to import"}
+          {c.signedIn ? "Connected" : "Signed out"}
+          <span aria-hidden="true">·</span><span data-site-imported="">{plural(n, "course", "courses")}{c.lastSync ? ` · ${whenText(c.lastSync)}` : ""}</span>
         </p>
-        <p className="text-sm text-ink-secondary" data-site-imported="">
-          {n ? `${plural(n, "course", "courses")} imported` : "No courses imported yet"}
-          {c.lastSync ? `, last on ${whenText(c.lastSync)}` : ""}.
-        </p>
-      </div>
+      </div></div>
       {confirming ? (
         <div className="flex flex-col gap-2 rounded-md bg-surface px-3 py-2.5" data-site-confirm="">
           <p id={askId} className="text-sm text-ink">
-            Sign out of {name}? Phaethon forgets this sign-in.{" "}
-            {n ? `The ${plural(n, "course", "courses")} already imported stay as files, and so does who can see them.` : "Nothing is removed."}
+            Disconnect {name}? Imported courses stay available.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button ref={confirmRef} type="button" variant="destructive" size="sm" disabled={busy} aria-describedby={askId} onClick={() => void signOut()} data-site-confirm-yes="">
@@ -195,22 +186,21 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
           {c.signedIn ? (
             <>
               <Button type="button" variant="outline" size="sm" data-site-action="more" onClick={() => openCourseImport({ space, connection: c.id, at: "choose" })}>
-                Import more…
+                <Icon name="plus" />Import courses
               </Button>
               {n > 0 && (
-                <Button type="button" variant="outline" size="sm" data-site-action="sync" onClick={() => openCourseImport({ space, connection: c.id, at: "sync" })}>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={`Refresh ${name}`} title="Refresh courses" data-site-action="sync" onClick={() => openCourseImport({ space, connection: c.id, at: "sync" })}>
                   <Icon name="retry" />
-                  Import again
                 </Button>
               )}
-              <Button ref={signOutRef} type="button" variant="ghost" size="sm" data-site-action="signout" onClick={() => setConfirming(true)}>
-                Sign out…
+              <Button ref={signOutRef} type="button" variant="ghost" size="sm" className="ms-auto" data-site-action="signout" onClick={() => setConfirming(true)}>
+                Disconnect
               </Button>
             </>
           ) : (
             <Button type="button" variant="outline" size="sm" data-site-action="signin" onClick={() => openCourseImport({ space, connection: c.id, at: "signin" })}>
               <Icon name="lock" />
-              Sign in again…
+              Reconnect
             </Button>
           )}
         </div>
@@ -306,7 +296,7 @@ function AccessGrid({
         </h5>
         {label && <p className="text-sm text-ink-secondary">{label}</p>}
       </div>
-      <MaterialLines summary={course.material} details className="flex flex-col" />
+      <Details summary="Import details"><MaterialLines summary={course.material} details className="flex flex-col" /></Details>
       {/* A data table: wider than a narrow window, it scrolls sideways on its own, never the page. */}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <table ref={tableRef} role="grid" aria-labelledby={captionId} onKeyDown={onKeyDown} className="w-max min-w-full border-collapse text-sm" data-access-grid={course.key}>

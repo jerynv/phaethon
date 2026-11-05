@@ -126,7 +126,7 @@ export default [
     name: "f8-space-courses",
     sizes: [[1100, 720], [640, 480]],
     themes: ["light"],
-    mock: { ...MOCK, courseAccess: { school: { "c1/101": [...ALL], "c1/102": [...ALL] }, work: { "c1/101": ["syllabus", "files"] } } },
+    mock: { ...MOCK, spaces: [{ id: "school", name: "School", description: "Courses", hue: 240, educationEnabled: true }, { id: "work", name: "Work", description: "Projects", hue: 50, educationEnabled: true }], courseAccess: { school: { "c1/101": [...ALL], "c1/102": [...ALL] }, work: { "c1/101": ["syllabus", "files"] } } },
     async run(page, h) {
       await page.waitForSelector(COMPOSER, { timeout: 5000 });
       await chord(page, ["Meta", ","]);
@@ -136,12 +136,13 @@ export default [
       // Folded, each space's line says how many courses it sees.
       const folded = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("[data-space-row]")].map((r) => [r.dataset.spaceRow, r.querySelector("[data-space-summary]")?.textContent])));
       check(folded.school === "Sees 2 courses" && folded.work === "Sees 1 course", "folded, each space says how many courses it sees", JSON.stringify(folded));
-      await openSpaceDetails(page);
+      await openSpaceDetails(page, ["school"]);
       const lists = await page.evaluate(() =>
         Object.fromEntries([...document.querySelectorAll("[data-space-courses]")].map((d) => [d.dataset.spaceCourses, [...d.querySelectorAll("[data-space-course]")].map((li) => li.innerText.replace(/\s+/g, " ").trim())])),
       );
       check(lists.school.length === 2 && lists.school.every((t) => t.endsWith("all of it")), "School sees both courses, all of them", JSON.stringify(lists));
-      check(lists.work.join() === "Discrete Structures for Computer Science syllabus, files", "Work sees one course, in words", JSON.stringify(lists));
+      check(lists.work.length === 1 && lists.work[0].includes("Discrete Structures for Computer Science") && lists.work[0].endsWith("syllabus, files"), "Work sees one course, in words", JSON.stringify(lists));
+      await openSpaceDetails(page, ["work"]);
       await page.$eval('[data-space-courses="work"]', (e) => e.scrollIntoView({ block: "center" }));
       await h.shot("spaces");
       await page.click('[data-space-courses="work"] [data-space-courses-change]');
@@ -159,7 +160,7 @@ export default [
       await page.waitForSelector(COMPOSER, { timeout: 5000 });
       await page.focus(COMPOSER);
       await chord(page, ["Meta", "k"]);
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("import courses");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-existing-site="c1"]', { timeout: 3000 });
@@ -208,8 +209,8 @@ export default [
       ...MOCK,
       // Work is the space in front; it sees no course.
       spaces: [
-        { id: "school", name: "School", description: "Courses", hue: 240 },
-        { id: "work", name: "Work", description: "Projects", hue: 50, lastUsed: Date.now() },
+        { id: "school", name: "School", description: "Courses", hue: 240, educationEnabled: true },
+        { id: "work", name: "Work", description: "Projects", hue: 50, educationEnabled: true, lastUsed: Date.now() },
       ],
     },
     async run(page, h) {

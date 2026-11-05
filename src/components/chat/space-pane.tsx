@@ -12,7 +12,7 @@ import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import { setSpaceActivity } from "@/lib/activity";
 import { getSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedDetail } from "@/lib/backend";
-import type { Space } from "@/lib/spaces";
+import { supportsEducation, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useConversationHost } from "@/lib/conversation-nav";
@@ -301,13 +301,12 @@ export function SpacePane({ space, reloadKey, onConversationChosen }: { space: S
     );
   }
 
-  // Chat, Study, Grades, Plan. Each view seen stays mounted (out of sight and inert while another
-  // shows), so the conversation keeps its reply, draft and scroll, and a review keeps its place.
+  // Preload supported views once and retain their keyed mounts. Switching tabs only
+  // changes visibility, so a first visit is ready and quizzes/drafts keep their state.
   const view = useSpaceView(space.id);
-  const [seen, setSeen] = useState<readonly SpaceView[]>(["chat"]);
-  if (!seen.includes(view)) setSeen([...seen, view]);
+  const education = supportsEducation(space);
   const panel = (v: SpaceView, content: ReactNode, ref?: RefObject<HTMLDivElement | null>) =>
-    seen.includes(v) && (
+    (v === "chat" || education) && (
       <div
         key={v}
         ref={ref}
@@ -339,7 +338,7 @@ export function SpacePane({ space, reloadKey, onConversationChosen }: { space: S
           className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-line bg-bg px-2 forced-colors:border-[CanvasText]"
         >
           <div className="py-1.5">
-            <ViewSwitcher space={space.id} spaceName={space.name} view={view} />
+            {education && <ViewSwitcher space={space.id} spaceName={space.name} view={view} />}
           </div>
           <div ref={setFallbackHost} className="min-w-0 flex-1" data-conversations-host="" />
         </div>

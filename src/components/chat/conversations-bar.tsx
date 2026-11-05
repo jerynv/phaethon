@@ -598,7 +598,7 @@ export function ConversationsBar({
               }}
               className={cn(
                 // 22rem at the default text size, growing with it; never wider or taller than the room.
-                "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none",
+                "z-50 flex max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[calc(24rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none",
                 "origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
                 // An exit animation too: without one Radix keeps the closed menu mounted, and its
                 // outside-click layer then dismisses the next open at once.
@@ -754,28 +754,20 @@ export function ConversationsBar({
                           disabled={working}
                           data-thread-id={t.id}
                           aria-keyshortcuts={empty ? undefined : "Delete"}
+                          aria-label={`${t.title}, ${stamp}`}
                           onSelect={() => void choose(t)}
                           className={cn(
                             itemClass,
-                            "grid min-w-0 grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 py-2 ps-2.5",
+                            "flex min-h-(--ph-control-height) min-w-0 items-center gap-2 py-1.5 ps-2.5",
                             empty ? "pe-2.5" : "pe-[calc(var(--ph-control-height)+var(--ph-space)*1.5)] group-hover/row:bg-hover",
                           )}
                         >
-                          {/* One line tall, so the check centres on the title at any text size. */}
-                          <span className="flex h-[1lh] items-center text-base">
-                            <DropdownMenu.ItemIndicator>
-                              <Icon name="check" className="text-accent-ink" />
-                            </DropdownMenu.ItemIndicator>
+                          {/* T3 Code SidebarThreadRow (MIT): one title line, metadata at its end. */}
+                          <span className="min-w-0 flex-1 truncate text-sm" title={t.title}>{t.title}</span>
+                          <span className="shrink-0 text-xs text-ink-secondary" title={stamp} data-thread-stamp="">
+                            {t.current ? "Current" : relativeDate(t.updated, undefined, stamp.startsWith("Earlier version"))}
                           </span>
-                          <span className="flex min-w-0 flex-col">
-                            {/* Up to two lines, so titles that start alike can be told apart in any reading font. */}
-                            <span className="line-clamp-2 text-base font-medium wrap-break-word" title={t.title}>
-                              {t.title}
-                            </span>
-                            <span className="text-sm text-ink-secondary" data-thread-stamp="">
-                              {stamp}
-                            </span>
-                          </span>
+                          <DropdownMenu.ItemIndicator className="flex shrink-0 items-center"><Icon name="check" className="size-3.5 text-ink-secondary" /></DropdownMenu.ItemIndicator>
                         </DropdownMenu.RadioItem>
                         {!empty && (
                           <DropdownMenu.Item
@@ -789,7 +781,7 @@ export function ConversationsBar({
                             }}
                             className={cn(
                               itemClass,
-                              "absolute end-1 top-1 flex size-(--ph-control-height) items-center justify-center text-ink-secondary data-highlighted:bg-danger-soft data-highlighted:text-danger-ink",
+                              "absolute end-1 top-1/2 flex size-(--ph-control-height-sm) -translate-y-1/2 items-center justify-center text-ink-secondary opacity-0 group-hover/row:opacity-100 focus:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100 data-highlighted:bg-danger-soft data-highlighted:text-danger-ink",
                             )}
                           >
                             <Icon name="trash" className="size-(--ph-icon-size-sm)" />
@@ -799,11 +791,6 @@ export function ConversationsBar({
                     );
                   })}
                 </DropdownMenu.RadioGroup>
-              )}
-              {list.status === "ready" && threads.length <= 1 && (
-                <p className="px-2.5 pt-1 pb-2 text-sm text-ink-secondary">
-                  Conversations you leave with New conversation are kept here.
-                </p>
               )}
               {/* Always present, so the menu has an item in every state (loading, an error). */}
               <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
@@ -887,7 +874,7 @@ export function ConversationsBar({
               type="button"
               variant="ghost"
               size="icon-xs"
-              className="text-warning-ink hover:bg-transparent hover:underline"
+              className="text-warning-ink hover:bg-transparent"
               aria-label="Dismiss"
               onClick={() => setProblem("")}
             >

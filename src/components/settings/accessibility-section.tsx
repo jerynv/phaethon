@@ -1,96 +1,31 @@
-import { RadioGroup } from "radix-ui";
+import { NativeSelect } from "vic-ui";
 import { useId } from "react";
 
 import { effective, setAppearance, setToken, setWideReading, useAppearance, useSystemPrefs } from "@/theme";
 import type { ReadingFont } from "@/theme/tokens";
-import { Icon } from "@/icons";
-import { cn } from "@/lib/utils";
 
-import { SettingGroup, SwitchRow, TokenRow, radioArrowKeys } from "./controls";
+import { SettingGroup, SettingRow, SwitchRow, TokenRow } from "./controls";
+import { SectionReset } from "./section-reset";
 
-/** Reading-font choices. Each card shows its sample in its own face. */
-const FONTS: { value: ReadingFont; label: string; description: string; family: string }[] = [
-  {
-    value: "atkinson",
-    label: "Atkinson Hyperlegible",
-    description: "The default. Made for low vision: letters that are easy to tell apart.",
-    family: "\"Atkinson Hyperlegible Next Variable\", var(--ph-font-fallback)",
-  },
-  {
-    value: "opendyslexic",
-    label: "OpenDyslexic",
-    description: "Weighted letter bottoms that some people with dyslexia find easier to follow.",
-    family: "\"OpenDyslexic\", var(--ph-font-fallback)",
-  },
-  {
-    value: "lexend",
-    label: "Lexend",
-    description: "Wide, simple letters designed to make reading flow more easily.",
-    family: "\"Lexend Variable\", var(--ph-font-fallback)",
-  },
-  {
-    value: "system",
-    label: "System font",
-    description: "Your computer’s own interface font.",
-    family: "var(--ph-font-fallback)",
-  },
+const FONTS: { value: ReadingFont; label: string }[] = [
+  { value: "atkinson", label: "Atkinson Hyperlegible" },
+  { value: "opendyslexic", label: "OpenDyslexic" },
+  { value: "lexend", label: "Lexend" },
+  { value: "system", label: "System font" },
 ];
 
-/** Typeface for all text in Phaethon; code keeps its own monospace font. */
+/** T3 Code's settings use compact native selectors for finite preference lists. */
 export function ReadingFontRow() {
   const a = useAppearance();
-  const labelId = useId();
-  const descId = useId();
-  const pick = (v: string) => setAppearance((p) => ({ ...p, readingFont: v as ReadingFont }));
+  const id = useId();
   return (
-    <div className="flex flex-col gap-3 px-4 py-3.5">
-      <div className="flex flex-col gap-0.5">
-        <span id={labelId} className="text-base font-medium text-ink">
-          Reading font
-        </span>
-        <p id={descId} className="max-w-(--ph-measure) text-sm text-ink-secondary">
-          The typeface for everything in Phaethon. Code keeps its own font. Try them on the sample.
-        </p>
-      </div>
-      <RadioGroup.Root
-        aria-labelledby={labelId}
-        aria-describedby={descId}
-        value={a.readingFont}
-        onValueChange={pick}
-        onKeyDownCapture={radioArrowKeys(pick)}
-        orientation="horizontal"
-        loop
-        className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,var(--ph-font-card-min)),1fr))] gap-3"
-      >
-        {FONTS.map((f) => (
-          <RadioGroup.Item
-            key={f.value}
-            value={f.value}
-            data-font-card={f.value}
-            className={cn(
-              "group flex min-w-0 flex-col items-start gap-1.5 rounded-lg border border-line-strong bg-raised p-3 text-left transition-colors duration-(--ph-duration-fast) hover:border-ink-tertiary",
-              "data-[state=checked]:border-accent-fill data-[state=checked]:shadow-[0_0_0_var(--ph-border-width)_var(--ph-accent)]",
-            )}
-          >
-            <span className="flex w-full items-start gap-1.5">
-              <span className="min-w-0 flex-1 text-base text-ink group-data-[state=checked]:font-semibold" style={{ fontFamily: f.family }}>
-                {f.label}
-              </span>
-              <RadioGroup.Indicator className="mt-0.5 shrink-0 text-accent-ink">
-                <Icon name="check" className="size-(--ph-icon-size-sm)" />
-              </RadioGroup.Indicator>
-            </span>
-            <span className="text-md text-ink" style={{ fontFamily: f.family }} aria-hidden="true">
-              Pack my box with five dozen liquor jugs.
-            </span>
-            <span className="text-sm text-ink-secondary">{f.description}</span>
-          </RadioGroup.Item>
-        ))}
-      </RadioGroup.Root>
-    </div>
+    <SettingRow label="Reading font" htmlFor={id}>
+      <NativeSelect id={id} data-reading-font="" value={a.readingFont} onChange={(e) => setAppearance((p) => ({ ...p, readingFont: e.target.value as ReadingFont }))}>
+        {FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+      </NativeSelect>
+    </SettingRow>
   );
 }
-import { SectionReset } from "./section-reset";
 
 export const ACCESSIBILITY_TOKENS = [
   "--ph-text-scale",
@@ -115,7 +50,6 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
       <SectionReset
         headingId={headingId}
         title="Accessibility"
-        description="Make Phaethon easier to see, read and use. Your system’s accessibility settings are followed unless you turn something on here."
         what="accessibility"
         tokens={ACCESSIBILITY_TOKENS}
         resetAccess
@@ -125,13 +59,13 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-text-scale" quickPicks />
         <SwitchRow
           label="Increase contrast"
-          description="Darker text and stronger borders in light and dark themes."
+          description="Stronger text and borders."
           checked={a.increaseContrast === "on"}
           onChange={(on) => setAppearance((p) => ({ ...p, increaseContrast: on ? "on" : "system" }))}
           status={
             a.increaseContrast === "on"
-              ? "On in Phaethon, whatever your system uses."
-              : `Following your system, which has it ${sys.moreContrast ? "on" : "off"}.`
+              ? "On"
+              : `System: ${sys.moreContrast ? "on" : "off"}`
           }
         />
         <SwitchRow
@@ -140,7 +74,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
           description="Outline the active control."
           checked={Number(a.tokens["--ph-focus-rings"] ?? 0) === 1}
           onChange={(on) => setToken("--ph-focus-rings", on ? 1 : 0)}
-          status={Number(a.tokens["--ph-focus-rings"] ?? 0) === 1 ? "On" : "Off by default"}
+          status={Number(a.tokens["--ph-focus-rings"] ?? 0) === 1 ? "On" : "Off"}
         />
         {Number(a.tokens["--ph-focus-rings"] ?? 0) === 1 && (
           <TokenRow name="--ph-focus-width">
@@ -150,7 +84,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-icon-stroke" />
       </SettingGroup>
 
-      <SettingGroup title="Reading" description="Font and spacing changes show in the sample below and across Phaethon as you make them.">
+      <SettingGroup title="Reading">
         <ReadingFontRow />
         <TokenRow name="--ph-leading-normal" />
         <TokenRow name="--ph-tracking-normal" />
@@ -166,18 +100,18 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
       <SettingGroup title="Motion">
         <SwitchRow
           label="Reduce motion"
-          description="Turns off animation: panels and messages appear without moving or fading."
+          description="Minimize interface animation."
           checked={a.reduceMotion === "on"}
           onChange={(on) => setAppearance((p) => ({ ...p, reduceMotion: on ? "on" : "system" }))}
           status={
             a.reduceMotion === "on"
-              ? "On in Phaethon, whatever your system uses."
-              : `Following your system, which has it ${sys.reduceMotion ? "on" : "off"}.`
+              ? "On"
+              : `System: ${sys.reduceMotion ? "on" : "off"}`
           }
         />
         {now.reduceMotion ? (
           <p className="px-4 py-3.5 text-sm text-ink-secondary">
-            Animation length is not shown while motion is reduced: every change is already instant.
+            Motion reduction is enabled.
           </p>
         ) : (
           <TokenRow name="--ph-duration-scale" />
@@ -224,10 +158,10 @@ function WideReadingRow() {
   return (
     <SwitchRow
       label="Wide reading"
-      description={"The conversation and the message box use most of the window instead of a comfortable line length. Handy for wide tables and code, or with large text."}
+      description="Use the available conversation width."
       checked={on}
       onChange={(next) => setWideReading(next)}
-      status={on ? "On: the conversation uses most of the window." : "Off: lines keep a comfortable reading length."}
+      status={on ? "On" : "Off"}
     />
   );
 }
@@ -239,10 +173,10 @@ function LargerTargetsRow() {
   return (
     <SwitchRow
       label="Larger click targets"
-      description="Makes buttons, switches and other controls at least 44 pixels across, so they are easier to hit with a shaky hand, a head pointer or dwell clicking."
+      description="44 px minimum controls."
       checked={on}
       onChange={(next) => setToken("--ph-target-size", next ? 44 : 24)}
-      status={on ? "On: controls are at least 44 by 44 pixels." : "Off: controls are at least 24 by 24 pixels, the usual desktop size."}
+      status={on ? "44 px" : "24 px"}
     />
   );
 }

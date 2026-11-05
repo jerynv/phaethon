@@ -83,6 +83,27 @@ export const listCliModels = (cli: "claude" | "codex" | "gemini") => invoke<CliM
 /** Stop a sign-in that waits for the browser; false if none was waiting. */
 export const cancelCliSignIn = (cli: "codex" | "gemini") => invoke<boolean>("agent_cli_sign_in_cancel", { cli });
 
+export type AgentCli = "claude" | "codex" | "gemini";
+export type AgentInstanceConfig = { id: string; cli: AgentCli; name: string; binary: string; args: string[] };
+export type AgentInstanceView = {
+  config: AgentInstanceConfig;
+  installed: boolean;
+  loggedIn: boolean | null;
+  account: string | null;
+  plan: string | null;
+  selected: boolean;
+  managedHome: boolean;
+};
+export const agentInstances = () => invoke<AgentInstanceView[]>("agent_instances_list");
+export const saveAgentInstance = (instance: AgentInstanceConfig) => invoke<AgentInstanceConfig>("agent_instance_save", { instance });
+export const selectAgentInstance = (id: string) => invoke<void>("agent_instance_select", { id });
+export const signInAgentInstance = (id: string) => invoke<CliSignIn>("agent_instance_sign_in", { id });
+export const cancelAgentInstanceSignIn = (id: string) => invoke<boolean>("agent_instance_sign_in_cancel", { id });
+export const removeAgentInstance = (id: string) => invoke<void>("agent_instance_remove", { id });
+export const signOutAgentInstance = (id: string) => invoke<void>("agent_instance_sign_out", { id });
+export type AgentInstanceUsage = { available: boolean; windows: { label: string; usedPercent: number; resetsAt: string | number | null }[]; reason: string | null };
+export const agentInstanceUsage = (id: string) => invoke<AgentInstanceUsage>("agent_instance_usage", { id });
+
 /**
  * Mirrors `SettingsView` in src-tauri/src/lib.rs. The key itself never comes back.
  * `appearance` is whatever passed the core's shape check (`{}` when none is

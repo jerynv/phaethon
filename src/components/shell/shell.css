@@ -38,3 +38,21 @@
 /* T3 Code’s ComposerSurface keeps its dark surface defined by the rim alone.
    Reference: https://github.com/pingdotgg/t3code/blob/7f6f47b/apps/web/src/components/chat/ComposerSurface.tsx */
 [data-mode="dark"] [data-composer] { box-shadow: none; }
+
+/* Vic's native palette provides the complete search interaction. The result
+   proportions follow T3 Code's CommandPaletteResultRow (MIT). */
+.ph-command-palette { max-width: calc(38rem * var(--ph-ui-scale)); color: var(--ph-ink); }
+/* T3's CommandList / AutocompleteList grow with their content up to a cap. */
+.ph-command-palette .ui-palette-list { height: auto; max-height: min(26rem, calc(60dvh - 7.5rem)); scrollbar-gutter: stable; }
+.ph-command-palette .ui-palette-title { flex: 1; min-width: 0; }
+.ph-command-palette .ui-palette-line { white-space: normal; }
+.ph-command-palette .ui-menu-item { min-height: var(--ph-control-height); padding-block: calc(var(--ph-space) * 1.5); font-size: var(--ph-text-base); }
+.ph-command-palette .ui-palette-go { display: none; }
+.ph-command-palette .ui-menu-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-conversation-search .ui-palette-item { align-items: center; }
+.ph-add-trigger:hover, .ph-add-trigger[aria-expanded="true"] { outline: 1px solid var(--ph-line-strong); outline-offset: -1px; }
+
+/* Message controls share one reveal instead of displacing an always-on time. */
+.ph-message-meta { opacity: 0; transition: opacity var(--ph-duration-fast); }
+[data-role]:hover .ph-message-meta, [data-role]:focus-within .ph-message-meta, .ph-message-meta:focus-within { opacity: 1; }
+@media (hover: none) { .ph-message-meta { opacity: 1; } }

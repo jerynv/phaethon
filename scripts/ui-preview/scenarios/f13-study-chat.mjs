@@ -306,6 +306,8 @@ export default [
     async run(page, h) {
       await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
       await page.click(`${NAV} [data-view-tab="study"]`);
+      await page.waitForSelector(`${SHOWN} [data-open-course="${M301}"]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-open-course="${M301}"]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
       await page.waitForSelector(`${SHOWN} [data-quiz-form] .katex`, { timeout: 4000 });

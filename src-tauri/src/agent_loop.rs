@@ -29,6 +29,8 @@ pub const PREVIEW_CAP: usize = 512 * 1024;
 const BASE_PROMPT: &str = "You are Phaethon, a personal assistant working inside one space of the user's vault. \
 The space is a folder of the user's own files. You see it through your tools; every path is relative to the space root. \
 Look at files before answering questions about them rather than guessing. \
+For handwritten notes, scans, diagrams or equations that OCR misreads, use read_page on the original PDF and cite its source path and page. Never guess an unreadable symbol. \
+There is no web download tool in this built-in assistant. Read the course reading index for the actual source URL; when a textbook or reading is missing, guide the user to its publisher or library sign-in and ask them to attach the downloaded PDF. Never claim to have downloaded or read a file that is not available. \
 Writing a file always asks the user first. If they decline, accept that and do not retry the same write; ask what they would like instead. \
 Write plainly and keep replies short. Your replies are often read aloud by screen readers, so use headings, lists and tables only when they genuinely help.";
 
@@ -220,6 +222,7 @@ async fn drive<P: Provider>(
     let vault = Vault::at(req.vault_root);
     // "once" grants: this turn only, never written to disk.
     let mut once: Vec<Grant> = vec![];
+    let mut page_images_read = 0;
     // Re-read before each tool call, so a grant revoked mid-turn stops at once.
     let ctx = |once: &[Grant]| tools::Ctx {
         space: req.space_dir.to_path_buf(),
@@ -316,6 +319,7 @@ async fn drive<P: Provider>(
         for u in &uses {
             let id = u["id"].as_str().unwrap_or("").to_string();
             let name = u["name"].as_str().unwrap_or("");
+            let mut images = vec![];
             let outcome: Result<String, String> = if cancelled {
                 Err("Not run: the user stopped the reply.".into())
             } else if turn.stop_reason == "max_tokens" {
@@ -325,13 +329,15 @@ async fn drive<P: Provider>(
             } else {
                 match tools::parse_call(name, &u["input"]) {
                     Err(e) => Err(format!("Not run: {e}.")),
+                    Ok(tools::Call::ReadPage { .. }) if provider.image_input() != crate::vision::Sees::Yes => Err("The selected model is not known to accept page images. Choose a model with image input; until then, use the OCR text and ask the user to clarify unreadable handwriting or equations. No page image was sent.".into()),
+                    Ok(tools::Call::ReadPage { .. }) if page_images_read >= 6 => Err("Six PDF pages have been shown in this reply. Work from those pages or ask the user which page to inspect next.".into()),
                     Ok(call) => match tools::access(name) {
                         tools::Access::Read if tools::is_cross(&call) => {
                             // Shown and recorded only once the read is allowed and done, so
                             // the conversation never claims a read that was refused.
                             let label = tools::label(&call);
                             let read = read_record(&call, req.space_id);
-                            let r = run_tool(ctx(&once), call).await;
+                            let r = run_tool(ctx(&once), call, &mut images).await;
                             if r.is_ok() {
                                 emit(AgentEvent::Tool { label });
                                 if let Some(rec) = read {
@@ -342,7 +348,7 @@ async fn drive<P: Provider>(
                         }
                         tools::Access::Read => {
                             emit(AgentEvent::Tool { label: tools::label(&call) });
-                            run_tool(ctx(&once), call).await
+                            run_tool(ctx(&once), call, &mut images).await
                         }
                         tools::Access::Ask => {
                             let tools::Call::RequestAccess { space, path, reason } = &call else {
@@ -427,7 +433,7 @@ Do not ask for it again in this conversation. Work without it, or tell the user 
                                     record(&mut msgs, reply, Record::Approval { path, action, allowed }, emit);
                                     if allowed {
                                         emit(AgentEvent::Tool { label: tools::label(&call) });
-                                        run_tool(ctx(&once), call).await
+                                        run_tool(ctx(&once), call, &mut images).await
                                     } else {
                                         Err("The user declined this write. Nothing was changed.".into())
                                     }
@@ -438,6 +444,12 @@ Do not ask for it again in this conversation. Work without it, or tell the user 
                 }
             };
             results.push(match outcome {
+                Ok(text) if !images.is_empty() => {
+                    page_images_read += 1;
+                    let mut content = vec![json!({"type": "text", "text": text})];
+                    content.extend(images);
+                    json!({"type": "tool_result", "tool_use_id": id, "content": content})
+                },
                 Ok(text) => json!({"type": "tool_result", "tool_use_id": id, "content": text}),
                 Err(text) => json!({"type": "tool_result", "tool_use_id": id, "content": text, "is_error": true}),
             });
@@ -485,7 +497,7 @@ pub(crate) fn partial_reply(partial: &[String], stopped: bool) -> Option<Value> 
 fn read_record(call: &tools::Call, own: &str) -> Option<Record> {
     let (path, tool, query) = match call {
         tools::Call::List { path } => (path, ReadTool::List, None),
-        tools::Call::Read { path } => (path, ReadTool::Read, None),
+        tools::Call::Read { path } | tools::Call::ReadPage { path, .. } => (path, ReadTool::Read, None),
         tools::Call::Search { query, path } => (path, ReadTool::Search, Some(query.clone())),
         _ => return None,
     };
@@ -498,7 +510,13 @@ fn read_record(call: &tools::Call, own: &str) -> Option<Record> {
     Some(Record::Read { space: space.to_string(), path: parts.join("/"), tool, query })
 }
 
-async fn run_tool(ctx: tools::Ctx, call: tools::Call) -> Result<String, String> {
+async fn run_tool(ctx: tools::Ctx, call: tools::Call, images: &mut Vec<Value>) -> Result<String, String> {
+    if let tools::Call::ReadPage { path, page } = call {
+        let (label, image) = tokio::task::spawn_blocking(move || tools::read_page(&ctx, &path, page))
+            .await.map_err(|e| format!("the page renderer crashed: {e}"))??;
+        images.push(image);
+        return Ok(label);
+    }
     tokio::task::spawn_blocking(move || tools::run_in(&ctx, &call))
         .await
         .unwrap_or_else(|e| Err(format!("the tool crashed: {e}")))
@@ -611,6 +629,7 @@ mod tests {
         turns: StdMutex<Vec<Result<ModelTurn, ProviderError>>>,
         seen: StdMutex<Vec<Vec<Value>>>,
         systems: StdMutex<Vec<String>>,
+        sight: crate::vision::Sees,
     }
 
     impl Scripted {
@@ -619,11 +638,14 @@ mod tests {
                 turns: StdMutex::new(turns.into_iter().rev().collect()),
                 seen: StdMutex::new(vec![]),
                 systems: StdMutex::new(vec![]),
+                sight: crate::vision::Sees::Yes,
             }
         }
     }
 
     impl Provider for Scripted {
+        fn image_input(&self) -> crate::vision::Sees { self.sight }
+
         async fn turn(
             &self,
             req: ModelRequest<'_>,
@@ -704,6 +726,45 @@ mod tests {
         assert_eq!(thread::to_ui(&saved).len(), 2);
         assert!(system_prompt(&dir, "school").contains("Call me J."));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reads_an_original_academic_page_as_image_and_saves_its_source() {
+        let dir = setup("read-page");
+        std::fs::write(dir.join("spaces/school/guide.pdf"), include_bytes!("../../scripts/ui-preview/fixtures/m301-study-guide.pdf")).unwrap();
+        let p = Scripted::new(vec![
+            turn(json!([{"type": "tool_use", "id": "page1", "name": "read_page", "input": {"path": "guide.pdf", "page": 1}}]), "tool_use"),
+            turn(json!([{"type": "text", "text": "The original page is available."}]), "end_turn"),
+        ]);
+        let events = run(&dir, &p, &Approvals::default(), "Look at the matrix on page 1.", |_| {});
+        assert!(events.iter().any(|event| matches!(event, AgentEvent::Tool { label } if label == "Reading page 1 of guide.pdf")));
+        let seen = p.seen.lock().unwrap();
+        let result = &seen[1].last().unwrap()["content"][0];
+        assert_eq!(result["tool_use_id"], "page1");
+        assert!(result["content"][0]["text"].as_str().unwrap().contains("Source: guide.pdf, page 1"));
+        assert_eq!(result["content"][1]["source"]["media_type"], "image/png");
+        assert!(result["content"][1]["source"]["data"].as_str().unwrap().len() > 1000);
+        let saved = thread::load(&dir.join("spaces/school")).unwrap();
+        assert!(saved.iter().any(|message| message["content"][0]["tool_use_id"] == "page1" && message["content"][0]["content"][1]["type"] == "image"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_text_only_model_gets_a_clear_page_image_limitation_without_an_image() {
+        let dir = setup("read-page-blind");
+        let mut p = Scripted::new(vec![
+            turn(json!([{"type": "tool_use", "id": "page1", "name": "read_page", "input": {"path": "guide.pdf", "page": 1}}]), "tool_use"),
+            turn(json!([{"type": "text", "text": "Please choose an image-capable model."}]), "end_turn"),
+        ]);
+        p.sight = crate::vision::Sees::No;
+        run(&dir, &p, &Approvals::default(), "Look at page 1.", |_| {});
+        let seen = p.seen.lock().unwrap();
+        let result = &seen[1].last().unwrap()["content"][0];
+        assert_eq!(result["is_error"], true);
+        assert!(result["content"].as_str().unwrap().contains("No page image was sent"));
+        assert!(!serde_json::to_string(&seen[1]).unwrap().contains("\"type\":\"image\""));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

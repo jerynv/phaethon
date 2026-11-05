@@ -1,13 +1,17 @@
-import { Checkbox, Radio } from "vic-ui";
+import { Checkbox, Radio, Tabs } from "vic-ui";
+import { Flag } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover } from "@/components/ui/menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon, type IconName } from "@/icons";
 import { openSettings } from "@/lib/open-settings";
+import { requestCompose } from "@/lib/compose";
+import { getConversations } from "@/lib/conversation-nav";
 import { studyQuiz, studyQuizSubmit, studyReviewMistakes, type Attempt, type Question, type Quiz, type StudyEvent } from "@/lib/study";
 import { cn } from "@/lib/utils";
 import { openSpaceFile } from "@/runtime/records";
@@ -20,6 +24,8 @@ import { SourceLine } from "@/components/rich/citation";
 
 import { CardText, MathText } from "./card-text";
 import { GroundingSummary } from "./grounding";
+import { setSpaceView } from "./space-view";
+import { loadQuizSession, questionHelpContext, saveQuizSession } from "./quiz-session";
 import { attemptOf, baseName, doneField, needsModel, percent, plainError, plural } from "./words";
 
 const KIND_HINT: Record<string, string> = {
@@ -35,21 +41,7 @@ const mathOnly = (s: string) => mathPieces(s).every((p) => p.math || !p.text.tri
 
 const asText = (a: string | string[] | undefined) => (Array.isArray(a) ? a.join(", ") : a ?? "");
 
-/**
- * A quiz, all on one page: each question is its own group with its number
- * and kind, so it can be read and answered in any order, and every answer
- * stays in view to check before handing it in. Choices are lettered radio
- * buttons (arrow keys move between them) or checkboxes; where each question
- * comes from stays hidden until the results, since its passage can give the
- * answer away. Answers are kept on this computer until they are checked, so
- * leaving the quiz loses nothing; the bar at the bottom counts them and goes
- * to the next question without one. Then the results: a strip of every
- * question's verdict to jump from, all of them or only the ones to look at
- * again, each marked Correct, Partly right or Not right in words and an
- * icon, a choice question with all its choices and which were yours and
- * right, feedback and where to read more; and from there a review of the
- * mistakes and cards made from them.
- */
+/** A quiz with one/all question layouts, saved drafts and flags, contextual AI help and graded review. */
 export function QuizView({
   space,
   path,
@@ -80,6 +72,8 @@ export function QuizView({
   const [askClear, setAskClear] = useState(false);
   /** The question on screen. */
   const [at, setAt] = useState(0);
+  const [layout, setLayout] = useState<"single" | "all">("single");
+  const [flagged, setFlagged] = useState<string[]>([]);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const questionRef = useRef<HTMLHeadingElement>(null);
   /** Set when the person moved to another question: its heading takes focus once it shows. */
@@ -87,6 +81,8 @@ export function QuizView({
   useLayoutEffect(() => {
     if (!moved.current) return;
     moved.current = false;
+    const questions = questionRef.current?.closest<HTMLElement>("[data-quiz-questions]");
+    if (layout === "single" && questions) questions.scrollTop = 0;
     questionRef.current?.focus({ preventScroll: true });
     // The map, the question and its buttons are one piece: when it doesn't all show, the map goes to the top of the view, never half cut off above it.
     const map = document.querySelector<HTMLElement>("[data-question-map]");
@@ -102,6 +98,9 @@ export function QuizView({
   useEffect(() => {
     if (quiz && !attempt) saveDraft(space, path, quiz.created, answers);
   }, [space, path, quiz, attempt, answers]);
+  useEffect(() => {
+    if (quiz) saveQuizSession(space, path, quiz.created, { layout, flagged, at });
+  }, [space, path, quiz, layout, flagged, at]);
 
   useEffect(() => {
     let live = true;
@@ -111,8 +110,10 @@ export function QuizView({
         const kept = loadDraft(space, path, q.created, q.questions.map((x) => x.id));
         setAnswers(kept);
         setRestored(Object.values(kept).filter(isAnswered).length);
-        // Back where it was left: the first question still without an answer.
-        setAt(Math.max(0, q.questions.findIndex((x) => !isAnswered(kept[x.id]))));
+        const session = loadQuizSession(space, path, q.created, q.questions.map((x) => x.id));
+        setAt(session.at);
+        setLayout(session.layout);
+        setFlagged(session.flagged);
         setQuiz(q);
       },
       (e: unknown) => live && setLoadError(plainError(e)),
@@ -195,6 +196,20 @@ export function QuizView({
     setAskUnanswered(false);
     setAt(Math.max(0, Math.min(total - 1, i)));
     moved.current = true;
+    if (layout === "all") requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-question="${CSS.escape(ids[i])}"]`)?.scrollIntoView({ block: "start" }));
+  }
+
+  function help(question: Question) {
+    const conversation = getConversations(space);
+    const composer = document.querySelector<HTMLTextAreaElement>(`[data-space-pane="${CSS.escape(space)}"] [data-composer-input]`);
+    if (conversation?.running || conversation?.working) return announce("Wait for the current reply before asking about this question.");
+    if (composer?.value.trim()) {
+      setSpaceView(space, "chat", true);
+      return announce("Send or clear your chat draft first. Your quiz answers are saved.");
+    }
+    saveDraft(space, path, quiz!.created, answers);
+    requestCompose(space, questionHelpContext(quiz!, path, question, answers[question.id]));
+    setSpaceView(space, "chat", true);
   }
 
   function clearAll() {
@@ -239,17 +254,13 @@ export function QuizView({
   const set = (qid: string, v: string | string[]) => setAnswers((a) => ({ ...a, [qid]: v }));
 
   return (
-    <Shell onBack={onBack}>
-      <div className="flex flex-col gap-0.5">
+    <Shell onBack={onBack} fill>
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold wrap-break-word text-ink" data-view-focus="" data-quiz-title="">
           <MathText text={quiz.title} />
         </h2>
-        <p className="text-sm text-ink-secondary">
-          {plural(total, "question")}
-          {quiz.course ? ` · ${quiz.course}` : ""} · One at a time, in any order; your answers are checked at the end.
-        </p>
+        <Tabs size="sm" aria-label="Question layout" value={layout} onValueChange={(value) => setLayout(value === "all" ? "all" : "single")} items={[{ value: "single", label: <span data-quiz-layout="single">One question</span> }, { value: "all", label: <span data-quiz-layout="all">All questions</span> }]} className="[&_.ui-tabs-mark]:bg-none [&_.ui-tabs-mark]:bg-selected [&_.ui-tabs-mark]:shadow-none [&_.ui-tab[aria-selected=true]]:text-ink" />
       </div>
-      {quiz.grounding && <GroundingSummary space={space} g={quiz.grounding} />}
       {restored > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-surface-sunken px-3 py-2 text-base text-ink" data-quiz-restored="">
           <Icon name="info" className="shrink-0 text-ink-secondary" />
@@ -265,7 +276,7 @@ export function QuizView({
             </>
           ) : (
             <>
-              <span className="min-w-0 flex-1">Your answers from before are here: {answered} of {total}. They stay until you check them.</span>
+              <span className="min-w-0 flex-1">Draft · {answered}/{total} answered</span>
               <Button
                 key="start-over"
                 type="button"
@@ -285,6 +296,7 @@ export function QuizView({
       )}
 
       <nav aria-label="Questions" className="flex scroll-mt-3 flex-col gap-1.5" data-question-map="">
+        <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-3 text-sm text-ink-secondary">
           <span data-answered="">
             {answered} of {total} answered
@@ -293,6 +305,8 @@ export function QuizView({
             <span className="block h-full rounded-full bg-accent-fill forced-colors:bg-[CanvasText]" style={{ width: `${(answered / Math.max(1, total)) * 100}%` }} />
           </span>
         </p>
+        {(quiz.grounding || quiz.course || quiz.sources.length > 0) && <Popover.Root><Popover.Trigger asChild><Button type="button" variant="ghost" size="sm" data-quiz-details=""><Icon name="info" />Details</Button></Popover.Trigger><Popover.Portal><Popover.Content align="end" sideOffset={6} className="max-h-[70vh] w-160 max-w-[calc(100vw-2rem)] overflow-y-auto p-4" data-quiz-details-content=""><div className="flex flex-col gap-3">{quiz.course && <p className="text-sm text-ink-secondary">{quiz.course} · {plural(total, "question")}</p>}{quiz.grounding && <GroundingSummary space={space} g={quiz.grounding} />}{quiz.sources.length > 0 && <p className="text-sm wrap-break-word text-ink-secondary">{quiz.sources.join(" · ")}</p>}</div></Popover.Content></Popover.Portal></Popover.Root>}
+        </div>
         <ol className="flex flex-wrap gap-1.5">
           {ids.map((qid, i) => {
             const done = isAnswered(answers[qid]);
@@ -303,19 +317,21 @@ export function QuizView({
                   type="button"
                   onClick={() => goTo(i)}
                   aria-current={here ? "step" : undefined}
-                  aria-label={`Question ${i + 1}${done ? ", answered" : ", no answer yet"}`}
+                  aria-label={`Question ${i + 1}${done ? ", answered" : ", no answer yet"}${flagged.includes(qid) ? ", flagged" : ""}`}
+                  data-flagged={flagged.includes(qid) ? "" : undefined}
                   data-go-question={qid}
                   data-done={done ? "" : undefined}
                   className={cn(
                     "inline-flex min-h-(--ph-target-min) min-w-(--ph-target-min) cursor-default items-center justify-center rounded-md border px-1.5 text-sm font-medium tabular-nums select-none",
                     "transition-[color,background-color,border-color] duration-(--ph-duration-fast) ease-out",
-                    // Answered is filled in the accent; the one shown has a ring when answered, a dotted border when not. Never a check beside the number, so every number keeps one width and the map never reflows onto another line as answers come in.
+                    // Answered and current are independent states; position is a quiet fill, never a focus treatment.
                     done
                       ? "border-accent-fill bg-accent-fill text-ink-inverse hover:bg-accent-fill-hover forced-colors:border-[Highlight] forced-colors:bg-[Highlight] forced-colors:text-[HighlightText]"
                       : here
-                        ? "border-2 border-dotted border-accent-ink text-ink forced-colors:border-[CanvasText]"
+                        ? "border-transparent bg-selected font-semibold text-ink forced-colors:border-[CanvasText]"
                         : "border-line text-ink-secondary hover:bg-hover hover:text-ink forced-colors:border-[CanvasText]",
-                    done && here && "ring-2 ring-ink ring-offset-2 ring-offset-bg forced-colors:outline-2 forced-colors:outline-offset-2 forced-colors:outline-[CanvasText] forced-colors:outline-solid",
+                    done && here && "font-semibold",
+                    flagged.includes(qid) && "border-warning-ink border-b-4",
                   )}
                 >
                   {i + 1}
@@ -333,16 +349,32 @@ export function QuizView({
         // Enter on a choice or in the blank is Next (on the last question, Check my answers), never an early hand-in.
         onKeyDown={(e) => {
           const t = e.target as HTMLElement;
-          if (e.key !== "Enter" || e.nativeEvent.isComposing || !(t instanceof HTMLInputElement)) return;
+          if (layout === "all" || e.key !== "Enter" || e.nativeEvent.isComposing || !(t instanceof HTMLInputElement)) return;
           if (last) return;
           e.preventDefault();
           goTo(index + 1);
         }}
         noValidate
-        className="flex flex-col gap-4"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
         data-quiz-form=""
       >
-        <QuestionField key={q.id} index={index} total={total} q={q} value={answers[q.id]} onChange={(v) => set(q.id, v)} headingRef={questionRef} />
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" data-quiz-questions="">
+        {(layout === "all" ? quiz.questions : [q]).map((question, offset) => (
+          <QuestionField
+            key={question.id}
+            index={layout === "all" ? offset : index}
+            total={total}
+            q={question}
+            value={answers[question.id]}
+            onChange={(v) => set(question.id, v)}
+            headingRef={layout === "single" || offset === index ? questionRef : undefined}
+            actions={<div className="flex shrink-0 items-center gap-1">
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={flagged.includes(question.id) ? "Unflag question" : "Flag question"} aria-pressed={flagged.includes(question.id)} data-flag-question={question.id} onClick={() => setFlagged((all) => all.includes(question.id) ? all.filter((id) => id !== question.id) : [...all, question.id])}><Flag aria-hidden="true" className={cn("size-(--ph-icon-size-sm)", flagged.includes(question.id) && "fill-warning-ink text-warning-ink")} style={{ strokeWidth: "var(--ph-icon-stroke)" }} /></Button>
+              <Button type="button" variant="ghost" size="xs" data-question-help={question.id} onClick={() => help(question)}><Icon name="agent" />AI help</Button>
+            </div>}
+          />
+        ))}
+        </div>
         {submitError && (
           <div role="alert" className="flex flex-col gap-2 rounded-lg bg-danger-soft px-3 py-2.5 text-base text-ink" data-quiz-error="">
             <p className="flex items-start gap-2.5">
@@ -381,18 +413,18 @@ export function QuizView({
             </Button>
           </div>
         ) : (
-          <div key="steps" className="flex flex-wrap items-center gap-2" data-quiz-steps="">
-            <Button key="prev" type="button" variant="outline" disabled={index === 0} onClick={() => goTo(index - 1)} data-quiz-prev="">
+          <div key="steps" className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line pt-2" data-quiz-steps="">
+            {layout === "single" && <Button key="prev" type="button" variant="outline" disabled={index === 0} onClick={() => goTo(index - 1)} data-quiz-prev="">
               <Icon name="chevron-left" />
               Previous
-            </Button>
+            </Button>}
             <span className="min-w-0 flex-1" />
-            {!last && (
+            {layout === "single" && !last && (
               <Button key="check-early" type="submit" variant="ghost" data-quiz-submit="">
                 Check my answers
               </Button>
             )}
-            {last ? (
+            {layout === "all" || last ? (
               <Button key="check" type="submit" data-quiz-submit="">
                 Check my answers
               </Button>
@@ -416,13 +448,15 @@ function QuestionField({
   value,
   onChange,
   headingRef,
+  actions,
 }: {
   index: number;
   total: number;
   q: Question;
   value: string | string[] | undefined;
   onChange: (v: string | string[]) => void;
-  headingRef: React.RefObject<HTMLHeadingElement | null>;
+  headingRef?: React.RefObject<HTMLHeadingElement | null>;
+  actions?: React.ReactNode;
 }) {
   const id = useId();
   const choices = q.kind === "truefalse" ? (q.choices?.length ? q.choices : ["True", "False"]) : (q.choices ?? []);
@@ -434,9 +468,12 @@ function QuestionField({
       </legend>
       <div className="flex flex-col gap-1">
         {/* Focused on moving to this question, so it is read from its number; the legend names the choices' group. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium text-ink-secondary outline-offset-2" data-question-heading="">
           Question {index + 1} of {total} <span className="font-normal">· {KIND_HINT[q.kind]}</span>
         </h3>
+        {actions}
+        </div>
         <p id={`${id}-prompt`} className="text-lg leading-normal wrap-break-word text-ink">
           {hasBlank ? <CardText text={q.prompt.replace(/_{3,}/g, "{{ }}")} /> : <MathText text={q.prompt} />}
         </p>
@@ -833,9 +870,9 @@ const MD = {
   code: ({ children }: MdProps) => <code className="rounded-xs bg-hover px-1 font-mono text-sm">{children}</code>,
 };
 
-function Shell({ onBack, children }: { onBack: () => void; children: React.ReactNode }) {
+function Shell({ onBack, children, fill = false }: { onBack: () => void; children: React.ReactNode; fill?: boolean }) {
   return (
-    <div className="mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-4 px-(--ph-thread-gutter) py-5">
+    <div className={cn("mx-auto flex w-full max-w-(--ph-thread-width) flex-col gap-3 px-(--ph-thread-gutter) py-4", fill && "h-full min-h-0 overflow-hidden")}>
       <div>
         <Button type="button" variant="ghost" size="sm" className="-ms-2" onClick={onBack} data-back-to-study="">
           <Icon name="chevron-left" />

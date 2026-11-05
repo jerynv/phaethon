@@ -53,6 +53,8 @@ function showMessage(el: HTMLElement) {
  * message `n`, then show it. Gives up after a few seconds (the composer keeps focus).
  */
 function showWhenMounted(pane: RefObject<HTMLElement | null>, before: Element | null, n: number) {
+  // Sidebar history opens the conversation itself; search also reveals a match.
+  if (n < 0) return;
   const started = performance.now();
   const tick = () => {
     const log = pane.current?.querySelector('[role="log"]');

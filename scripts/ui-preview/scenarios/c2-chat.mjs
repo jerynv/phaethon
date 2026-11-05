@@ -80,13 +80,16 @@ const LOADED = [
 ];
 
 /** Colour contrast between two CSS colours, read back through a canvas (works for oklch). */
-const contrast = (page, fg, bg) =>
+const contrast = (page, fg, bg, backdrop = "transparent") =>
   page.evaluate(
-    (fg, bg) => {
+    (fg, bg, backdrop) => {
       const rgb = (css) => {
         const c = document.createElement("canvas");
         c.width = c.height = 1;
         const x = c.getContext("2d");
+        // Vic line faces are transparent; measure the paint over its real surface.
+        x.fillStyle = backdrop;
+        x.fillRect(0, 0, 1, 1);
         x.fillStyle = css;
         x.fillRect(0, 0, 1, 1);
         return [...x.getImageData(0, 0, 1, 1).data].slice(0, 3);
@@ -100,6 +103,7 @@ const contrast = (page, fg, bg) =>
     },
     fg,
     bg,
+    backdrop,
   );
 
 export default [
@@ -779,7 +783,11 @@ export default [
       });
       check(bubble.code === "cargo test" && bubble.strong === "then" && bubble.br, "your message shows code, bold and its line break", JSON.stringify(bubble));
       const copies = await page.evaluate(() => [...document.querySelectorAll("[data-copy-reply]")].map((b) => getComputedStyle(b.closest("[data-reply-actions]")).opacity));
-      check(copies.length === 3 && copies.at(-1) === "1", "the current reply’s actions stay visible", copies.join());
+      check(copies.length === 3 && copies.every((opacity) => opacity === "0"), "finished reply actions stay quiet until hover or focus", copies.join());
+      const messages = await page.$$('[data-role="assistant"]');
+      await messages.at(-1).hover();
+      await h.idle();
+      check(await messages.at(-1).$eval('[data-reply-actions]', (actions) => getComputedStyle(actions).opacity === "1"), "hover reveals the current reply’s actions");
       await page.focus("[data-copy-reply]");
       await h.idle();
       check(await page.$eval("[data-copy-reply]", (b) => document.activeElement === b && getComputedStyle(b.closest("[data-reply-actions]")).opacity === "1"), "earlier reply actions appear when reached by keyboard");
@@ -793,8 +801,8 @@ export default [
     async run(page, h) {
       await pick(page, [FILES.notes, C2_FILES.longName, C2_FILES.rust, C2_FILES.cargo]);
       await page.waitForFunction(() => document.querySelectorAll('[aria-label="Attached files"] li').length === 4, { timeout: 5000 });
-      const count = await page.evaluate(() => document.querySelector("[data-attachment-count]").textContent);
-      check(count === "4 files attached", "the tray says how many files are attached", count);
+      const count = await page.$$eval('[aria-label="Attached files"] li', (items) => items.length);
+      check(count === 4, "the compact tray contains all four attached files", String(count));
       const name = await page.evaluate(() => {
         const li = [...document.querySelectorAll('[aria-label="Attached files"] li')][1];
         const shown = li.querySelector('[aria-hidden="true"]:not(span[aria-hidden="true"] svg)')?.textContent;
@@ -846,6 +854,14 @@ export default [
         const form = document.querySelector("[data-composer]");
         const main = document.querySelector("#main");
         const send = document.querySelector('button[aria-label="Send message"]');
+        const face = send.querySelector('.ui-button-face');
+        const sample = document.createElement('span');
+        face.append(sample);
+        sample.style.color = 'var(--face-top)';
+        const sendTop = getComputedStyle(sample).color;
+        sample.style.color = 'var(--face-bottom)';
+        const sendBottom = getComputedStyle(sample).color;
+        sample.remove();
         return {
           border: getComputedStyle(form).borderTopColor,
           bg: getComputedStyle(main).backgroundColor,
@@ -853,13 +869,13 @@ export default [
           sendOpacity: getComputedStyle(send).opacity,
           sendDisabled: send.disabled,
           icon: getComputedStyle(send).color,
-          sendBg: getComputedStyle(send).backgroundColor,
+          sendTop, sendBottom,
         };
       });
       const outer = await contrast(page, c.border, c.bg);
       const inner = await contrast(page, c.border, c.inner);
       check(outer >= 3 && inner >= 3, "the composer's border is at least 3:1 against the page and its own fill", `${outer.toFixed(2)} / ${inner.toFixed(2)}`);
-      const icon = await contrast(page, c.icon, c.sendBg);
+      const icon = Math.min(await contrast(page, c.icon, c.sendTop, c.inner), await contrast(page, c.icon, c.sendBottom, c.inner));
       check(c.sendDisabled && c.sendOpacity === "1" && icon >= 4.5, "an empty composer's Send is quiet but not washed out (full opacity, readable icon)", `${c.sendOpacity} ${icon.toFixed(2)}`);
       // A long message: whole lines only.
       await page.focus(COMPOSER);

@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
 import { Button as VicButton, DangerButton } from "vic-ui"
+import { getAppearance, subscribe } from "@/theme/appearance"
 
 // Vic owns the rim, face and interaction states; these sizes retain Phaethon's
 // text scaling and minimum targets. Text labels can wrap without being clipped.
@@ -40,18 +41,22 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  round = false,
   children,
   type,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    round?: boolean
   }) {
+  const appearance = React.useSyncExternalStore(subscribe, getAppearance);
+  const accented = variant === "default" && ("--ph-accent-h" in appearance.tokens || "--ph-accent-c" in appearance.tokens);
   const shared = {
     "data-slot": "button",
     "data-variant": variant,
     "data-size": size,
-    className: cn(buttonVariants({ variant, size, className }), asChild && (size === "lg" || size === "icon-lg") && "ui-button-lg"),
+    className: cn(buttonVariants({ variant, size, className }), round && "ui-button-round", accented && "ui-button-accent", asChild && (size === "lg" || size === "icon-lg") && "ui-button-lg"),
     ...props,
   }
 
@@ -67,7 +72,7 @@ function Button({
   }
   const Comp = variant === "destructive" ? DangerButton : VicButton
   return (
-    <Comp {...shared} look={looks[variant ?? "default"]} size={size === "lg" || size === "icon-lg" ? "lg" : "md"} square={size?.startsWith("icon")} type={type ?? "submit"}>
+    <Comp {...shared} look={looks[variant ?? "default"]} tone={accented ? "accent" : undefined} size={size === "lg" || size === "icon-lg" ? "lg" : "md"} square={size?.startsWith("icon")} round={round} type={type ?? "submit"}>
       {children}
     </Comp>
   )

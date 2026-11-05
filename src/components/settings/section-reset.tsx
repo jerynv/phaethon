@@ -24,7 +24,7 @@ export function SectionReset({
 }: {
   headingId: string;
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
   what: string;
   tokens: readonly string[];
 } & Prefs) {
@@ -94,11 +94,7 @@ export function SectionReset({
             Reset {what}
           </Button>
         ) : (
-          // Not a disabled button: its reason would sit in a tooltip nobody can reach.
-          <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
-            <Icon name="check" className="size-(--ph-icon-size-sm) shrink-0" />
-            Everything here is at its default.
-          </p>
+          null
         )
       }
     />

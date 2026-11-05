@@ -58,7 +58,7 @@ const openMenu = async (page, h) => {
 };
 const items = (page) =>
   page.$$eval('[data-conversations-menu] [role="menuitemradio"]', (els) =>
-    els.map((e) => ({ id: e.dataset.threadId, text: e.textContent, checked: e.getAttribute("aria-checked") })),
+    els.map((e) => ({ id: e.dataset.threadId, text: e.textContent, label: e.getAttribute("aria-label"), stamp: e.querySelector("[data-thread-stamp]")?.title, checked: e.getAttribute("aria-checked") })),
   );
 /** Nothing sticks out sideways: no horizontal page scroll, and the menu fits the window. */
 const fits = async (page) => {
@@ -101,9 +101,9 @@ export default [
       const list = await items(page);
       expect(list.length === 3, `expected 3 conversations, got ${list.length}`);
       expect(list[0].id === "current" && list[0].checked === "true", "current is not first and checked");
-      expect(list[0].text.includes("Current") && list[0].text.includes("2 messages"), `current row: ${list[0].text}`);
+      expect(list[0].text.includes("Current") && list[0].label.includes("2 messages"), `current row: ${list[0].text}`);
       expect(list[1].text.includes("Yesterday at"), `yesterday row: ${list[1].text}`);
-      expect(list[2].text.includes("…") && list[2].text.includes("4 messages"), `long title row: ${list[2].text}`);
+      expect(list[2].label.includes("4 messages") && list[2].text.includes("Can you go through"), `long title row: ${list[2].text}`);
       expect(
         await page.evaluate(() => document.activeElement?.closest("[data-conversations-menu]") !== null),
         "focus is not in the menu",

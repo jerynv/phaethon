@@ -11,7 +11,7 @@
 // string in a formula is upright text. f19-quiz-steady: in a short window a
 // 25-question map keeps its lines as answers come in, and moving never leaves
 // the map cut off at the top or the buttons below; answered numbers are filled,
-// the one shown without an answer dotted; the chosen answer pressed again clears it. Each scenario throws when wrong.
+// the current open question uses a quiet selection; the chosen answer pressed again clears it. Each scenario throws when wrong.
 import { SETTINGS, check } from "../audit-fixtures.mjs";
 
 const SHOWN = "[data-space-pane][data-shown]";
@@ -62,6 +62,8 @@ async function pick(page, q, i) {
 async function openQuiz(page) {
   await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
   await page.click(`${NAV} [data-view-tab="study"]`);
+  await page.waitForSelector(`${SHOWN} [data-open-course]`, { timeout: 3000 });
+  await page.click(`${SHOWN} [data-open-course]`);
   await page.waitForSelector(`${SHOWN} [data-take-quiz="${PATH}"]`, { timeout: 3000 });
   await page.click(`${SHOWN} [data-take-quiz="${PATH}"]`);
   await page.waitForSelector("[data-quiz-form]", { timeout: 3000 });
@@ -74,8 +76,11 @@ export default [
     mock: mock(),
     async run(page, h) {
       await openQuiz(page);
+      await page.click("[data-quiz-details]");
       const scope = await text(page, "[data-scope-line]");
       check(scope === "Test 1: October 15 or 16, 2026; through HW 6; no graphs or combinatorics", "the scope says each part once", scope);
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector("[data-quiz-details-content]"));
       const first = await text(page, '[data-question="q1"] label');
       check(first.startsWith("A."), "choices are lettered", first);
       check((await page.$$("[data-question]")).length === 1 && (await text(page, "[data-question-heading]")).startsWith("Question 1 of 10"), "one question at a time, with its number");
@@ -94,7 +99,7 @@ export default [
       const map = await page.$$eval("[data-go-question]", (bs) => bs.map((b) => `${b.getAttribute("aria-label")}${b.getAttribute("aria-current") ? " (here)" : ""}`));
       check(map.length === 10 && map[0] === "Question 1, answered" && map[1] === "Question 2, no answer yet (here)", "the map says which have answers and which is shown", JSON.stringify(map));
       await page.click('[data-go-question="q7"]');
-      check(await waitFor(page, () => document.querySelector("[data-question]")?.dataset.question === "q7" && document.activeElement?.matches("[data-question-heading]")), "the map goes to question 7");
+      check(await waitFor(page, () => document.querySelector("[data-question]")?.dataset.question === "q7" && document.activeElement?.matches("[data-question-heading]")), "the map goes to question 7", JSON.stringify(await page.evaluate(() => ({ question: document.querySelector("[data-question]")?.dataset.question, active: document.activeElement?.outerHTML.slice(0, 250) }))));
       const str = await page.$$eval('[data-question="q7"] .katex-html', (es) => es.map((e) => e.textContent).join(" "));
       check(str.includes("“cat”") && str.includes("“ant”"), "a quoted string in a formula is upright text in curly quotes", str);
       await page.click('[data-go-question="q9"]');
@@ -115,18 +120,18 @@ export default [
       await pick(page, "q2", 1);
       await pick(page, "q4", 0);
       await page.click("[data-back-to-study]");
-      check(await waitFor(page, (p) => document.querySelector(`[data-quiz-row="${p}"] [data-last-score]`)?.textContent === "3 of 10 answered, not checked yet", PATH), "the hub says the quiz is begun", await text(page, `[data-quiz-row="${PATH}"] [data-last-score]`));
+      check(await waitFor(page, (p) => document.querySelector(`[data-quiz-row="${p}"] [data-last-score]`)?.textContent === "Draft · 3/10", PATH), "the hub says the quiz is begun", await text(page, `[data-quiz-row="${PATH}"] [data-last-score]`));
       const btn = await text(page, `[data-take-quiz="${PATH}"]`);
       check(btn.startsWith("Continue quiz"), "and continues it", btn);
       await page.click(`${SHOWN} [data-take-quiz="${PATH}"]`);
       await page.waitForSelector("[data-quiz-form]");
       check(await waitFor(page, () => document.querySelector("[data-answered]")?.textContent === "3 of 10 answered"), "the answers are back", await text(page, "[data-answered]"));
       const back = await page.evaluate(() => [...document.querySelectorAll("[data-question] input:checked")].map((i) => i.closest("[data-question]").dataset.question).join(","));
-      check(back === "", "only the question on screen shows", back);
-      check((await shown(page)) === "q3", "back at the first question without an answer");
+      check(back === "q4", "only the remembered question is shown with its answer", back);
+      check((await shown(page)) === "q4", "back at the remembered question");
       const done = await page.$$eval("[data-go-question][data-done]", (bs) => bs.map((b) => b.dataset.goQuestion).join(","));
       check(done === "q1,q2,q4", "the map shows the ones answered", done);
-      check((await text(page, "[data-quiz-restored]")).includes("3 of 10"), "and it says so", await text(page, "[data-quiz-restored]"));
+      check((await text(page, "[data-quiz-restored]")).includes("3/10"), "and it says so", await text(page, "[data-quiz-restored]"));
       // Start over asks first; Keep them keeps them.
       await page.click("[data-start-over]");
       check(await waitFor(page, () => document.activeElement?.matches("[data-keep-answers]")), "start over asks, focus on Keep them");
@@ -221,7 +226,7 @@ export default [
       check(after === before, "answers don't make the map wrap onto more lines", `${before} → ${after}`);
       await new Promise((r) => setTimeout(r, 300)); // colours settle
       const looks = await page.$$eval("[data-go-question]", (bs) => bs.map((b) => { const c = getComputedStyle(b); return `${b.dataset.done === undefined ? "open" : "done"}:${c.borderTopStyle}:${/^rgba\(0, 0, 0, 0\)$|^transparent$/.test(c.backgroundColor) ? "none" : "fill"}`; }));
-      check(looks.slice(0, 24).every((l) => l === "done:solid:fill") && looks[24] === "open:dotted:none", "answered numbers are filled, the one shown without an answer is dotted", JSON.stringify(looks.slice(22)));
+      check(looks.slice(0, 24).every((l) => l === "done:solid:fill") && looks[24] === "open:solid:fill", "answered numbers retain their accent and the current open question has a quiet fill", JSON.stringify(looks.slice(22)));
       check(!(await page.$("[data-go-question] svg")), "no check beside a number");
       // Pressing the chosen answer again leaves the question open.
       await page.$eval('[data-question="q25"] input', (el) => el.click());

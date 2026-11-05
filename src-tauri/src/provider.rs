@@ -61,6 +61,9 @@ impl ProviderError {
 }
 
 pub trait Provider: Send + Sync {
+    /// Whether the selected model is known to accept original page images.
+    fn image_input(&self) -> crate::vision::Sees { crate::vision::Sees::Unknown }
+
     /// One model turn: stream text through `on_delta`, return the full content.
     fn turn(
         &self,

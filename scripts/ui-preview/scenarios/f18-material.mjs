@@ -65,7 +65,7 @@ async function openImport(page) {
   await page.waitForSelector("[data-composer-input]", { timeout: 5000 });
   await page.focus("[data-composer-input]");
   await chord(page, ["Meta", "k"]);
-  await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+  await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
   await page.keyboard.type("import courses");
   await page.keyboard.press("Enter");
   await page.waitForSelector(DIALOG, { timeout: 3000 });
@@ -167,6 +167,7 @@ export default [
       await page.waitForSelector('[data-testid="settings-tab-courses"]', { timeout: 3000 });
       await page.$eval('[data-testid="settings-tab-courses"]', (el) => el.click());
       await page.waitForSelector('[data-access-course="c1/101"] [data-material]', { timeout: 3000 });
+      await page.$$eval('[data-access-course] > details', (disclosures) => disclosures.forEach((details) => { details.open = true; }));
       const a = await text(page, '[data-access-course="c1/101"] [data-material] ul');
       const b = await text(page, '[data-access-course="c1/103"] [data-material] ul');
       check(a === "185 pages are handwriting or scans: read with text recognition; expect some mistakes.", "C241's report under its name", a);
@@ -255,6 +256,8 @@ export default [
     async run(page, h) {
       await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
       await page.click(`${NAV} [data-view-tab="study"]`);
+      await page.waitForSelector(`${SHOWN} [data-open-course]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-open-course]`);
       await page.waitForSelector(`${SHOWN} [data-take-quiz]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-take-quiz]`);
       // Where it comes from shows with the results.
@@ -289,6 +292,8 @@ export default [
       await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
       await page.click(`${NAV} [data-view-tab="study"]`);
       // The deck editor: each card says where it comes from, as a question does.
+      await page.waitForSelector(`${SHOWN} [data-open-course]`, { timeout: 4000 });
+      await page.click(`${SHOWN} [data-open-course]`);
       await page.waitForSelector(`${SHOWN} [data-open-deck="study/decks/Rules.md"]`, { timeout: 4000 });
       await page.click(`${SHOWN} [data-open-deck="study/decks/Rules.md"]`);
       await page.waitForSelector(`${SHOWN} [data-card-row] [data-provenance]`, { timeout: 4000 });

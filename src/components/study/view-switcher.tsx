@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
 
-import { panelId, setSpaceView, tabId, VIEWS, type SpaceView } from "./space-view";
+import { panelId, setSpaceView, tabId, visibleViews, type SpaceView } from "./space-view";
 
 const viewIcons: Record<SpaceView, IconName> = { chat: "chat", study: "book", grades: "success", plan: "file-text" };
 
@@ -30,6 +30,7 @@ export function ViewSwitcher({
   orientation?: "horizontal" | "vertical";
   currentConversationShown?: boolean;
 }) {
+  const views = visibleViews(space);
   const vertical = orientation === "vertical";
   const go = (v: SpaceView) => {
     setSpaceView(space, v);
@@ -37,16 +38,16 @@ export function ViewSwitcher({
   };
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    const at = VIEWS.findIndex((v) => v.id === view);
+    const at = views.findIndex((v) => v.id === view);
     const rtl = getComputedStyle(e.currentTarget).direction === "rtl";
     const step = vertical ? { ArrowDown: 1, ArrowUp: -1 }[e.key] : { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[e.key];
     let to: number | null = null;
-    if (step) to = (at + step + VIEWS.length) % VIEWS.length;
+    if (step) to = (at + step + views.length) % views.length;
     else if (e.key === "Home") to = 0;
-    else if (e.key === "End") to = VIEWS.length - 1;
+    else if (e.key === "End") to = views.length - 1;
     if (to === null) return;
     e.preventDefault();
-    go(VIEWS[to].id);
+    go(views[to].id);
   };
   return (
     <div
@@ -57,7 +58,7 @@ export function ViewSwitcher({
       onKeyDown={onKey}
       className={cn("flex shrink-0 gap-0.5", vertical ? "flex-col items-stretch" : "items-center")}
     >
-      {VIEWS.map((v) => {
+      {views.map((v) => {
         const selected = v.id === view;
         const filled = selected && !(vertical && v.id === "chat" && currentConversationShown);
         const chord = viewChord(v.digit);

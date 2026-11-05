@@ -18,9 +18,6 @@
   /* Below this a label and its control stack; capped so a narrow window at
      a large text size still fits one column. */
   --ph-settings-label-min: min(calc(169px * var(--ph-ui-scale)), 100%);
-  /* Reserve the top-right Close button’s room in the compact header and banners. */
-  --ph-settings-close-inset: calc(var(--ph-space) * 3);
-  --ph-settings-close-room: calc(var(--ph-settings-close-inset) + var(--ph-control-height-sm) + var(--ph-space) * 2);
   /* Larger click targets (Settings › Accessibility) sets --ph-target-min to
      44px and --ph-target-boost to 1.5; switches, slider thumbs and swatches
      grow by the boost. Unset, the boost is 1. */
@@ -139,7 +136,7 @@
 :root[data-motion="reduce"] *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
+  transition-duration: 0s !important;
   scroll-behavior: auto !important;
 }
 

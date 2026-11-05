@@ -37,7 +37,7 @@ export function SectionHeader({
 }: {
   id: string;
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
   action?: ReactNode;
 }) {
   return (
@@ -47,11 +47,11 @@ export function SectionHeader({
         title={title}
         description={description}
         actions={action}
-        textClassName="min-w-[min(24em,100%)] basis-[min(24em,100%)] text-sm"
-        actionsClassName="max-w-full pe-(--ph-settings-close-room) max-md:pe-0"
+        textClassName="min-w-0 flex-1 text-sm"
+        actionsClassName="max-w-full shrink-0"
         headingAs="h3"
         size="section"
-        headingProps={{ id, tabIndex: -1, className: "self-start rounded-xs pe-(--ph-settings-close-room) max-md:pe-0" }}
+        headingProps={{ id, tabIndex: -1, className: "self-start rounded-xs" }}
       />
     </div>
   );
@@ -82,7 +82,7 @@ export function SettingGroup({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-0.5 px-1">
-        <h4 id={id} className="text-base font-medium text-ink">
+        <h4 id={id} className="text-xs font-medium text-ink-secondary">
           {title}
         </h4>
         {description && <p className="text-xs text-ink-secondary">{description}</p>}
@@ -119,7 +119,7 @@ export function SettingRow({
 }) {
   const LabelTag = htmlFor ? "label" : "span";
   return (
-    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-3 px-4 py-3", stacked ? "flex-col" : "flex-wrap items-start")}>
+    <div data-setting-row="" data-token={token} className={cn("flex gap-x-5 gap-y-2 px-3.5 py-3", stacked ? "flex-col" : "flex-wrap items-center")}>
       <div className="flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5">
         <LabelTag id={labelId} htmlFor={htmlFor} className="text-base font-medium text-ink">
           {label}
@@ -284,7 +284,8 @@ export function TokenRow({ name, quickPicks, children }: { name: string; quickPi
   const labelId = useId();
   const descId = useId();
   return (
-    <SettingRow token={name} label={spec.label} labelId={labelId} description={spec.description} descriptionId={descId}>
+    <SettingRow token={name} label={<span title={spec.description}>{spec.label}</span>} labelId={labelId}>
+      <span id={descId} className="sr-only">{spec.description}</span>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-ink tabular-nums" aria-hidden="true">
           {spec.format(value)}
@@ -465,7 +466,7 @@ export function SwitchRow({
   const descId = useId();
   const statusId = useId();
   return (
-    <div data-token={token} className="flex items-start gap-6 px-4 py-3">
+    <div data-token={token} className="flex items-center gap-4 px-3.5 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <label htmlFor={id} className="cursor-pointer text-base font-medium text-ink">
           {label}
@@ -473,8 +474,7 @@ export function SwitchRow({
         <p id={descId} className="max-w-(--ph-measure) text-xs text-ink-secondary">
           {description}
         </p>
-        <p id={statusId} className="flex items-center gap-1.5 text-xs text-ink-secondary">
-          <Icon name="info" className="size-(--ph-icon-size-sm) text-ink-tertiary" />
+        <p id={statusId} className="sr-only">
           {status}
         </p>
       </div>

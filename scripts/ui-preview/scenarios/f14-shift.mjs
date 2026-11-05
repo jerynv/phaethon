@@ -216,7 +216,7 @@ export default [
       threads: { school: CONVERSATION },
       // A name long enough that "Answering…" beside it once wrapped onto a line of its own.
       spaces: [
-        { id: "school", name: "School and every course", description: "Courses, deadlines, study notes", hue: 240 },
+        { id: "school", name: "School and every course", description: "Courses, deadlines, study notes", hue: 240, educationEnabled: true },
         { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50 },
       ],
       holdOpen: true,

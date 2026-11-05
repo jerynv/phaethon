@@ -45,7 +45,7 @@ export default [
       await page.keyboard.down("Meta");
       await page.keyboard.press("k");
       await page.keyboard.up("Meta");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("import courses");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-existing-site="c1"]', { timeout: 3000 });

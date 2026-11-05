@@ -54,10 +54,10 @@ const openFromPalette = async (page) => {
   await page.waitForSelector(COMPOSER, { timeout: 5000 });
   await page.focus(COMPOSER);
   await chord(page, ["Meta", "k"]);
-  await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+  await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
   await page.keyboard.type("import courses");
-  const sel = await page.evaluate(() => document.querySelector('[data-command="import-courses"]')?.getAttribute("aria-selected"));
-  check(sel === "true", "the palette offers “Import courses…”");
+  const sel = await page.evaluate(() => document.querySelector('[data-command="import-courses"]')?.textContent);
+  check(sel?.includes("Import courses"), "the palette offers “Import courses…”");
   await page.keyboard.press("Enter");
   await page.waitForSelector(DIALOG, { timeout: 3000 });
 };
@@ -496,9 +496,9 @@ export default [
       check(rows.length === 2, "both sites are listed once, for the vault", JSON.stringify(rows));
       const iu = rows.find((r) => r.id === "c1");
       const moodle = rows.find((r) => r.id !== "c1");
-      check(iu.status === "Signed in" && iu.imported.startsWith("2 courses imported, last on "), "IU: signed in, two courses, when it last imported", JSON.stringify(iu));
-      check(iu.actions.join("|") === "Import more…|Import again|Sign out…", "IU offers Import more, Import again and Sign out", iu.actions.join("|"));
-      check(moodle.status.startsWith("Signed out") && moodle.actions.join("|") === "Sign in again…", "Moodle is signed out and offers Sign in again", JSON.stringify(moodle));
+      check(iu.status.startsWith("Connected") && iu.imported.startsWith("2 courses"), "IU shows connection status, imported courses and last sync compactly", JSON.stringify(iu));
+      check(iu.actions.length === 3 && iu.actions[0] === "Import courses" && iu.actions[2] === "Disconnect", "Import is the primary action beside compact refresh and disconnect", iu.actions.join("|"));
+      check(moodle.status.startsWith("Signed out") && moodle.actions.join("|") === "Reconnect", "Moodle is signed out and offers Sign in again", JSON.stringify(moodle));
       await sleep(400);
       await h.shot("list");
       // Import again: the dialog opens over Settings on the import of the two imported courses.
@@ -515,13 +515,13 @@ export default [
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-site-confirm]", { timeout: 2000 });
       const ask = await page.evaluate(() => ({ text: document.querySelector("[data-site-confirm] p").textContent, focus: document.activeElement?.textContent }));
-      check(ask.text.includes("The 2 courses already imported stay as files, and so does who can see them.") && ask.focus === "Sign out", "Sign out asks first and says the courses stay", JSON.stringify(ask));
+      check(ask.text.includes("Imported courses stay available.") && ask.focus === "Sign out", "Sign out asks first and says the courses stay", JSON.stringify(ask));
       await h.shot("confirm");
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => document.querySelector('[data-site-row="c1"] [data-site-status]')?.textContent.startsWith("Signed out"), { timeout: 3000 });
       const after = await page.evaluate(() => ({ actions: [...document.querySelectorAll('[data-site-row="c1"] [data-site-action]')].map((b) => b.textContent), calls: window.__calls.filter((c) => c[0] === "lms_disconnect").map((c) => c[1]) }));
       check(after.calls.length === 1 && after.calls[0].connection === "c1" && after.calls[0].space === undefined, "the core is asked to sign out of that site", JSON.stringify(after.calls));
-      check(after.actions.join("|") === "Sign in again…", "signed out, the site stays with its courses and offers Sign in again", JSON.stringify(after));
+      check(after.actions.join("|") === "Reconnect", "signed out, the site stays with its courses and offers Sign in again", JSON.stringify(after));
       // Sign in again for the signed-out Moodle site.
       await page.click(`[data-site-row="${moodle.id}"] [data-site-action="signin"]`);
       const s = await waitStep(page, "signin");
@@ -560,7 +560,7 @@ export default [
       // The empty conversation of a space with no course site offers it, quietly.
       await page.waitForSelector("[data-courses-suggestion]", { timeout: 5000 });
       const t = await page.$eval("[data-courses-suggestion]", (e) => e.textContent);
-      check(t.includes("Canvas, Brightspace, Moodle or Blackboard") && t.includes("Import courses…"), "the empty conversation suggests importing courses", t);
+      check(t.trim() === "Import courses", "the empty conversation offers one compact import action", t);
       await h.shot("empty");
       await page.click("[data-courses-suggestion] button");
       await waitStep(page, "kind");

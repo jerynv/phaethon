@@ -25,7 +25,9 @@ async function emptyCue(page, selector) {
 async function openStudy(page) {
   await page.waitForSelector(`${nav} [data-view-tab="study"]`, { timeout: 5000 });
   await page.click(`${nav} [data-view-tab="study"]`);
-  await page.waitForSelector(`${shown} [data-study-hub]`, { timeout: 4000 });
+  await page.waitForSelector(`${shown} [data-open-course]`, { timeout: 4000 });
+  await page.click(`${shown} [data-open-course]`);
+  await page.waitForSelector(`${shown} [data-study-hub] [data-course-back]`, { timeout: 4000 });
 }
 
 export default [

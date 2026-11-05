@@ -3,7 +3,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { DialogSurface } from "vic-ui";
 
 import { Button } from "@/components/ui/button";
-import { IconTip } from "@/components/ui/tooltip";
 import { Icon, type IconName } from "@/icons";
 import { getSettings, type Settings } from "@/lib/backend";
 import { commitPendingRevokes } from "@/lib/grants";
@@ -342,12 +341,25 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
             if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
           }}
           className={cn(
-            "fixed top-1/2 left-1/2 z-50 m-0! flex h-[min(var(--ph-settings-height),calc(100dvh-48px))] max-h-none! w-[min(var(--ph-settings-width),calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-clip p-0! text-ink outline-none max-sm:h-[min(var(--ph-settings-height),calc(100dvh-32px))] max-sm:w-[calc(100%-32px)]",
+            "fixed top-1/2 left-1/2 z-50 m-0! flex flex-col h-[min(var(--ph-settings-height),calc(100dvh-48px))] max-h-none! w-[min(var(--ph-settings-width),calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-clip p-0! text-ink outline-none max-sm:h-[min(var(--ph-settings-height),calc(100dvh-32px))] max-sm:w-[calc(100%-32px)]",
             "duration-(--ph-duration) data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           )}
         >
           <StatusContext.Provider value={statusApi}>
             <NavContext.Provider value={nav}>
+              {/* T3 Code's settings route keeps its header and Close outside the scrollable page. */}
+              <header data-settings-header="" className="flex h-12 shrink-0 items-center gap-3 border-b border-line ps-5 pe-2">
+                <Dialog.Title className="text-base font-semibold text-ink">Settings</Dialog.Title>
+                <span aria-hidden="true" className="text-ink-tertiary">/</span>
+                <span className="min-w-0 truncate text-sm text-ink-secondary">{SECTIONS.find((s) => s.id === section)?.label}</span>
+                <div className="ms-auto flex shrink-0 items-center gap-3 text-xs text-ink-secondary">
+                  <span className="max-sm:hidden"><SaveIndicator /></span>
+                  <Dialog.Close asChild>
+                    <Button variant="ghost" size="icon-sm" aria-label="Close settings" title="Close settings (Escape)" className="text-ink-secondary hover:text-ink"><Icon name="close" /></Button>
+                  </Dialog.Close>
+                </div>
+              </header>
+              <Dialog.Description id={descId} className="sr-only">Application preferences and workspace settings.</Dialog.Description>
               <Tabs.Root
                 value={section}
                 onValueChange={choose}
@@ -357,9 +369,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                 {/* Below 768 px the section list sits above the page and wraps, so no section hides off-screen.
                     It is kept compact there (title beside the tabs, no icons, shorter tabs), so at a large
                     text size the page keeps most of the height. */}
-                <div className="flex min-h-0 w-(--ph-settings-nav-width) shrink-0 flex-col overflow-y-auto border-e border-line bg-surface max-md:max-h-[45%] max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-x-2 max-md:border-e-0 max-md:border-b max-md:py-1 max-md:ps-3 max-md:pe-(--ph-settings-close-room)">
-                  <Dialog.Title className="px-4 pt-5 pb-5 text-base font-semibold text-ink max-md:p-0 max-md:ps-1">Settings</Dialog.Title>
-                  <Dialog.Description id={descId} className="sr-only">Changes apply as you make them and are saved in your Phaethon folder.</Dialog.Description>
+                <div className="flex min-h-0 w-(--ph-settings-nav-width) shrink-0 flex-col overflow-y-auto border-e border-line bg-surface py-3 max-md:max-h-[35%] max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:border-e-0 max-md:border-b max-md:px-2 max-md:py-0.5">
                   <Tabs.List aria-label="Settings sections" className="flex flex-col gap-0.5 px-2 max-md:flex-row max-md:flex-wrap max-md:px-0">
                     {SECTIONS.map((s) => (
                       <Tabs.Trigger
@@ -380,14 +390,11 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       </Tabs.Trigger>
                     ))}
                   </Tabs.List>
-                  <div className="mt-auto flex flex-col gap-1.5 px-4 pt-4 pb-4 text-xs text-ink-secondary max-md:hidden">
-                    <SaveIndicator />
-                  </div>
                 </div>
 
                 <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                   {error && (
-                    <div role="alert" className="ms-6 me-(--ph-settings-close-room) mt-5 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-ink">
+                    <div role="alert" className="mx-5 mt-4 flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-ink">
                       <Icon name="error" className="mt-0.5" />
                       <span className="min-w-0 flex-1">{error}</span>
                       <Button
@@ -408,9 +415,9 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       value={s.id}
                       aria-labelledby={ids[s.id]}
                       // A tab stop (Radix), so the page scrolls by keyboard. Keep its ring inside the panel.
-                      className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:[outline-offset:calc(-1*(var(--ph-focus-width)+var(--ph-focus-offset)))]! data-[state=inactive]:hidden"
+                      className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] outline-none focus-visible:[outline-offset:calc(-1*(var(--ph-focus-width)+var(--ph-focus-offset)))]! data-[state=inactive]:hidden"
                     >
-                      <div className="flex w-full max-w-(--ph-settings-content-width) flex-col gap-6 px-6 pt-6 pb-8 max-sm:px-4">
+                      <div className="flex w-full max-w-(--ph-settings-content-width) flex-col gap-5 px-5 pt-5 pb-6 max-sm:px-4">
                         {pages[s.id]}
                       </div>
                     </Tabs.Content>
@@ -423,14 +430,6 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
               </p>
             </NavContext.Provider>
 
-            {/* The name shows on hover and focus, so it matches what a voice-control user says. */}
-            <IconTip label="Close settings" spoken="Escape" side="bottom">
-              <Dialog.Close asChild>
-                <Button variant="ghost" size="icon-sm" aria-label="Close settings" className="absolute top-(--ph-settings-close-inset) right-(--ph-settings-close-inset) min-h-(--ph-target-min) min-w-(--ph-target-min) text-ink-secondary hover:text-ink">
-                  <Icon name="close" />
-                </Button>
-              </Dialog.Close>
-            </IconTip>
           </StatusContext.Provider>
         </Dialog.Content></DialogSurface>
       </Dialog.Portal>

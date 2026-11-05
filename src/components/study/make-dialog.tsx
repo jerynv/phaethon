@@ -34,6 +34,7 @@ export type MakeKind = "deck" | "quiz";
 export type MakeRequest = {
   kind: MakeKind;
   key: number;
+  course?: string;
   fromAttempt?: { path: string; sources: string[]; quizTitle: string };
 };
 
@@ -174,7 +175,7 @@ function MakeFlow({
   // Something was chosen or typed: closing asks before discarding it.
   const [touched, setTouched] = useState(false);
   // Sources: a course folder ("courses/X") means all of it; otherwise its chosen parts ("courses/X/syllabus.md").
-  const [chosen, setChosen] = useState<Set<string>>(() => new Set(courses.length === 1 ? [courses[0].folder] : []));
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set(request.course && request.course !== "uncategorized" ? [request.course] : courses.length === 1 ? [courses[0].folder] : []));
   const [count, setCount] = useState(quiz ? "10" : "20");
   const [focus, setFocus] = useState("");
   const [title, setTitle] = useState("");

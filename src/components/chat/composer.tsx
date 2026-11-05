@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import type { AgentMessageCustom } from "@/runtime/agent-adapter";
 import {
   ACCEPT,
-  ACCEPTED_SUMMARY,
   MAX_FILES,
   attachmentKind,
   attachmentProblem,
@@ -20,7 +19,8 @@ import {
 } from "@/runtime/attachments";
 
 import { useAnnounce } from "./announce";
-import { FullAccessBanner } from "./full-access-banner";
+import { AccessPicker } from "./access-picker";
+import { supportsEducation } from "@/lib/spaces";
 import { AttachmentFold, ComposerAttachments, useAttachmentTray } from "./attachments";
 import { jumpKeyLabel } from "./card-arrival";
 import { ModelPicker } from "./model-picker";
@@ -96,7 +96,7 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
         type="button"
         variant="ghost"
         size="icon-xs"
-        className="text-warning-ink hover:bg-transparent hover:underline"
+        className="text-warning-ink hover:bg-transparent"
         aria-label="Dismiss"
         onClick={onDismiss}
       >
@@ -106,7 +106,7 @@ function AttachProblems({ problems, onDismiss }: { problems: string[]; onDismiss
   );
 }
 
-const itemClass = "flex cursor-default items-start gap-2.5 rounded-md px-2.5 py-2 outline-none select-none data-highlighted:bg-hover";
+const itemClass = "flex min-h-(--ph-control-height) cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm outline-none select-none data-highlighted:bg-hover";
 
 /**
  * The + button: attach files to this message, or add files or a folder to
@@ -135,11 +135,12 @@ function AddMenu({ onAttach, space }: { onAttach: () => void; space?: string }) 
             ref={triggerRef}
             type="button"
             variant="ghost"
-            size="icon"
-            className="rounded-full text-ink-secondary hover:text-ink data-[state=open]:bg-hover data-[state=open]:text-ink"
+            size="icon-sm"
+            round
+            className="ph-add-trigger text-ink-secondary hover:text-ink data-[state=open]:text-ink"
             aria-label="Add to message"
           >
-            <Icon name="plus" className="size-(--ph-icon-size-lg)" />
+            <Icon name="plus" className="size-(--ph-icon-size)" />
           </Button>
         </DropdownMenu.Trigger>
       </IconTip>
@@ -152,31 +153,25 @@ function AddMenu({ onAttach, space }: { onAttach: () => void; space?: string }) 
             if (adding.current) e.preventDefault();
             adding.current = false;
           }}
-          className="z-50 min-w-[min(20rem,calc(100vw-var(--ph-space)*8))] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
+          className="z-50 min-w-[min(19rem,calc(100vw-var(--ph-space)*8))] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-1"
         >
           <DropdownMenu.Item onSelect={onAttach} className={itemClass}>
-            <Icon name="attach" className="mt-0.5 text-ink-secondary" />
-            <span className="flex flex-col">
-              <span className="text-base font-medium">Attach files…</span>
-              <span className="text-sm text-ink-secondary">{ACCEPTED_SUMMARY}</span>
-            </span>
+            <Icon name="attach" className="size-4 text-ink-secondary" />
+            <span className="flex-1">Attach files…</span>
+            <span className="text-xs text-ink-secondary">Images, PDF, text</span>
           </DropdownMenu.Item>
           {space && (
             <>
               <DropdownMenu.Separator className="mx-1 my-1 h-px bg-line forced-colors:bg-[CanvasText]" />
               <DropdownMenu.Item onSelect={() => add(false)} className={itemClass} data-add-to-space="files">
-                <Icon name="file-plus" className="mt-0.5 text-ink-secondary" />
-                <span className="flex flex-col">
-                  <span className="text-base font-medium">Add files to this space…</span>
-                  <span className="text-sm text-ink-secondary">Copied into its files folder, any kind, for every conversation here</span>
-                </span>
+                <Icon name="file-plus" className="size-4 text-ink-secondary" />
+                <span className="flex-1">Add files to space…</span>
+                <span className="text-xs text-ink-secondary">Files</span>
               </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={() => add(true)} className={itemClass} data-add-to-space="folder">
-                <Icon name="folder-plus" className="mt-0.5 text-ink-secondary" />
-                <span className="flex flex-col">
-                  <span className="text-base font-medium">Add a folder to this space…</span>
-                  <span className="text-sm text-ink-secondary">The whole folder, copied; the original stays where it is</span>
-                </span>
+                <Icon name="folder-plus" className="size-4 text-ink-secondary" />
+                <span className="flex-1">Add folder to space…</span>
+                <span className="text-xs text-ink-secondary">Folder</span>
               </DropdownMenu.Item>
             </>
           )}
@@ -316,7 +311,6 @@ export function Composer({
     // Never more than about 40% of the window: what is inside (problems, files, the text) gives
     // way first, each scrolling in its own box, so the conversation always keeps the rest.
     <div className="mx-auto flex max-h-[40dvh] min-h-0 w-full max-w-(--ph-thread-width) flex-col px-(--ph-thread-gutter) pt-2 pb-4" data-composer-wrap="">
-      <FullAccessBanner space={spaceId} onOff={() => inputRef.current?.focus()} />
       <AttachProblems problems={problems} onDismiss={clearProblems} />
       <ComposerPrimitive.Root
         aria-label="Message composer"
@@ -401,7 +395,8 @@ export function Composer({
           <span aria-hidden="true" className="hidden flex-1 group-has-[[data-jump-latest]]/toolbar:block" />
           {pane && (
             <div className="flex min-w-0 items-center gap-0.5">
-              <TutorModePicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />
+              <AccessPicker spaceId={pane.spaceId} />
+              {supportsEducation(pane.spaceId) && <TutorModePicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />}
               <ModelPicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />
             </div>
           )}
@@ -417,7 +412,7 @@ export function Composer({
                 <Button
                   type="button"
                   size="icon"
-                  className="rounded-full"
+                  round
                   aria-label="Stop reply"
                   data-stop=""
                   onFocus={() => (stopFocused.current = true)}
@@ -434,7 +429,8 @@ export function Composer({
                   type="submit"
                   size="icon"
                   variant={isEmpty ? "outline" : "default"}
-                  className="rounded-full disabled:bg-surface disabled:text-ink-secondary disabled:opacity-100"
+                  round
+                  className="disabled:text-ink-secondary disabled:opacity-100"
                   aria-label="Send message"
                 >
                   <Icon name="send" />

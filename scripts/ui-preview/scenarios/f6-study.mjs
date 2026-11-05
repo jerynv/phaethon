@@ -33,6 +33,13 @@ const openStudy = async (page) => {
   await page.waitForSelector(`${NAV} [data-view-tab="study"]`, { timeout: 5000 });
   await page.click(`${NAV} [data-view-tab="study"]`);
   await page.waitForSelector(`${SHOWN} [data-study-hub]`, { timeout: 3000 });
+  await page.waitForFunction((S) => !!document.querySelector(`${S} [data-open-course], ${S} [data-study-empty]`), { timeout: 3000 }, SHOWN);
+  const course = await page.$(`${SHOWN} [data-open-course]`);
+  if (course) {
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator(`${SHOWN} [data-study-hub] [data-open-course]`).setTimeout(3000).click();
+    await page.waitForSelector(`${SHOWN} [data-study-hub] [data-course-back]`, { timeout: 3000 });
+  }
 };
 
 const C241 = "courses/CSCI-C 241 Fall 2026 (All Sections)";
@@ -115,7 +122,7 @@ export default [
         };
       }, SHOWN, NAV);
       check(hub.due === "3 cards due today", "the hub says how many cards are due", hub.due);
-      check(hub.streak?.includes("3 days in a row"), "the streak is in words", hub.streak);
+      check(!hub.streak, "course workspace omits the streak tutorial");
       check(hub.decks.length === 2 && hub.decks[0].includes("40% known") && hub.decks[0].includes("3 due · 3 new · 5 cards"), "a deck row has mastery in words and its counts", hub.decks[0]);
       check(hub.decks[0].includes("CSCI-C 241"), "a deck row names its course");
       check(hub.quiz?.startsWith("Last score 60%"), "a quiz row has its last score", hub.quiz);
@@ -157,10 +164,10 @@ export default [
       check(await waitFor(page, (c) => document.activeElement?.matches(c), COMPOSER), "⌥⌘1 goes back to Chat, focus in the composer");
       // The palette: Open Study.
       await chord(page, ["Meta", "k"]);
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("open study");
-      const listed = await page.evaluate(() => document.querySelector('[data-command="view:study"]')?.getAttribute("aria-selected"));
-      check(listed === "true", "the palette offers Open Study");
+      const listed = await page.evaluate(() => document.querySelector('[data-command="view:study"]')?.textContent);
+      check(listed?.includes("Open Study"), "the palette offers Open Study");
       await page.keyboard.press("Enter");
       check(await waitFor(page, () => document.activeElement?.matches("[data-study-hub] h2")), "Open Study shows Study with its heading focused");
       // Cmd+N from Study goes back to Chat and starts a new conversation there.
@@ -187,7 +194,7 @@ export default [
         importBtn: !!document.querySelector("[data-empty-import]"),
         make: !!document.querySelector("[data-study-empty] [data-make]"),
       }));
-      check(e.text.includes("Turn your courses into flashcards") && e.importBtn && !e.make, "no courses: it explains, and offers Import courses", JSON.stringify(e));
+      check(e.text.includes("No courses yet") && e.importBtn && !e.make, "no courses: a concise empty state offers Import courses", JSON.stringify(e));
       await page.click("[data-empty-import]");
       check(await waitFor(page, () => !!document.querySelector("[data-course-import]")), "Import courses opens the course import");
     },
@@ -197,7 +204,8 @@ export default [
     mock: mock({ courses: STUDY.courses }),
     async run(page) {
       await openStudy(page);
-      await page.waitForSelector("[data-study-empty] [data-make='deck']", { timeout: 3000 });
+      await page.waitForSelector("[data-study-hub] [data-make='deck']", { timeout: 3000 });
+      check(!(await page.$("[data-study-empty]")), "an imported course opens its own activity workspace");
       check(!(await page.$("[data-empty-import]")), "with courses: it offers to make cards, not to import");
     },
   },
@@ -209,7 +217,9 @@ export default [
       await openStudy(page);
       await page.click(`${SHOWN} [data-study-hub] [data-make="deck"]`);
       await page.waitForSelector("[data-make-dialog='deck']", { timeout: 3000 });
-      // Step by step (f14-make has the whole of it): nothing chosen is a plain error, tied to the choices, focus there.
+      check(await page.$eval(`[data-source-course="${C241}"] input`, (input) => input.checked), "the selected course starts chosen");
+      await page.click(`[data-source-course="${C241}"] input`);
+      // Removing the preselected course exercises the required source validation.
       await page.click("[data-step-next]");
       const err = await page.evaluate(() => ({
         text: document.querySelector("[data-field-error]")?.textContent ?? "",
@@ -261,7 +271,7 @@ export default [
       await openStudy(page);
       await page.click(`${SHOWN} [data-make="quiz"]`);
       await page.waitForSelector("[data-make-dialog='quiz']", { timeout: 3000 });
-      await page.click(`[data-source-course="${C241}"] input`);
+      check(await page.$eval(`[data-source-course="${C241}"] input`, (input) => input.checked), "the course workspace preselects its source for the quiz");
       await page.click("[data-step-next]");
       await page.waitForSelector('[data-make-form][data-make-at="exam"]', { timeout: 3000 });
       await page.click("[data-step-next]");

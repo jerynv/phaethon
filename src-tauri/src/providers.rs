@@ -278,6 +278,13 @@ pub enum AnyProvider {
 }
 
 impl Provider for AnyProvider {
+    fn image_input(&self) -> crate::vision::Sees {
+        match self {
+            AnyProvider::Anthropic(p) => p.image_input(),
+            AnyProvider::OpenAi(p) => p.image_input(),
+        }
+    }
+
     async fn turn(&self, req: ModelRequest<'_>, on_delta: &mut (dyn FnMut(Delta<'_>) + Send)) -> Result<ModelTurn, ProviderError> {
         match self {
             AnyProvider::Anthropic(p) => p.turn(req, on_delta).await,

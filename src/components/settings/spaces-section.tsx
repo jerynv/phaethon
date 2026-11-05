@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { NativeSelect } from "vic-ui";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { SPACE_HUES, spaceSwatch, spaceSwatchCheck } from "@/components/shell/new-space-dialog";
 import { SpaceMark } from "@/components/shell/space-mark";
@@ -12,7 +13,7 @@ import { grantDate, grantLabel, grantNoun, scheduleRevoke, spaceInfo, undoRevoke
 import { SPACE_DESCRIPTION_MAX, SPACE_NAME_MAX, updateSpace, useSpaces, type Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 
-import { HueSwatches, PathText, SectionHeader, SettingGroup } from "./controls";
+import { HueSwatches, PathText, SectionHeader, SettingGroup, SettingRow, SwitchRow } from "./controls";
 import { coursesSeen, SpaceCourses, useSpaceCourses } from "./space-courses";
 import { useStatus } from "./status";
 
@@ -22,21 +23,11 @@ function lineOf(message: string): string | null {
   return m ? `line ${m[1]}` : null;
 }
 
-/**
- * Settings > Spaces: every space in the vault, with its name, description and
- * colour editable in place, and under each, what it may read in other spaces
- * and which other spaces may read it (saved read-only grants), with Remove
- * and Undo. Modelled on the
- * per-app lists of macOS Privacy & Security and the "third-party access" pages
- * of GitHub and Google: who has access to what, since when, and one button to
- * take it back. Nothing here grants access; that only happens in a
- * conversation, when Phaethon asks.
- *
- * Problems with grants.json are about the whole file, so they are shown once,
- * above the list, not repeated under every space.
- */
+/** T3 Code's project settings separate the project list from one project's editor. */
 export function SpacesSection({ headingId, editSpace }: { headingId: string; editSpace?: { id: string; n: number } | null }) {
   const [vaultPath, setVaultPath] = useState<string | undefined>();
+  const [selected, setSelected] = useState<string | null>(editSpace?.id ?? null);
+  useEffect(() => { if (editSpace?.id) setSelected(editSpace.id); }, [editSpace?.id, editSpace?.n]);
   useEffect(() => {
     getSettings().then(
       (s) => setVaultPath(s.vaultPath),
@@ -44,6 +35,20 @@ export function SpacesSection({ headingId, editSpace }: { headingId: string; edi
     );
   }, []);
   const { spaces, status: spacesStatus } = useSpaces();
+  function openEditor(id: string) {
+    setSelected(id);
+    requestAnimationFrame(() => {
+      const field = document.querySelector<HTMLInputElement>(`[data-space-details="${CSS.escape(id)}"] [data-space-field="name"]`);
+      field?.focus();
+      const panel = field?.closest<HTMLElement>('[role="tabpanel"]');
+      if (panel) panel.scrollTop = 0;
+    });
+  }
+  function back() {
+    const previous = selected;
+    setSelected(null);
+    requestAnimationFrame(() => { if (previous) document.querySelector<HTMLElement>(`[data-space-edit="${CSS.escape(previous)}"]`)?.focus(); });
+  }
   // grants.json problems are about the whole file; every space reports the same list.
   const { state } = useGrants(spaces[0]?.id ?? "");
   const problems = state.status === "ready" ? state.problems : [];
@@ -54,8 +59,8 @@ export function SpacesSection({ headingId, editSpace }: { headingId: string; edi
     <>
       <SectionHeader
         id={headingId}
-        title="Spaces"
-        description="A space only sees its own files. When Phaethon needs something from another space, it asks you in the conversation. Each space says the access you chose to keep: what it can read in other spaces, and which other spaces can read it; Edit shows it in full, with its name and colour. It is read-only: one space can never change another’s files."
+        title={selected ? (spaces.find((s) => s.id === selected)?.name ?? "Space") : "Spaces"}
+        action={selected ? <Button variant="ghost" size="sm" data-spaces-back="" onClick={back}><Icon name="chevron-left" />All spaces</Button> : undefined}
       />
       {fileError && (
         <FileNotice tone="danger" icon="error" title="Phaethon can’t read its list of access between spaces, so no space can read another.">
@@ -70,10 +75,10 @@ export function SpacesSection({ headingId, editSpace }: { headingId: string; edi
           </Details>
         </FileNotice>
       )}
-      <SettingGroup title="Your spaces">
-        <ul className="flex flex-col divide-y divide-line" aria-label="Your spaces">
+      <SettingGroup title={selected ? "Workspace" : "Your spaces"} bare>
+        <ul className={cn("flex flex-col divide-y divide-line", !selected && "rounded-lg border border-line bg-raised")} aria-label="Your spaces">
           {spaces.map((s) => (
-            <SpaceRow key={s.id} space={s} fileError={fileError} editRequest={editSpace?.id === s.id ? editSpace.n : 0} />
+            <SpaceRow key={s.id} space={s} fileError={fileError} open={selected === s.id} hidden={selected !== null && selected !== s.id} onEdit={() => openEditor(s.id)} />
           ))}
         </ul>
         {spacesStatus === "ready" && spaces.length === 0 && <p className="px-4 py-3.5 text-sm text-ink-secondary">You have no spaces yet.</p>}
@@ -93,12 +98,7 @@ export function SpacesSection({ headingId, editSpace }: { headingId: string; edi
           </p>
         </FileNotice>
       )}
-      <p className="flex items-start gap-2 text-sm text-ink-secondary">
-        <Icon name="info" className="mt-0.5 shrink-0 text-ink-tertiary" />
-        <span className="max-w-(--ph-measure)">
-          Names and descriptions save when you press Enter or leave the field; Escape undoes an unsaved edit. Renaming a space changes only the name you see: its folder keeps the name it was created with. To add a space, use New space in the sidebar.
-        </span>
-      </p>
+
     </>
   );
 }
@@ -156,32 +156,14 @@ function accessSummary({ status, reads, readBy, courses }: { status: string; rea
   return parts.length ? parts.join(" · ") : "Only its own files";
 }
 
-/**
- * Under each space: what it can read in other spaces, and which other spaces
- * can read it. Remove takes access away at once and leaves the row, struck
- * through, with Undo until Settings closes (the same revoke-with-Undo as the
- * title bar's popover, src/lib/grants.ts). Focus moves from Remove to Undo and
- * back; when a row goes, to the row that took its place.
- *
- * Folded by default to one line per space: its name, its description, and a
- * summary of its access (so access is never hidden by the fold), with Edit to
- * open the rest. Folded, the details stay mounted and only hidden, so an
- * unsaved field or a pending Undo survives; the summary says so.
- * `editRequest` (a count) opens it when it changes from 0: the sidebar's Edit
- * name and colour… for this space.
- */
-function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: string | null; editRequest: number }) {
+/** List identity and the selected editor share mounted state, including unsaved drafts and grant Undo. */
+function SpaceRow({ space, fileError, open, hidden, onEdit }: { space: Space; fileError: string | null; open: boolean; hidden: boolean; onEdit: () => void }) {
   const { state } = useGrants(space.id);
   const { pending, revoked } = usePendingRevokes();
   const { say, fail } = useStatus();
   const courses = useSpaceCourses(space.id);
   const fullAccess = useFullAccess(space.id);
-  const [open, setOpen] = useState(editRequest > 0);
-  useEffect(() => {
-    if (editRequest > 0) setOpen(true);
-  }, [editRequest]);
-  const [unsaved, setUnsaved] = useState<string[]>([]);
-  const panelId = useId();
+  const [unsaved, setUnsaved] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const focusNext = useRef<{ undo: string } | { revoke: string } | { index: number } | null>(null);
   const emptyId = `space-${space.id}-grants`;
@@ -325,11 +307,11 @@ function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: 
     courses: courses ? coursesSeen(courses, space.id).length : 0,
   });
   const undoable = [...reads, ...readBy].filter((r) => pending.has(r.id)).length;
-  const notes = [...unsaved.map((f) => `${f} not saved`), ...(undoable ? [undoable === 1 ? "1 removal can be undone" : `${undoable} removals can be undone`] : [])];
+  const notes = [unsaved ? "Unsaved changes" : "", undoable ? `${undoable} pending removal${undoable === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
 
   return (
-    <li data-space-row={space.id} data-open={open ? "" : undefined} className="flex flex-col gap-3 px-4 py-3">
-      <div className="flex items-start gap-3">
+    <li data-space-row={space.id} data-open={open ? "" : undefined} hidden={hidden} className={cn("flex flex-col gap-4", open ? "p-0" : "px-3.5 py-3")} >
+      <div hidden={open} className="flex items-center gap-3">
         {/* One line tall, so the dot sits on the name's first line however it wraps. */}
         <span className="flex h-[1lh] shrink-0 items-center text-base">
           <SpaceMark hue={space.hue} />
@@ -344,44 +326,34 @@ function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: 
               {space.description}
             </p>
           )}
-          {summary && (
+          {summary && summary !== "Only its own files" && (
             <p data-space-summary="" className="text-sm text-ink-secondary">
               {summary}
             </p>
           )}
-          {fullAccess && (
-            <p data-space-full-access="" className="flex items-start gap-1.5 text-sm font-medium text-warning-ink">
-              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-              Full access: can read and change anything on this Mac
-            </p>
-          )}
-          {!open && notes.length > 0 && (
-            <p data-space-notes="" className="flex items-start gap-1.5 text-sm text-warning-ink">
-              <Icon name="warning" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-              {notes.join(" · ")}. Edit to see.
-            </p>
-          )}
+          {notes && <p data-space-notes="" className="text-xs text-ink-secondary">{notes}</p>}
+
         </div>
+        <span data-space-full-access="" className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-xs text-ink-secondary">{fullAccess ? "Full access" : "Workspace"}</span>
+        {space.educationEnabled && <span className="shrink-0 rounded-md bg-accent-soft px-2 py-0.5 text-xs text-accent-ink">Education</span>}
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
           aria-expanded={open}
-          aria-controls={panelId}
           data-space-edit={space.id}
-          onClick={() => setOpen((o) => !o)}
+          onClick={onEdit}
           className="min-h-(--ph-target-min) shrink-0"
         >
-          {open ? "Done" : "Edit"}
-          <span className="sr-only">{open ? ` editing ${space.name}` : ` ${space.name}`}</span>
+          Edit<span className="sr-only"> {space.name}</span>
         </Button>
       </div>
 
-      {/* Hidden, never unmounted, when folded: unsaved text and Undo survive it. */}
-      <div id={panelId} hidden={!open} data-space-details={space.id} className="ms-(--ph-space-mark-size) flex flex-col gap-4 ps-3">
-        <SpaceEditor space={space} onUnsaved={setUnsaved} />
+      <div hidden={!open} data-space-details={space.id} className="flex flex-col gap-5">
+        <SpaceEditor space={space} onDirty={setUnsaved} />
+        <FullAccess space={space} on={fullAccess} />
 
-        <div ref={listRef} className="flex flex-col gap-3">
+        <Details summary="Shared access" className="flex flex-col gap-3"><div ref={listRef} className="flex flex-col gap-3">
           {state.status === "loading" && <p className="text-sm text-ink-secondary">Checking what {space.name} can read…</p>}
           {state.status === "error" &&
             (state.error === fileError ? (
@@ -428,257 +400,87 @@ function SpaceRow({ space, fileError, editRequest }: { space: Space; fileError: 
                 </ul>
               </div>
             ))}
-          <SpaceCourses space={space} view={courses} />
-        </div>
-        <FullAccess space={space} on={fullAccess} />
+        </div></Details>
+        {space.educationEnabled && <SpaceCourses space={space} view={courses} />}
       </div>
     </li>
   );
 }
 
-/**
- * Full access for one space (src/lib/full-access.ts): off, a button that asks
- * the core, which warns in a dialog of the system's own before turning it on;
- * on, what it means and Turn off. Focus stays on the one button, whose words
- * change, and the change is said in the Settings status region.
- */
+/** The CLI access setting is explicit and persisted for this space. */
 function FullAccess({ space, on }: { space: Space; on: boolean }) {
   const { say, fail } = useStatus();
   const [busy, setBusy] = useState(false);
-  const descId = useId();
-  async function toggle() {
-    if (busy) return;
+  const id = useId();
+  async function change(next: boolean) {
+    if (busy || next === on) return;
     setBusy(true);
     try {
-      const now = await setFullAccess(space.id, !on);
-      if (now) say(`Full access is on for ${space.name}. The assistant there can read and change anything on this Mac and use the internet, without asking.`);
-      else if (on) say(`Full access is off for ${space.name}. Its assistant can only read ${space.name} again.`);
-      else say(`Full access stays off for ${space.name}.`);
+      const now = await setFullAccess(space.id, next);
+      say(`${space.name}: ${now ? "full access" : "workspace access"}.`);
     } catch (e) {
-      fail(`Full access for ${space.name} couldn’t be changed: ${String(e)}`);
-    } finally {
-      setBusy(false);
-    }
+      fail(`Couldn’t change access for ${space.name}: ${String(e)}`);
+    } finally { setBusy(false); }
   }
   return (
-    <div data-full-access={space.id} className="flex flex-col items-start gap-2 border-t border-line pt-3">
-      <h6 className="text-sm font-medium text-ink">Full access</h6>
-      <p id={descId} className={cn("text-sm", on ? "text-warning-ink" : "text-ink-secondary")}>
-        {on
-          ? `On, on this Mac only. The assistant in ${space.name} can read, change and delete any file you can, run any command and use the internet, without asking. Your other spaces’ walls don’t stop it.`
-          : `Off. The assistant in ${space.name} can only read its own files and what you share with it. Full access lets it change anything on this Mac and use the internet, without asking. For Claude Code, Codex and Gemini CLI; Phaethon’s own assistant still asks before saving.`}
-      </p>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        data-full-access-toggle={on ? "off" : "on"}
-        aria-describedby={descId}
-        aria-disabled={busy || undefined}
-        onClick={() => void toggle()}
-        className="min-h-(--ph-target-min)"
-      >
-        <Icon name={on ? "lock" : "warning"} />
-        {on ? "Turn off full access" : "Give full access…"}
-      </Button>
-    </div>
+    <SettingGroup title="Permissions">
+      <SettingRow label="Agent access" htmlFor={id} description="Applies to CLI agents on this Mac.">
+        <NativeSelect id={id} data-full-access={space.id} data-full-access-toggle={on ? "off" : "on"} value={on ? "full" : "workspace"} disabled={busy} onChange={(e) => void change(e.target.value === "full")}>
+          <option value="workspace">Workspace only</option>
+          <option value="full">Full access</option>
+        </NativeSelect>
+      </SettingRow>
+    </SettingGroup>
   );
 }
 
-/**
- * A space's name, description and colour, edited in place. Text fields save
- * on Enter or when focus leaves them, and Escape puts back the saved text
- * (Settings stays open while a field has unsaved text). A colour saves when
- * chosen. Each save is said in the Settings status region and shown under
- * the fields. `onUnsaved` hears which fields hold unsaved text, for the
- * folded row to say so.
- */
-function SpaceEditor({ space, onUnsaved }: { space: Space; onUnsaved: (fields: string[]) => void }) {
+/** One explicit transaction keeps names, descriptions, colour and enabled views together. */
+function SpaceEditor({ space, onDirty }: { space: Space; onDirty: (dirty: boolean) => void }) {
   const { say, fail } = useStatus();
-  const [saved, setSaved] = useState("");
-  const [dirty, setDirty] = useState<Record<string, boolean>>({});
-  const markDirty = useCallback((label: string, d: boolean) => setDirty((m) => (!!m[label] === d ? m : { ...m, [label]: d })), []);
-  const dirtyKey = Object.keys(dirty)
-    .filter((k) => dirty[k])
-    .join();
-  useEffect(() => {
-    onUnsaved(dirtyKey ? dirtyKey.split(",") : []);
-  }, [dirtyKey, onUnsaved]);
-
-  async function save(patch: { name?: string; description?: string; hue?: number }, done: (s: Space) => string): Promise<string | null> {
-    try {
-      const message = done(await updateSpace(space.id, patch));
-      setSaved(message);
-      say(message);
-      return null;
-    } catch (e) {
-      fail(`${space.name} couldn’t be changed: ${String(e)}`);
-      return String(e);
-    }
-  }
-
-  // A hue that is not a preset (the built-in School and Work, or one set by hand) shows first as "Current".
-  const presets = SPACE_HUES.some((p) => p.value === space.hue) ? SPACE_HUES : [{ label: "Current", value: space.hue }, ...SPACE_HUES];
-  return (
-    <>
-      <div className="flex flex-wrap gap-x-4 gap-y-3">
-        <InlineField
-          label="Name"
-          placeholder="Home"
-          spaceName={space.name}
-          value={space.name}
-          maxLength={SPACE_NAME_MAX}
-          required
-          onDirty={markDirty}
-          className="flex-[1_1_12em]"
-          onSave={(name) => save({ name }, (s) => `Renamed to ${s.name}.`)}
-        />
-        <InlineField
-          label="Description"
-          placeholder="Projects, notes and plans for this space"
-          spaceName={space.name}
-          value={space.description}
-          maxLength={SPACE_DESCRIPTION_MAX}
-          onDirty={markDirty}
-          className="flex-[2_1_18em]"
-          onSave={(description) => save({ description }, (s) => (s.description ? `${s.name}’s description saved.` : `${s.name}’s description removed.`))}
-        />
-        {/* Where its files are, in words rather than a path. */}
-        <p className="-mt-1.5 w-full text-xs text-ink-secondary" data-space-folder="">
-          Kept in the folder named “{space.id}”, inside the spaces folder of your Phaethon folder.
-        </p>
-        <div className="flex w-full flex-col gap-1">
-          <span aria-hidden="true" className="text-sm font-medium text-ink">
-            Colour <span className="font-normal text-ink-secondary">({colourName(space.hue)})</span>
-          </span>
-          <HueSwatches
-            label={`Colour, ${space.name}`}
-            presets={presets}
-            value={space.hue}
-            onPick={(hue) => void save({ hue }, (s) => `${s.name}’s colour is now ${colourName(s.hue)}.`)}
-            swatchColour={spaceSwatch}
-            checkColour={spaceSwatchCheck}
-          />
-        </div>
-        {saved && (
-          // Seen here; heard through the Settings status region.
-          <p aria-hidden="true" data-space-saved="" className="flex w-full items-center gap-1.5 text-sm text-ink-secondary">
-            <Icon name="check" className="size-(--ph-icon-size-sm) shrink-0" />
-            {saved}
-          </p>
-        )}
-      </div>
-    </>
-  );
-}
-
-/** A preset's name ("Rose"), or the angle for any other hue, so it never claims a preset it only resembles. */
-function colourName(h: number): string {
-  return SPACE_HUES.find((p) => p.value === h)?.label ?? `custom, hue ${h}`;
-}
-
-function InlineField({
-  label,
-  placeholder,
-  spaceName,
-  value,
-  maxLength,
-  required,
-  className,
-  onDirty,
-  onSave,
-}: {
-  label: string;
-  placeholder: string;
-  spaceName: string;
-  value: string;
-  maxLength: number;
-  required?: boolean;
-  className?: string;
-  /** Hears whether the field holds unsaved text (or a refused save). */
-  onDirty: (label: string, dirty: boolean) => void;
-  /** Resolves with an error message, or null once saved. */
-  onSave: (value: string) => Promise<string | null>;
-}) {
-  const id = useId();
-  const errorId = useId();
-  const [draft, setDraft] = useState(value);
+  const draftOf = () => ({ name: space.name, description: space.description, hue: space.hue, educationEnabled: space.educationEnabled });
+  const [draft, setDraft] = useState(draftOf);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const busy = useRef(false);
-  const { say } = useStatus();
-  const dirty = draft !== value;
-  const unsaved = dirty || !!error;
-  useEffect(() => onDirty(label, unsaved), [label, unsaved, onDirty]);
-
-  // A saved change (here, or in space.json by hand) shows unless this field holds unsaved text.
-  const last = useRef(value);
-  useEffect(() => {
-    if (last.current === value) return;
-    const before = last.current;
-    last.current = value;
-    setDraft((d) => (d === before ? value : d));
-  }, [value]);
-
-  async function commit() {
-    if (busy.current) return;
-    const next = draft.trim();
-    if (next === value) {
-      setDraft(value);
-      setError("");
-      return;
-    }
-    if (required && !next) {
-      setError("A space needs a name. Type one, or press Escape to keep the old one.");
-      return;
-    }
-    busy.current = true;
-    const problem = await onSave(next);
-    busy.current = false;
-    setError(problem ?? "");
+  const [saved, setSaved] = useState(false);
+  const nameId = useId();
+  const descId = useId();
+  const nameRef = useRef<HTMLInputElement>(null);
+  const dirty = draft.name !== space.name || draft.description !== space.description || draft.hue !== space.hue || draft.educationEnabled !== space.educationEnabled;
+  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  const presets = SPACE_HUES.some((p) => p.value === draft.hue) ? SPACE_HUES : [{ label: "Current", value: draft.hue }, ...SPACE_HUES];
+  const reset = () => { setDraft(draftOf()); setError(""); setSaved(false); };
+  async function save() {
+    if (busy || !dirty) return;
+    if (!draft.name.trim()) { setError("Enter a name."); nameRef.current?.focus(); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const result = await updateSpace(space.id, { ...draft, name: draft.name.trim(), description: draft.description.trim() });
+      setDraft({ name: result.name, description: result.description, hue: result.hue, educationEnabled: result.educationEnabled });
+      setSaved(true);
+      say(`${result.name} saved.`);
+    } catch (e) { setError(String(e)); fail(`Couldn’t save ${space.name}: ${String(e)}`); }
+    finally { setBusy(false); }
   }
-
-  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      void commit();
-    } else if (e.key === "Escape" && (dirty || error)) {
-      // Settings sees data-dirty on this field and stays open for this Escape.
-      setDraft(value);
-      setError("");
-      say(`${label} change undone.`);
-    }
-  }
-
   return (
-    <div className={cn("flex min-w-0 flex-col gap-1", className)}>
-      <label htmlFor={id} className="text-sm font-medium text-ink">
-        {label}
-        <span className="sr-only">, {spaceName}</span>
-      </label>
-      <Input
-        id={id}
-        placeholder={placeholder}
-        value={draft}
-        maxLength={maxLength}
-        autoComplete="off"
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        aria-required={required ? true : undefined}
-        data-dirty={dirty || error ? "" : undefined}
-        data-space-field={label.toLowerCase()}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          if (error) setError("");
-        }}
-        onKeyDown={onKeyDown}
-        onBlur={() => void commit()}
-      />
-      {error && (
-        <p id={errorId} className="flex items-start gap-1.5 text-sm text-danger-ink">
-          <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-          {error}
-        </p>
-      )}
+    <div className="flex flex-col gap-4" data-space-editor="">
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={nameId} className="text-sm font-medium text-ink">Name</label>
+        <Input ref={nameRef} id={nameId} value={draft.name} placeholder="Home" maxLength={SPACE_NAME_MAX} autoComplete="off" data-space-field="name" data-dirty={dirty ? "" : undefined} aria-invalid={!!error && !draft.name.trim() || undefined} onChange={(e) => { setDraft((d) => ({ ...d, name: e.target.value })); setSaved(false); }} onKeyDown={(e) => { if (e.key === "Escape" && dirty) { e.preventDefault(); e.stopPropagation(); reset(); } }} />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={descId} className="text-sm font-medium text-ink">Description <span className="font-normal text-ink-tertiary">Optional</span></label>
+        <Input id={descId} value={draft.description} placeholder="Projects, notes and plans" maxLength={SPACE_DESCRIPTION_MAX} autoComplete="off" data-space-field="description" data-dirty={dirty ? "" : undefined} onChange={(e) => { setDraft((d) => ({ ...d, description: e.target.value })); setSaved(false); }} onKeyDown={(e) => { if (e.key === "Escape" && dirty) { e.preventDefault(); e.stopPropagation(); reset(); } }} />
+      </div>
+      <div className="flex flex-col gap-2"><span className="text-sm font-medium text-ink">Colour</span><HueSwatches label={`Colour, ${space.name}`} presets={presets} value={draft.hue} onPick={(hue) => { setDraft((d) => ({ ...d, hue })); setSaved(false); }} swatchColour={spaceSwatch} checkColour={spaceSwatchCheck} /></div>
+      <div className="rounded-lg border border-line"><SwitchRow label="Education" description="Study, grades and planning for this space." checked={draft.educationEnabled} onChange={(educationEnabled) => { setDraft((d) => ({ ...d, educationEnabled })); setSaved(false); }} status={draft.educationEnabled ? "On" : "Off"} /></div>
+      <div data-space-folder="" className="flex items-center gap-2 text-xs text-ink-secondary"><Icon name="folder" className="size-(--ph-icon-size-sm)" /><code className="min-w-0 wrap-anywhere">spaces/{space.id}/</code></div>
+      {error && <p role="alert" className="text-sm text-danger-ink">{error}</p>}
+      <div className="flex items-center gap-2">
+        <Button data-space-save="" disabled={busy || !dirty} onClick={() => void save()}>{busy ? "Saving…" : "Save changes"}</Button>
+        <Button variant="ghost" disabled={busy || !dirty} onClick={reset}>Cancel</Button>
+        {saved && !dirty && <span data-space-saved="" className="ms-auto flex items-center gap-1 text-xs text-ink-secondary"><Icon name="check" className="size-(--ph-icon-size-sm)" />Saved</span>}
+      </div>
     </div>
   );
 }

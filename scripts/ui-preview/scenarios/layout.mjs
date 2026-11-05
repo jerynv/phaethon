@@ -131,7 +131,14 @@ export default [
         fit: getComputedStyle(img).objectFit,
         width: img.getBoundingClientRect().width,
       }));
-      check(preview.fit === "contain" && preview.width >= 64, "attached images have a useful preview that preserves the whole image", preview);
+      check(preview.fit === "cover" && preview.width >= 36 && preview.width <= 48, "draft images use compact thumbnails beside their filenames", preview);
+      await page.click('[aria-label="Attached files"] [data-view-attachment]');
+      await page.waitForFunction(() => document.querySelector('[data-viewer-image]')?.naturalWidth === 240);
+      check(await page.$eval('[data-viewer-image]', (image) => image.naturalHeight === 120 && getComputedStyle(image).objectFit === "contain"), "opening the thumbnail preserves the whole original image");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector('[data-viewer-image]'));
+      const collapsed = await page.$('[data-attachment-fold][aria-expanded="false"]');
+      if (collapsed && await collapsed.isVisible()) await collapsed.click();
       await page.click('[data-remove-attachment]');
       await page.waitForFunction(() => !document.querySelector('[aria-label="Attached files"] img'));
       check(true, "the redesigned image preview can be removed");

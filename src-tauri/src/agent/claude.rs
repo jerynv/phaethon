@@ -12,10 +12,10 @@ use super::{AgentEvent, Outcome, place};
 pub const ALLOWED_TOOLS: &str = "Read,Grep,Glob";
 
 /// Shown when the binary cannot be found or started.
-pub const MISSING_CLI_MESSAGE: &str = "Claude Code was not found. Install Claude Code, then run `claude` once in a terminal to log in.";
+pub const MISSING_CLI_MESSAGE: &str = "Claude Code was not found. Install it, then connect it in Settings › Assistant.";
 
 pub(crate) const NOT_LOGGED_IN_MESSAGE: &str =
-    "Claude Code is not logged in. Run `claude` once in a terminal to log in, then try again.";
+    "Claude Code isn’t signed in. Sign in to this connection in Settings › Assistant, then retry.";
 
 /// Variables a parent Claude Code session sets for its own children. If Phaethon
 /// was launched from inside one, they would make our child think it is nested.

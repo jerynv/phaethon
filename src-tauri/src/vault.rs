@@ -31,6 +31,8 @@ pub struct VaultSettings {
     pub isolate_claude_config: bool,
     /// Which agent runs in this vault's spaces.
     pub backend: Backend,
+    pub agent_instances: Option<serde_json::Value>,
+    pub active_agent_instances: Option<serde_json::Value>,
     /// Model for Phaethon's own loop; the provider's default when unset.
     pub model: Option<String>,
     /// Effort for Phaethon's own loop; the provider's default when unset.

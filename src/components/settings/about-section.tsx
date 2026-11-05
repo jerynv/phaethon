@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Details } from "@/components/ui/details";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
 import type { Settings } from "@/lib/backend";
@@ -24,13 +25,15 @@ function CopyPath({ path, what }: { path: string; what: string }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <code className="min-w-0 flex-1 rounded-md bg-surface-sunken px-2.5 py-1.5 font-mono text-sm wrap-anywhere text-ink">
+      <code className="min-w-0 flex-1 font-mono text-xs wrap-anywhere text-ink-secondary">
         <PathText path={path} />
       </code>
       <Button
         type="button"
-        variant="outline"
-        size="sm"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={isCopied ? `${what} path copied` : `Copy ${what} path`}
+        title={isCopied ? "Copied" : "Copy path"}
         onClick={() =>
           navigator.clipboard.writeText(path).then(
             () => {
@@ -44,7 +47,6 @@ function CopyPath({ path, what }: { path: string; what: string }) {
         }
       >
         <Icon name={isCopied ? "check" : "copy"} />
-        {isCopied ? "Copied" : "Copy path"}
       </Button>
     </div>
   );
@@ -59,14 +61,10 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
       <SectionHeader
         id={headingId}
         title="About Phaethon"
-        description="Your personal assistant workspace."
       />
-      <SettingGroup title="This copy">
+      <SettingGroup title="Application">
         <SettingRow label="Version">
           <span className="text-base text-ink tabular-nums">{settings?.version ?? "Unknown"}</span>
-        </SettingRow>
-        <SettingRow label="Licence">
-          <span className="text-base text-ink">MIT</span>
         </SettingRow>
       </SettingGroup>
 
@@ -79,24 +77,22 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
           </h4>
         </div>
         <div data-about-files="" className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised">
-          <SettingRow stacked label="Phaethon folder">
+          <SettingRow label="Phaethon folder">
             {vault ? <CopyPath path={vault} what="your Phaethon folder" /> : <span className="text-sm text-ink-secondary">Not available in this preview.</span>}
           </SettingRow>
-          <SettingRow stacked label="Instructions" description="MANUAL.md applies to every space.">
+          <SettingRow label="Instructions">
             {vault ? <CopyPath path={`${vault}/MANUAL.md`} what="MANUAL.md" /> : <PathText path="MANUAL.md" />}
           </SettingRow>
-          <SettingRow stacked label="Conversations">
+          <SettingRow label="Conversations">
             <PathText path="spaces/<space>/.phaethon/" />
           </SettingRow>
-          <SettingRow stacked label="Attachments">
+          <SettingRow label="Attachments">
             <PathText path="spaces/<space>/attachments/" />
           </SettingRow>
         </div>
       </div>
 
-      <p className="max-w-(--ph-measure) text-sm text-ink-secondary">
-        Atkinson Hyperlegible by the Braille Institute.
-      </p>
+      <Details summary="Legal" className="text-xs text-ink-secondary"><p>Phaethon is available under the MIT licence.</p><p>Atkinson Hyperlegible by the Braille Institute. OpenDyslexic by Abbie Gonzalez. Lexend by Bonnie Shaver-Troup and Thomas Jockin.</p></Details>
     </>
   );
 }

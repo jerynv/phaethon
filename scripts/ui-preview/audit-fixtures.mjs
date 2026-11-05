@@ -226,26 +226,20 @@ export const scrollPanel = (page, y) =>
     if (p) p.scrollTop = y === "end" ? p.scrollHeight : y;
   }, y, PANEL);
 
-/**
- * Settings › Spaces lists each space folded to one line; open the details
- * (its Edit button) of the spaces named, or of every space.
- */
+/** Open one space's editor and reveal its grant details when used by access scenarios. */
 export async function openSpaceDetails(page, ids) {
   await page.waitForSelector(`${PANEL} [data-space-edit]`, { timeout: 5000 });
-  const want = ids ?? null;
-  await page.evaluate(
-    (want, panel) => {
-      for (const b of document.querySelectorAll(`${panel} [data-space-edit][aria-expanded="false"]`)) if (!want || want.includes(b.dataset.spaceEdit)) b.click();
-    },
-    want,
-    PANEL,
-  );
-  await page.waitForFunction(
-    (want, panel) => [...document.querySelectorAll(`${panel} [data-space-edit]`)].every((b) => (want && !want.includes(b.dataset.spaceEdit)) || b.getAttribute("aria-expanded") === "true"),
-    { timeout: 3000 },
-    want,
-    PANEL,
-  );
+  const id = ids?.[0] ?? await page.$eval(`${PANEL} [data-space-edit]`, (button) => button.dataset.spaceEdit);
+  const selected = await page.$eval(`${PANEL} [data-space-edit="${id}"]`, (button) => button.getAttribute("aria-expanded") === "true");
+  if (!selected) {
+    const back = await page.$(`${PANEL} [data-spaces-back]`);
+    if (back) await back.click();
+    await page.$eval(`${PANEL} [data-space-edit="${id}"]`, (button) => button.click());
+  }
+  await page.waitForSelector(`${PANEL} [data-space-details="${id}"]`, { visible: true, timeout: 3000 });
+  await page.$eval(`${PANEL} [data-space-details="${id}"]`, (details) => {
+    for (const disclosure of details.querySelectorAll("details")) if (disclosure.querySelector("summary")?.textContent === "Shared access") disclosure.open = true;
+  });
 }
 
 /** Scroll an element into the middle of its scroller. */

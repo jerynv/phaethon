@@ -48,7 +48,7 @@ const WAIT: Duration = Duration::from_secs(20);
 /// The models `cli` offers. `home` is the vault's own home for Codex and
 /// Gemini CLI (and Claude Code's when the vault keeps one).
 pub async fn list(cli: Cli, home: Option<&Path>) -> CliModels {
-    let Some(bin) = cli.find() else {
+    let Some(bin) = crate::agent_instances::binary(cli, home) else {
         return CliModels { models: vec![], note: Some(format!("{} isn’t installed on this computer.", cli.name())) };
     };
     match cli {

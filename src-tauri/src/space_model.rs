@@ -175,7 +175,7 @@ mod tests {
         set(&vault, "work", None).unwrap();
         assert_eq!(resolve(&work, default.clone()), default);
         assert!(list(&vault).unwrap().is_empty());
-        assert_eq!(saved(&root, "work"), json!({}));
+        assert_eq!(saved(&root, "work"), json!({"educationEnabled": false}));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -204,7 +204,7 @@ mod tests {
         spaces::update(&vault, "school", Some("School"), None, None).unwrap();
         assert_eq!(saved(&root, "school")["model"], "claude-haiku-5-5");
         set(&vault, "school", None).unwrap();
-        assert_eq!(saved(&root, "school"), json!({ "name": "School", "hue": 200, "future": [1] }));
+        assert_eq!(saved(&root, "school"), json!({ "name": "School", "hue": 200, "educationEnabled": false, "future": [1] }));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -260,7 +260,7 @@ mod tests {
         }
         set_cli(&vault, "school", "codex", None).unwrap();
         set_cli(&vault, "school", "gemini", None).unwrap();
-        assert_eq!(saved(&root, "school"), json!({"model": "claude-haiku-5-5"}));
+        assert_eq!(saved(&root, "school"), json!({"model": "claude-haiku-5-5", "educationEnabled": false}));
         assert_eq!(split_cli_ref("codex:gpt-5.5"), Some(("codex", "gpt-5.5")));
         assert_eq!(split_cli_ref("claude:opus"), Some(("claude", "opus")));
         assert_eq!(split_cli_ref("opencode:x"), None);

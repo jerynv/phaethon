@@ -10,8 +10,8 @@
       grants: {},
       // The vault's spaces; spaces_list returns them most recently used first (lastUsed), then by name.
       spaces: [
-        { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240 },
-        { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50 },
+        { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 240, educationEnabled: true },
+        { id: "work", name: "Work", description: "Projects, meetings, follow-ups", hue: 50, educationEnabled: false },
       ],
       // Events streamed for each agent_send; { waitApproval: true } pauses until answered.
       turn: [{ kind: "text", delta: "Done." }],
@@ -28,6 +28,13 @@
     },
     window.__MOCK__ || {},
   ));
+  // Older fixtures supplied course/study data before the explicit feature flag existed.
+  M.spaces = M.spaces.map((space, index) => ({
+    ...space,
+    educationEnabled: typeof space.educationEnabled === "boolean" ? space.educationEnabled :
+      Object.values(M.courseAccess?.[space.id] ?? {}).some((parts) => parts.length > 0) ||
+      (index === 0 && !!M.study && ((M.study.courses?.length ?? 0) > 0 || Object.keys(M.study.decks ?? {}).length > 0 || Object.keys(M.study.quizzes ?? {}).length > 0)),
+  }));
   window.__PHAETHON_PLATFORM__ = M.platform;
   const dark = M.theme === "dark";
   const realMatch = window.matchMedia?.bind(window);
@@ -233,14 +240,13 @@
           if (M.addResult === null) return null;
           return M.addResult ?? (args.folder ? { paths: ["files/Scool"], files: 34, skipped: 2 } : { paths: ["files/Resume.pdf"], files: 1, skipped: 0 });
         }
-        // Contract (src-tauri/src/lib.rs full_access_set): turning on asks in the system's own dialog;
-        // { fullAccessDeclined: true } is that dialog cancelled. Returns whether it is on afterwards.
+        // The access dropdown is the explicit user choice; the core persists it directly.
         case "full_access_list":
           return [...(M.fullAccess ?? [])];
         case "full_access_set": {
           if (!M.spaces.some((s) => s.id === args.id)) throw "That space isn’t in your Phaethon folder any more.";
           (M.fullAccessCalls ??= []).push({ id: args.id, on: args.on });
-          const now = args.on && !M.fullAccessDeclined;
+          const now = args.on;
           const set = new Set(M.fullAccess ?? []);
           if (now) set.add(args.id);
           else if (!args.on) set.delete(args.id);
@@ -258,7 +264,7 @@
           const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "space";
           let id = base;
           for (let n = 2; M.spaces.some((s) => s.id === id); n++) id = `${base}-${n}`;
-          const space = { id, name, description: (args.description ?? "").trim(), hue: Math.round(args.hue ?? 168) };
+          const space = { id, name, description: (args.description ?? "").trim(), hue: Math.round(args.hue ?? 168), educationEnabled: args.educationEnabled ?? false };
           M.spaces.push(space);
           return { ...space };
         }
@@ -271,6 +277,7 @@
           }
           if (args.description != null) space.description = args.description.trim();
           if (args.hue != null) space.hue = Math.round(args.hue);
+          if (args.educationEnabled != null) space.educationEnabled = args.educationEnabled;
           return { ...space };
         }
         // As thread.rs returns them: each message carries its index and its records.
@@ -329,6 +336,54 @@
         case "claude_cli_status":
           // Contract: whether the claude command is installed (and where). Never says anything about the login.
           return M.claudeCli ?? { installed: true, path: "/Users/you/.local/bin/claude" };
+        case "agent_instances_list": {
+          M.agentInstances ??= ["claude", "codex", "gemini"].map((cli) => {
+            const old = M.clis?.find((item) => item.id === cli);
+            return { config: { id: cli, cli, name: { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI" }[cli], binary: "", args: [] }, installed: old?.installed ?? (cli === "claude" ? M.claudeCli?.installed ?? true : true), loggedIn: old?.loggedIn ?? (cli === "codex" ? true : null), account: old?.account ?? null, plan: old?.plan ?? null, managedHome: cli !== "claude", selected: false };
+          });
+          return M.agentInstances.map((item) => ({ ...item, selected: M.settings.backend === `${item.config.cli}-cli` && (M.activeAgentInstances?.[item.config.cli] ?? item.config.cli) === item.config.id }));
+        }
+        case "agent_instance_save": {
+          const config = { ...args.instance, name: args.instance.name.trim(), binary: args.instance.binary.trim() };
+          if (!config.name) throw "Use a name of 1–80 characters.";
+          M.agentInstances ??= [];
+          const existing = M.agentInstances.find((item) => item.config.id === config.id);
+          if (existing) existing.config = config;
+          else M.agentInstances.push({ config, installed: true, loggedIn: false, account: null, plan: null, managedHome: true, selected: false });
+          return config;
+        }
+        case "agent_instance_select": {
+          const instance = M.agentInstances?.find((item) => item.config.id === args.id);
+          if (!instance) throw "Assistant instance not found.";
+          (M.activeAgentInstances ??= {})[instance.config.cli] = args.id;
+          M.settings.backend = `${instance.config.cli}-cli`;
+          return;
+        }
+        case "agent_instance_usage":
+          return M.instanceUsage?.[args.id] ?? { available: false, windows: [], reason: "Usage is not available from this CLI." };
+        case "agent_instance_sign_out": {
+          const instance = M.agentInstances?.find((item) => item.config.id === args.id);
+          if (!instance) throw "Assistant instance not found.";
+          instance.loggedIn = false; instance.account = null; instance.plan = null;
+          return;
+        }
+        case "agent_instance_remove":
+          if (["claude", "codex", "gemini"].includes(args.id)) throw "Built-in connections cannot be removed.";
+          M.agentInstances = M.agentInstances.filter((item) => item.config.id !== args.id);
+          return;
+        case "agent_instance_sign_in": {
+          const instance = M.agentInstances?.find((item) => item.config.id === args.id);
+          if (!instance) throw "Assistant instance not found.";
+          const plan = M.signIn?.[args.id] ?? M.signIn?.[instance.config.cli] ?? { status: "signedIn", message: `Signed in to ${instance.config.name}.` };
+          if (M.signInWaiting) return { status: "busy", message: "Another sign-in is already running." };
+          const result = await new Promise((resolve) => { M.signInWaiting = resolve; window.__signInDone = resolve; if (!plan.hold) setTimeout(() => resolve(plan), M.signInDelay ?? 300); });
+          M.signInWaiting = null;
+          if (result.status === "signedIn") instance.loggedIn = true;
+          return result;
+        }
+        case "agent_instance_sign_in_cancel":
+          if (!M.signInWaiting) return false;
+          M.signInWaiting({ status: "cancelled", message: "Sign-in cancelled." }); return true;
         case "agent_clis_status":
           // Contract (agent::CliInfo): installed, signed in only where the CLI itself says (Codex), the sign-in command,
           // and whether it has a setup of its own for the vault (Codex and Gemini CLI always).

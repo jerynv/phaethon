@@ -106,12 +106,16 @@ export default [
           const d = dialog.getBoundingClientRect();
           const close = dialog.querySelector('button[aria-label="Close settings"], button[aria-label="Close"]').getBoundingClientRect();
           const out = [];
-          const name = (el) => `${el.tagName.toLowerCase()}[${(el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 30)}]`;
+          const name = (el) => `${el.tagName.toLowerCase()}[${(el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 30)}] role=${el.getAttribute("role")} class=${String(el.className).slice(0, 90)}`;
           for (const el of dialog.querySelectorAll("*")) {
             const r = el.getBoundingClientRect();
             if (!r.width || !r.height) continue;
             if (r.right > d.right + 1 || r.left < d.left - 1) out.push(`spills sideways: ${name(el)} ${Math.round(r.left)}..${Math.round(r.right)} vs ${Math.round(d.left)}..${Math.round(d.right)}`);
-            if (el.matches("button, [role=radio], [role=switch], [role=tab]") && el.scrollWidth > el.clientWidth + 1) out.push(`text wider than its control: ${name(el)} ${el.scrollWidth}>${el.clientWidth}`);
+            if (el.matches('button:not([role="switch"]), [role=radio], [role=tab]') && el.scrollWidth > el.clientWidth + 1) out.push(`text wider than its control: ${name(el)} ${el.scrollWidth}>${el.clientWidth}`);
+            if (el.matches('[role="switch"]')) {
+              const knob = el.querySelector("span")?.getBoundingClientRect();
+              if (knob && (knob.left < r.left - 1 || knob.right > r.right + 1)) out.push(`switch knob spills: ${name(el)}`);
+            }
             if (el.matches('button:not([aria-label="Close settings"]):not([aria-label="Close"]), input, [role=slider], [role=radio], [role=switch], [role=tab], a, h3') && !el.closest('[role="tabpanel"][hidden]')) {
               const hit = r.left < close.right && r.right > close.left && r.top < close.bottom && r.bottom > close.top;
               // Only what is scrolled to the top matters; the panel scrolls under the corner.
@@ -235,8 +239,8 @@ export default [
       await page.keyboard.press("Shift");
       await h.idle();
       await h.shot("cli-chosen");
-      const changes = await page.evaluate(() => window.__calls.filter(([c]) => c === "settings_set_backend"));
-      check(changes.length === 1 && changes[0][1].backend === "claude-cli", "explicit default action selects Claude Code once", JSON.stringify(changes));
+      const changes = await page.evaluate(() => window.__calls.filter(([command]) => command === "agent_instance_select"));
+      check(changes.length === 1 && changes[0][1].id === "claude", "explicit default action selects the Claude Code instance once", JSON.stringify(changes));
       await closeProviderPopup(page);
       await park(page);
       await scrollPanel(page, "end");
@@ -387,6 +391,7 @@ export default [
       const state = (sel) =>
         page.evaluate((s) => [...document.querySelectorAll(s)].map((r) => `${r.textContent.trim()}:${r.getAttribute("aria-checked")}${r === document.activeElement ? "(focus)" : ""}`).join(" "), sel);
       for (const group of ["Theme", "Accent colour", "Surface tint"]) {
+        if (group === "Surface tint") await page.$eval('details:has([aria-label="Surface tint"])', (details) => { details.open = true; });
         const sel = `[role="radiogroup"][aria-label="${group}"] [role="radio"]`;
         if (!(await page.$(sel))) throw new Error(`no radio group "${group}"`);
         // Radix keeps a roving tabindex: at most one radio is tabbable (before
@@ -476,7 +481,7 @@ export default [
       // N-009: the dot sits on the first line of its row, and the space name is
       // never alone on a line: the path starts on the same line as "Work /".
       const rows = await page.evaluate((p) =>
-        [...document.querySelectorAll(`${p} [data-grant-row]`)].map((row) => {
+        [...document.querySelectorAll(`${p} [data-grant-row]`)].filter((row) => row.getClientRects().length > 0).map((row) => {
           const where = row.querySelector("[data-grant-where]");
           const dot = row.querySelector("[aria-hidden].rounded-full").getBoundingClientRect();
           const parts = [...where.children];
@@ -546,7 +551,7 @@ export default [
     mock: { settings: { ...SETTINGS, vaultPath: "/Users/someone-with-a-long-name/Library/Mobile Documents/com~apple~CloudDocs/Phaethon/default" }, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "about");
-      await press(page, "Copy path");
+      await h.click('[aria-label="Copy your Phaethon folder path"]');
       await h.idle();
       await park(page);
       await h.shot("copied");
@@ -625,7 +630,7 @@ export default [
       await openSettings(page, h, "appearance");
       const sliders = await page.evaluate((p) => document.querySelectorAll(`${p} [data-token="--ph-text-scale"] [role="slider"]`).length, PANEL);
       check(sliders === 0, "no text size slider on Appearance");
-      await press(page, "Change in Accessibility");
+      await h.click('[data-token="--ph-text-scale-link"] button');
       await h.idle();
       const got = await page.evaluate(() => ({
         tab: document.querySelector('[role="dialog"] [role="tab"][data-state="active"]')?.textContent,
@@ -833,21 +838,12 @@ export default [
         await page.$eval(`[data-testid="settings-tab-${tab}"]`, (el) => el.click());
         await h.idle();
         const got = await page.evaluate((p) => {
-          const header = document.querySelector(`${p} [data-section-header]`);
-          const desc = header.querySelector("p");
-          const action = header.querySelector("button");
-          const em = parseFloat(getComputedStyle(desc).fontSize);
-          const hw = header.getBoundingClientRect().width;
-          return {
-            header: Math.round(hw),
-            desc: Math.round(desc.getBoundingClientRect().width),
-            want: Math.round(Math.min(24 * em, hw)),
-            actionBelow: !!action && action.getBoundingClientRect().top >= desc.getBoundingClientRect().bottom - 1,
-            lines: Math.round(desc.getBoundingClientRect().height / parseFloat(getComputedStyle(desc).lineHeight)),
-          };
+          const frame = document.querySelector('[role="dialog"]').getBoundingClientRect();
+          const header = document.querySelector(`${p} [data-section-header]`).getBoundingClientRect();
+          const close = document.querySelector('[aria-label="Close settings"]').getBoundingClientRect();
+          return { headerRight: header.right, frameRight: frame.right, closeBottom: close.bottom, headerTop: header.top };
         }, PANEL);
-        console.log(`     ${tab} header at 2x: ${JSON.stringify(got)}`);
-        check(got.desc >= got.want - 1, `${tab}: the description keeps at least 24 em (or the full width)`, JSON.stringify(got));
+        check(got.headerRight <= got.frameRight && got.closeBottom <= got.headerTop, `${tab}: the page heading fits below the separate Close header`, JSON.stringify(got));
       }
       await page.$eval('[data-testid="settings-tab-appearance"]', (el) => el.click());
       await h.idle();

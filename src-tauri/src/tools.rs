@@ -75,6 +75,16 @@ pub fn definitions() -> Value {
             }
         },
         {
+            "name": "read_page",
+            "description": "Look at one original PDF page as an image, including handwriting, equations and diagrams OCR may have misread. Page numbers start at 1. The result identifies the source path and page: cite both. Uses the same course permissions and @space grants as read_file. For text, use read_file first; request only the page needed.",
+            "input_schema": {
+                "type": "object",
+                "properties": {"path": path, "page": {"type": "integer", "minimum": 1, "maximum": 10000}},
+                "required": ["path", "page"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "search_files",
             "description": "Find lines containing some text (case-insensitive) in the text files of this space. Returns path:line: text. With path \"@<space>/<folder>\" it searches a granted folder of another space instead.",
             "eager_input_streaming": true,
@@ -140,6 +150,7 @@ pub fn definitions() -> Value {
 pub enum Call {
     List { path: String },
     Read { path: String },
+    ReadPage { path: String, page: u32 },
     Search { query: String, path: String },
     Write { path: String, contents: String },
     RequestAccess { space: String, path: String, reason: String },
@@ -155,6 +166,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
     let allowed: &[&str] = match name {
         "list_files" => &["path"],
         "read_file" => &["path"],
+        "read_page" => &["path", "page"],
         "search_files" => &["query", "path"],
         "write_file" => &["path", "contents"],
         "request_access" => &["space", "path", "reason"],
@@ -181,6 +193,7 @@ pub fn parse_call(name: &str, input: &Value) -> Result<Call, String> {
     Ok(match name {
         "list_files" => Call::List { path: opt("path")? },
         "read_file" => Call::Read { path: req("path")? },
+        "read_page" => Call::ReadPage { path: req("path")?, page: obj.get("page").and_then(Value::as_u64).filter(|n| (1..=10_000).contains(n)).ok_or("page must be a whole number from 1 to 10000")? as u32 },
         "search_files" => Call::Search {
             query: req("query")?,
             path: opt("path")?,
@@ -228,7 +241,7 @@ pub fn target(path: &str) -> Target<'_> {
 /// Whether a read tool call addresses another space.
 pub fn is_cross(call: &Call) -> bool {
     match call {
-        Call::List { path } | Call::Read { path } | Call::Search { path, .. } => {
+        Call::List { path } | Call::Read { path } | Call::ReadPage { path, .. } | Call::Search { path, .. } => {
             matches!(target(path), Target::Other { .. })
         }
         _ => false,
@@ -254,6 +267,7 @@ pub fn label(call: &Call) -> String {
             Some(o) => format!("Reading {o}"),
             None => format!("Reading file {path}"),
         },
+        Call::ReadPage { path, page } => format!("Reading page {page} of {path}"),
         Call::Search { query, path } => match other(path) {
             Some(o) => format!("Searching {o} for \u{201c}{query}\u{201d}"),
             None => format!("Searching files for \u{201c}{query}\u{201d}"),
@@ -301,6 +315,7 @@ pub fn run_in(ctx: &Ctx, call: &Call) -> Result<String, String> {
             (Some(space), rel) => read_at(&resolve_other(ctx, &space, &rel)?.0, path),
             (None, rel) => read_here(ctx, &rel),
         },
+        Call::ReadPage { path, page } => read_page(ctx, path, *page).map(|(label, _)| label),
         Call::Search { query, path } => match split(path) {
             (Some(space), rel) => {
                 let (start, root) = resolve_other(ctx, &space, &rel)?;
@@ -316,6 +331,32 @@ pub fn run_in(ctx: &Ctx, call: &Call) -> Result<String, String> {
         Call::Guide => Ok(crate::app_guide::guide()),
         Call::StudyAttempt { path } => study_attempt(&ctx.space, path),
     }
+}
+
+/// The same source resolver as text reads, with one bounded page from the
+/// existing isolated PDF renderer. No OCR transcription replaces the image.
+pub fn read_page(ctx: &Ctx, path: &str, page: u32) -> Result<(String, Value), String> {
+    let real = match target(path) {
+        Target::Other { space, rel } if space != ctx.space_id => resolve_other(ctx, space, rel)?.0,
+        Target::Other { rel, .. } | Target::Local(rel) => {
+            if let Some(clean) = course_path(rel) {
+                match ctx.courses.place(&clean, true)? {
+                    Place::Course { real, .. } => real,
+                    Place::Root => return Err("Choose a PDF file, not the courses folder.".into()),
+                }
+            } else { resolve(&ctx.space, rel, true)? }
+        }
+    };
+    read_page_at(&real, path, page)
+}
+
+fn read_page_at(real: &Path, source: &str, page: u32) -> Result<(String, Value), String> {
+    if !(1..=10_000).contains(&page) { return Err("page must be from 1 to 10000".into()); }
+    if crate::lms::text::kind_of(real) != crate::lms::text::Doc::Pdf { return Err("read_page needs the original PDF file. Use read_file for its text copy.".into()); }
+    let picture = crate::lms::text::page_pictures(None, real, &[page]).into_iter().next()
+        .ok_or_else(|| format!("Page {page} of {source} could not be rendered. Check the page number, or ask the user to attach a clear image of that page."))?;
+    let label = format!("Source: {source}, page {page}. This is the original page image; inspect its handwriting, equations and diagrams directly and cite this path and page. If a symbol is unclear, ask instead of inventing it.");
+    Ok((label, json!({"type": "image", "source": {"type": "base64", "media_type": picture.mime, "data": picture.data}})))
 }
 
 /// Resolve `rel` in another space through a grant. Returns the real path and
@@ -355,6 +396,7 @@ pub fn run(space: &Path, call: &Call) -> Result<String, String> {
     match call {
         Call::List { path } => list(space, path),
         Call::Read { path } => read(space, path),
+        Call::ReadPage { path, page } => read_page_at(&resolve(space, path, true)?, path, *page).map(|(label, _)| label),
         Call::Search { query, path } => search(space, query, path),
         Call::Write { path, contents } => write(space, path, contents),
         Call::RequestAccess { .. } => Err("request_access is answered by the user, not run as a file tool".into()),
@@ -807,6 +849,45 @@ mod tests {
             panic!()
         };
         assert_eq!(reason.len(), MAX_REASON);
+    }
+
+    #[test]
+    fn page_inputs_are_bounded_and_keep_cross_space_access_visible() {
+        assert_eq!(parse_call("read_page", &json!({"path": "notes.pdf", "page": 19})).unwrap(), Call::ReadPage { path: "notes.pdf".into(), page: 19 });
+        for page in [json!(0), json!(-1), json!(1.5), json!(10001), json!("2")] {
+            assert!(parse_call("read_page", &json!({"path": "notes.pdf", "page": page})).is_err());
+        }
+        assert!(is_cross(&Call::ReadPage { path: "@work/notes.pdf".into(), page: 1 }));
+        assert_eq!(label(&Call::ReadPage { path: "@work/notes.pdf".into(), page: 1 }), "Reading page 1 of @work/notes.pdf");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn page_images_use_the_original_pdf_and_respect_course_grants() {
+        use base64::Engine;
+        let root = space("page-image");
+        let vault = Vault::at(&root);
+        let course = root.join("courses/Calculus/files");
+        fs::create_dir_all(&course).unwrap();
+        fs::write(course.join("notes.pdf"), crate::lms::text::test_pdf("The span of vectors is their linear combinations")).unwrap();
+        let courses = access::fixture(&root, "school", &[("Calculus", &[access::Part::Overview])]);
+        let mut ctx = Ctx { space: root.join("spaces/school"), space_id: "school".into(), vault: vault.clone(), grants: vec![], courses };
+        assert!(read_page(&ctx, "courses/Calculus/files/notes.pdf", 1).is_err(), "overview access cannot read course images");
+        access::set(&vault, "school", "canvas-x/1", &[access::Part::Files]).unwrap();
+        ctx.courses = access::visible(&vault, "school");
+        let (source, image) = read_page(&ctx, "courses/Calculus/files/notes.pdf", 1).unwrap();
+        assert!(source.contains("courses/Calculus/files/notes.pdf, page 1"));
+        assert_eq!(image["source"]["media_type"], "image/png");
+        let bytes = base64::engine::general_purpose::STANDARD.decode(image["source"]["data"].as_str().unwrap()).unwrap();
+        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(read_page(&ctx, "courses/Calculus/files/notes.pdf", 99).is_err());
+        assert!(read_page(&ctx, "../outside.pdf", 1).is_err());
+        assert!(read_page(&ctx, "@work/notes.pdf", 1).is_err());
+        fs::create_dir_all(root.join("spaces/work")).unwrap();
+        fs::copy(course.join("notes.pdf"), root.join("spaces/work/notes.pdf")).unwrap();
+        ctx.grants.push(grants::once("school", "work", "notes.pdf"));
+        assert!(read_page(&ctx, "@work/notes.pdf", 1).unwrap().0.contains("@work/notes.pdf, page 1"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

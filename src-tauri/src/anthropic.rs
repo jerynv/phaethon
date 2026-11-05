@@ -83,6 +83,8 @@ impl Anthropic {
 }
 
 impl Provider for Anthropic {
+    fn image_input(&self) -> crate::vision::Sees { crate::vision::model_sees("anthropic", &self.model) }
+
     async fn turn(
         &self,
         req: ModelRequest<'_>,

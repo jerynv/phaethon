@@ -13,6 +13,7 @@ import { lmsConnections, type LmsConnection } from "@/lib/lms";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { CourseBack, CourseGrid } from "@/components/study/course-grid";
 
 import { WhatIf } from "./what-if-panel";
 import { calculate, letterFor, pct, trend, type CalcInput } from "./what-if";
@@ -47,6 +48,7 @@ type Refresh = { connection: string; done: number; total: number } | null;
  */
 export function GradesView({ space }: { space: Space }) {
   const [courses, setCourses] = useState<CourseGrades[] | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [connections, setConnections] = useState<LmsConnection[]>([]);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState<Refresh>(null);
@@ -122,9 +124,9 @@ export function GradesView({ space }: { space: Space }) {
   return (
     <section aria-labelledby={headingId} data-grades-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <WorkspacePage>
+        {selected && <CourseBack onBack={() => setSelected(null)} />}
         <WorkspacePageHeader
           title="Grades"
-          description={<>From the courses {space.name} can see. Phaethon only reads them: nothing changes on your course site.</>}
           headingProps={{ id: headingId }}
           actions={connIds.map((id) => (
               <Button
@@ -183,11 +185,17 @@ export function GradesView({ space }: { space: Space }) {
           <WorkspaceEmpty
             data-grades-empty=""
             title="No grades here yet"
-            line="Import your courses to see their grades here."
             action={<Button type="button" onClick={() => openCourseImport({ space: space.id })}><Icon name="book" />Import courses…</Button>}
           />
         ) : (
-          courses.map((c) => <CourseCard key={`${c.connection}:${c.courseId}`} space={space.id} course={c} />)
+          selected ? courses.filter((c) => `${c.connection}:${c.courseId}` === selected).map((c) => <CourseCard key={selected} space={space.id} course={c} />) : (
+            <CourseGrid courses={courses.map((c) => {
+              const input = calcInput(c);
+              const grade = c.current.percent ?? calculate(input).percent;
+              const graded = c.items.filter((item) => item.graded && !item.excused).length;
+              return { id: `${c.connection}:${c.courseId}`, name: c.course, detail: `${graded}/${c.items.length} graded`, metric: grade != null ? pct(grade) : "—", progress: grade ?? undefined };
+            })} onOpen={setSelected} />
+          )
         )}
       </WorkspacePage>
     </section>
@@ -243,7 +251,7 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
             {percent != null ? pct(percent) : "No grade yet"}
             {letter && <span className="text-xl text-ink-secondary"> {letter}</span>}
           </p>
-          <p className="text-sm text-ink-secondary">{site.percent != null ? "Course grade, as your course site shows it" : percent != null ? "Calculated from your scores" : "Nothing graded yet"}</p>
+          <p className="text-sm text-ink-secondary">{site.percent != null ? "Course grade" : percent != null ? "Calculated grade" : "Not graded"}</p>
           {moved && Math.abs(moved.delta) >= 0.05 && (
             <p className="flex items-center gap-1 text-sm font-medium text-ink" data-grades-trend="">
               <Icon name={moved.delta > 0 ? "chevron-up" : "chevron-down"} className="size-(--ph-icon-size-sm)" />
@@ -264,13 +272,14 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
           <h4 className="text-sm font-semibold text-ink-secondary">{calc.usesWeights ? "How it’s weighted" : "Groups (counted by points)"}</h4>
           <ul className="flex flex-wrap gap-x-6 gap-y-2" data-grades-groups="">
             {calc.groups.map((g) => (
-              <li key={g.name} className="flex min-w-0 flex-col">
+              <li key={g.name} className="flex min-w-0 flex-col gap-1">
                 <span className="text-base font-medium text-ink wrap-break-word">{g.name}</span>
                 <span className="text-sm text-ink-secondary">
                   {g.weight != null ? `${num(g.weight)}% of the grade` : calc.usesWeights ? "Not weighted" : "By points"}
                   {" · "}
                   {g.percent != null ? `average ${pct(g.percent)}` : "nothing graded"}
                 </span>
+                {g.percent != null && <span className="h-1.5 w-36 max-w-full overflow-hidden rounded-full bg-surface-sunken" aria-hidden="true"><span className="block h-full rounded-full bg-accent-fill" style={{ width: `${Math.max(0, Math.min(100, g.percent))}%` }} /></span>}
               </li>
             ))}
           </ul>

@@ -542,11 +542,11 @@ const ROUND3 = [
       },
     },
     async run(page, h) {
-      await page.waitForFunction(() => document.querySelector("[data-empty-reach]")?.textContent.includes("Claude Code"), { timeout: 5000 });
-      await h.idle();
-      const t = await page.$eval("[data-empty-reach]", (e) => e.textContent.replace(/\s+/g, " ").trim());
-      check(!t.includes("asks before"), "it doesn't promise to ask before changing anything", t);
-      check(t.includes("can’t change") && t.includes("Work / calendar") && !t.includes("intake.pdf"), "it says it can't change files, and names only the folders Claude Code can read", t);
+      await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
+      const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
+      check(text.includes("Start a conversation in School") && !text.includes("can’t change") && !text.includes("intake.pdf"), "the empty workspace contains no permission essay or file inventory", text);
+      check(await page.$eval('[data-model-picker="school"]', (picker) => picker.getAttribute("aria-label").includes("Claude Code")), "the model control identifies Claude Code");
+      check(await page.$eval('[data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "the toolbar exposes the saved permission mode");
       await h.shot("empty");
     },
   },
@@ -788,7 +788,7 @@ export default [
         const regen = row.querySelector('[data-reply-again="regenerate"]').getBoundingClientRect();
         return Math.round(regen.left - copy.right);
       });
-      check(gap >= 4 && gap <= 16, "reply actions stay together with a compact, visible gap, including with Larger click targets", gap);
+      check(gap >= 2 && gap <= 8, "reply actions use a tight visible gap without overlapping, including with Larger click targets", gap);
       const copyText = await page.$$eval("[data-copy-reply]", (bs) => bs.map((b) => b.textContent.trim()));
       check(copyText.every((t) => t === "Copy reply"), "Copy says what it copies", JSON.stringify(copyText));
       await page.click('[data-reply-again="regenerate"]');
@@ -935,9 +935,10 @@ export default [
     sizes: [[1100, 720]],
     mock: { threads: {}, grants: { school: [{ id: "g1", from: "work", path: "clients", created: "2026-10-09T10:00:00Z", scope: "always" }] } },
     async run(page, h) {
-      await page.waitForFunction(() => document.querySelector("[data-empty-reach]")?.textContent.includes("already read"), { timeout: 5000 });
-      const t = await page.$eval("[data-empty-reach]", (e) => e.textContent.replace(/\s+/g, " ").trim());
-      check(t.includes("it can already read Work / clients") && t.includes("anything else in another space"), "the empty state is true to a standing grant", t);
+      await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
+      const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
+      check(text.includes("School") && !text.includes("Work / clients") && !text.includes("already read"), "standing grants do not add explanatory paragraphs to the empty workspace", text);
+      check(await page.$eval('[data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "the saved access mode remains available in the toolbar");
     },
   },
   {
@@ -945,10 +946,10 @@ export default [
     sizes: [[1100, 720]],
     mock: { threads: {} },
     async run(page, h) {
-      await page.waitForSelector("[data-empty-reach]", { timeout: 5000 });
-      await h.idle();
-      const t = await page.$eval("[data-empty-reach]", (e) => e.textContent.replace(/\s+/g, " ").trim());
-      check(!t.includes("already read") && t.includes("before it reads another space"), "without grants it promises to ask", t);
+      await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
+      const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
+      check(text.includes("Start a conversation in School") && !text.includes("before it reads another space"), "an empty workspace stays concise without permission promises", text);
+      check(await page.$eval('[data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "permissions remain inspectable without an essay");
     },
   },
 

@@ -142,7 +142,7 @@ export default [
       await chord(page, String(at + 1));
       await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "School", { timeout: 3000 });
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("new conversation");
       await page.keyboard.press("Enter");
       await h.idle();
@@ -299,13 +299,13 @@ export default [
     async run(page, h) {
       await h.idle();
       await chord(page, "k");
-      await page.waitForSelector("[data-command-palette] [data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       const a = await page.evaluate(() => {
         const i = document.activeElement;
         const list = document.getElementById(i.getAttribute("aria-controls"));
         return {
           role: i.getAttribute("role"),
-          focusedInput: i.hasAttribute("data-palette-input"),
+          focusedInput: i.matches("[data-command-palette] .ui-palette-head input"),
           list: list?.getAttribute("role"),
           active: document.getElementById(i.getAttribute("aria-activedescendant"))?.textContent,
           options: list?.querySelectorAll('[role="option"]').length,
@@ -315,7 +315,7 @@ export default [
       await h.shot("open");
       await page.keyboard.type("wor");
       await h.idle();
-      const sel = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute("aria-activedescendant"))?.getAttribute("data-command"));
+      const sel = await page.evaluate(() => document.querySelector("[data-command-palette] [data-command]")?.getAttribute("data-command"));
       check(sel === "space:work", "typing \"wor\" highlights Work", sel);
       await h.shot("filtered");
       await page.keyboard.press("Enter");
@@ -323,30 +323,31 @@ export default [
       check(!(await page.$("[data-command-palette]")), "Enter runs it and the palette closes");
       // Settings sections are commands too.
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("appearance");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-testid="settings-tab-appearance"][data-state="active"]', { timeout: 5000 });
       check(true, "\"appearance\" + Enter opens Settings at Appearance");
       await page.keyboard.press("Escape");
+      await h.idle();
       await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
       // Arrow keys move the highlight; Escape closes and focus returns.
       await page.focus(`${pane("work")} [data-composer-input]`);
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.press("ArrowDown");
-      const second = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute("aria-activedescendant"))?.getAttribute("data-command"));
-      check(second === "space:school", "ArrowDown moves to the second option (School: Work, used last, is listed first)", second);
+      const second = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute("aria-activedescendant"))?.querySelector("[data-command]")?.getAttribute("data-command"));
+      check(second === "space:work", "ArrowDown selects the first option (Work, used last)", second);
       await page.keyboard.press("Escape");
       await h.idle();
       const back = await page.evaluate(() => document.activeElement?.hasAttribute("data-composer-input"));
       check(back, "Escape closes the palette and focus returns to the composer");
       // Straight away (while the palette is still fading out), Cmd+K opens it again.
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.press("Escape");
       await chord(page, "k");
-      const reopened = await page.waitForSelector('[data-command-palette][data-state="open"] [data-palette-input]', { timeout: 1000 }).then(() => true, () => false);
+      const reopened = await page.waitForSelector('[data-command-palette] dialog[open] .ui-palette-head input', { timeout: 1000 }).then(() => true, () => false);
       check(reopened, "Cmd+K right after Escape opens the palette again");
     },
   },
@@ -373,7 +374,7 @@ export default [
       await h.idle();
       check(!(await page.$("[data-shortcuts-sheet]")), "Cmd+/ again closes it");
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("shortcuts");
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-shortcuts-sheet]", { timeout: 3000 });

@@ -1,6 +1,7 @@
 import { RadioGroup } from "radix-ui";
 import { useId, type CSSProperties } from "react";
 
+import { Details } from "@/components/ui/details";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
@@ -47,41 +48,38 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
       <SectionReset
         headingId={headingId}
         title="Appearance"
-        description="How Phaethon looks. Changes apply as you make them and are saved in your Phaethon folder, so they go with it if you sync it to another computer."
         what="appearance"
         tokens={APPEARANCE_TOKENS}
         resetTheme
       />
-      {/* Text first: the reading font is what people come here for most (and it is the same picker as in Accessibility). */}
+      <SettingGroup title="Theme">
+        <ThemeRow />
+      </SettingGroup>
       <SettingGroup title="Text">
         <ReadingFontRow />
         <TextSizeLink />
-        <TokenRow name="--ph-weight-normal" />
       </SettingGroup>
-      <SettingGroup title="Theme" description="Light, dark, or whatever your computer is set to.">
-        <ThemeRow />
-      </SettingGroup>
-      <SettingGroup title="Colour" description="Colours stay soft and keep text readable whatever you pick.">
+      <SettingGroup title="Colour">
         <HueRow
           name="--ph-accent-h"
           presets={ACCENT_PRESETS}
           swatch={(h) => `oklch(0.6 ${accentC} ${h})`}
           check={() => "oklch(0.99 0 0)"}
         />
-        <TokenRow name="--ph-accent-c" />
-        <HueRow
-          name="--ph-neutral-h"
-          presets={NEUTRAL_PRESETS}
-          swatch={(h) => `oklch(0.9 0.035 ${h})`}
-          check={(h) => `oklch(0.3 0.05 ${h})`}
-        />
-        <TokenRow name="--ph-neutral-c" />
       </SettingGroup>
-      <SettingGroup title="Layout">
-        <TokenRow name="--ph-density" />
-        <TokenRow name="--ph-radius-scale" />
-        <TokenRow name="--ph-sidebar-width" />
-      </SettingGroup>
+      <Details summary="Advanced appearance" className="flex flex-col gap-5">
+        <SettingGroup title="Colour">
+          <TokenRow name="--ph-accent-c" />
+          <HueRow name="--ph-neutral-h" presets={NEUTRAL_PRESETS} swatch={(h) => `oklch(0.9 0.035 ${h})`} check={(h) => `oklch(0.3 0.05 ${h})`} />
+          <TokenRow name="--ph-neutral-c" />
+        </SettingGroup>
+        <SettingGroup title="Layout and type">
+          <TokenRow name="--ph-weight-normal" />
+          <TokenRow name="--ph-density" />
+          <TokenRow name="--ph-radius-scale" />
+          <TokenRow name="--ph-sidebar-width" />
+        </SettingGroup>
+      </Details>
     </>
   );
 }
@@ -93,16 +91,17 @@ function TextSizeLink() {
   const spec = TOKEN_BY_NAME.get("--ph-text-scale") as NumberToken;
   const value = numericValue(spec, a.tokens["--ph-text-scale"]);
   return (
-    <SettingRow label="Text size" description={`${spec.format(value)}. Set in Accessibility, with line, letter and word spacing.`}>
+    <SettingRow label="Text size" token="--ph-text-scale-link">
       <Button
         type="button"
+        aria-label={`Text size, ${spec.format(value)}. Open Accessibility`}
         variant="outline"
         size="sm"
         // Wraps rather than spilling when the text is large and the column narrow.
         className="h-auto min-h-(--ph-control-height-sm) max-w-full self-start py-1 text-left whitespace-normal"
         onClick={() => go("accessibility", '[data-token="--ph-text-scale"] [role="slider"]')}
       >
-        Change in Accessibility
+        {spec.format(value)}
         <Icon name="chevron-right" />
       </Button>
     </SettingRow>
@@ -199,7 +198,7 @@ function ThemeRow() {
           </RadioGroup.Item>
         ))}
       </RadioGroup.Root>
-      <p id={statusId} className="text-sm text-ink-secondary">
+      <p id={statusId} className="sr-only">
         {a.theme === "system"
           ? `Your system is using ${sys.dark ? "dark" : "light"} mode right now, so Phaethon is too.`
           : `Always ${a.theme}, whatever your system uses.`}
@@ -229,7 +228,8 @@ function HueRow({
   const descId = useId();
   const sliderLabelId = useId();
   return (
-    <SettingRow stacked label={spec.label} labelId={labelId} description={spec.description} descriptionId={descId}>
+    <SettingRow stacked label={spec.label} labelId={labelId}>
+      <span id={descId} className="sr-only">{spec.description}</span>
       <HueSwatches label={spec.label} presets={presets} value={value} onPick={set} swatchColour={swatch} checkColour={check} />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span id={sliderLabelId} className="text-sm text-ink-secondary">

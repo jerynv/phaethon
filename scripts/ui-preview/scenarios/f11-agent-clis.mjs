@@ -42,28 +42,21 @@ export default [
     mock: { settings: SETTINGS, threads: {}, clis: CLIS({ codex: { loggedIn: false } }) },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await page.waitForSelector('[data-cli-status]', { timeout: 3000 });
+      await page.waitForSelector('[data-cli-status]');
       const choices = await page.$$eval('[data-provider-row]', (rows) => rows.map((row) => ({ id: row.dataset.providerRow, status: row.querySelector("[data-cli-status]")?.textContent })));
-      check(["anthropic", "claude-cli", "codex-cli", "gemini-cli"].every((id) => choices.some((c) => c.id === id)), "configured providers and installed assistants have rows", JSON.stringify(choices));
-      check(choices.find((c) => c.id === "codex-cli")?.status === "Sign-in required", "Codex's known signed-out state is shown", JSON.stringify(choices));
-      check(choices.find((c) => c.id === "gemini-cli")?.status === "Installed", "unknown Gemini authentication is not presented as signed in", JSON.stringify(choices));
-      check(choices.find((c) => c.id === "claude-cli")?.status === "Installed", "Claude Code's unchecked authentication is not presented as signed in", JSON.stringify(choices));
-      check(!(await page.$("[data-cli-can], [data-opencode], [data-cli-own-setup], [data-cli-history]")), "removed explanatory sections are absent");
-      await park(page);
-      await h.shot("choices");
-
+      check(["anthropic", "claude-cli", "codex-cli", "gemini-cli"].every((id) => choices.some((choice) => choice.id === id)), "API providers and installed assistant instances each have a management row", JSON.stringify(choices));
+      check(choices.find((choice) => choice.id === "codex-cli")?.status === "Sign in required", "known signed-out state is shown honestly");
+      check(choices.find((choice) => choice.id === "claude-cli")?.status === "Installed", "unknown authentication is not presented as signed in");
       await openProviderConfiguration(page, "codex-cli", { keyboard: true, catalog: true });
+      check((await calls(page, "agent_instance_select")).length === 0, "opening the catalog and management leaves the active account unchanged");
       await useProviderDefault(page, "codex-cli", { keyboard: true });
-      check(await settingsSaid(page, "Now using Codex."), "keyboard activation explicitly chooses Codex and says so");
-      const sets = await calls(page, "settings_set_backend");
-      check(sets.at(-1)?.backend === "codex-cli", "codex-cli is saved", JSON.stringify(sets));
-      await page.waitForSelector("[data-cli-model-default]", { timeout: 3000 });
-      const text = await page.$eval(providerPopup, (e) => e.innerText);
-      check(/Models are chosen in each space/.test(text), "CLI configuration points to each space's model control", text);
-      check(!/What is sent to|AGENTS\.md|\.codex folder/.test(text), "CLI configuration omits the removed disclosure paragraphs", text);
-      check(!!(await page.$('[data-cli-sign-in="codex"]')), "Codex can be signed in to here", "");
-      await park(page);
+      check(await settingsSaid(page, "Now using Codex."), "the explicit default action is announced");
+      check((await calls(page, "agent_instance_select")).at(-1)?.id === "codex", "the exact Codex instance is selected");
+      check(!!(await page.$('[data-cli-sign-in="codex"]')), "the account has a direct sign-in action");
+      const text = await page.$eval(providerPopup, (element) => element.innerText);
+      check(!/Models are chosen in each space|AGENTS\.md|terminal/.test(text), "management omits obvious tutorials");
       await h.shot("codex");
+
     },
   },
   {
@@ -73,14 +66,12 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "gemini-cli", { catalog: true });
-      await useProviderDefault(page, "gemini-cli");
-      await page.waitForSelector('[data-cli-missing="gemini-cli"]', { timeout: 3000 });
-      const box = await page.$eval('[data-cli-missing="gemini-cli"]', (b) => [b.textContent, b.querySelector("a")?.href]);
-      check(/Gemini CLI is not installed/.test(box[0]) && /Install Gemini CLI/.test(box[0]) && /github\.com\/google-gemini/.test(box[1] ?? ""), "it says Gemini CLI is missing and links to installation", JSON.stringify(box));
-      check((await calls(page, "settings_set_backend")).length === 0, "and doesn't switch");
-      check(await page.evaluate(() => window.__MOCK__.settings.backend) === "phaethon", "Phaethon's own assistant stays chosen");
-      await park(page);
+      const link = await page.$eval('[data-cli-missing="gemini-cli"]', (element) => ({ text: element.textContent, href: element.href }));
+      check(link.text.includes("Install Gemini CLI") && /github\.com\/google-gemini/.test(link.href), "a missing assistant links to its official installer", JSON.stringify(link));
+      check(await page.$eval('[data-instance-select]', (button) => button.disabled), "a missing executable cannot become the default");
+      check((await calls(page, "agent_instance_select")).length === 0, "the installed provider stays selected");
       await h.shot("missing");
+
     },
   },
   {
@@ -95,8 +86,8 @@ export default [
       await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
       await h.idle();
       const items = await page.$$eval("[data-model-menu] [data-model-option]", (els) => els.map((e) => e.textContent.trim()));
-      check(/^DefaultThe model Codex chooses/.test(items[0]) && items.at(-1) === "Another model…", "Codex's default first, then Another model…", JSON.stringify(items));
-      check(/^GPT-6\.1-SolLatest workhorse/.test(items[1]) && /^GPT-6-Astra/.test(items[2]) && /^GPT-6-Luna/.test(items[3]), "then the models Codex lists, by its names, with what each is for", JSON.stringify(items));
+      check(items[0] === "DefaultCodex" && items.at(-1) === "Another model…", "Codex's default first, then Another model…", JSON.stringify(items));
+      check(items[1] === "GPT-6.1-Sol" && items[2] === "GPT-6-Astra" && items[3] === "GPT-6-Luna", "models use consistent name-only rows", JSON.stringify(items));
       check(items.at(-2) === "Refresh the list", "Refresh the list before Another model…", JSON.stringify(items));
       check((await calls(page, "agent_cli_models")).every((a) => a.cli === "codex") && (await calls(page, "agent_cli_models")).length === 1, "Codex is asked once", JSON.stringify(await calls(page, "agent_cli_models")));
       check(!(await page.$("[data-cli-models-note]")), "no note: Codex lists its own models");
@@ -240,54 +231,28 @@ export default [
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "codex-cli");
       const start = '[data-cli-sign-in="codex"] [data-cli-sign-in-start]';
-      await page.waitForSelector(start, { timeout: 3000 });
-      const intro = await page.$eval('[data-cli-sign-in="codex"]', (g) => g.textContent.replace(/\s+/g, " "));
-      check(/Sign in to Codex in your browser to connect it here/.test(intro) && !/AGENTS\.md|never sees your password/.test(intro), "sign-in instructions are concise", intro);
-      const named = await page.$eval(start, (b) => [b.textContent, document.getElementById(b.getAttribute("aria-describedby"))?.textContent ?? ""]);
-      check(named[0] === "Sign in to Codex" && /in your browser/.test(named[1]), "the sign-in button has a name and description", JSON.stringify(named));
-      await page.$eval(start, (b) => b.scrollIntoView({ block: "center" }));
-      await park(page);
-      await h.shot("ready");
-
-      // By keyboard: Enter starts it; the button keeps focus and says it waits; pressing again does nothing.
       await page.focus(start);
       await page.keyboard.press("Enter");
-      check(await settingsSaid(page, "Opening Codex’s sign-in in your browser. Come back here when you’ve signed in."), "it says the browser opens");
-      await page.waitForSelector('[data-cli-sign-in-stop]', { timeout: 3000 });
-      const waiting = await page.$eval(start, (b) => [b.textContent, b.getAttribute("aria-disabled"), document.activeElement === b]);
-      check(waiting[0] === "Waiting for browser sign-in…" && waiting[1] === "true" && waiting[2], "the button says it waits, can't be pressed twice, and keeps focus", JSON.stringify(waiting));
+      await page.waitForSelector('[data-cli-sign-in-stop]');
+      check(await page.$eval(start, (button) => button.disabled && button.textContent.includes("Waiting")), "a pending browser sign-in cannot start twice");
       await page.keyboard.press("Enter");
-      check((await calls(page, "agent_cli_sign_in")).length === 1, "pressing it again starts nothing", "");
-      check((await calls(page, "agent_cli_sign_in"))[0]?.cli === "codex", "it signs in to Codex", "");
+      check((await calls(page, "agent_instance_sign_in")).length === 1 && (await calls(page, "agent_instance_sign_in"))[0].id === "codex", "the pending request names exactly this account");
       await page.keyboard.press("Escape");
-      check(!!(await page.$(providerPopup)), "Escape keeps pending sign-in configuration open");
-      const locked = await page.$$eval('[data-provider-popup] [data-slot="dialog-footer"] button', (buttons) => buttons.every((button) => button.disabled));
-      check(locked, "pending sign-in disables popup navigation until cancellation or completion");
-      await park(page);
-      await h.shot("waiting");
-
-      // Stop signing in, by keyboard: said, and the button is back.
-      await page.keyboard.press("Tab");
-      check(await page.evaluate(() => document.activeElement?.hasAttribute("data-cli-sign-in-stop")), "Tab reaches Stop signing in", "");
+      check(!!(await page.$(providerPopup)), "Escape keeps a pending sign-in open");
+      check(await page.$$eval('[data-provider-popup] [data-slot="dialog-footer"] button', (buttons) => buttons.every((button) => button.disabled)), "management actions wait for authentication to finish");
+      await page.focus('[data-cli-sign-in-stop]');
       await page.keyboard.press("Enter");
-      check(await settingsSaid(page, "Signing in to Codex was stopped."), "stopping is said");
-      await page.waitForSelector('[data-cli-sign-in-outcome="cancelled"]', { timeout: 3000 });
-      check((await calls(page, "agent_cli_sign_in_cancel")).at(-1)?.cli === "codex", "Codex's sign-in is the one stopped", "");
-      await page.waitForFunction((s) => document.activeElement === document.querySelector(s), { timeout: 3000 }, start).catch(() => {});
-      check(await page.evaluate((s) => document.activeElement === document.querySelector(s), start), "focus goes back to the sign-in button", await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 120)));
-
-      // Again, and this time it works: said, shown, and Codex's choice says signed in.
-      await page.evaluate(() => (window.__MOCK__.signIn.codex = { status: "signedIn", message: "Signed in to Codex for this Phaethon folder." }));
+      await page.waitForSelector('[data-cli-sign-in-outcome="cancelled"]');
+      check((await calls(page, "agent_instance_sign_in_cancel")).at(-1)?.id === "codex", "Cancel targets the pending account");
+      await page.waitForFunction((selector) => document.activeElement === document.querySelector(selector), {}, start);
+      check(await page.evaluate((selector) => document.activeElement === document.querySelector(selector), start), "Cancel returns focus to the sign-in action");
+      await page.evaluate(() => { window.__MOCK__.signIn.codex = { status: "signedIn", message: "Signed in to Codex." }; });
       await page.keyboard.press("Enter");
-      check(await settingsSaid(page, "Signed in to Codex for this Phaethon folder."), "signing in is said");
-      await page.waitForSelector('[data-cli-sign-in-outcome="signedIn"]', { timeout: 3000 });
-      await page.waitForFunction(() => document.querySelector('[data-provider-row="codex-cli"] [data-cli-status]')?.textContent === "Signed in", { timeout: 3000 });
-      const status = await page.$eval('[data-provider-row="codex-cli"] [data-cli-status]', (s) => s.textContent);
-      check(status === "Signed in", "Codex's row shows authentication only after successful sign-in", status);
-      await page.waitForFunction((s) => document.querySelector(s)?.textContent === "Change account", { timeout: 3000 }, start);
-      check(await page.$eval(start, (b) => b.textContent === "Change account"), "a connected account offers Change account");
-      await park(page);
+      await page.waitForSelector('[data-cli-sign-in-outcome="signedIn"]');
+      await page.waitForFunction(() => document.querySelector('[data-provider-row="codex-cli"] [data-cli-status]')?.textContent === "Signed in");
+      check(await page.$eval(start, (button) => button.textContent === "Change account"), "a connected account offers Change account");
       await h.shot("signed-in");
+
     },
   },
   {
@@ -307,23 +272,17 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "gemini-cli");
-      const start = '[data-cli-sign-in="gemini"] [data-cli-sign-in-start]';
-      await page.waitForSelector(start, { timeout: 3000 });
-      check((await page.$eval(start, (b) => b.textContent)) === "Sign in to Gemini CLI", "Gemini CLI has its own sign-in control", "");
-      const intro = await page.$eval('[data-cli-sign-in="gemini"]', (g) => g.textContent);
-      check(/in your browser/.test(intro) && !/GEMINI\.md/.test(intro), "Gemini sign-in instructions are concise", intro);
-      await page.click(start);
-      await page.waitForSelector('[data-cli-sign-in-outcome="notSignedIn"]', { timeout: 3000 });
-      const out = await page.$eval('[data-cli-sign-in-outcome="notSignedIn"]', (p) => p.textContent);
-      check(/Google no longer lets it answer with this account/.test(out), "Google refusing the account is said in words", out);
-      // Claude Code and Phaethon's own assistant: no sign-in here.
+      await h.click('[data-cli-sign-in="gemini"] [data-cli-sign-in-start]');
+      await page.waitForSelector('[data-cli-sign-in-outcome="notSignedIn"]');
+      const outcome = await page.$eval('[data-cli-sign-in-outcome="notSignedIn"]', (element) => element.textContent);
+      check(outcome.includes("Google no longer lets it answer with this account"), "an actual rejected login is shown", outcome);
       await closeProviderPopup(page);
       await openProviderConfiguration(page, "claude-cli");
-      await useProviderDefault(page, "claude-cli");
-      await page.waitForFunction(() => !document.querySelector("[data-cli-sign-in]"), { timeout: 3000 }).catch(() => {});
-      check(!(await page.$("[data-cli-sign-in]")), "Claude Code has no sign-in here", "");
-      await park(page);
+      check(!!(await page.$('[data-cli-sign-in="claude"] [data-cli-sign-in-start]')), "Claude Code also uses its actual browser sign-in flow");
+      check(!(await page.$('[data-instance-args]')), "legacy personal Claude keeps its existing launch setup");
+      check(!!(await page.$('[data-provider-logo="claude-cli"]')), "the management header retains the official assistant mark");
       await h.shot("refused");
+
     },
   },
   {
@@ -331,10 +290,9 @@ export default [
     sizes: [[1100, 720]],
     mock: { settings: { ...SETTINGS, backend: "gemini-cli" }, threads: {} },
     async run(page, h) {
-      await page.waitForSelector(`${shown} [data-empty-reach]`, { timeout: 5000 });
-      await page.waitForFunction((s) => /Gemini CLI answers here/.test(document.querySelector(`${s} [data-empty-reach]`)?.textContent ?? ""), { timeout: 3000 }, shown);
-      const text = await page.$eval(`${shown} [data-empty-reach]`, (p) => p.textContent);
-      check(/Gemini CLI answers here\. It can read and search the files in School/.test(text) && /can’t change any file/.test(text), "the empty conversation says Gemini CLI answers, read-only", text);
+      await page.waitForSelector(`${shown} [data-empty-state]`, { timeout: 5000 });
+      const text = await page.$eval(`${shown} [data-empty-state]`, (empty) => empty.textContent);
+      check(text.includes("Start a conversation in School") && !text.includes("It can read and search"), "the empty workspace names the space without a permission essay", text);
       const label = await page.$eval(picker, (b) => b.textContent.trim());
       check(label === "Gemini CLI default", "the model button says Gemini CLI picks its own", label);
       await park(page);

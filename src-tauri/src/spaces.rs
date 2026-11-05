@@ -45,6 +45,8 @@ pub struct SpaceView {
     pub description: String,
     /// oklch hue angle, 0 to 360.
     pub hue: u16,
+    #[serde(rename = "educationEnabled")]
+    pub education_enabled: bool,
     /// When the space was last used, in milliseconds since 1970; `None` if never.
     #[serde(rename = "lastUsed")]
     pub last_used: Option<u64>,
@@ -71,7 +73,7 @@ pub fn list(vault: &Vault) -> Result<Vec<SpaceView>, String> {
                 return None;
             }
             let dir = vault.space_dir(&id).ok()?;
-            Some(view(&id, &dir))
+            Some(view(vault, &id, &dir))
         })
         .collect();
     out.sort_by(|a, b| {
@@ -86,7 +88,7 @@ pub fn list(vault: &Vault) -> Result<Vec<SpaceView>, String> {
 /// One space by id, as the list shows it.
 pub fn get(vault: &Vault, id: &str) -> Result<SpaceView, String> {
     let dir = vault.space_dir(id)?;
-    Ok(view(id, &dir))
+    Ok(view(vault, id, &dir))
 }
 
 /// Mark `id` as used now. The time is the core's clock, never the webview's.
@@ -142,6 +144,16 @@ pub fn create(
     description: Option<&str>,
     hue: Option<f64>,
 ) -> Result<SpaceView, String> {
+    create_with_education(vault, name, description, hue, false)
+}
+
+pub fn create_with_education(
+    vault: &Vault,
+    name: &str,
+    description: Option<&str>,
+    hue: Option<f64>,
+    education_enabled: bool,
+) -> Result<SpaceView, String> {
     let name = check_name(name)?;
     let description = description.map(check_description).transpose()?;
     let hue = hue.map(check_hue).transpose()?;
@@ -172,8 +184,9 @@ pub fn create(
         meta.insert("description".into(), d.into());
     }
     meta.insert("hue".into(), hue.unwrap_or_else(|| default_hue(&id)).into());
+    meta.insert("educationEnabled".into(), education_enabled.into());
     write_meta(&dir, &meta).map_err(|e| format!("The space was created, but its name couldn’t be saved: {e}"))?;
-    Ok(view(&id, &dir))
+    Ok(view(vault, &id, &dir))
 }
 
 /// Change a space's display name, description or colour. Fields left `None`
@@ -185,6 +198,17 @@ pub fn update(
     name: Option<&str>,
     description: Option<&str>,
     hue: Option<f64>,
+) -> Result<SpaceView, String> {
+    update_with_education(vault, id, name, description, hue, None)
+}
+
+pub fn update_with_education(
+    vault: &Vault,
+    id: &str,
+    name: Option<&str>,
+    description: Option<&str>,
+    hue: Option<f64>,
+    education_enabled: Option<bool>,
 ) -> Result<SpaceView, String> {
     let dir = vault.space_dir(id)?;
     let name = name.map(check_name).transpose()?;
@@ -212,15 +236,40 @@ pub fn update(
     if let Some(h) = hue {
         meta.insert("hue".into(), h.into());
     }
+    if let Some(enabled) = education_enabled {
+        meta.insert("educationEnabled".into(), enabled.into());
+    }
     write_meta(&dir, &meta).map_err(|e| format!("The change couldn’t be saved: {e}"))?;
-    Ok(view(id, &dir))
+    Ok(view(vault, id, &dir))
 }
 
 /// The space as shown: space.json's fields where they pass the checks, the
 /// defaults for the rest.
-fn view(id: &str, dir: &Path) -> SpaceView {
-    let meta = read_meta_raw(dir).ok().flatten();
+fn view(vault: &Vault, id: &str, dir: &Path) -> SpaceView {
+    let read = read_meta_raw(dir);
+    let can_migrate = matches!(&read, Ok(None) | Ok(Some(serde_json::Value::Object(_))));
+    let meta = read.ok().flatten();
     let field = |k: &str| meta.as_ref().and_then(|m| m.get(k));
+    let education_enabled = field("educationEnabled").and_then(|v| v.as_bool()).unwrap_or_else(|| {
+        let enabled = !crate::lms::access::visible(vault, id).courses.is_empty()
+            || ["study/decks", "study/quizzes", ".phaethon/study/attempts"].iter().any(|folder| {
+                let path = dir.join(folder);
+                path.symlink_metadata().is_ok_and(|m| m.is_dir())
+                    && fs::read_dir(path).is_ok_and(|entries| entries.filter_map(Result::ok).any(|entry| {
+                        entry.file_type().is_ok_and(|m| m.is_file())
+                            && entry.path().extension().is_some_and(|ext| ext == "md" || ext == "json")
+                    }))
+            })
+            || ["study/exams.json", "study/plan.md"].iter().any(|file| {
+                dir.join(file).symlink_metadata().is_ok_and(|meta| meta.is_file() && meta.len() > 2)
+            });
+        // Freeze legacy detection once; removing a course never disables its workspace.
+        if can_migrate && let Some(mut object) = meta.as_ref().and_then(|m| m.as_object()).cloned().or_else(|| if meta.is_none() { Some(serde_json::Map::new()) } else { None }) {
+            object.insert("educationEnabled".into(), enabled.into());
+            let _ = write_meta(dir, &object);
+        }
+        enabled
+    });
     SpaceView {
         id: id.to_string(),
         name: field("name")
@@ -235,6 +284,7 @@ fn view(id: &str, dir: &Path) -> SpaceView {
             .and_then(|v| v.as_f64())
             .and_then(|h| check_hue(h).ok())
             .unwrap_or_else(|| default_hue(id)),
+        education_enabled,
         last_used: read_last_used(dir),
     }
 }
@@ -400,8 +450,8 @@ mod tests {
         assert_eq!(
             spaces,
             vec![
-                SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240, last_used: None },
-                SpaceView { id: "work".into(), name: "Work".into(), description: String::new(), hue: 50, last_used: None },
+                SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240, education_enabled: false, last_used: None },
+                SpaceView { id: "work".into(), name: "Work".into(), description: String::new(), hue: 50, education_enabled: false, last_used: None },
             ]
         );
         fs::remove_dir_all(root).unwrap();
@@ -416,6 +466,47 @@ mod tests {
         assert_eq!(ids(&spaces), ["art", "school", "side-project_2", "work"]);
         assert_eq!(spaces[2].name, "Side project 2");
         assert_eq!(spaces[2].hue, default_hue("side-project_2"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn education_is_opt_in_and_legacy_study_detection_is_saved() {
+        let (root, vault) = temp_vault("education");
+        let fresh = create(&vault, "School notes", None, None).unwrap();
+        assert!(!fresh.education_enabled);
+        let enabled = update_with_education(&vault, &fresh.id, None, None, None, Some(true)).unwrap();
+        assert!(enabled.education_enabled);
+        assert!(get(&vault, &fresh.id).unwrap().education_enabled);
+        let dir = root.join("spaces/work/study/quizzes");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Algebra.json"), "{}").unwrap();
+        assert!(get(&vault, "work").unwrap().education_enabled);
+        fs::remove_file(dir.join("Algebra.json")).unwrap();
+        assert!(get(&vault, "work").unwrap().education_enabled);
+        assert!(!update_with_education(&vault, "work", None, None, None, Some(false)).unwrap().education_enabled);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_course_access_enables_education_independently_of_space_name() {
+        let (root, vault) = temp_vault("education-courses");
+        crate::lms::access::fixture(&root, "work", &[("Calculus", &[crate::lms::access::Part::Overview])]);
+        assert!(get(&vault, "work").unwrap().education_enabled);
+        assert!(!get(&vault, "school").unwrap().education_enabled);
+        crate::lms::access::set(&vault, "work", "canvas-x/1", &[]).unwrap();
+        assert!(get(&vault, "work").unwrap().education_enabled);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn education_migration_never_overwrites_unreadable_metadata() {
+        let (root, vault) = temp_vault("education-unreadable");
+        let state = root.join("spaces/work/.phaethon");
+        fs::create_dir_all(&state).unwrap();
+        let file = state.join("space.json");
+        fs::write(&file, "{ broken").unwrap();
+        assert!(!get(&vault, "work").unwrap().education_enabled);
+        assert_eq!(fs::read_to_string(file).unwrap(), "{ broken");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -463,11 +554,11 @@ mod tests {
             json!(["not", "an", "object"]),
         ] {
             fs::write(state.join("space.json"), bad.to_string()).unwrap();
-            let s = view("school", &root.join("spaces/school"));
-            assert_eq!(s, SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240, last_used: None }, "{bad}");
+            let s = view(&vault, "school", &root.join("spaces/school"));
+            assert_eq!(s, SpaceView { id: "school".into(), name: "School".into(), description: String::new(), hue: 240, education_enabled: false, last_used: None }, "{bad}");
         }
         fs::write(state.join("space.json"), "{ not json").unwrap();
-        assert_eq!(view("school", &root.join("spaces/school")).name, "School");
+        assert_eq!(view(&vault, "school", &root.join("spaces/school")).name, "School");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -479,7 +570,7 @@ mod tests {
         let state = root.join("spaces/school/.phaethon");
         fs::create_dir_all(&state).unwrap();
         std::os::unix::fs::symlink(root.join("outside.json"), state.join("space.json")).unwrap();
-        assert_eq!(view("school", &root.join("spaces/school")).name, "School");
+        assert_eq!(view(&vault, "school", &root.join("spaces/school")).name, "School");
         // Nor written through: an update refuses rather than overwrite the target.
         assert!(update(&vault, "school", Some("New"), None, None).is_err());
         assert!(fs::read_to_string(root.join("outside.json")).unwrap().contains("Leaked"));
@@ -496,7 +587,7 @@ mod tests {
     fn create_derives_a_unique_id_and_saves_metadata() {
         let (root, vault) = temp_vault("create");
         let a = create(&vault, "  Side Project! ", Some("Weekend things"), Some(130.0)).unwrap();
-        assert_eq!(a, SpaceView { id: "side-project".into(), name: "Side Project!".into(), description: "Weekend things".into(), hue: 130, last_used: None });
+        assert_eq!(a, SpaceView { id: "side-project".into(), name: "Side Project!".into(), description: "Weekend things".into(), hue: 130, education_enabled: false, last_used: None });
         let b = create(&vault, "side project", None, None).unwrap();
         assert_eq!(b.id, "side-project-2");
         assert_eq!(b.hue, default_hue("side-project-2"));
@@ -513,7 +604,7 @@ mod tests {
         let listed = list(&vault).unwrap();
         assert!(listed.contains(&a));
         let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(root.join("spaces/side-project/.phaethon/space.json")).unwrap()).unwrap();
-        assert_eq!(saved, json!({ "name": "Side Project!", "description": "Weekend things", "hue": 130 }));
+        assert_eq!(saved, json!({ "name": "Side Project!", "description": "Weekend things", "hue": 130, "educationEnabled": false }));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -553,7 +644,7 @@ mod tests {
         assert_eq!(w.description, "");
 
         let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(state.join("space.json")).unwrap()).unwrap();
-        assert_eq!(saved, json!({ "name": "Job", "description": "", "hue": 200, "future": { "x": 1 } }));
+        assert_eq!(saved, json!({ "name": "Job", "description": "", "hue": 200, "educationEnabled": false, "future": { "x": 1 } }));
         assert!(!state.join("space.json.tmp").exists());
         assert_eq!(fs::read_to_string(state.join("session")).unwrap(), "kept");
         assert!(root.join("spaces/work").is_dir() && !root.join("spaces/job").exists(), "the folder keeps its id");
@@ -591,6 +682,7 @@ mod tests {
         // Never used: by name.
         assert_eq!(ids(&list(&vault).unwrap()), ["art", "home", "school", "work"]);
         let dir = |id: &str| root.join("spaces").join(id);
+        let metadata_before_touch = fs::read_to_string(dir("work").join(".phaethon/space.json")).unwrap();
         touch_at(&dir("work"), 1_000).unwrap();
         touch_at(&dir("home"), 3_000).unwrap();
         touch_at(&dir("school"), 2_000).unwrap();
@@ -603,7 +695,7 @@ mod tests {
         assert_eq!(listed[1].last_used, Some(3_000));
         assert_eq!(fs::read_to_string(dir("work").join(".phaethon/last-used")).unwrap(), "1000\n");
         // space.json is never touched by it.
-        assert!(!dir("work").join(".phaethon/space.json").exists());
+        assert_eq!(fs::read_to_string(dir("work").join(".phaethon/space.json")).unwrap(), metadata_before_touch);
         // A time from a clock that ran ahead counts as now, not forever first.
         fs::write(dir("work").join(".phaethon/last-used"), u64::MAX.to_string()).unwrap();
         assert!(list(&vault).unwrap().iter().find(|s| s.id == "work").unwrap().last_used.unwrap() <= now_ms());

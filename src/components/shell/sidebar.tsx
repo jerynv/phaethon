@@ -8,10 +8,11 @@ import { ViewSwitcher } from "@/components/study/view-switcher";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Icon } from "@/icons";
 import { useSpaceActivity, type SpaceActivity } from "@/lib/activity";
-import type { ThreadSummary } from "@/lib/backend";
+import { listThreads, type ThreadSummary } from "@/lib/backend";
+import { requestOpenConversation } from "@/lib/open-conversation";
 import { setConversationHost, useConversations } from "@/lib/conversation-nav";
 import { openSettings } from "@/lib/open-settings";
-import { holdSpaceOrder, markSpaceUsed, type Space } from "@/lib/spaces";
+import { holdSpaceOrder, markSpaceUsed, supportsEducation, type Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
@@ -332,14 +333,22 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
   );
 }
 
-/** A space, and under the current one (while the sidebar shows) its views and recent conversations. */
+/** T3 Code's SidebarProjectFolderHeader / SidebarThreadRow (MIT), ported
+ * to spaces: each parent expands independently and owns its child destinations. */
 function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }) {
   const { onChosen, shown, ...item } = props;
+  const [expanded, setExpanded] = useState(props.active);
+  useEffect(() => {
+    if (props.active) setExpanded(true);
+  }, [props.active]);
   return (
-    <>
-      <SpaceItem {...item} />
-      {props.active && shown && <SpaceConversations space={props.space} onChosen={onChosen} />}
-    </>
+    <li data-space-section={props.space.id} className="list-none">
+      <SpaceItem {...item} expanded={expanded} onToggle={() => setExpanded((value) => !value)}
+        onSelect={(id) => { setExpanded(true); props.onSelect(id); }} />
+      {expanded && shown && <ul className="ms-4 border-s border-line ps-2" id={`space-children-${props.space.id}`}>
+        <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} />
+      </ul>}
+    </li>
   );
 }
 
@@ -363,30 +372,60 @@ const threadRow = cn(
  * SidebarThreadHeader (apps/web/src/components/sidebar/, MIT): one line, the
  * title taking the row; actions in the header, not per row.
  */
-function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () => void }) {
+function SpaceConversations({ space, active, onSelect, onChosen }: { space: Space; active: boolean; onSelect: (id: string) => void; onChosen?: () => void }) {
   const nav = useConversations(space.id);
   const view = useSpaceView(space.id);
-  const threads = nav?.threads ?? [];
+  const [fallback, setFallback] = useState<{ status: "loading" | "ready" | "error"; threads: ThreadSummary[] }>({ status: "loading", threads: [] });
+  const [pending, setPending] = useState<"new" | "history" | null>(null);
+  useEffect(() => {
+    if (nav) return;
+    let live = true;
+    if (!inTauri()) setFallback({ status: "ready", threads: [] });
+    else void listThreads(space.id).then(
+      (threads) => live && setFallback({ status: "ready", threads }),
+      () => live && setFallback({ status: "error", threads: [] }),
+    );
+    return () => { live = false; };
+  }, [space.id, !!nav]);
+  useEffect(() => {
+    if (!nav || !pending) return;
+    setPending(null);
+    if (pending === "new") nav.startNew();
+    else nav.showAll();
+  }, [nav, pending]);
+  const threads = nav?.threads ?? fallback.threads;
+  const status = nav?.status ?? fallback.status;
   const shown = threads.slice(0, RECENT);
   // The bar's controls land here; gone with this section, they go back to the pane.
   const host = useCallback((el: HTMLDivElement | null) => setConversationHost(space.id, el), [space.id]);
 
   function open(t: ThreadSummary) {
-    if (!nav) return;
+    onSelect(space.id);
     setSpaceView(space.id, "chat", t.current);
     onChosen?.();
-    if (!t.current) nav.open(t);
+    if (!t.current) {
+      if (nav) nav.open(t);
+      else requestOpenConversation({ space: space.id, thread: t.id, title: t.title, message: -1 });
+    }
   }
 
   const label = (t: ThreadSummary) => (t.current && t.messages === 0 ? "New conversation" : t.title);
 
   return (
-    <li data-sidebar-conversations={space.id} className="flex flex-col gap-1 pt-0.5 pb-2">
-      <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} />
-      <div ref={host} data-conversations-host="" className="pt-3" />
-      {threads.length === 0 && (!nav || nav.status === "loading") && <p role="status" className="ps-2 text-sm text-ink-secondary">Loading conversations…</p>}
-      {nav?.status === "ready" && threads.length === 0 && <p className="ps-2 text-sm text-ink-secondary">No conversations yet.</p>}
-      {nav?.status === "error" && <p className="ps-2 text-sm text-danger-ink">Conversations couldn’t be loaded. Open the Conversations menu to try again.</p>}
+    <li data-sidebar-conversations={space.id} className="flex flex-col gap-1 pt-0.5 pb-2" onClickCapture={(event) => {
+      if ((event.target as Element).closest("[data-view-tab]")) onSelect(space.id);
+    }}>
+      {active && supportsEducation(space) && <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} />}
+      {active ? <div ref={host} data-conversations-host="" className="pt-1" /> : <div className="flex items-center justify-between pt-1">
+        <button type="button" className="min-h-(--ph-control-height-sm) rounded-md px-2 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink"
+          onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }}>Conversations</button>
+        <button type="button" aria-label={`New conversation in ${space.name}`} data-sidebar-new-in={space.id}
+          className="grid size-(--ph-control-height-sm) place-items-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink"
+          onClick={() => { onSelect(space.id); onChosen?.(); if (nav) nav.startNew(); else setPending("new"); }}><Icon name="plus" className="size-3.5" /></button>
+      </div>}
+      {threads.length === 0 && status === "loading" && <p role="status" className="ps-2 text-sm text-ink-secondary">Loading conversations…</p>}
+      {status === "ready" && threads.length === 0 && <p className="ps-2 text-sm text-ink-secondary">No conversations yet.</p>}
+      {status === "error" && <p className="ps-2 text-sm text-danger-ink">Conversations couldn’t be loaded. Open the Conversations menu to try again.</p>}
       <ul aria-label={`Recent conversations in ${space.name}`} className="flex flex-col gap-(--ph-sidebar-item-gap) empty:hidden">
         {shown.map((t) => (
           <li key={t.id}>
@@ -394,17 +433,17 @@ function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () =
               type="button"
               data-sidebar-thread={t.id}
               disabled={nav?.working}
-              aria-current={t.current ? "page" : undefined}
+              aria-current={t.current && active && view === "chat" ? "page" : undefined}
               onClick={() => open(t)}
               className={cn(
                 threadRow,
-                t.current && view === "chat"
+                t.current && active && view === "chat"
                   ? "bg-selected text-ink forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]"
                   : "text-ink-secondary hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
               <Icon name="chat" className="size-(--ph-icon-size-sm) text-ink-tertiary" />
-              <span data-sidebar-thread-title="" className={cn("min-w-0 truncate", t.current && "font-medium text-ink")}>{label(t)}</span>
+              <span data-sidebar-thread-title="" className={cn("min-w-0 truncate", t.current && active && "font-medium text-ink")}>{label(t)}</span>
               <span className="flex shrink-0 items-center gap-1 text-xs text-ink-secondary">
                 {t.current && nav?.running ? (
                   <>
@@ -422,7 +461,7 @@ function SpaceConversations({ space, onChosen }: { space: Space; onChosen?: () =
         ))}
       </ul>
       {threads.length > RECENT && (
-        <button type="button" data-sidebar-history-all="" onClick={() => nav?.showAll()} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-start text-xs text-ink-secondary hover:bg-hover hover:text-ink">
+        <button type="button" data-sidebar-history-all="" onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-start text-xs text-ink-secondary hover:bg-hover hover:text-ink">
           Show all {threads.length} conversations
         </button>
       )}
@@ -443,7 +482,7 @@ const itemClass =
   "flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 text-base text-ink outline-none select-none data-highlighted:bg-hover data-disabled:opacity-45";
 
 /** One space in the list, with its menu. */
-function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
+function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onToggle }: ItemProps & { expanded: boolean; onToggle: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
@@ -465,9 +504,13 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
       e.preventDefault();
       const r = e.currentTarget.getBoundingClientRect();
       openMenuAt(r.left, r.bottom);
+    } else if (e.key === "ArrowLeft" && expanded) {
+      e.preventDefault();
+      onToggle();
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      moreRef.current?.focus();
+      if (!expanded) onToggle();
+      else moreRef.current?.focus();
     }
   }
 
@@ -494,11 +537,18 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
       }}
     >
       <ContextMenu.Trigger asChild>
-        <li className="group/space relative" data-space-item={space.id}>
+        <div className="group/space relative" data-space-item={space.id}>
+          <button type="button" tabIndex={-1} data-space-expand={space.id} aria-expanded={expanded} aria-controls={`space-children-${space.id}`}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${space.name}`}
+            onClick={onToggle} className="absolute start-0.5 top-1/2 z-10 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-ink-tertiary hover:bg-hover hover:text-ink">
+            <Icon name={expanded ? "chevron-down" : "chevron-right"} className="size-3" />
+          </button>
           <button
             ref={buttonRef}
             type="button"
             aria-current={active ? "page" : undefined}
+            aria-expanded={expanded}
+            aria-controls={`space-children-${space.id}`}
             aria-keyshortcuts="Shift+F10"
             // Named by its own text, each part once: "School, needs your answer, Courses, deadlines…".
             // Keep the description available to assistive technology without a second visual line.
@@ -511,7 +561,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
             className={cn(
               // The space is parent context; the selected destination is one of its views or threads.
               // The end keeps room for the More button, so it never covers the name.
-              "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-2 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
+              "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-6 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
               "transition-colors duration-(--ph-duration-fast)",
               "hover:bg-hover active:bg-selected",
               active && "forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]",
@@ -585,7 +635,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu }: ItemProps) {
           >
             <Icon name="more" className="size-(--ph-icon-size-sm)" />
           </button>
-        </li>
+        </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content

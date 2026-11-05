@@ -264,12 +264,12 @@ export default [
     async run(page, h) {
       await h.idle();
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("export");
       await h.idle();
       const opt = await page.evaluate(() => {
-        const o = document.getElementById(document.activeElement.getAttribute("aria-activedescendant"));
-        return { id: o?.getAttribute("data-command"), text: o?.textContent };
+        const o = document.querySelector("[data-command-palette] [role=option]");
+        return { id: o?.querySelector("[data-command]")?.getAttribute("data-command"), text: o?.textContent };
       });
       check(opt.id === "space-export" && opt.text.includes("Export space…") && opt.text.includes("School"), "\"export\" finds Export space… for School", JSON.stringify(opt));
       await page.keyboard.press("Enter");
@@ -278,7 +278,7 @@ export default [
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("[data-space-action-notice]"), { timeout: 3000 });
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("folder");
       await h.idle();
       const found = await page.$$eval('[role="option"]', (els) => els.map((e) => e.textContent));
@@ -290,10 +290,10 @@ export default [
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("[data-space-action-notice]"), { timeout: 3000 });
       await chord(page, "k");
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("finder");
       await h.idle();
-      const show = await page.evaluate(() => document.getElementById(document.activeElement.getAttribute("aria-activedescendant"))?.textContent);
+      const show = await page.evaluate(() => document.querySelector("[data-command-palette] [role=option]")?.textContent);
       check(show?.startsWith("Show space in Finder"), "\"finder\" finds Show space in Finder", show);
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "space_show"), { timeout: 3000 });

@@ -222,11 +222,7 @@ impl Cli {
                 "{} isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Assistant, then send your message again.",
                 self.name()
             ),
-            _ => format!(
-                "{} is not logged in. Run `{}` once in a terminal to sign in, then try again.",
-                self.name(),
-                self.login_command(config_dir)
-            ),
+            _ => format!("{} isn’t signed in. Sign in to this connection in Settings › Assistant, then retry.", self.name()),
         }
     }
 
@@ -306,7 +302,7 @@ pub struct TurnRequest<'a> {
 
 /// Whether a CLI is installed, for Settings and the setup card to check
 /// before offering it. Only looks for the program: nothing about the user's
-/// login is read (Anthropic's terms; see CLAUDE.md).
+/// login is read by this installation check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CliStatus {
     pub installed: bool,
@@ -327,7 +323,7 @@ pub(crate) fn status_of(found: Option<PathBuf>) -> CliStatus {
     }
 }
 
-fn is_executable(p: &Path) -> bool {
+pub(crate) fn is_executable(p: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -389,7 +385,19 @@ pub fn no_home() -> PathBuf {
 /// one if none is given, never the person's), for Claude Code when the vault
 /// asks for one.
 pub fn command(cli: Cli, bin: &Path, cwd: &Path, config_dir: Option<&Path>) -> Command {
-    let mut cmd = Command::new(bin);
+    let launch = crate::agent_instances::launch(config_dir).filter(|i| i.cli == cli.id());
+    let configured = launch.as_ref().filter(|i| !i.binary.is_empty()).and_then(|_| crate::agent_instances::binary(cli, config_dir));
+    let mut cmd = Command::new(configured.as_deref().unwrap_or(bin));
+    if launch.as_ref().is_some_and(|i| i.id != cli.id()) {
+        // A named account must not be replaced by credentials inherited from the parent harness.
+        let credentials: &[&str] = match cli {
+            Cli::Claude => &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
+            Cli::Codex => &["OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL"],
+            Cli::Gemini => &["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS"],
+        };
+        for variable in credentials { cmd.env_remove(variable); }
+    }
+    if let Some(instance) = launch { cmd.args(instance.args); }
     cmd.current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -508,6 +516,10 @@ Here it is so far, as plain text (\"Phaethon\" is you). Carry on from it.";
 /// What the CLI is asked: the user's message, and before it the conversation
 /// so far when the session starts fresh on one that already has messages (had
 /// with Phaethon's own agent or another CLI, edited, or its session is gone).
+fn instance_session_tag(cli: Cli, home: Option<&Path>) -> Option<String> {
+    crate::agent_instances::launch(home).filter(|i| i.id != cli.id()).map(|i| format!("{}-{}", cli.id(), i.id))
+}
+
 fn cli_prompt(ask: &str, msgs: &[Value], fresh: bool) -> String {
     if !fresh || thread::to_ui(msgs).is_empty() {
         return ask.to_string();
@@ -550,7 +562,8 @@ async fn turn(
     }
     let user = thread::stamped(thread::user_message(req.prompt, &req.attachments));
     let ask = format!("{}{}", req.prompt, attachments::cli_note(&req.attachments));
-    let mut resume = vault::read_cli_session(req.space_dir, cli.session_tag());
+    let instance_tag = instance_session_tag(cli, req.config_dir.as_deref());
+    let mut resume = vault::read_cli_session(req.space_dir, instance_tag.as_deref().or(cli.session_tag()));
     let mut text = String::new();
     let (stopped, session_id) = loop {
         let prompt = cli_prompt(&ask, &msgs, resume.is_none());
@@ -699,7 +712,7 @@ async fn drive(
         fail(emit, ErrorCode::Cli, format!("Phaethon couldn’t find a folder for {}’s own setup in this Phaethon folder, so nothing was sent.", cli.name()));
         return Attempt::NotStarted;
     }
-    let Some(bin) = cli.find() else {
+    let Some(bin) = crate::agent_instances::binary(cli, req.config_dir.as_deref()) else {
         fail(emit, ErrorCode::MissingCli, cli.missing_message().into());
         return Attempt::NotStarted;
     };
@@ -820,7 +833,7 @@ async fn drive(
         Outcome::Success { session_id } => {
             if let Some(Err(e)) = session_id
                 .as_deref()
-                .map(|id| vault::write_cli_session(req.space_dir, cli.session_tag(), id))
+                .map(|id| vault::write_cli_session(req.space_dir, instance_session_tag(cli, req.config_dir.as_deref()).as_deref().or(cli.session_tag()), id))
             {
                 fail(
                     emit,
@@ -973,16 +986,16 @@ pub struct CliInfo {
 
 /// [`CliInfo`] for every CLI. Codex says whether it is signed in through its
 /// own `codex login status`, which Phaethon runs and reads the words of;
-/// Phaethon itself never opens a CLI's credential files. Claude Code's
-/// sign-in is never asked (Anthropic's terms), and Gemini CLI has no way to
-/// say short of a real question.
+/// Phaethon itself never opens a CLI's credential files. Claude Code reports
+/// its public `auth status`; Gemini CLI has no account-status command.
 pub async fn clis_info(config_dir: impl Fn(Cli) -> Option<PathBuf>) -> Vec<CliInfo> {
     let mut out = vec![];
     for cli in Cli::ALL {
-        let bin = cli.find().filter(|p| is_executable(p));
         let dir = config_dir(cli);
+        let bin = crate::agent_instances::binary(cli, dir.as_deref()).filter(|p| is_executable(p));
         let logged_in = match (cli, &bin) {
             (Cli::Codex, Some(bin)) => codex_logged_in(bin, dir.as_deref()).await,
+            (Cli::Claude, Some(_)) => crate::agent_instances::account(cli, dir.as_deref()).await.0,
             _ => None,
         };
         out.push(CliInfo {
@@ -1059,7 +1072,7 @@ mod tests {
             assert!(!said.contains("terminal") && !said.contains("/x/"), "{said}");
         }
         let iso = Cli::Claude.not_logged_in_message(Some(Path::new("/x/default")));
-        assert!(iso.contains("CLAUDE_CONFIG_DIR=\"/x/default\" claude"), "{iso}");
+        assert!(iso.contains("Settings › Assistant") && !iso.contains("terminal") && !iso.contains("/x/default"), "{iso}");
         assert_eq!(Cli::Codex.login_command(Some(Path::new("/x/default-codex"))), "CODEX_HOME=\"/x/default-codex\" codex login");
         assert_eq!(Cli::of(Backend::Phaethon), None);
         assert_eq!(Cli::of(Backend::GeminiCli), Some(Cli::Gemini));

@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::model::Picture;
 use super::quote;
 use super::scope::{self, ExamScope, ScopeMap};
-use crate::lms::access::{Seen, Visible};
+use crate::lms::access::{Place, Seen, Visible};
 use crate::lms::material::{FileQuality, Report, summarise};
 use crate::lms::text;
 use crate::vision::{self, Alert, Sight};
@@ -53,7 +53,6 @@ fn weight(f: &FileQuality) -> u32 {
 /// the order given: each PDF page drawn or taken as stored (text.rs, in a
 /// child process), a picture file as it is. A page that can't be had is left out.
 pub fn pictures(visible: &Visible, seen: &Seen, pages: &[PageRef], max: usize) -> Vec<Picture> {
-    let Some(dir) = visible.dir_of(seen) else { return vec![] };
     let mut by_file: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
     let mut order: Vec<&str> = vec![];
     for (label, page) in pages.iter().take(max) {
@@ -64,9 +63,9 @@ pub fn pictures(visible: &Visible, seen: &Seen, pages: &[PageRef], max: usize) -
     }
     let mut got: Vec<(String, u32, Picture)> = vec![];
     for label in order {
-        let Some(rel) = rel_of(seen, label) else { continue };
-        let Ok(clean) = crate::tools::clean_rel(rel) else { continue };
-        let path = dir.join(clean);
+        let Ok(clean) = crate::tools::clean_rel(label) else { continue };
+        let Ok(Place::Course { seen: allowed, real: path, .. }) = visible.place(&clean, true) else { continue };
+        if allowed.key != seen.key { continue; }
         if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
             continue;
         }
@@ -344,6 +343,22 @@ mod tests {
         assert_eq!(pages, [("courses/C/files/Notes/week1.pdf".to_string(), 1), ("courses/C/files/slides.pdf".to_string(), 4), ("courses/C/files/Notes/week1.pdf".to_string(), 2)]);
         assert_eq!(pages_in_chunk(&vis.courses[0], chunk, 1).len(), 1);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_later_handwritten_excerpt_selects_its_own_page_image() {
+        let root = std::env::temp_dir().join(format!("phaethon-study-later-page-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("courses/C/files")).unwrap();
+        let mut visible = fixture(&root, "s", &[("C", &Part::ALL)]);
+        visible.courses[0].state.material = Some(Report { version: VERSION, files: vec![FileQuality { path: "files/notes.pdf".into(), pages: 19, handwriting: vec![2, 19], ..Default::default() }], cant_recognise: None });
+        let text = format!("## Page 2 {}\n\n{}\n\n## Page 19 {}\n\n{}", text::RECOGNISED, "Earlier unrelated lecture. ".repeat(400), text::RECOGNISED, "The later handwritten relation is reflexive. ".repeat(300));
+        let label = "courses/C/files/notes.pdf";
+        let file = super::super::sources::CourseFile { label: label.into(), sub: "files/notes.pdf.md".into(), size: text.len() as u64, modified: 0, text: text.clone() };
+        let excerpt = super::super::sources::chunks(&text).into_iter().rev().find(|chunk| chunk.contains("later handwritten")).unwrap();
+        let request = format!("<source path=\"{label}\">\n{excerpt}\n</source>");
+        assert_eq!(pages_in_chunk(&visible.courses[0], &request, 1), [(label.into(), 19)]);
+        assert_eq!(pages_of_passages(&visible.courses[0], &[file], &request, 1), [(label.into(), 19)]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// Real Claude Code calls (one per page) on real handwritten pages, read

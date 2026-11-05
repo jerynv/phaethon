@@ -134,10 +134,10 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
           onCloseAutoFocus={(e) => other && e.preventDefault()}
         >
-          <MenuHeader spaceName={spaceName} note={running ? "Applies from your next message. The reply now running keeps its model." : undefined} />
+          <MenuHeader spaceName={spaceName} note={running ? "Next message" : undefined} />
           {error && <MenuError error={error} />}
           <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)}>
-            <ModelItem value={DEFAULT} title="Default" hint={`${defaultName}, as set in Settings`} spoken={`Use the default, ${defaultName}`} />
+            <ModelItem value={DEFAULT} title="Default" hint={defaultName} spoken={`Use the default, ${defaultName}`} />
             {groups.map((g) => (
               <DropdownMenu.Group key={g.provider} aria-label={groups.length > 1 ? g.name : undefined}>
                 <Separator />
@@ -152,7 +152,6 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
                     key={m.id}
                     value={m.id}
                     title={m.name}
-                    hint={g.provider === "anthropic" ? anthropicHint(m.id) : undefined}
                     // Grouped under the provider's name on screen; said in full.
                     spoken={g.provider === "anthropic" ? undefined : modelName(m.id, s.models)}
                   />
@@ -289,14 +288,14 @@ function CliModelPicker({
             <MenuHeader
               spaceName={spaceName}
               provider={cliProvider}
-              note={running ? `${cli.name} · Applies from your next message. The reply now running keeps its model.` : cli.name}
+              note={running ? "Next message" : undefined}
             />
             {error && <MenuError error={error} />}
             <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)}>
-              <ModelItem value={DEFAULT} title="Default" hint={`The model ${cli.name} chooses`} spoken={`${cli.name}’s own default`} />
+              <ModelItem value={DEFAULT} title="Default" hint={cli.name} spoken={`${cli.name}’s own default`} />
               {!!list?.models.length && <Separator />}
               {list?.models.map((m) => (
-                <ModelItem key={m.id} value={m.id} title={m.name} hint={m.description} spoken={`${cli.name} · ${m.name}`} />
+                <ModelItem key={m.id} value={m.id} title={m.name} spoken={`${cli.name} · ${m.name}`} />
               ))}
               {own && !list?.models.some((m) => m.id === own.model) && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
             </DropdownMenu.RadioGroup>
@@ -461,7 +460,7 @@ function OtherModelDialog({
       <DialogContent data-other-model-dialog="">
         <DialogHeader>
           <DialogTitle>Model in {spaceName}</DialogTitle>
-          <DialogDescription>Any model from a provider you’ve set up in Settings. It applies from your next message here.</DialogDescription>
+
         </DialogHeader>
         <div className="flex flex-col gap-1.5">
           <label htmlFor={selectId} className="flex items-center gap-2 text-base font-medium text-ink">
@@ -547,33 +546,16 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
   return list;
 }
 
-/** A model: its name with a line on what it's for beneath, a check at the end when it's the one in use. */
+/** T3 Code's ModelListRow (MIT): the same compact name/check shape in every provider. */
 function ModelItem({ value, title, hint, spoken }: { value: string; title: string; hint?: string; spoken?: string }) {
   return (
-    <DropdownMenu.RadioItem
-      value={value}
-      textValue={title}
-      aria-label={spoken}
-      data-model-option={value}
-      className="group/model grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[minmax(0,1fr)_var(--ph-icon-size)] items-center gap-x-3 rounded-md px-2.5 py-2 outline-none select-none data-highlighted:bg-hover data-[state=checked]:bg-accent-soft data-[state=checked]:data-highlighted:bg-selected"
-    >
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-base font-medium wrap-break-word group-data-[state=checked]/model:text-accent-soft-ink">{title}</span>
-        {hint && <span className="text-sm text-ink-secondary wrap-break-word">{hint}</span>}
-      </span>
-      <DropdownMenu.ItemIndicator className="flex items-center justify-center">
-        <Icon name="check" className="text-accent-ink" />
-      </DropdownMenu.ItemIndicator>
+    <DropdownMenu.RadioItem value={value} textValue={title} aria-label={spoken} data-model-option={value}
+      className="flex min-h-(--ph-control-height) cursor-default items-center gap-3 rounded-md px-2.5 py-1.5 text-sm outline-none select-none data-highlighted:bg-hover">
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {hint && <span className="max-w-[45%] truncate text-xs text-ink-secondary">{hint}</span>}
+      <DropdownMenu.ItemIndicator className="flex shrink-0 items-center"><Icon name="check" className="size-3.5 text-ink-secondary" /></DropdownMenu.ItemIndicator>
     </DropdownMenu.RadioItem>
   );
-}
-
-/** What each of Anthropic's families is for, said under its name. */
-function anthropicHint(id: string): string | undefined {
-  if (/opus/i.test(id)) return "Most capable, for hard problems";
-  if (/sonnet/i.test(id)) return "Fast and capable, for most things";
-  if (/haiku/i.test(id)) return "Quickest, for short answers";
-  return undefined;
 }
 
 const MENU =
@@ -588,7 +570,8 @@ function Separator() {
 function MenuHeader({ spaceName, note, provider }: { spaceName: string; note?: string; provider?: ProviderId | CliBackend }) {
   return (
     <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
-      <DropdownMenu.Label className="text-base font-semibold text-ink">Model in {spaceName}</DropdownMenu.Label>
+      <DropdownMenu.Label className="text-xs font-medium text-ink-secondary">Model</DropdownMenu.Label>
+      <span className="sr-only">in {spaceName}</span>
       {note && <p className="flex items-start gap-2 text-sm text-ink-secondary" data-model-note="">
         {provider && <ProviderLogo provider={provider} className="mt-0.5 size-4" />}
         {note}

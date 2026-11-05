@@ -1,8 +1,8 @@
 //! Full access: a space whose CLI (Claude Code, Codex, Gemini CLI) runs with
 //! no walls at all. It reads and changes anything the person's account can,
 //! runs any command and uses the network, without asking. Off unless the
-//! person turns it on for that space in Settings › Spaces (after a warning),
-//! and shown in the space for as long as it is on.
+//! person selects it for that space in Settings › Spaces or the composer.
+//! A compact access control shows the current mode.
 //!
 //! Which spaces have it is kept on this computer only, in the app's own data
 //! folder, never in the vault: a vault syncs, and a switch like this must not

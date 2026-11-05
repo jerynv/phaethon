@@ -182,33 +182,25 @@ export function UpdatesGroup() {
   if (s.state === "notSetUp") {
     return (
       <SettingGroup title="Updates">
-        <div data-updates="not-set-up" className="flex items-start gap-2.5 px-4 py-3.5 text-sm text-ink-secondary">
-          <Icon name="info" className="mt-0.5 shrink-0" />
-          <div className="flex max-w-(--ph-measure) flex-col gap-1">
-            <p className="text-base font-medium text-ink">Updates aren’t set up for this build</p>
-            <p>
-              {s.reason} This copy never checks for or installs updates by itself. To get a newer version, download it and install it
-              yourself.
-            </p>
-          </div>
-        </div>
+        <SettingRow label="Update channel">
+          <span data-updates="not-set-up" title={s.reason} className="text-sm text-ink-secondary">Manual installation</span>
+        </SettingRow>
       </SettingGroup>
     );
   }
 
   const busy = checking || !!installing;
-  const from = view.source?.includes("/") ? `the ${view.source} releases on GitHub` : (view.source ?? "this build’s release page");
 
   return (
-    <SettingGroup title="Updates" description={`New versions come from ${from}. Each is checked against Phaethon’s signature before it’s installed.`}>
+    <SettingGroup title="Updates">
       <SettingRow
-        label="Check for updates"
+        label="Software updates"
         description={
           s.state === "upToDate"
-            ? `Phaethon ${view.currentVersion} is the newest version. Checked at ${timeOf(s.checkedAt)}.`
+            ? `Up to date · ${timeOf(s.checkedAt)}`
             : s.state === "checking" || checking
               ? "Checking…"
-              : "Phaethon checks quietly when it starts, and only installs an update when you choose to."
+              : view.source ?? undefined
         }
       >
         <Button

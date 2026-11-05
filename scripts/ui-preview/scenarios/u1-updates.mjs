@@ -42,7 +42,8 @@ export default [
     mock: { settings: SETTINGS },
     async run(page, h) {
       await about(page, h);
-      await h.waitText("Updates aren’t set up for this build");
+      await page.waitForSelector('[data-updates="not-set-up"]');
+      check(await page.$eval('[data-updates="not-set-up"]', (state) => state.textContent === "Manual installation" && state.title.length > 0), "the manual update channel keeps its reason available without a tutorial");
       check(await page.$('[data-updates="not-set-up"]'), "says updates aren't set up");
       check(!(await page.$("[data-update-check]")), "and offers no check");
       await show(page, '[data-updates="not-set-up"]');
@@ -154,7 +155,7 @@ export default [
     mock: { settings: SETTINGS, updates: { view: view({ state: "upToDate", checkedAt: Date.UTC(2026, 9, 12, 14, 5) }) } },
     async run(page, h) {
       await about(page, h);
-      await h.waitText("Phaethon 0.1.0 is the newest version. Checked at");
+      await h.waitText("Up to date ·");
       check(!(await page.$("[data-update-available]")), "nothing offered");
       await show(page, "[data-update-check]");
     },

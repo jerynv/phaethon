@@ -221,9 +221,9 @@ for (const s of chosen) {
           },
           /** Tab from wherever focus is until `sel` has it, as a keyboard user would. Returns the presses. */
           focusVia: async (sel, max = 60) => {
-            for (let i = 0; i < max; i++) {
+            for (let i = 0; i <= max; i++) {
               if (await page.evaluate((sel) => !!document.activeElement?.matches(sel), sel)) return i;
-              await page.keyboard.press("Tab");
+              if (i < max) await page.keyboard.press("Tab");
             }
             throw new Error(`Tab never reached ${sel}`);
           },

@@ -115,6 +115,8 @@ impl OpenAi {
 }
 
 impl Provider for OpenAi {
+    fn image_input(&self) -> crate::vision::Sees { crate::vision::sees(self.cfg.provider.id, &self.cfg.base, &self.cfg.model) }
+
     async fn turn(&self, req: ModelRequest<'_>, on_delta: &mut (dyn FnMut(Delta<'_>) + Send)) -> Result<ModelTurn, ProviderError> {
         let pdfs = pdf_texts(req.messages).await;
         let mut images = has_images(req.messages);
@@ -243,7 +245,7 @@ fn hash_of(s: &str) -> u64 {
 }
 
 fn has_images(messages: &[Value]) -> bool {
-    messages.iter().any(|m| m["content"].as_array().is_some_and(|c| c.iter().any(|b| b["type"] == "image")))
+    messages.iter().any(|m| m["content"].as_array().is_some_and(|c| c.iter().any(|b| b["type"] == "image" || (b["type"] == "tool_result" && b["content"].as_array().is_some_and(|parts| parts.iter().any(|p| p["type"] == "image"))))))
 }
 
 fn image_note() -> String {
@@ -284,13 +286,13 @@ fn user_part(b: &Value, pdfs: &HashMap<u64, String>, images: bool) -> Option<Par
     }
 }
 
-/// A tool result's content as text (Phaethon's tools answer in text).
-fn result_text(b: &Value) -> String {
+/// Chat Completions tool messages stay text; page images follow as user parts.
+fn result_text(b: &Value, images: bool) -> String {
     let text = match &b["content"] {
         Value::String(s) => s.clone(),
         Value::Array(parts) => parts
             .iter()
-            .map(|p| if p["type"] == "text" { p["text"].as_str().unwrap_or("").to_string() } else { image_note() })
+            .map(|p| if p["type"] == "text" { p["text"].as_str().unwrap_or("").to_string() } else if images { "[Page image follows.]".into() } else { image_note() })
             .collect::<Vec<_>>()
             .join("\n"),
         _ => String::new(),
@@ -329,9 +331,17 @@ pub fn to_messages(system: &str, messages: &[Value], pdfs: &HashMap<u64, String>
         }
         // Results first: each answers a call in the message just before.
         for b in blocks.iter().filter(|b| b["type"] == "tool_result") {
-            out.push(json!({"role": "tool", "tool_call_id": wire_id(b["tool_use_id"].as_str().unwrap_or(""), mistral), "content": result_text(b)}));
+            out.push(json!({"role": "tool", "tool_call_id": wire_id(b["tool_use_id"].as_str().unwrap_or(""), mistral), "content": result_text(b, images)}));
         }
-        let parts: Vec<Part> = blocks.iter().filter_map(|b| user_part(b, pdfs, images)).collect();
+        let mut parts: Vec<Part> = blocks.iter().filter_map(|b| user_part(b, pdfs, images)).collect();
+        // OpenAI's Chat Completions schema accepts images in user content,
+        // so preserve nested Anthropic tool-result images after all tool replies.
+        for result in blocks.iter().filter(|b| b["type"] == "tool_result") {
+            for image in result["content"].as_array().into_iter().flatten().filter(|b| b["type"] == "image") {
+                parts.push(Part::Text(format!("Page image returned by tool {}:", result["tool_use_id"].as_str().unwrap_or(""))));
+                if let Some(part) = user_part(image, pdfs, images) { parts.push(part); }
+            }
+        }
         if parts.is_empty() {
             continue;
         }
@@ -1085,6 +1095,22 @@ mod tests {
         assert!(id.len() == 9 && id.bytes().all(|b| b.is_ascii_alphanumeric()), "{id}");
         assert_eq!(out[3]["tool_call_id"], id);
         assert_eq!(wire_id("abcDEF123", true), "abcDEF123");
+    }
+
+    #[test]
+    fn original_pdf_page_images_survive_tool_results_in_chat_completions() {
+        let messages = vec![json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": "page1", "content": [{"type": "text", "text": "Source: courses/C/notes.pdf, page 19"}, {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBO"}}]}]})];
+        assert!(has_images(&messages));
+        let out = to_messages("sys", &messages, &HashMap::new(), true, false);
+        assert_eq!(out[1]["role"], "tool");
+        assert_eq!(out[1]["tool_call_id"], "page1");
+        assert!(out[1]["content"].as_str().unwrap().contains("courses/C/notes.pdf, page 19"));
+        assert_eq!(out[2]["role"], "user");
+        assert_eq!(out[2]["content"][1]["image_url"]["url"], "data:image/png;base64,iVBO");
+        let blind = to_messages("sys", &messages, &HashMap::new(), false, false);
+        let blind = serde_json::to_string(&blind).unwrap();
+        assert!(!blind.contains("data:image/"));
+        assert!(blind.contains("can’t see images"));
     }
 
     #[test]

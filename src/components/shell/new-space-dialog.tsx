@@ -1,10 +1,13 @@
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { NativeSelect, Switch } from "vic-ui";
 
 import { HueSwatches } from "@/components/settings/controls";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/icons";
+import { setFullAccess } from "@/lib/full-access";
+import { getSettings } from "@/lib/backend";
 import { createSpace, SPACE_DESCRIPTION_MAX, SPACE_NAME_MAX, type Space } from "@/lib/spaces";
 import { ACCENT_PRESETS } from "@/theme";
 
@@ -26,16 +29,7 @@ function freshHue(taken: readonly number[]): number {
   return best;
 }
 
-/**
- * "New space": a name (required), an optional description and a colour.
- * Opened from the sidebar or the empty state. Keyboard: the name field has
- * focus on open, Enter in a field creates, Escape cancels; the colour is a
- * radio group (arrows choose). A missing name is said next to the field and
- * the field takes focus; a refusal from the vault shows as an alert above
- * the buttons. `onCreated` runs with the new space before the dialog closes;
- * `onCloseFocus` decides where focus goes after (true: created). Mount it
- * afresh (a new key) for each opening, so every form starts empty.
- */
+/** Details and workspace options are separate steps, following T3 Code's project setup flow. */
 export function NewSpaceDialog({
   open,
   onOpenChange,
@@ -52,7 +46,15 @@ export function NewSpaceDialog({
   const nameId = useId();
   const nameErrorId = useId();
   const descId = useId();
-  const descHintId = useId();
+  const educationId = useId();
+  const accessId = useId();
+  const [access, setAccess] = useState<"full" | "workspace">("full");
+  const pendingCreated = useRef<Space | null>(null);
+  const workspaceHeading = useRef<HTMLHeadingElement>(null);
+  const [step, setStep] = useState<"details" | "workspace">("details");
+  const [educationEnabled, setEducationEnabled] = useState(false);
+  const [vaultPath, setVaultPath] = useState<string | null>(null);
+  useEffect(() => { getSettings().then((settings) => setVaultPath(settings.vaultPath ?? null), () => {}); }, []);
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -63,6 +65,10 @@ export function NewSpaceDialog({
   const created = useRef(false);
   const [said, setSaid] = useState("");
 
+  useLayoutEffect(() => {
+    if (open) (step === "workspace" ? workspaceHeading.current : nameRef.current)?.focus();
+  }, [open, step]);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -71,10 +77,16 @@ export function NewSpaceDialog({
       nameRef.current?.focus();
       return;
     }
+    if (step === "details") {
+      setStep("workspace");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const space = await createSpace({ name: name.trim(), description: description.trim(), hue });
+      const space = pendingCreated.current ?? await createSpace({ name: name.trim(), description: description.trim(), hue, educationEnabled });
+      pendingCreated.current = space;
+      await setFullAccess(space.id, access === "full");
       created.current = true;
       onCreated(space);
       setSaid("");
@@ -103,9 +115,11 @@ export function NewSpaceDialog({
         >
           <DialogHeader>
             <DialogTitle>New space</DialogTitle>
-            <DialogDescription>A space has its own files and conversation. Phaethon in one space can’t see another unless you allow it.</DialogDescription>
+            <DialogDescription className="sr-only">Name a space and choose its workspace options.</DialogDescription>
           </DialogHeader>
+          <div className="flex items-center gap-2 text-xs text-ink-secondary" aria-label="Setup progress"><span className={step === "details" ? "font-medium text-ink" : ""}>1. Details</span><Icon name="chevron-right" className="size-(--ph-icon-size-sm)" /><span className={step === "workspace" ? "font-medium text-ink" : ""}>2. Workspace</span></div>
           <form onSubmit={(e) => void submit(e)} noValidate className="flex flex-col gap-4">
+            <div hidden={step !== "details"} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label htmlFor={nameId} className="text-base font-medium text-ink">
                 Name
@@ -143,12 +157,8 @@ export function NewSpaceDialog({
                 value={description}
                 maxLength={SPACE_DESCRIPTION_MAX}
                 autoComplete="off"
-                aria-describedby={descHintId}
-                onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => setDescription(e.target.value)}
               />
-              <p id={descHintId} className="text-sm text-ink-secondary">
-                Shown under the name in the sidebar.
-              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <span aria-hidden="true" className="text-base font-medium text-ink">
@@ -156,18 +166,25 @@ export function NewSpaceDialog({
               </span>
               <HueSwatches label="Colour" presets={SPACE_HUES} value={hue} onPick={setHue} swatchColour={spaceSwatch} checkColour={spaceSwatchCheck} />
             </div>
-            {error && (
+            </div>
+          <div hidden={step !== "workspace"} className="flex flex-col gap-4" data-new-space-workspace="">
+            <div><h3 ref={workspaceHeading} tabIndex={-1} className="text-base font-medium text-ink outline-none">{name.trim()}</h3>{description.trim() && <p className="mt-1 text-sm text-ink-secondary">{description.trim()}</p>}</div>
+            <div className="flex items-center gap-3 rounded-lg border border-line px-3.5 py-3"><Icon name="folder" className="shrink-0 text-ink-tertiary" /><div className="min-w-0"><p className="text-sm font-medium text-ink">Workspace location</p><code className="mt-1 block text-xs wrap-anywhere text-ink-secondary">{vaultPath ? `${vaultPath}/spaces/` : "Phaethon/spaces/"}</code></div></div>
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line px-3.5 py-3"><label htmlFor={accessId} className="min-w-0 flex-1 text-sm font-medium text-ink">Agent access</label><NativeSelect id={accessId} data-new-space-access="" className="max-w-full" value={access} onChange={(e) => setAccess(e.target.value as "full" | "workspace")}><option value="full">Full access</option><option value="workspace">Workspace only</option></NativeSelect></div>
+            <div className="flex items-center gap-4 rounded-lg border border-line px-3.5 py-3"><div className="min-w-0 flex-1"><label htmlFor={educationId} className="text-sm font-medium text-ink">Education</label><p className="mt-0.5 text-xs text-ink-secondary">Study, grades and planning.</p></div><Switch id={educationId} data-new-space-education="" checked={educationEnabled} onCheckedChange={setEducationEnabled} className="shrink-0" /></div>
+          </div>
+          {error && (
               <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-ink">
                 <Icon name="error" className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1">The space couldn’t be created. {error}</span>
+                <span className="min-w-0 flex-1">{pendingCreated.current ? "Space created. Access could not be saved." : "The space couldn’t be created."} {error}</span>
               </p>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
+              <Button type="button" variant="ghost" onClick={() => { if (step === "workspace") setStep("details"); else onOpenChange(false); }} disabled={busy || !!pendingCreated.current}>
+                {step === "workspace" ? "Back" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={busy} data-create-space="">
-                {busy ? "Creating…" : "Create space"}
+              <Button type="submit" disabled={busy} data-create-space={step === "workspace" ? "" : undefined} data-next-space={step === "details" ? "" : undefined}>
+                {busy ? "Creating…" : step === "details" ? "Continue" : pendingCreated.current ? "Retry setup" : "Create space"}
               </Button>
             </DialogFooter>
           </form>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { announce } from "@/components/shell/announcer";
 import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
+import { supportsEducation } from "@/lib/spaces";
 import { IconTip } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
 import type { Space } from "@/lib/spaces";
@@ -118,7 +119,7 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  if (!all) return null;
+  if (!all || !supportsEducation(spaceId)) return null;
   const mode = all[spaceId] ?? "normal";
   const info = modeInfo(mode);
   const on = mode !== "normal";
@@ -165,12 +166,10 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
           collisionPadding={8}
           aria-label={`Tutor mode in ${spaceName}`}
           data-tutor-menu=""
-          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(22rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
+          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(20rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
         >
           <DropdownMenu.Label className="px-2.5 pt-1.5 text-sm font-semibold text-ink-secondary">Tutor mode in {spaceName}</DropdownMenu.Label>
-          <p className="px-2.5 pb-1.5 text-sm text-ink-secondary">
-            {running ? "Applies from your next message. The reply now running isn’t changed." : "Applies from your next message."}
-          </p>
+          {running && <p className="px-2.5 pb-1 text-xs text-ink-secondary">Next message</p>}
           {error && (
             <p role="alert" className="flex items-start gap-2 px-2.5 pb-1.5 text-sm text-danger-ink">
               <Icon name="error" className="mt-0.5 shrink-0" />
@@ -185,17 +184,10 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
                   value={m.id}
                   textValue={m.title}
                   data-tutor-option={m.id}
-                  className="grid min-h-(--ph-control-height-lg) cursor-default grid-cols-[var(--ph-icon-size)_minmax(0,1fr)] items-start gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
+                  className="grid min-h-(--ph-control-height) cursor-default grid-cols-[minmax(0,1fr)_var(--ph-icon-size)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
                 >
-                  <span className="flex h-[1lh] items-center text-base">
-                    <DropdownMenu.ItemIndicator>
-                      <Icon name="check" className="text-accent-ink" />
-                    </DropdownMenu.ItemIndicator>
-                  </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="text-base font-medium wrap-break-word">{m.title}</span>
-                    <span className="text-sm text-ink-secondary">{m.hint}</span>
-                  </span>
+                  <span className="min-w-0 truncate text-sm" title={m.hint}>{m.title}</span>
+                  <DropdownMenu.ItemIndicator><Icon name="check" className="size-3.5 text-ink-secondary" /></DropdownMenu.ItemIndicator>
                 </DropdownMenu.RadioItem>
               </div>
             ))}
@@ -213,7 +205,7 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
 export function useTutorModeCommands(space: Space | undefined): Command[] {
   const all = useTutorModes();
   return useMemo(() => {
-    if (!space || !all) return [];
+    if (!space || !all || !supportsEducation(space)) return [];
     const current = all[space.id] ?? "normal";
     return TUTOR_MODES.map<Command>((m) => ({
       id: `tutor-mode:${m.id}`,

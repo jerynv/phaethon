@@ -1,9 +1,8 @@
 /**
  * Which spaces have full access (src-tauri/src/full_access.rs): their CLI
  * runs with no walls, reading and changing anything on this computer and
- * using the internet. Kept by the core on this computer only. Turning it on
- * goes through a warning in a dialog of the system's own, which the page
- * can't answer; turning it off is immediate.
+ * using the internet. Kept by the core on this computer only and selected
+ * explicitly in the space editor or composer access control.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useSyncExternalStore } from "react";
@@ -43,8 +42,7 @@ export function useFullAccess(space: string | undefined): boolean {
 }
 
 /**
- * Turn full access on (after the system's warning) or off. Resolves to
- * whether it is on afterwards: still off when the warning was cancelled.
+ * Persist the selected access mode and synchronize every control showing it.
  */
 export async function setFullAccess(space: string, want: boolean): Promise<boolean> {
   const now = await invoke<boolean>("full_access_set", { id: space, on: want });

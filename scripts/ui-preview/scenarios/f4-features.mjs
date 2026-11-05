@@ -44,15 +44,15 @@ const openSearch = async (page) => {
   await page.focus(COMPOSER);
   await chord(page, ["Meta", "Shift", "f"]);
   await page.waitForSelector(SEARCH, { timeout: 3000 });
-  check(await activeIs(page, "[data-search-input]"), "Cmd+Shift+F opens Search conversations with focus in its field");
+  check(await activeIs(page, "[data-search-dialog] .ui-palette-head input"), "Cmd+Shift+F opens Search conversations with focus in its field");
 };
 const results = (page) =>
   page.evaluate(() =>
     [...document.querySelectorAll("[data-search-result]")].map((o) => ({
       text: o.textContent,
       mark: o.querySelector("mark")?.textContent,
-      selected: o.getAttribute("aria-selected"),
-      space: o.closest("[data-search-group]")?.querySelector("[data-search-space]")?.getAttribute("data-search-space") ?? null,
+      selected: o.closest("[role=option]")?.getAttribute("aria-selected"),
+      space: document.querySelector("[data-search-all]")?.getAttribute("aria-pressed") === "true" ? o.getAttribute("data-search-space") : null,
     })),
   );
 const searchStatus = (page) => page.evaluate(() => document.querySelector("[data-search-status]")?.textContent ?? "");
@@ -99,15 +99,15 @@ export default [
     async run(page, h) {
       await openSearch(page);
       // Before typing: says what it searches and that nothing goes to the model.
-      const hint = await page.evaluate(() => document.querySelector("[data-search-empty]")?.textContent ?? "");
-      check(hint.includes("Nothing is sent to the model") && hint.includes("School"), "the empty search says its scope and that nothing is sent", hint);
+      const hint = await page.evaluate(() => document.querySelector("[data-search-dialog] .ui-palette-state")?.textContent ?? "");
+      check(hint.trim() === "Search your conversations" && await page.$eval("[data-search-dialog] input", (input) => input.placeholder.includes("School")), "the scope is in the search field, with a concise empty state", hint);
       await page.keyboard.type("resume");
       const got = await waitFor(page, () => document.querySelectorAll("[data-search-result]").length > 0);
       check(got, "results arrive once typing pauses");
       const r = await results(page);
       check(r.length === 3, "accent- and case-insensitive: “Résumé”, “resume” and “RÉSUMÉ” in the old conversation", JSON.stringify(r));
       check(r.every((x) => /r[ée]sum[ée]/i.test(x.mark ?? "")), "each match is a <mark> around the found words", JSON.stringify(r.map((x) => x.mark)));
-      check(r[0].selected === "true" && r[1].selected === "false", "the first result is highlighted");
+      check(r.every((row) => row.selected === "false"), "Vic leaves pointer highlighting off until an option is chosen with arrows");
       const said = await searchStatus(page);
       check(said === "3 matches in 1 conversation.", "the count is in the polite status line", said);
       const calledWith = (await calls(page, "conversations_search")).at(-1);
@@ -116,8 +116,9 @@ export default [
       check(typed <= 2, "typing is debounced (not one search per key)", String(typed));
       await h.shot("results");
       await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
       const desc = await page.evaluate(() => {
-        const input = document.querySelector("[data-search-input]");
+        const input = document.querySelector("[data-search-dialog] .ui-palette-head input");
         return document.getElementById(input.getAttribute("aria-activedescendant"))?.textContent ?? "";
       });
       check(desc.includes("RÉSUMÉ workshop starts"), "ArrowDown moves the active option (aria-activedescendant)", desc);
@@ -145,13 +146,13 @@ export default [
       await page.waitForSelector(COMPOSER, { timeout: 5000 });
       await page.focus(COMPOSER);
       await chord(page, ["Meta", "k"]);
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("search conv");
-      const entry = await page.evaluate(() => document.querySelector('[data-command="search-conversations"]')?.getAttribute("aria-selected"));
-      check(entry === "true", "the palette offers “Search conversations…”");
+      const entry = await page.evaluate(() => document.querySelector('[data-command="search-conversations"]')?.textContent);
+      check(entry?.includes("Search conversations"), "the palette offers “Search conversations…”");
       await page.keyboard.press("Enter");
       await page.waitForSelector(SEARCH, { timeout: 3000 });
-      await waitFor(page, () => document.activeElement?.matches("[data-search-input]"));
+      await waitFor(page, () => document.activeElement?.matches("[data-search-dialog] .ui-palette-head input"));
       await page.keyboard.type("budget");
       await waitFor(page, () => document.querySelectorAll("[data-search-result]").length > 0);
       let r = await results(page);
@@ -168,7 +169,7 @@ export default [
       check(said === "3 matches in 2 conversations.", "the new count is said", said);
       await h.shot("all-spaces");
       // Back to the field and open the Work result.
-      await page.focus("[data-search-input]");
+      await page.focus("[data-search-dialog] .ui-palette-head input");
       await page.keyboard.press("Enter");
       await page.waitForFunction((S) => !document.querySelector(S), { timeout: 3000 }, SEARCH);
       await waitFor(page, () => document.activeElement?.hasAttribute("data-found-message"));
@@ -185,7 +186,7 @@ export default [
     async run(page) {
       // Claude Code's conversations are kept by Phaethon too, so they are searched the same way.
       await openSearch(page);
-      const empty = await page.evaluate(() => document.querySelector("[data-search-empty]")?.textContent ?? "");
+      const empty = await page.evaluate(() => document.querySelector("[data-search-dialog] .ui-palette-state")?.textContent ?? "");
       check(!empty.includes("Claude Code"), "no note that Claude Code's history can't be searched", empty);
       await page.keyboard.type("budget");
       check(await waitFor(page, () => document.querySelectorAll("[data-search-result]").length > 0), "with Claude Code, typing finds its conversations");
@@ -219,7 +220,7 @@ export default [
       await h.shot("on");
       // The palette turns it off again.
       await chord(page, ["Meta", "k"]);
-      await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+      await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
       await page.keyboard.type("wide");
       const label = await page.evaluate(() => document.querySelector('[data-command="wide-reading"]')?.textContent ?? "");
       check(label.includes("Turn wide reading off"), "the palette offers to turn it off", label);

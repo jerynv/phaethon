@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_instances;
 pub mod agent_loop;
 pub mod anthropic;
 pub mod app_guide;
@@ -173,12 +174,16 @@ async fn agent_send(
         }
         Backend::ClaudeCli | Backend::CodexCli | Backend::GeminiCli => {
             let cli = agent::Cli::of(settings.backend).expect("a CLI backend");
+            let config_dir = match agent_instances::require_home(&state.vault, state.isolated_config_root.as_deref(), &agent_instances::selected(&state.vault, cli)) {
+                Ok(home) => home,
+                Err(message) => { fail(ErrorCode::Cli, message); return Ok(()); }
+            };
             let req = TurnRequest {
                 space_dir: &space_dir,
                 prompt: &prompt,
                 attachments: refs,
                 replace_from,
-                config_dir: study::model::cli_config_dir(&state.vault, state.isolated_config_root.as_deref(), cli),
+                config_dir,
                 // Granted folders of other spaces, and the courses this space sees in full.
                 add_dirs: grants::cli_dirs(&state.vault, &space).into_iter().chain(lms::access::visible(&state.vault, &space).cli_dirs()).collect(),
                 model: space_model::get_cli(&space_dir, cli.id()),
@@ -274,8 +279,9 @@ fn space_create(
     name: String,
     description: Option<String>,
     hue: Option<f64>,
+    education_enabled: Option<bool>,
 ) -> Result<spaces::SpaceView, String> {
-    spaces::create(&state.vault, &name, description.as_deref(), hue)
+    spaces::create_with_education(&state.vault, &name, description.as_deref(), hue, education_enabled.unwrap_or(false))
 }
 
 /// Rename, describe or recolour a space. Its folder (the id) never changes.
@@ -286,8 +292,9 @@ fn space_update(
     name: Option<String>,
     description: Option<String>,
     hue: Option<f64>,
+    education_enabled: Option<bool>,
 ) -> Result<spaces::SpaceView, String> {
-    spaces::update(&state.vault, &id, name.as_deref(), description.as_deref(), hue)
+    spaces::update_with_education(&state.vault, &id, name.as_deref(), description.as_deref(), hue, education_enabled)
 }
 
 /// Mark `space` as used now (it was opened). The time is the core's own.
@@ -310,35 +317,11 @@ fn full_access_list(state: State<'_, AppState>) -> Vec<String> {
     full_access::list(state.full_access_file.as_deref(), state.vault.root())
 }
 
-/// Turn full access on or off for a space. Turning it on asks in a dialog of
-/// the system's own, which the webview can't answer for the person; whether
-/// it is on afterwards is returned.
+/// Persist the access mode explicitly selected in the space editor or composer.
 #[tauri::command]
-async fn full_access_set(app: tauri::AppHandle, state: State<'_, AppState>, id: String, on: bool) -> Result<bool, String> {
-    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-    let space = spaces::get(&state.vault, &id)?;
+fn full_access_set(state: State<'_, AppState>, id: String, on: bool) -> Result<bool, String> {
+    spaces::get(&state.vault, &id)?;
     let file = state.full_access_file.as_deref();
-    if on && !full_access::is_on(file, state.vault.root(), &id) {
-        let mut dialog = app
-            .dialog()
-            .message(format!(
-                "The assistant in {} will be able to read, change and delete any file on this Mac that you can, run any command and use the internet, without asking you first. Your other spaces’ walls won’t stop it.\n\nThis is for Claude Code, Codex and Gemini CLI. It stays on, on this Mac only, until you turn it off.",
-                space.name
-            ))
-            .title(format!("Give {} full access?", space.name))
-            .kind(MessageDialogKind::Warning)
-            .buttons(MessageDialogButtons::OkCancelCustom("Turn On Full Access".into(), "Cancel".into()));
-        if let Some(window) = app.get_webview_window("main") {
-            dialog = dialog.parent(&window);
-        }
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        dialog.show(move |yes| {
-            let _ = tx.send(yes);
-        });
-        if !rx.await.unwrap_or(false) {
-            return Ok(false);
-        }
-    }
     full_access::set(file, state.vault.root(), &id, on)?;
     Ok(on)
 }
@@ -616,6 +599,59 @@ async fn agent_cli_sign_in(state: State<'_, AppState>, cli: String) -> Result<ag
 #[tauri::command]
 fn agent_cli_sign_in_cancel(state: State<'_, AppState>, cli: String) -> bool {
     agent::Cli::ALL.into_iter().find(|c| c.id() == cli).is_some_and(|c| agent::sign_in::cancel(&state.runs, c))
+}
+
+#[tauri::command]
+async fn agent_instances_list(state: State<'_, AppState>) -> Result<Vec<agent_instances::InstanceView>, String> {
+    Ok(agent_instances::views(&state.vault, state.isolated_config_root.as_deref()).await)
+}
+
+#[tauri::command]
+fn agent_instance_save(state: State<'_, AppState>, instance: agent_instances::Instance) -> Result<agent_instances::Instance, String> {
+    agent_instances::save(&state.vault, state.isolated_config_root.as_deref(), instance)
+}
+
+#[tauri::command]
+fn agent_instance_select(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    agent_instances::select(&state.vault, &id)
+}
+
+#[tauri::command]
+async fn agent_instance_sign_in(state: State<'_, AppState>, id: String) -> Result<agent::sign_in::SignInOutcome, String> {
+    let instance = agent_instances::list(&state.vault).into_iter().find(|i| i.id == id).ok_or("Assistant instance not found.")?;
+    let cli = agent_instances::cli(&instance.cli)?;
+    let home = agent_instances::require_home(&state.vault, state.isolated_config_root.as_deref(), &instance)?;
+    if cli == agent::Cli::Claude {
+        Ok(agent::sign_in::claude_sign_in(&state.runs, home.as_deref(), &id).await)
+    } else {
+        Ok(agent::sign_in::sign_in(&state.runs, cli, home.as_deref().ok_or("Assistant home is unavailable.")?).await)
+    }
+}
+
+#[tauri::command]
+fn agent_instance_sign_in_cancel(state: State<'_, AppState>, id: String) -> bool {
+    let Some(instance) = agent_instances::list(&state.vault).into_iter().find(|i| i.id == id) else { return false; };
+    if instance.cli == "claude" { state.runs.cancel(&format!("\u{0}sign-in:instance:{id}")) }
+    else { agent_instances::cli(&instance.cli).is_ok_and(|c| agent::sign_in::cancel(&state.runs, c)) }
+}
+
+#[tauri::command]
+fn agent_instance_remove(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    agent_instances::remove(&state.vault, &id)
+}
+
+#[tauri::command]
+async fn agent_instance_sign_out(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let instance = agent_instances::list(&state.vault).into_iter().find(|i| i.id == id).ok_or("Assistant instance not found.")?;
+    let home = agent_instances::require_home(&state.vault, state.isolated_config_root.as_deref(), &instance)?;
+    agent_instances::sign_out(agent_instances::cli(&instance.cli)?, home.as_deref()).await
+}
+
+#[tauri::command]
+async fn agent_instance_usage(state: State<'_, AppState>, id: String) -> Result<agent_instances::Usage, String> {
+    let instance = agent_instances::list(&state.vault).into_iter().find(|i| i.id == id).ok_or("Assistant instance not found.")?;
+    let home = agent_instances::require_home(&state.vault, state.isolated_config_root.as_deref(), &instance)?;
+    Ok(agent_instances::usage(agent_instances::cli(&instance.cli)?, home.as_deref()).await)
 }
 
 #[derive(serde::Serialize)]
@@ -1167,6 +1203,14 @@ pub fn run() {
             full_access_list,
             full_access_set,
             agent_cli_sign_in,
+            agent_instances_list,
+            agent_instance_save,
+            agent_instance_select,
+            agent_instance_sign_in,
+            agent_instance_sign_in_cancel,
+            agent_instance_remove,
+            agent_instance_sign_out,
+            agent_instance_usage,
             agent_cli_sign_in_cancel,
             agent_cli_models,
             agent_approve,

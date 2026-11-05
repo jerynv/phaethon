@@ -1,4 +1,4 @@
-// Reading font (Settings > Accessibility): choosing a font by keyboard applies
+// Reading font (Settings > Accessibility): choosing a font in the native dropdown applies
 // it to the whole app, saves it, and a saved choice applies at startup.
 
 const settings = {
@@ -28,23 +28,19 @@ export default [
       await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
       await h.idle();
       await h.click('[data-testid="settings-tab-accessibility"]');
-      await page.waitForSelector("[data-font-card]", { timeout: 5000 });
+      const picker = '[role="tabpanel"]:not([hidden]) [data-reading-font]';
+      await page.waitForSelector(picker, { visible: true, timeout: 5000 });
       check((await bodyFont(page)).includes("Atkinson"), "the default reading font is Atkinson Hyperlegible", await bodyFont(page));
-      // Keyboard: focus the checked card, one arrow moves and chooses.
-      await page.focus('[data-font-card="atkinson"]');
-      await page.keyboard.press("ArrowRight");
+      await page.focus(picker);
+      await page.select(picker, "opendyslexic");
       await h.idle();
-      const picked = await page.evaluate(() => ({
-        attr: document.documentElement.dataset.font ?? null,
-        checked: document.querySelector('[data-font-card][data-state="checked"]')?.getAttribute("data-font-card"),
-        focused: document.activeElement?.getAttribute("data-font-card"),
-      }));
-      check(picked.attr === "opendyslexic" && picked.checked === "opendyslexic" && picked.focused === "opendyslexic", "one arrow key moves to OpenDyslexic and chooses it", JSON.stringify(picked));
+      const picked = await page.$eval(picker, (select) => ({ attr: document.documentElement.dataset.font ?? null, selected: select.value, focused: document.activeElement === select }));
+      check(picked.attr === "opendyslexic" && picked.selected === "opendyslexic" && picked.focused, "the native dropdown applies OpenDyslexic while retaining focus", JSON.stringify(picked));
       check((await bodyFont(page)).includes("OpenDyslexic"), "the whole app now reads in OpenDyslexic", await bodyFont(page));
       await page.evaluate(() => document.fonts.ready);
       const loaded = await page.evaluate(() => document.fonts.check('16px "OpenDyslexic"'));
       check(loaded, "the OpenDyslexic font file actually loaded", String(loaded));
-      await new Promise((r) => setTimeout(r, 900)); // saves are debounced
+      await page.waitForFunction(() => window.__calls.filter(([command]) => command === "appearance_set").at(-1)?.[1].appearance.readingFont === "opendyslexic", { timeout: 5000 });
       const saved = await page.evaluate(() => window.__calls.filter((c) => c[0] === "appearance_set").map((c) => c[1].appearance.readingFont).pop());
       check(saved === "opendyslexic", "the choice is saved to the vault", String(saved));
       await h.idle();

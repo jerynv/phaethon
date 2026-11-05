@@ -63,14 +63,14 @@ function Thumb({ icon, draft, src, image, onError }: { icon: IconName; draft: bo
       aria-hidden="true"
       className={cn(
         "flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-sunken text-ink-secondary",
-        image ? (draft ? "h-20 w-24" : "min-h-20 max-w-64") : "size-10",
+        image ? (draft ? "size-10" : "min-h-20 max-w-64") : "size-10",
       )}
     >
       {src && image ? (
         <img
           src={src}
           alt=""
-          className={cn("object-contain", draft ? "size-full" : "h-auto max-h-64 w-auto min-w-24 max-w-full")}
+          className={draft ? "size-full object-cover" : "h-auto max-h-64 w-auto min-w-24 max-w-full object-contain"}
           onError={onError}
         />
       ) : (
@@ -143,8 +143,8 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
     <li className="min-w-0 max-w-full">
       <AttachmentPrimitive.Root
         className={cn(
-          "flex h-full min-w-0 max-w-full gap-2 rounded-lg border bg-raised py-1 ps-1",
-          image ? "items-start" : "items-center",
+          "flex h-full min-w-0 max-w-full gap-1 rounded-lg border bg-raised py-1 ps-1",
+          removable ? "max-w-64 items-center" : image ? "items-start" : "items-center",
           removable ? "pe-1" : "pe-3",
           failed ? "border-danger" : "border-line",
         )}
@@ -152,7 +152,7 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
         {/* The file itself opens it in the viewer ("notes.md, Markdown · 2 KB, open in the viewer"). */}
         <ChipBody
           view={source ? () => open(source) : undefined}
-          image={image}
+          image={image && !removable}
           thumb={<Thumb icon={failed ? "file" : icon} draft={removable} src={src} image={image} onError={() => setBrokenSrc(src)} />}
         >
           <span className={cn("truncate", image ? "text-xs text-ink-secondary" : "text-sm font-medium text-ink")} title={name}>
@@ -171,7 +171,8 @@ function AttachmentChip({ onRemoved }: { onRemoved?: (r: Removed, index: number)
             type="button"
             variant="ghost"
             size="icon-xs"
-            className="ms-0.5 shrink-0 rounded-full text-ink-secondary hover:text-ink"
+            round
+            className="ms-0.5 shrink-0 text-ink-secondary hover:text-ink"
             aria-label={`Remove ${name}`}
             title={`Remove ${name}`}
             data-remove-attachment=""
@@ -305,8 +306,7 @@ export function AttachmentFold({ tray }: { tray: AttachmentTray }) {
 }
 
 /**
- * Files waiting to go with the message being written: a count, then the
- * files, each chip whole (useAttachmentTray says when they fold away).
+ * Files waiting to go with the message being written, each chip whole (useAttachmentTray says when they fold away).
  *
  * Removing a file keeps focus in the tray (on the next file's Remove, or on
  * Undo when none is left), says "Removed notes.md", and offers Undo.
@@ -355,7 +355,7 @@ export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
   }
 
   if (count === 0 && !removed) return null;
-  const countText = count === 0 ? "No files attached" : `${count} file${count === 1 ? "" : "s"} attached`;
+
   // Folded with nothing to undo: the tray takes no room (its button is in the toolbar).
   const bare = folded && !removed;
   return (
@@ -368,9 +368,8 @@ export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
       data-attachment-tray=""
       data-folded={folded ? "" : undefined}
     >
-      {!bare && (
+      {!bare && removed && (
       <div className="flex min-h-(--ph-control-height-sm) shrink-0 flex-wrap items-center gap-x-2 text-xs text-ink-secondary">
-        {!folded && <span data-attachment-count="">{countText}</span>}
         {removed && (
           <span className="flex min-w-0 items-center gap-1" data-attachment-undo="">
             {!folded && <span aria-hidden="true">·</span>}

@@ -65,11 +65,11 @@ export default [
     name: "sidebar-conversations-overlay-history",
     sizesRequired: true,
     sizes: [[640, 480]],
-    mock: historyMock(7),
+    mock: historyMock(15),
     async run(page, h) {
       await showSidebar(page);
       await h.click("[data-sidebar-history-all]");
-      await page.waitForFunction(() => document.querySelectorAll("[data-conversations-menu] [data-thread-id]").length === 7, { timeout: 3000 });
+      await page.waitForFunction(() => document.querySelectorAll("[data-conversations-menu] [data-thread-id]").length === 15, { timeout: 3000 });
       await h.idle();
       expect(await page.$eval("[data-conversations-menu]", (menu) => menu.scrollHeight > menu.clientHeight), "the narrow history fixture does not exercise scrolling");
       const ids = await page.$$eval("[data-conversations-menu] [data-thread-id]", (items) => items.map((item) => item.dataset.threadId));
@@ -136,8 +136,9 @@ export default [
         if (await page.$eval("#spaces-sidebar", (sidebar) => sidebar.hidden)) {
           await page.click('button[aria-controls="spaces-sidebar"]');
         }
-        await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-sidebar-thread][aria-current="page"]', { timeout: 5000 });
-        await h.click('#spaces-sidebar [data-sidebar-thread][aria-current="page"]');
+        await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-sidebar-thread="current"]', { timeout: 5000 });
+        expect(!(await page.$('#spaces-sidebar [data-sidebar-thread][aria-current="page"]')), "a learning view does not also mark Chat as the current page");
+        await h.click('#spaces-sidebar [data-sidebar-thread="current"]');
         await page.waitForFunction(() => !!document.querySelector('[data-space-pane][data-shown] [data-space-view="chat"][data-view-shown]') && document.activeElement?.matches("[data-composer-input]"), { timeout: 5000 });
         expect(await page.$eval("[data-composer-input]", (input) => input.value === "Keep this draft"), `returning from ${view} lost the draft`);
         expect((await calls(page, "thread_open")).length === 0, `returning from ${view} reloaded the current conversation`);
@@ -226,9 +227,9 @@ export default [
 
       // Search entry opens Search conversations.
       await h.click("[data-sidebar-search]");
-      await page.waitForSelector('[role="dialog"]', { timeout: 3000 });
+      await page.waitForSelector('[data-search-dialog] dialog[open]', { timeout: 3000 });
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 3000 });
+      await page.waitForFunction(() => !document.querySelector('[data-search-dialog] dialog[open]'), { timeout: 3000 });
 
       // Sidebar hidden: the compact header takes the views and the bar, and New conversation still works.
       await h.click('button[aria-controls="spaces-sidebar"]');

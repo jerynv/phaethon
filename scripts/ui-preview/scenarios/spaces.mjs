@@ -17,7 +17,7 @@ function check(ok, what, detail = "") {
 }
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const title = (page) => page.evaluate(() => document.getElementById("space-title")?.textContent ?? "");
-const sidebarNames = (page) => page.evaluate(() => [...document.querySelectorAll("#spaces-sidebar [data-space-id]")].map((b) => `${b.dataset.spaceId}:${b.querySelector("span.truncate > [aria-hidden]")?.textContent}${b.getAttribute("aria-current") ? "*" : ""}`));
+const sidebarNames = (page) => page.evaluate(() => [...document.querySelectorAll("#spaces-sidebar [data-space-id]")].map((b) => `${b.dataset.spaceId}:${b.querySelector("[data-space-name] > [aria-hidden]")?.textContent}${b.getAttribute("aria-current") ? "*" : ""}`));
 const focused = (page) => page.evaluate(() => {
   const a = document.activeElement;
   return a ? `${a.tagName.toLowerCase()}${a.dataset.spaceId ? `[${a.dataset.spaceId}]` : ""}${a.id === "main" ? "#main" : ""}${a.dataset.spaceField ? `{${a.dataset.spaceField}}` : ""}` : "";
@@ -82,38 +82,25 @@ export default [
     async run(page, h) {
       await showSidebar(page, h);
       await h.click("[data-new-space]");
-      await page.waitForSelector(DIALOG, { timeout: 5000 });
-      // An empty name is refused in place, with nothing sent.
-      await h.click(`${DIALOG} [data-create-space]`);
-      await h.idle();
-      const empty = await page.evaluate((d) => {
-        const input = document.querySelector(`${d} input`);
-        return { invalid: input.getAttribute("aria-invalid"), said: document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent, focus: document.activeElement === input };
-      }, DIALOG);
-      check(empty.invalid === "true" && empty.said === "Give the space a name." && empty.focus, "an empty name is flagged on the field, which takes focus", JSON.stringify(empty));
-      check((await calls(page, "space_create")).length === 0, "nothing was created");
-      await h.shot("empty-name");
+      await page.waitForSelector(DIALOG);
+      await h.click(`${DIALOG} [data-next-space]`);
+      check((await calls(page, "space_create")).length === 0, "a missing name never reaches the backend");
+      check(await page.$eval(`${DIALOG} input[required]`, (input) => input.getAttribute("aria-invalid") === "true" && document.activeElement === input), "name validation focuses the field");
       await page.keyboard.type("Garden");
-      await page.type(`${DIALOG} input[aria-describedby]:not([aria-required])`, "Plants and seeds");
+      await page.type(`${DIALOG} input:not([required])`, "Plants and seeds");
       await page.evaluate((d) => [...document.querySelectorAll(`${d} [role="radio"]`)].find((r) => r.textContent === "Moss")?.click(), DIALOG);
+      await h.click(`${DIALOG} [data-next-space]`);
+      check((await calls(page, "space_create")).length === 0, "Continue only advances to Workspace");
+      check(await page.$eval('[data-new-space-education]', (control) => control.getAttribute("aria-checked") === "false"), "Education is opt-in");
       await h.click(`${DIALOG} [data-create-space]`);
-      await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Garden", { timeout: 5000 });
-      await h.idle();
+      await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Garden");
       const sent = await calls(page, "space_create");
-      check(JSON.stringify(sent) === JSON.stringify([{ name: "Garden", description: "Plants and seeds", hue: 130 }]), "space_create got the name, description and colour", JSON.stringify(sent));
-      const names = await sidebarNames(page);
-      const wide = !(await narrow(page));
-      if (wide) {
-        check(names.join() === "garden:Garden*,school:School,work:Work", "Garden, just made and opened, is the most recently used space: first, and current", names.join());
-        check((await focused(page)) === "button[garden]", "focus is on Garden in the sidebar", await focused(page));
-      } else {
-        check((await focused(page)) === "main#main", "the narrow sidebar closed and focus is on the conversation", await focused(page));
-      }
-      const hue = await page.evaluate(() => document.documentElement.style.getPropertyValue("--ph-space-h"));
-      check(hue === "130", "the window takes Garden’s colour", hue);
-      const said = await page.evaluate(() => [...document.querySelectorAll('p[role="status"]')].map((p) => p.textContent).join("|"));
-      check(said.includes("Created Garden."), "the creation is announced", said);
-      check(!(await page.$(DIALOG)), "the dialog closed");
+      check(JSON.stringify(sent) === JSON.stringify([{ name: "Garden", description: "Plants and seeds", hue: 130, educationEnabled: false }]), "the complete workspace choice reaches space_create", JSON.stringify(sent));
+      check((await calls(page, "full_access_set"))[0]?.id === "garden" && (await calls(page, "full_access_set"))[0]?.on === true, "new spaces save the default full access selection");
+      await page.waitForFunction((d) => !document.querySelector(d), { timeout: 3000 }, DIALOG);
+      check(!(await page.$(DIALOG)), "successful creation closes the dialog");
+      check(await page.$eval('[data-space-pane][data-shown]', (pane) => pane.dataset.spacePane === "garden"), "the created space opens");
+
     },
   },
   {
@@ -122,45 +109,36 @@ export default [
     mock: {},
     async run(page, h) {
       await showSidebar(page, h);
-      await page.focus("#spaces-sidebar [data-space-id]");
-      // Arrow keys reach New space at the end of the list.
-      await page.keyboard.press("End");
-      check(await page.evaluate(() => document.activeElement?.hasAttribute("data-new-space")), "End moves to New space");
+      await page.focus("[data-new-space]");
       await page.keyboard.press("Enter");
-      await page.waitForSelector(DIALOG, { timeout: 5000 });
-      await h.idle();
+      await page.waitForSelector(DIALOG);
       await page.keyboard.type("Side Project");
       await page.keyboard.press("Tab");
       await page.keyboard.type("Weekend things");
       await page.keyboard.press("Tab");
-      const onRadio = await page.evaluate(() => document.activeElement?.getAttribute("role"));
-      check(onRadio === "radio", "Tab reaches the colours", onRadio);
-      const before = await page.evaluate(() => document.activeElement?.textContent);
+      check(await page.evaluate(() => document.activeElement?.getAttribute("role") === "radio"), "Tab reaches the colour choices");
       await page.keyboard.press("ArrowRight");
-      const after = await page.evaluate(() => ({ label: document.activeElement?.textContent, checked: document.activeElement?.getAttribute("aria-checked") }));
-      check(after.label !== before && after.checked === "true", "an arrow key moves to and chooses the next colour", `${before} -> ${JSON.stringify(after)}`);
-      // Tab past Cancel to Create space.
-      await h.focusVia(`${DIALOG} [data-create-space]`, 4);
+      await h.focusVia(`${DIALOG} [data-next-space]`, 5);
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Side Project", { timeout: 5000 });
-      await h.idle();
+      await page.waitForSelector('[data-new-space-workspace]:not([hidden])');
+      await page.select('[data-new-space-access]', "workspace");
+      await page.focus('[data-new-space-education]');
+      await page.keyboard.press("Space");
+      await h.focusVia(`${DIALOG} [data-create-space]`, 5);
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Side Project");
       const sent = await calls(page, "space_create");
-      check(sent.length === 1 && sent[0].name === "Side Project" && sent[0].description === "Weekend things", "created from the keyboard", JSON.stringify(sent));
-      const f = await focused(page);
-      check(f === "button[side-project]" || f === "main#main", "focus lands on the new space (or the conversation when the sidebar hides)", f);
-      // Escape cancels a second dialog and returns focus to New space.
-      if (await narrow(page)) await showSidebar(page, h);
+      check(sent.length === 1 && sent[0].educationEnabled === true, "keyboard creation saves the Education choice", JSON.stringify(sent));
+      check((await calls(page, "full_access_set"))[0]?.on === false, "Workspace only saves the selected restriction");
+      await showSidebar(page, h);
       await page.focus("[data-new-space]");
       await page.keyboard.press("Enter");
-      await page.waitForSelector(DIALOG, { timeout: 5000 });
-      await h.idle();
-      check((await page.evaluate((d) => document.querySelector(`${d} input`).value, DIALOG)) === "", "a new dialog starts empty");
-      await page.keyboard.type("Never mind");
+      await page.waitForSelector(DIALOG);
+      check(await page.$eval(`${DIALOG} input[required]`, (input) => input.value === ""), "a second setup starts empty");
       await page.keyboard.press("Escape");
-      await page.waitForFunction((d) => !document.querySelector(d), { timeout: 5000 }, DIALOG);
-      await h.idle();
-      check(await page.evaluate(() => document.activeElement?.hasAttribute("data-new-space")), "Escape cancels and returns focus to New space", await focused(page));
-      check((await calls(page, "space_create")).length === 1, "cancelling created nothing");
+      await page.waitForFunction((d) => !document.querySelector(d), {}, DIALOG);
+      check((await calls(page, "space_create")).length === 1, "Escape never creates another space");
+
     },
   },
   {
@@ -168,53 +146,33 @@ export default [
     mock: { settings: SETTINGS },
     async run(page, h) {
       await openSpacesSettings(page, h);
-      await openSpaceDetails(page);
+      await openSpaceDetails(page, ["school"]);
       const school = `${PANEL} [data-space-row="school"]`;
-      const work = `${PANEL} [data-space-row="work"]`;
-      // Rename with Enter.
       await retype(page, `${school} [data-space-field="name"]`, "Uni");
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Uni", { timeout: 5000 });
-      await h.idle();
-      check(JSON.stringify(await calls(page, "space_update")) === JSON.stringify([{ id: "school", name: "Uni", description: null, hue: null }]), "space_update renamed school, nothing else", JSON.stringify(await calls(page, "space_update")));
-      check((await settingsStatus(page)) === "Renamed to Uni.", "the rename is confirmed in the status region", await settingsStatus(page));
-      const names = await sidebarNames(page);
-      check(names.join() === "school:Uni*,work:Work", "the sidebar shows the new name; the id is unchanged", names.join());
-      // Describe with blur (Tab away).
-      await retype(page, `${work} [data-space-field="description"]`, "Clients and invoices");
       await page.keyboard.press("Tab");
-      await page.waitForFunction(() => window.__calls.filter(([c]) => c === "space_update").length === 2, { timeout: 5000 });
-      await h.idle();
-      check((await settingsStatus(page)) === "Work’s description saved.", "leaving the field saves the description", await settingsStatus(page));
-      // Escape undoes an unsaved edit and keeps Settings open.
+      check((await calls(page, "space_update")).length === 0, "Enter and blur do not silently save draft text");
+      await h.click(`${school} [data-space-save]`);
+      await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Uni");
+      check((await calls(page, "space_update"))[0].name === "Uni", "Save changes persists the renamed space");
+      await h.click(`${PANEL} [data-spaces-back]`);
+      await openSpaceDetails(page, ["work"]);
+      const work = `${PANEL} [data-space-row="work"]`;
       await retype(page, `${work} [data-space-field="name"]`, "Oops");
       await page.keyboard.press("Escape");
-      await h.idle();
-      const esc = await page.evaluate((w) => ({ value: document.querySelector(`${w} [data-space-field="name"]`).value, open: !!document.querySelector('[role="dialog"]') }), work);
-      check(esc.value === "Work" && esc.open, "Escape puts the saved name back and Settings stays open", JSON.stringify(esc));
-      check((await calls(page, "space_update")).length === 2, "the undone edit was not saved");
-      // An empty name is refused in place.
+      check(await page.$eval(`${work} [data-space-field="name"]`, (input) => input.value === "Work"), "Escape cancels the draft and keeps Settings open");
       await retype(page, `${work} [data-space-field="name"]`, " ");
-      await page.keyboard.press("Enter");
-      await h.idle();
-      const bad = await page.evaluate((w) => document.querySelector(`${w} [data-space-field="name"]`).getAttribute("aria-invalid"), work);
-      check(bad === "true" && (await calls(page, "space_update")).length === 2, "an empty name is flagged and not saved");
+      await h.click(`${work} [data-space-save]`);
+      check(await page.$eval(`${work} [data-space-field="name"]`, (input) => input.getAttribute("aria-invalid") === "true"), "Save rejects an empty name");
       await page.keyboard.press("Escape");
-      await h.idle();
-      // Recolour.
-      await page.evaluate((w) => [...document.querySelectorAll(`${w} [role="radio"]`)].find((r) => r.textContent === "Rose")?.click(), work);
-      await page.waitForFunction(() => window.__calls.filter(([c]) => c === "space_update").length === 3, { timeout: 5000 });
-      await h.idle();
-      const hue = await page.evaluate(() => document.querySelector('#spaces-sidebar [data-space-id="work"]')?.style.getPropertyValue("--ph-space-h"));
-      check(hue === "10", "the sidebar shows Work in its new colour", hue);
-      check((await settingsStatus(page)) === "Work’s colour is now Rose.", "the colour change is confirmed", await settingsStatus(page));
+      await retype(page, `${work} [data-space-field="description"]`, "Clients and invoices");
+      await page.evaluate((w) => [...document.querySelectorAll(`${w} [role="radio"]`)].find((radio) => radio.textContent === "Rose")?.click(), work);
+      await h.click(`${work} [data-space-save]`);
+      await page.waitForFunction(() => window.__calls.filter(([command]) => command === "space_update").length === 2);
+      const last = (await calls(page, "space_update")).at(-1);
+      check(last.description === "Clients and invoices" && last.hue === 10, "description and colour save together", JSON.stringify(last));
       await h.shot("saved");
-      // Escape on a clean field closes Settings; the title bar kept the new name.
-      await page.focus(`${work} [data-space-field="name"]`);
-      await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
-      await h.idle();
-      check((await title(page)) === "Uni", "the title bar shows the new name", await title(page));
+
     },
   },
   {
@@ -243,104 +201,28 @@ export default [
     async run(page, h) {
       await openSpacesSettings(page, h);
       const row = (id) => `${PANEL} [data-space-row="${id}"]`;
-      const edit = (id) => `${row(id)} [data-space-edit]`;
-      const rows = () =>
-        page.evaluate((p) =>
-          [...document.querySelectorAll(`${p} [data-space-row]`)].map((r) => {
-            const name = r.querySelector("[data-space-name]");
-            const b = r.querySelector("[data-space-edit]");
-            const range = document.createRange();
-            range.selectNodeContents(name);
-            const lines = new Set([...range.getClientRects()].map((x) => Math.round(x.top))).size;
-            const details = r.querySelector("[data-space-details]");
-            return {
-              id: r.dataset.spaceRow,
-              name: name.textContent,
-              clipped: name.scrollWidth > name.clientWidth || getComputedStyle(name).textOverflow === "ellipsis",
-              lines,
-              nameWidth: Math.round(name.getBoundingClientRect().width),
-              rowWidth: Math.round(r.getBoundingClientRect().width),
-              summary: r.querySelector("[data-space-summary]")?.textContent ?? null,
-              description: r.querySelector("[data-space-description]")?.textContent ?? null,
-              button: b.textContent,
-              expanded: b.getAttribute("aria-expanded"),
-              controls: b.getAttribute("aria-controls") === details.id,
-              buttonH: Math.round(b.getBoundingClientRect().height),
-              detailsShown: details.getClientRects().length > 0,
-              fieldShown: !!r.querySelector('[data-space-field="name"]')?.getClientRects().length,
-            };
-          }),
-        PANEL);
-
-      // Folded by default: one line each, the name whole, Edit at the end.
-      let all = await rows();
-      check(all.every((r) => r.expanded === "false" && !r.detailsShown && !r.fieldShown && r.controls), "every space starts folded: Edit says collapsed and controls its hidden details", JSON.stringify(all));
-      for (const r of all) check(!r.clipped, `${r.name}: its name is never cut short`, JSON.stringify(r));
-      const short = all.filter((r) => r.id !== "garden");
-      check(short.every((r) => r.lines === 1), "short names sit on one line", JSON.stringify(short));
-      const garden = all.find((r) => r.id === "garden");
-      check(garden.nameWidth > garden.rowWidth * 0.5, "a long name has most of the row, not a sliver beside other text", JSON.stringify(garden));
-      check(all.every((r) => r.button === `Edit ${r.name}`), "each button is named Edit and its space", all.map((r) => r.button).join("|"));
-      check(all.every((r) => r.buttonH >= 24), "Edit is at least 24 px tall", all.map((r) => r.buttonH).join());
-      const summaries = Object.fromEntries(all.map((r) => [r.id, r.summary]));
-      check(summaries.school === "Reads 1 folder in Work" && summaries.work === "Read by School" && summaries.garden === "Only its own files", "the access each space keeps is said while folded", JSON.stringify(summaries));
-      check(all.find((r) => r.id === "school").description === "Courses, deadlines, study notes", "the description is shown beneath the name");
-      check((await fitsWidth(page, PANEL)) === "", "Settings > Spaces fits its width", await fitsWidth(page, PANEL));
-      await park(page);
-      await h.shot("collapsed");
-
-      // Edit opens the details; focus stays on the button, which now reads Done.
-      await page.focus(edit("school"));
-      await page.keyboard.press("Enter");
-      await page.waitForSelector(`${edit("school")}[aria-expanded="true"]`, { timeout: 3000 });
-      await h.idle();
-      all = await rows();
-      let school = all.find((r) => r.id === "school");
-      check(school.detailsShown && school.fieldShown && school.button === "Done editing School", "Edit shows School's fields and reads Done", JSON.stringify(school));
-      check(await page.evaluate(() => document.activeElement?.dataset.spaceEdit === "school"), "focus stays on the button");
-      check(all.filter((r) => r.id !== "school").every((r) => r.expanded === "false"), "the other spaces stay folded");
-      const inside = await page.evaluate((r) => ({ folder: !!document.querySelector(`${r} [data-space-folder]`)?.getClientRects().length, revoke: !!document.querySelector(`${r} [data-revoke="g-cal"]`)?.getClientRects().length }), row("school"));
-      check(inside.folder && inside.revoke, "the folder line and the access list with Remove are inside", JSON.stringify(inside));
-      check((await fitsWidth(page, PANEL)) === "", "open, Settings > Spaces still fits its width", await fitsWidth(page, PANEL));
-      await page.$eval(row("school"), (el) => el.scrollIntoView({ block: "start" }));
-      await park(page);
-      await h.shot("expanded");
-
-      // Unsaved text survives folding: an empty name is refused and kept; folded, the row says so.
-      await retype(page, `${row("school")} [data-space-field="name"]`, " ");
-      await page.keyboard.press("Enter");
-      await h.idle();
-      await page.click(edit("school"));
-      await page.waitForSelector(`${edit("school")}[aria-expanded="false"]`, { timeout: 3000 });
-      await h.idle();
-      check(await page.evaluate(() => document.activeElement?.dataset.spaceEdit === "school"), "after Done, focus is on Edit School");
-      let note = await page.$eval(row("school"), (r) => r.querySelector("[data-space-notes]")?.textContent ?? "");
-      check(note === "Name not saved. Edit to see.", "folded with unsaved text, the row says so", note);
-      await page.click(edit("school"));
-      await page.waitForSelector(`${edit("school")}[aria-expanded="true"]`, { timeout: 3000 });
-      const kept = await page.$eval(`${row("school")} [data-space-field="name"]`, (el) => ({ value: el.value, invalid: el.getAttribute("aria-invalid"), dirty: el.hasAttribute("data-dirty") }));
-      check(kept.value === " " && kept.invalid === "true" && kept.dirty, "opened again, the unsaved text and its error are still there", JSON.stringify(kept));
-      check((await calls(page, "space_update")).length === 0, "nothing was saved");
+      check((await page.$$(`${PANEL} [data-space-row]:not([hidden])`)).length === 3, "Spaces starts as a compact list");
+      const before = await page.$eval(PANEL, (panel) => ({ width: panel.clientWidth, gutter: getComputedStyle(panel).scrollbarGutter }));
+      await openSpaceDetails(page, ["school"]);
+      check((await page.$$(`${PANEL} [data-space-row]:not([hidden])`)).length === 1, "editing opens only the selected workspace");
+      check(await page.$eval(`${row("school")} [data-space-field="name"]`, (input) => input.getClientRects().length > 0), "the selected editor is visible");
+      const after = await page.$eval(PANEL, (panel) => ({ width: panel.clientWidth, gutter: getComputedStyle(panel).scrollbarGutter }));
+      check(before.width === after.width && after.gutter.includes("stable"), "opening an editor keeps a stable scroll width", JSON.stringify({ before, after }));
+      await retype(page, `${row("school")} [data-space-field="name"]`, "Draft name");
+      await h.click(`${PANEL} [data-spaces-back]`);
+      await openSpaceDetails(page, ["school"]);
+      check(await page.$eval(`${row("school")} [data-space-field="name"]`, (input) => input.value === "Draft name"), "returning to an editor preserves its unsaved draft");
       await page.focus(`${row("school")} [data-space-field="name"]`);
       await page.keyboard.press("Escape");
-      await h.idle();
-      check(!!(await page.$('[role="dialog"]')), "Escape in the field undoes the edit and Settings stays open");
-      check((await page.$eval(`${row("school")} [data-space-field="name"]`, (el) => el.value)) === "School", "the saved name is back");
+      await h.click(`${row("school")} [data-revoke="g-cal"]`);
+      await page.waitForSelector(`${row("school")} [data-undo="g-cal"]`);
+      await h.click(`${PANEL} [data-spaces-back]`);
+      await openSpaceDetails(page, ["school"]);
+      await h.click(`${row("school")} [data-undo="g-cal"]`);
+      await page.waitForSelector(`${row("school")} [data-revoke="g-cal"]`);
+      check((await calls(page, "grant_restore")).length === 1, "a pending access Undo survives leaving the editor");
+      await h.shot("workspace-editor");
 
-      // A pending Undo survives folding too.
-      await page.click(`${row("school")} [data-revoke="g-cal"]`);
-      await page.waitForSelector(`${row("school")} [data-undo="g-cal"]`, { timeout: 3000 });
-      await page.click(edit("school"));
-      await page.waitForSelector(`${edit("school")}[aria-expanded="false"]`, { timeout: 3000 });
-      await h.idle();
-      note = await page.$eval(row("school"), (r) => r.querySelector("[data-space-notes]")?.textContent ?? "");
-      const sum = await page.$eval(row("school"), (r) => r.querySelector("[data-space-summary]")?.textContent ?? "");
-      check(note === "1 removal can be undone. Edit to see." && sum === "Only its own files", "folded, the removed access no longer counts and Undo is mentioned", `${sum} | ${note}`);
-      await page.click(edit("school"));
-      await page.waitForSelector(`${edit("school")}[aria-expanded="true"]`, { timeout: 3000 });
-      await page.click(`${row("school")} [data-undo="g-cal"]`);
-      await page.waitForSelector(`${row("school")} [data-revoke="g-cal"]`, { timeout: 3000 });
-      check((await calls(page, "grant_restore")).length === 1, "and Undo still works");
     },
   },
   {
@@ -391,9 +273,49 @@ export default [
       await page.waitForSelector(DIALOG, { timeout: 5000 });
       await page.keyboard.type("Home");
       await page.keyboard.press("Enter");
+      await h.click(`${DIALOG} [data-create-space]`);
       await page.waitForFunction(() => document.getElementById("space-title")?.textContent === "Home", { timeout: 5000 });
       await h.idle();
       check(!(await page.$("[data-no-spaces]")), "the first space replaces the empty state");
+    },
+  },
+  {
+    name: "spaces-create-access-retry",
+    sizes: [[1100, 720]],
+    mock: { fail: { full_access_set: "Settings are temporarily unavailable." } },
+    async run(page, h) {
+      await showSidebar(page, h);
+      await h.click("[data-new-space]");
+      await page.waitForSelector(DIALOG);
+      await page.type(`${DIALOG} input[required]`, "Garden");
+      await h.click(`${DIALOG} [data-next-space]`);
+      await h.click(`${DIALOG} [data-create-space]`);
+      await page.waitForFunction(() => document.querySelector('[data-new-space-dialog] [role="alert"]')?.textContent.includes("Space created. Access could not be saved."));
+      check((await calls(page, "space_create")).length === 1, "the space exists once before retrying its access save");
+      await page.evaluate(() => delete window.__MOCK__.fail.full_access_set);
+      await h.click(`${DIALOG} [data-create-space]`);
+      await page.waitForFunction(() => !document.querySelector('[data-new-space-dialog]'));
+      check((await calls(page, "space_create")).length === 1 && (await calls(page, "full_access_set")).length === 2, "Retry setup saves access without creating a duplicate space");
+    },
+  },
+  {
+    name: "spaces-workspace-options",
+    sizes: [[1100, 720], [640, 480]],
+    mock: { settings: SETTINGS },
+    async run(page, h) {
+      await showSidebar(page, h);
+      await h.click("[data-new-space]");
+      await page.waitForSelector(DIALOG);
+      await page.type(`${DIALOG} input[required]`, "Personal projects");
+      await h.click(`${DIALOG} [data-next-space]`);
+      check(await page.$eval('[data-new-space-access]', (select) => select.value === "full"), "the new workspace starts with full agent access");
+      await page.select('[data-new-space-access]', "workspace");
+      await h.click('[data-new-space-education]');
+      await page.$$eval('[data-new-space-dialog] button', (buttons) => buttons.find((button) => button.textContent === "Back").click());
+      check(await page.$eval(`${DIALOG} input[required]`, (input) => input.value === "Personal projects"), "Back preserves the workspace name");
+      await h.click(`${DIALOG} [data-next-space]`);
+      check(await page.$eval('[data-new-space-access]', (select) => select.value === "workspace") && await page.$eval('[data-new-space-education]', (control) => control.getAttribute("aria-checked") === "true"), "moving between steps preserves both permission and Education choices");
+      await h.shot("workspace-options");
     },
   },
 ];

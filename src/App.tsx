@@ -386,7 +386,7 @@ export default function App() {
             grades: "marks scores gpa results course",
             plan: "schedule calendar study plan exams week",
           }[v.id],
-          icon: v.id === "chat" ? "agent" : "book",
+          icon: ({ chat: "chat", study: "book", grades: "success", plan: "file-text" } as const)[v.id],
           shortcut: { keys: viewChord(v.digit).keys, aria: viewChord(v.digit).aria },
           run: () => setSpaceView(active.id, v.id, true),
         });

@@ -10,8 +10,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
-  agentClis,
-  cancelCliSignIn,
   CLI_INFO,
   clearApiKey,
   isCliBackend,
@@ -22,11 +20,7 @@ import {
   setProvider,
   setProviderModel,
   setProviderUrl,
-  signInCli,
-  type AgentCliStatus,
-  type Backend,
   type CliBackend,
-  type CliSignIn,
   type ModelInfo,
   type ProviderId,
   type ProviderInfo,
@@ -48,27 +42,14 @@ import {
   readableModel,
   type KeyOutcome,
 } from "./api-key";
-import { CLAUDE_CODE_MISSING, checkClaudeCode } from "./claude-code";
+import { AgentInstances, type AgentInstanceRequest } from "./agent-instances";
 import { ModelSearch } from "./model-search";
 import { SectionHeader, SettingGroup } from "./controls";
 import { useStatus } from "./status";
 
 const CLI_BACKENDS: CliBackend[] = ["claude-cli", "codex-cli", "gemini-cli"];
-const cliMissingText = (b: CliBackend) =>
-  b === "claude-cli" ? CLAUDE_CODE_MISSING : `${CLI_INFO[b].name} is not installed. Install it, then try again.`;
-type OwnHomeBackend = Exclude<CliBackend, "claude-cli">;
-const isOwnHome = (b: Backend): b is OwnHomeBackend => isCliBackend(b) && b !== "claude-cli";
-
-function cliStatusText(s: AgentCliStatus | undefined): string {
-  if (!s) return "Checking installation…";
-  if (!s.installed) return "Not installed";
-  if (s.loggedIn === true) return "Signed in";
-  if (s.loggedIn === false) return "Sign-in required";
-  return "Installed";
-}
-
 export type AgentFocusRequest = { target: "key" | "model"; n: number; closeSettingsOnClose: boolean };
-type ProviderPopup = { kind: "catalog" } | { kind: "provider"; id: ProviderId } | { kind: "cli"; backend: CliBackend };
+type ProviderPopup = { kind: "catalog" } | { kind: "provider"; id: ProviderId };
 
 function ProviderRow({ id, name, current, children, onConfigure }: {
   id: ProviderId | CliBackend;
@@ -83,7 +64,6 @@ function ProviderRow({ id, name, current, children, onConfigure }: {
         variant="ghost" data-provider-configure={id} aria-label={`Manage ${name}`} onClick={onConfigure}
         className={cn(
           "w-full rounded-none text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-4 [&>.ui-button-face]:py-2.5",
-          current && "[&>.ui-button-face]:bg-selected",
         )}
       >
         <ProviderLogo provider={id} className="size-7 shrink-0" />
@@ -127,12 +107,10 @@ export function AgentSection({
   const setupHintId = useId();
   const [retrying, setRetrying] = useState(false);
   const [popup, setPopup] = useState<ProviderPopup | null>(null);
-  const [signingIn, setSigningIn] = useState(false);
+  const signingIn = false;
+  const [instanceRequest, setInstanceRequest] = useState<AgentInstanceRequest | null>(null);
   const [actionError, setActionError] = useState("");
   const [changingDefault, setChangingDefault] = useState(false);
-  const [cliMissing, setCliMissing] = useState<CliBackend | null>(null);
-  const [clis, setClis] = useState<AgentCliStatus[] | null>(null);
-  const backendAsked = useRef<Backend | null>(null);
   const popupTitleRef = useRef<HTMLHeadingElement>(null);
   const popupContentRef = useRef<HTMLDivElement>(null);
   const handledFocusRequest = useRef<number | null>(null);
@@ -142,14 +120,16 @@ export function AgentSection({
   const closingToChat = useRef(false);
   const provider = settings ? chosenProvider(settings) : ANTHROPIC_INFO;
   const providers = settings?.providers?.length ? settings.providers : [{ ...ANTHROPIC_INFO, hasKey: settings?.hasAnthropicKey ?? false, model: settings?.model ?? null, ready: settings?.hasAnthropicKey ?? false }];
-  const statusOf = (b: CliBackend) => clis?.find((c) => c.id === CLI_INFO[b].id);
-  const refreshClis = () => agentClis().then((c) => setClis(c), () => {});
-
-  useEffect(() => { void refreshClis(); }, [settings?.backend]);
   useEffect(() => { setActionError(""); }, [popup]);
   useLayoutEffect(() => {
     if (!focusRequest || !settings || handledFocusRequest.current === focusRequest.n) return;
     handledFocusRequest.current = focusRequest.n;
+    if (isCliBackend(settings.backend)) {
+      pendingProviderFocus.current = null;
+      setPopup(null);
+      setInstanceRequest({ cli: CLI_INFO[settings.backend].id, n: focusRequest.n, closeSettingsOnClose: focusRequest.closeSettingsOnClose });
+      return;
+    }
     requestedPopup.current = focusRequest;
     const target = chosenProvider(settings);
     pendingProviderFocus.current = {
@@ -182,25 +162,6 @@ export function AgentSection({
     if (settings && isCliBackend(settings.backend)) void loadCliModels(CLI_INFO[settings.backend].id, true);
   }, [settings?.backend]);
 
-  function chooseBackend(backend: CliBackend) {
-    if (backendAsked.current || changingDefault) return;
-    backendAsked.current = backend;
-    setChangingDefault(true);
-    setActionError("");
-    setCliMissing(null);
-    void (async () => {
-      const status = backend === "claude-cli"
-        ? await checkClaudeCode()
-        : (await agentClis().catch(() => null))?.find((c) => c.id === CLI_INFO[backend].id);
-      if (status && !status.installed) {
-        setCliMissing(backend);
-        say(cliMissingText(backend));
-        return;
-      }
-      await act(() => setBackend(backend), `Now using ${CLI_INFO[backend].name}.`, setActionError, true);
-    })().finally(() => { backendAsked.current = null; setChangingDefault(false); });
-  }
-
   function useProvider(p: ProviderInfo) {
     if (changingDefault || !p.ready || !(p.model ?? (p.id === "anthropic" ? settings?.model ?? DEFAULT_MODEL : null))) return;
     setChangingDefault(true);
@@ -225,27 +186,15 @@ export function AgentSection({
     (p.editableBase && p.baseUrl !== p.defaultBaseUrl) ||
     (settings?.backend === "phaethon" && provider.id === p.id),
   );
-  const configuredClis = CLI_BACKENDS.filter((b) => statusOf(b)?.installed || settings?.backend === b);
   const editingProvider = popup?.kind === "provider" ? providers.find((p) => p.id === popup.id) : undefined;
-  const editingCli = popup?.kind === "cli" ? popup.backend : undefined;
-  const editingIsDefault = editingProvider ? settings?.backend === "phaethon" && provider.id === editingProvider.id : editingCli === settings?.backend;
+  const editingIsDefault = editingProvider ? settings?.backend === "phaethon" && provider.id === editingProvider.id : false;
   const setupRequirement = !editingProvider ? "" : !editingProvider.ready ?
     editingProvider.key === "required" && !editingProvider.hasKey ? "Add an API key first." : "Save a server URL first." :
     !(editingProvider.model ?? (editingProvider.id === "anthropic" ? settings?.model ?? DEFAULT_MODEL : null)) ? "Choose a model first." : "";
   const defaultId = settings && isCliBackend(settings.backend) ? settings.backend : provider.id;
   const providerRows = [
     ...configuredProviders.map((p) => ({ id: p.id, provider: p, backend: null })),
-    ...configuredClis.map((b) => ({ id: b, provider: null, backend: b })),
   ].sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId));
-
-  function missingCli(backend: CliBackend) {
-    return (
-      <p data-cli-missing={backend} role="status" className="text-sm text-warning-ink">
-        {cliMissingText(backend)}{" "}
-        <ExternalLink href={CLI_INFO[backend].installUrl}>Install {CLI_INFO[backend].name}</ExternalLink>
-      </p>
-    );
-  }
 
   function closePopup() {
     const requested = requestedPopup.current;
@@ -253,16 +202,15 @@ export function AgentSection({
     pendingProviderFocus.current = null;
     closingToChat.current = requested?.closeSettingsOnClose ?? false;
     setPopup(null);
-    setCliMissing(null);
     if (requested) onRequestedProviderClose?.(requested.n);
   }
 
   return (
     <>
       <SectionHeader
-        id={headingId} title="Assistant" description="Choose who answers in your spaces."
+        id={headingId} title="Assistant"
         action={settings && (
-          <Button variant="outline" size="sm" data-provider-add="" onClick={() => setPopup({ kind: "catalog" })}>
+          <Button size="sm" data-provider-add="" onClick={() => setPopup({ kind: "catalog" })}>
             <Icon name="plus" />Add provider
           </Button>
         )}
@@ -283,26 +231,16 @@ export function AgentSection({
               <div className="divide-y divide-line">
                 {providerRows.map((row) => {
                   const p = row.provider;
-                  const b = row.backend;
-                  const model = p && (p.model ?? (p.id === "anthropic" ? settings.model : null));
-                  return (
-                    <ProviderRow
-                      key={row.id} id={row.id} name={p?.name ?? CLI_INFO[b!].name} current={row.id === defaultId}
-                      onConfigure={() => { setCliMissing(null); setPopup(p ? { kind: "provider", id: p.id } : { kind: "cli", backend: b! }); }}
-                    >
-                      {p ? <>
-                        {model && <><span>{modelName(toRef(p.id, model))}</span><span aria-hidden="true">·</span></>}
-                        <span data-provider-readiness={p.ready ? "configured" : "needs-setup"}>{p.ready ? "Configured" : "Needs setup"}</span>
-                      </> : <span data-cli-status={!statusOf(b!) ? "checking" : !statusOf(b!)?.installed ? "missing" : statusOf(b!)?.loggedIn === false ? "signed-out" : "installed"}>
-                        {cliStatusText(statusOf(b!))}
-                      </span>}
-                    </ProviderRow>
-                  );
+                  const model = p.model ?? (p.id === "anthropic" ? settings.model : null);
+                  return <ProviderRow key={p.id} id={p.id} name={p.name} current={p.id === defaultId} onConfigure={() => setPopup({ kind: "provider", id: p.id })}>
+                    {model && <><span>{modelName(toRef(p.id, model))}</span><span aria-hidden="true">·</span></>}
+                    <span data-provider-readiness={p.ready ? "configured" : "needs-setup"}>{p.ready ? "Configured" : "Needs setup"}</span>
+                  </ProviderRow>;
                 })}
               </div>
             </Card>
           </SettingGroup>
-          {cliMissing && !popup && missingCli(cliMissing)}
+          <AgentInstances act={act} request={instanceRequest} backendVersion={settings.backend} onRequestedClose={onRequestedProviderClose} />
           {actionError && !popup && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
         </>
       )}
@@ -325,17 +263,13 @@ export function AgentSection({
         >
           <DialogHeader className="shrink-0">
             <div className="flex items-center gap-3">
-              {(editingProvider || editingCli) && <ProviderLogo provider={editingProvider?.id ?? editingCli!} className="size-9" />}
+              {editingProvider && <ProviderLogo provider={editingProvider.id} className="size-9" />}
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <DialogTitle ref={popupTitleRef} tabIndex={-1}>
-                  {popup?.kind === "catalog" ? "Add provider" : editingProvider?.name ?? (editingCli ? CLI_INFO[editingCli].name : "Provider")}
+                  {popup?.kind === "catalog" ? "Add provider" : editingProvider?.name ?? "Provider"}
                 </DialogTitle>
                 <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>{popup?.kind === "catalog" ? "Choose a service or coding assistant." : editingCli ? cliStatusText(statusOf(editingCli)) :
-                    editingProvider?.local ? "Local connection" : editingProvider?.hasKey ? "API key saved" : "API connection"}</span>
-                  {editingCli && <Button variant="ghost" size="xs" data-provider-refresh="" disabled={signingIn} onClick={() => void refreshClis()}>
-                    <Icon name="retry" />Check again
-                  </Button>}
+                  <span>{popup?.kind === "catalog" ? "" : editingProvider?.local ? "Local connection" : editingProvider?.hasKey ? "API key saved" : "API connection"}</span>
                 </DialogDescription>
               </div>
             </div>
@@ -370,11 +304,10 @@ export function AgentSection({
                       {CLI_BACKENDS.map((b) => (
                         <Button
                           key={b} variant="outline" className="text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2.5" data-provider-catalog-select={b}
-                          onClick={() => { setCliMissing(null); setPopup({ kind: "cli", backend: b }); }}
+                          onClick={() => { setPopup(null); setInstanceRequest({ cli: CLI_INFO[b].id, n: Date.now() }); }}
                         >
                           <ProviderLogo provider={b} className="size-6" />
                           <span className="min-w-0 flex-1 text-base font-medium">{CLI_INFO[b].name}</span>
-                          {providerRows.some((row) => row.id === b) && <Icon name="check" className="text-ink-tertiary" />}
                         </Button>
                       ))}
                     </div>
@@ -391,18 +324,6 @@ export function AgentSection({
                       <ProviderModel provider={editingProvider} act={act} />}
                   </div>
                 </div>
-              ) : editingCli ? (
-                <div className="flex flex-col gap-4" data-provider-configuration={editingCli}>
-                  {statusOf(editingCli)?.installed === false || cliMissing === editingCli ? missingCli(editingCli) :
-                    isOwnHome(editingCli) ? (
-                      <CliSignInGroup key={editingCli} backend={editingCli} signedIn={statusOf(editingCli)?.loggedIn === true} onSignedIn={refreshClis} onWaitingChange={setSigningIn} />
-                    ) : (
-                      <p className="text-sm text-ink-secondary">
-                        Sign in to Claude Code in a terminal with <code>claude</code>, then return here.
-                      </p>
-                    )}
-                  <p className="text-sm text-ink-secondary" data-cli-model-default="">Models are chosen in each space.</p>
-                </div>
               ) : null}
               {actionError && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
             </div>
@@ -410,16 +331,16 @@ export function AgentSection({
           <DialogFooter className="shrink-0 flex-row flex-wrap">
             {setupRequirement && !editingIsDefault && <p id={setupHintId} data-provider-requirement="" className="basis-full text-sm text-ink-secondary">{setupRequirement}</p>}
             {popup?.kind !== "catalog" && (
-              <Button variant="ghost" disabled={signingIn} onClick={() => { setCliMissing(null); setPopup({ kind: "catalog" }); }}>
+              <Button variant="ghost" disabled={signingIn} onClick={() => setPopup({ kind: "catalog" })}>
                 All providers
               </Button>
             )}
             {popup?.kind !== "catalog" && !editingIsDefault && (
               <Button
-                variant={(editingProvider?.ready && !setupRequirement) || (editingCli && statusOf(editingCli)?.loggedIn === true) ? "default" : "outline"}
+                variant={editingProvider?.ready && !setupRequirement ? "default" : "outline"}
                 disabled={signingIn || changingDefault || !!setupRequirement} aria-describedby={setupRequirement ? setupHintId : undefined}
-                data-backend={editingCli ?? "phaethon"} data-provider-default={editingProvider?.id}
-                onClick={() => { if (editingProvider) useProvider(editingProvider); else if (editingCli) chooseBackend(editingCli); }}
+                data-backend="phaethon" data-provider-default={editingProvider?.id}
+                onClick={() => { if (editingProvider) useProvider(editingProvider); }}
               >
                 Use as default
               </Button>
@@ -429,90 +350,6 @@ export function AgentSection({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-/**
- * Signing in to Codex or Gemini CLI for this Phaethon folder's own setup, with the CLI's own sign-in in
- * the browser. Keyboard: the sign-in button keeps focus while it waits (it says so, and can't be pressed
- * twice); Stop signing in sits beside it and, as it goes, hands focus back to the sign-in button. The
- * outcome is said through the status line and stays shown.
- */
-function CliSignInGroup({ backend, signedIn, onSignedIn, onWaitingChange }: { backend: OwnHomeBackend; signedIn: boolean; onSignedIn: () => void; onWaitingChange: (waiting: boolean) => void }) {
-  const cli = CLI_INFO[backend];
-  const id = cli.id as "codex" | "gemini";
-  const { say } = useStatus();
-  const descId = useId();
-  const [waiting, setWaiting] = useState(false);
-  const [outcome, setOutcome] = useState<CliSignIn | null>(null);
-  const live = useRef(true);
-  const startRef = useRef<HTMLButtonElement>(null);
-  const stopRef = useRef<HTMLButtonElement>(null);
-  // Set on every mount: React's StrictMode mounts, unmounts and mounts again in development.
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      live.current = false;
-    };
-  }, []);
-
-  async function start() {
-    if (waiting) return;
-    setWaiting(true);
-    onWaitingChange(true);
-    setOutcome(null);
-    say(`Opening ${cli.name}’s sign-in in your browser. Come back here when you’ve signed in.`);
-    const out: CliSignIn = await signInCli(id).catch((e: unknown) => ({
-      status: "notSignedIn" as const,
-      message: `${cli.name} couldn’t start signing in: ${String(e)}`,
-    }));
-    if (!live.current) return;
-    // Stop signing in goes away with the wait: focus on it moves to the sign-in button.
-    if (document.activeElement === stopRef.current) startRef.current?.focus();
-    setWaiting(false);
-    onWaitingChange(false);
-    setOutcome(out);
-    say(out.message);
-    if (out.status === "signedIn") onSignedIn();
-  }
-
-  return (
-    <SettingGroup title="Account" bare>
-      <div data-cli-sign-in={id} className="flex flex-col gap-3">
-        <p id={descId} className={cn("text-sm text-ink-secondary", signedIn && !waiting && "sr-only")}>
-          {waiting ? "Finish signing in in your browser." : signedIn ?
-            `Change your ${cli.name} account in your browser.` : `Sign in to ${cli.name} in your browser to connect it here.`}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            ref={startRef}
-            type="button"
-            variant={signedIn ? "outline" : "default"}
-            data-cli-sign-in-start=""
-            aria-describedby={descId}
-            aria-disabled={waiting || undefined}
-            onClick={() => void start()}
-            className="aria-disabled:cursor-progress"
-          >
-            {waiting ? "Waiting for browser sign-in…" : signedIn ? "Change account" : `Sign in to ${cli.name}`}
-          </Button>
-          {waiting && (
-            <Button ref={stopRef} type="button" variant="ghost" data-cli-sign-in-stop="" onClick={() => void cancelCliSignIn(id).catch(() => false)}>
-              Cancel
-            </Button>
-          )}
-        </div>
-        {outcome && outcome.status !== "busy" && (
-          <p
-            data-cli-sign-in-outcome={outcome.status}
-            className={cn("flex items-start gap-2 text-sm", outcome.status === "signedIn" ? "text-ink" : "text-ink-secondary")}
-          >
-            <Icon name={outcome.status === "signedIn" ? "check" : outcome.status === "cancelled" ? "info" : "warning"} className="mt-0.5 shrink-0" />
-            <span className="min-w-0 wrap-anywhere">{outcome.message}</span>
-          </p>
-        )}
-      </div>
-    </SettingGroup>
   );
 }
 

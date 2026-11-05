@@ -41,11 +41,11 @@ export function MessageTime({ role }: { role: "user" | "assistant" }) {
   if (!at || running) return null;
   const full = fullTime(at);
   return (
-    <p className="text-xs text-ink-secondary" data-message-time="">
+    <span className="whitespace-nowrap text-xs text-ink-secondary" data-message-time="">
       <time dateTime={new Date(at).toISOString()} title={full}>
         <span aria-hidden="true">{shortTime(at)}</span>
         <span className="sr-only">{`${role === "user" ? "Sent" : "Finished"} ${full}`}</span>
       </time>
-    </p>
+    </span>
   );
 }

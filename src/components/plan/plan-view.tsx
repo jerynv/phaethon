@@ -5,12 +5,15 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEven
 import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
+import { Details } from "@/components/ui/details";
 import { Input } from "@/components/ui/input";
+import { Popover } from "@/components/ui/menu";
 import { WorkspacePage, WorkspacePageHeader, WorkspaceSection } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { courseMatches } from "@/components/study/course-grid";
 
 import { start as startTimer, useFocusTimer } from "./focus-timer-store";
 import { FocusTimer } from "./focus-timer";
@@ -29,7 +32,7 @@ import {
   type PlanState,
   type Upcoming,
 } from "./plan-api";
-import { dayName, localDay, makePlan, planMarkdown, type Session } from "./schedule";
+import { addDays, dayName, localDay, makePlan, planMarkdown, type Session } from "./schedule";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 /** Shown Monday first. */
@@ -54,6 +57,9 @@ export function PlanView({ space }: { space: Space }) {
   const [decks, setDecks] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [course, setCourse] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
+  const [week, setWeek] = useState(0);
   const headingId = useId();
   const today = localDay(Date.now());
 
@@ -107,17 +113,23 @@ export function PlanView({ space }: { space: Space }) {
     }
   }
 
-  const todays = plan.days.find((d) => d.day === today)?.sessions ?? [];
-  const dueToday = (upcoming ?? []).filter((u) => localDay(u.due) === today);
+  const selected = courses.find((c) => c.folder === course);
+  const matches = (name?: string) => !course || courseMatches(name, course, selected?.name ?? "");
+  const visiblePlan = { ...plan, days: plan.days.map((d) => ({ ...d, sessions: d.sessions.filter((s) => matches(s.course)) })).filter((d) => d.sessions.length) };
+  const todays = visiblePlan.days.find((d) => d.day === today)?.sessions ?? [];
+  const dueToday = (upcoming ?? []).filter((u) => localDay(u.due) === today && matches(u.folder));
+  // FullCalendar's event-array pattern: deadlines and saved exams share one dated agenda.
+  const agenda = [...(upcoming ?? []), ...exams.map((e) => ({ course: courses.find((c) => c.folder === e.course)?.name ?? e.course ?? "Exam", folder: e.course ?? "", title: e.title, due: new Date(`${e.date}T12:00:00`).getTime(), link: "" }))]
+    .filter((item) => localDay(item.due) >= today && (!course || matches(item.folder)))
+    .sort((a, b) => a.due - b.due);
 
   return (
     <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
-      <WorkspacePage>
+      <WorkspacePage className="gap-4 pt-5">
         <WorkspacePageHeader
-          title="Study plan"
-          description={<>For {space.name}: from your exams and what’s due in your imported courses.</>}
+          title="Plan"
           headingProps={{ id: headingId }}
-          actions={<Button type="button" onClick={() => void save()} data-plan-save=""><Icon name="download" />Save as plan.md</Button>}
+          actions={<><TimerPopover /><Button type="button" variant="outline" size="sm" onClick={() => void save()} data-plan-save=""><Icon name="download" />Export plan</Button></>}
         />
         {error && (
           <div role="alert" className="flex flex-col items-start gap-2 rounded-lg bg-danger-soft px-4 py-3 text-base text-danger-ink">
@@ -131,13 +143,21 @@ export function PlanView({ space }: { space: Space }) {
             </Button>
           </div>
         )}
+        {courses.length > 0 && <div className="flex min-w-0 items-center gap-2" data-plan-course=""><label htmlFor={`${headingId}-course`} className="shrink-0 text-sm text-ink-secondary">Course</label><NativeSelect id={`${headingId}-course`} value={course ?? ""} onChange={(event) => { setCourse(event.target.value || null); setDay(null); }} data-plan-course-filter="" className="max-w-full min-w-0 w-auto"><option value="">All courses</option>{courses.map((item) => <option key={item.folder} value={item.folder}>{item.name}</option>)}</NativeSelect></div>}
+        <div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold text-ink">{week === 0 ? "Next seven days" : `${dayName(addDays(today, week * 7))} – ${dayName(addDays(today, week * 7 + 6))}`}</h3><div className="flex gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Previous week" disabled={week === 0} onClick={() => { setWeek((value) => Math.max(0, value - 1)); setDay(null); }}><Icon name="chevron-left" /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => { setWeek((value) => value + 1); setDay(null); }}><Icon name="chevron-right" /></Button></div></div>
+        <nav aria-label="Agenda days" className="grid grid-cols-7 gap-1" data-plan-week="">
+          {Array.from({ length: 7 }, (_, i) => addDays(today, week * 7 + i)).map((date) => {
+            const count = agenda.filter((item) => localDay(item.due) === date).length;
+            const active = day === date;
+            return <Button key={date} type="button" variant={active ? "default" : "ghost"} aria-pressed={active} onClick={() => setDay(active ? null : date)} className="h-auto [&>.ui-button-face]:h-auto [&>.ui-button-face]:px-1 [&>.ui-button-face]:py-1"><span className="flex flex-col gap-0.5"><span className="text-xs font-normal">{new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })}</span><span className="text-lg tabular-nums">{Number(date.slice(-2))}</span><span className="text-xs font-normal">{count ? `${count} due` : "—"}</span></span></Button>;
+          })}
+        </nav>
+        <ComingUp space={space.id} items={upcoming === null ? null : agenda.filter((item) => day ? localDay(item.due) === day : localDay(item.due) >= addDays(today, week * 7) && localDay(item.due) <= addDays(today, week * 7 + 6))} />
         <Today space={space.id} sessions={todays} due={dueToday} done={done} onToggle={toggleDone} loading={upcoming === null} />
-        <FocusTimer />
-        <ComingUp space={space.id} items={upcoming} />
-        <Exams space={space} exams={exams} courses={courses} onChange={setExams} />
+        <Details summary="Exams"><Exams key={course ?? "all"} space={space} exams={exams} courses={courses} onChange={setExams} visibleCourse={course ?? undefined} /></Details>
         <Schedule
           space={space.id}
-          plan={plan}
+          plan={visiblePlan}
           st={st}
           done={done}
           onState={(s) => void saveState(s)}
@@ -147,6 +167,11 @@ export function PlanView({ space }: { space: Space }) {
       </WorkspacePage>
     </section>
   );
+}
+
+function TimerPopover() {
+  const timer = useFocusTimer();
+  return <Popover.Root><Popover.Trigger asChild><Button type="button" variant="ghost" size="sm" data-plan-timer=""><Icon name={timer.running ? "pause" : "play"} />{timer.running ? "Focus running" : "Focus timer"}</Button></Popover.Trigger><Popover.Portal><Popover.Content align="end" sideOffset={8} className="max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto p-4"><FocusTimer /></Popover.Content></Popover.Portal></Popover.Root>;
 }
 
 function SessionRow({ space, s, done, onToggle, focus }: { space: string; s: Session; done: boolean; onToggle: (s: Session, on: boolean) => void; focus?: boolean }) {
@@ -227,11 +252,11 @@ function Today({ space, sessions, due, done, onToggle, loading }: { space: strin
   );
 }
 
-function Exams({ space, exams, courses, onChange }: { space: Space; exams: Exam[]; courses: CourseRef[]; onChange: (e: Exam[]) => void }) {
+function Exams({ space, exams, courses, onChange, visibleCourse }: { space: Space; exams: Exam[]; courses: CourseRef[]; onChange: (e: Exam[]) => void; visibleCourse?: string }) {
   const id = useId();
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
-  const [course, setCourse] = useState("");
+  const [course, setCourse] = useState(visibleCourse ?? "");
   const [problem, setProblem] = useState<{ field: "title" | "date" | "save"; text: string } | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const dateRef = useRef<HTMLInputElement>(null);
@@ -282,10 +307,10 @@ function Exams({ space, exams, courses, onChange }: { space: Space; exams: Exam[
   return (
     <WorkspaceSection title="Exams" titleId={id} data-plan-exams="">
       {exams.length === 0 ? (
-        <p className="text-base text-ink-secondary">No exams yet. Add one and the schedule spreads review sessions before it.</p>
+        <p className="text-sm text-ink-secondary">No exams yet.</p>
       ) : (
         <ul ref={listRef} aria-labelledby={id} className="flex flex-col divide-y divide-line">
-          {exams.map((x, i) => (
+          {exams.filter((exam) => !visibleCourse || exam.course === visibleCourse).map((x, i) => (
             <li key={x.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" data-exam={x.id}>
               <div className="flex min-w-0 flex-1 basis-48 flex-col">
                 <span className={cn("text-base font-medium wrap-break-word", x.date < today ? "text-ink-secondary" : "text-ink")}>{x.title}</span>
@@ -348,13 +373,13 @@ function ComingUp({ space, items }: { space: string; items: Upcoming[] | null })
   const hidden = hiddenCourses(useCourseReach(space), ["overview", "assignments"]);
   const shown = (items ?? []).slice(0, 12);
   return (
-    <WorkspaceSection title="Coming up in your courses" titleId={id} data-plan-upcoming="">
+    <WorkspaceSection title="Agenda" titleId={id} className="gap-2 pt-3" data-plan-upcoming="">
       {items === null ? (
         <p className="text-base text-ink-secondary">Loading…</p>
       ) : shown.length === 0 && hidden ? (
         <NoCourseAccess why={hidden} part="assignments" />
       ) : shown.length === 0 ? (
-        <p className="text-base text-ink-secondary">Nothing due in your imported courses. Import courses from your school’s course site to see their due dates here.</p>
+        <p className="text-sm text-ink-secondary">Nothing due.</p>
       ) : (
         <ul aria-labelledby={id} className="flex flex-col divide-y divide-line">
           {shown.map((u) => (
@@ -365,10 +390,10 @@ function ComingUp({ space, items }: { space: string; items: Upcoming[] | null })
                   {u.course} · due {new Date(u.due).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
                 </span>
               </div>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void openFile(space, u.link.split("#")[0])} aria-label={`Details of ${u.title}`}>
+              {u.link && <Button type="button" variant="ghost" size="sm" onClick={() => void openFile(space, u.link.split("#")[0])} aria-label={`Details of ${u.title}`}>
                 <Icon name="file-text" />
                 Details
-              </Button>
+              </Button>}
             </li>
           ))}
         </ul>
@@ -414,6 +439,7 @@ function Schedule({
         </div>
       }
     >
+      <Details summary="Schedule settings">
       <fieldset className="flex flex-col gap-1.5">
         <legend className="mb-1 text-sm font-semibold text-ink-secondary">Days you study</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -465,6 +491,7 @@ function Schedule({
           </NativeSelect>
         </label>
       </div>
+      </Details>
       {plan.unplaced.length > 0 && (
         <p className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-base text-warning-ink" data-plan-unplaced="">
           <Icon name="warning" className="mt-0.5 shrink-0" />

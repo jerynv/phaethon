@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(get(&school), Mode::Quiz);
 
         set(&vault, "school", Mode::Normal).unwrap();
-        assert_eq!(saved(&root, "school"), json!({ "name": "School", "hue": 200 }));
+        assert_eq!(saved(&root, "school"), json!({ "name": "School", "hue": 200, "educationEnabled": false }));
         assert!(list(&vault).unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
     }

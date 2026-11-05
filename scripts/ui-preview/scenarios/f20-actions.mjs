@@ -159,8 +159,8 @@ export default [
       await page.focus(`${SHOWN} [aria-label="Add to message"]`);
       await page.keyboard.press("Enter"); // by keyboard: the first item takes focus
       await page.waitForSelector('[data-add-to-space="folder"]', { timeout: 3000 });
-      const items = await page.$$eval('[role="menu"] [role="menuitem"]', (els) => els.map((e) => e.querySelector(".font-medium")?.textContent.trim()));
-      check(items.join("|") === "Attach files…|Add files to this space…|Add a folder to this space…", "the + menu attaches to the message or adds to the space", items.join("|"));
+      const items = await page.$$eval('[role="menu"] [role="menuitem"]', (els) => els.map((e) => e.querySelector(".flex-1")?.textContent.trim()));
+      check(items.join("|") === "Attach files…|Add files to space…|Add folder to space…", "the + menu attaches to the message or adds to the space", items.join("|"));
       check(await waitFor(page, () => document.activeElement?.textContent.includes("Attach files…")), "Attach files… first");
       await new Promise((r) => setTimeout(r, 300)); // as a person would: the menu has settled
       await page.keyboard.press("ArrowDown");

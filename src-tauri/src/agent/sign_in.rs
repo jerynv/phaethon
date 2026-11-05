@@ -2,6 +2,8 @@
 //! CLI's own sign-in: Phaethon starts it with that home, the CLI opens the
 //! browser itself, and Phaethon learns how it went only from what the CLI
 //! says. It never reads, copies or passes on what the CLI saves there.
+//! Named Claude Code connections use `claude auth login` and its public
+//! `auth status` command with their own configuration directory.
 //!
 //! - Codex: `codex login` with `CODEX_HOME` set, then `codex login status`.
 //! - Gemini CLI has no sign-in command: its own Google sign-in runs when it
@@ -70,10 +72,9 @@ pub fn cancel(runs: &Runs, cli: Cli) -> bool {
 /// finish in the browser (or [`cancel`]).
 pub async fn sign_in(runs: &Runs, cli: Cli, home: &Path) -> SignInOutcome {
     if !cli.own_home() {
-        // Claude Code is never signed in to by Phaethon (Anthropic's terms).
-        return SignInOutcome::new(SignInStatus::NotSignedIn, format!("Phaethon doesn’t sign in to {}.", cli.name()));
+        return claude_sign_in(runs, Some(home), "claude").await;
     }
-    let Some(bin) = cli.find() else {
+    let Some(bin) = crate::agent_instances::binary(cli, Some(home)) else {
         return SignInOutcome::new(SignInStatus::Missing, cli.missing_message());
     };
     let key = run_key(cli);
@@ -88,6 +89,29 @@ pub async fn sign_in(runs: &Runs, cli: Cli, home: &Path) -> SignInOutcome {
     out
 }
 
+/// Claude's official browser login, scoped to the selected managed instance when present.
+pub async fn claude_sign_in(runs: &Runs, home: Option<&Path>, instance: &str) -> SignInOutcome {
+    let Some(bin) = crate::agent_instances::binary(Cli::Claude, home) else {
+        return SignInOutcome::new(SignInStatus::Missing, Cli::Claude.missing_message());
+    };
+    let key = format!("\u{0}sign-in:instance:{instance}");
+    let Some(cancel_rx) = runs.claim(&key) else { return SignInOutcome::new(SignInStatus::Busy, "Sign-in is already running."); };
+    let mut cmd = command(Cli::Claude, &bin, &std::env::temp_dir(), home);
+    cmd.args(["auth", "login"]);
+    let ended = run(runs, &key, cmd, None, cancel_rx).await;
+    runs.release(&key);
+    match ended {
+        Ended::Cancelled => SignInOutcome::new(SignInStatus::Cancelled, "Sign-in stopped."),
+        Ended::TimedOut => SignInOutcome::new(SignInStatus::NotSignedIn, "Sign-in timed out."),
+        Ended::Failed(e) => SignInOutcome::new(SignInStatus::NotSignedIn, format!("Claude Code couldn’t start: {e}")),
+        Ended::Exited { success: false, .. } => SignInOutcome::new(SignInStatus::NotSignedIn, "Claude Code did not finish signing in."),
+        Ended::Exited { .. } => match crate::agent_instances::account(Cli::Claude, home).await.0 {
+            Some(true) => SignInOutcome::new(SignInStatus::SignedIn, "Signed in to Claude Code."),
+            _ => SignInOutcome::new(SignInStatus::NotSignedIn, "Claude Code did not finish signing in."),
+        },
+    }
+}
+
 async fn codex(runs: &Runs, key: &str, bin: &Path, home: &Path, cancel_rx: tokio::sync::oneshot::Receiver<()>) -> SignInOutcome {
     let mut cmd = command(Cli::Codex, bin, &std::env::temp_dir(), Some(home));
     cmd.arg("login");
@@ -96,7 +120,11 @@ async fn codex(runs: &Runs, key: &str, bin: &Path, home: &Path, cancel_rx: tokio
         Ended::Cancelled => return SignInOutcome::new(SignInStatus::Cancelled, "Signing in to Codex was stopped."),
         Ended::Failed(e) => return SignInOutcome::new(SignInStatus::NotSignedIn, format!("Codex couldn’t start: {e}")),
         Ended::TimedOut => return SignInOutcome::new(SignInStatus::NotSignedIn, "Codex waited too long for you to sign in. Try again."),
-        Ended::Exited(said) => said,
+        Ended::Exited { said, success: false } => {
+            let why = stderr_summary(&said);
+            return SignInOutcome::new(SignInStatus::NotSignedIn, if why.is_empty() { "Codex didn’t finish signing in. Try again.".into() } else { format!("Codex didn’t finish signing in: {why}") });
+        },
+        Ended::Exited { said, .. } => said,
     };
     // Only Codex's own status says whether it worked.
     match codex_logged_in(bin, Some(home)).await {
@@ -162,7 +190,7 @@ async fn gemini(runs: &Runs, key: &str, bin: &Path, home: &Path, cancel_rx: toki
         Ended::Cancelled => return SignInOutcome::new(SignInStatus::Cancelled, "Signing in to Gemini CLI was stopped."),
         Ended::Failed(e) => return SignInOutcome::new(SignInStatus::NotSignedIn, format!("Gemini CLI couldn’t start: {e}")),
         Ended::TimedOut => return SignInOutcome::new(SignInStatus::NotSignedIn, "Gemini CLI waited too long for you to sign in. Try again."),
-        Ended::Exited(said) => said,
+        Ended::Exited { said, .. } => said,
     };
     gemini_outcome(&said)
 }
@@ -189,7 +217,7 @@ pub(crate) fn gemini_outcome(said: &str) -> SignInOutcome {
 
 enum Ended {
     /// Its stdout and stderr, together (the last 64 KB).
-    Exited(String),
+    Exited { said: String, success: bool },
     Cancelled,
     TimedOut,
     Failed(std::io::Error),
@@ -224,11 +252,13 @@ async fn run(runs: &Runs, key: &str, mut cmd: Command, consent: Option<&str>, mu
     drop(tx);
     let mut said = String::new();
     let mut answered = false;
+    let mut pipes_open = true;
+    let mut exit_success = None;
     let deadline = tokio::time::sleep(WAIT);
     tokio::pin!(deadline);
     let end = loop {
         tokio::select! {
-            chunk = rx.recv() => match chunk {
+            chunk = rx.recv(), if pipes_open => match chunk {
                 Some(c) => {
                     said.push_str(&String::from_utf8_lossy(&c));
                     if said.len() > 64 * 1024 {
@@ -244,11 +274,14 @@ async fn run(runs: &Runs, key: &str, mut cmd: Command, consent: Option<&str>, mu
                         let _ = input.flush().await;
                     }
                 }
-                // Both pipes closed: it is ending.
                 None => {
-                    let _ = child.wait().await;
-                    break None;
+                    pipes_open = false;
+                    if exit_success.is_some() { break None; }
                 }
+            },
+            status = child.wait(), if exit_success.is_none() => {
+                exit_success = Some(status.is_ok_and(|s| s.success()));
+                if !pipes_open { break None; }
             },
             _ = &mut cancel_rx => break Some(true),
             _ = &mut deadline => break Some(false),
@@ -257,7 +290,7 @@ async fn run(runs: &Runs, key: &str, mut cmd: Command, consent: Option<&str>, mu
     drop(stdin);
     runs.set_pid(key, None);
     match end {
-        None => Ended::Exited(said),
+        None => Ended::Exited { said, success: exit_success.unwrap_or(false) },
         Some(cancelled) => {
             if let Some(pid) = pid {
                 signal_group(pid, Signal::Term);
@@ -276,6 +309,27 @@ async fn run(runs: &Runs, key: &str, mut cmd: Command, consent: Option<&str>, mu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancelled_sign_in_stays_responsive_after_output_closes() {
+        let runs = Runs::default();
+        let key = "\0sign-in:closed-pipes";
+        let cancel = runs.claim(key).unwrap();
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "exec 1>&- 2>&-; sleep 30"]).process_group(0).kill_on_drop(true);
+        let cancel_run = runs.clone();
+        let request_cancel = async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(cancel_run.cancel(key));
+        };
+        let result = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(run(&runs, key, cmd, None, cancel), request_cancel).0
+        }).await.expect("closed output must not block cancellation");
+        assert!(matches!(result, Ended::Cancelled));
+        runs.release(key);
+    }
+
 
     #[test]
     fn gemini_says_how_its_sign_in_went() {

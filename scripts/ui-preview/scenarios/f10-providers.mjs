@@ -57,7 +57,7 @@ async function palette(page, query) {
   await page.keyboard.down("Meta");
   await page.keyboard.press("k");
   await page.keyboard.up("Meta");
-  await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+  await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
   await page.keyboard.type(query);
 }
 
@@ -282,7 +282,7 @@ export default [
       await page.waitForSelector(picker, { timeout: 5000 });
       await page.focus(`${shown} [data-composer-input]`);
       await palette(page, "change model");
-      await page.waitForFunction(() => document.querySelector('[role="option"][aria-selected="true"]')?.dataset.command === "change-model", { timeout: 3000 });
+      await page.waitForFunction(() => !!document.querySelector('[data-command="change-model"]'), { timeout: 3000 });
       const hint = await page.$eval('[data-command="change-model"]', (e) => e.textContent);
       check(/in School: OpenRouter · OpenAI: GPT-5/.test(hint), "Change model… says the space's provider and model, by its name from the list", hint);
       await page.keyboard.press("Enter");

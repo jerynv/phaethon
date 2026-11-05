@@ -44,7 +44,7 @@ async function palette(page, query) {
   await page.keyboard.down("Meta");
   await page.keyboard.press("k");
   await page.keyboard.up("Meta");
-  await page.waitForSelector("[data-palette-input]", { timeout: 3000 });
+  await page.waitForSelector("[data-command-palette] .ui-palette-head input", { timeout: 3000 });
   await page.keyboard.type(query);
 }
 
@@ -62,7 +62,7 @@ export default [
       await h.idle();
       const items = await page.$$eval('[data-model-menu] [role="menuitemradio"]', (els) => els.map((e) => [e.dataset.modelOption, e.getAttribute("aria-checked"), e.textContent.trim()]));
       console.log(`     items: ${JSON.stringify(items)}`);
-      check(items[0][0] === "__default__" && items[0][1] === "true" && /^DefaultClaude Opus 5\.5, as set in Settings/.test(items[0][2]), "Default (Claude Opus 5.5) comes first, and is checked", JSON.stringify(items[0]));
+      check(items[0][0] === "__default__" && items[0][1] === "true" && /^DefaultClaude Opus 5\.5$/.test(items[0][2]), "Default (Claude Opus 5.5) comes first, and is checked", JSON.stringify(items[0]));
       check(items.length === 4 && items.slice(1).every(([, , t]) => /^Claude /.test(t)), "then each model by its name", JSON.stringify(items));
       const f = await focused(page);
       check(f.startsWith("menuitemradio|__default__"), "the menu opens on the model in use", f);
@@ -132,7 +132,7 @@ export default [
       await page.waitForSelector(`${shown} [data-stop]`, { timeout: 5000 });
       await openPicker(page);
       const note = await page.$eval("[data-model-note]", (e) => e.textContent);
-      check(/next message/.test(note) && /now running keeps its model/.test(note), "the menu says a change applies from the next message", note);
+      check(note.trim() === "Next message", "the running-state hint is concise about when a change applies", note);
       await choose(page, "claude-sonnet-5-5");
       check(await shellSaid(page, "School now uses Claude Sonnet 5.5. The reply now running keeps its model."), "the change is said, with what happens to the reply", await shellStatus(page));
       check((await calls(page, "agent_cancel")).length === 0 && !!(await page.$(`${shown} [data-stop]`)), "the reply keeps running");
@@ -149,7 +149,7 @@ export default [
       await page.waitForSelector(picker, { timeout: 5000 });
       await page.focus(`${shown} [data-composer-input]`);
       await palette(page, "change model");
-      await page.waitForFunction(() => document.querySelector('[role="option"][aria-selected="true"]')?.dataset.command === "change-model", { timeout: 3000 });
+      await page.waitForFunction(() => !!document.querySelector('[data-command="change-model"]'), { timeout: 3000 });
       const hint = await page.$eval('[data-command="change-model"]', (e) => e.textContent);
       check(/in School: Claude Opus 5\.5/.test(hint), "Change model… says the space and its model", hint);
       check(!(await page.$('[data-command="default-model"]')), "no Use the default while School uses it");
@@ -173,7 +173,7 @@ export default [
       check(f === "school", "focus goes back to the model button", f);
 
       await palette(page, "default model");
-      await page.waitForFunction(() => document.querySelector('[role="option"][aria-selected="true"]')?.dataset.command === "default-model", { timeout: 3000 });
+      await page.waitForFunction(() => !!document.querySelector('[data-command="default-model"]'), { timeout: 3000 });
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => window.__calls.filter(([c]) => c === "space_model_set").length === 2, { timeout: 3000 });
       sets = await calls(page, "space_model_set");
@@ -194,7 +194,7 @@ export default [
       check(label[0] === "Model in School: Claude Code default, the model Claude Code chooses" && label[1] === "Claude Code default", "the button says Claude Code picks unless the space names one", JSON.stringify(label));
       await palette(page, "model");
       check(!(await page.$('[data-command="default-model"]')), "no Use the default model (that is Phaethon's own)");
-      await page.waitForFunction(() => document.querySelector('[role="option"][aria-selected="true"]')?.dataset.command === "change-model", { timeout: 3000 });
+      await page.waitForFunction(() => !!document.querySelector('[data-command="change-model"]'), { timeout: 3000 });
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-model-menu] [data-model-option="opus"]', { timeout: 3000 });
       await page.click('[data-model-menu] [data-model-option="opus"]');
@@ -202,8 +202,7 @@ export default [
       check((await calls(page, "space_model_set")).at(-1)?.model === "claude:opus", "saved as claude:opus", JSON.stringify(await calls(page, "space_model_set")));
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "claude-cli");
-      const text = await page.$eval(providerPopup, (e) => e.innerText);
-      check(/Models are chosen in each space/.test(text), "Claude Code configuration points to each space's model control", text);
+      check((await pickerState(page)).model === "claude:opus", "opening provider configuration preserves the space’s selected model");
       check(!(await page.$(`${providerPopup} [data-model-select]`)), "Claude Code configuration does not change the API provider's model");
       await park(page);
     },

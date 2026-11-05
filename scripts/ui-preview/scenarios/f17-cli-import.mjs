@@ -13,7 +13,7 @@ const MENU = "[data-conversations-menu]";
 const ITEM = "[data-find-earlier]";
 const waitFor = (page, fn, arg, timeout = 4000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
 const rows = (page) =>
-  page.$$eval(`${MENU} [role="menuitemradio"]`, (els) => els.map((e) => ({ id: e.dataset.threadId, text: e.innerText.replace(/\s+/g, " ").trim() })));
+  page.$$eval(`${MENU} [role="menuitemradio"]`, (els) => els.map((e) => ({ id: e.dataset.threadId, text: e.getAttribute("aria-label") ?? e.innerText.replace(/\s+/g, " ").trim() })));
 
 const OCT10 = Date.UTC(2026, 9, 10, 0, 6, 46);
 const OCT11 = Date.UTC(2026, 9, 11, 7, 1, 52);

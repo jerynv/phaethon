@@ -121,9 +121,9 @@ export default [
       const t = await page.evaluate((id) => {
         const el = document.querySelector(`[data-thread-id="${id}"] [title]`);
         const lh = parseFloat(getComputedStyle(el).lineHeight);
-        return { lines: Math.round(el.getBoundingClientRect().height / lh), oneLineCut: el.scrollWidth > el.clientWidth + 1 };
+        return { lines: Math.round(el.getBoundingClientRect().height / lh), oneLineCut: el.scrollWidth > el.clientWidth + 1, complete: el.title === el.textContent, overflow: getComputedStyle(el).textOverflow };
       }, String(now - 2 * DAY));
-      check(t.lines === 2 && !t.oneLineCut, "a long title wraps to two lines in the menu", JSON.stringify(t));
+      check(t.lines === 1 && t.oneLineCut && t.complete && t.overflow === "ellipsis", "a compact history row truncates long titles while keeping their full text on hover", JSON.stringify(t));
       await h.shot("menu");
       // Opening another conversation updates the breadcrumb and selected sidebar row.
       await page.click(`[data-thread-id="${now - DAY}"]`);
@@ -310,7 +310,7 @@ export default [
       await openMenu(page);
       await h.idle();
       const stamps = await page.$$eval('[data-conversations-menu] [role="menuitemradio"]', (rows) =>
-        Object.fromEntries(rows.map((r) => [r.dataset.threadId, r.querySelector("[data-thread-stamp]")?.textContent])),
+        Object.fromEntries(rows.map((r) => [r.dataset.threadId, r.querySelector("[data-thread-stamp]")?.getAttribute("title")])),
       );
       const [v1, v2] = [String(now - 3 * DAY - 3600000), String(now - 3 * DAY)];
       check(/^Earlier version · \S+ at .+ · 2 messages$/.test(stamps[v1] ?? "") && /^Earlier version · \S+ at /.test(stamps[v2] ?? ""), "older copies of the open conversation read \"Earlier version\" with their time", JSON.stringify(stamps));

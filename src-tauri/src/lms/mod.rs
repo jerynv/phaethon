@@ -44,6 +44,9 @@ pub mod migrate;
 pub mod textbooks;
 pub mod text;
 pub mod material;
+pub mod cancel;
+pub mod browse;
+pub mod hash;
 #[cfg(test)]
 pub mod fake;
 
@@ -219,6 +222,9 @@ pub struct RemoteFile {
     /// Other addresses that mean this same file (a file's preview page, its id-based link), so a
     /// link in the syllabus to any of them resolves to the downloaded copy.
     pub aliases: Vec<Url>,
+    /// The site's own version stamp for the file from its listing (Canvas: `updated_at` with
+    /// the size), when it gives one: unchanged since the last import means no request at all.
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -347,13 +353,15 @@ pub enum LmsError {
     /// The site doesn't offer what's needed.
     Unsupported(String),
     Other(String),
+    /// The site still has pages, but its pagination cannot safely be completed.
+    Incomplete(String),
 }
 
 impl std::fmt::Display for LmsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LmsError::SignedOut => f.write_str("You’ve been signed out of your course site. Sign in again."),
-            LmsError::Forbidden(s) | LmsError::NotFound(s) | LmsError::Unsupported(s) | LmsError::Other(s) => f.write_str(s),
+            LmsError::Forbidden(s) | LmsError::NotFound(s) | LmsError::Unsupported(s) | LmsError::Other(s) | LmsError::Incomplete(s) => f.write_str(s),
             LmsError::Network(s) => write!(f, "Couldn’t reach your course site: {s}"),
         }
     }
@@ -423,6 +431,18 @@ impl Session {
     /// to 5 redirects, dropping the credential the moment one leaves the origin (a file
     /// served from a storage host). 401 → SignedOut, 403 → Forbidden, 404 → NotFound.
     pub async fn get(&self, url: &Url) -> Result<reqwest::Response, LmsError> {
+        self.get_with(url, None, None).await
+    }
+
+    /// [`Session::get`] as a conditional request (RFC 9110 §13): `If-None-Match` with
+    /// `etag` and `If-Modified-Since` with `modified`, sent on every hop (they carry no
+    /// credential), so a storage host the site redirects to can answer too. A
+    /// `304 Not Modified` comes back as `Ok` with that status: the copy on disk is current.
+    pub async fn get_conditional(&self, url: &Url, etag: Option<&str>, modified: Option<&str>) -> Result<reqwest::Response, LmsError> {
+        self.get_with(url, etag, modified).await
+    }
+
+    async fn get_with(&self, url: &Url, etag: Option<&str>, modified: Option<&str>) -> Result<reqwest::Response, LmsError> {
         if !self.site.owns(url) {
             return Err(LmsError::Other(format!("Refused to send your sign-in to {}", url.host_str().unwrap_or("another site"))));
         }
@@ -432,8 +452,17 @@ impl Session {
             if self.site.owns(&at) {
                 req = req.header(reqwest::header::COOKIE, self.cookie_header());
             }
+            if let Some(t) = etag {
+                req = req.header(reqwest::header::IF_NONE_MATCH, t);
+            }
+            if let Some(m) = modified {
+                req = req.header(reqwest::header::IF_MODIFIED_SINCE, m);
+            }
             let res = req.send().await.map_err(|e| LmsError::Network(e.to_string()))?;
             let status = res.status();
+            if status == reqwest::StatusCode::NOT_MODIFIED && (etag.is_some() || modified.is_some()) {
+                return Ok(res);
+            }
             if status.is_redirection() {
                 let Some(next) = res.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).and_then(|l| at.join(l).ok()) else {
                     return Err(LmsError::Other("The site sent a redirect without an address.".into()));
@@ -585,6 +614,27 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
         Kind::Moodle => moodle::content(s, course_id).await,
         Kind::Blackboard => blackboard::content(s, course_id).await,
     }
+}
+
+/// The signed-in account's id on the site, from the site's documented "who am I"
+/// call (Canvas `GET /api/v1/users/self`, Brightspace `GET /d2l/api/lp/(v)/users/whoami`,
+/// Blackboard `GET /learn/api/public/v1/users/me`). `Ok(None)` where the site has no
+/// such call Phaethon may use with a browser session (Moodle). Never stored as is:
+/// see [`account_fingerprint`].
+pub async fn account(s: &Session) -> Result<Option<String>, LmsError> {
+    match s.site.kind {
+        Kind::Canvas => canvas::account(s).await.map(Some),
+        Kind::Brightspace => brightspace::account(s).await.map(Some),
+        Kind::Blackboard => blackboard::account(s).await.map(Some),
+        Kind::Moodle => Ok(None),
+    }
+}
+
+/// What lms.json keeps to tell one account on a site from another: a SHA-256 of
+/// the kind, the site and the site's account id (32 hex digits), not the id itself.
+pub fn account_fingerprint(site: &Site, account_id: &str) -> String {
+    let raw = format!("phaethon-lms-account\n{}\n{}\n{}", site.kind.name(), site.base.as_str().trim_end_matches('/'), account_id.trim());
+    hash::hex_of(raw.as_bytes())[..32].to_string()
 }
 
 /// The person's grades in one course (read-only, with their own session).

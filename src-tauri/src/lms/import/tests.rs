@@ -33,6 +33,10 @@ struct Server {
     routes: Arc<Mutex<HashMap<String, Route>>>,
     /// (path, the Cookie header if any), in order.
     log: Arc<Mutex<Vec<Hit>>>,
+    /// (path, the If-None-Match header if any), in order.
+    cond: Arc<Mutex<Vec<Hit>>>,
+    /// (path, the If-Modified-Since header if any), in order.
+    modified_cond: Arc<Mutex<Vec<Hit>>>,
 }
 
 impl Server {
@@ -60,8 +64,18 @@ impl Server {
                     let path = target.split('?').next().unwrap_or("/").to_string();
                     let cookie = text.lines().find_map(|l| l.strip_prefix("cookie: ").or_else(|| l.strip_prefix("Cookie: ")).map(str::to_string));
                     me.log.lock().unwrap().push((path.clone(), cookie));
+                    let inm = text.lines().find_map(|l| l.to_ascii_lowercase().starts_with("if-none-match:").then(|| l[14..].trim().to_string()));
+                    me.cond.lock().unwrap().push((path.clone(), inm.clone()));
+                    let ims = text.lines().find_map(|l| l.to_ascii_lowercase().starts_with("if-modified-since:").then(|| l[18..].trim().to_string()));
+                    me.modified_cond.lock().unwrap().push((path.clone(), ims.clone()));
                     let route = me.routes.lock().unwrap().get(&path).cloned();
-                    let r = route.unwrap_or(Route { status: "404 Not Found", headers: vec![], body: b"nope".to_vec() });
+                    let mut r = route.unwrap_or(Route { status: "404 Not Found", headers: vec![], body: b"nope".to_vec() });
+                    // A server that honours conditional requests; ETag takes precedence.
+                    let etag = r.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("etag")).map(|(_, v)| v.clone());
+                    let modified = r.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("last-modified")).map(|(_, v)| v.clone());
+                    if if inm.is_some() { etag.is_some() && etag == inm } else { ims.is_some() && modified == ims } {
+                        r = Route { status: "304 Not Modified", headers: r.headers, body: vec![] };
+                    }
                     let mut head = format!("HTTP/1.1 {}\r\nConnection: close\r\nContent-Length: {}\r\n", r.status, r.body.len());
                     for (k, v) in &r.headers {
                         head.push_str(&format!("{k}: {v}\r\n"));
@@ -86,7 +100,7 @@ impl Server {
 }
 
 fn file(name: &str, folder: Option<&str>, url: Url, size: Option<u64>, aliases: Vec<Url>) -> RemoteFile {
-    RemoteFile { name: name.into(), folder: folder.map(String::from), url, size, mime: None, aliases }
+    RemoteFile { name: name.into(), folder: folder.map(String::from), url, size, mime: None, aliases, version: None }
 }
 
 struct Fixture {
@@ -178,7 +192,7 @@ fn read(p: &Path) -> String {
 async fn a_course_is_imported_and_reimported_with_only_what_changed() {
     let f = fixture("e2e").await;
     serve(&f, "Derivatives lecture", "\"v1\"");
-    let opts = Options { max_download: 2000, max_links: 80, grades: None };
+    let opts = Options { max_download: 2000, max_links: 80, ..Options::default() };
     let courses = f.root.join("courses");
     let mut steps = vec![];
     let out = import_course(&f.session, &courses, &course(), content(&f), None, &[], &opts, &mut |s, d, t| steps.push((s, d, t))).await.unwrap();
@@ -351,5 +365,196 @@ async fn grades_go_into_grades_md_and_the_readme_and_a_skipped_line_is_said_once
     import_course(&f.session, &courses, &course(), CourseContent::default(), Some(&out.state), &[], &Options::default(), &mut |_, _, _| {}).await.unwrap();
     assert!(read(&c.join("grades.md")).contains("91.25%"));
     assert!(read(&c.join("README.md")).contains("**Grades**: [grades.md](grades.md) (from the last time they could be read)."));
+    std::fs::remove_dir_all(&f.root).unwrap();
+}
+
+#[cfg(unix)]
+fn ino(p: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(p).unwrap_or_else(|e| panic!("{}: {e}", p.display())).ino()
+}
+
+/// Unchanged bytes are never downloaded where the site can say so (a listing version, an
+/// ETag answered 304) and never rewritten where it can't (hashed and compared); changed
+/// bytes, even of the same size, always replace the copy. Files the import didn't make stay.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn unchanged_bytes_are_neither_downloaded_nor_written_and_changed_ones_always_are() {
+    let f = fixture("unchanged").await;
+    let courses = f.root.join("courses");
+    let j = |p: &str| f.s.join(p).unwrap();
+    let route = |body: &str, etag: Option<&str>| {
+        let mut r = ok("text/plain", body.as_bytes().to_vec());
+        if let Some(e) = etag {
+            r.headers.push(("ETag".into(), e.into()));
+        }
+        r
+    };
+    let files = |v3: &str| {
+        let mut list = vec![
+            file("tagged.txt", None, j("/t/1"), None, vec![]),
+            file("plain.txt", None, j("/t/2"), None, vec![]),
+            file("listed.txt", None, j("/t/3"), Some(5), vec![]),
+        ];
+        list[2].version = Some(v3.into());
+        CourseContent { syllabus: Some("<p>Read the notes.</p>".into()), files: list, ..Default::default() }
+    };
+    f.site.route("/t/1", route("one", Some("\"a\"")));
+    f.site.route("/t/2", route("same", None));
+    f.site.route("/t/3", route("three", None));
+    let opts = Options::default();
+    let first = import_course(&f.session, &courses, &course(), files("v1"), None, &[], &opts, &mut |_, _, _| {}).await.unwrap();
+    assert_eq!((first.downloaded, first.unchanged), (3, 0), "{:?}", first.skipped);
+    let c = courses.join("Calculus I");
+    let before: Vec<u64> = ["files/tagged.txt", "files/plain.txt", "files/listed.txt", "README.md", "syllabus.md"].iter().map(|p| ino(&c.join(p))).collect();
+    // Someone's own notes and a file the site no longer lists: the import never touches them.
+    std::fs::write(c.join("my notes.md"), "mine").unwrap();
+    std::fs::write(c.join("files/old handout.txt"), "kept").unwrap();
+
+    // Again, nothing changed on the site.
+    let hits = f.site.cond.lock().unwrap().len();
+    let again = import_course(&f.session, &courses, &course(), files("v1"), Some(&first.state), &[], &opts, &mut |_, _, _| {}).await.unwrap();
+    assert_eq!((again.downloaded, again.unchanged, again.files), (0, 3, 3), "{:?}", again.skipped);
+    let asked: Vec<Hit> = f.site.cond.lock().unwrap()[hits..].to_vec();
+    assert_eq!(asked, vec![("/t/1".to_string(), Some("\"a\"".to_string())), ("/t/2".to_string(), None)], "t/1 conditional (304), t/2 read and hashed, t/3 not asked at all");
+    let after: Vec<u64> = ["files/tagged.txt", "files/plain.txt", "files/listed.txt", "README.md", "syllabus.md"].iter().map(|p| ino(&c.join(p))).collect();
+    assert_eq!(before, after, "nothing rewritten, README included (only its date would differ)");
+    assert_eq!(again.state.files[&file_key(&j("/t/2"))].sha256.as_deref(), Some(crate::lms::hash::hex_of(b"same").as_str()));
+
+    // Changed: a new ETag and body; the same size but different bytes and no validators;
+    // a new listing version with the very same bytes (read, compared, not written).
+    f.site.route("/t/1", route("two", Some("\"b\"")));
+    f.site.route("/t/2", route("SAME", None));
+    let third = import_course(&f.session, &courses, &course(), files("v2"), Some(&again.state), &[], &opts, &mut |_, _, _| {}).await.unwrap();
+    assert_eq!((third.downloaded, third.unchanged), (2, 1), "{:?}", third.skipped);
+    assert_eq!(read(&c.join("files/tagged.txt")), "two");
+    assert_eq!(read(&c.join("files/plain.txt")), "SAME", "same size, different bytes: replaced");
+    assert_eq!(ino(&c.join("files/listed.txt")), before[2], "same bytes under a new version: not rewritten");
+    assert_eq!(third.state.files[&file_key(&j("/t/3"))].version.as_deref(), Some("v2"));
+    assert_eq!(read(&c.join("my notes.md")), "mine");
+    assert_eq!(read(&c.join("files/old handout.txt")), "kept");
+    let in_courses: Vec<String> = std::fs::read_dir(&courses).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(in_courses, vec!["Calculus I"], "nothing written outside the course's folder");
+    std::fs::remove_dir_all(&f.root).unwrap();
+}
+
+fn downloaded(got: Got) -> FileRec {
+    match got {
+        Got::Written(rec) => rec,
+        Got::Same(_) => panic!("expected the source to be repaired, but it was accepted as unchanged"),
+        Got::Skipped(why) => panic!("the source was skipped: {why}"),
+        Got::Cancelled => panic!("the download was cancelled"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_corrupted_source_is_repaired_despite_the_same_listing_version() {
+    let f = fixture("corrupt-version").await;
+    f.site.route("/source", ok("text/plain", "source"));
+    let mut remote = file("source.txt", None, f.s.join("/source").unwrap(), Some(6), vec![]);
+    remote.version = Some("v1".into());
+    let rel = Path::new("files/source.txt");
+    let opts = Options::default();
+    let old = downloaded(fetch_file(&f.session, &f.root, &remote, rel, None, &opts).await);
+    let dest = f.root.join(rel);
+    #[cfg(unix)]
+    let before = ino(&dest);
+
+    // A verified copy still takes the listing's no-request, no-write shortcut.
+    assert!(matches!(fetch_file(&f.session, &f.root, &remote, rel, Some(&old), &opts).await, Got::Same(_)));
+    assert_eq!(f.site.hits("/source").len(), 1);
+    #[cfg(unix)]
+    assert_eq!(ino(&dest), before);
+
+    // Local changes can have exactly the same length and unchanged listing metadata.
+    std::fs::write(&dest, "broken").unwrap();
+    let repaired = downloaded(fetch_file(&f.session, &f.root, &remote, rel, Some(&old), &opts).await);
+    assert_eq!(read(&dest), "source");
+    assert_eq!(repaired.sha256.as_deref(), Some(hash::hex_of(b"source").as_str()));
+    assert_eq!(f.site.hits("/source").len(), 2);
+    std::fs::remove_dir_all(&f.root).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn corrupted_sources_are_fetched_without_either_http_validator() {
+    for (tag, etag, modified) in [("etag", true, false), ("modified", false, true), ("both", true, true)] {
+        let f = fixture(&format!("corrupt-{tag}")).await;
+        let mut route = ok("text/plain", "source");
+        if etag {
+            route.headers.push(("ETag".into(), "\"v1\"".into()));
+        }
+        if modified {
+            route.headers.push(("Last-Modified".into(), "Wed, 04 Nov 2026 12:00:00 GMT".into()));
+        }
+        f.site.route("/source", route);
+        let remote = file("source.txt", None, f.s.join("/source").unwrap(), Some(6), vec![]);
+        let rel = Path::new("files/source.txt");
+        let opts = Options::default();
+        let old = downloaded(fetch_file(&f.session, &f.root, &remote, rel, None, &opts).await);
+
+        // Establish that this server would return 304 if the stale validators were sent.
+        assert!(matches!(fetch_file(&f.session, &f.root, &remote, rel, Some(&old), &opts).await, Got::Same(_)));
+        assert_eq!(f.site.cond.lock().unwrap()[1].1.is_some(), etag);
+        assert_eq!(f.site.modified_cond.lock().unwrap()[1].1.is_some(), modified);
+
+        std::fs::write(f.root.join(rel), "broken").unwrap();
+        let repaired = downloaded(fetch_file(&f.session, &f.root, &remote, rel, Some(&old), &opts).await);
+        assert_eq!(read(&f.root.join(rel)), "source", "{tag}");
+        assert_eq!(repaired.sha256, old.sha256);
+        assert_eq!(f.site.cond.lock().unwrap()[2].1, None, "repair must not send If-None-Match ({tag})");
+        assert_eq!(f.site.modified_cond.lock().unwrap()[2].1, None, "repair must not send If-Modified-Since ({tag})");
+        std::fs::remove_dir_all(&f.root).unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_missing_source_is_restored_without_http_validators() {
+    let f = fixture("missing-source").await;
+    let mut route = ok("text/plain", "source");
+    route.headers.push(("ETag".into(), "\"v1\"".into()));
+    f.site.route("/source", route);
+    let mut remote = file("source.txt", None, f.s.join("/source").unwrap(), Some(6), vec![]);
+    remote.version = Some("v1".into());
+    let rel = Path::new("files/source.txt");
+    let opts = Options::default();
+    let old = downloaded(fetch_file(&f.session, &f.root, &remote, rel, None, &opts).await);
+    std::fs::remove_file(f.root.join(rel)).unwrap();
+
+    let repaired = downloaded(fetch_file(&f.session, &f.root, &remote, rel, Some(&old), &opts).await);
+    assert_eq!(read(&f.root.join(rel)), "source");
+    assert_eq!(repaired.sha256, old.sha256);
+    assert_eq!(f.site.cond.lock().unwrap()[1].1, None);
+    std::fs::remove_dir_all(&f.root).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_source_digests_are_established_from_a_fresh_download() {
+    let f = fixture("legacy-source").await;
+    let mut route = ok("text/plain", "source");
+    route.headers.push(("ETag".into(), "\"v1\"".into()));
+    f.site.route("/source", route);
+    let mut remote = file("source.txt", None, f.s.join("/source").unwrap(), Some(6), vec![]);
+    remote.version = Some("v1".into());
+    let rel = Path::new("files/source.txt");
+    let opts = Options::default();
+    let mut legacy = downloaded(fetch_file(&f.session, &f.root, &remote, rel, None, &opts).await);
+    legacy.sha256 = None;
+    #[cfg(unix)]
+    let before = ino(&f.root.join(rel));
+
+    let verified = match fetch_file(&f.session, &f.root, &remote, rel, Some(&legacy), &opts).await {
+        Got::Same(rec) => rec,
+        _ => panic!("an equal legacy source should be verified without being rewritten"),
+    };
+    assert_eq!(verified.sha256.as_deref(), Some(hash::hex_of(b"source").as_str()));
+    assert_eq!(f.site.hits("/source").len(), 2, "a local digest alone cannot establish the site's bytes");
+    #[cfg(unix)]
+    assert_eq!(ino(&f.root.join(rel)), before);
+
+    std::fs::write(f.root.join(rel), "broken").unwrap();
+    let repaired = downloaded(fetch_file(&f.session, &f.root, &remote, rel, Some(&legacy), &opts).await);
+    assert_eq!(read(&f.root.join(rel)), "source");
+    assert_eq!(repaired.sha256, verified.sha256);
+    assert!(f.site.cond.lock().unwrap().iter().all(|(_, value)| value.is_none()), "legacy metadata must not cause 304 or skip the body");
     std::fs::remove_dir_all(&f.root).unwrap();
 }

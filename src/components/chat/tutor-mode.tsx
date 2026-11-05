@@ -7,7 +7,7 @@ import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
 import { supportsEducation } from "@/lib/spaces";
 import { IconTip } from "@/components/ui/tooltip";
-import { Icon } from "@/icons";
+import { Icon, type IconName } from "@/icons";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,8 @@ const KEYWORDS: Record<TutorMode, string> = {
   socratic: "socratic hints questions guide",
   cram: "exam cram revise summary review",
 };
+
+const MODE_ICON: Record<TutorMode, IconName> = { normal: "agent", quiz: "chat", explain: "edit", socratic: "thinking", cram: "book" };
 
 const modeInfo = (id: TutorMode) => TUTOR_MODES.find((m) => m.id === id) ?? TUTOR_MODES[0];
 
@@ -152,7 +154,7 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
             data-mode={mode}
             className={cn("min-w-0 shrink gap-1.5 px-2 text-sm", on ? "bg-accent-soft font-medium text-accent-soft-ink hover:text-accent-soft-ink forced-colors:border-[CanvasText]" : "text-ink-secondary hover:text-ink")}
           >
-            <Icon name="book" className="size-(--ph-icon-size-sm)" />
+            <Icon name={MODE_ICON[mode]} className="size-(--ph-icon-size-sm)" />
             <span className="truncate">{on ? info.short : "Tutor"}</span>
           </Button>
         </DropdownMenu.Trigger>
@@ -166,7 +168,7 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
           collisionPadding={8}
           aria-label={`Tutor mode in ${spaceName}`}
           data-tutor-menu=""
-          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(20rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
+          className="z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(14rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]"
         >
           <DropdownMenu.Label className="px-2.5 pt-1.5 text-sm font-semibold text-ink-secondary">Tutor mode in {spaceName}</DropdownMenu.Label>
           {running && <p className="px-2.5 pb-1 text-xs text-ink-secondary">Next message</p>}
@@ -184,8 +186,9 @@ export function TutorModePicker({ spaceId, spaceName, running }: { spaceId: stri
                   value={m.id}
                   textValue={m.title}
                   data-tutor-option={m.id}
-                  className="grid min-h-(--ph-control-height) cursor-default grid-cols-[minmax(0,1fr)_var(--ph-icon-size)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
+                  className="grid min-h-(--ph-control-height) cursor-default grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)_var(--ph-icon-size)] items-center gap-x-2 rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-hover"
                 >
+                  <Icon name={MODE_ICON[m.id]} className="size-3.5 text-ink-secondary" />
                   <span className="min-w-0 truncate text-sm" title={m.hint}>{m.title}</span>
                   <DropdownMenu.ItemIndicator><Icon name="check" className="size-3.5 text-ink-secondary" /></DropdownMenu.ItemIndicator>
                 </DropdownMenu.RadioItem>

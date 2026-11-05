@@ -109,16 +109,15 @@ export default [
       await page.waitForSelector('[data-model-option="__default__"]', { timeout: 3000 });
       await page.click('[data-model-option="__default__"]');
       check(await shellSaid(page, "School now uses Codex’s own default model."), "and back to the default", await shellStatus(page));
-      // By keyboard alone: close, open from the button, start on the model in use, End reaches Another model….
+      // By keyboard alone: reopen in search, then Tab through catalog/access to Another model….
       await page.keyboard.press("Escape");
       await page.waitForFunction((p) => !document.querySelector("[data-model-menu]") && document.activeElement === document.querySelector(p), { timeout: 3000 }, picker);
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-checked") === "true", { timeout: 3000 });
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-      await page.keyboard.press("End");
+      await page.waitForFunction(() => document.activeElement?.matches('[data-model-search] input'), { timeout: 3000 });
+      for (let i = 0; i < 5 && !(await page.evaluate(() => /Another model/.test(document.activeElement?.textContent ?? ""))); i++) await page.keyboard.press("Tab");
       await page.waitForFunction(() => /Another model/.test(document.activeElement?.textContent ?? ""), { timeout: 3000 }).catch(() => {});
       const at = await page.evaluate(() => document.activeElement?.textContent);
-      check(/Another model/.test(at ?? ""), "End reaches Another model…, the last item", at);
+      check(/Another model/.test(at ?? ""), "Tab reaches Another model after the catalog and permission controls", at);
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-cli-model-dialog]", { timeout: 3000 });
       const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-cli-model-input"));

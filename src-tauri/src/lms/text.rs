@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -76,8 +77,30 @@ pub fn extract(path: &Path) -> Result<String, String> {
 /// [`extract`], with `reader` as the program started to read PDFs and
 /// recognise text (`None`: this one). Tests outside the crate pass the app.
 pub fn extract_with(reader: Option<&Path>, path: &Path) -> Result<String, String> {
+    extract_until(reader, path, None)
+}
+
+/// [`extract_with`], stopping as soon as `stop` is set: the PDF reader or text
+/// recognition child is killed and the result is `Err(cancel::CANCELLED)`, so no
+/// half-made copy is written.
+pub fn extract_until(reader: Option<&Path>, path: &Path, stop: Option<&AtomicBool>) -> Result<String, String> {
+    if stopped(stop) {
+        return Err(super::cancel::CANCELLED.into());
+    }
+    let r = extract_inner(reader, path, stop);
+    if stopped(stop) {
+        return Err(super::cancel::CANCELLED.into());
+    }
+    r
+}
+
+pub(crate) fn stopped(stop: Option<&AtomicBool>) -> bool {
+    stop.is_some_and(|s| s.load(Ordering::SeqCst))
+}
+
+fn extract_inner(reader: Option<&Path>, path: &Path, stop: Option<&AtomicBool>) -> Result<String, String> {
     match kind_of(path) {
-        Doc::Pdf => pdf_text(reader, path),
+        Doc::Pdf => pdf_text(reader, path, stop),
         Doc::Docx => {
             let bytes = read_capped(path)?;
             attachments::docx_text(&bytes)
@@ -86,7 +109,7 @@ pub fn extract_with(reader: Option<&Path>, path: &Path) -> Result<String, String
             let bytes = read_capped(path)?;
             pptx_text(&bytes)
         }
-        Doc::Picture => picture_text(reader, path),
+        Doc::Picture => picture_text(reader, path, stop),
         Doc::Other => Err("not a document Phaethon can read".into()),
     }
 }
@@ -219,23 +242,32 @@ fn reader_exe(reader: Option<&Path>) -> Result<std::path::PathBuf, String> {
 
 /// Each page's text layer and pictures, no recognition: in a child (or, in unit tests, here).
 pub fn pdf_layers(reader: Option<&Path>, path: &Path) -> Result<Vec<Layer>, String> {
-    if in_process(reader) { pdf_pages_here(&read_capped(path)?) } else { pdf_pages(&reader_exe(reader)?, path) }
+    pdf_layers_until(reader, path, None)
 }
 
-fn pdf_text(reader: Option<&Path>, path: &Path) -> Result<String, String> {
-    let pages = pdf_layers(reader, path)?;
+/// [`pdf_layers`], with the child killed once `stop` is set.
+pub fn pdf_layers_until(reader: Option<&Path>, path: &Path, stop: Option<&AtomicBool>) -> Result<Vec<Layer>, String> {
+    if in_process(reader) { pdf_pages_here(&read_capped(path)?) } else { pdf_pages(&reader_exe(reader)?, path, stop) }
+}
+
+fn pdf_text(reader: Option<&Path>, path: &Path, stop: Option<&AtomicBool>) -> Result<String, String> {
+    let pages = pdf_layers_until(reader, path, stop)?;
     let sparse: Vec<u32> = pages.iter().filter(|l| letters(&l.text) < SPARSE).map(|l| l.page).take(ocr::MAX_PAGES).collect();
     let can = ocr::availability();
-    let recognised = if sparse.is_empty() || can.is_err() { BTreeMap::new() } else { recognise(reader, path, Some(&sparse))? };
+    let recognised = if sparse.is_empty() || can.is_err() { BTreeMap::new() } else { recognise(reader, path, Some(&sparse), stop)? };
     Ok(assemble(&pages, &recognised, &can))
 }
 
-fn recognise(reader: Option<&Path>, path: &Path, pages: Option<&[u32]>) -> Result<BTreeMap<u32, Page>, String> {
+fn recognise(reader: Option<&Path>, path: &Path, pages: Option<&[u32]>, stop: Option<&AtomicBool>) -> Result<BTreeMap<u32, Page>, String> {
     #[cfg(test)]
     if in_process(reader) {
         return Ok(ocr::recognise_here(path, pages));
     }
-    Ok(ocr::recognise(&reader_exe(reader)?, path, pages))
+    let out = ocr::recognise_until(&reader_exe(reader)?, path, pages, stop);
+    if stopped(stop) {
+        return Err(super::cancel::CANCELLED.into());
+    }
+    Ok(out)
 }
 
 pub fn letters(t: &str) -> usize {
@@ -321,11 +353,11 @@ pub fn with_picture_notes(copy: &str, layers: &[Layer]) -> Option<String> {
 }
 
 /// A text copy of a picture: whatever text was recognised in it.
-fn picture_text(reader: Option<&Path>, path: &Path) -> Result<String, String> {
+fn picture_text(reader: Option<&Path>, path: &Path, stop: Option<&AtomicBool>) -> Result<String, String> {
     if let Err(why) = ocr::availability() {
         return Ok(format!("(This is a picture, and {CANT_RECOGNISE} {why}.)"));
     }
-    Ok(match recognise(reader, path, None)?.remove(&1) {
+    Ok(match recognise(reader, path, None, stop)?.remove(&1) {
         Some(Page::Text(t)) if !t.trim().is_empty() => format!("## Picture {RECOGNISED}\n\n{}", t.trim()),
         Some(Page::Text(_)) => NO_TEXT_IN_PICTURE.into(),
         Some(Page::Failed(why)) => format!("(Any text in this picture couldn’t be recognised: {why}.)"),
@@ -358,7 +390,7 @@ pub fn copy_is_stale(md: &Path) -> bool {
 
 /// Run this program as a child with `envs`: its stdout (at most `cap` bytes),
 /// or why not. Killed after `limit`.
-fn run_child(exe: &Path, envs: &[(&str, &std::ffi::OsStr)], limit: Duration, cap: u64) -> Result<Vec<u8>, String> {
+fn run_child(exe: &Path, envs: &[(&str, &std::ffi::OsStr)], limit: Duration, cap: u64, stop: Option<&AtomicBool>) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new(exe);
     for (k, v) in envs {
         cmd.env(k, v);
@@ -383,6 +415,11 @@ fn run_child(exe: &Path, envs: &[(&str, &std::ffi::OsStr)], limit: Duration, cap
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break s,
+            Ok(None) if stopped(stop) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(super::cancel::CANCELLED.into());
+            }
             Ok(None) if started.elapsed() < limit => std::thread::sleep(Duration::from_millis(50)),
             _ => {
                 let _ = child.kill();
@@ -401,8 +438,8 @@ fn run_child(exe: &Path, envs: &[(&str, &std::ffi::OsStr)], limit: Duration, cap
 }
 
 /// Each page's text layer, from a child process (see the module's notes).
-fn pdf_pages(exe: &Path, path: &Path) -> Result<Vec<Layer>, String> {
-    let out = run_child(exe, &[(CHILD_ENV, path.as_os_str())], PDF_TIMEOUT, 2 * MAX_TEXT as u64 + 1)?;
+fn pdf_pages(exe: &Path, path: &Path, stop: Option<&AtomicBool>) -> Result<Vec<Layer>, String> {
+    let out = run_child(exe, &[(CHILD_ENV, path.as_os_str())], PDF_TIMEOUT, 2 * MAX_TEXT as u64 + 1, stop)?;
     serde_json::from_slice(&out).map_err(|_| "the PDF’s text was too long or couldn’t be read".into())
 }
 
@@ -484,7 +521,7 @@ pub fn page_pictures(reader: Option<&Path>, path: &Path, pages: &[u32]) -> Vec<P
     let Ok(exe) = reader_exe(reader) else { return vec![] };
     let list = pages.iter().take(PICTURES_MAX).map(u32::to_string).collect::<Vec<_>>().join(",");
     let cap = (PICTURES_MAX * PICTURE_BYTES * 2) as u64;
-    run_child(&exe, &[(PICTURES_ENV, path.as_os_str()), (ocr::PAGES_ENV, list.as_ref())], PICTURES_TIMEOUT, cap)
+    run_child(&exe, &[(PICTURES_ENV, path.as_os_str()), (ocr::PAGES_ENV, list.as_ref())], PICTURES_TIMEOUT, cap, None)
         .ok()
         .and_then(|out| serde_json::from_slice(&out).ok())
         .unwrap_or_default()

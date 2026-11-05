@@ -213,7 +213,9 @@ export default [
       await h.focusVia("[data-conversations-trigger]");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-conversations-menu] [role="menuitemradio"]', { timeout: 5000 });
-      await page.waitForFunction(() => document.activeElement?.getAttribute("data-thread-id") === "current", { timeout: 3000 });
+      await page.waitForFunction(() => document.activeElement?.matches('[data-history-controls] input'), { timeout: 3000 });
+      await page.keyboard.press("ArrowDown");
+      await focusOn(page, "current", "ArrowDown from search");
       // ArrowDown goes conversation to conversation; each one's Delete is beside it, on ArrowRight.
       await page.keyboard.press("ArrowRight");
       await page.waitForFunction(() => document.activeElement?.getAttribute("data-delete-thread") === "current", { timeout: 3000 });
@@ -228,7 +230,9 @@ export default [
       await page.waitForFunction(() => document.activeElement?.matches("[data-conversations-trigger]"), { timeout: 3000 });
       // Open again and choose with Enter.
       await page.keyboard.press("ArrowDown");
-      await page.waitForFunction(() => document.activeElement?.getAttribute("data-thread-id") === "current", { timeout: 3000 });
+      await page.waitForFunction(() => document.activeElement?.matches('[data-history-controls] input'), { timeout: 3000 });
+      await page.keyboard.press("ArrowDown");
+      await focusOn(page, "current", "ArrowDown from search");
       await page.keyboard.press("ArrowDown");
       await focusOn(page, archive[0].id, "ArrowDown");
       // From a Delete, ArrowDown moves on as from its conversation.
@@ -261,6 +265,9 @@ export default [
       await openMenu(page, h);
       expect((await items(page)).length === 3, "Claude Code's conversations are not all listed");
       expect(!(await page.$("[data-conversations-cli]")), "the old note that Claude Code keeps its own history is still shown");
+      await page.waitForFunction(() => document.activeElement?.matches('[data-history-controls] input'), { timeout: 3000 });
+      await page.keyboard.press("ArrowDown");
+      await focusOn(page, "current", "ArrowDown from search");
       await page.keyboard.press("ArrowDown");
       await focusOn(page, String(now - DAY), "ArrowDown");
       await page.keyboard.press("Enter");
@@ -302,11 +309,11 @@ export default [
       expect((await items(page)).length === 15, "not all 15 listed");
       await fits(page);
       // The list scrolls inside the menu; the last one can be reached.
-      // End goes to the menu's own New conversation; one up is the oldest conversation (Delete items are not arrow stops).
+      // The editable search keeps native caret keys; enter the list before using End.
+      await page.keyboard.press("ArrowDown");
+      await focusOn(page, "current", "ArrowDown from search");
       await page.keyboard.press("End");
-      await page.waitForFunction(() => document.activeElement?.matches("[data-menu-new-conversation]"), { timeout: 3000 });
-      await page.keyboard.press("ArrowUp");
-      await focusOn(page, String(now - 14 * DAY), "End, ArrowUp");
+      await focusOn(page, String(now - 14 * DAY), "End");
       const last = await page.evaluate(() => {
         const el = document.activeElement;
         const r = el.getBoundingClientRect();

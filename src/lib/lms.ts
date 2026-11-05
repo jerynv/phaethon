@@ -32,6 +32,8 @@ export type LmsCourse = {
   /** Running now, as far as the site says. */
   current: boolean;
   imported: boolean;
+  /** A previous first import stopped before completion; importing resumes it. */
+  partial?: boolean;
 };
 
 /** What an import step is doing: reading the course from the site, its files, links out of it, writing the folder. */
@@ -61,6 +63,7 @@ export type LmsImportEvent =
       /** What its documents are made of (typed, handwriting, pictures). */
       material?: MaterialSummary;
     }
+  | { type: "cancelled" }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -245,3 +248,11 @@ export function lmsGradesRefresh(space: string, connection: string, onEvent: (e:
   channel.onmessage = onEvent;
   return invoke<void>("lms_grades_refresh", { space, connection, onEvent: channel });
 }
+
+/** Stop the active import after its current safe checkpoint. Completed files remain available. */
+export const lmsImportCancel = (connection: string) => invoke<boolean>("lms_import_cancel", { connection });
+
+export type CourseContentEntry = { path: string; title: string; kind: "file" | "page" | "module" | "assignment" | "overview"; anchor?: string; headingIndex?: number; text?: string; bytes?: number };
+export type CourseContent = { entries: CourseContentEntry[]; updated?: number; truncated?: boolean };
+/** Only content the selected space is permitted to read; paths open in the existing viewer. */
+export const lmsCourseContent = (space: string, course: string) => invoke<CourseContent>("lms_course_content", { space, course });

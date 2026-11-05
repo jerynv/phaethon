@@ -76,7 +76,7 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
             Files
           </h4>
         </div>
-        <div data-about-files="" className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised">
+        <div data-about-files="" className="flex flex-col divide-y divide-line/60">
           <SettingRow label="Phaethon folder">
             {vault ? <CopyPath path={vault} what="your Phaethon folder" /> : <span className="text-sm text-ink-secondary">Not available in this preview.</span>}
           </SettingRow>

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { announce } from "@/components/shell/announcer";
 import { Keys, spokenKeys } from "@/components/shell/command-palette";
 import { modCap } from "@/components/shell/shortcuts";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Icon } from "@/icons";
@@ -172,6 +173,9 @@ export function ConversationsBar({
   const [problem, setProblem] = useState("");
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [open, setOpen] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
+  useEffect(() => { if (!open) { setHistoryQuery(""); setHistoryPage(0); } }, [open]);
   const [working, setWorking] = useState(false);
   // The space's conversations, newest first (the sidebar lists them, the title bar names the open one);
   // reloaded after a switch and when a reply ends.
@@ -477,15 +481,6 @@ export function ConversationsBar({
     };
   }, [open, space.id]);
 
-  // Once the list arrives, put keyboard focus on the current conversation (it
-  // went to the menu itself, or to its New conversation, while loading).
-  useEffect(() => {
-    if (!open || list.status !== "ready") return;
-    const content = contentRef.current;
-    const at = document.activeElement;
-    if (!content || !(at === content || at?.matches("[data-menu-new-conversation]"))) return;
-    content.querySelector<HTMLElement>('[role="menuitemradio"][data-state="checked"]')?.focus();
-  }, [open, list]);
 
   // After Delete, Cancel or a delete: put focus where it belongs.
   useLayoutEffect(() => {
@@ -510,6 +505,12 @@ export function ConversationsBar({
   }, [found, list]);
 
   const threads = list.status === "ready" ? list.threads : [];
+  // T3's virtualized history keeps controls reachable regardless of archive size.
+  // Bounded pages provide the same bounded DOM without another list dependency.
+  const matchingThreads = threads.filter((thread) => thread.title.toLocaleLowerCase().includes(historyQuery.toLocaleLowerCase()));
+  const historyPages = Math.max(1, Math.ceil(matchingThreads.length / 50));
+  const page = Math.min(historyPage, historyPages - 1);
+  const visibleThreads = matchingThreads.slice(page * 50, (page + 1) * 50);
 
   function askDelete(id: string, from: "row" | "del") {
     confirmFrom.current = from;
@@ -523,6 +524,19 @@ export function ConversationsBar({
   function onMenuKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     const root = contentRef.current;
     const el = document.activeElement;
+    if (e.key === "Tab" && root && el instanceof HTMLElement) {
+      // Menu's default Tab suppression cannot strand the editable search or pagination.
+      const activeRow = el.closest<HTMLElement>('[data-thread-id]');
+      const row = activeRow ?? root.querySelector<HTMLElement>('[data-thread-id][data-state="checked"]') ?? root.querySelector<HTMLElement>('[data-thread-id]');
+      const controls = [root.querySelector<HTMLElement>('[data-history-controls] input'), root.querySelector<HTMLElement>('[data-menu-new-conversation]'), root.querySelector<HTMLElement>('[data-find-earlier]'), row,
+        ...root.querySelectorAll<HTMLElement>('[data-history-pagination] button:not(:disabled)')].filter((node): node is HTMLElement => !!node && node.getClientRects().length > 0 && !node.hasAttribute('data-disabled'));
+      if (!controls.length) return;
+      e.preventDefault(); e.stopPropagation();
+      const at = controls.indexOf(activeRow ?? el);
+      controls[(at + (e.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
+      return;
+    }
+    if (el instanceof HTMLInputElement) return;
     if (!root || !(el instanceof HTMLElement) || !root.contains(el) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const handled = () => {
       e.preventDefault();
@@ -532,7 +546,13 @@ export function ConversationsBar({
     const onRow = el.hasAttribute("data-thread-id");
     const row = id == null ? null : root.querySelector<HTMLElement>(`[data-thread-id="${id}"]`);
     const del = id == null ? null : root.querySelector<HTMLElement>(`[data-delete-thread="${id}"]`);
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (e.key === "Home" || e.key === "End") {
+      handled();
+      const stops = [...root.querySelectorAll<HTMLElement>(STOPS)];
+      const target = e.key === "Home" ? stops[0] : stops.at(-1);
+      target?.focus();
+      target?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       // From a Delete, move as from its row.
       const stops = [...root.querySelectorAll<HTMLElement>(STOPS)];
       const at = stops.indexOf(row ?? el);
@@ -566,21 +586,32 @@ export function ConversationsBar({
               variant="ghost"
               size="sm"
               data-conversations-trigger=""
+              data-sidebar-history-all={inSidebar && recent.length > 6 ? "" : undefined}
+              title={inSidebar ? `View all ${recent.length} conversations` : undefined}
               className={inSidebar ? "min-w-0 text-sm! font-medium text-ink-secondary hover:text-ink" : undefined}
             >
               Conversations
+              {inSidebar && recent.length > 6 && <span aria-hidden="true" className="text-xs font-normal text-ink-secondary">{recent.length}</span>}
               <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
             </Button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
               ref={contentRef}
+              onFocusCapture={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+                // Redirect the controller's initial container focus before its row roving handler.
+                event.stopPropagation();
+                event.currentTarget.querySelector<HTMLInputElement>('[data-history-controls] input')?.focus();
+              }}
               onCloseAutoFocus={(e) => {
                 if (!switching.current) return;
                 switching.current = false;
                 e.preventDefault();
               }}
-              align="end"
+              align="start"
+              side="right"
               sideOffset={6}
               collisionPadding={8}
               aria-label={`Conversations in ${space.name}`}
@@ -598,16 +629,58 @@ export function ConversationsBar({
               }}
               className={cn(
                 // 22rem at the default text size, growing with it; never wider or taller than the room.
-                "z-50 flex max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[calc(24rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none",
+                "z-50 flex max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[calc(24rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-hidden overscroll-contain outline-none",
                 "origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97]",
                 // An exit animation too: without one Radix keeps the closed menu mounted, and its
                 // outside-click layer then dismisses the next open at once.
                 "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]",
               )}
             >
-              <DropdownMenu.Label className="px-2.5 pt-1.5 pb-1 text-sm font-semibold text-ink-secondary">
-                Conversations in {space.name}
-              </DropdownMenu.Label>
+              <div className="shrink-0 p-1" data-history-controls="">
+                <Input autoComplete="off" aria-label="Search conversations" placeholder="Search conversations…" value={historyQuery}
+                  onChange={(event) => { setHistoryQuery(event.target.value); setHistoryPage(0); }}
+                  onKeyDown={(event) => { if (event.key !== "Escape") event.stopPropagation(); if (event.key === "ArrowDown") { event.preventDefault(); contentRef.current?.querySelector<HTMLElement>('[data-thread-id]')?.focus(); } else if (event.key === "Enter" && historyQuery.trim()) { event.preventDefault(); contentRef.current?.querySelector<HTMLElement>('[data-thread-id]')?.click(); } }} />
+              </div>
+              {/* Always present, so the menu has an item in every state (loading, an error). */}
+              <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
+              <DropdownMenu.Item
+                data-menu-new-conversation=""
+                disabled={working}
+                onSelect={() => {
+                  switching.current = !running;
+                  void startNew();
+                }}
+                className={cn(itemClass, "flex shrink-0 items-center gap-2 px-2.5 py-1.5 text-sm font-normal")}
+              >
+                <Icon name="plus" className="text-ink-secondary" />
+                <span className="flex-1">New conversation</span>
+                <kbd aria-hidden="true" className="font-sans text-sm text-ink-secondary">
+                  {`${modKeyLabel()}${mac ? "" : "+"}N`}
+                </kbd>
+              </DropdownMenu.Item>
+              {list.status === "ready" && list.findEarlier && (
+                <>
+                  <DropdownMenu.Item
+                    data-find-earlier=""
+                    disabled={working}
+                    aria-describedby={found ? `found-${space.id}` : undefined}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      void findEarlier();
+                    }}
+                    className={cn(itemClass, "flex shrink-0 items-center gap-2 px-2.5 py-1.5 text-sm font-normal")}
+                  >
+                    <Icon name={finding ? "spinner" : "search"} className={cn("text-ink-secondary", finding && "animate-spin")} />
+                    <span className="flex-1">{finding ? "Looking for earlier Claude Code conversations…" : "Find earlier Claude Code conversations"}</span>
+                  </DropdownMenu.Item>
+                  {/* Already announced; shown here until the menu closes. */}
+                  {found && (
+                    <p id={`found-${space.id}`} data-find-earlier-result="" className="px-2.5 pt-1 pb-2 text-sm wrap-break-word text-ink-secondary">
+                      {found}
+                    </p>
+                  )}
+                </>
+              )}
               {list.status === "loading" && (
                 <p className="flex items-center gap-2 px-2.5 py-2 text-base text-ink-secondary">
                   <Icon name="spinner" className="animate-spin" />
@@ -620,9 +693,9 @@ export function ConversationsBar({
                   <span className="min-w-0 wrap-anywhere">{list.message}</span>
                 </p>
               )}
-              {threads.length > 0 && (
-                <DropdownMenu.RadioGroup value="current" className="flex flex-col">
-                  {threads.map((t, i) => {
+              {visibleThreads.length > 0 && (
+                <DropdownMenu.RadioGroup value="current" className="flex min-h-0 flex-col overflow-y-auto overscroll-contain" data-history-list="">
+                  {visibleThreads.map((t, i) => {
                     const empty = t.current && t.messages === 0;
                     const stamp = stampOf(t, threads);
                     if (confirming === t.id) {
@@ -704,7 +777,7 @@ export function ConversationsBar({
                                   e.preventDefault();
                                   void remove(t, i, "plain");
                                 }}
-                                className={cn(button, "border-2 border-ink bg-raised text-ink data-highlighted:bg-hover")}
+                                className={cn(button, "border border-line bg-raised text-ink data-highlighted:bg-hover")}
                               >
                                 Clear without keeping anything
                               </DropdownMenu.Item>
@@ -792,46 +865,13 @@ export function ConversationsBar({
                   })}
                 </DropdownMenu.RadioGroup>
               )}
-              {/* Always present, so the menu has an item in every state (loading, an error). */}
-              <DropdownMenu.Separator className="mx-1 my-1 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />
-              <DropdownMenu.Item
-                data-menu-new-conversation=""
-                disabled={working}
-                onSelect={() => {
-                  switching.current = !running;
-                  void startNew();
-                }}
-                className={cn(itemClass, "flex shrink-0 items-center gap-2 px-2.5 py-2 text-base font-medium")}
-              >
-                <Icon name="plus" className="text-ink-secondary" />
-                <span className="flex-1">New conversation</span>
-                <kbd aria-hidden="true" className="font-sans text-sm text-ink-secondary">
-                  {`${modKeyLabel()}${mac ? "" : "+"}N`}
-                </kbd>
-              </DropdownMenu.Item>
-              {list.status === "ready" && list.findEarlier && (
-                <>
-                  <DropdownMenu.Item
-                    data-find-earlier=""
-                    disabled={working}
-                    aria-describedby={found ? `found-${space.id}` : undefined}
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      void findEarlier();
-                    }}
-                    className={cn(itemClass, "flex shrink-0 items-center gap-2 px-2.5 py-2 text-base font-medium")}
-                  >
-                    <Icon name={finding ? "spinner" : "search"} className={cn("text-ink-secondary", finding && "animate-spin")} />
-                    <span className="flex-1">{finding ? "Looking for earlier Claude Code conversations…" : "Find earlier Claude Code conversations"}</span>
-                  </DropdownMenu.Item>
-                  {/* Already announced; shown here until the menu closes. */}
-                  {found && (
-                    <p id={`found-${space.id}`} data-find-earlier-result="" className="px-2.5 pt-1 pb-2 text-sm wrap-break-word text-ink-secondary">
-                      {found}
-                    </p>
-                  )}
-                </>
-              )}
+
+              {list.status === "ready" && matchingThreads.length === 0 && <p className="px-2.5 py-3 text-sm text-ink-secondary">{historyQuery ? "No matching conversations." : "No conversations yet."}</p>}
+              {historyPages > 1 && <div className="flex shrink-0 items-center justify-between gap-2 border-t border-line px-2 py-1.5" data-history-pagination="">
+                <Button type="button" variant="ghost" size="icon-xs" aria-label="Previous conversations" disabled={page === 0} onClick={() => setHistoryPage(page - 1)}><Icon name="chevron-left" /></Button>
+                <span className="text-xs tabular-nums text-ink-secondary">{page * 50 + 1}–{Math.min((page + 1) * 50, matchingThreads.length)} of {matchingThreads.length}</span>
+                <Button type="button" variant="ghost" size="icon-xs" aria-label="Next conversations" disabled={page === historyPages - 1} onClick={() => setHistoryPage(page + 1)}><Icon name="chevron-right" /></Button>
+              </div>}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
@@ -844,6 +884,7 @@ export function ConversationsBar({
               aria-label={inSidebar ? "New conversation" : undefined}
               aria-keyshortcuts={mac ? "Meta+N" : "Control+N"}
               data-new-conversation=""
+              className="text-ink-secondary hover:text-ink"
               onClick={() => void startNew()}
             >
               <Icon name={inSidebar ? "new-chat" : "plus"} />

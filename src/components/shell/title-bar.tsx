@@ -182,13 +182,13 @@ export function TitleBar({
           and divider), so the sidebar runs the window’s full height and the title starts where the pane does. */}
       <div
         className={cn(
-          "flex h-full min-w-0 shrink-0 items-center gap-2 ps-(--ph-titlebar-inset-start) pe-2",
+          "flex h-full min-w-0 shrink-0 items-center gap-2 ps-[max(var(--ph-titlebar-inset-start),var(--ph-mac-controls-room,0px))] pe-2",
           sidebarDocked && "w-(--ph-sidebar-width) border-e border-line bg-surface forced-colors:border-[CanvasText]",
         )}
       >
         <BarButton
           label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-          text={words ? "Spaces" : undefined}
+          text={words && platform() !== "mac" ? "Spaces" : undefined}
           keys={[mod, "\\"]}
           keyshortcuts={`${aria}+Backslash`}
           icon="sidebar"
@@ -201,7 +201,7 @@ export function TitleBar({
         {showSettings && (
           <BarButton
             label="Settings"
-            text={words ? "Settings" : undefined}
+            text={words && platform() !== "mac" ? "Settings" : undefined}
             keys={[mod, ","]}
             keyshortcuts={`${aria}+Comma`}
             icon="settings"

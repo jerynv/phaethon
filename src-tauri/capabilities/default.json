@@ -7,6 +7,7 @@
   ],
   "permissions": [
     "allow-dev-log",
+    "allow-voice-dictation-start",
     "allow-agent-send",
     "allow-agent-cancel",
     "allow-agent-approve",
@@ -76,6 +77,8 @@
     "allow-lms-connections",
     "allow-lms-courses",
     "allow-lms-import",
+    "allow-lms-import-cancel",
+    "allow-lms-course-content",
     "allow-lms-disconnect",
     "allow-lms-grades",
     "allow-lms-grades-refresh",

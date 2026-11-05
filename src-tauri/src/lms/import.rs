@@ -16,10 +16,12 @@ use std::path::{Path, PathBuf};
 use futures_util::StreamExt;
 use url::Url;
 
+use super::cancel::{CANCELLED, Cancel};
+use super::hash;
 use super::html::{self, FoundLink};
 use super::store::{self, CourseState, Due, FileRec, LinkRec};
 use super::textbooks::{self, Isbn};
-use super::{Course, CourseContent, CourseGrades, GradeItem, LmsError, MAX_DOWNLOAD, Session, material, names, text};
+use super::{Course, CourseContent, CourseGrades, GradeItem, LmsError, MAX_DOWNLOAD, RemoteFile, Session, material, names, text};
 
 pub struct Options {
     /// Largest single download.
@@ -28,11 +30,13 @@ pub struct Options {
     pub max_links: usize,
     /// The course's grades, read just before (written as grades.md); `None` keeps any grades.md already there.
     pub grades: Option<CourseGrades>,
+    /// Set by the person's Cancel: the import stops at the next step and records only what it finished.
+    pub cancel: Cancel,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { max_download: MAX_DOWNLOAD, max_links: 80, grades: None }
+        Options { max_download: MAX_DOWNLOAD, max_links: 80, grades: None, cancel: Cancel::default() }
     }
 }
 
@@ -42,8 +46,16 @@ pub struct Outcome {
     pub state: CourseState,
     /// Course files in the folder (downloaded now or already up to date).
     pub files: usize,
-    /// Downloaded now (new or changed).
+    /// Written now (new or changed bytes).
     pub downloaded: usize,
+    /// Already up to date: not modified by the site's listing or validators (no body read),
+    /// or read again but byte-for-byte the copy on disk (not written).
+    pub unchanged: usize,
+    /// Stopped by [`Options::cancel`]. `state` then holds what was finished (merged with
+    /// the previous import's record), so the next import resumes without fetching it again.
+    pub cancelled: bool,
+    /// The Markdown and README were written: the course folder is complete for this import.
+    pub written: bool,
     pub readings: usize,
     pub links: usize,
     pub skipped: Vec<String>,
@@ -56,6 +68,10 @@ pub const STEP_WRITING: &str = "writing";
 
 const README: &str = "README.md";
 const GRADES_MD: &str = "grades.md";
+/// The line in README.md and grades.md that only dates them: a re-import that changes
+/// nothing else doesn't rewrite the file for it.
+const README_STAMP: &str = "Imported from ";
+const GRADES_STAMP: &str = "Read from the course site on ";
 const FIXED: &[&str] = &[README, GRADES_MD, "syllabus.md", "assignments.md", "announcements.md", "modules.md", "links.md", "pages", "files", "readings"];
 /// Most of an HTML page read for its title or a book's PDF link.
 const MAX_PAGE: usize = 2 * 1024 * 1024;
@@ -80,7 +96,7 @@ pub fn link_key(u: &Url) -> String {
 }
 
 /// GitHub-style heading anchors, numbered when repeated.
-fn anchor(title: &str, used: &mut HashMap<String, usize>) -> String {
+pub(crate) fn anchor(title: &str, used: &mut HashMap<String, usize>) -> String {
     let base: String = title
         .to_lowercase()
         .chars()
@@ -149,8 +165,9 @@ where
     Ok(buf)
 }
 
-/// Write `first` and the rest of `stream` to `file`, at most `cap` bytes.
-async fn rest_to<S, B>(stream: &mut S, first: &[u8], file: &mut std::fs::File, cap: u64) -> Result<u64, String>
+/// Write `first` and the rest of `stream` to `file`, at most `cap` bytes, feeding
+/// `hasher` as it goes. `Err(CANCELLED)` as soon as `cancel` is set.
+async fn rest_to<S, B>(stream: &mut S, first: &[u8], file: &mut std::fs::File, cap: u64, mut hasher: Option<&mut hash::Hasher>, cancel: &Cancel) -> Result<u64, String>
 where
     S: futures_util::Stream<Item = reqwest::Result<B>> + Unpin,
     B: AsRef<[u8]>,
@@ -161,7 +178,16 @@ where
         return Err(too_big());
     }
     file.write_all(first).map_err(|e| e.to_string())?;
-    while let Some(chunk) = stream.next().await {
+    if let Some(h) = hasher.as_deref_mut() {
+        h.update(first);
+    }
+    loop {
+        let next = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(CANCELLED.into()),
+            c = stream.next() => c,
+        };
+        let Some(chunk) = next else { break };
         let chunk = chunk.map_err(|e| format!("the download stopped: {e}"))?;
         let chunk = chunk.as_ref();
         total += chunk.len() as u64;
@@ -169,6 +195,9 @@ where
             return Err(too_big());
         }
         file.write_all(chunk).map_err(|e| e.to_string())?;
+        if let Some(h) = hasher.as_deref_mut() {
+            h.update(chunk);
+        }
     }
     file.flush().map_err(|e| e.to_string())?;
     Ok(total)
@@ -234,8 +263,8 @@ fn ext_of(name: &str) -> String {
 
 /// What came of fetching one link out of the course.
 enum Fetched {
-    /// A document, in a temporary file in readings/, with the name to give it.
-    Saved { tmp: PathBuf, name: String, via: Option<Url>, title: Option<String> },
+    /// A document, in a temporary file in readings/ (removed if never moved into place), with the name to give it.
+    Saved { tmp: names::TempGuard, name: String, via: Option<Url>, title: Option<String> },
     Page { title: Option<String> },
     Failed(String),
 }
@@ -255,7 +284,7 @@ fn why_not(e: &LmsError) -> String {
 /// into `readings_dir` under a temporary name; a web page gives its title,
 /// and for a textbook its page is searched (one level, no further) for the
 /// book's PDF.
-async fn fetch_link(session: &Session, readings_dir: &Path, url: &Url, textbook: bool, cap: u64) -> Fetched {
+async fn fetch_link(session: &Session, readings_dir: &Path, url: &Url, textbook: bool, cap: u64, cancel: &Cancel) -> Fetched {
     let res = match session.fetch_external(url).await {
         Ok(r) => r,
         Err(e) => return Fetched::Failed(why_not(&e)),
@@ -280,7 +309,7 @@ async fn fetch_link(session: &Session, readings_dir: &Path, url: &Url, textbook:
         .unwrap_or_else(|| "reading".into());
     if let Some(ext) = sniff(&first, &ct, &ext_of(&base_name)) {
         let name = if ext_of(&base_name) == ext { base_name } else { format!("{base_name}.{ext}") };
-        return match save_tmp(readings_dir, &mut stream, &first, cap).await {
+        return match save_tmp(readings_dir, &mut stream, &first, cap, cancel).await {
             Ok(tmp) => Fetched::Saved { tmp, name, via: None, title: None },
             Err(e) => Fetched::Failed(e),
         };
@@ -310,7 +339,7 @@ async fn fetch_link(session: &Session, readings_dir: &Path, url: &Url, textbook:
             let mut stream = Box::pin(res.bytes_stream());
             if let Ok(first) = head(&mut stream, 1024).await
                 && sniff(&first, &ct, "pdf") == Some("pdf")
-                && let Ok(tmp) = save_tmp(readings_dir, &mut stream, &first, cap).await
+                && let Ok(tmp) = save_tmp(readings_dir, &mut stream, &first, cap, cancel).await
             {
                 let name = dname
                     .or_else(|| title.clone().map(|t| format!("{t}.pdf")))
@@ -324,31 +353,34 @@ async fn fetch_link(session: &Session, readings_dir: &Path, url: &Url, textbook:
     Fetched::Page { title }
 }
 
-async fn save_tmp<S, B>(dir: &Path, stream: &mut S, first: &[u8], cap: u64) -> Result<PathBuf, String>
+async fn save_tmp<S, B>(dir: &Path, stream: &mut S, first: &[u8], cap: u64, cancel: &Cancel) -> Result<names::TempGuard, String>
 where
     S: futures_util::Stream<Item = reqwest::Result<B>> + Unpin,
     B: AsRef<[u8]>,
 {
     let (mut file, tmp, _) = names::temp_for(dir, Path::new("download")).map_err(|e| format!("couldn’t be saved: {e}"))?;
-    match rest_to(stream, first, &mut file, cap).await {
-        Ok(_) => Ok(tmp),
-        Err(e) => {
-            drop(file);
-            let _ = std::fs::remove_file(&tmp);
-            Err(e)
-        }
-    }
+    // Removed on any way out but success, including this future being dropped by a cancel.
+    let guard = names::TempGuard::new(&tmp);
+    rest_to(stream, first, &mut file, cap, None, cancel).await?;
+    Ok(guard)
 }
 
-/// Write a text copy (`name.ext.md`) beside a document, from the file at `root/rel`.
-async fn text_copy(root: &Path, rel: &Path) -> Result<(), String> {
+/// Write a text copy (`name.ext.md`) beside a document, from the file at `root/rel`
+/// (only when it differs from the copy there). `Err(CANCELLED)` when `cancel` stopped
+/// it; nothing is written then, and the next import makes it.
+async fn text_copy(root: &Path, rel: &Path, cancel: &Cancel) -> Result<(), String> {
     if text::kind_of(rel) == text::Doc::Other {
         return Ok(());
     }
+    if cancel.is_cancelled() {
+        return Err(CANCELLED.into());
+    }
     let full = root.join(rel);
-    let extracted = tokio::task::spawn_blocking(move || text::extract(&full)).await.map_err(|e| e.to_string())?;
+    let c = cancel.clone();
+    let extracted = tokio::task::spawn_blocking(move || text::extract_until(None, &full, Some(c.flag()))).await.map_err(|e| e.to_string())?;
     let name = rel.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let body = match extracted {
+        _ if cancel.is_cancelled() => return Err(CANCELLED.into()),
         Ok(t) if !t.trim().is_empty() => t,
         Ok(_) => "(This file has no text in it: it may be scanned pages or pictures. Open the file itself to read it.)".into(),
         Err(e) => return Err(format!("{name}: no text copy ({e})")),
@@ -359,7 +391,121 @@ async fn text_copy(root: &Path, rel: &Path) -> Result<(), String> {
     );
     let mut md = rel.as_os_str().to_owned();
     md.push(".md");
-    names::write(root, Path::new(&md), doc.as_bytes()).map_err(|e| format!("{name}: no text copy ({e})"))
+    names::write_if_changed(root, Path::new(&md), doc.as_bytes()).map(|_| ()).map_err(|e| format!("{name}: no text copy ({e})"))
+}
+
+/// What came of one course file.
+enum Got {
+    /// The copy on disk is current (no body read, or the same bytes read again).
+    Same(FileRec),
+    /// New or changed bytes, now on disk.
+    Written(FileRec),
+    Skipped(String),
+    Cancelled,
+}
+
+fn download_error(name: &str, e: LmsError) -> String {
+    match e {
+        LmsError::SignedOut => format!("{name}: couldn’t be downloaded (sign in again if this keeps happening)"),
+        LmsError::Forbidden(_) => format!("{name}: the course site didn’t allow downloading it"),
+        LmsError::NotFound(_) => format!("{name}: the course site couldn’t find it"),
+        e => format!("{name}: couldn’t be downloaded ({e})"),
+    }
+}
+
+/// Bring one course file up to date at `root/rel`, doing as little as the site allows:
+///
+/// 1. Verify the local copy against its saved SHA-256. Only an intact, previously
+///    verified copy can use the listing's version or HTTP validators. Missing,
+///    unreadable, altered or legacy copies need an unconditional download.
+/// 2. The site's listing says the same version (and size) as last time: no request.
+///    Otherwise a conditional GET with last time's ETag / Last-Modified: `304` means
+///    current, and a `200` with those same validators (a site that ignores conditional
+///    requests) is taken as current without reading the body.
+/// 3. Otherwise the body is read into a temporary file while hashed (SHA-256); if it is
+///    byte-for-byte the file on disk, nothing is written. Only different bytes replace it.
+async fn fetch_file(session: &Session, root: &Path, f: &RemoteFile, rel: &Path, old: Option<&FileRec>, opts: &Options) -> Got {
+    let path = rel.to_string_lossy().replace('\\', "/");
+    let dest = root.join(rel);
+    // Server metadata only describes the server's bytes. It says nothing about a
+    // local copy that changed since the import, or one whose digest was never saved.
+    let verified = old.filter(|o| o.path == path && o.sha256.as_deref().is_some_and(|expected| hash::file_hex(&dest).is_ok_and(|actual| actual == expected)));
+    if let (Some(o), Some(v)) = (verified, f.version.as_deref())
+        && o.version.as_deref() == Some(v)
+        && (f.size.is_none() || f.size == o.size)
+    {
+        return Got::Same(o.clone());
+    }
+    let etag0 = verified.and_then(|o| o.etag.as_deref());
+    let mod0 = verified.and_then(|o| o.modified.as_deref());
+    let res = match opts.cancel.run(session.get_conditional(&f.url, etag0, mod0)).await {
+        Err(_) => return Got::Cancelled,
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return Got::Skipped(download_error(&f.name, e)),
+    };
+    let etag = header(&res, reqwest::header::ETAG);
+    let modified = header(&res, reqwest::header::LAST_MODIFIED);
+    if res.status() == reqwest::StatusCode::NOT_MODIFIED {
+        let Some(o) = verified else { return Got::Skipped(format!("{}: the course site sent no file", f.name)) };
+        return Got::Same(FileRec { etag: etag.or_else(|| o.etag.clone()), modified: modified.or_else(|| o.modified.clone()), version: f.version.clone(), ..o.clone() });
+    }
+    let listed = f.size.or(res.content_length());
+    if let Some(o) = verified
+        && (etag.is_some() || modified.is_some())
+        && o.etag == etag
+        && o.modified == modified
+        && (listed.is_none() || o.size == listed)
+    {
+        drop(res); // not read: the copy on disk is this file
+        return Got::Same(FileRec { version: f.version.clone(), ..o.clone() });
+    }
+    if let Some(len) = res.content_length()
+        && len > opts.max_download
+    {
+        return Got::Skipped(format!("{}: too big to download ({}; the limit is {})", f.name, mb(len), mb(opts.max_download)));
+    }
+    let (mut file, tmp, dest) = match names::temp_for(root, rel) {
+        Ok(t) => t,
+        Err(e) => return Got::Skipped(format!("{}: couldn’t be saved ({e})", f.name)),
+    };
+    let guard = names::TempGuard::new(&tmp);
+    let mut hasher = hash::Hasher::new();
+    let mut stream = Box::pin(res.bytes_stream());
+    let n = match rest_to(&mut stream, &[], &mut file, opts.max_download, Some(&mut hasher), &opts.cancel).await {
+        Ok(n) => n,
+        Err(e) if e == CANCELLED => return Got::Cancelled,
+        Err(e) => return Got::Skipped(format!("{}: {e}", f.name)),
+    };
+    drop(file);
+    let sha = hasher.hex();
+    let rec = FileRec { path, size: Some(n), etag, modified, sha256: Some(sha.clone()), version: f.version.clone() };
+    // The same bytes as the file already there (hashed now, not trusted from the record): keep it.
+    if hash::file_hex(&dest).is_ok_and(|d| d == sha) {
+        drop(guard);
+        return Got::Same(rec);
+    }
+    if let Err(e) = names::finish(&tmp, &dest) {
+        return Got::Skipped(format!("{}: couldn’t be saved ({e})", f.name));
+    }
+    guard.keep();
+    Got::Written(rec)
+}
+
+/// Write `body` to `root/rel` unless the file there already says the same, apart from
+/// lines starting with `stamp` (the "imported on" date): a re-import that changed
+/// nothing leaves the file alone. `Ok(true)` when it wrote.
+fn write_unless_same(root: &Path, rel: &str, body: &str, stamp: Option<&str>) -> Result<bool, String> {
+    let path = root.join(rel);
+    if let Some(stamp) = stamp
+        && std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file())
+        && let Ok(old) = std::fs::read_to_string(&path)
+    {
+        let strip = |t: &str| t.lines().filter(|l| !l.starts_with(stamp)).map(str::to_string).collect::<Vec<_>>();
+        if strip(&old) == strip(body) {
+            return Ok(false);
+        }
+    }
+    names::write_if_changed(root, Path::new(rel), body.as_bytes()).map_err(|e| format!("{rel} couldn’t be written: {e}"))
 }
 
 /// Where links in course HTML point once the course is on disk.
@@ -471,11 +617,16 @@ pub async fn import_course(
     let mut targets = Targets { local, readings: HashMap::new() };
 
     // ---- Course files, with the session. ----
+    let cancel = &opts.cancel;
     let total = content.files.len();
     let mut files_state: BTreeMap<String, FileRec> = BTreeMap::new();
     let mut present = 0;
     let mut downloaded = 0;
+    let mut unchanged = 0;
     for (i, (f, rel)) in content.files.iter().zip(&planned).enumerate() {
+        if cancel.is_cancelled() {
+            break;
+        }
         progress(STEP_FILES, i, total);
         let key = file_key(&f.url);
         if let Some(size) = f.size
@@ -484,83 +635,29 @@ pub async fn import_course(
             skipped.push(format!("{}: too big to download ({}; the limit is {})", f.name, mb(size), mb(opts.max_download)));
             continue;
         }
-        let res = match session.get(&f.url).await {
-            Ok(r) => r,
-            Err(LmsError::SignedOut) => {
-                skipped.push(format!("{}: couldn’t be downloaded (sign in again if this keeps happening)", f.name));
+        let (rec, wrote) = match fetch_file(session, &root, f, rel, prev_files.get(key.as_str()).copied(), opts).await {
+            Got::Cancelled => break,
+            Got::Skipped(why) => {
+                skipped.push(why);
                 continue;
             }
-            Err(LmsError::Forbidden(_)) => {
-                skipped.push(format!("{}: the course site didn’t allow downloading it", f.name));
-                continue;
-            }
-            Err(LmsError::NotFound(_)) => {
-                skipped.push(format!("{}: the course site couldn’t find it", f.name));
-                continue;
-            }
-            Err(e) => {
-                skipped.push(format!("{}: couldn’t be downloaded ({e})", f.name));
-                continue;
-            }
+            Got::Same(rec) => (rec, false),
+            Got::Written(rec) => (rec, true),
         };
-        let etag = header(&res, reqwest::header::ETAG);
-        let modified = header(&res, reqwest::header::LAST_MODIFIED);
-        let size = f.size.or(res.content_length());
-        let rec = FileRec { path: rel.to_string_lossy().replace('\\', "/"), size, etag: etag.clone(), modified: modified.clone() };
-        // Unchanged: same size and the same ETag / Last-Modified (where the site sends them).
-        if let Some(old) = prev_files.get(key.as_str())
-            && old.path == rec.path
-            && old.size == rec.size
-            && old.etag == rec.etag
-            && old.modified == rec.modified
-            && std::fs::symlink_metadata(root.join(rel)).is_ok_and(|m| m.is_file())
-        {
-            drop(res); // not read: the copy on disk is this file
-            present += 1;
-            files_state.insert(key, rec);
-            let mut md = rel.as_os_str().to_owned();
-            md.push(".md");
-            // Missing, or made before handwritten and scanned pages were recognised.
-            if text::copy_is_stale(&root.join(&md))
-                && let Err(e) = text_copy(&root, rel).await
-            {
-                skipped.push(e);
-            }
-            continue;
-        }
-        if let Some(len) = res.content_length()
-            && len > opts.max_download
-        {
-            skipped.push(format!("{}: too big to download ({}; the limit is {})", f.name, mb(len), mb(opts.max_download)));
-            continue;
-        }
-        let (mut file, tmp, dest) = match names::temp_for(&root, rel) {
-            Ok(t) => t,
-            Err(e) => {
-                skipped.push(format!("{}: couldn’t be saved ({e})", f.name));
-                continue;
-            }
-        };
-        let mut stream = Box::pin(res.bytes_stream());
-        match rest_to(&mut stream, &[], &mut file, opts.max_download).await {
-            Ok(_) => {
-                drop(file);
-                if let Err(e) = names::finish(&tmp, &dest) {
-                    skipped.push(format!("{}: couldn’t be saved ({e})", f.name));
-                    continue;
-                }
-            }
-            Err(e) => {
-                drop(file);
-                let _ = std::fs::remove_file(&tmp);
-                skipped.push(format!("{}: {e}", f.name));
-                continue;
-            }
-        }
         present += 1;
-        downloaded += 1;
+        if wrote {
+            downloaded += 1;
+        } else {
+            unchanged += 1;
+        }
         files_state.insert(key, rec);
-        if let Err(e) = text_copy(&root, rel).await {
+        let mut md = rel.as_os_str().to_owned();
+        md.push(".md");
+        // New bytes, or a copy that's missing or was made before handwritten and scanned pages were recognised.
+        if (wrote || text::copy_is_stale(&root.join(&md)))
+            && let Err(e) = text_copy(&root, rel, cancel).await
+            && e != CANCELLED
+        {
             skipped.push(e);
         }
     }
@@ -641,14 +738,17 @@ pub async fn import_course(
             let url = seen[i].found.url.clone();
             let textbook = seen[i].textbook;
             let dir = readings_dir.clone();
-            async move { (i, fetch_link(session, &dir, &url, textbook, opts.max_download).await) }
+            async move { (i, cancel.run(fetch_link(session, &dir, &url, textbook, opts.max_download, cancel)).await) }
         })
         .collect();
-    let mut fetches = futures_util::stream::iter(reads)
-    .buffer_unordered(4);
+    let mut fetches = futures_util::stream::iter(reads).buffer_unordered(4);
     let mut done = 0;
     let mut new_readings: Vec<PathBuf> = vec![];
-    while let Some((i, fetched)) = fetches.next().await {
+    while !cancel.is_cancelled()
+        && let Some((i, fetched)) = fetches.next().await
+    {
+        // Cancelled: the fetches still running are dropped below, and their temporary files with them.
+        let Ok(fetched) = fetched else { break };
         done += 1;
         progress(STEP_READINGS, done, fetch_total);
         let key = file_key(&seen[i].found.url);
@@ -658,8 +758,9 @@ pub async fn import_course(
                 let mut md = rel.as_os_str().to_owned();
                 md.push(".md");
                 taken.reserve(Path::new(&md));
-                match names::finish(&tmp, &root.join(&rel)) {
+                match names::finish(tmp.path(), &root.join(&rel)) {
                     Ok(()) => {
+                        tmp.keep();
                         new_readings.push(rel.clone());
                         LinkRec { path: Some(rel.to_string_lossy().replace('\\', "/")), title, via: via.map(|v| v.to_string()), ..Default::default() }
                     }
@@ -678,14 +779,39 @@ pub async fn import_course(
         }
     }
     for rel in new_readings.iter().chain(&stale_readings) {
-        if let Err(e) = text_copy(&root, rel).await {
+        if let Err(e) = text_copy(&root, rel, cancel).await
+            && e != CANCELLED
+        {
             skipped.push(e);
         }
     }
 
+    // Stopped before the Markdown: record what's finished (on top of the last import's
+    // record, so nothing done before is forgotten) and leave the course's text as it was.
+    if cancel.is_cancelled() {
+        let mut files = prev.map(|p| p.files.clone()).unwrap_or_default();
+        files.extend(files_state);
+        let mut links = prev.map(|p| p.links.clone()).unwrap_or_default();
+        links.extend(links_state);
+        let readings = links.values().filter(|r| r.path.is_some()).count();
+        let state = CourseState {
+            name: course.name.clone(),
+            code: course.code.clone(),
+            term: course.term.clone(),
+            folder,
+            files,
+            links,
+            due: prev.map(|p| p.due.clone()).unwrap_or_default(),
+            last_sync: prev.and_then(|p| p.last_sync),
+            material: prev.and_then(|p| p.material.clone()),
+            partial: prev.is_none_or(|p| p.partial),
+        };
+        return Ok(Outcome { state, files: present, downloaded, unchanged, readings, links: 0, skipped, cancelled: true, written: false });
+    }
+
     // ---- The Markdown. ----
     progress(STEP_WRITING, 0, 1);
-    let write = |rel: &str, body: &str| names::write(&root, Path::new(rel), body.as_bytes()).map_err(|e| format!("{rel} couldn’t be written: {e}"));
+    let write = |rel: &str, body: &str| write_unless_same(&root, rel, body, None).map(|_| ());
     let md = |html_src: &str, base: Option<&Url>, depth: usize| {
         html::to_markdown(html_src, Some(base.unwrap_or(&session.site.base)), &mut |u| targets.rewrite(session, u, depth))
     };
@@ -780,7 +906,7 @@ pub async fn import_course(
     }
 
     if let Some(g) = &opts.grades {
-        write(GRADES_MD, &grades_markdown(&course.name, g))?;
+        write_unless_same(&root, GRADES_MD, &grades_markdown(&course.name, g), Some(GRADES_STAMP))?;
     }
 
     // ---- README. ----
@@ -794,7 +920,7 @@ pub async fn import_course(
         acc
     });
     let readme = readme(course, session, &content, &assignments, &seen, &links_state, &isbns, &files_state, &planned, &page_paths, &skipped, &root, opts.grades.as_ref());
-    write(README, &readme)?;
+    write_unless_same(&root, README, &readme, Some(README_STAMP))?;
     progress(STEP_WRITING, 1, 1);
 
     // ---- What each document is made of (typed, handwriting, pictures). ----
@@ -806,7 +932,13 @@ pub async fn import_course(
         .collect();
     let prev_material = prev.and_then(|p| p.material.clone());
     let at = root.clone();
-    let material = tokio::task::spawn_blocking(move || material::assess_course(&at, &docs, prev_material.as_ref(), &|p| text::pdf_layers(None, p))).await.ok();
+    let c = cancel.clone();
+    let keep = prev_material.clone();
+    let material = tokio::task::spawn_blocking(move || material::assess_course(&at, &docs, prev_material.as_ref(), &|p| text::pdf_layers_until(None, p, Some(c.flag()))))
+        .await
+        .ok();
+    // Cancelled while assessing: the folder is complete; keep the last assessment rather than a cut-short one.
+    let material = if cancel.is_cancelled() { keep } else { material };
 
     let readings = links_state.values().filter(|r| r.path.is_some()).count();
     let links = web_pages.len();
@@ -820,8 +952,9 @@ pub async fn import_course(
         due,
         last_sync: Some(store::now_ms()),
         material,
+        partial: false,
     };
-    Ok(Outcome { state, files: present, downloaded, readings, links, skipped })
+    Ok(Outcome { state, files: present, downloaded, unchanged, readings, links, skipped, cancelled: cancel.is_cancelled(), written: true })
 }
 
 #[allow(clippy::too_many_arguments)]

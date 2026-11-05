@@ -44,7 +44,7 @@ export function SpaceCourses({ space, view }: { space: Space; view: CourseAccess
   const seen = coursesSeen(view, space.id);
   const words = (key: string) => {
     const parts = mine[key] ?? [];
-    if (parts.length === COURSE_PARTS.length) return "all of it";
+    if (parts.length === COURSE_PARTS.length) return "Full course";
     return COURSE_PARTS.filter((p) => parts.includes(p.part))
       .map((p) => p.label.toLowerCase())
       .join(", ");
@@ -58,19 +58,19 @@ export function SpaceCourses({ space, view }: { space: Space; view: CourseAccess
         </p>
       ) : (
         <>
-          <p className="text-sm text-ink-secondary">Courses {space.name} can see:</p>
-          <ul aria-label={`Courses ${space.name} can see`} className="flex w-full flex-col rounded-md bg-surface-sunken">
+          <p className="text-sm text-ink-secondary">Courses</p>
+          <ul aria-label={`Courses ${space.name} can see`} className="flex max-h-40 w-full flex-col overflow-y-auto overscroll-contain">
             {seen.map((c) => (
               <li key={c.key} className="flex flex-col py-2 ps-3 pe-1.5 not-first:border-t not-first:border-line" data-space-course={c.key}>
-                <span className="text-base wrap-anywhere text-ink">{c.name}</span>
-                <span className="text-sm text-ink-secondary">{words(c.key)}</span>
+                <span className="text-sm wrap-anywhere text-ink">{c.name}</span>
+                <span className="text-xs text-ink-tertiary">{words(c.key)}</span>
               </li>
             ))}
           </ul>
         </>
       )}
-      <Button type="button" variant="link" className="px-0" onClick={() => go("courses", `[data-access-row="${CSS.escape(space.id)}"] [data-cell]`)} data-space-courses-change="">
-        Choose which courses {space.name} can see…
+      <Button type="button" variant="link" className="px-0" onClick={() => go("courses", seen[0] ? `[data-course-select="${CSS.escape(seen[0].key)}"]` : undefined)} data-space-courses-change="">
+        Manage course access
       </Button>
     </div>
   );

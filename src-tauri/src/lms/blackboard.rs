@@ -240,7 +240,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
                         aliases.extend(base.join(&format!("{path}/{}", enc(&aid))).ok());
                         aliases.extend(nautilus(&base, course_id, &it.id, it.parent.as_deref()));
                         entries.push(name.clone());
-                        out.files.push(RemoteFile { name, folder: folder.clone(), url, size: None, mime: text(&a, "mimeType"), aliases });
+                        out.files.push(RemoteFile { name, folder: folder.clone(), url, size: None, mime: text(&a, "mimeType"), aliases, version: None });
                     }
                 }
                 Err(LmsError::SignedOut) => return Err(LmsError::SignedOut),
@@ -252,7 +252,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
         // Files embedded in the item's text by Learn's editor (`/bbcswebdav/...`).
         for (url, name) in webdav_links(&base, &body) {
             if seen_files.insert(url.to_string()) {
-                out.files.push(RemoteFile { name, folder: folder.clone(), url, size: None, mime: None, aliases: Vec::new() });
+                out.files.push(RemoteFile { name, folder: folder.clone(), url, size: None, mime: None, aliases: Vec::new(), version: None });
             }
         }
 
@@ -345,6 +345,11 @@ fn has_attachments(handler: &str) -> bool {
     matches!(handler, "resource/x-bb-file" | "resource/x-bb-document" | "resource/x-bb-assignment" | "resource/x-bb-syllabus")
 }
 
+/// The signed-in user's id (`GET /learn/api/public/v1/users/me`).
+pub async fn account(s: &Session) -> Result<String, LmsError> {
+    whoami(s).await
+}
+
 /// The person's user id. 401/403 or a login page from this call: signed out.
 async fn whoami(s: &Session) -> Result<String, LmsError> {
     let me: Value = s.get_json(&format!("{API}/v1/users/me")).await.map_err(|e| match e {
@@ -359,7 +364,11 @@ async fn paged(s: &Session, first: &str) -> Result<Vec<Value>, LmsError> {
     let mut out = Vec::new();
     let mut next = Some(first.to_string());
     let mut pages = 0;
+    let mut seen = std::collections::HashSet::new();
     while let Some(path) = next.take() {
+        let canonical = s.site.base.join(&path).map_err(|_| LmsError::Incomplete("Blackboard returned an invalid next page.".into()))?;
+        if !s.site.owns(&canonical) { return Err(LmsError::Incomplete("Blackboard pointed the remaining list at another site. The list is incomplete.".into())); }
+        if !seen.insert(canonical.to_string()) { return Err(LmsError::Incomplete("Blackboard repeated a list page. The list is incomplete; try importing again.".into())); }
         let v: Value = s.get_json(&path).await?;
         match &v {
             Value::Array(a) => out.extend(a.iter().cloned()),
@@ -367,7 +376,8 @@ async fn paged(s: &Session, first: &str) -> Result<Vec<Value>, LmsError> {
         }
         pages += 1;
         // Only follow a next page that stays on the site (`get_json` would refuse anything else anyway).
-        next = text_at(&v, &["paging", "nextPage"]).filter(|n| pages < MAX_PAGES && s.site.base.join(n).is_ok_and(|u| s.site.owns(&u)));
+        next = text_at(&v, &["paging", "nextPage"]);
+        if next.is_some() && pages >= MAX_PAGES { return Err(LmsError::Incomplete(format!("Blackboard has more than {MAX_PAGES} list pages. The list is incomplete; narrow the selection before retrying."))); }
     }
     Ok(out)
 }
@@ -939,5 +949,26 @@ mod tests {
         assert_eq!(enc("a/b c"), "a%2Fb%20c");
         assert_eq!(percent_decode("a%3Ab%2"), "a:b%2");
         assert_eq!(router_field("user:1,xsrf:", "xsrf"), None);
+    }
+}
+
+#[cfg(test)]
+mod pagination_integrity_tests {
+    use super::*;
+    use crate::lms::{fake, Credential, Kind, Site};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn pagination_never_silently_returns_a_cycle_or_capped_list() {
+        for cycle in [true, false] {
+            let (base, requests) = fake::serve(Arc::new(move |path| {
+                let n = path.rsplit('=').next().unwrap_or("0").parse::<usize>().unwrap_or(0);
+                fake::json(serde_json::json!({"results":[],"paging":{"nextPage":format!("/pages?n={}", if cycle { n } else { n + 1 })}}).to_string())
+            })).await;
+            let session = Session::new(Site::for_test(Kind::Blackboard, &base), Credential { cookies: vec![], csrf: None });
+            let error = paged(&session, "/pages?n=0").await.unwrap_err();
+            assert!(matches!(error, LmsError::Incomplete(_)));
+            assert_eq!(requests.lock().unwrap().len(), if cycle { 1 } else { MAX_PAGES });
+        }
     }
 }

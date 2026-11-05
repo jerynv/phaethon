@@ -58,7 +58,7 @@ pub async fn courses(s: &Session) -> Result<Vec<Course>, LmsError> {
     let active = get_all(s, &list("active")).await?;
     let past = match get_all(s, &list("completed")).await {
         Ok(v) => v,
-        Err(e @ (LmsError::SignedOut | LmsError::Network(_))) => return Err(e),
+        Err(e @ (LmsError::SignedOut | LmsError::Network(_) | LmsError::Incomplete(_))) => return Err(e),
         Err(_) => Vec::new(),
     };
     let mut seen = HashSet::new();
@@ -71,6 +71,12 @@ pub async fn courses(s: &Session) -> Result<Vec<Course>, LmsError> {
         }
     }
     Ok(out)
+}
+
+/// The signed-in user's id: `GET /api/v1/users/self` (Canvas Users API, "Show user details").
+pub async fn account(s: &Session) -> Result<String, LmsError> {
+    let me = get_one(s, &api(s, &["users", "self"], &[])).await?;
+    id_str(&me["id"]).ok_or_else(|| unexpected("no user id"))
 }
 
 fn course_from(v: &Value, concluded: bool, now: i64) -> Option<Course> {
@@ -433,6 +439,8 @@ impl Files {
             size: v["size"].as_u64(),
             mime: v["content-type"].as_str().map(str::to_string),
             aliases,
+            // The File object's `updated_at` (with its size): the same stamp means the same bytes.
+            version: v["updated_at"].as_str().or(v["modified_at"].as_str()).filter(|t| !t.is_empty()).map(|t| format!("{t}/{}", v["size"].as_u64().map(|n| n.to_string()).unwrap_or_default())),
         });
     }
 }
@@ -517,8 +525,11 @@ async fn get_all(s: &Session, url: &Url) -> Result<Vec<Value>, LmsError> {
         if !s.site.owns(&u) {
             return Err(LmsError::Other("Your course site pointed the rest of a list at another site, so Phaethon stopped there.".into()));
         }
-        if !seen.insert(u.to_string()) || seen.len() > MAX_PAGES {
-            break;
+        if !seen.insert(u.to_string()) {
+            return Err(LmsError::Incomplete("Canvas repeated a list page. The list is incomplete; try importing again.".into()));
+        }
+        if seen.len() > MAX_PAGES {
+            return Err(LmsError::Incomplete(format!("Canvas has more than {MAX_PAGES} list pages. The list is incomplete; narrow the selection before retrying.")));
         }
         let (v, n) = get_page(s, &u).await?;
         match v {
@@ -1129,5 +1140,28 @@ mod tests {
         assert_eq!(p["10"], None);
         assert_eq!(p["12"].as_deref(), Some("Lectures/Week 1"));
         assert_eq!(percent_decode("a%2Bb%3D%zz"), "a+b=%zz");
+    }
+}
+
+#[cfg(test)]
+mod pagination_integrity_tests {
+    use super::*;
+    use crate::lms::{fake, Credential, Kind, Site};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn pagination_never_silently_returns_a_cycle_or_capped_list() {
+        for cycle in [true, false] {
+            let (base, requests) = fake::serve(Arc::new(move |path| {
+                let n = path.rsplit('=').next().unwrap_or("0").parse::<usize>().unwrap_or(0);
+                let mut reply = fake::json("[]");
+                reply.headers.push(("Link", format!("</pages?n={}>; rel=\"next\"", if cycle { n } else { n + 1 })));
+                reply
+            })).await;
+            let session = Session::new(Site::for_test(Kind::Canvas, &base), Credential { cookies: vec![], csrf: None });
+            let error = get_all(&session, &Url::parse(&format!("{base}/pages?n=0")).unwrap()).await.unwrap_err();
+            assert!(matches!(error, LmsError::Incomplete(_)));
+            assert_eq!(requests.lock().unwrap().len(), if cycle { 1 } else { MAX_PAGES });
+        }
     }
 }

@@ -71,7 +71,7 @@ export default [
       await h.click("[data-sidebar-history-all]");
       await page.waitForFunction(() => document.querySelectorAll("[data-conversations-menu] [data-thread-id]").length === 15, { timeout: 3000 });
       await h.idle();
-      expect(await page.$eval("[data-conversations-menu]", (menu) => menu.scrollHeight > menu.clientHeight), "the narrow history fixture does not exercise scrolling");
+      expect(await page.$eval("[data-history-list]", (list) => list.scrollHeight > list.clientHeight), "the narrow history fixture does not exercise scrolling");
       const ids = await page.$$eval("[data-conversations-menu] [data-thread-id]", (items) => items.map((item) => item.dataset.threadId));
       for (const id of ids) {
         const item = await page.$(`[data-conversations-menu] [data-thread-id="${id}"]`);

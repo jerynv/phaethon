@@ -1,4 +1,8 @@
-import { Checkbox } from "vic-ui";
+import { Checkbox, MenuSurface, PopoverSurface, Skeleton } from "vic-ui";
+import { CourseSiteMark } from "@/components/settings/course-site-mark";
+import { MaterialFiles } from "./material-files";
+import { CourseContentBrowser } from "./course-content";
+import "./lms.css";
 import { RadioGroup } from "radix-ui";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -24,10 +28,9 @@ import { Icon } from "@/icons";
 import { lmsConnect, lmsConnections, lmsCourses, lmsSchools, type LmsConnection, type LmsCourse, type LmsKind, type LmsSchool } from "@/lib/lms";
 import type { Space } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
-import { MaterialLines } from "@/components/study/material-note";
 import { openSpaceFile } from "@/runtime/records";
 
-import { clearRun, openCourseImport, sitesChanged, startImport, useImportRequest, useRun, type CourseRun, type ImportRequest, type Run } from "./import-store";
+import { cancelImport, clearRun, openCourseImport, sitesChanged, startImport, useImportRequest, useRun, type CourseRun, type ImportRequest, type Run } from "./import-store";
 import { checkAddress, connectionName, hostOf, isCancelled, isSignedOut, KINDS, kindLabel, plural } from "./sites";
 
 /** Typing pauses this long before the school search runs. */
@@ -66,6 +69,7 @@ const importedCount = (r: Run) => r.courses.filter((c) => c.result).length;
 
 function endText(r: Run): string {
   const n = importedCount(r);
+  if (r.status === "cancelled") return `Import stopped · ${n} courses saved.`;
   if (r.status === "failed" && n === 0) return `The import stopped. ${r.error ?? ""}`.trim();
   if (n === r.courses.length) return `${plural(n, "course", "courses")} imported.`;
   return `${n} of ${r.courses.length} courses imported.`;
@@ -377,11 +381,12 @@ function Flow({
   return (
     <WizardDialogContent
       data-course-import=""
+      className="lms-import-flow"
       data-step={step}
       aria-describedby={undefined}
       dirty={["school", "signin", "choose", "viewers", "review"].includes(step)}
       onClose={onClose}
-      discard={{ title: "Stop importing courses?", body: "Nothing has been imported yet. What you chose here isn’t kept; a site you signed in to stays signed in." }}
+      discard={{ title: "Discard import setup?", body: "Your connected account will stay connected." }}
       onOpenAutoFocus={(e) => {
         e.preventDefault();
         titleRef.current?.focus();
@@ -466,7 +471,7 @@ function KindStep({
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!kind) {
-      setError("Choose the course site your school uses. If you aren’t sure, open it in your browser: its name is usually on the sign-in page.");
+      setError("Choose a course site.");
       groupRef.current?.querySelector<HTMLElement>('[role="radio"]')?.focus();
       return;
     }
@@ -475,17 +480,15 @@ function KindStep({
 
   return (
     <form onSubmit={submit} onKeyDown={enterAdvances} noValidate className={WIZARD_FORM}>
-      <StepHead {...frame} title="Which course site does your school use?">
-        <p>Phaethon reads your courses from it and keeps them as files you can open, for the spaces you choose.</p>
-      </StepHead>
+      <StepHead {...frame} title="Connect a course site" />
       <WizardBody>
       {connections && connections.length > 0 && (
         <div className="flex flex-col gap-2" data-existing-sites="">
           <h3 className="text-md font-semibold text-ink">Already connected</h3>
           <ul className="flex flex-col gap-2">
             {connections.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-2.5">
-                <span className="flex min-w-0 flex-[1_1_12em] flex-col">
+              <li key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
+                <CourseSiteMark connection={c} /><span className="flex min-w-0 flex-[1_1_12em] flex-col">
                   <span className="font-medium text-ink wrap-break-word">{connectionName(c)}</span>
                   <span className="text-sm text-ink-secondary">
                     {kindLabel(c.kind)} · {c.signedIn ? "Signed in" : "Signed out"}
@@ -499,7 +502,7 @@ function KindStep({
             ))}
           </ul>
           <h3 id={groupLabel} className="pt-2 text-md font-semibold text-ink">
-            Or connect another course site
+            Connect another site
           </h3>
         </div>
       )}
@@ -519,7 +522,7 @@ function KindStep({
           setError("");
         })}
         loop
-        className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,calc(15rem*var(--ph-ui-scale))),1fr))] gap-2"
+        className="grid grid-cols-2 gap-2"
       >
         {KINDS.map((k) => (
           <RadioGroup.Item
@@ -527,23 +530,19 @@ function KindStep({
             value={k.kind}
             data-kind={k.kind}
             aria-labelledby={`${groupLabel}-${k.kind}`}
-            aria-describedby={`${groupLabel}-${k.kind}-hint`}
-            className={cn(
-              "group flex min-h-(--ph-control-height-lg) w-full min-w-0 items-start gap-3 rounded-lg border border-line-strong bg-raised px-3.5 py-3 text-start shadow-sm transition-colors duration-(--ph-duration-fast) hover:bg-hover",
+                        className={cn(
+              "group flex min-h-16 w-full min-w-0 items-center gap-3 rounded-md bg-surface px-3 py-3 text-start transition-colors duration-(--ph-duration-fast) hover:bg-hover",
               "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft",
             )}
           >
-            <span className="mt-0.5 grid size-(--ph-icon-size) shrink-0 place-items-center rounded-full border-2 border-ink-tertiary group-data-[state=checked]:border-accent-fill">
-              <RadioGroup.Indicator className="size-[50%] rounded-full bg-accent-fill forced-colors:bg-[CanvasText]" />
-            </span>
+            <CourseSiteMark connection={{ kind: k.kind, address: "" }} />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span id={`${groupLabel}-${k.kind}`} className="text-md font-semibold text-ink">
                 {k.label}
               </span>
-              <span id={`${groupLabel}-${k.kind}-hint`} className="text-sm wrap-anywhere text-ink-secondary group-data-[state=checked]:text-accent-soft-ink">
-                {k.hint}
-              </span>
+
             </span>
+            <RadioGroup.Indicator className="lms-site-selected ms-auto flex size-4 shrink-0 items-center justify-center"><Icon name="check" className="size-full" /></RadioGroup.Indicator>
           </RadioGroup.Item>
         ))}
       </RadioGroup.Root>
@@ -579,25 +578,19 @@ function SchoolStep({ site, onBack, onNext, ...frame }: FrameProps & { site: Sit
 
   return (
     <div className={WIZARD_FORM}>
-      <StepHead {...frame} title="Find your school">
-        <p>
-          {typing
-            ? `Type the address of your school’s ${k.label} site: the address you see when you open it in your browser.`
-            : `Search for your school by name. Phaethon looks it up in ${k.label}’s list of schools.`}
-        </p>
-      </StepHead>
+      <StepHead {...frame} title="Find your school"><span className="flex items-center gap-2 text-sm"><CourseSiteMark connection={site} />{k.label}</span></StepHead>
       {typing ? (
         <AddressForm fieldRef={fieldRef} site={site} example={k.example} onBack={onBack} onNext={onNext}>
           {canSearch && (
             <Button type="button" variant="link" data-school-mode="search" onClick={() => setTyping(false)} className="self-start">
-              Search for your school by name instead
+              Search by school name
             </Button>
           )}
         </AddressForm>
       ) : (
         <SchoolSearch fieldRef={fieldRef} site={site} onBack={onBack} onNext={onNext}>
           <Button type="button" variant="link" data-school-mode="address" onClick={() => setTyping(true)} className="self-start">
-            Type the address instead
+            Enter site address
           </Button>
         </SchoolSearch>
       )}
@@ -662,7 +655,7 @@ function AddressForm({
           }}
         />
         <p id={hintId} className="text-sm text-ink-secondary">
-          The address you see when you open it in your browser, for example {example}. Only the part before the first / matters.
+          {example}
         </p>
         {error && <FieldError id={errId}>{error}</FieldError>}
       </div>
@@ -794,7 +787,7 @@ function SchoolSearch({
         <label htmlFor={id} className="text-base font-medium text-ink">
           School
         </label>
-        <div className="relative">
+        <div className="relative lms-school-search">
           <Icon name="search" className="pointer-events-none absolute start-2.5 top-1/2 z-10 -translate-y-1/2 text-ink-secondary" />
           <Input
             ref={fieldRef}
@@ -820,14 +813,12 @@ function SchoolSearch({
             onKeyDown={onKeyDown}
             className="w-full ps-[calc(var(--ph-icon-size)+var(--ph-space)*4)]"
           />
-        </div>
-        {/* Always in the page, so the listbox the field controls exists; empty while nothing is listed. */}
-        <ul
+        <MenuSurface asChild><ul
           id={listId}
           role="listbox"
           aria-label="Schools"
           hidden={!listed}
-          className="flex max-h-[calc(var(--ph-control-height-lg)*5)] flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-md border border-line bg-raised p-1 shadow-sm"
+          className="lms-school-options absolute! inset-auto! top-full! start-0! z-20! mt-1! flex max-h-48 flex-col gap-0.5 overflow-y-auto overscroll-contain"
         >
           {listed &&
             results.map((s, i) => (
@@ -849,7 +840,8 @@ function SchoolSearch({
                 <span className="text-sm wrap-anywhere text-ink-secondary">{hostOf(s.address)}</span>
               </li>
             ))}
-        </ul>
+        </ul></MenuSurface>
+        </div>
         {picked ? (
           <p id={`${id}-picked`} className="flex items-start gap-1.5 text-sm text-ink-secondary" data-school-picked="">
             <Icon name="check" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0 text-success-ink" />
@@ -859,7 +851,7 @@ function SchoolSearch({
           </p>
         ) : (
           <p id={hintId} className="text-sm text-ink-secondary">
-            Type at least {SEARCH_MIN} letters of its name, then pick it with the arrow keys and Enter.
+            Search by name or enter the site address.
           </p>
         )}
         <p id={statusId} role="status" className="text-sm text-ink-secondary empty:hidden" data-school-status="">
@@ -919,7 +911,7 @@ function SignInStep({
       setWaiting(false);
       setProblem(
         isCancelled(e)
-          ? { tone: "warning", text: "The sign-in window was closed before you finished signing in. Open it again when you’re ready." }
+          ? { tone: "warning", text: "Sign-in was closed. Open it to try again." }
           : { tone: "danger", text: `Signing in didn’t work. ${String(e)}` },
       );
       requestAnimationFrame(() => openRef.current?.focus());
@@ -929,7 +921,7 @@ function SignInStep({
   function cancel() {
     attempt.current++;
     setWaiting(false);
-    setProblem({ tone: "warning", text: "Stopped waiting. If the sign-in window is still open, you can close it." });
+    setProblem({ tone: "warning", text: "Sign-in paused." });
     requestAnimationFrame(() => openRef.current?.focus());
   }
 
@@ -939,24 +931,20 @@ function SignInStep({
         {reason === "signedOut" ? (
           <p>You’ve been signed out of {school}, so Phaethon can’t see your courses. Sign in again to carry on.</p>
         ) : null}
-        <p>
-          Phaethon opens your school’s own sign-in page ({hostOf(site.address)}) in a separate window. Sign in there as you always do, including any
-          extra check your school asks for.
-        </p>
+        <p className="text-sm">{hostOf(site.address)}</p>
       </StepHead>
       <WizardBody>
       {waiting ? (
         <div role="status" className="flex items-start gap-2.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-base text-ink" data-signin-waiting="">
           <Icon name="spinner" className="mt-0.5 shrink-0 text-ink-secondary motion-safe:animate-spin" />
           <p>
-            Finish signing in in the window that opened. Phaethon only keeps the session your sign-in creates, in your keychain on this computer, and only
-            uses it to read your courses.
+            Finish signing in in the school window.
           </p>
         </div>
       ) : (
         <p className="flex items-start gap-2 text-sm text-ink-secondary">
           <Icon name="lock" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0 text-ink-tertiary" />
-          <span>Your password goes only to your school. Phaethon keeps the session it leaves, in your keychain on this computer, and only reads from {school}: it never changes anything there.</span>
+          <span>Continue in your school’s sign-in window.</span>
         </p>
       )}
       {problem && (
@@ -1010,6 +998,7 @@ function ChooseStep({
   const courses = pick?.courses ?? null;
   const chosen = pick?.chosen ?? new Set<string>();
   const [loadError, setLoadError] = useState(syncError);
+  const [filter, setFilter] = useState("");
   const [error, setError] = useState("");
   const errId = useId();
   const listRef = useRef<HTMLDivElement>(null);
@@ -1019,7 +1008,12 @@ function ChooseStep({
     setLoadError("");
     lmsCourses(connection.id).then(
       // Current courses not imported yet start checked; past ones and ones already here don't.
-      (cs) => onPick({ connection: connection.id, courses: cs, chosen: new Set(cs.filter((c) => c.current && !c.imported).map((c) => c.id)) }),
+      (cs) => {
+        let saved: unknown = null;
+        try { saved = JSON.parse(localStorage.getItem(`phaethon.lms-selection.${connection.id}`) ?? "null"); } catch { /* The connection remains usable without local storage. */ }
+        const chosen = new Set<string>(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string" && cs.some(c => c.id === id)) : cs.filter(c => c.imported || c.partial || c.current).map(c => c.id));
+        onPick({ connection: connection.id, courses: cs, chosen });
+      },
       (e: unknown) => {
         if (isSignedOut(e)) onSignedOut();
         else setLoadError(String(e));
@@ -1032,14 +1026,16 @@ function ChooseStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const current = courses?.filter((c) => c.current) ?? [];
-  const past = courses?.filter((c) => !c.current) ?? [];
+  const matches = (c: LmsCourse) => `${c.name} ${c.code ?? ""} ${c.term ?? ""}`.toLowerCase().includes(filter.toLowerCase());
+  const current = courses?.filter((c) => c.current && matches(c)) ?? [];
+  const past = courses?.filter((c) => !c.current && matches(c)) ?? [];
 
   function setChosen(f: (s: Set<string>) => void) {
     if (!courses) return;
     const next = new Set(chosen);
     f(next);
     onPick({ connection: connection.id, courses, chosen: next });
+    try { localStorage.setItem(`phaethon.lms-selection.${connection.id}`, JSON.stringify([...next])); } catch { /* Selection stays available in this flow. */ }
     setError("");
   }
   const toggle = (id: string, on: boolean) => setChosen((s) => (on ? s.add(id) : s.delete(id)));
@@ -1050,7 +1046,7 @@ function ChooseStep({
     if (!courses) return;
     if (!courses.some((c) => chosen.has(c.id))) {
       setError("Choose at least one course to import.");
-      listRef.current?.querySelector<HTMLElement>('input[type="checkbox"]')?.focus();
+      (Array.from(listRef.current?.querySelectorAll<HTMLElement>('input[type="checkbox"]') ?? []).find(input => input.getClientRects().length > 0) ?? frame.titleRef.current)?.focus();
       return;
     }
     onNext();
@@ -1058,11 +1054,7 @@ function ChooseStep({
 
   return (
     <form onSubmit={submit} onKeyDown={enterAdvances} noValidate className={WIZARD_FORM}>
-      <StepHead {...frame} title="Choose courses to import">
-        <p>
-          From {school}. Courses you imported before are updated: only new or changed files are downloaded.
-        </p>
-      </StepHead>
+      <StepHead {...frame} title="Choose courses"><p className="text-sm">{school} · {chosen.size} selected</p></StepHead>
       <WizardBody>
         {loadError ? (
           <Alert>
@@ -1073,12 +1065,10 @@ function ChooseStep({
             </Button>
           </Alert>
         ) : !courses ? (
-          <p role="status" className="flex items-center gap-2 text-base text-ink-secondary" data-courses-loading="">
-            <Icon name="spinner" className="motion-safe:animate-spin" />
-            Getting your courses from {school}…
-          </p>
+          <div role="status" aria-label="Loading courses" className="flex flex-col gap-3" data-courses-loading="">{[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : (
-          <div ref={listRef} className="flex flex-col gap-3" data-course-list="">
+          <div ref={listRef} className="flex min-h-0 flex-col gap-3" data-course-list="">
+            <Input aria-label="Filter courses" placeholder="Search courses…" value={filter} onChange={e => setFilter(e.target.value)} className="shrink-0" />
             <CourseGroup
               title="Current courses"
               courses={current}
@@ -1090,7 +1080,7 @@ function ChooseStep({
             />
             {past.length > 0 && (
               <details
-                className="group/past flex flex-col"
+                className="group/past flex min-h-0 flex-col"
                 data-past-courses=""
                 // Open from the start when coming back with a past course checked; after that it is the person's to fold.
                 ref={(el) => {
@@ -1103,7 +1093,7 @@ function ChooseStep({
                   <Icon name="chevron-right" className="size-(--ph-icon-size-sm) transition-transform duration-(--ph-duration-fast) group-open/past:rotate-90" />
                   Past courses ({past.length})
                 </summary>
-                <div className="pt-2">
+                <div className="max-h-48 overflow-y-auto overscroll-contain pt-2">
                   <CourseGroup title="Past courses" courses={past} chosen={chosen} onToggle={toggle} onAll={(on) => setAll(past, on)} empty="" hideTitle />
                 </div>
               </details>
@@ -1158,9 +1148,7 @@ function ViewersStep({
 
   return (
     <form onSubmit={submit} onKeyDown={enterAdvances} noValidate className={WIZARD_FORM}>
-      <StepHead {...frame} title="Which spaces can see these courses?">
-        <p>Phaethon in a space can only read the courses that space can see.</p>
-      </StepHead>
+      <StepHead {...frame} title="Add to spaces" />
       <WizardBody>
         <fieldset className="flex min-w-0 flex-col gap-1.5" aria-describedby={`${spaceId}-what${error ? ` ${spaceId}-err` : ""}`} data-import-viewers="">
           <legend className="sr-only">Who can see these courses</legend>
@@ -1179,15 +1167,14 @@ function ViewersStep({
                     }}
                   />
                   {s.name}
-                  {s.id === space && <span className="text-sm text-ink-secondary">(this space)</span>}
+                  {s.id === space && <span className="text-sm text-ink-secondary">Current</span>}
                 </label>
               </li>
             ))}
           </ul>
           {error && <FieldError id={`${spaceId}-err`}>{error}</FieldError>}
           <p id={`${spaceId}-what`} className="text-sm text-ink-secondary" data-import-what="">
-            Each course gets a folder with its syllabus, assignments, files and the readings it links to. The spaces you check can see all of each new course;
-            choose part by part later in Settings › Course sites. Courses imported before keep who can see them.
+            Existing course access stays unchanged.
           </p>
         </fieldset>
       </WizardBody>
@@ -1254,12 +1241,10 @@ function ReviewStep({
               ),
               onChange: () => onChange("choose"),
             },
-            { id: "viewers", label: "Who can see them", value: seenBy.map((s) => s.name).join(", "), onChange: () => onChange("viewers") },
+            { id: "viewers", label: "Spaces", value: seenBy.map((s) => s.name).join(", "), onChange: () => onChange("viewers") },
           ]}
         />
-        <p className="text-sm text-ink-secondary">
-          Phaethon downloads them into your vault as plain files. It only reads from {school}: nothing changes there. You can close this window while it works.
-        </p>
+
       </WizardBody>
       <Footer
         onBack={onBack}
@@ -1297,7 +1282,7 @@ function CourseGroup({
   const lower = title.toLowerCase();
   return (
     <fieldset aria-describedby={describedBy} className="flex min-w-0 flex-col gap-1.5" data-course-group={lower}>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 bg-surface py-1">
         <legend id={legendId} className={cn("float-start text-base font-medium text-ink", hideTitle && "sr-only")}>
           {title}
         </legend>
@@ -1315,10 +1300,10 @@ function CourseGroup({
       {courses.length === 0 ? (
         empty && <p className="text-sm text-ink-secondary">{empty}</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised">
+        <ul className="flex flex-col divide-y divide-line">
           {courses.map((c) => (
             <li key={c.id}>
-              <label className="flex min-h-(--ph-control-height-lg) cursor-default items-start gap-3 px-3.5 py-2.5 hover:bg-hover" data-course={c.id}>
+              <label className="flex min-h-12 cursor-default items-center gap-2.5 rounded-md px-2 py-2 hover:bg-hover" data-course={c.id}>
                 <Checkbox
                   checked={chosen.has(c.id)}
                   onChange={(e) => onToggle(c.id, e.target.checked)}
@@ -1327,9 +1312,10 @@ function CourseGroup({
                   <span className="font-medium wrap-break-word text-ink">{c.name}</span>
                   <span className="text-sm text-ink-secondary">
                     {[c.code, c.term].filter(Boolean).join(" · ")}
-                    {c.imported && (
+                    {c.partial && <span data-course-partial="" className="text-warning-ink">{c.code || c.term ? " · " : ""}Resume import</span>}
+                    {c.imported && !c.partial && (
                       <span data-course-imported="">
-                        {c.code || c.term ? " · " : ""}Imported before
+                        {c.code || c.term ? " · " : ""}Imported
                       </span>
                     )}
                   </span>
@@ -1355,6 +1341,7 @@ function ProgressStep({
   const run = useRun();
   const [said, setSaid] = useState("");
   const [showError, setShowError] = useState("");
+  const [browsing, setBrowsing] = useState<CourseRun | null>(null);
   const before = useRef<Run | null>(run);
 
   // Said politely, once per course as it finishes and once at the end: never each step.
@@ -1408,14 +1395,12 @@ function ProgressStep({
 
   return (
     <div className={WIZARD_FORM}>
-      <StepHead {...frame} title={running ? "Importing courses" : run.status === "failed" && !done ? "The import stopped" : "Import finished"}>
+      <StepHead {...frame} title={running ? "Importing courses" : run.status === "cancelled" ? "Import stopped" : run.status === "failed" && !done ? "The import stopped" : "Import finished"}>
         <p>
-          {running
-            ? "You can close this window: the import keeps going, and Phaethon says when it’s done."
-            : `From ${run.school}. ${endText(run)}`}
+          {running ? `${done} of ${run.courses.length} courses · ${run.school}` : endText(run)}
         </p>
         <p data-import-seen-by="">
-          {seenBy.length ? `New courses can be seen in ${seenBy.join(", ")}.` : "No space can see the new courses yet: choose in Settings › Course sites."}
+          {seenBy.join(" · ")}
         </p>
       </StepHead>
       <WizardBody>
@@ -1426,22 +1411,26 @@ function ProgressStep({
         </p>
       ))}
       {showError && <Alert>{showError}</Alert>}
-      <ul className="flex flex-col gap-2" aria-label="Courses" data-import-list="">
+      {run.cancelError && <Alert>{run.cancelError}</Alert>}
+      {browsing?.result && viewer ? <div className="flex min-h-0 flex-col gap-3">
+        <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => setBrowsing(null)}><Icon name="chevron-left" />Import summary</Button>
+        <h3 className="text-base font-medium text-ink">{browsing.name}</h3>
+        <CourseContentBrowser space={viewer} course={{ key: `${run.connection}/${browsing.id}`, connection: run.connection, courseId: browsing.id, name: browsing.name, folder: browsing.result.folder }} />
+      </div> : <ul className="flex flex-col gap-2" aria-label="Courses" data-import-list="">
         {run.courses.map((c) => (
-          <CourseProgress key={c.id} course={c} running={running} onShow={viewer ? () => void show(c) : undefined} onAsk={viewer ? () => onAsk(viewer, askText(c)) : undefined} />
+          <CourseProgress key={c.id} course={c} running={running} onShow={viewer ? () => void show(c) : undefined} onAsk={viewer ? () => onAsk(viewer, askText(c)) : undefined} onBrowse={viewer ? () => setBrowsing(c) : undefined} space={viewer ?? undefined} />
         ))}
-      </ul>
+      </ul>}
       <p role="status" className="sr-only" data-import-status="">
         {said}
       </p>
       </WizardBody>
       <Footer
         cancel={false}
-        next={
-          <Button type="button" variant={running ? "outline" : "default"} onClick={onClose} data-import-close="">
-            {running ? "Close" : "Done"}
-          </Button>
-        }
+        next={<>
+          {running && <Button type="button" variant="destructive" size="sm" disabled={run.cancelling} onClick={() => void cancelImport()} data-import-cancel=""><Icon name="stop" />{run.cancelling ? "Stopping…" : "Stop import"}</Button>}
+          <Button type="button" variant={running ? "outline" : "default"} onClick={onClose} data-import-close="">{running ? "Continue in background" : "Done"}</Button>
+        </>}
       />
     </div>
   );
@@ -1461,12 +1450,12 @@ function stepText(c: CourseRun): string {
 
 const askText = (c: CourseRun) => `What’s coming up in ${c.name}, and what should I read first?`;
 
-function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseRun; running: boolean; onShow?: () => void; onAsk?: () => void }) {
+function CourseProgress({ course: c, running, onShow, onAsk, onBrowse, space }: { course: CourseRun; running: boolean; onShow?: () => void; onAsk?: () => void; onBrowse?: () => void; space?: string }) {
   const nameId = useId();
   const state = c.result ? "done" : c.failed ? "failed" : c.step ? "working" : "waiting";
   const total = Math.max(c.total, 1);
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-line bg-raised px-3.5 py-3" data-import-course={c.id} data-state={state}>
+    <li className="flex flex-col gap-2 border-b border-line px-1 py-3 last:border-0" data-import-course={c.id} data-state={state}>
       <div className="flex items-start gap-2">
         <Icon
           name={state === "done" ? "success" : state === "failed" ? "error" : state === "working" ? "spinner" : "file-text"}
@@ -1477,7 +1466,7 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
           )}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h3 id={nameId} className="text-base font-semibold wrap-break-word text-ink">
+          <h3 id={nameId} className="text-sm font-medium wrap-break-word text-ink">
             {c.name}
           </h3>
           <p className="text-sm text-ink-secondary" data-course-status="">
@@ -1499,17 +1488,17 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
           aria-labelledby={nameId}
           aria-valuemin={0}
           aria-valuemax={total}
-          aria-valuenow={Math.min(c.done, total)}
+          aria-valuenow={c.total > 0 ? Math.min(c.done, total) : undefined}
           aria-valuetext={state === "waiting" ? "Waiting" : stepText(c)}
           className="h-1.5 overflow-hidden rounded-full bg-surface-sunken forced-colors:border forced-colors:border-[CanvasText]"
         >
           <div
-            className="h-full rounded-full bg-accent-fill transition-[width] duration-(--ph-duration) forced-colors:bg-[Highlight]"
-            style={{ width: `${(Math.min(c.done, total) / total) * 100}%` }}
+            className={cn("h-full rounded-full bg-accent-fill transition-[width] duration-(--ph-duration) forced-colors:bg-[Highlight]", !c.total && "lms-progress-indeterminate")}
+            style={{ width: c.total ? `${(Math.min(c.done, total) / total) * 100}%` : "35%" }}
           />
         </div>
       )}
-      {state === "done" && <MaterialLines summary={c.result!.material} details className="flex flex-col" />}
+      {state === "done" && <MaterialFiles summary={c.result!.material} space={space} folder={c.result!.folder} />}
       {state === "done" && c.result!.skipped.length > 0 && (
         <div className="flex flex-col gap-0.5 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning-ink forced-colors:border forced-colors:border-[CanvasText]" data-course-skipped="">
           <p className="font-medium">Some parts couldn’t be imported:</p>
@@ -1522,12 +1511,13 @@ function CourseProgress({ course: c, running, onShow, onAsk }: { course: CourseR
       )}
       {state === "done" && onShow && onAsk && (
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onShow} data-course-show="">
+          {onBrowse && <Button type="button" variant="outline" size="sm" onClick={onBrowse} data-course-browse=""><Icon name="book" />Browse content</Button>}
+          <Button type="button" variant="ghost" size="sm" onClick={onShow} data-course-show="">
             <Icon name="folder" />
             {showInLabel()}
             <span className="sr-only">{`: ${c.name}`}</span>
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={onAsk} data-course-ask="">
+          <Button type="button" variant="ghost" size="sm" onClick={onAsk} data-course-ask="">
             <Icon name="agent" />
             Ask about this course
             <span className="sr-only">{`: ${c.name}`}</span>
@@ -1550,12 +1540,12 @@ function ImportNotice({ run, onShow, onDismiss }: { run: Run; onShow: () => void
   const running = run.status === "running";
   const finished = run.courses.filter((c) => c.result || c.failed).length;
   return createPortal(
-    <section
+    <PopoverSurface asChild><section
       aria-label={running ? "Importing courses" : "Import finished"}
       data-import-notice={running ? "running" : "done"}
       className={cn(
-        "fixed start-(--ph-notice-inset) bottom-(--ph-notice-inset) z-40 flex w-[calc(var(--ph-sidebar-width)-var(--ph-notice-inset))] max-w-[calc(100%-var(--ph-notice-inset)*2)] items-start gap-2.5",
-        "rounded-lg border border-line bg-raised px-3.5 py-3 text-base text-ink shadow-lg forced-colors:border-[CanvasText]",
+        "fixed! inset-auto! end-4! bottom-4! z-40! m-0! flex! w-80 max-w-[calc(100%-32px)] items-center gap-2.5",
+        "px-3! py-2.5! text-sm text-ink",
       )}
     >
       <Icon
@@ -1570,6 +1560,7 @@ function ImportNotice({ run, onShow, onDismiss }: { run: Run; onShow: () => void
           <Button type="button" variant="outline" size="sm" aria-describedby={msgId} onClick={onShow} data-import-notice-show="">
             {running ? "Show progress" : "Show summary"}
           </Button>
+          {running && <Button type="button" variant="ghost" size="sm" disabled={run.cancelling} onClick={() => void cancelImport()} data-import-notice-cancel="">{run.cancelling ? "Stopping…" : "Stop"}</Button>}
           {!running && (
             <Button type="button" variant="ghost" size="sm" onClick={onDismiss} data-import-notice-dismiss="">
               Dismiss
@@ -1577,7 +1568,7 @@ function ImportNotice({ run, onShow, onDismiss }: { run: Run; onShow: () => void
           )}
         </div>
       </div>
-    </section>,
+    </section></PopoverSurface>,
     document.body,
   );
 }

@@ -1,3 +1,4 @@
+import { Gauge } from "lucide-react";
 import { ContextMenu } from "@/components/ui/menu";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
@@ -16,7 +17,8 @@ import { holdSpaceOrder, markSpaceUsed, supportsEducation, type Space } from "@/
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-import { Keys } from "./command-palette";
+import { IconTip } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import { addToSpace, exportSpace, showInLabel, showSpaceFolder, SpaceActionNotice } from "./space-actions";
 import { spaceHueStyle, SpaceMark } from "./space-mark";
 
@@ -276,17 +278,13 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
               onClick={onSearch}
               aria-keyshortcuts={searchShortcut?.aria}
               className={cn(
-                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
+                "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] items-center gap-x-2.5 rounded-md px-2 py-1 text-start",
                 "text-base text-ink-secondary transition-colors duration-(--ph-duration-fast) hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
               <Icon name="search" className="size-(--ph-icon-size-sm) justify-self-center" />
               <span className="truncate">Search</span>
-              {searchShortcut && (
-                <span aria-hidden="true">
-                  <Keys keys={searchShortcut.keys} className="gap-0.5 text-xs text-ink-tertiary [&_kbd]:min-w-0 [&_kbd]:border-0 [&_kbd]:bg-transparent [&_kbd]:px-0" />
-                </span>
-              )}
+
             </button>
           </div>
         )}
@@ -326,7 +324,12 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
             </button>
           </div>
         </ScrollArea>
-        {footer && <div className="border-t border-line p-2 forced-colors:border-[CanvasText]">{footer}</div>}
+        {footer && <div className="flex shrink-0 items-center gap-1 border-t border-line px-3 py-2 forced-colors:border-[CanvasText]" data-sidebar-quick-actions="">
+          {footer}
+          <IconTip label="Usage" spoken="Provider usage"><Button type="button" variant="ghost" size="icon-sm" aria-label="Usage" data-sidebar-usage="" className="text-ink-secondary" onClick={() => window.dispatchEvent(new Event("phaethon:open-usage"))}><Gauge className="size-(--ph-icon-size-sm)" style={{ strokeWidth: "var(--ph-icon-stroke)" }} /></Button></IconTip>
+          <span className="flex-1" />
+          <IconTip label="Updates" spoken="Check for updates"><Button type="button" variant="ghost" size="icon-sm" aria-label="Updates" className="text-ink-secondary" onClick={() => openSettings("about")}><Icon name="download" /></Button></IconTip>
+        </div>}
       </nav>
       <SpaceActionNotice />
     </>
@@ -345,7 +348,7 @@ function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }
     <li data-space-section={props.space.id} className="list-none">
       <SpaceItem {...item} expanded={expanded} onToggle={() => setExpanded((value) => !value)}
         onSelect={(id) => { setExpanded(true); props.onSelect(id); }} />
-      {expanded && shown && <ul className="ms-4 border-s border-line ps-2" id={`space-children-${props.space.id}`}>
+      {expanded && shown && <ul className="ms-[calc(var(--ph-space)*3)] border-s border-line ps-2" id={`space-children-${props.space.id}`}>
         <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} />
       </ul>}
     </li>
@@ -374,7 +377,25 @@ const threadRow = cn(
  */
 function SpaceConversations({ space, active, onSelect, onChosen }: { space: Space; active: boolean; onSelect: (id: string) => void; onChosen?: () => void }) {
   const nav = useConversations(space.id);
+  const rowActivity = useSpaceActivity()[space.id];
+  const [hasDraft, setHasDraft] = useState(false);
+  const [unread, setUnread] = useState(false);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const read = () => { try { setHasDraft(!!localStorage.getItem(`phaethon:draft:${space.id}`)?.trim()); } catch { setHasDraft(false); } };
+    read(); window.addEventListener("phaethon:draft-changed", read); window.addEventListener("storage", read);
+    return () => { window.removeEventListener("phaethon:draft-changed", read); window.removeEventListener("storage", read); };
+  }, [space.id]);
   const view = useSpaceView(space.id);
+  useEffect(() => {
+    const seen = () => active && view === "chat" && document.hasFocus() && !document.querySelector('[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]');
+    if (wasRunning.current && !nav?.running && !seen()) setUnread(true);
+    if (seen()) setUnread(false);
+    wasRunning.current = !!nav?.running;
+    const acknowledge = () => { if (seen()) setUnread(false); };
+    window.addEventListener("focus", acknowledge); document.addEventListener("focusin", acknowledge);
+    return () => { window.removeEventListener("focus", acknowledge); document.removeEventListener("focusin", acknowledge); };
+  }, [nav?.running, active, view]);
   const [fallback, setFallback] = useState<{ status: "loading" | "ready" | "error"; threads: ThreadSummary[] }>({ status: "loading", threads: [] });
   const [pending, setPending] = useState<"new" | "history" | null>(null);
   useEffect(() => {
@@ -400,6 +421,7 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
   const host = useCallback((el: HTMLDivElement | null) => setConversationHost(space.id, el), [space.id]);
 
   function open(t: ThreadSummary) {
+    setUnread(false);
     onSelect(space.id);
     setSpaceView(space.id, "chat", t.current);
     onChosen?.();
@@ -417,7 +439,7 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
     }}>
       {active && supportsEducation(space) && <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} />}
       {active ? <div ref={host} data-conversations-host="" className="pt-1" /> : <div className="flex items-center justify-between pt-1">
-        <button type="button" className="min-h-(--ph-control-height-sm) rounded-md px-2 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink"
+        <button type="button" data-sidebar-history-all={threads.length > RECENT ? "" : undefined} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink"
           onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }}>Conversations</button>
         <button type="button" aria-label={`New conversation in ${space.name}`} data-sidebar-new-in={space.id}
           className="grid size-(--ph-control-height-sm) place-items-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink"
@@ -442,12 +464,15 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
                   : "text-ink-secondary hover:bg-hover hover:text-ink active:bg-selected",
               )}
             >
-              <Icon name="chat" className="size-(--ph-icon-size-sm) text-ink-tertiary" />
+              <Icon data-thread-state={t.current && rowActivity?.needsYou ? "needs-you" : t.current && nav?.running ? "running" : t.current && unread ? "unread" : t.current && hasDraft ? "draft" : "idle"}
+                name={t.current && rowActivity?.needsYou ? "warning" : t.current && nav?.running ? "spinner" : t.current && unread ? "success" : t.current && hasDraft ? "edit" : "chat"}
+                className={cn("size-(--ph-icon-size-sm)", t.current && rowActivity?.needsYou ? "text-warning-ink" : t.current && nav?.running ? "text-accent-soft-ink motion-safe:animate-spin" : t.current && unread ? "text-accent-soft-ink" : "text-ink-tertiary")} />
               <span data-sidebar-thread-title="" className={cn("min-w-0 truncate", t.current && active && "font-medium text-ink")}>{label(t)}</span>
               <span className="flex shrink-0 items-center gap-1 text-xs text-ink-secondary">
+                {t.current && hasDraft && !nav?.running && <span className="sr-only">, draft</span>}
+                {t.current && unread && !nav?.running && <span className="sr-only">, unread</span>}
                 {t.current && nav?.running ? (
                   <>
-                    <Icon name="spinner" className="size-(--ph-icon-size-sm) motion-safe:animate-spin" />
                     <span className="sr-only">, answering</span>
                   </>
                 ) : (
@@ -460,11 +485,7 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
           </li>
         ))}
       </ul>
-      {threads.length > RECENT && (
-        <button type="button" data-sidebar-history-all="" onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-start text-xs text-ink-secondary hover:bg-hover hover:text-ink">
-          Show all {threads.length} conversations
-        </button>
-      )}
+
     </li>
   );
 }

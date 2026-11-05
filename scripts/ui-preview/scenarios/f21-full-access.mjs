@@ -4,6 +4,8 @@ import { SETTINGS, check, park, openSettings, openSpaceDetails } from "../audit-
 const SHOWN = "[data-space-pane][data-shown]";
 const waitFor = (page, fn, arg, timeout = 4000) => page.waitForFunction(fn, { timeout }, arg).then(() => true, () => false);
 const calls = (page) => page.evaluate(() => window.__MOCK__.fullAccessCalls ?? []);
+const model = `${SHOWN} [data-model-picker]`;
+async function permissions(page, h) { await h.click(model); await page.waitForSelector('[data-model-menu] [data-access-picker]'); }
 const selectAccess = '[data-full-access="school"]';
 
 export default [
@@ -39,11 +41,11 @@ export default [
     name: "f21-composer-access",
     sizes: [[1100, 720], [640, 480]],
     mock: { settings: SETTINGS, threads: {}, fullAccess: ["school"] },
-    async run(page) {
-      await page.waitForSelector(`${SHOWN} [data-access-picker]`);
-      check(await page.$eval(`${SHOWN} [data-access-picker]`, (button) => button.getAttribute("aria-label") === "Access: Full access"), "the composer shows one compact permissions control");
-      const height = await page.$eval(`${SHOWN} [data-access-picker]`, (button) => button.getBoundingClientRect().height);
-      check(height <= 36, "permissions fit in the existing composer toolbar", String(height));
+    async run(page, h) {
+      await permissions(page, h);
+      check(await page.$eval(`[data-model-menu] [data-access-picker]`, (button) => button.getAttribute("aria-label") === "Access: Full access"), "the model menu shows one compact permissions control");
+      const height = await page.$eval(`[data-model-menu] [data-access-picker]`, (button) => button.getBoundingClientRect().height);
+      check(height <= 36, "permissions use a compact menu row", String(height));
       await park(page);
     },
   },
@@ -51,12 +53,15 @@ export default [
     name: "f21-composer-access-off",
     mock: { settings: SETTINGS, threads: {}, fullAccess: ["school"] },
     async run(page, h) {
-      await page.waitForSelector(`${SHOWN} [data-access-picker]`);
-      await h.click(`${SHOWN} [data-access-picker]`);
+      await permissions(page, h);
+      await h.click(`[data-model-menu] [data-access-picker]`);
       await h.click('[data-access-menu] [role="menuitemradio"]:first-child');
-      check(await waitFor(page, (selector) => document.querySelector(selector)?.getAttribute("aria-label") === "Access: Space access", `${SHOWN} [data-access-picker]`), "the composer reflects workspace access immediately");
+      await page.waitForFunction(() => !document.querySelector('[data-model-menu]'));
+      await permissions(page, h);
+      check(await waitFor(page, (selector) => document.querySelector(selector)?.getAttribute("aria-label") === "Access: Space access", `[data-model-menu] [data-access-picker]`), "the model menu reflects workspace access immediately");
       check(JSON.stringify(await calls(page)) === JSON.stringify([{ id: "school", on: false }]), "the core receives the permission change once");
-      check(await waitFor(page, () => !!document.activeElement?.matches("[data-access-picker]")), "focus returns to the permissions trigger");
+      await page.keyboard.press("Escape");
+      check(await waitFor(page, () => !!document.activeElement?.matches("[data-model-picker]")), "focus returns to the model trigger");
     },
   },
   {
@@ -69,16 +74,18 @@ export default [
       await page.select(selectAccess, "workspace");
       check(await waitFor(page, (selector) => document.querySelector(selector)?.value === "workspace", selectAccess), "Settings persists workspace access");
       await page.keyboard.press("Escape");
-      check(await waitFor(page, (selector) => document.querySelector(selector)?.getAttribute("aria-label") === "Access: Space access", `${SHOWN} [data-access-picker]`), "the composer stays synchronized with Settings");
+      await permissions(page, h);
+      check(await waitFor(page, (selector) => document.querySelector(selector)?.getAttribute("aria-label") === "Access: Space access", `[data-model-menu] [data-access-picker]`), "the composer stays synchronized with Settings");
     },
   },
   {
     name: "f21-cli-empty",
     mock: { settings: { ...SETTINGS, backend: "codex-cli" }, threads: {}, fullAccess: ["school"] },
-    async run(page) {
+    async run(page, h) {
       await page.waitForSelector(`${SHOWN} [data-empty-state]`);
       check(await page.$eval(`${SHOWN} [data-empty-state]`, (empty) => !empty.textContent.includes("anything on this Mac")), "the empty conversation contains no permissions essay");
-      check(await page.$eval(`${SHOWN} [data-access-picker]`, (button) => button.getAttribute("aria-label") === "Access: Full access"), "permissions remain available in the toolbar");
+      await permissions(page, h);
+      check(await page.$eval(`[data-model-menu] [data-access-picker]`, (button) => button.getAttribute("aria-label") === "Access: Full access"), "permissions remain available inside the model menu");
     },
   },
 ];

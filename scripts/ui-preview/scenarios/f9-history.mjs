@@ -61,9 +61,12 @@ export default [
       check(!(await page.$("[data-conversations-cli]")), "no note that Claude Code keeps its own history");
       await h.shot("menu");
 
-      // Opening the old one from the menu, by keyboard.
+      // Opening the old one from the pinned search, by keyboard.
+      check(await waitFor(page, () => document.activeElement?.matches('[data-history-controls] input')), "history opens on search");
       await page.keyboard.press("ArrowDown");
-      await waitFor(page, (id) => document.activeElement?.getAttribute("data-thread-id") === id, rows[1].id);
+      check(await waitFor(page, () => document.activeElement?.getAttribute("data-thread-id") === "current"), "ArrowDown enters the current conversation");
+      await page.keyboard.press("ArrowDown");
+      check(await waitFor(page, (id) => document.activeElement?.getAttribute("data-thread-id") === id, rows[1].id), "ArrowDown reaches the saved conversation");
       await page.keyboard.press("Enter");
       check(await waitFor(page, (S) => {
         const log = document.querySelector(`${S} [role="log"]`)?.innerText ?? "";

@@ -160,7 +160,7 @@ export function AccessRequestCard() {
       data-access-request=""
       data-waiting-card=""
       onKeyDown={onKeyDown}
-      className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
+      className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line bg-surface"
     >
       <div className="flex items-start gap-3 p-4 pb-3">
         <span

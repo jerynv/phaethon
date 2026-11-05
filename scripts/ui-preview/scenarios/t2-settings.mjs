@@ -266,13 +266,14 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "appearance");
-      const choices = await page.$$eval(`${PANEL} [data-reading-font] option`, (options) => options.map((option) => option.value));
-      check(choices.length === 4, "Appearance offers four reading fonts in one dropdown", choices.join());
-      await page.select(`${PANEL} [data-reading-font]`, "lexend");
+      await h.click(`${PANEL} [data-reading-font] [role="combobox"]`);
+      const choices = await page.$$eval('[role="option"] [data-font-preview]', (options) => options.map((option) => option.dataset.fontPreview));
+      check(choices.length === 4, "Appearance offers four reading fonts in one Vic menu", choices.join());
+      await h.click('[role="option"] [data-font-preview="lexend"]');
       await h.idle();
       check(await page.evaluate(() => document.documentElement.dataset.font === "lexend"), "choosing Lexend updates the whole app");
       await h.click('[data-testid="settings-tab-accessibility"]');
-      check(await page.$eval(`${PANEL} [data-reading-font]`, (select) => select.value === "lexend"), "Accessibility keeps the same saved font choice");
+      check(await page.$eval(`${PANEL} [data-reading-font] [role="combobox"]`, (select) => select.textContent.includes("Lexend")), "Accessibility keeps the same saved font choice");
     },
   },
   {
@@ -282,8 +283,34 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "accessibility");
-      const thumbs = await page.$$eval('[role="slider"]', (ts) => ts.map((t) => t.getBoundingClientRect()).map((r) => [r.width, r.height]));
-      check(thumbs.length > 0 && thumbs.every(([w, hh]) => w >= 24 && hh >= 24), "every slider thumb is at least 24x24", JSON.stringify(thumbs));
+      const thumbs = await page.$$eval('[role="slider"]', (ts) => ts.map((t) => {
+        const target = t.getBoundingClientRect();
+        const visible = t.querySelector('[data-slider-thumb-visual]').getBoundingClientRect();
+        return { target: [target.width, target.height], visible: [visible.width, visible.height] };
+      }));
+      check(thumbs.length > 0 && thumbs.every(({ target: [w, hh] }) => w >= 24 && hh >= 24), "every slider has a transparent target of at least 24x24", JSON.stringify(thumbs));
+      check(thumbs.every(({ visible: [w, hh] }) => w <= 16 && hh <= 16), "the visible slider thumbs stay thin", JSON.stringify(thumbs));
+      const labelAlignment = await page.$eval('[data-token="--ph-text-scale"]', (row) => {
+        const label = row.firstElementChild.firstElementChild.getBoundingClientRect();
+        const value = row.querySelector('output').getBoundingClientRect();
+        return Math.abs((label.top + label.height / 2) - (value.top + value.height / 2));
+      });
+      check(labelAlignment <= 6, "Text size aligns with its slider and value rather than the preset block", String(labelAlignment));
+      await h.shot("default-targets");
+      const slider = await page.waitForSelector('[role="slider"]');
+      await slider.evaluate((element) => element.scrollIntoView({ block: "center" }));
+      const hit = await slider.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const x = box.left + 2;
+        const y = box.top + box.height / 2;
+        return { x, y, own: document.elementFromPoint(x, y)?.closest('[role="slider"]') === element, value: element.getAttribute('aria-valuenow') };
+      });
+      check(hit.own, "the transparent area outside the small visible circle receives pointer input", JSON.stringify(hit));
+      await page.mouse.click(hit.x, hit.y);
+      check(await slider.evaluate((element, value) => document.activeElement === element && element.getAttribute('aria-valuenow') === value, hit.value), "clicking the transparent thumb area focuses without stepping the value");
+      await page.keyboard.press("ArrowRight");
+      check(await slider.evaluate((element, value) => element.getAttribute('aria-valuenow') !== value, hit.value), "the same thumb remains operable with arrow keys");
+      await page.keyboard.press("ArrowLeft");
       const presets = await page.$$eval("[data-preset]", (bs) => bs.map((b) => b.getBoundingClientRect().toJSON()));
       const gaps = presets.slice(1).map((r, i) => (Math.abs(r.top - presets[i].top) < 2 ? r.left - presets[i].right : 99));
       check(gaps.every((g) => g >= 4), "text-size presets are at least 4px apart", JSON.stringify(gaps));
@@ -308,10 +335,12 @@ export default [
         close: document.querySelector('[aria-label="Close settings"]').getBoundingClientRect().toJSON(),
         tab: document.querySelector('[data-testid="settings-tab-agent"]').getBoundingClientRect().height,
         thumb: document.querySelector('[role="slider"]').getBoundingClientRect().width,
+        visibleThumb: document.querySelector('[data-slider-thumb-visual]').getBoundingClientRect().width,
       }));
       console.log(`     larger targets: ${JSON.stringify(big)}`);
       check(big.target === "44px", "Larger click targets sets --ph-target-min to 44px", big.target);
       check(big.close.width >= 44 && big.close.height >= 44 && big.tab >= 44, "the Close button and tabs grow to 44px", JSON.stringify(big));
+      check(big.thumb >= 44 && big.visibleThumb <= 16, "larger targets expand the transparent slider hitbox while retaining the small visible thumb", JSON.stringify(big));
       await new Promise((r) => setTimeout(r, 900));
       const saved = (await calls(page, "appearance_set")).at(-1)?.appearance?.tokens ?? {};
       check(saved["--ph-target-size"] === 44, "the choice is saved with the appearance", JSON.stringify(saved));

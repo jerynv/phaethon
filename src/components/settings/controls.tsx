@@ -9,11 +9,10 @@
  * radioArrowKeys). Vic Switch uses a native button: Space and Enter toggle it.
  */
 import { RadioGroup, Slider } from "radix-ui";
-import { Card, Switch } from "vic-ui";
+import { Switch } from "vic-ui";
 import { Fragment, useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
-import { WorkspacePageHeader } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 import {
@@ -40,25 +39,20 @@ export function SectionHeader({
   description?: ReactNode;
   action?: ReactNode;
 }) {
+  // Hierarchy and spacing ported from T3 Code's settingsLayout.tsx (MIT).
   return (
-    <div data-section-header="">
-      <WorkspacePageHeader
-        as="div"
-        title={title}
-        description={description}
-        actions={action}
-        textClassName="min-w-0 flex-1 text-sm"
-        actionsClassName="max-w-full shrink-0"
-        headingAs="h3"
-        size="section"
-        headingProps={{ id, tabIndex: -1, className: "self-start rounded-xs" }}
-      />
+    <div data-section-header="" className="flex min-h-8 items-start justify-between gap-4">
+      <div className="min-w-0 flex-1">
+        <h3 id={id} tabIndex={-1} className="w-fit max-w-full rounded-xs text-xl font-semibold tracking-tight text-ink">{title}</h3>
+        {description && <p className="mt-1 max-w-(--ph-measure) text-sm text-ink-secondary">{description}</p>}
+      </div>
+      {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
     </div>
   );
 }
 
 /**
- * A titled group of rows: one bordered list, rows divided by hairlines. A plain
+ * A titled group of rows, divided by hairlines like T3 settingsLayout. A plain
  * block with a heading, not a region landmark: a page of groups would otherwise
  * be a page of landmarks.
  */
@@ -80,14 +74,14 @@ export function SettingGroup({
   const ownId = useId();
   const id = titleId ?? ownId;
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-0.5 px-1">
-        <h4 id={id} className="text-xs font-medium text-ink-secondary">
+    <div data-settings-group="" className="flex flex-col gap-2.5">
+      <div className="flex min-h-7 flex-col justify-center gap-0.5">
+        <h4 id={id} className="text-base font-semibold text-ink">
           {title}
         </h4>
         {description && <p className="text-xs text-ink-secondary">{description}</p>}
       </div>
-      {bare ? children : <Card plain className="flex flex-col divide-y divide-line rounded-lg p-0!">{children}</Card>}
+      {bare ? children : <div className="flex flex-col divide-y divide-line/60">{children}</div>}
     </div>
   );
 }
@@ -104,6 +98,7 @@ export function SettingRow({
   descriptionId,
   children,
   stacked,
+  alignStart,
   token,
 }: {
   label: ReactNode;
@@ -114,14 +109,16 @@ export function SettingRow({
   children: ReactNode;
   /** Put the control below the label at full width (swatches, theme cards). */
   stacked?: boolean;
+  /** Align a multi-line control with its first row, rather than its full height. */
+  alignStart?: boolean;
   /** The token this row sets, so another page can find and focus it. */
   token?: string;
 }) {
   const LabelTag = htmlFor ? "label" : "span";
   return (
-    <div data-setting-row="" data-token={token} className={cn("flex gap-x-5 gap-y-2 px-3.5 py-3", stacked ? "flex-col" : "flex-wrap items-center")}>
-      <div className="flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5">
-        <LabelTag id={labelId} htmlFor={htmlFor} className="text-base font-medium text-ink">
+    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-2 px-0.5 py-3", stacked ? "flex-col" : alignStart ? "flex-wrap items-start" : "flex-wrap items-center")}>
+      <div className={cn("flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5", alignStart && !stacked && "pt-1.5")}>
+        <LabelTag id={labelId} htmlFor={htmlFor} className="text-sm font-medium text-ink">
           {label}
         </LabelTag>
         {description && (
@@ -160,7 +157,7 @@ export function DefaultOrReset({ changed, onReset, what, defaultText }: { change
       Reset
     </Button>
   ) : (
-    <span className="text-sm text-ink-tertiary">Default</span>
+    <span className="sr-only">Default</span>
   );
 }
 
@@ -252,7 +249,7 @@ export function TokenSlider({
         data-slider-track=""
         data-hue-track={trackStyle ? "" : undefined}
         className={cn(
-          "relative h-(--ph-slider-track) grow overflow-hidden rounded-full",
+          "relative h-1! grow overflow-hidden rounded-full",
           trackStyle ? "" : "bg-line-strong group-hover/slider:bg-ink-tertiary",
         )}
         style={trackStyle}
@@ -266,14 +263,17 @@ export function TokenSlider({
         aria-labelledby={labelId}
         aria-describedby={descriptionId}
         aria-valuetext={valueText}
-        className={cn(
-          "relative block size-(--ph-slider-thumb) cursor-grab rounded-full border-2 bg-raised shadow transition-[box-shadow,transform] duration-(--ph-duration-fast) active:cursor-grabbing",
-          // Hover: a soft halo, so the thumb under the pointer is clear. The hit area reaches the target size.
-          "group-hover/slider:shadow-[0_0_0_var(--ph-slider-halo)_var(--ph-accent-soft)]",
-          "before:absolute before:-inset-(--ph-slider-hit) before:content-['']",
-          trackStyle ? "border-ink" : "border-accent-fill",
-        )}
-      />
+        className="relative grid size-(--ph-slider-thumb) min-h-(--ph-target-min) min-w-(--ph-target-min) cursor-grab place-items-center rounded-full active:cursor-grabbing"
+      >
+        <span
+          data-slider-thumb-visual=""
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none block size-3.5 shrink-0 rounded-full border bg-raised transition-colors duration-(--ph-duration-fast) group-hover/slider:bg-accent-soft",
+            trackStyle ? "border-ink" : "border-accent-fill",
+          )}
+        />
+      </Slider.Thumb>
     </Slider.Root>
   );
 }
@@ -284,24 +284,22 @@ export function TokenRow({ name, quickPicks, children }: { name: string; quickPi
   const labelId = useId();
   const descId = useId();
   return (
-    <SettingRow token={name} label={<span title={spec.description}>{spec.label}</span>} labelId={labelId}>
+    <SettingRow token={name} label={<span title={spec.description}>{spec.label}</span>} labelId={labelId} alignStart={quickPicks}>
       <span id={descId} className="sr-only">{spec.description}</span>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium text-ink tabular-nums" aria-hidden="true">
-          {spec.format(value)}
-        </span>
+      <div className="flex items-center gap-3">
+        <output className="min-w-10 shrink-0 text-end text-xs text-ink-secondary tabular-nums" aria-hidden="true">{spec.format(value)}</output>
+        <TokenSlider
+          labelId={labelId}
+          descriptionId={descId}
+          value={value}
+          min={spec.min}
+          max={spec.max}
+          step={spec.step}
+          valueText={spec.format(value)}
+          onChange={set}
+        />
         <DefaultOrReset changed={changed} onReset={() => set(spec.default)} what={spec.label.toLowerCase()} defaultText={spec.format(spec.default)} />
       </div>
-      <TokenSlider
-        labelId={labelId}
-        descriptionId={descId}
-        value={value}
-        min={spec.min}
-        max={spec.max}
-        step={spec.step}
-        valueText={spec.format(value)}
-        onChange={set}
-      />
       {quickPicks && spec.kind === "number" && spec.presets && (
         <QuickPicks label={spec.label} presets={spec.presets} value={value} onPick={set} format={spec.format} />
       )}
@@ -428,7 +426,7 @@ export function HueSwatches({
         >
           <span
             data-swatch=""
-            className="grid size-(--ph-swatch-size) place-items-center rounded-full shadow-sm ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
+            className="grid size-(--ph-swatch-size) place-items-center rounded-full ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
             style={{ background: swatchColour(p.value), color: checkColour(p.value) }}
           >
             <RadioGroup.Indicator>
@@ -466,9 +464,9 @@ export function SwitchRow({
   const descId = useId();
   const statusId = useId();
   return (
-    <div data-token={token} className="flex items-center gap-4 px-3.5 py-3">
+    <div data-token={token} className="flex items-center gap-4 px-0.5 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <label htmlFor={id} className="cursor-pointer text-base font-medium text-ink">
+        <label htmlFor={id} className="cursor-pointer text-sm font-medium text-ink">
           {label}
         </label>
         <p id={descId} className="max-w-(--ph-measure) text-xs text-ink-secondary">
@@ -479,6 +477,7 @@ export function SwitchRow({
         </p>
       </div>
       <Switch
+        look="flat"
         data-switch=""
         data-state={checked ? "checked" : "unchecked"}
         id={id}

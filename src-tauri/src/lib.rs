@@ -33,6 +33,7 @@ pub mod updater;
 pub mod vault;
 pub mod viewer;
 pub mod vision;
+mod voice;
 
 use tauri::ipc::Channel;
 use tauri::{Manager, RunEvent, State};
@@ -61,6 +62,14 @@ fn dev_log(window: tauri::WebviewWindow, message: String) {
 /// until they answered a dialog they might not even see.
 async fn off_main<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| format!("That stopped unexpectedly: {e}"))?
+}
+
+/// User-initiated OS dictation; text is inserted into the focused editor, never sent.
+#[tauri::command]
+async fn voice_dictation_start(app: tauri::AppHandle) -> Result<(), String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || { let _ = tx.send(voice::start()); }).map_err(|e| e.to_string())?;
+    rx.await.map_err(|_| "Dictation did not start.".to_string())?
 }
 
 struct AppState {
@@ -1012,14 +1021,7 @@ async fn lms_connect(
     // A made-up or mistyped address says so, instead of opening a blank window.
     lms::probe::check(&site).await?;
     let credential = lms::login::sign_in(&app, &site, &format!("Sign in to {school}"), store_id, data_dir).await?;
-    let vault = state.vault.clone();
-    off_main(move || {
-        let view = lms::service::save_sign_in(&vault, &site, &credential)?;
-        let Some(name) = school_name else { return Ok(view) };
-        lms::service::set_school_name(vault.root(), &view.id, &name)?;
-        lms::service::connections(&vault)?.into_iter().find(|c| c.id == view.id).ok_or_else(|| "The connection wasn’t saved.".into())
-    })
-    .await
+    lms::service::finish_sign_in(&state.vault, &site, &credential, school_name).await
 }
 
 /// The vault's course sites. Reads only lms.json (a signed-in hint, never the keychain).
@@ -1051,6 +1053,17 @@ async fn lms_import(
     };
     lms::service::import(&state.vault, &connection, &course_ids, &spaces, &emit).await;
     Ok(())
+}
+
+#[tauri::command]
+fn lms_import_cancel(connection: String) -> bool {
+    lms::service::cancel_import(&connection)
+}
+
+#[tauri::command]
+async fn lms_course_content(state: State<'_, AppState>, space: String, course: String) -> Result<lms::service::CourseBrowse, String> {
+    let vault = state.vault.clone();
+    off_main(move || lms::service::course_content(&vault, &space, &course)).await
 }
 
 /// Sign out of a course site: its session leaves the keychain; the connection,
@@ -1194,6 +1207,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            voice_dictation_start,
             dev_log,
             agent_send,
             agent_cancel,
@@ -1257,6 +1271,8 @@ pub fn run() {
             lms_connections,
             lms_courses,
             lms_import,
+            lms_import_cancel,
+            lms_course_content,
             lms_disconnect,
             lms_grades,
             lms_grades_refresh,

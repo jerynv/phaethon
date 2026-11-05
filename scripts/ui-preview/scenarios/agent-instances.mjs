@@ -41,10 +41,9 @@ export default [
       check((await page.$$(`${PANEL} [data-agent-instance]`)).length === 3, "each installed assistant has its own connection row");
       await h.click('[data-provider-configure="codex-cli"]');
       await page.waitForSelector(dialog);
-      await page.waitForFunction(() => document.querySelector('[data-instance-usage]')?.textContent.includes("23% used"));
+      check(!(await page.$('[data-instance-usage]')), "Manage focuses on connection settings rather than usage");
+      check((await calls(page, "agent_instance_usage")).length === 0, "opening Manage does not request usage");
       check((await calls(page, "agent_instance_select")).length === 0, "opening a connection leaves the active provider unchanged");
-      const usage = await page.$eval('[data-instance-usage]', (element) => element.innerText);
-      check(usage.includes("Session") && usage.includes("23% used") && usage.includes("Resets"), "usage renders actual windows and a reset time", usage);
       await h.click(`${dialog} [data-instance-select]`);
       check((await calls(page, "agent_instance_select"))[0]?.id === "codex", "Use as default selects this exact connection");
       await h.click(`${dialog} [data-instance-signout]`);
@@ -53,7 +52,7 @@ export default [
       await h.click(`${dialog} [data-cli-sign-in-start]`);
       await page.waitForSelector('[data-cli-sign-in-outcome="signedIn"]');
       check((await calls(page, "agent_instance_sign_in"))[0]?.id === "codex", "browser sign-in targets the exact account home");
-      await h.shot("account-and-usage");
+      await h.shot("account-settings");
     },
   },
   {
@@ -66,6 +65,7 @@ export default [
       await page.waitForSelector(dialog);
       await page.select('[data-instance-cli]', "codex");
       await page.type('[data-instance-name]', "Codex · Work");
+      await page.$$eval(`${dialog} summary`, (items) => items.find((item) => item.textContent.includes("Launch options")).click());
       await page.type('[data-instance-binary]', "/opt/company/bin/codex");
       await page.type('[data-instance-args]', "--config\nname=a value with spaces");
       await h.click('[data-instance-save]');
@@ -111,7 +111,7 @@ export default [
     name: "agent-instances-usage-race",
     sizes: [[1100, 720]],
     mock: {
-      settings: SETTINGS, threads: {}, slow: { agent_instance_usage: 1600 },
+      settings: { ...SETTINGS, backend: "claude-cli" }, threads: {}, slow: { agent_instance_usage: 1600 },
       instanceUsage: {
         claude: { available: true, windows: [{ label: "Claude window", usedPercent: 81, resetsAt: null }], reason: null },
         codex: { available: true, windows: [{ label: "Codex window", usedPercent: 12, resetsAt: null }], reason: null },
@@ -128,12 +128,13 @@ export default [
           return result;
         };
       });
-      await h.click('[data-provider-configure="claude-cli"]');
+      await h.click('[data-settings-header] button[aria-label="Close settings"]');
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent("phaethon:open-usage")));
       await page.waitForFunction(() => window.__calls.some(([command, args]) => command === "agent_instance_usage" && args.id === "claude"));
-      await page.$$eval('[data-agent-instance-popup] [data-slot="dialog-footer"] button', (buttons) => buttons.find((button) => button.textContent === "Done").click());
-      await page.waitForFunction(() => !document.querySelector('[data-agent-instance-popup]'));
       await page.evaluate(() => { window.__MOCK__.slow.agent_instance_usage = 0; });
-      await h.click('[data-provider-configure="codex-cli"]');
+      await h.click('[data-usage-account] [role="combobox"]');
+      await page.waitForSelector('[role="option"]', { visible: true });
+      await page.$$eval('[role="option"]', (options) => options.find((option) => option.textContent.trim() === "Codex").click());
       await page.waitForFunction(() => document.querySelector('[data-instance-usage]')?.textContent.includes("12% used"));
       await page.waitForFunction(() => window.__completedUsage.includes("claude"));
       const shown = await page.$eval('[data-instance-usage]', (usage) => usage.textContent);

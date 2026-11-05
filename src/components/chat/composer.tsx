@@ -1,6 +1,6 @@
 import { ComposerPrimitive, useAui, useAuiState } from "@assistant-ui/react";
 import { DropdownMenu } from "@/components/ui/menu";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import { IconTip } from "@/components/ui/tooltip";
@@ -19,10 +19,10 @@ import {
 } from "@/runtime/attachments";
 
 import { useAnnounce } from "./announce";
-import { AccessPicker } from "./access-picker";
 import { supportsEducation } from "@/lib/spaces";
 import { AttachmentFold, ComposerAttachments, useAttachmentTray } from "./attachments";
 import { jumpKeyLabel } from "./card-arrival";
+import { VoiceInput } from "./voice-input";
 import { ModelPicker } from "./model-picker";
 import { TutorModePicker } from "./tutor-mode";
 import { focusPaneComposer, usePane } from "./pane";
@@ -211,6 +211,7 @@ function useDraft(spaceId: string) {
       try {
         if (text.trim()) localStorage.setItem(draftKey(spaceId), text);
         else localStorage.removeItem(draftKey(spaceId));
+        window.dispatchEvent(new CustomEvent("phaethon:draft-changed", { detail: spaceId }));
       } catch {
         // As above.
       }
@@ -234,10 +235,7 @@ export function Composer({
   problems,
   clearProblems,
   dragging,
-  jump,
 }: {
-  /** Jump to latest (renders nothing at the bottom): it takes the hint's place in the toolbar. */
-  jump?: ReactNode;
   spaceName: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   stopFocused: RefObject<boolean>;
@@ -248,6 +246,7 @@ export function Composer({
 }) {
   const pane = usePane();
   const announce = useAnnounce();
+  const aui = useAui();
   const inputId = useId();
   const hintId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -322,7 +321,7 @@ export function Composer({
         }}
         className={cn(
           // T3's ComposerSurface groups input and controls on one quiet surface.
-          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 shadow-(--ph-composer-shadow) transition-colors",
+          "flex min-h-0 flex-col gap-1 rounded-(--ph-composer-radius) border bg-raised p-2 transition-colors",
           dragging ? "border-focus bg-accent-soft" : "border-(--ph-composer-rim)",
         )}
       >
@@ -359,7 +358,7 @@ export function Composer({
           // Scrolled text is clipped at the padding, so no half line shows above or below the whole ones
           // (focus is drawn on the composer's frame, so nothing else is clipped).
           // Forced colours: the placeholder is GrayText, the system colour for hint text (not a mapped author colour).
-          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-[calc(2lh+var(--ph-space)*3)] w-full shrink-0 resize-none rounded-md [clip-path:inset(calc(var(--ph-space)*1.5)_0)] bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
+          className="max-h-[calc(min(7lh,max(2lh,round(down,22dvh,1lh)))+var(--ph-space)*3)] min-h-[calc(2lh+var(--ph-space)*3)] w-full shrink-0 resize-none rounded-[max(0px,calc(var(--ph-composer-radius)-0.5rem))] [clip-path:inset(calc(var(--ph-space)*1.5)_0)] bg-transparent px-2 py-1.5 text-md text-ink placeholder:text-ink-secondary forced-colors:placeholder:text-[color:GrayText]"
         />
         {/* One short hint; every key is in the Shortcuts sheet. */}
         <span id={hintId} className="sr-only">
@@ -368,6 +367,7 @@ export function Composer({
         <div className="group/toolbar flex shrink-0 items-center gap-2">
           <AddMenu onAttach={() => fileInput.current?.click()} space={spaceId} />
           <AttachmentFold tray={tray} />
+          <VoiceInput disabled={isRunning} onTranscript={(text: string) => { const before = aui.composer().getState().text; aui.composer().setText(`${before}${before && !/\s$/.test(before) ? " " : ""}${text}`); inputRef.current?.focus(); }} />
           <input
             ref={fileInput}
             type="file"
@@ -391,11 +391,9 @@ export function Composer({
           >
             {held || waiting || isRunning ? hint : null}
           </p>
-          {jump}
           <span aria-hidden="true" className="hidden flex-1 group-has-[[data-jump-latest]]/toolbar:block" />
           {pane && (
             <div className="flex min-w-0 items-center gap-0.5">
-              <AccessPicker spaceId={pane.spaceId} />
               {supportsEducation(pane.spaceId) && <TutorModePicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />}
               <ModelPicker spaceId={pane.spaceId} spaceName={spaceName} running={isRunning} />
             </div>
@@ -415,10 +413,12 @@ export function Composer({
                   round
                   aria-label="Stop reply"
                   data-stop=""
+                  variant="destructive"
+                  className="[&_.ui-button-face]:bg-danger-soft [&_.ui-button-face]:text-danger-ink"
                   onFocus={() => (stopFocused.current = true)}
                   onBlur={() => (stopFocused.current = false)}
                 >
-                  <Icon name="stop" />
+                  <Icon name="stop" className="size-3.5 fill-current stroke-none" />
                 </Button>
               </ComposerPrimitive.Cancel>
             </IconTip>

@@ -50,7 +50,10 @@ async function toItem(page, h) {
   await h.focusVia("[data-conversations-trigger]");
   await page.keyboard.press("Enter");
   check(await waitFor(page, (S) => !!document.querySelector(S), ITEM), "the menu offers Find earlier Claude Code conversations");
-  for (let i = 0; i < 8 && !(await page.evaluate((S) => document.activeElement?.matches(S), ITEM)); i++) await page.keyboard.press("ArrowDown");
+  // Search opens first. ArrowDown reaches results; the pinned import action is
+  // directly above the first result, so ArrowUp reaches it without leaving the menu.
+  await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 8 && !(await page.evaluate((S) => document.activeElement?.matches(S), ITEM)); i++) await page.keyboard.press("ArrowUp");
   check(await page.evaluate((S) => document.activeElement?.matches(S), ITEM), "and it is reached with the arrow keys");
 }
 

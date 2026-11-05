@@ -1,4 +1,4 @@
-// Reading font (Settings > Accessibility): choosing a font in the native dropdown applies
+// Reading font (Settings > Accessibility): choosing a font in the Vic menu applies
 // it to the whole app, saves it, and a saved choice applies at startup.
 
 const settings = {
@@ -28,14 +28,18 @@ export default [
       await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
       await h.idle();
       await h.click('[data-testid="settings-tab-accessibility"]');
-      const picker = '[role="tabpanel"]:not([hidden]) [data-reading-font]';
+      const picker = '[role="tabpanel"]:not([hidden]) [data-reading-font] [role="combobox"]';
       await page.waitForSelector(picker, { visible: true, timeout: 5000 });
       check((await bodyFont(page)).includes("Atkinson"), "the default reading font is Atkinson Hyperlegible", await bodyFont(page));
-      await page.focus(picker);
-      await page.select(picker, "opendyslexic");
+      await h.click(picker);
+      await page.waitForSelector('[role="option"] [data-font-preview="opendyslexic"]', { visible: true });
+      const previewFonts = await page.$$eval('[role="option"] [data-font-preview]', (options) => options.map((option) => ({ value: option.dataset.fontPreview, family: getComputedStyle(option).fontFamily })));
+      check(previewFonts.some((font) => font.value === "opendyslexic" && font.family.includes("OpenDyslexic")) && previewFonts.some((font) => font.value === "lexend" && font.family.includes("Lexend")), "the Vic menu previews each actual font face", JSON.stringify(previewFonts));
+      await h.shot("font-menu");
+      await h.click('[role="option"] [data-font-preview="opendyslexic"]');
       await h.idle();
-      const picked = await page.$eval(picker, (select) => ({ attr: document.documentElement.dataset.font ?? null, selected: select.value, focused: document.activeElement === select }));
-      check(picked.attr === "opendyslexic" && picked.selected === "opendyslexic" && picked.focused, "the native dropdown applies OpenDyslexic while retaining focus", JSON.stringify(picked));
+      const picked = await page.$eval(picker, (select) => ({ attr: document.documentElement.dataset.font ?? null, selected: select.textContent, focused: document.activeElement === select }));
+      check(picked.attr === "opendyslexic" && picked.selected.includes("OpenDyslexic") && picked.focused, "the Vic font menu applies OpenDyslexic while retaining focus", JSON.stringify(picked));
       check((await bodyFont(page)).includes("OpenDyslexic"), "the whole app now reads in OpenDyslexic", await bodyFont(page));
       await page.evaluate(() => document.fonts.ready);
       const loaded = await page.evaluate(() => document.fonts.check('16px "OpenDyslexic"'));

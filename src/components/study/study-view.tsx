@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Tabs } from "vic-ui";
 
 import { relativeDate } from "@/components/chat/conversations-bar";
 import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
@@ -13,6 +14,7 @@ import { draftCount } from "@/lib/quiz-answers";
 import { cn } from "@/lib/utils";
 
 import { DeckEditor } from "./deck-editor";
+import { CourseMaterials } from "./course-materials";
 import { CourseBack, CourseGrid, courseMatches } from "./course-grid";
 import { MakeDialog, type Made, type MakeKind, type MakeRequest } from "./make-dialog";
 import { QuizView } from "./quiz-view";
@@ -35,6 +37,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   const [error, setError] = useState("");
   const [courses, setCourses] = useState<CourseFolder[] | null>(null);
   const [course, setCourse] = useState<string | null>(null);
+  const [courseTab, setCourseTab] = useState("practice");
   const [screen, setScreen] = useState<Screen>({ at: "hub" });
   const [make, setMake] = useState<MakeRequest | null>(null);
   const makeKey = useRef(1);
@@ -200,7 +203,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
       const quizzes = overview.quizzes.filter((q) => courseMatches(q.course, c.folder, c.name));
       const due = decks.reduce((n, d) => n + d.due, 0);
       return { id: c.folder, name: c.name, detail: `${plural(decks.length, "deck")} · ${plural(quizzes.length, "quiz", "quizzes")}`, metric: due ? `${due} due` : undefined };
-    })} onOpen={setCourse} /> : <Empty space={space} hasCourses={false} loading={courses === null} onMake={openMake} />;
+    })} onOpen={(folder) => { setCourseTab("practice"); setCourse(folder); }} /> : <Empty space={space} hasCourses={false} loading={courses === null} onMake={openMake} />;
   } else {
     const selected = courses?.find((c) => c.folder === course);
     const decks = overview.decks.filter((d) => courseMatches(d.course, course, selected?.name ?? ""));
@@ -259,11 +262,11 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
 
   return (
     <WorkspacePage data-study-hub={space.id}>
-      {course && <CourseBack onBack={() => setCourse(null)} />}
+      {course && <CourseBack onBack={() => { setCourseTab("practice"); setCourse(null); }} />}
       <WorkspacePageHeader
         title={course ? courses?.find((c) => c.folder === course)?.name ?? "General study" : "Study"}
         headingProps={{ ref: headingRef, tabIndex: -1, "data-view-focus": "" }}
-        actions={overview && ((courses?.length ?? 0) > 0 || overview.decks.length > 0 || overview.quizzes.length > 0) && (
+        actions={courseTab === "practice" && overview && ((courses?.length ?? 0) > 0 || overview.decks.length > 0 || overview.quizzes.length > 0) && (
           <>
             <Button type="button" variant="outline" onClick={() => openMake("deck")} data-make="deck">
               <Icon name="plus" />
@@ -276,7 +279,8 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
           </>
         )}
       />
-      {body}
+      {course && course !== "uncategorized" && <Tabs size="sm" aria-label="Course workspace" value={courseTab} onValueChange={setCourseTab} items={[{ value: "practice", label: "Practice" }, { value: "materials", label: <span data-study-materials="">Materials</span> }]} />}
+      {course && courseTab === "materials" ? <CourseMaterials space={space.id} folder={course} /> : body}
       {dialog}
     </WorkspacePage>
   );

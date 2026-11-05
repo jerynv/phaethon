@@ -1,6 +1,51 @@
 # Personal workspace redesign
 
-## Native startup correction verified
+## Walkthrough revision installed — 2026-11-05
+
+Implemented locally on `feat/vic-ui-migration` from baseline `1ce201e`. The current app is installed at `/Applications/Phaethon.app` and left running. No Phaethon changes were pushed or published. The pre-existing untracked root `CLAUDE.md` remains untouched. The owner authorized the complete migration, personal replacement, unlimited captures and changes above the earlier PR-size cap.
+
+The installed executable matches the signed bundle: SHA256 `674a54d354b4655b1a111187dc7fe653a3a983b02d207225fad3a3996a5e929c`. The previous app is backed up at `~/Library/Application Support/Phaethon App Backups/20261105-002134/Phaethon.app`; existing application data was preserved. PID42686 was alive at verification. Its own WKWebView reported116buttons, visible1100×720 content and an unfrozen prototype. Root inspected the newly generated native snapshot and observed the sidebar, actual conversation/figure and composer. `/tmp/phaethon-r2-native-proof.json` records the proof. The native screenshot stays outside the repository because it contains personal data.
+
+### Requested outcomes
+
+| Area | Result and evidence |
+| --- | --- |
+| Vic controls | Official603c207 includes the ed35c65 concentric button geometry and flat-switch API. Consumer switches use `look="flat"`; off thumbs use the local secondary foreground token so the track stays rimless and the knob remains visible. Real-browser computed thumb/track contrast>=3:1 passes light/dark and both sizes. No round-button geometry or package patch. |
+| T3 Settings patterns | Stronger page/group/row hierarchy, compact Advanced appearance, actual font-face Vic Select, thinner visible slider thumbs with larger transparent targets. Manage opens account/launch configuration; independent Usage lives behind a sidebar quick action. Whole Add connection row is clickable. |
+| Chat and sidebar | Aligned rail, quiet New icon, cog/Usage/Updates footer and left-side running/needs-answer/unread/draft states. History searches the whole archive with50DOMrows/page. Model search has no silent catalog cap, nested real access selection and content-sized tutor modes. Stop is a solid red square; Jump sits above the capped editor. |
+| Stable menu interaction | Public synchronous initial search focus; internal pointer movement no longer redirects focus to search. The narrow permission flow failed twice before the relatedTarget guard, then passed8capture checkpoints. Search/keyboard/paging/120-model and3000-history paths pass after the final guard. |
+| LMS interface | Compact connected-site rows, square local marks, progressive hints, stable overlay school search, compact selection and bounded Past courses. Saved/imported selections are reused; partial imports offer Resume. Progress/cancel can coexist with Settings, and the discard dialog is bounded. |
+| Source browsing | Modules, pages, assignments and files open their permission-checked originals from Course sites or Study→course→Materials. Heading ordinals handle duplicate/math headings; fenced headings and UTF8 boundaries have native tests, and truncation is disclosed. |
+| Import integrity | All selected courses/pages, explicit listing cycle/cap errors, SHA256 verification before metadata shortcuts, unchanged-file preservation, changed/corrupt-file replacement, resumable cancellation and OCR-child termination. Supported identity checks precede credential writes; reconnect reuses the same site/account. Moodle remains site-based. Generated practice belongs in the space's study/notes context; full-access CLI instructions are policy rather than an OS write barrier. |
+| Rich previews | Ready-input Vic image zoom/pan/fit, numbered text, quoted/bounded CSV/TSV, status/retry and toolbar are integrated. Phaethon keeps authorized loading, classification, native opening, PDF, syntax colours and academic Markdown/math. Only image CSP adds blob URLs. No Office/media renderer is claimed. |
+| Voice | User-initiated macOS Dictation; browser SpeechRecognition only where supported. Focused draft is preserved, failures permit retry and nothing auto-sends. Real recognition remains untested. |
+| Stack decision | Keep Rust for native services, permissions, import/OCR and process supervision; keep React/TypeScript for UI. No rewrite was needed to fix this walkthrough. See `ARCHITECTURE.md`. |
+
+### Package and handoff
+
+Active archive `vendor/vic-ui-603c207.tgz`, upstream `603c20750e246ee194dea0667b9351295f994352`, SHA256 `5700e4f560e757ee007629b7c55fabc689d965c388c9ce1efa1bb86d2831257f`. Root independently verified the bytes and131runtime exports; upstream and the independent handoff report strict packed Bundler/NodeNext checks with historical exports preserved. Postmerge CI41971291603 passed and deployed. The verified V-Client source pack remains provenance/research, not a claim of Office/media support. Image20MiB encoded, text512KiB/20000lines, CSV1MiB/1000rows/60columns are renderer limits; the host retains I/O and decoded-image policy.
+
+Consumer adoption results and off-thumb token feedback were sent to Vic owner thread `da9b659b-c548-4da7-ae28-cae82758823f`, receipt `message:mcp:2eb789d1-1c24-4863-9064-4d7a79c97eec:thread-send:567231a0-f39c-4df4-b434-5d70fb3eb6f9`. This handoff does not require another upstream release to use the installed app.
+
+### Verification
+
+- Final frontend design check, TypeScript and Vite build pass: `/tmp/phaethon-r2-pointer-final-build.log`. JavaScript units35passed/0failed.
+- Complete Chromium suite:903checkpoints/0failed across4shards. Exact logs/counts: `/tmp/phaethon-r2-full-ui-results.json`. The last shard was rerun after migrating its old image selector; original natural-size/fit/removal assertions remain.
+- The full903run predates only the final off-thumb colour and internal pointer-focus guard. Affected current flows pass44keyboard/switch/new-space captures plus8pointer permission captures; current Appearance12captures/0. Logs `/tmp/phaethon-r2-final-focus-confirm.log`, `/tmp/phaethon-r2-pointer-fix.log`, `/tmp/phaethon-r2-appearance-delivery.log`.
+- Preview integration16captures/0, targeted image attachment4/0, complete gallery88/0, Study Materials12/0, LMS scale/forced-colours64/0. Root inspected selected actual output; these are fixture-based browser checks.
+- Native `cargo test --tests`:497passed,0failed,21ignored across19executables (`/tmp/phaethon-r2-final-native.log`). Native startup-config regression rerun1passed after the CSP addition. No later Rust implementation changes.
+- Final macOS bundle/signature/install and actual WKWebView output verified: `/tmp/phaethon-r2-native-delivery-bundle.log`, `/tmp/phaethon-r2-native-proof.json`.
+- Mechanical detector ran once on40changed UI files; its single thick diff-edge warning was removed, retaining +/- signs and semantic fills. `git diff --check` clean at handback.
+
+### Council and limits
+
+Codex Terra's bounded recheck scored UI/core8.5/8.5. Claude Work's final review cleared prior blockers and scored UI7.5/core8 while shard3 and the contrast correction were pending. It caught the faint off thumb and identified the pointer-focus concern; both were then corrected and exercised. These are subjective sampled reviews, not user acceptance. Reports `/tmp/phaethon-r2-final-council-codex.md`, `/tmp/phaethon-r2-release-council-claude-work.md`, and independent preview integration review `/tmp/phaethon-r2-preview-integration-review.md`. Default Claude hit its rate limit; the user-authorized Claude Work provider was used. Only two provider families were available.
+
+Real new-account LMS identity/sign-in, real text-recognition cancellation, Keychain write prompts and microphone recognition were not exercised this revision. Fake local HTTP/process tests establish integrity/cancel behavior, not live service compatibility. Native output verification establishes rendering, not a complete native click-through. A complete accessibility audit remains deferred; the off-switch fix does not establish whole-app AA compliance. No Calendar sync, new RAG model runtime, Office renderer or media renderer was added.
+
+All implementation and review workers have completed. The integrated changes are recorded as one coherent local increment; no further implementation or upstream preview work is required for this increment. Test browsers close through their runner; no owned live preview tab/server remains. The installed app is intentionally left running. Current seeded gallery: `/tmp/phaethon-r2-gallery.html` (40images; shown inline after HTML preview validation). Future visual feedback should be reproduced against this installed build.
+
+## Previous revision: native startup correction verified
 
 The previous window/process check missed a real black-window defect: a native-only `Object.freeze(Object.prototype)` script threw in D3 before React. Temporary dependency patches exposed the same issue in Dayjs/diagram code and were removed. The app now uses the existing Tauri `freezePrototype:false` configuration without a manual override. This removes optional prototype hardening; CSP, command ACLs and native filesystem checks are unchanged. The official Vic archive, dependency versions and lockfile remain unchanged.
 

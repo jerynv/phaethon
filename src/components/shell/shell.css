@@ -56,3 +56,13 @@
 .ph-message-meta { opacity: 0; transition: opacity var(--ph-duration-fast); }
 [data-role]:hover .ph-message-meta, [data-role]:focus-within .ph-message-meta, .ph-message-meta:focus-within { opacity: 1; }
 @media (hover: none) { .ph-message-meta { opacity: 1; } }
+
+/* Keep the sidebar control beyond the macOS traffic lights, with an optical gap. */
+:root[data-platform="mac"] { --ph-mac-controls-room: 86px; }
+/* T3's restrained transcript action typography; native Vic face keeps its geometry. */
+[data-message-meta] .ui-button { font-weight: 400; color: var(--ph-ink-secondary); }
+[data-message-meta] .ui-button-face { font-weight: inherit; }
+/* A quiet static mesh stays inside the empty workspace, clear of the composer. */
+.ph-workspace-empty { position: relative; isolation: isolate; padding-block: 3rem; }
+.ph-workspace-empty::before { content: ""; pointer-events: none; position: absolute; inset: -1rem -1.5rem; z-index: -1; mask-image: radial-gradient(ellipse at center, black, transparent 72%); background: radial-gradient(ellipse at 22% 44%, color-mix(in oklch, var(--ph-accent-soft) 38%, transparent), transparent 62%), radial-gradient(ellipse at 78% 22%, color-mix(in oklch, var(--ph-ink-secondary) 8%, transparent), transparent 58%); }
+.ph-workspace-empty .ui-empty-title { font-size: var(--ph-text-xl); font-weight: 500; }

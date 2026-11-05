@@ -242,7 +242,7 @@ const ROUND3 = [
         const wrap = document.querySelector("[data-composer-wrap]").getBoundingClientRect();
         const bar = document.querySelector("[data-composer] .group\\/toolbar").getBoundingClientRect();
         const root = document.querySelector("[data-composer]").getBoundingClientRect();
-        return { share: wrap.height / innerHeight, inside: bar.bottom <= root.bottom + 0.5 && root.bottom <= wrap.bottom + 0.5 };
+        return { share: wrap.height / innerHeight, inside: bar.bottom <= root.bottom + 0.5 && root.bottom <= wrap.bottom + 0.5, wrap: [wrap.top, wrap.bottom], root: [root.top, root.bottom], toolbar: [bar.top, bar.bottom], input: document.querySelector("[data-composer-input]").getBoundingClientRect().height, spacing: getComputedStyle(document.documentElement).getPropertyValue("--ph-space") };
       });
       check(m.share <= 0.401 && m.inside, "and the message box stays within 40% of the window, nothing spilling out", JSON.stringify(m));
       await h.shot("typed");
@@ -546,7 +546,9 @@ const ROUND3 = [
       const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
       check(text.includes("Start a conversation in School") && !text.includes("can’t change") && !text.includes("intake.pdf"), "the empty workspace contains no permission essay or file inventory", text);
       check(await page.$eval('[data-model-picker="school"]', (picker) => picker.getAttribute("aria-label").includes("Claude Code")), "the model control identifies Claude Code");
-      check(await page.$eval('[data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "the toolbar exposes the saved permission mode");
+      await h.click('[data-space-pane][data-shown] [data-model-picker]');
+      await page.waitForSelector('[data-model-menu] [data-access-picker]');
+      check(await page.$eval('[data-model-menu] [data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "the model menu exposes the saved permission mode");
       await h.shot("empty");
     },
   },
@@ -938,7 +940,9 @@ export default [
       await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
       const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
       check(text.includes("School") && !text.includes("Work / clients") && !text.includes("already read"), "standing grants do not add explanatory paragraphs to the empty workspace", text);
-      check(await page.$eval('[data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "the saved access mode remains available in the toolbar");
+      await h.click('[data-space-pane][data-shown] [data-model-picker]');
+      await page.waitForSelector('[data-model-menu] [data-access-picker]');
+      check(await page.$eval('[data-model-menu] [data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "the saved access mode remains available in the model menu");
     },
   },
   {
@@ -949,7 +953,9 @@ export default [
       await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
       const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
       check(text.includes("Start a conversation in School") && !text.includes("before it reads another space"), "an empty workspace stays concise without permission promises", text);
-      check(await page.$eval('[data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "permissions remain inspectable without an essay");
+      await h.click('[data-space-pane][data-shown] [data-model-picker]');
+      await page.waitForSelector('[data-model-menu] [data-access-picker]');
+      check(await page.$eval('[data-model-menu] [data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "permissions remain inspectable without an essay");
     },
   },
 

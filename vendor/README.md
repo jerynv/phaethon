@@ -1,5 +1,11 @@
-The active archive is the upstream Vic UI build from commit `a2521a914b02d4c8acefccead2d04e44d300e489`, stored as `vic-ui-a2521a9.tgz`. Its SHA-256 is `b109c04e29336e7da6c137a0b42d330d64bcb4ac05bfc52656a0f72316c6a028`.
+The active archive is the upstream Vic UI build from commit `603c20750e246ee194dea0667b9351295f994352`, stored as `vic-ui-603c207.tgz`. Its SHA-256 is `5700e4f560e757ee007629b7c55fabc689d965c388c9ce1efa1bb86d2831257f`.
 
 It includes coordinated accent buttons, circular quiet/ghost buttons, the shared surfaces, and all native field exports used by Phaethon. The private compatibility port is retired. Phaethon maps its accent and inverse-text variables to `--button-accent` and `--button-on-accent` and opts into `tone="accent"`; it does not override the library's face gradients or round shapes.
 
 To update, verify the supplied archive's checksum, copy it here with its source commit in the name, update the file dependency and lockfile with pnpm, then run the application build and behavioral checks. Keep the library's licence and third-party notices inside the archive. The upstream package contract is https://jerynv.github.io/vic-ui/docs/package-compatibility/ and the surface contract is https://jerynv.github.io/vic-ui/docs/surfaces/.
+
+This release was packed from 09327c7, whose source tree is identical to merged 603c207. It includes the ed35c65 controls increment. Shared switches opt into `look="flat"`. Button face radii derive from actual rim insets in the library; no consumer radius patch is needed.
+
+Seven additive preview exports preserve the 123 historical exports. Phaethon uses ImagePreview (20 MiB encoded-byte cap), TextPreview (512 KiB/20,000 lines), DelimitedPreview (1 MiB/1,000 rows/60 columns), FilePreviewStatus and FilePreviewToolbar. The library renders ready Blob/Uint8Array inputs and owns its image URLs. Phaethon retains classification, permissions, loading/retry, native opening, PDF, syntax colours and academic Markdown; no Office or media renderer is claimed. CSP permits blob images only, without broadening script or frame sources. Preview source/provenance notices are retained in the archive.
+
+The consumer scopes the off-state flat switch thumb to its secondary-foreground token, keeping the track rimless while identifying the movable control. Computed thumb/track contrast is checked at >=3:1 in light/dark at both supported window sizes; this is a consumer colour adaptation, not a geometry or package patch. The issue and a suggested dedicated thumb token were sent to the Vic owner.

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { lmsImport, type LmsImportEvent, type LmsCourse, type MaterialSummary } from "@/lib/lms";
+import { lmsImport, lmsImportCancel, type LmsImportEvent, type LmsCourse, type MaterialSummary } from "@/lib/lms";
 
 import { isSignedOut } from "./sites";
 
@@ -58,7 +58,9 @@ export type Run = {
   connection: string;
   school: string;
   courses: CourseRun[];
-  status: "running" | "done" | "failed";
+  status: "running" | "done" | "failed" | "cancelled";
+  cancelling?: boolean;
+  cancelError?: string;
   /** Why the whole import stopped (status "failed"). */
   error?: string;
   /** Things the core said that aren't about one course ("some courses aren't on the site any more"). */
@@ -158,6 +160,8 @@ export function startImport(
       setRun(next);
       const c = next.courses.find((x) => x.id === at.id);
       if (c) hooks.onCourse?.(c);
+    } else if (e.type === "cancelled") {
+      finish("cancelled", undefined, "Stopped");
     } else if (e.type === "done") {
       finish("done");
     }
@@ -170,7 +174,7 @@ export function startImport(
     onEvent,
   ).then(
     () => finish("done"),
-    (err: unknown) => finish("failed", String(err)),
+    (err: unknown) => String(err).trim().toLowerCase() === "cancelled" ? finish("cancelled", undefined, "Stopped") : finish("failed", String(err)),
   );
   return true;
 }
@@ -193,3 +197,16 @@ export const useSitesVersion = () =>
     },
     () => sitesVersion,
   );
+
+/** Ask the native import to stop; the terminal event, not this click, confirms completion. */
+export async function cancelImport(): Promise<void> {
+  const active = run;
+  if (!active || active.status !== "running" || active.cancelling) return;
+  setRun({ ...active, cancelling: true, cancelError: undefined });
+  try {
+    const accepted = await lmsImportCancel(active.connection);
+    if (run?.key === active.key && run.status === "running" && !accepted) setRun({ ...run, cancelling: false, cancelError: "The import is finishing. Try again in a moment." });
+  } catch (e) {
+    if (run?.key === active.key && run.status === "running") setRun({ ...run, cancelling: false, cancelError: String(e) });
+  }
+}

@@ -1,3 +1,5 @@
+import { AccessPicker } from "./access-picker";
+import { useFullAccess } from "@/lib/full-access";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "vic-ui";
 import { DropdownMenu } from "@/components/ui/menu";
@@ -51,6 +53,9 @@ const OTHER = "__other__";
 export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; spaceName: string; running: boolean }) {
   const s = useModels();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const fullAccess = useFullAccess(spaceId);
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
   const [other, setOther] = useState(false);
   const [error, setError] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
@@ -63,14 +68,6 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
     window.addEventListener(OPEN_MODEL_PICKER_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_MODEL_PICKER_EVENT, onOpen);
   }, [spaceId]);
-  // Open (by pointer, keyboard or the command palette): start on the model in use, not the first item.
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() =>
-      contentRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus(),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [open]);
 
   if (s.status === "loading") return null;
   // An assistant this version doesn't know picks its own model too.
@@ -97,7 +94,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       return false;
     }
   }
-  const groups = modelGroups(s);
+  const groups = modelGroups(s).map((group) => ({ ...group, models: group.models.filter((model) => `${group.name} ${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) })).filter((group) => group.models.length);
   const canChooseOther = choosableProviders(s).length > 0;
 
   return (
@@ -117,6 +114,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           >
             <ProviderLogo provider={splitRef(current.id).provider} className="size-4" />
             <span className="truncate">{shortName(name)}</span>
+            {fullAccess && <Icon name="shield" className="size-3 text-danger-ink" />}
             <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
           </Button>
         </DropdownMenu.Trigger>
@@ -124,6 +122,13 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           ref={contentRef}
+          onFocusCapture={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+            // Redirect the controller's initial container focus before its row roving handler.
+            event.stopPropagation();
+            event.currentTarget.querySelector<HTMLInputElement>('[data-model-search] input')?.focus();
+          }}
           side="top"
           align="end"
           sideOffset={6}
@@ -131,12 +136,14 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
           aria-label={`Model in ${spaceName}`}
           data-model-menu=""
           className={MENU}
+          onKeyDownCapture={modelMenuKeyboard}
           // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
           onCloseAutoFocus={(e) => other && e.preventDefault()}
         >
+          <ModelSearchInput value={query} onChange={setQuery} />
           <MenuHeader spaceName={spaceName} note={running ? "Next message" : undefined} />
           {error && <MenuError error={error} />}
-          <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)}>
+          <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)} className="min-h-0 overflow-y-auto overscroll-contain">
             <ModelItem value={DEFAULT} title="Default" hint={defaultName} spoken={`Use the default, ${defaultName}`} />
             {groups.map((g) => (
               <DropdownMenu.Group key={g.provider} aria-label={groups.length > 1 ? g.name : undefined}>
@@ -152,6 +159,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
                     key={m.id}
                     value={m.id}
                     title={m.name}
+                    provider={g.provider}
                     // Grouped under the provider's name on screen; said in full.
                     spoken={g.provider === "anthropic" ? undefined : modelName(m.id, s.models)}
                   />
@@ -159,6 +167,8 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
               </DropdownMenu.Group>
             ))}
           </DropdownMenu.RadioGroup>
+          <Separator /><AccessPicker spaceId={spaceId} nested />
+          {groups.length === 0 && <p className="px-2.5 py-2 text-sm text-ink-secondary">No matching models.</p>}
           {canChooseOther && (
             <MenuFooter>
               <MenuAction
@@ -217,6 +227,9 @@ function CliModelPicker({
   setOpen: (o: boolean) => void;
   contentRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const [query, setQuery] = useState("");
+  const fullAccess = useFullAccess(spaceId);
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
   const cli = cliOf(s.backend)!;
   const cliProvider: CliBackend = `${cli.id}-cli`;
   const [typing, setTyping] = useState(false);
@@ -268,6 +281,7 @@ function CliModelPicker({
             >
               <ProviderLogo provider={cliProvider} className="size-4" />
               <span className="truncate">{name}</span>
+              {fullAccess && <Icon name="shield" className="size-3 text-danger-ink" />}
               <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
             </Button>
           </DropdownMenu.Trigger>
@@ -275,6 +289,13 @@ function CliModelPicker({
         <DropdownMenu.Portal>
           <DropdownMenu.Content
             ref={contentRef}
+            onFocusCapture={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+              // Redirect the controller's initial container focus before its row roving handler.
+              event.stopPropagation();
+              event.currentTarget.querySelector<HTMLInputElement>('[data-model-search] input')?.focus();
+            }}
             side="top"
             align="end"
             sideOffset={6}
@@ -282,29 +303,32 @@ function CliModelPicker({
             aria-label={`Model in ${spaceName}`}
             data-model-menu=""
             className={MENU}
+            onKeyDownCapture={modelMenuKeyboard}
             // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
             onCloseAutoFocus={(e) => typing && e.preventDefault()}
           >
+            <ModelSearchInput value={query} onChange={setQuery} />
             <MenuHeader
               spaceName={spaceName}
               provider={cliProvider}
               note={running ? "Next message" : undefined}
             />
             {error && <MenuError error={error} />}
-            <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)}>
+            <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)} className="min-h-0 overflow-y-auto overscroll-contain">
               <ModelItem value={DEFAULT} title="Default" hint={cli.name} spoken={`${cli.name}’s own default`} />
               {!!list?.models.length && <Separator />}
-              {list?.models.map((m) => (
-                <ModelItem key={m.id} value={m.id} title={m.name} spoken={`${cli.name} · ${m.name}`} />
+              {list?.models.filter((m) => `${m.name} ${m.id}`.toLowerCase().includes(query.toLowerCase())).map((m) => (
+                <ModelItem key={m.id} value={m.id} title={m.name} provider={cliProvider} spoken={`${cli.name} · ${m.name}`} />
               ))}
               {own && !list?.models.some((m) => m.id === own.model) && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
             </DropdownMenu.RadioGroup>
             {(list?.status === "loading" || list?.note) && (
-              <p className="mx-1 mt-1 flex items-start gap-2 rounded-md bg-surface-sunken px-2.5 py-2 text-sm text-ink-secondary" data-cli-models-note={list.status}>
-                <Icon name={list.status === "loading" ? "spinner" : "info"} className={cn("mt-0.5 size-(--ph-icon-size-sm) shrink-0", list.status === "loading" && "animate-spin")} />
-                <span className="min-w-0">{list.status === "loading" ? `Asking ${cli.name} which models it offers…` : list.note}</span>
+              <p className="mx-1 mt-1 flex shrink-0 items-center gap-2 px-2.5 py-1 text-xs text-ink-secondary" data-cli-models-note={list.status}>
+                <Icon name={list.status === "loading" ? "spinner" : "info"} className={cn("mt-0.5 size-(--ph-icon-size-sm) shrink-0", list.status === "loading" && "motion-safe:animate-spin")} />
+                <span className="min-w-0 truncate" title={list.note}>{list.status === "loading" ? `Refreshing ${cli.name} models…` : list.note}</span>
               </p>
             )}
+            <Separator /><AccessPicker spaceId={spaceId} nested />
             <MenuFooter>
             <MenuAction
               option="__refresh__"
@@ -547,11 +571,12 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
 }
 
 /** T3 Code's ModelListRow (MIT): the same compact name/check shape in every provider. */
-function ModelItem({ value, title, hint, spoken }: { value: string; title: string; hint?: string; spoken?: string }) {
+function ModelItem({ value, title, hint, spoken, provider }: { value: string; title: string; hint?: string; spoken?: string; provider?: ProviderId | CliBackend }) {
   return (
     <DropdownMenu.RadioItem value={value} textValue={title} aria-label={spoken} data-model-option={value}
       className="flex min-h-(--ph-control-height) cursor-default items-center gap-3 rounded-md px-2.5 py-1.5 text-sm outline-none select-none data-highlighted:bg-hover">
-      <span className="min-w-0 flex-1 truncate">{title}</span>
+      {provider && <ProviderLogo provider={provider} className="size-4 opacity-75" />}
+      <span className="min-w-0 flex-1 truncate font-normal">{title}</span>
       {hint && <span className="max-w-[45%] truncate text-xs text-ink-secondary">{hint}</span>}
       <DropdownMenu.ItemIndicator className="flex shrink-0 items-center"><Icon name="check" className="size-3.5 text-ink-secondary" /></DropdownMenu.ItemIndicator>
     </DropdownMenu.RadioItem>
@@ -559,7 +584,7 @@ function ModelItem({ value, title, hint, spoken }: { value: string; title: strin
 }
 
 const MENU =
-  "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(19rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
+  "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(18rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-hidden overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
 const GROUP_LABEL = "flex items-center gap-2 px-2.5 pt-2 pb-1 text-sm font-medium text-ink-secondary";
 
 function Separator() {
@@ -624,4 +649,43 @@ function MenuAction({
       <span>{children}</span>
     </DropdownMenu.Item>
   );
+}
+
+/** Port of T3 ModelPickerContent's pinned ComboboxSearchInput (MIT). */
+function ModelSearchInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return <div className="sticky top-0 z-10 shrink-0 bg-raised p-1" data-model-search="">
+    <Input aria-label="Search models" placeholder="Search models…" autoComplete="off" value={value} onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => { if (event.key === "Escape") return; event.stopPropagation();
+        if (event.key === "ArrowDown" || (event.key === "Enter" && value.trim())) {
+          event.preventDefault();
+          const root = event.currentTarget.closest('[data-model-menu]');
+          const query = value.trim().toLocaleLowerCase();
+          const result = query
+            ? root?.querySelector<HTMLElement>('[role="menuitemradio"][data-model-option]:not([data-model-option="__default__"])') ?? ("default".includes(query) ? root?.querySelector<HTMLElement>('[data-model-option="__default__"]') : null)
+            : root?.querySelector<HTMLElement>('[role="menuitemradio"]');
+          if (event.key === "Enter") result?.click(); else result?.focus();
+        }
+      }} />
+  </div>;
+}
+
+/** Editable search + a roving result + footer controls form one keyboard path. */
+function modelMenuKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+  const root = event.currentTarget;
+  const active = document.activeElement as HTMLElement | null;
+  if ((event.key === "Home" || event.key === "End") && active?.matches('[role="menuitemradio"]')) {
+    const rows = [...root.querySelectorAll<HTMLElement>('[role="menuitemradio"]:not([data-disabled])')];
+    const target = event.key === "Home" ? rows[0] : rows.at(-1);
+    event.preventDefault(); event.stopPropagation();
+    target?.focus(); target?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const row = active?.closest<HTMLElement>('[role="menuitemradio"]') ?? root.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ?? root.querySelector<HTMLElement>('[role="menuitemradio"]');
+  const controls = [root.querySelector<HTMLElement>('[data-model-search] input'), row, root.querySelector<HTMLElement>('[data-access-picker]'), ...root.querySelectorAll<HTMLElement>('[role="menuitem"][data-model-option]')]
+    .filter((node): node is HTMLElement => !!node && node.getClientRects().length > 0 && !node.hasAttribute('data-disabled'));
+  if (!controls.length) return;
+  event.preventDefault(); event.stopPropagation();
+  const at = active ? controls.indexOf(active) : -1;
+  controls[(at + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
 }

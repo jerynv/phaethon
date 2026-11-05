@@ -739,7 +739,8 @@ export default [
       // The file is fixed; Try again loads the page and focus goes to its heading.
       await page.evaluate(() => { delete window.__MOCK__.fail.settings_get; });
       await press(page, "Try again");
-      await h.waitText("Providers");
+      await page.waitForSelector(`${PANEL} [data-provider-configure]`, { timeout: 5000 });
+      check(!(await page.$(`${PANEL} [role="alert"]`)), "a successful retry replaces the load error with connection settings");
       await h.idle();
       const focus = await page.evaluate(() => document.activeElement?.textContent);
       check(focus === "Assistant", "after a good retry, focus moves to the page heading", focus);

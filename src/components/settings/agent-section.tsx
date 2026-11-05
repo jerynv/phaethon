@@ -1,5 +1,5 @@
 import { Input } from "@/components/ui/input";
-import { Card, NativeSelect } from "vic-ui";
+import { NativeSelect } from "vic-ui";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ function ProviderRow({ id, name, current, children, onConfigure }: {
       <Button
         variant="ghost" data-provider-configure={id} aria-label={`Manage ${name}`} onClick={onConfigure}
         className={cn(
-          "w-full rounded-none text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-4 [&>.ui-button-face]:py-2.5",
+          "w-full rounded-md text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-2 [&>.ui-button-face]:py-2.5",
         )}
       >
         <ProviderLogo provider={id} className="size-7 shrink-0" />
@@ -226,9 +226,9 @@ export function AgentSection({
         <p className="text-base text-ink-secondary" role="status">Loading assistant settings…</p>
       ) : (
         <>
-          <SettingGroup title="Providers" bare>
-            <Card plain className="overflow-hidden rounded-lg p-0!">
-              <div className="divide-y divide-line">
+          <SettingGroup title="API providers" bare>
+            <div className="overflow-hidden">
+              <div className="divide-y divide-line/60">
                 {providerRows.map((row) => {
                   const p = row.provider;
                   const model = p.model ?? (p.id === "anthropic" ? settings.model : null);
@@ -238,7 +238,7 @@ export function AgentSection({
                   </ProviderRow>;
                 })}
               </div>
-            </Card>
+            </div>
           </SettingGroup>
           <AgentInstances act={act} request={instanceRequest} backendVersion={settings.backend} onRequestedClose={onRequestedProviderClose} />
           {actionError && !popup && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
@@ -247,7 +247,7 @@ export function AgentSection({
       <Dialog open={popup !== null} onOpenChange={(open) => { if (!open && !signingIn) closePopup(); }}>
         <DialogContent
           ref={popupContentRef}
-          className="flex flex-col overflow-hidden"
+          className="flex max-w-lg! flex-col overflow-hidden"
           showCloseButton={!signingIn} data-provider-popup={popup?.kind}
           onOpenAutoFocus={(e) => {
             e.preventDefault();

@@ -3,7 +3,7 @@ fn main() {
     // a command not granted in capabilities/*.json is rejected at the IPC layer.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
-            "dev_log", "agent_send", "agent_cancel", "agent_approve", "agent_access_answer", "grants_list", "grant_revoke", "grant_restore",
+            "dev_log", "voice_dictation_start", "agent_send", "agent_cancel", "agent_approve", "agent_access_answer", "grants_list", "grant_revoke", "grant_restore",
             "thread_load", "thread_new", "threads_list", "thread_open", "thread_delete", "claude_cli_status", "agent_clis_status", "agent_cli_sign_in", "agent_cli_sign_in_cancel", "agent_cli_models",
             "agent_instances_list", "agent_instance_save", "agent_instance_select", "agent_instance_sign_in", "agent_instance_sign_in_cancel", "agent_instance_remove", "agent_instance_sign_out", "agent_instance_usage",
             "thread_clear", "thread_forget", "thread_forget_preview", "cli_import_offered", "cli_import_run",
@@ -13,7 +13,7 @@ fn main() {
             "space_model_get", "space_model_set", "space_models_list",
             "space_touch", "space_show", "space_add", "full_access_list", "full_access_set", "space_export", "export_show",
             "conversations_search",
-            "lms_schools", "lms_connect", "lms_connections", "lms_courses", "lms_import", "lms_disconnect",
+            "lms_schools", "lms_connect", "lms_connections", "lms_courses", "lms_import", "lms_import_cancel", "lms_course_content", "lms_disconnect",
             "lms_grades", "lms_grades_refresh", "course_access_get", "course_access_set",
             "study_sources", "study_overview", "study_deck", "study_deck_save", "study_session", "study_rate", "study_make_deck", "study_make_quiz",
             "study_quiz", "study_quiz_submit", "study_review_mistakes", "study_delete", "study_chat_plan", "study_chat_make", "study_chat_cancel",

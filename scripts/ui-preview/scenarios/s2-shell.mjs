@@ -256,7 +256,7 @@ export default [
       if (!(await page.evaluate(() => document.getElementById("spaces-sidebar").hidden))) await page.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
       const t = await page.evaluate(() => [...document.querySelectorAll("header button[aria-keyshortcuts]")].map((b) => `${b.textContent.trim()}|${b.getAttribute("aria-label") ?? ""}`));
-      check(t.join() === "Spaces|,Settings|", "the title bar buttons show their words, which are their names", t.join());
+      check(t.length === 2 && t[0].endsWith("|Show sidebar") && t[1].endsWith("|Settings"), "compact title bar controls retain descriptive accessible names", t.join());
       const whole = await page.$eval("#space-title", (h1) => h1.scrollWidth <= h1.clientWidth);
       check(whole, "the space title still shows whole");
       const fit = await page.evaluate(() => {

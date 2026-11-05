@@ -194,6 +194,14 @@ export default function App() {
     },
     [sidebarNarrow, sidebarOpen, setSidebarOpen],
   );
+  useEffect(() => {
+    const choose = (event: Event) => {
+      const id: unknown = (event as CustomEvent<unknown>).detail;
+      if (typeof id === "string" && spaces.some((space) => space.id === id)) goToSpace(id);
+    };
+    window.addEventListener("phaethon:choose-space", choose);
+    return () => window.removeEventListener("phaethon:choose-space", choose);
+  }, [spaces, goToSpace]);
   const dismissSidebar = useCallback(() => {
     document.querySelector<HTMLElement>(`button[aria-controls="${SIDEBAR_ID}"]`)?.focus();
     setSidebarOpen(false);

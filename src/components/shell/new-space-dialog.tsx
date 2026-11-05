@@ -139,6 +139,7 @@ export function NewSpaceDialog({
               </label>
               <Input
                 id={descId}
+                placeholder="Projects, notes and plans for home"
                 value={description}
                 maxLength={SPACE_DESCRIPTION_MAX}
                 autoComplete="off"

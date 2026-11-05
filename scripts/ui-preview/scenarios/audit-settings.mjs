@@ -606,7 +606,7 @@ export default [
       await press(page, "Remove saved key…");
       await h.idle();
       await press(page, "Remove key");
-      await h.waitText("Paste your Anthropic API key");
+      await page.waitForFunction(() => window.__MOCK__.settings.hasAnthropicKey === false && document.querySelector("[data-key-input]")?.value === "", { timeout: 3000 });
       await h.idle();
       clears = await page.evaluate(() => window.__calls.filter(([c]) => c === "api_key_clear").length);
       const after = await page.evaluate(() => document.activeElement?.getAttribute("type"));
@@ -734,7 +734,7 @@ export default [
       // The file is fixed; Try again loads the page and focus goes to its heading.
       await page.evaluate(() => { delete window.__MOCK__.fail.settings_get; });
       await press(page, "Try again");
-      await h.waitText("Default assistant");
+      await h.waitText("Providers");
       await h.idle();
       const focus = await page.evaluate(() => document.activeElement?.textContent);
       check(focus === "Assistant", "after a good retry, focus moves to the page heading", focus);

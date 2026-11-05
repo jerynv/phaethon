@@ -296,6 +296,7 @@ export function SetupCard({ space, onResult }: { space: Space; onResult?: () => 
                 id={keyId}
                 data-setup-key=""
                 type="password"
+                placeholder="sk-ant-…"
                 autoComplete="off"
                 spellCheck={false}
                 value={draft}

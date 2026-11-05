@@ -134,6 +134,7 @@ export function WhatIf({ space, course, input, sitePercent }: { space: string; c
                     <Input
                         id={inputId}
                         inputMode="decimal"
+                        placeholder={String(i.possible ? Math.round(i.possible * 0.85) : 85)}
                         autoComplete="off"
                         value={t.scores[i.key] ?? ""}
                         onChange={(e) => update({ scores: { ...t.scores, [i.key]: e.target.value } })}
@@ -159,8 +160,8 @@ export function WhatIf({ space, course, input, sitePercent }: { space: string; c
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-semibold text-ink-secondary">A final exam not listed above</legend>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
-              <NumberField id={`${id}-fw`} label="Worth" unit="% of the course" value={t.finalWeight} invalid={finalBad.weight} error="Type a share between 0 and 100." onChange={(v) => update({ finalWeight: v })} />
-              <NumberField id={`${id}-fs`} label="Score" unit="%" value={t.finalScore} invalid={finalBad.score} error="Type a number from 0 to 200." onChange={(v) => update({ finalScore: v })} />
+              <NumberField id={`${id}-fw`} label="Worth" unit="% of the course" placeholder="30" value={t.finalWeight} invalid={finalBad.weight} error="Type a share between 0 and 100." onChange={(v) => update({ finalWeight: v })} />
+              <NumberField id={`${id}-fs`} label="Score" unit="%" placeholder="85" value={t.finalScore} invalid={finalBad.score} error="Type a number from 0 to 200." onChange={(v) => update({ finalScore: v })} />
             </div>
           </fieldset>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg bg-accent-soft px-3 py-2.5 text-accent-soft-ink forced-colors:border forced-colors:border-[CanvasText]" data-what-if-result="">
@@ -219,7 +220,7 @@ export function WhatIf({ space, course, input, sitePercent }: { space: string; c
   );
 }
 
-function NumberField({ id, label, unit, value, invalid, error, onChange }: { id: string; label: string; unit: string; value: string; invalid: boolean; error: string; onChange: (v: string) => void }) {
+function NumberField({ id, label, unit, placeholder, value, invalid, error, onChange }: { id: string; label: string; unit: string; placeholder: string; value: string; invalid: boolean; error: string; onChange: (v: string) => void }) {
   return (
     <div className="flex flex-col gap-1">
       <span className="flex items-center gap-1.5 text-base text-ink">
@@ -227,6 +228,7 @@ function NumberField({ id, label, unit, value, invalid, error, onChange }: { id:
         <Input
           id={id}
           inputMode="decimal"
+          placeholder={placeholder}
           autoComplete="off"
           value={value}
           onChange={(e) => onChange(e.target.value)}

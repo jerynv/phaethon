@@ -524,6 +524,7 @@ function SpaceEditor({ space, onUnsaved }: { space: Space; onUnsaved: (fields: s
       <div className="flex flex-wrap gap-x-4 gap-y-3">
         <InlineField
           label="Name"
+          placeholder="Home"
           spaceName={space.name}
           value={space.name}
           maxLength={SPACE_NAME_MAX}
@@ -534,6 +535,7 @@ function SpaceEditor({ space, onUnsaved }: { space: Space; onUnsaved: (fields: s
         />
         <InlineField
           label="Description"
+          placeholder="Projects, notes and plans for this space"
           spaceName={space.name}
           value={space.description}
           maxLength={SPACE_DESCRIPTION_MAX}
@@ -577,6 +579,7 @@ function colourName(h: number): string {
 
 function InlineField({
   label,
+  placeholder,
   spaceName,
   value,
   maxLength,
@@ -586,6 +589,7 @@ function InlineField({
   onSave,
 }: {
   label: string;
+  placeholder: string;
   spaceName: string;
   value: string;
   maxLength: number;
@@ -653,6 +657,7 @@ function InlineField({
       </label>
       <Input
         id={id}
+        placeholder={placeholder}
         value={draft}
         maxLength={maxLength}
         autoComplete="off"

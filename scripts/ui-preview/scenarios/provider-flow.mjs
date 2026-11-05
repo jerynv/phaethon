@@ -25,13 +25,18 @@ export default [
       await openProviderConfiguration(page, "openrouter", { keyboard: true, catalog: true });
       await h.idle();
       const input = `${providerPopup} [data-key-input]`;
+      check(await page.$eval(`${providerPopup} [data-provider-default="openrouter"]`, (button) => button.disabled), "an unconfigured provider cannot become the default");
+      check(await page.$eval("[data-model-selection]", (state) => state.textContent === "Not selected"), "the model field makes its unselected state explicit");
       check(await page.$eval(input, (node) => node.type) === "password", "API keys use a password input");
       await page.type(input, "sk-or-v1-0123456789abcdef");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-key-outcome="saved"]', { timeout: 3000 });
       check((await calls(page, "api_key_set")).at(-1)?.provider === "openrouter", "the inactive provider receives its own key");
+      check(await page.$eval(`${providerPopup} [data-provider-default="openrouter"]`, (button) => button.disabled), "saving a key still requires choosing a model before activation");
       await page.click('[data-model-choice="openai/gpt-5"]');
       await page.waitForFunction(() => window.__MOCK__.prov.models.openrouter === "openai/gpt-5", { timeout: 3000 });
+      await page.waitForFunction(() => document.querySelector('[data-provider-popup] [data-provider-default="openrouter"]')?.disabled === false, { timeout: 3000 });
+      check(await page.$eval("[data-model-selection]", (state) => state.textContent === "Selected"), "the selected model is explicit before activation");
       await assertDefault(page, "codex-cli", "anthropic");
       check((await calls(page, "settings_set_backend")).length === 0 && (await calls(page, "settings_set_provider")).length === 0, "adding a key and model never changes the default");
       const secret = await page.$eval(providerPopup, (dialog) => ({ text: dialog.textContent, value: dialog.querySelector("[data-key-input]").value }));
@@ -53,7 +58,7 @@ export default [
     name: "provider-default-failure-visible",
     sizes: [[1100, 720]],
     themes: ["light"],
-    mock: { settings: { ...SETTINGS, backend: "codex-cli" }, threads: {}, prov: prov(), fail: { settings_set_provider: "Wait for the current reply to finish." } },
+    mock: { settings: { ...SETTINGS, backend: "codex-cli" }, threads: {}, prov: { ...prov(), keys: { openrouter: true }, models: { openrouter: "openai/gpt-5" } }, fail: { settings_set_provider: "Wait for the current reply to finish." } },
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "openrouter", { catalog: true });

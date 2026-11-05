@@ -491,14 +491,14 @@ function QuestionField({
           <label htmlFor={`${id}-a`} className="text-sm font-medium text-ink">
             What goes in the blank
           </label>
-          <Input id={`${id}-a`} value={asText(value)} onChange={(e) => onChange(e.target.value)} aria-describedby={`${id}-prompt`} className="max-w-md" />
+          <Input id={`${id}-a`} placeholder="One word or phrase" value={asText(value)} onChange={(e) => onChange(e.target.value)} aria-describedby={`${id}-prompt`} className="max-w-md" />
         </div>
       ) : (
         <div className="flex flex-col gap-1">
           <label htmlFor={`${id}-a`} className="text-sm font-medium text-ink">
             Your answer
           </label>
-          <Textarea id={`${id}-a`} value={asText(value)} onChange={(e) => onChange(e.target.value)} aria-describedby={`${id}-prompt`} />
+          <Textarea id={`${id}-a`} placeholder="Write a short explanation…" value={asText(value)} onChange={(e) => onChange(e.target.value)} aria-describedby={`${id}-prompt`} />
         </div>
       )}
     </fieldset>

@@ -219,7 +219,7 @@ export default [
       const label = await page.$eval("[data-model-select]", (s) => s.labels?.[0]?.textContent);
       check(label === "Default model", "the setting is the Default model", label);
       const desc = await page.$eval("[data-model-select]", (s) => document.getElementById(s.getAttribute("aria-describedby"))?.textContent ?? "");
-      check(/Each space can choose another model beside Send/.test(desc), "the default model description points to per-space choices", desc);
+      check(/Used unless a space has its own model/.test(desc), "the default model description points to per-space choices", desc);
       const rows = await page.$$eval("[data-own-model]", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
       check(rows.length === 2 && /School: Claude Haiku 5\.5/.test(rows[0]) && /Work: Claude Sonnet 5\.5/.test(rows[1]), "it lists each space with its own model", JSON.stringify(rows));
       await page.$eval("[data-own-models]", (e) => e.scrollIntoView({ block: "center" }));

@@ -58,6 +58,7 @@ export function ScopeForm({ space, needs, onSaved }: { space: string; needs: Unk
         <Input
           ref={ref}
           id={`${id}-scope`}
+          placeholder="Chapters 1–3; sections 4.1–4.2"
           value={text}
           onChange={(e) => {
             setText(e.target.value);

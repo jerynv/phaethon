@@ -53,12 +53,6 @@ const OLLAMA = [
 ];
 const PROV = (over = {}) => ({ provider: "anthropic", keys: {}, models: {}, urls: {}, running: {}, lists: { openrouter: OPENROUTER, ollama: OLLAMA }, ...over });
 
-async function choose(page, value) {
-  await openProviderConfiguration(page, value);
-  await useProviderDefault(page, value);
-  await page.waitForFunction((v) => window.__calls.some(([c, a]) => c === "settings_set_provider" && a.provider === v), { timeout: 3000 }, value);
-}
-
 async function palette(page, query) {
   await page.keyboard.down("Meta");
   await page.keyboard.press("k");
@@ -81,8 +75,8 @@ export default [
       const catalog = await page.$$eval("[data-provider-catalog-select]", (buttons) => buttons.map((button) => button.dataset.providerCatalogSelect));
       check(["anthropic", "openrouter", "openai", "ollama", "custom", "claude-cli", "codex-cli", "gemini-cli"].every((id) => catalog.includes(id)), "Add provider offers hosted, local, custom and CLI configuration", JSON.stringify(catalog));
       await closeProviderPopup(page);
-      await choose(page, "openrouter");
-      check(await settingsSaid(page, "Now using OpenRouter."), "choosing OpenRouter is said", await settingsStatus(page));
+      await openProviderConfiguration(page, "openrouter");
+      check(await page.$eval('[data-provider-popup] [data-provider-default="openrouter"]', (button) => button.disabled), "OpenRouter requires a key and model before becoming the default");
       await page.waitForSelector("[data-model-search=openrouter]", { timeout: 3000 });
       const text = await page.$eval(providerPopup, (e) => e.innerText);
       const keyLink = await page.$eval(`${providerPopup} a`, (a) => a.href);
@@ -115,8 +109,8 @@ export default [
       await page.waitForFunction(() => /120 models/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
       check(/The first 50 are shown/.test(await searchStatus(page)), "a long list says only the first 50 show", await searchStatus(page));
       check((await page.$$("[data-model-search] [role=option]")).length === 50, "and shows 50");
-      const none = await page.$eval("[data-provider-model]", (e) => e.textContent);
-      check(/Choose a default model, or enter its name/.test(none), "no model is chosen yet, said plainly", none);
+      const none = await page.$eval("[data-model-query]", (e) => ({ value: e.value, placeholder: e.placeholder, label: e.labels?.[0]?.textContent }));
+      check(none.value === "" && none.placeholder && none.label === "Default model" && !(await page.$("[data-provider-model]")), "an unconfigured model has an empty labelled search with a format cue", JSON.stringify(none));
       await page.focus("[data-model-query]");
       await page.keyboard.type("sonnet");
       await page.waitForFunction(() => /1 match/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
@@ -133,6 +127,8 @@ export default [
       await page.waitForFunction(() => document.querySelector("[data-provider-model]")?.dataset.providerModel === "anthropic/claude-sonnet-5", { timeout: 3000 });
       const inUse = await page.$eval("[data-provider-model]", (e) => e.textContent);
       check(/Default: OpenRouter · Anthropic: Claude Sonnet 5/.test(inUse), "the configured default model is shown", inUse);
+      await useProviderDefault(page, "openrouter");
+      check(await settingsSaid(page, "Now using OpenRouter."), "activating the configured provider is said", await settingsStatus(page));
 
       // A model the list doesn't have: typed, then used as it is.
       await page.click("[data-model-query]", { clickCount: 3 });
@@ -170,11 +166,11 @@ export default [
       check(/Ollama isn’t running at http:\/\/127\.0\.0\.1:11434\. Open it, then check again\./.test(st), "says Ollama isn’t running, where, and what to do", st);
       check(!(await page.$("[data-key-input]")), "no key is asked for a model on this computer");
       const text = await page.$eval(providerPopup, (e) => e.innerText);
-      check(/Where Ollama answers/.test(text) && !/What is sent to/.test(text), "the popup gives Ollama's address without the removed disclosure", text.slice(0, 900));
+      check(/Connect to your Ollama server/.test(text) && !/What is sent to/.test(text), "the popup gives Ollama's address without the removed disclosure", text.slice(0, 900));
       const ms = await searchStatus(page);
       check(/Ollama isn’t running/.test(ms) && /Type a model’s name/.test(ms), "the model list says why it is empty and that a name can be typed", ms);
       const url = await page.$eval("[data-provider-url]", (e) => [e.value, e.labels?.[0]?.textContent]);
-      check(url[0] === "http://127.0.0.1:11434/v1" && url[1] === "Address", "the usual address is shown, labelled", JSON.stringify(url));
+      check(url[0] === "http://127.0.0.1:11434/v1" && url[1] === "Server URL", "the usual address is shown, labelled", JSON.stringify(url));
       // A bad address is refused at the field.
       await page.click("[data-provider-url]", { clickCount: 3 });
       await page.keyboard.type("not an address");
@@ -322,7 +318,7 @@ export default [
       const over = await page.$eval(providerPopup, (p) => p.scrollWidth - p.clientWidth);
       check(over <= 0, "provider configuration doesn't scroll sideways", `${over}`);
       const text = await page.$eval(providerPopup, (e) => e.innerText);
-      check(/Your server’s address/.test(text) && /Add a key only if your server requires one/.test(text) && !/What is sent to/.test(text), "custom configuration offers an address and optional key without disclosure paragraphs", text.slice(0, 1200));
+      check(/Server URL/.test(text) && /OpenAI-compatible endpoint/.test(text) && /Add a key only if your server requires one/.test(text) && !/What is sent to/.test(text), "custom configuration offers an address and optional key without disclosure paragraphs", text.slice(0, 1200));
       await page.$eval("[data-model-search]", (e) => e.scrollIntoView({ block: "center" }));
       await park(page);
       await h.shot("custom");

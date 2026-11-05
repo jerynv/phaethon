@@ -454,6 +454,7 @@ function MakeFlow({
         </label>
         <Input
           id={`${id}-scope-text`}
+          placeholder="Chapters 1–3; sections 4.1–4.2"
           value={typedScope(title, fallback)}
           onChange={(e) => {
             change(setScopeText)({ ...scopeText, [k]: e.target.value });
@@ -512,6 +513,7 @@ function MakeFlow({
             </label>
             <Input
               id={`${id}-other-name`}
+              placeholder="Midterm 2"
               value={otherName}
               onChange={(e) => {
                 change(setOtherName)(e.target.value);
@@ -791,7 +793,7 @@ function MakeFlow({
             <label htmlFor={`${id}-focus`} className="text-base font-medium text-ink">
               Focus on <span className="font-normal text-ink-secondary">(optional)</span>
             </label>
-            <Input id={`${id}-focus`} value={focus} onChange={(e) => change(setFocus)(e.target.value)} aria-describedby={`${id}-focus-hint`} data-make-focus="" />
+            <Input id={`${id}-focus`} placeholder="Chapter 3, power sets…" value={focus} onChange={(e) => change(setFocus)(e.target.value)} aria-describedby={`${id}-focus-hint`} data-make-focus="" />
             <p id={`${id}-focus-hint`} className="text-sm text-ink-secondary">
               A topic or chapter, like “chapter 3” or “power sets”.
             </p>
@@ -804,6 +806,7 @@ function MakeFlow({
               <Input
                 id={`${id}-count`}
                 type="number"
+                placeholder={quiz ? "10" : "20"}
                 inputMode="numeric"
                 min={COUNT_MIN}
                 max={COUNT_MAX}
@@ -820,7 +823,7 @@ function MakeFlow({
               <label htmlFor={`${id}-title`} className="text-base font-medium text-ink">
                 Name <span className="font-normal text-ink-secondary">(optional)</span>
               </label>
-              <Input id={`${id}-title`} value={title} onChange={(e) => change(setTitle)(e.target.value)} aria-describedby={`${id}-title-hint`} data-make-name="" />
+              <Input id={`${id}-title`} placeholder={quiz ? "Chapter 3 practice quiz" : "Chapter 3 flashcards"} value={title} onChange={(e) => change(setTitle)(e.target.value)} aria-describedby={`${id}-title-hint`} data-make-name="" />
               <p id={`${id}-title-hint`} className="text-sm text-ink-secondary">
                 Phaethon names it from what it covers if you leave this empty.
               </p>

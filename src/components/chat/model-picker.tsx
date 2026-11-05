@@ -4,6 +4,7 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { ModelSearch } from "@/components/settings/model-search";
+import { ProviderLogo } from "@/components/provider-logo";
 import { announce } from "@/components/shell/announcer";
 import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { IconTip } from "@/components/ui/tooltip";
 import { Icon, type IconName } from "@/icons";
 import { cn } from "@/lib/utils";
-import { cliOf, type ProviderId } from "@/lib/backend";
+import { cliOf, type CliBackend, type ProviderId } from "@/lib/backend";
 import {
   changedText,
   choosableProviders,
@@ -114,6 +115,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
             data-model={current.id}
             className="min-w-0 shrink px-2 text-sm font-medium"
           >
+            <ProviderLogo provider={splitRef(current.id).provider} className="size-4" />
             <span className="truncate">{shortName(name)}</span>
             <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
           </Button>
@@ -141,6 +143,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
                 <Separator />
                 {groups.length > 1 && (
                   <DropdownMenu.Label aria-hidden className={GROUP_LABEL} data-model-group={g.provider}>
+                    <ProviderLogo provider={g.provider} className="size-4" />
                     {g.name}
                   </DropdownMenu.Label>
                 )}
@@ -216,6 +219,7 @@ function CliModelPicker({
   contentRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const cli = cliOf(s.backend)!;
+  const cliProvider: CliBackend = `${cli.id}-cli`;
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -263,6 +267,7 @@ function CliModelPicker({
               data-model={own ? s.own[spaceId] : ""}
               className="min-w-0 shrink px-2 text-sm font-medium"
             >
+              <ProviderLogo provider={cliProvider} className="size-4" />
               <span className="truncate">{name}</span>
               <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
             </Button>
@@ -283,6 +288,7 @@ function CliModelPicker({
           >
             <MenuHeader
               spaceName={spaceName}
+              provider={cliProvider}
               note={running ? `${cli.name} · Applies from your next message. The reply now running keeps its model.` : cli.name}
             />
             {error && <MenuError error={error} />}
@@ -398,6 +404,7 @@ function CliModelDialog({
             <Input
               id={inputId}
               data-cli-model-input=""
+              placeholder={example}
               autoComplete="off"
               spellCheck={false}
               value={draft}
@@ -457,7 +464,8 @@ function OtherModelDialog({
           <DialogDescription>Any model from a provider you’ve set up in Settings. It applies from your next message here.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor={selectId} className="text-base font-medium text-ink">
+          <label htmlFor={selectId} className="flex items-center gap-2 text-base font-medium text-ink">
+            <ProviderLogo provider={info.id} className="size-4" />
             Provider
           </label>
           <NativeSelect
@@ -570,18 +578,19 @@ function anthropicHint(id: string): string | undefined {
 
 const MENU =
   "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(19rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-y-auto overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
-const GROUP_LABEL = "px-2.5 pt-2 pb-1 text-sm font-medium text-ink-secondary";
+const GROUP_LABEL = "flex items-center gap-2 px-2.5 pt-2 pb-1 text-sm font-medium text-ink-secondary";
 
 function Separator() {
   return <DropdownMenu.Separator className="mx-1 my-1.5 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />;
 }
 
 /** "Model" over the space's name, and when a change takes effect. */
-function MenuHeader({ spaceName, note }: { spaceName: string; note?: string }) {
+function MenuHeader({ spaceName, note, provider }: { spaceName: string; note?: string; provider?: ProviderId | CliBackend }) {
   return (
     <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
       <DropdownMenu.Label className="text-base font-semibold text-ink">Model in {spaceName}</DropdownMenu.Label>
-      {note && <p className="text-sm text-ink-secondary" data-model-note="">
+      {note && <p className="flex items-start gap-2 text-sm text-ink-secondary" data-model-note="">
+        {provider && <ProviderLogo provider={provider} className="mt-0.5 size-4" />}
         {note}
       </p>}
     </div>

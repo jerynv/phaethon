@@ -66,6 +66,7 @@ function apply(a: Appearance) {
   root.dataset.mode = e.dark ? "dark" : "light";
   root.toggleAttribute("data-custom-accent", "--ph-accent-h" in a.tokens || "--ph-accent-c" in a.tokens);
   root.dataset.themePref = a.theme;
+  root.dataset.focusRings = Number(a.tokens["--ph-focus-rings"] ?? 0) === 1 ? "on" : "off";
   if (a.readingFont && a.readingFont !== "atkinson") root.dataset.font = a.readingFont;
   else delete root.dataset.font;
   if (e.moreContrast) root.dataset.contrast = "more";

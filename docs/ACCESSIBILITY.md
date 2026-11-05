@@ -1,6 +1,6 @@
 # Accessibility
 
-Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is the floor**; where a AAA criterion is cheap (for example focus appearance, 2.4.13) we meet it. A change that regresses any requirement below is a bug, not a polish item.
+Keyboard and assistive-technology support remain part of the workspace. Visual focus rings are an optional personal preference, off by default; enable them in Settings → Accessibility → Show focus rings.
 
 ## Baseline already in the shell
 
@@ -8,7 +8,7 @@ Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is 
 - Streaming is silent: the `log` has `aria-live="off"`, so replies are not read token by token. One polite `status` region announces what the agent is doing ("Reading file notes.md") and then the whole reply once it completes ("Phaethon replied: …"), or "Reply stopped." Errors render inside the message as `role="alert"` and are announced immediately.
 - While a reply runs, Send becomes "Stop reply"; Escape in the composer also stops it. If the reply ends while Stop has focus, focus returns to the composer.
 - Every control has an accessible name; the composer has a real `<label>` and a described keyboard hint.
-- One high-contrast focus outline (3px, at least 3:1 against both backgrounds) on every focusable element, and it cannot be removed by component styles. Uses the system `Highlight` colour in forced-colours mode.
+- When focus rings are enabled, controls use the chosen outline thickness (3px by default). The setting covers the composer and library control wrappers too; turning it off preserves the chosen thickness for later use.
 - Follows the system light/dark setting live, and `prefers-reduced-motion` disables animation and smooth scrolling.
 - Sidebar works with Tab and with ArrowUp/ArrowDown/Home/End.
 - A file change the agent wants is an inline `alertdialog` ("Phaethon wants to change a file") with a plain summary, a focusable preview, and Allow / Don't allow. It takes focus when it appears and returns focus to the composer once answered; it is not also announced by the status region. A reply loaded from a saved thread is not announced.
@@ -21,12 +21,12 @@ Accessibility is a day-one constraint, not a later pass. **WCAG 2.2 Level AA is 
 - New assistant output is announced once, at a sensible granularity: streaming must not read every token. Announce on completion or by sentence, and let users choose.
 - Message authorship is spoken ("You said", "Phaethon said"), not only shown by colour or alignment.
 - Text contrast at least 4.5:1 (3:1 for large text and UI components) in both themes; respect OS text-size and zoom up to 200% without horizontal scrolling at the default window size, reflow at 320 CSS px wide.
-- Forced-colours / high-contrast mode keeps every boundary and focus state visible.
+- Forced-colours / high-contrast mode keeps selection and validation boundaries visible and respects the focus-ring preference.
 - Images and generated charts carry text alternatives; code blocks are readable as text.
 
 ### Motor and switch access
 
-- Everything reachable and operable by keyboard alone, with a visible focus indicator and no keyboard traps.
+- Everything remains reachable and operable by keyboard alone, with no keyboard traps. Focus indicators are available when enabled.
 - Target size at least 24×24 CSS px (WCAG 2.5.8); primary actions larger.
 - No action requires a drag, a multi-finger gesture, or precise timing; any drag has a single-pointer alternative (2.5.7).
 - Works with switch control, voice control (Voice Control, Dragon) and dwell clicking: visible labels match accessible names (2.5.3).

@@ -193,11 +193,33 @@
 
 /* ---- Phaethon accessibility baseline ---- */
 
-/* One strong, consistent focus ring for every focusable element. Unlayered and
-   !important so component-level `outline-none` utilities cannot hide it. */
-:focus-visible {
+/* Focus rings are optional. The preference also covers Vic's own indicators. */
+:root[data-focus-rings="on"] :focus-visible {
   outline: var(--ph-focus-width) solid var(--ph-focus) !important;
   outline-offset: var(--ph-focus-offset) !important;
+}
+
+:root:not([data-focus-rings="on"]) :is(:focus, :focus-visible):where(:not([data-found-message])) {
+  outline: none !important;
+}
+:root:not([data-focus-rings="on"]) :is(
+  .ui-file-button:has(input:focus-visible),
+  .ui-choice-card:has(input:focus-visible),
+  .ui-list-row:has(.ui-list-row-link:focus-visible)
+) {
+  outline: none;
+}
+:root:not([data-focus-rings="on"]) :is(
+  .ui-select-box:has(.ui-select:focus-visible),
+  .ui-field-box[data-disabled]:focus-within
+) {
+  box-shadow: none;
+}
+:root:not([data-focus-rings="on"]) :is(
+  .ui-select-box[data-invalid]:has(.ui-select:focus-visible),
+  .ui-field-box[data-disabled][data-invalid]:focus-within
+) {
+  box-shadow: inset 0 0 0 1px var(--tone-danger-ink);
 }
 
 /* A heading that only receives focus from script (tabindex=-1, e.g. a popover
@@ -216,9 +238,16 @@
 }
 
 /* The composer shows focus on its whole frame, not a second ring inside it. */
-[data-composer]:has([data-composer-input]:focus-visible) {
+:root[data-focus-rings="on"] [data-composer]:has([data-composer-input]:focus-visible) {
   outline: var(--ph-focus-width) solid var(--ph-focus);
   outline-offset: var(--ph-focus-offset);
+}
+:root[data-focus-rings="on"] [data-composer]:focus-within {
+  border-color: var(--ph-focus);
+}
+:root[data-focus-rings="on"] [data-model-search]:has([data-model-query]:focus) [role="option"][aria-selected="true"] {
+  outline: 2px solid var(--ph-accent);
+  outline-offset: -2px;
 }
 [data-composer-input]:focus-visible {
   outline: none !important;
@@ -241,13 +270,8 @@
   }
   /* Selection drawn with a background disappears in forced colours; mark the
      current item with a real boundary instead. */
-  [aria-current="page"],
-  [aria-current="true"],
-  [aria-selected="true"],
-  [role="tab"][data-state="active"],
-  [aria-pressed="true"],
-  [aria-checked="true"]:not(input) {
-    outline: 2px solid SelectedItem;
-    outline-offset: -2px;
+  :root :is([aria-current="page"], [aria-current="true"], [aria-selected="true"], [role="tab"][data-state="active"], [aria-pressed="true"], [aria-checked="true"]:not(input)) {
+    outline: 2px solid SelectedItem !important;
+    outline-offset: -2px !important;
   }
 }

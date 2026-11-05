@@ -94,6 +94,7 @@ import { SectionReset } from "./section-reset";
 
 export const ACCESSIBILITY_TOKENS = [
   "--ph-text-scale",
+  "--ph-focus-rings",
   "--ph-focus-width",
   "--ph-icon-stroke",
   "--ph-leading-normal",
@@ -124,7 +125,7 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
         <TokenRow name="--ph-text-scale" quickPicks />
         <SwitchRow
           label="Increase contrast"
-          description="Darker text, visible borders and a stronger focus ring, in light and dark themes."
+          description="Darker text and stronger borders in light and dark themes."
           checked={a.increaseContrast === "on"}
           onChange={(on) => setAppearance((p) => ({ ...p, increaseContrast: on ? "on" : "system" }))}
           status={
@@ -133,9 +134,19 @@ export function AccessibilitySection({ headingId }: { headingId: string }) {
               : `Following your system, which has it ${sys.moreContrast ? "on" : "off"}.`
           }
         />
-        <TokenRow name="--ph-focus-width">
-          <FocusSample />
-        </TokenRow>
+        <SwitchRow
+          token="--ph-focus-rings"
+          label="Show focus rings"
+          description="Outline the active control."
+          checked={Number(a.tokens["--ph-focus-rings"] ?? 0) === 1}
+          onChange={(on) => setToken("--ph-focus-rings", on ? 1 : 0)}
+          status={Number(a.tokens["--ph-focus-rings"] ?? 0) === 1 ? "On" : "Off by default"}
+        />
+        {Number(a.tokens["--ph-focus-rings"] ?? 0) === 1 && (
+          <TokenRow name="--ph-focus-width">
+            <FocusSample />
+          </TokenRow>
+        )}
         <TokenRow name="--ph-icon-stroke" />
       </SettingGroup>
 

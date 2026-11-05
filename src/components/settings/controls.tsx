@@ -444,8 +444,7 @@ export function HueSwatches({
 // ---- Switches ----
 
 /**
- * An on/off setting whose "off" means "follow the system". The status line
- * says what the system currently does, so the result is never a guess.
+ * An on/off setting with a status line for its current behavior.
  */
 export function SwitchRow({
   label,
@@ -453,18 +452,20 @@ export function SwitchRow({
   checked,
   onChange,
   status,
+  token,
 }: {
   label: string;
   description: ReactNode;
   checked: boolean;
   onChange: (on: boolean) => void;
   status: ReactNode;
+  token?: string;
 }) {
   const id = useId();
   const descId = useId();
   const statusId = useId();
   return (
-    <div className="flex items-start gap-6 px-4 py-3">
+    <div data-token={token} className="flex items-start gap-6 px-4 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <label htmlFor={id} className="cursor-pointer text-base font-medium text-ink">
           {label}

@@ -23,11 +23,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { showSidebar } from "../audit-fixtures.mjs";
+import { SETTINGS, showSidebar } from "../audit-fixtures.mjs";
 
 // Obscura matches neither :focus-visible nor :focus when painting, so the
 // focused element is tagged and drawn with the same tokens as index.css.
-const RING = `[data-shot-focus] { outline: var(--ph-focus-width) solid var(--ph-focus) !important; outline-offset: var(--ph-focus-offset) !important; }
+const RING = `:root[data-focus-rings="on"] [data-shot-focus] { outline: var(--ph-focus-width) solid var(--ph-focus) !important; outline-offset: var(--ph-focus-offset) !important; }
 a[data-shot-focus][href="#main"] { position: fixed; top: calc(var(--ph-titlebar-height) + var(--ph-space) * 3); left: 50%; transform: translateX(-50%); z-index: 50; width: auto; height: auto; margin: 0; clip: auto; clip-path: none; overflow: visible; white-space: nowrap; border-radius: var(--ph-radius); background: var(--ph-raised); color: var(--ph-ink); padding: var(--ph-space) calc(var(--ph-space) * 3); font-weight: var(--ph-weight-medium); box-shadow: var(--ph-shadow); }`;
 const tagFocus = (page) => page.evaluate(() => document.activeElement?.setAttribute("data-shot-focus", ""));
 
@@ -125,7 +125,7 @@ export default [
   },
   {
     name: "shell-focus",
-    mock: { threads: { work: thread } },
+    mock: { settings: { ...SETTINGS, appearance: { tokens: { "--ph-focus-rings": 1 } } }, threads: { work: thread } },
     async run(page, h) {
       await addStyle(page, RING);
       await showSidebar(page);
@@ -139,7 +139,7 @@ export default [
   },
   {
     name: "shell-skip-link",
-    mock: { threads: { school: thread } },
+    mock: { settings: { ...SETTINGS, appearance: { tokens: { "--ph-focus-rings": 1 } } }, threads: { school: thread } },
     async run(page, h) {
       const order = await tabOrder(page);
       console.log(`     tab order: ${order.join(" > ")}`);

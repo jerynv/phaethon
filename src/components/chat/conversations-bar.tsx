@@ -588,7 +588,7 @@ export function ConversationsBar({
               data-conversations-trigger=""
               data-sidebar-history-all={inSidebar && recent.length > 6 ? "" : undefined}
               title={inSidebar ? `View all ${recent.length} conversations` : undefined}
-              className={inSidebar ? "min-w-0 text-sm! font-medium text-ink-secondary hover:text-ink" : undefined}
+              className={inSidebar ? "min-w-0 text-xs! font-normal! text-ink-secondary hover:text-ink" : undefined}
             >
               Conversations
               {inSidebar && recent.length > 6 && <span aria-hidden="true" className="text-xs font-normal text-ink-secondary">{recent.length}</span>}
@@ -875,7 +875,7 @@ export function ConversationsBar({
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
-        <Tooltip>
+        {!inSidebar && <Tooltip>
           <TooltipTrigger asChild>
             <Button
               type="button"
@@ -896,7 +896,7 @@ export function ConversationsBar({
             New conversation
             <Keys keys={[modCap(), "N"]} className="[&_kbd]:border-ink-inverse/30 [&_kbd]:bg-transparent [&_kbd]:text-ink-inverse/80" />
           </TooltipContent>
-        </Tooltip>
+        </Tooltip>}
       </div>,
       )}
       {/* Under the header, at the top of the conversation, when the pane gives them a place (in the bar otherwise). */}

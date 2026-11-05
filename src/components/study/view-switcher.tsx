@@ -78,7 +78,7 @@ export function ViewSwitcher({
                 className={cn(
                   // One selected destination: the current thread stands in for its Chat parent.
                   "min-h-(--ph-control-height) cursor-default rounded-md border border-transparent px-2 py-1 leading-tight select-none",
-                  vertical ? "flex w-full items-center gap-2.5 text-start text-base" : "text-base font-medium",
+                  vertical ? "flex w-full items-center gap-2.5 text-start text-sm font-normal" : "text-sm font-normal",
                   "transition-[color,background-color] duration-(--ph-duration-fast) ease-out",
                   filled
                     ? "bg-selected text-ink forced-colors:border-[Highlight]"

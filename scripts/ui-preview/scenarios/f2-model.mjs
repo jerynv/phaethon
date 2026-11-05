@@ -19,13 +19,14 @@ const pickerState = (page) =>
   page.$eval(picker, (b) => ({ text: b.textContent.trim(), label: b.getAttribute("aria-label"), model: b.dataset.model, space: b.dataset.modelPicker }));
 const focused = (page) =>
   page.evaluate(() => {
-    const a = document.activeElement;
+    const input = document.activeElement;
+    const a = document.getElementById(input?.getAttribute("aria-activedescendant")) ?? input;
     return a ? `${a.getAttribute("role") ?? a.tagName.toLowerCase()}|${a.getAttribute("data-model-option") ?? ""}|${a.textContent?.trim().slice(0, 50)}` : "none";
   });
 async function openPicker(page) {
   await page.waitForSelector(picker, { timeout: 5000 });
   await page.click(picker);
-  await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
+  await page.waitForSelector('[data-model-menu] [role="option"]', { timeout: 3000 });
 }
 async function choose(page, value) {
   await page.click(`[data-model-menu] [data-model-option="${value}"]`);
@@ -60,7 +61,7 @@ export default [
       check(p.label === "Model in School: Claude Opus 5.5, the default", "its name says the space, the full model name and that it is the default", p.label);
       await openPicker(page);
       await h.idle();
-      const items = await page.$$eval('[data-model-menu] [role="menuitemradio"]', (els) => els.map((e) => [e.dataset.modelOption, e.getAttribute("aria-checked"), e.textContent.trim()]));
+      const items = await page.$$eval('[data-model-menu] [role="option"]', (els) => els.map((e) => [e.dataset.modelOption, e.getAttribute("aria-selected"), e.textContent.trim()]));
       console.log(`     items: ${JSON.stringify(items)}`);
       check(items[0][0] === "__default__" && items[0][1] === "true" && /^DefaultClaude Opus 5\.5$/.test(items[0][2]), "Default (Claude Opus 5.5) comes first, and is checked", JSON.stringify(items[0]));
       check(items.length === 4 && items.slice(1).every(([, , t]) => /^Claude /.test(t)), "then each model by its name", JSON.stringify(items));
@@ -102,7 +103,7 @@ export default [
       await page.waitForFunction((sel) => document.querySelector(sel)?.dataset.model === "claude-haiku-5-5", { timeout: 3000 }, picker);
       check((await pickerState(page)).text === "Haiku 5.5", "a model saved for School shows when the app opens");
       await openPicker(page);
-      const checked = await page.$eval('[data-model-menu] [aria-checked="true"]', (e) => e.dataset.modelOption);
+      const checked = await page.$eval('[data-model-menu] [role="option"][aria-selected="true"]', (e) => e.dataset.modelOption);
       check(checked === "claude-haiku-5-5", "and is the checked choice", checked);
       await choose(page, "__default__");
       const sets = await calls(page, "space_model_set");
@@ -131,8 +132,7 @@ export default [
       await h.send("Plan my week");
       await page.waitForSelector(`${shown} [data-stop]`, { timeout: 5000 });
       await openPicker(page);
-      const note = await page.$eval("[data-model-note]", (e) => e.textContent);
-      check(note.trim() === "Next message", "the running-state hint is concise about when a change applies", note);
+      check(!!(await page.$(`${shown} [data-stop]`)), "opening the model picker keeps the active reply running");
       await choose(page, "claude-sonnet-5-5");
       check(await shellSaid(page, "School now uses Claude Sonnet 5.5. The reply now running keeps its model."), "the change is said, with what happens to the reply", await shellStatus(page));
       check((await calls(page, "agent_cancel")).length === 0 && !!(await page.$(`${shown} [data-stop]`)), "the reply keeps running");
@@ -154,18 +154,16 @@ export default [
       check(/in School: Claude Opus 5\.5/.test(hint), "Change model… says the space and its model", hint);
       check(!(await page.$('[data-command="default-model"]')), "no Use the default while School uses it");
       await page.keyboard.press("Enter");
-      await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
+      await page.waitForSelector('[data-model-menu] [role="option"]', { timeout: 3000 });
       await h.idle();
       let f = await focused(page);
       check(await page.evaluate(() => document.activeElement?.matches('[data-model-search] input')), "the model picker opens in editable search", f);
       await page.keyboard.press("ArrowDown");
-      await page.waitForFunction(() => document.activeElement?.dataset.modelOption === "__default__", { timeout: 3000 });
+      await page.waitForFunction(() => document.getElementById(document.activeElement?.getAttribute("aria-activedescendant"))?.dataset.modelOption === "claude-opus-5-5", { timeout: 3000 });
       await page.keyboard.press("ArrowDown");
-      await page.waitForFunction(() => document.activeElement?.dataset.modelOption === "claude-opus-5-5", { timeout: 3000 });
-      await page.keyboard.press("ArrowDown");
-      await page.waitForFunction(() => document.activeElement?.dataset.modelOption === "claude-sonnet-5-5", { timeout: 3000 });
+      await page.waitForFunction(() => document.getElementById(document.activeElement?.getAttribute("aria-activedescendant"))?.dataset.modelOption === "claude-sonnet-5-5", { timeout: 3000 });
       f = await focused(page);
-      check(f.startsWith("menuitemradio|claude-sonnet-5-5"), "arrows move through the models", f);
+      check(f.startsWith("option|claude-sonnet-5-5"), "arrows move through the models", f);
       await park(page);
       await h.shot("menu");
       await page.keyboard.press("Enter");
@@ -195,7 +193,7 @@ export default [
       // Claude Code answering: its own models (the aliases its help gives), not Phaethon's own choice for the space.
       await page.waitForSelector(picker, { timeout: 5000 });
       const label = await page.$eval(picker, (b) => [b.getAttribute("aria-label"), b.textContent.trim()]);
-      check(label[0] === "Model in School: Claude Code default, the model Claude Code chooses" && label[1] === "Claude Code default", "the button says Claude Code picks unless the space names one", JSON.stringify(label));
+      check(label[0] === "Model in School: Claude Code · Default" && label[1] === "Claude Code default", "the button says Claude Code picks unless the space names one", JSON.stringify(label));
       await palette(page, "model");
       check(!(await page.$('[data-command="default-model"]')), "no Use the default model (that is Phaethon's own)");
       await page.waitForFunction(() => !!document.querySelector('[data-command="change-model"]'), { timeout: 3000 });

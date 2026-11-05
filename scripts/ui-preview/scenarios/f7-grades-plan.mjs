@@ -188,7 +188,9 @@ export default [
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, v);
         el.dispatchEvent(new Event("input", { bubbles: true }));
       }, date);
-      await page.select("[data-exam-course]", "Discrete Structures for Computer Science");
+      await page.click("[data-exam-course] [role=combobox]");
+      await page.waitForSelector('[role="option"]');
+      await page.$$eval('[role="option"]', items => items.find(e => e.textContent.trim() === 'Discrete Structures for Computer Science').click());
       await page.focus("[data-exam-add]");
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-plan-exams] [data-exam]", { timeout: 3000 });
@@ -202,7 +204,9 @@ export default [
 
       // Fewer sessions a day: still within the limit.
       await page.$eval("[data-plan-per-day]", (node) => { const details = node.closest("details"); if (!details.open) details.querySelector("summary").click(); });
-      await page.select("[data-plan-per-day]", "1");
+      await page.click("[data-plan-per-day] [role=combobox]");
+      await page.waitForSelector('[role="option"]');
+      await page.$$eval('[role="option"]', items => items.find(e => e.textContent.trim() === '1').click());
       await page.waitForFunction(() => [...document.querySelectorAll("[data-plan-days] > li")].every((e) => e.querySelectorAll("[data-plan-session]").length <= 1), { timeout: 3000 });
       const st = await calls(page, "plan_state_set");
       check(st.at(-1).planState.sessionsPerDay === 1, "the setting is kept (plan_state_set)", JSON.stringify(st.at(-1)));

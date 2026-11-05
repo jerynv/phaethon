@@ -213,7 +213,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
       <>
         {decks.length > 0 && <section aria-label="Today" className="flex flex-wrap items-center gap-x-6 gap-y-4 py-1">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <p className="text-lg font-semibold text-ink" data-due-count="">
+            <p className="text-lg font-medium text-ink" data-due-count="">
               {due === 0 ? "Nothing due today" : `${plural(due, "card")} due today`}
             </p>
           </div>
@@ -321,7 +321,7 @@ function DeckRow({ deck, onOpen, onStudy }: { deck: DeckSummary; onOpen: () => v
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-deck-row={deck.path}>
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-1">
-        <Button type="button" variant="link" className="h-auto justify-start text-start text-md font-semibold text-ink [&>.ui-button-face]:justify-start [&>.ui-button-face]:px-0" onClick={onOpen} data-open-deck={deck.path}>
+        <Button type="button" variant="link" className="h-auto justify-start text-start text-md font-medium text-ink [&>.ui-button-face]:justify-start [&>.ui-button-face]:px-0" onClick={onOpen} data-open-deck={deck.path}>
           {deck.title}
         </Button>
         {deck.course && <p className="text-sm wrap-break-word text-ink-secondary">{deck.course}</p>}
@@ -363,7 +363,7 @@ function QuizRow({ space, quiz, onTake }: { space: string; quiz: QuizSummary; on
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3" data-quiz-row={quiz.path}>
       <div className="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
-        <p className="text-md font-semibold wrap-break-word text-ink">{quiz.title}</p>
+        <p className="text-md font-medium wrap-break-word text-ink">{quiz.title}</p>
         <p className="text-sm text-ink-secondary">
           {plural(quiz.questions, "question")}
           {quiz.course ? ` · ${quiz.course}` : ""}

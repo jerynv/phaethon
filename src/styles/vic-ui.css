@@ -5,7 +5,8 @@
   --font-code: var(--ph-font-mono);
   --text-tag: var(--ph-text-xs);
   --text-meta: var(--ph-text-sm);
-  --text-ui: var(--ph-text-base);
+  --text-ui: var(--ph-text-sm);
+  --field-text: var(--ph-text-sm);
   --text-read: var(--ph-text-md);
   --text-lead: var(--ph-text-lg);
   --control-h: max(var(--ph-target-min), calc(32px * var(--ph-ui-scale)));
@@ -27,10 +28,12 @@
 
 /* A user-selected reading face must also reach fields, menus and overlays. */
 .ui-field, .ui-textarea, .ui-native-select, .ui-button { font-family: var(--ph-font-sans); }
+.ui-button { font-weight: var(--ph-weight-normal); }
+.ui-button:is(.ui-button-ink, .ui-button-danger) { font-weight: var(--ph-weight-medium); }
 /* Keep Vic's track/knob geometry intact; extra hit room is transparent. */
 .ui-switch::after { content: ""; position: absolute; inset: min(0px, calc((1.375rem - var(--ph-target-min)) / 2)); }
 /* The flat track stays rimless; its movable knob must remain visible in either theme. */
-.ui-switch-flat[aria-checked="false"] { --surface-lifted: var(--fg-subtle); }
+.ui-switch-flat[aria-checked="false"] { --field-fill: color-mix(in oklab, var(--fg-subtle) 88%, var(--ph-bg)); --field-fill-hover: var(--fg-subtle); --surface-lifted: var(--ph-bg); }
 /* Quiet controls are application actions. Sentence links retain Vic's link look. */
 .ui-button[data-variant="ghost"] { text-decoration: none; }
 .ui-button[data-variant="ghost"]:hover:not(:disabled, [aria-disabled="true"]) { text-decoration: none; background: var(--ph-hover); }

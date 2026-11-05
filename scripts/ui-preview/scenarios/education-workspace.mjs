@@ -91,7 +91,9 @@ export default [
       await page.click('[aria-label="Previous week"]');
       await page.waitForFunction(() => document.querySelector('[data-plan-upcoming]')?.textContent.includes('Functions problem set'));
       check(await page.$eval('[data-plan-upcoming]', (node) => !node.textContent.includes('Functions project')), "Previous week restores the earlier agenda");
-      await page.select('[data-plan-course-filter]', C);
+      await page.click('[data-plan-course-filter] [role=combobox]');
+      await page.waitForSelector('[role=option]');
+      await page.$$eval('[role=option]', items => items.find(e => e.textContent.trim() === 'Discrete mathematics').click());
       await page.waitForFunction(() => !document.querySelector('[data-plan-upcoming]')?.textContent.includes('Derivatives'));
       const agenda = await page.$eval('[data-plan-upcoming]', (node) => node.textContent);
       check(agenda.includes("Functions problem set") && !agenda.includes("Derivatives"), "course agenda excludes other classes");

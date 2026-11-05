@@ -53,6 +53,7 @@
     "allow-agent-cli-sign-in",
     "allow-agent-cli-sign-in-cancel",
     "allow-agent-cli-models",
+    "allow-agent-instance-models",
     "allow-agent-instances-list",
     "allow-agent-instance-save",
     "allow-agent-instance-select",

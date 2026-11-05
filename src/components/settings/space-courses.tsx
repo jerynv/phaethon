@@ -61,7 +61,7 @@ export function SpaceCourses({ space, view }: { space: Space; view: CourseAccess
           <p className="text-sm text-ink-secondary">Courses</p>
           <ul aria-label={`Courses ${space.name} can see`} className="flex max-h-40 w-full flex-col overflow-y-auto overscroll-contain">
             {seen.map((c) => (
-              <li key={c.key} className="flex flex-col py-2 ps-3 pe-1.5 not-first:border-t not-first:border-line" data-space-course={c.key}>
+              <li key={c.key} className="flex flex-col rounded-md py-2 ps-3 pe-1.5 hover:bg-hover" data-space-course={c.key}>
                 <span className="text-sm wrap-anywhere text-ink">{c.name}</span>
                 <span className="text-xs text-ink-tertiary">{words(c.key)}</span>
               </li>

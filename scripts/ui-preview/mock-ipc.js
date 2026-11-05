@@ -363,7 +363,7 @@
             const old = M.clis?.find((item) => item.id === cli);
             return { config: { id: cli, cli, name: { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI" }[cli], binary: "", args: [] }, installed: old?.installed ?? (cli === "claude" ? M.claudeCli?.installed ?? true : true), loggedIn: old?.loggedIn ?? (cli === "codex" ? true : null), account: old?.account ?? null, plan: old?.plan ?? null, managedHome: cli !== "claude", selected: false };
           });
-          return M.agentInstances.map((item) => ({ ...item, selected: M.settings.backend === `${item.config.cli}-cli` && (M.activeAgentInstances?.[item.config.cli] ?? item.config.cli) === item.config.id }));
+          return M.agentInstances.map((item) => ({ ...item, source: item.source ?? (item.config.id === "claude" || item.config.id.endsWith("-system") ? "system" : "managed"), readOnly: item.readOnly ?? item.config.id.endsWith("-system"), selected: M.settings.backend === `${item.config.cli}-cli` && (M.activeAgentInstances?.[item.config.cli] ?? item.config.cli) === item.config.id }));
         }
         case "agent_instance_save": {
           const config = { ...args.instance, name: args.instance.name.trim(), binary: args.instance.binary.trim() };
@@ -435,11 +435,16 @@
         }
         // Each CLI's own model list (agent/models.rs), as the installed versions gave it (Oct 2026). M.cliLists[cli]
         // replaces one ({ models, note }); M.cliListDelay delays the answer (to show "Asking…").
+        case "agent_instance_models":
         case "agent_cli_models": {
+          const instanceId = cmd === "agent_instance_models" ? args.id : (M.activeAgentInstances?.[args.cli] ?? args.cli);
+          const instance = M.agentInstances?.find(item => item.config.id === instanceId);
+          if (cmd === "agent_instance_models" && !instance) throw "Assistant instance not found.";
+          const cli = instance?.config.cli ?? args.cli;
           if (M.cliListDelay) await sleep(M.cliListDelay);
-          const own = M.cliLists?.[args.cli];
+          const own = (instance && M.instanceModels?.[instance.config.id]) ?? M.cliLists?.[cli];
           if (own) return typeof own === "function" ? own() : own;
-          if (args.cli === "codex")
+          if (cli === "codex")
             return {
               models: [
                 { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", description: "Latest workhorse model for coding and everyday work." },
@@ -447,7 +452,7 @@
                 { id: "gpt-6-luna", name: "GPT-6-Luna", description: "Fast and affordable model for easier tasks." },
               ],
             };
-          if (args.cli === "claude")
+          if (cli === "claude")
             return {
               models: ["fable", "opus", "sonnet"].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1) })),
               note: "Claude Code can’t list its models: these are the names its help gives, each its newest model of that kind. Another model… takes a model’s full name.",

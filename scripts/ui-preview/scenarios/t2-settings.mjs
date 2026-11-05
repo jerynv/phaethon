@@ -150,15 +150,15 @@ export default [
       const summary = await page.evaluate((panel) => {
         const el = document.querySelector(panel);
         const rows = [...el.querySelectorAll("[data-provider-row]")];
-        return { rows: rows.length, add: !!el.querySelector("[data-provider-add]"), manage: !!el.querySelector('[data-provider-configure="anthropic"]'), fields: el.querySelectorAll("input, select").length, text: el.innerText,
+        return { rows: rows.length, add: !!el.querySelector("[data-provider-add]"), manage: !!el.querySelector('[data-provider-configure="anthropic"]'), fields: el.querySelectorAll("input, select").length, inlineDetail: !!el.querySelector("[data-provider-detail] [data-instance-name]"), keyFields: el.querySelectorAll("[data-key-input]").length, text: el.innerText,
           defaultFirst: rows[0]?.hasAttribute("data-provider-default-row"), defaults: el.querySelectorAll("[data-provider-default-row]").length,
           branded: rows.every((row) => row.querySelector("[data-provider-logo]") && (row.matches("button") ? 1 : row.querySelectorAll("button").length) === 1),
           masks: [...el.querySelectorAll("[data-provider-monochrome]")].map((mark) => getComputedStyle(mark).maskImage),
           inlineSwitch: !!el.querySelector("[data-provider-default], [data-backend], [data-assistant-default-manage]"),
         };
       }, PANEL);
-      check(summary.rows > 0 && summary.add && summary.manage && summary.fields === 0, "Assistant lists providers and their setup actions", JSON.stringify(summary));
-      check(summary.defaultFirst && summary.defaults === 1 && summary.branded && !summary.inlineSwitch, "one branded row per provider, default first, with one configuration action", JSON.stringify(summary));
+      check(summary.rows > 0 && summary.add && summary.manage && summary.inlineDetail && summary.keyFields === 0, "Providers lists services beside inline CLI connection management", JSON.stringify(summary));
+      check(summary.defaultFirst && summary.defaults === 1 && summary.branded && summary.inlineSwitch, "one branded row per provider, default first, with explicit separate configuration and default actions", JSON.stringify(summary));
       check(summary.masks.length > 0 && summary.masks.every((mask) => mask !== "none"), "monochrome brand artwork has a valid mask instead of a solid square", JSON.stringify(summary.masks.map((mask) => mask.slice(0, 50))));
       check(!/privacy policy|subscription|Nothing is sent|What is sent/.test(summary.text), "the provider list omits policy tutorials", summary.text);
       await park(page);
@@ -380,7 +380,7 @@ export default [
         check(hits.length === 0, `${tab}: no jargon (vault, grant, revoke, backend, keychain, model ids)`, hits.join(" | "));
       }
       const tabs = await page.$$eval('[role="dialog"] [role="tab"]', (ts) => ts.map((t) => t.textContent));
-      check(tabs[0] === "Assistant", "the first section is called Assistant", tabs.join());
+      check(tabs[0] === "Providers", "the first section is called Providers", tabs.join());
     },
   },
 ];

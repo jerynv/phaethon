@@ -41,6 +41,21 @@ function expect(cond, message) {
 }
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd), cmd);
 const composerFocused = (page) => page.evaluate(() => document.activeElement?.matches("[data-composer-input]") ?? false);
+/** The single reachable New control moves between the shelf and compact header. */
+async function newControl(page) {
+  const controls = await page.$$('[data-new-conversation]');
+  for (const control of controls) {
+    if (await control.evaluate(element => element.getClientRects().length > 0 && !element.closest('[hidden], [inert]'))) return control;
+  }
+  throw new Error('No reachable New conversation control');
+}
+const clickNew = async page => (await newControl(page)).click();
+const newShortcut = async (page, modifier = "Meta") => {
+  await page.focus('[data-space-pane][data-shown] [data-composer-input]');
+  await page.keyboard.down(modifier);
+  await page.keyboard.press('n');
+  await page.keyboard.up(modifier);
+};
 /** The closed menu is gone (after its short exit animation), so the next open is a fresh one. */
 const menuGone = (page) => page.waitForFunction(() => !document.querySelector("[data-conversations-menu]"), { timeout: 3000 });
 /** Radix moves menu focus in a timeout after the key, so wait for it. */
@@ -81,7 +96,7 @@ export default [
     mock: mock(),
     async run(page, h) {
       await h.waitText("Problem set 4");
-      await h.click("[data-new-conversation]");
+      await clickNew(page);
       await h.waitText("Start a conversation in School");
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       expect(!(await page.evaluate(() => document.body.innerText.includes("Problem set 4"))), "old messages still shown");
@@ -141,7 +156,7 @@ export default [
     mock: mock(),
     async run(page, h) {
       await h.waitText("Problem set 4");
-      const ks = await page.$eval("[data-new-conversation]", (e) => e.getAttribute("aria-keyshortcuts"));
+      const ks = await (await newControl(page)).evaluate(e => e.getAttribute("aria-keyshortcuts"));
       expect(ks === "Meta+N", `aria-keyshortcuts ${ks}`);
       await page.focus("[data-composer-input]");
       await page.keyboard.down("Meta");
@@ -160,7 +175,7 @@ export default [
     mock: { ...mock(), platform: "windows" },
     async run(page, h) {
       await h.waitText("Problem set 4");
-      const ks = await page.$eval("[data-new-conversation]", (e) => e.getAttribute("aria-keyshortcuts"));
+      const ks = await (await newControl(page)).evaluate(e => e.getAttribute("aria-keyshortcuts"));
       expect(ks === "Control+N", `aria-keyshortcuts ${ks}`);
       await page.focus("[data-composer-input]");
       await page.keyboard.down("Control");
@@ -181,7 +196,17 @@ export default [
       await h.waitText("Problem set 4");
       await h.send("And next week?");
       await h.waitText("Looking at your syllabus");
-      await h.click("[data-new-conversation]");
+      const fresh = await newControl(page);
+      if (await fresh.evaluate(button => !!button.closest('#spaces-sidebar'))) {
+        expect(await fresh.evaluate(button => button.disabled), "the shelf New control must be disabled while a reply runs");
+        await fresh.click();
+        expect((await calls(page, "thread_new")).length === 0, "disabled New called thread_new while busy");
+        // The shortcut still exercises the controller's running guard and its live refusal.
+        await newShortcut(page);
+      } else {
+        // The compact header retains its guarded action when the sidebar is hidden.
+        await fresh.click();
+      }
       await page.waitForSelector('[data-conversations-problem][role="alert"]', { timeout: 3000 });
       await h.waitText("Phaethon is still replying");
       expect((await calls(page, "thread_new")).length === 0, "thread_new called while busy");
@@ -199,7 +224,7 @@ export default [
       await page.waitForFunction(() => !document.querySelector("[data-conversations-problem]"), { timeout: 3000 });
       // The backend refuses too: its message is shown when it does.
       await page.evaluate(() => (window.__MOCK__.fail = { thread_new: "Phaethon is still replying in this space. Stop the reply or wait for it to finish, then try again." }));
-      await h.click("[data-new-conversation]");
+      await clickNew(page);
       await page.waitForSelector("[data-conversations-problem]", { timeout: 3000 });
       await h.waitText("Phaethon is still replying in this space");
       await h.idle();
@@ -275,7 +300,7 @@ export default [
       expect((await calls(page, "thread_open")).length === 1, "thread_open not called for the CLI backend");
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       await menuGone(page);
-      await h.click("[data-new-conversation]");
+      await clickNew(page);
       await h.waitText("Start a conversation in School");
       expect((await calls(page, "thread_new")).length === 1, "thread_new not called for the CLI backend");
       // Deleting a CLI conversation uses the same named confirmation.

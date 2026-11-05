@@ -151,11 +151,11 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await page.waitForSelector('[data-provider-row="claude-cli"]');
-      const actions = await page.$$(`${PANEL} [data-provider-configure], ${PANEL} [data-provider-default], ${PANEL} [data-backend], ${PANEL} [data-provider-add]`);
+      const actions = await page.$$(`${PANEL} [data-provider-configure], ${PANEL} [data-provider-add]`);
       check(actions.length >= 4, "configured providers expose one management action each and Add provider", `${actions.length}`);
       for (const action of actions) {
         const ax = await page.accessibility.snapshot({ root: action, interestingOnly: false });
-        check(ax?.role === "button" && ["Manage Anthropic", "Manage Claude Code", "Manage Codex", "Manage Gemini CLI", "Add provider"].includes(ax.name), "each provider action names its provider without the row's status prose", JSON.stringify({ role: ax?.role, name: ax?.name }));
+        check(ax?.role === "button" && ["Manage Anthropic", "Manage Claude Code", "Manage Codex", "Manage Gemini CLI", "Add connection"].includes(ax.name), "each provider action names its provider without the row's status prose", JSON.stringify({ role: ax?.role, name: ax?.name }));
       }
       check((await page.$$(`${PANEL} [role="radio"]`)).length === 0, "provider setup uses explicit actions");
     },
@@ -341,7 +341,7 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "anthropic", { keyboard: true, catalog: true });
-      const setup = await page.$eval(providerPopup, (el) => ({ text: el.innerText, key: !!el.querySelector("[data-key-input]"), model: !!el.querySelector("[data-model-select]") }));
+      const setup = await page.$eval('[role="dialog"][data-provider-popup]', (el) => ({ text: el.innerText, key: !!el.querySelector("[data-key-input]"), model: !!el.querySelector("[data-model-select]") }));
       check(setup.key && setup.model, "keyboard provider selection opens its key and model controls", JSON.stringify(setup));
       check(!/privacy policy|subscription|What is sent/.test(setup.text), "setup keeps its copy focused on configuration", setup.text);
       check((await calls(page, "settings_set_backend")).length === 0 && (await calls(page, "settings_set_provider")).length === 0, "opening setup leaves the default unchanged");

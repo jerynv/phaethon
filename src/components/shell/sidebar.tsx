@@ -14,6 +14,7 @@ import { requestOpenConversation } from "@/lib/open-conversation";
 import { setConversationHost, useConversations } from "@/lib/conversation-nav";
 import { openSettings } from "@/lib/open-settings";
 import { holdSpaceOrder, markSpaceUsed, supportsEducation, type Space } from "@/lib/spaces";
+import { platform } from "@/lib/platform";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
@@ -54,8 +55,6 @@ const RECENT = 6;
 
 const NEEDS_YOU = { shown: "Needs you", spoken: "needs your answer", urgent: true };
 const ANSWERING = { shown: "Answering…", spoken: "answering", urgent: false };
-/** Every state a space's activity can show, so its place is as wide as the widest. */
-const ACTIVITY_SHOWN = [NEEDS_YOU, ANSWERING];
 
 /** What a space is doing, as shown beside its name and as spoken after it. */
 function activityWords(a: SpaceActivity | undefined): { shown: string; spoken: string; urgent: boolean } | null {
@@ -345,10 +344,10 @@ function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }
     if (props.active) setExpanded(true);
   }, [props.active]);
   return (
-    <li data-space-section={props.space.id} className="list-none">
-      <SpaceItem {...item} expanded={expanded} onToggle={() => setExpanded((value) => !value)}
+    <li data-space-section={props.space.id} className="mt-2 list-none first:mt-0">
+      <SpaceItem {...item} expanded={expanded} onToggle={() => setExpanded((value) => !value)} onNewChosen={onChosen}
         onSelect={(id) => { setExpanded(true); props.onSelect(id); }} />
-      {expanded && shown && <ul className="ms-[calc(var(--ph-space)*3)] border-s border-line ps-2" id={`space-children-${props.space.id}`}>
+      {expanded && shown && <ul className="ms-4 ps-1" id={`space-children-${props.space.id}`}>
         <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} />
       </ul>}
     </li>
@@ -356,7 +355,7 @@ function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }
 }
 
 const threadRow = cn(
-  "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start text-base",
+  "grid min-h-[max(32px,var(--ph-target-min))] w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 text-start text-sm",
   "transition-colors duration-(--ph-duration-fast)",
 );
 
@@ -441,9 +440,6 @@ function SpaceConversations({ space, active, onSelect, onChosen }: { space: Spac
       {active ? <div ref={host} data-conversations-host="" className="pt-1" /> : <div className="flex items-center justify-between pt-1">
         <button type="button" data-sidebar-history-all={threads.length > RECENT ? "" : undefined} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink"
           onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }}>Conversations</button>
-        <button type="button" aria-label={`New conversation in ${space.name}`} data-sidebar-new-in={space.id}
-          className="grid size-(--ph-control-height-sm) place-items-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink"
-          onClick={() => { onSelect(space.id); onChosen?.(); if (nav) nav.startNew(); else setPending("new"); }}><Icon name="plus" className="size-3.5" /></button>
       </div>}
       {threads.length === 0 && status === "loading" && <p role="status" className="ps-2 text-sm text-ink-secondary">Loading conversations…</p>}
       {status === "ready" && threads.length === 0 && <p className="ps-2 text-sm text-ink-secondary">No conversations yet.</p>}
@@ -503,7 +499,14 @@ const itemClass =
   "flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 text-base text-ink outline-none select-none data-highlighted:bg-hover data-disabled:opacity-45";
 
 /** One space in the list, with its menu. */
-function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onToggle }: ItemProps & { expanded: boolean; onToggle: () => void }) {
+function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onToggle, onNewChosen }: ItemProps & { expanded: boolean; onToggle: () => void; onNewChosen?: () => void }) {
+  const conversations = useConversations(space.id);
+  const pendingNew = useRef(false);
+  useEffect(() => {
+    if (!pendingNew.current || !conversations || conversations.working) return;
+    pendingNew.current = false;
+    conversations.startNew();
+  }, [conversations]);
   const [menuOpen, setMenuOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
@@ -559,11 +562,6 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onTo
     >
       <ContextMenu.Trigger asChild>
         <div className="group/space relative" data-space-item={space.id}>
-          <button type="button" tabIndex={-1} data-space-expand={space.id} aria-expanded={expanded} aria-controls={`space-children-${space.id}`}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${space.name}`}
-            onClick={onToggle} className="absolute start-0.5 top-1/2 z-10 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-ink-tertiary hover:bg-hover hover:text-ink">
-            <Icon name={expanded ? "chevron-down" : "chevron-right"} className="size-3" />
-          </button>
           <button
             ref={buttonRef}
             type="button"
@@ -582,7 +580,7 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onTo
             className={cn(
               // The space is parent context; the selected destination is one of its views or threads.
               // The end keeps room for the More button, so it never covers the name.
-              "grid min-h-(--ph-control-height) w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-6 pe-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] text-start",
+              "grid min-h-[max(32px,var(--ph-target-min))] w-full min-w-0 grid-cols-[var(--ph-icon-size-sm)_minmax(0,1fr)] content-center items-start gap-x-2.5 rounded-md py-1 ps-2 pe-20 text-start",
               "transition-colors duration-(--ph-duration-fast)",
               "hover:bg-hover active:bg-selected",
               active && "forced-colors:outline forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-[Highlight]",
@@ -590,48 +588,35 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onTo
             )}
           >
             {/* One line tall, so the dot centres on the name at any text size. */}
-            <span className="flex h-[1lh] items-center justify-center text-base">
-              <SpaceMark hue={space.hue} />
+            <span className="flex h-[1lh] items-center justify-center text-sm">
+              <Icon name={expanded ? "space" : "folder"} className="size-4 text-space-mark" />
             </span>
-            {/* The name and what the space is doing share a line while both fit; otherwise the state wraps below.
-                Its place is always laid out, as wide as its widest state and unseen while idle, so a reply
-                starting or a card waiting never rewraps the row and the spaces below never move. */}
-            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span data-space-name="" className={cn("max-w-full min-w-0 truncate text-base text-ink", active ? "font-medium" : "font-normal")}>
+            {/* The name truncates before the compact activity icon; starting a reply never adds a line. */}
+            <span className="flex min-w-0 items-center gap-2">
+              <span data-space-name="" className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
                 {/* Spoken as one piece of text, so no stray space lands before a comma. */}
                 <span aria-hidden="true">{space.name}</span>
                 <span className="sr-only">{`${space.name}${doing ? `, ${doing.spoken}` : ""}${space.description ? "," : ""}`}</span>
               </span>
-              <span aria-hidden="true" className="grid shrink-0 text-xs" data-space-activity-slot="">
-                {ACTIVITY_SHOWN.map((s) => {
-                  const on = doing?.shown === s.shown;
-                  return (
-                    <span
-                      key={s.shown}
-                      data-space-activity={on ? "" : undefined}
-                      className={cn(
-                        "col-start-1 row-start-1 flex items-center gap-1",
-                        !on && "invisible",
-                        s.urgent
-                          ? "rounded-full bg-warning-soft px-1.5 font-semibold text-warning-ink forced-colors:border forced-colors:border-[CanvasText]"
-                          : "text-ink-secondary",
-                      )}
-                    >
-                      {s.urgent ? (
-                        <Icon name="warning" className="size-(--ph-icon-size-sm)" />
-                      ) : (
-                        <Icon name="spinner" className={cn("size-(--ph-icon-size-sm)", on && "motion-safe:animate-spin")} />
-                      )}
-                      {s.shown}
-                    </span>
-                  );
-                })}
-              </span>
+              {doing && <span aria-hidden="true" data-space-activity="" className={cn("shrink-0", doing.urgent ? "text-warning-ink" : "text-accent-soft-ink")}><Icon name={doing.urgent ? "warning" : "spinner"} className={cn("size-3", !doing.urgent && "motion-safe:animate-spin")} /></span>}
             </span>
             {/* Keep the description in the accessible name without a second visual line. */}
             {space.description && (
               <span className="sr-only">{space.description}</span>
             )}
+          </button>
+          {!expanded && !!conversations?.threads.length && <span aria-hidden="true" className="pointer-events-none absolute end-7 top-1/2 -translate-y-1/2 text-xs tabular-nums text-ink-tertiary group-hover/space:invisible group-focus-within/space:invisible">{conversations.threads.length}</span>}
+          <IconTip label={`New conversation in ${space.name}`} spoken={`New conversation in ${space.name}`}><button type="button"
+            data-new-conversation={active ? "" : undefined} data-sidebar-new-in={!active ? space.id : undefined}
+            aria-label={active ? "New conversation" : `New conversation in ${space.name}`} aria-keyshortcuts={active ? platform() === "mac" ? "Meta+N" : "Control+N" : undefined} disabled={conversations?.working || conversations?.running}
+            onClick={() => { onSelect(space.id); if (conversations) conversations.startNew(); else pendingNew.current = true; onNewChosen?.(); }}
+            className="absolute end-6 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-ink-tertiary opacity-0 hover:bg-selected hover:text-ink group-hover/space:opacity-100 group-focus-within/space:opacity-100 focus-visible:opacity-100 disabled:opacity-30">
+            <Icon name="new-chat" className="size-3.5" />
+          </button></IconTip>
+          <button type="button" tabIndex={-1} data-space-expand={space.id} aria-expanded={expanded} aria-controls={`space-children-${space.id}`}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${space.name}`}
+            onClick={onToggle} className="absolute end-0 top-1/2 z-10 grid size-6 -translate-y-1/2 place-items-center rounded-sm text-ink-tertiary hover:bg-hover hover:text-ink">
+            <Icon name={expanded ? "chevron-down" : "chevron-right"} className="size-3" />
           </button>
           <button
             ref={moreRef}
@@ -647,10 +632,10 @@ function SpaceItem({ space, active, doing, onSelect, holdForMenu, expanded, onTo
             }}
             onKeyDown={onMoreKeyDown}
             className={cn(
-              "absolute end-1 top-1/2 grid size-(--ph-control-height-sm) -translate-y-1/2 place-items-center rounded-md text-ink-secondary",
+              "absolute end-12 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-ink-secondary",
               "transition-opacity duration-(--ph-duration-fast) hover:bg-selected hover:text-ink",
               // Always on the current space; on another, while it is pointed at, focused or its menu is open.
-              active || menuOpen ? "opacity-100" : "opacity-0 group-focus-within/space:opacity-100 group-hover/space:opacity-100 focus-visible:opacity-100",
+              menuOpen ? "opacity-100" : "opacity-0 group-focus-within/space:opacity-100 group-hover/space:opacity-100 focus-visible:opacity-100",
               menuOpen && "bg-selected text-ink",
             )}
           >

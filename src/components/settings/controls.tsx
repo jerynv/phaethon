@@ -9,7 +9,7 @@
  * radioArrowKeys). Vic Switch uses a native button: Space and Enter toggle it.
  */
 import { RadioGroup, Slider } from "radix-ui";
-import { Switch } from "vic-ui";
+import { Card, Switch } from "vic-ui";
 import { Fragment, useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,7 @@ export function SectionHeader({
   return (
     <div data-section-header="" className="flex min-h-8 items-start justify-between gap-4">
       <div className="min-w-0 flex-1">
-        <h3 id={id} tabIndex={-1} className="w-fit max-w-full rounded-xs text-xl font-semibold tracking-tight text-ink">{title}</h3>
+        <h3 id={id} tabIndex={-1} className="w-fit max-w-full rounded-xs text-xl font-medium tracking-tight text-ink">{title}</h3>
         {description && <p className="mt-1 max-w-(--ph-measure) text-sm text-ink-secondary">{description}</p>}
       </div>
       {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
@@ -52,7 +52,7 @@ export function SectionHeader({
 }
 
 /**
- * A titled group of rows, divided by hairlines like T3 settingsLayout. A plain
+ * T3 SettingsSection + SettingsGroup: a titled, contained group. A plain
  * block with a heading, not a region landmark: a page of groups would otherwise
  * be a page of landmarks.
  */
@@ -62,6 +62,7 @@ export function SettingGroup({
   description,
   children,
   bare,
+  action,
 }: {
   title: string;
   /** The heading's id, for a control inside that is labelled by it. */
@@ -70,18 +71,22 @@ export function SettingGroup({
   children: ReactNode;
   /** No surrounding card: for content that is itself a set of cards (radio cards). */
   bare?: boolean;
+  action?: ReactNode;
 }) {
   const ownId = useId();
   const id = titleId ?? ownId;
   return (
     <div data-settings-group="" className="flex flex-col gap-2.5">
-      <div className="flex min-h-7 flex-col justify-center gap-0.5">
-        <h4 id={id} className="text-base font-semibold text-ink">
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+        <h4 id={id} className="text-sm font-medium text-ink">
           {title}
         </h4>
         {description && <p className="text-xs text-ink-secondary">{description}</p>}
+        </div>
+        {action && <div className="flex shrink-0 items-center gap-1">{action}</div>}
       </div>
-      {bare ? children : <div className="flex flex-col divide-y divide-line/60">{children}</div>}
+      {bare ? children : <Card look="lifted" flush className="rounded-xl border border-line shadow-none!" data-settings-container=""><div className="flex flex-col">{children}</div></Card>}
     </div>
   );
 }
@@ -116,9 +121,9 @@ export function SettingRow({
 }) {
   const LabelTag = htmlFor ? "label" : "span";
   return (
-    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-2 px-0.5 py-3", stacked ? "flex-col" : alignStart ? "flex-wrap items-start" : "flex-wrap items-center")}>
+    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-2 px-3.5 py-3", stacked ? "flex-col" : alignStart ? "flex-wrap items-start" : "flex-wrap items-center")}>
       <div className={cn("flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5", alignStart && !stacked && "pt-1.5")}>
-        <LabelTag id={labelId} htmlFor={htmlFor} className="text-sm font-medium text-ink">
+        <LabelTag id={labelId} htmlFor={htmlFor} className="text-sm font-normal text-ink">
           {label}
         </LabelTag>
         {description && (
@@ -330,7 +335,7 @@ function QuickPicks({
         const on = Math.abs(p.value - value) < 1e-6;
         return (
           <Button
-            variant={on ? "default" : "outline"}
+            variant="ghost"
             size="sm"
             key={p.label}
             type="button"
@@ -338,7 +343,7 @@ function QuickPicks({
             aria-pressed={on}
             onClick={() => onPick(p.value)}
             aria-label={`${p.label}, ${format(p.value)}`}
-            className="min-h-(--ph-control-height) text-sm tabular-nums"
+            className={cn("min-h-(--ph-control-height) text-sm tabular-nums", on && "bg-selected text-ink font-medium")}
           >
             {format(p.value)}
           </Button>
@@ -464,9 +469,9 @@ export function SwitchRow({
   const descId = useId();
   const statusId = useId();
   return (
-    <div data-token={token} className="flex items-center gap-4 px-0.5 py-3">
+    <div data-token={token} className="flex items-center gap-4 px-3.5 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <label htmlFor={id} className="cursor-pointer text-sm font-medium text-ink">
+        <label htmlFor={id} className="cursor-pointer text-sm font-normal text-ink">
           {label}
         </label>
         <p id={descId} className="max-w-(--ph-measure) text-xs text-ink-secondary">

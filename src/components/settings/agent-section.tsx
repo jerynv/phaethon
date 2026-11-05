@@ -63,13 +63,13 @@ function ProviderRow({ id, name, current, children, onConfigure }: {
       <Button
         variant="ghost" data-provider-configure={id} aria-label={`Manage ${name}`} onClick={onConfigure}
         className={cn(
-          "w-full rounded-md text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-2 [&>.ui-button-face]:py-2.5",
+          "w-full rounded-none text-start [&>.ui-button-face]:min-h-12 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2.5 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2",
         )}
       >
-        <ProviderLogo provider={id} className="size-7 shrink-0" />
+        <ProviderLogo provider={id} className="size-5 shrink-0" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-base font-medium leading-snug text-ink">{name}</span>
-          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-normal leading-snug text-ink-secondary">{children}</span>
+          <span className="text-sm font-normal leading-snug text-ink">{name}</span>
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-normal leading-snug text-ink-secondary">{children}</span>
         </span>
         {current && <span className="shrink-0 rounded-md bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-secondary">Default</span>}
         <Icon name="chevron-right" className="shrink-0 text-ink-tertiary" />
@@ -93,7 +93,7 @@ export function ExternalLink({ href, children }: { href: string; children: React
  * Phaethon keeps one configuration per service; managing a row never selects it as the default.
  */
 export function AgentSection({
-  headingId, settings, loadError, retryLoad, act, focusRequest, onRequestedProviderClose,
+  headingId, settings, loadError, retryLoad, act, focusRequest, onRequestedProviderClose, onBusyChange,
 }: {
   headingId: string;
   settings: Settings | null;
@@ -101,6 +101,7 @@ export function AgentSection({
   retryLoad: () => Promise<boolean>;
   focusRequest?: AgentFocusRequest | null;
   onRequestedProviderClose?: (n: number) => void;
+  onBusyChange?: (busy: boolean) => void;
   act: (work: () => Promise<void>, done: string, onError?: (message: string) => void, reloadThread?: boolean) => Promise<boolean>;
 }) {
   const { say } = useStatus();
@@ -182,9 +183,7 @@ export function AgentSection({
   }
 
   const configuredProviders = providers.filter((p) =>
-    p.hasKey || (p.id !== "anthropic" && p.model !== null) ||
-    (p.editableBase && p.baseUrl !== p.defaultBaseUrl) ||
-    (settings?.backend === "phaethon" && provider.id === p.id),
+    p.hasKey || ((p.local || p.key === "none") && (p.model !== null || (p.editableBase && p.baseUrl !== p.defaultBaseUrl))),
   );
   const editingProvider = popup?.kind === "provider" ? providers.find((p) => p.id === popup.id) : undefined;
   const editingIsDefault = editingProvider ? settings?.backend === "phaethon" && provider.id === editingProvider.id : false;
@@ -208,10 +207,10 @@ export function AgentSection({
   return (
     <>
       <SectionHeader
-        id={headingId} title="Assistant"
+        id={headingId} title="Providers"
         action={settings && (
-          <Button size="sm" data-provider-add="" onClick={() => setPopup({ kind: "catalog" })}>
-            <Icon name="plus" />Add provider
+          <Button variant="ghost" size="icon-xs" data-provider-add="" aria-label="Add connection" title="Add connection" onClick={() => setPopup({ kind: "catalog" })}>
+            <Icon name="plus" />
           </Button>
         )}
       />
@@ -226,9 +225,9 @@ export function AgentSection({
         <p className="text-base text-ink-secondary" role="status">Loading assistant settings…</p>
       ) : (
         <>
-          <SettingGroup title="API providers" bare>
+          {providerRows.length > 0 && <SettingGroup title="API providers">
             <div className="overflow-hidden">
-              <div className="divide-y divide-line/60">
+              <div>
                 {providerRows.map((row) => {
                   const p = row.provider;
                   const model = p.model ?? (p.id === "anthropic" ? settings.model : null);
@@ -239,8 +238,8 @@ export function AgentSection({
                 })}
               </div>
             </div>
-          </SettingGroup>
-          <AgentInstances act={act} request={instanceRequest} backendVersion={settings.backend} onRequestedClose={onRequestedProviderClose} />
+          </SettingGroup>}
+          <AgentInstances onBusyChange={onBusyChange} act={act} request={instanceRequest} backendVersion={settings.backend} onRequestedClose={onRequestedProviderClose} />
           {actionError && !popup && <p role="alert" className="text-sm text-danger-ink">{actionError}</p>}
         </>
       )}
@@ -266,7 +265,7 @@ export function AgentSection({
               {editingProvider && <ProviderLogo provider={editingProvider.id} className="size-9" />}
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <DialogTitle ref={popupTitleRef} tabIndex={-1}>
-                  {popup?.kind === "catalog" ? "Add provider" : editingProvider?.name ?? "Provider"}
+                  {popup?.kind === "catalog" ? "Add connection" : editingProvider?.name ?? "Provider"}
                 </DialogTitle>
                 <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span>{popup?.kind === "catalog" ? "" : editingProvider?.local ? "Local connection" : editingProvider?.hasKey ? "API key saved" : "API connection"}</span>
@@ -283,15 +282,15 @@ export function AgentSection({
                 <div className="flex flex-col gap-6" data-provider-catalog="">
                   {PROVIDER_GROUPS.filter((g) => providers.some(g.test)).map((g) => (
                     <div key={g.label}>
-                      <p className="mb-2 text-xs font-medium text-ink-secondary">{g.label}</p>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <p className="mb-2 text-xs font-normal text-ink-secondary">{g.label}</p>
+                      <div className="flex flex-col gap-1">
                         {providers.filter(g.test).map((p) => (
                           <Button
-                            key={p.id} variant="outline" className="text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2.5" data-provider-catalog-select={p.id}
+                            key={p.id} variant="ghost" className="w-full text-start [&>.ui-button-face]:w-full [&>.ui-button-face]:min-h-8 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2 [&>.ui-button-face]:px-2 [&>.ui-button-face]:py-1.5" data-provider-catalog-select={p.id}
                             onClick={() => setPopup({ kind: "provider", id: p.id })}
                           >
-                            <ProviderLogo provider={p.id} className="size-6" />
-                            <span className="min-w-0 flex-1 text-base font-medium">{p.name}</span>
+                            <ProviderLogo provider={p.id} className="size-4" />
+                            <span className="min-w-0 flex-1 text-sm font-normal">{p.name}</span>
                             {providerRows.some((row) => row.id === p.id) && <Icon name="check" className="text-ink-tertiary" />}
                           </Button>
                         ))}
@@ -299,15 +298,15 @@ export function AgentSection({
                     </div>
                   ))}
                   <div>
-                    <p className="mb-2 text-xs font-medium text-ink-secondary">Coding assistants</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <p className="mb-2 text-xs font-normal text-ink-secondary">Coding assistants</p>
+                    <div className="flex flex-col gap-1">
                       {CLI_BACKENDS.map((b) => (
                         <Button
-                          key={b} variant="outline" className="text-start [&>.ui-button-face]:min-h-14 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-3 [&>.ui-button-face]:px-3 [&>.ui-button-face]:py-2.5" data-provider-catalog-select={b}
-                          onClick={() => { setPopup(null); setInstanceRequest({ cli: CLI_INFO[b].id, n: Date.now() }); }}
+                          key={b} variant="ghost" className="w-full text-start [&>.ui-button-face]:w-full [&>.ui-button-face]:min-h-8 [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2 [&>.ui-button-face]:px-2 [&>.ui-button-face]:py-1.5" data-provider-catalog-select={b}
+                          onClick={() => { setPopup(null); setInstanceRequest({ cli: CLI_INFO[b].id, n: Date.now(), create: true }); }}
                         >
-                          <ProviderLogo provider={b} className="size-6" />
-                          <span className="min-w-0 flex-1 text-base font-medium">{CLI_INFO[b].name}</span>
+                          <ProviderLogo provider={b} className="size-4" />
+                          <span className="min-w-0 flex-1 text-sm font-normal">{CLI_INFO[b].name}</span>
                         </Button>
                       ))}
                     </div>

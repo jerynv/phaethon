@@ -16,7 +16,7 @@ const SECTIONS = ["agent", "appearance", "accessibility", "spaces", "about"];
  */
 const press = async (page, text) => {
   const ok = await page.evaluate((scope, text) => {
-    const root = document.querySelector("[data-provider-popup]") ?? document.querySelector(scope);
+    const root = document.querySelector('[role="dialog"][data-provider-popup]') ?? document.querySelector("[data-provider-popup]") ?? document.querySelector(scope);
     const b = [...root.querySelectorAll("button")].find((x) => x.textContent.trim() === text);
     b?.focus();
     b?.click();
@@ -102,7 +102,7 @@ export default [
           await h.idle();
         }
         const bad = await page.evaluate(() => {
-          const dialog = document.querySelector('[data-provider-popup]') ?? document.querySelector('[role="dialog"]');
+          const dialog = document.querySelector('[role="dialog"][data-provider-popup]') ?? document.querySelector('[role="dialog"]');
           const d = dialog.getBoundingClientRect();
           const close = dialog.querySelector('button[aria-label="Close settings"], button[aria-label="Close"]').getBoundingClientRect();
           const out = [];
@@ -743,7 +743,7 @@ export default [
       check(!(await page.$(`${PANEL} [role="alert"]`)), "a successful retry replaces the load error with connection settings");
       await h.idle();
       const focus = await page.evaluate(() => document.activeElement?.textContent);
-      check(focus === "Assistant", "after a good retry, focus moves to the page heading", focus);
+      check(focus === "Providers", "after a good retry, focus moves to the page heading", focus);
     },
   },
   {

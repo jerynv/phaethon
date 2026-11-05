@@ -898,6 +898,15 @@ async fn agent_cli_models(state: State<'_, AppState>, cli: String) -> Result<age
     Ok(agent::models::list(cli, home.as_deref()).await)
 }
 
+/// Browse a named connection's catalog without selecting it or changing another account's home.
+#[tauri::command]
+async fn agent_instance_models(state: State<'_, AppState>, id: String) -> Result<agent::models::CliModels, String> {
+    let instance = agent_instances::list(&state.vault).into_iter().find(|i| i.id == id).ok_or("Assistant instance not found.")?;
+    let cli = agent_instances::cli(&instance.cli)?;
+    let home = agent_instances::require_home(&state.vault, state.isolated_config_root.as_deref(), &instance)?;
+    Ok(agent::models::list(cli, home.as_deref()).await)
+}
+
 /// Choose the model that answers in `space`: Phaethon's own agent's (a model
 /// reference), or with `codex:` / `gemini:` that CLI's; `None` goes back to
 /// the default of whichever answers now. Applies from the next message there.
@@ -1225,6 +1234,7 @@ pub fn run() {
             agent_instance_usage,
             agent_cli_sign_in_cancel,
             agent_cli_models,
+            agent_instance_models,
             agent_approve,
             agent_access_answer,
             grants_list,

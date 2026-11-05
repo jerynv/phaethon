@@ -76,7 +76,7 @@ export function SpacesSection({ headingId, editSpace }: { headingId: string; edi
         </FileNotice>
       )}
       <SettingGroup title={selected ? "Workspace" : "Your spaces"} bare>
-        <ul className={cn("flex flex-col divide-y divide-line", !selected && "rounded-lg border border-line bg-raised")} aria-label="Your spaces">
+        <ul className={cn("flex flex-col gap-0.5 p-1", !selected && "rounded-lg border border-line bg-raised")} aria-label="Your spaces">
           {spaces.map((s) => (
             <SpaceRow key={s.id} space={s} fileError={fileError} open={selected === s.id} hidden={selected !== null && selected !== s.id} onEdit={() => openEditor(s.id)} />
           ))}
@@ -465,14 +465,14 @@ function SpaceEditor({ space, onDirty }: { space: Space; onDirty: (dirty: boolea
   return (
     <div className="flex flex-col gap-4" data-space-editor="">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={nameId} className="text-sm font-medium text-ink">Name</label>
+        <label htmlFor={nameId} className="text-sm font-normal text-ink">Name</label>
         <Input ref={nameRef} id={nameId} value={draft.name} placeholder="Home" maxLength={SPACE_NAME_MAX} autoComplete="off" data-space-field="name" data-dirty={dirty ? "" : undefined} aria-invalid={!!error && !draft.name.trim() || undefined} onChange={(e) => { setDraft((d) => ({ ...d, name: e.target.value })); setSaved(false); }} onKeyDown={(e) => { if (e.key === "Escape" && dirty) { e.preventDefault(); e.stopPropagation(); reset(); } }} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={descId} className="text-sm font-medium text-ink">Description <span className="font-normal text-ink-tertiary">Optional</span></label>
+        <label htmlFor={descId} className="text-sm font-normal text-ink">Description <span className="font-normal text-ink-tertiary">Optional</span></label>
         <Input id={descId} value={draft.description} placeholder="Projects, notes and plans" maxLength={SPACE_DESCRIPTION_MAX} autoComplete="off" data-space-field="description" data-dirty={dirty ? "" : undefined} onChange={(e) => { setDraft((d) => ({ ...d, description: e.target.value })); setSaved(false); }} onKeyDown={(e) => { if (e.key === "Escape" && dirty) { e.preventDefault(); e.stopPropagation(); reset(); } }} />
       </div>
-      <div className="flex flex-col gap-2"><span className="text-sm font-medium text-ink">Colour</span><HueSwatches label={`Colour, ${space.name}`} presets={presets} value={draft.hue} onPick={(hue) => { setDraft((d) => ({ ...d, hue })); setSaved(false); }} swatchColour={spaceSwatch} checkColour={spaceSwatchCheck} /></div>
+      <div className="flex flex-col gap-2"><span className="text-sm font-normal text-ink">Colour</span><HueSwatches label={`Colour, ${space.name}`} presets={presets} value={draft.hue} onPick={(hue) => { setDraft((d) => ({ ...d, hue })); setSaved(false); }} swatchColour={spaceSwatch} checkColour={spaceSwatchCheck} /></div>
       <div className="rounded-lg border border-line"><SwitchRow label="Education" description="Study, grades and planning for this space." checked={draft.educationEnabled} onChange={(educationEnabled) => { setDraft((d) => ({ ...d, educationEnabled })); setSaved(false); }} status={draft.educationEnabled ? "On" : "Off"} /></div>
       <div data-space-folder="" className="flex items-center gap-2 text-xs text-ink-secondary"><Icon name="folder" className="size-(--ph-icon-size-sm)" /><code className="min-w-0 wrap-anywhere">spaces/{space.id}/</code></div>
       {error && <p role="alert" className="text-sm text-danger-ink">{error}</p>}

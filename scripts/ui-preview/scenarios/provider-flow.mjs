@@ -1,6 +1,7 @@
 import { SETTINGS, check, openSettings } from "../audit-fixtures.mjs";
-import { closeProviderPopup, openProviderConfiguration, providerPopup, useProviderDefault } from "../provider-flow.mjs";
+import { closeProviderPopup, openProviderConfiguration, useProviderDefault } from "../provider-flow.mjs";
 
+const providerPopup = '[role="dialog"][data-provider-popup]';
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([name]) => name === cmd).map(([, args]) => args), cmd);
 const prov = () => ({ provider: "anthropic", keys: {}, models: {}, urls: {}, lists: { openrouter: [{ id: "openai/gpt-5", name: "GPT-5" }] } });
 
@@ -9,9 +10,9 @@ async function assertDefault(page, backend, provider) {
   check(actual[0] === backend && actual[1] === provider, "configuration preserves the selected default", JSON.stringify(actual));
 }
 
-async function assertSwitchError(page, message) {
-  await page.waitForFunction((message) => document.querySelector('[data-provider-popup] [role="alert"]')?.textContent.includes(message), { timeout: 3000 }, message);
-  check(!!await page.$(`${providerPopup} [data-provider-configuration]`), "a failed switch keeps configuration open");
+async function assertSwitchError(page, message, surface = providerPopup) {
+  await page.waitForFunction((selector, message) => document.querySelector(`${selector} [role="alert"]`)?.textContent.includes(message), { timeout: 3000 }, surface, message);
+  check(!!await page.$(`${surface} [data-provider-configuration]`), "a failed switch keeps configuration open");
 }
 
 export default [
@@ -35,7 +36,7 @@ export default [
       check(await page.$eval(`${providerPopup} [data-provider-default="openrouter"]`, (button) => button.disabled), "saving a key still requires choosing a model before activation");
       await page.click('[data-model-choice="openai/gpt-5"]');
       await page.waitForFunction(() => window.__MOCK__.prov.models.openrouter === "openai/gpt-5", { timeout: 3000 });
-      await page.waitForFunction(() => document.querySelector('[data-provider-popup] [data-provider-default="openrouter"]')?.disabled === false, { timeout: 3000 });
+      await page.waitForFunction(() => document.querySelector('[role="dialog"][data-provider-popup] [data-provider-default="openrouter"]')?.disabled === false, { timeout: 3000 });
       check(await page.$eval("[data-model-selection]", (state) => state.textContent === "Selected"), "the selected model is explicit before activation");
       await assertDefault(page, "codex-cli", "anthropic");
       check((await calls(page, "settings_set_backend")).length === 0 && (await calls(page, "settings_set_provider")).length === 0, "adding a key and model never changes the default");
@@ -82,12 +83,12 @@ export default [
       await openProviderConfiguration(page, "codex-cli");
       check((await calls(page, "agent_instance_select")).length === 0, "managing an inactive CLI does not select it");
       await useProviderDefault(page, "codex-cli");
-      await assertSwitchError(page, "Wait for the current reply to finish.");
+      await assertSwitchError(page, "Wait for the current reply to finish.", '[data-provider-detail] [data-agent-instance-popup]');
       await assertDefault(page, "phaethon", "anthropic");
       await page.evaluate(() => delete window.__MOCK__.fail.agent_instance_select);
       await useProviderDefault(page, "codex-cli");
       await page.waitForFunction(() => window.__MOCK__.settings.backend === "codex-cli", { timeout: 3000 });
-      check(!(await page.$(`${providerPopup} [role="alert"]`)), "CLI default selection can be retried in the same popup");
+      check(!(await page.$('[data-provider-detail] [data-agent-instance-popup] [role="alert"]')), "CLI default selection can be retried in the same inline editor");
     },
   },
 ];

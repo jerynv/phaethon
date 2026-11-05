@@ -14,10 +14,11 @@
 //                  Code and Phaethon's own assistant have no sign-in here
 //   f11-empty      the empty conversation says Gemini CLI answers here, read-only
 import { SETTINGS, check, openSettings, park } from "../audit-fixtures.mjs";
-import { closeProviderPopup, openProviderConfiguration, providerPopup, useProviderDefault } from "../provider-flow.mjs";
+import { closeProviderPopup, openProviderConfiguration, useProviderDefault } from "../provider-flow.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const shown = "[data-space-pane][data-shown]";
+const cliEditor = (id) => `[data-provider-detail] [data-agent-instance-popup]:has([data-provider-configuration="${id}"])`;
 const picker = `${shown} [data-model-picker]`;
 const settingsSaid = (page, text, timeout = 4000) =>
   page
@@ -47,13 +48,13 @@ export default [
       check(["anthropic", "claude-cli", "codex-cli", "gemini-cli"].every((id) => choices.some((choice) => choice.id === id)), "API providers and installed assistant instances each have a management row", JSON.stringify(choices));
       check(choices.find((choice) => choice.id === "codex-cli")?.status === "Sign in required", "known signed-out state is shown honestly");
       check(choices.find((choice) => choice.id === "claude-cli")?.status === "Installed", "unknown authentication is not presented as signed in");
-      await openProviderConfiguration(page, "codex-cli", { keyboard: true, catalog: true });
-      check((await calls(page, "agent_instance_select")).length === 0, "opening the catalog and management leaves the active account unchanged");
+      await openProviderConfiguration(page, "codex-cli", { keyboard: true });
+      check((await calls(page, "agent_instance_select")).length === 0, "opening existing-account management leaves the active account unchanged");
       await useProviderDefault(page, "codex-cli", { keyboard: true });
       check(await settingsSaid(page, "Now using Codex."), "the explicit default action is announced");
       check((await calls(page, "agent_instance_select")).at(-1)?.id === "codex", "the exact Codex instance is selected");
       check(!!(await page.$('[data-cli-sign-in="codex"]')), "the account has a direct sign-in action");
-      const text = await page.$eval(providerPopup, (element) => element.innerText);
+      const text = await page.$eval(cliEditor("codex-cli"), (element) => element.innerText);
       check(!/Models are chosen in each space|AGENTS\.md|terminal/.test(text), "management omits obvious tutorials");
       await h.shot("codex");
 
@@ -65,10 +66,10 @@ export default [
     mock: { settings: SETTINGS, threads: {}, clis: CLIS({ gemini: { installed: false } }) },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await openProviderConfiguration(page, "gemini-cli", { catalog: true });
-      const link = await page.$eval('[data-cli-missing="gemini-cli"]', (element) => ({ text: element.textContent, href: element.href }));
+      await openProviderConfiguration(page, "gemini-cli");
+      const link = await page.$eval(`${cliEditor("gemini-cli")} [data-cli-missing="gemini-cli"]`, (element) => ({ text: element.textContent, href: element.href }));
       check(link.text.includes("Install Gemini CLI") && /github\.com\/google-gemini/.test(link.href), "a missing assistant links to its official installer", JSON.stringify(link));
-      check(await page.$eval('[data-instance-select]', (button) => button.disabled), "a missing executable cannot become the default");
+      check(await page.$eval(`${cliEditor("gemini-cli")} [data-instance-select]`, (button) => button.disabled), "a missing executable cannot become the default");
       check((await calls(page, "agent_instance_select")).length === 0, "the installed provider stays selected");
       await h.shot("missing");
 
@@ -81,22 +82,22 @@ export default [
     async run(page, h) {
       await page.waitForSelector(picker, { timeout: 5000 });
       let label = await page.$eval(picker, (b) => [b.getAttribute("aria-label"), b.textContent.trim()]);
-      check(label[0] === "Model in School: Codex default, the model Codex chooses" && label[1] === "Codex default", "the button says Codex picks its own model", JSON.stringify(label));
+      check(label[0] === "Model in School: Codex · Default" && label[1] === "Codex default", "the button says Codex picks its own model", JSON.stringify(label));
       await page.click(picker);
-      await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
+      await page.waitForSelector('[data-model-menu] [role="option"]', { timeout: 3000 });
       await h.idle();
       const items = await page.$$eval("[data-model-menu] [data-model-option]", (els) => els.map((e) => e.textContent.trim()));
-      check(items[0] === "DefaultCodex" && items.at(-1) === "Another model…", "Codex's default first, then Another model…", JSON.stringify(items));
+      check(items[0] === "DefaultCodex" && !!(await page.$('[aria-label="Custom model"]')), "Codex's default stays first and custom models have an icon action", JSON.stringify(items));
       check(items[1] === "GPT-6.1-Sol" && items[2] === "GPT-6-Astra" && items[3] === "GPT-6-Luna", "models use consistent name-only rows", JSON.stringify(items));
-      check(items.at(-2) === "Refresh the list", "Refresh the list before Another model…", JSON.stringify(items));
+      check(await page.$$eval('.ph-model-footer-actions [data-model-option]', buttons => buttons.map(button => button.getAttribute('data-model-option')).join(',') === '__refresh__,__other__'), "refresh and custom-model icons keep a consistent footer order");
       check((await calls(page, "agent_cli_models")).every((a) => a.cli === "codex") && (await calls(page, "agent_cli_models")).length === 1, "Codex is asked once", JSON.stringify(await calls(page, "agent_cli_models")));
       check(!(await page.$("[data-cli-models-note]")), "no note: Codex lists its own models");
       await park(page);
       await h.shot("menu");
       // Refresh the list: asked again, the menu stays open, said.
       await page.click('[data-model-option="__refresh__"]');
-      check(await shellSaid(page, "Codex offers 3 models."), "refreshing says how many Codex offers", await shellStatus(page));
-      check((await calls(page, "agent_cli_models")).length === 2 && !!(await page.$("[data-model-menu]")), "asked again, menu still open", "");
+      await page.waitForFunction(() => window.__calls.filter(([command]) => command === "agent_instance_models").length >= 2);
+      check((await calls(page, "agent_instance_models")).every(args => args.id === 'codex') && !!(await page.$("[data-model-menu]")), "the exact account catalog refreshes while the picker stays open", "");
       // A listed model, chosen: saved and named as Codex names it.
       await page.click('[data-model-option="gpt-6-astra"]');
       check(await shellSaid(page, "School now uses Codex · GPT-6-Astra."), "choosing a listed model says its name", await shellStatus(page));
@@ -114,10 +115,10 @@ export default [
       await page.waitForFunction((p) => !document.querySelector("[data-model-menu]") && document.activeElement === document.querySelector(p), { timeout: 3000 }, picker);
       await page.keyboard.press("Enter");
       await page.waitForFunction(() => document.activeElement?.matches('[data-model-search] input'), { timeout: 3000 });
-      for (let i = 0; i < 5 && !(await page.evaluate(() => /Another model/.test(document.activeElement?.textContent ?? ""))); i++) await page.keyboard.press("Tab");
-      await page.waitForFunction(() => /Another model/.test(document.activeElement?.textContent ?? ""), { timeout: 3000 }).catch(() => {});
-      const at = await page.evaluate(() => document.activeElement?.textContent);
-      check(/Another model/.test(at ?? ""), "Tab reaches Another model after the catalog and permission controls", at);
+      for (let i = 0; i < 8 && !(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "Custom model")); i++) await page.keyboard.press("Tab");
+      await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Custom model", { timeout: 3000 });
+      const at = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+      check(at === "Custom model", "Tab reaches the custom-model icon after catalog and permission controls", at);
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-cli-model-dialog]", { timeout: 3000 });
       const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-cli-model-input"));
@@ -237,8 +238,8 @@ export default [
       await page.keyboard.press("Enter");
       check((await calls(page, "agent_instance_sign_in")).length === 1 && (await calls(page, "agent_instance_sign_in"))[0].id === "codex", "the pending request names exactly this account");
       await page.keyboard.press("Escape");
-      check(!!(await page.$(providerPopup)), "Escape keeps a pending sign-in open");
-      check(await page.$$eval('[data-provider-popup] [data-slot="dialog-footer"] button', (buttons) => buttons.every((button) => button.disabled)), "management actions wait for authentication to finish");
+      check(!!(await page.$(cliEditor("codex-cli"))), "Escape keeps a pending sign-in open");
+      check(await page.$$eval(`${cliEditor("codex-cli")} [data-slot="dialog-footer"] button`, (buttons) => buttons.every((button) => button.disabled)), "management actions wait for authentication to finish");
       await page.focus('[data-cli-sign-in-stop]');
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-cli-sign-in-outcome="cancelled"]');

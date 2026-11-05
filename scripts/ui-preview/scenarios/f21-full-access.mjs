@@ -56,8 +56,8 @@ export default [
       await permissions(page, h);
       await h.click(`[data-model-menu] [data-access-picker]`);
       await h.click('[data-access-menu] [role="menuitemradio"]:first-child');
-      await page.waitForFunction(() => !document.querySelector('[data-model-menu]'));
-      await permissions(page, h);
+      await page.waitForFunction(() => !document.querySelector('[data-access-menu]'));
+      check(!!(await page.$('[data-model-menu]')), "choosing access keeps the parent model picker available");
       check(await waitFor(page, (selector) => document.querySelector(selector)?.getAttribute("aria-label") === "Access: Space access", `[data-model-menu] [data-access-picker]`), "the model menu reflects workspace access immediately");
       check(JSON.stringify(await calls(page)) === JSON.stringify([{ id: "school", on: false }]), "the core receives the permission change once");
       await page.keyboard.press("Escape");

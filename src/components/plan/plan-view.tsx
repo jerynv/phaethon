@@ -1,4 +1,4 @@
-import { Checkbox, NativeSelect } from "vic-ui";
+import { Checkbox, Select } from "vic-ui";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -125,7 +125,7 @@ export function PlanView({ space }: { space: Space }) {
 
   return (
     <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
-      <WorkspacePage className="gap-4 pt-5">
+      <WorkspacePage className="gap-4">
         <WorkspacePageHeader
           title="Plan"
           headingProps={{ id: headingId }}
@@ -143,7 +143,7 @@ export function PlanView({ space }: { space: Space }) {
             </Button>
           </div>
         )}
-        {courses.length > 0 && <div className="flex min-w-0 items-center gap-2" data-plan-course=""><label htmlFor={`${headingId}-course`} className="shrink-0 text-sm text-ink-secondary">Course</label><NativeSelect id={`${headingId}-course`} value={course ?? ""} onChange={(event) => { setCourse(event.target.value || null); setDay(null); }} data-plan-course-filter="" className="max-w-full min-w-0 w-auto"><option value="">All courses</option>{courses.map((item) => <option key={item.folder} value={item.folder}>{item.name}</option>)}</NativeSelect></div>}
+        {courses.length > 0 && <div className="flex min-w-0 items-center gap-2" data-plan-course=""><label htmlFor={`${headingId}-course`} className="shrink-0 text-sm text-ink-secondary">Course</label><div data-plan-course-filter="" className="min-w-0"><Select id={`${headingId}-course`} aria-label="Course" value={course ?? "all"} onValueChange={(value) => { setCourse(value === "all" ? null : value); setDay(null); }} items={[{ value: "all", label: "All courses" }, ...courses.map(item => ({ value: item.folder, label: item.name }))]} /></div></div>}
         <div className="flex items-center justify-between gap-2"><h3 className="text-lg font-medium text-ink">{week === 0 ? "Next seven days" : `${dayName(addDays(today, week * 7))} – ${dayName(addDays(today, week * 7 + 6))}`}</h3><div className="flex gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Previous week" disabled={week === 0} onClick={() => { setWeek((value) => Math.max(0, value - 1)); setDay(null); }}><Icon name="chevron-left" /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => { setWeek((value) => value + 1); setDay(null); }}><Icon name="chevron-right" /></Button></div></div>
         <nav aria-label="Agenda days" className="grid grid-cols-7 gap-1 rounded-lg bg-surface-sunken p-1" data-plan-week="">
           {Array.from({ length: 7 }, (_, i) => addDays(today, week * 7 + i)).map((date) => {
@@ -330,7 +330,7 @@ function Exams({ space, exams, courses, onChange, visibleCourse }: { space: Spac
         </ul>
       )}
       <form onSubmit={(e) => void add(e)} className="flex flex-col gap-2 border-t border-line pt-3" aria-labelledby={`${id}-add`} noValidate>
-        <h4 id={`${id}-add`} className="text-sm font-semibold text-ink-secondary">
+        <h4 id={`${id}-add`} className="text-sm font-medium text-ink-secondary">
           Add an exam
         </h4>
         <div className="flex flex-wrap items-end gap-3">
@@ -345,14 +345,7 @@ function Exams({ space, exams, courses, onChange, visibleCourse }: { space: Spac
           {courses.length > 0 && (
             <label className="flex min-w-0 flex-col gap-1 text-base text-ink">
               Course
-              <NativeSelect value={course} onChange={(e) => setCourse(e.target.value)} className="w-auto max-w-full" data-exam-course="">
-                <option value="">Not tied to a course</option>
-                {courses.map((c) => (
-                  <option key={c.folder} value={c.folder}>
-                    {c.name}
-                  </option>
-                ))}
-              </NativeSelect>
+              <div data-exam-course=""><Select aria-label="Exam course" value={course || "none"} onValueChange={value => setCourse(value === "none" ? "" : value)} items={[{ value: "none", label: "Not tied to a course" }, ...courses.map(item => ({ value: item.folder, label: item.name }))]} /></div>
             </label>
           )}
           <Button type="submit" data-exam-add="">
@@ -443,7 +436,7 @@ function Schedule({
     >
       <Details summary="Schedule settings">
       <fieldset className="flex flex-col gap-1.5">
-        <legend className="mb-1 text-sm font-semibold text-ink-secondary">Days you study</legend>
+        <legend className="mb-1 text-sm font-medium text-ink-secondary">Days you study</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {WEEK_ORDER.map((d) => {
             const on = st.studyDays.includes(d);
@@ -471,26 +464,12 @@ function Schedule({
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-base text-ink">
         <label className="flex items-center gap-1.5">
           At most
-          <NativeSelect value={st.sessionsPerDay} onChange={(e) => onState({ ...st, sessionsPerDay: Number(e.target.value) })} className="w-auto" data-plan-per-day="">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </NativeSelect>
+          <div data-plan-per-day=""><Select aria-label="Sessions per day" value={String(st.sessionsPerDay)} onValueChange={value => onState({ ...st, sessionsPerDay: Number(value) })} items={[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ value: String(n), label: String(n) }))} /></div>
           sessions a day
         </label>
         <label className="flex items-center gap-1.5">
           of
-          <NativeSelect value={st.sessionMinutes} onChange={(e) => onState({ ...st, sessionMinutes: Number(e.target.value) })} className="w-auto">
-            {[...new Set([15, 25, 30, 45, 60, 90, st.sessionMinutes])]
-              .sort((a, b) => a - b)
-              .map((n) => (
-                <option key={n} value={n}>
-                  {n} minutes
-                </option>
-              ))}
-          </NativeSelect>
+          <Select aria-label="Session length" value={String(st.sessionMinutes)} onValueChange={value => onState({ ...st, sessionMinutes: Number(value) })} items={[...new Set([15, 25, 30, 45, 60, 90, st.sessionMinutes])].sort((a, b) => a - b).map(n => ({ value: String(n), label: `${n} minutes` }))} />
         </label>
       </div>
       </Details>
@@ -508,7 +487,7 @@ function Schedule({
         <ol className="flex flex-col gap-3" aria-label="Schedule by day" data-plan-days="">
           {days.map((d) => (
             <li key={d.day} className="flex flex-col">
-              <h4 className="text-base font-semibold text-ink">{dayName(d.day)}</h4>
+              <h4 className="text-base font-medium text-ink">{dayName(d.day)}</h4>
               <ul className="flex flex-col divide-y divide-line">
                 {d.sessions.map((s) => (
                   <SessionRow key={s.id} space={space} s={s} done={done.has(s.id)} onToggle={onToggle} />

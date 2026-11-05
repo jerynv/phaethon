@@ -7,10 +7,11 @@
 //   f10-palette      ⌘K › Change model… lists provider · model and chooses one by keyboard only
 //   f10-fit          at 640x480 (and with --scale 2) the provider settings and the model chooser fit
 import { SETTINGS, check, openSettings, park } from "../audit-fixtures.mjs";
-import { closeProviderPopup, openProviderConfiguration, providerPopup, useProviderDefault } from "../provider-flow.mjs";
+import { closeProviderPopup, openProviderConfiguration, useProviderDefault } from "../provider-flow.mjs";
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const shown = "[data-space-pane][data-shown]";
+const providerPopup = '[role="dialog"][data-provider-popup]';
 const picker = `${shown} [data-model-picker]`;
 const settingsSaid = (page, text, timeout = 4000) =>
   page
@@ -76,7 +77,7 @@ export default [
       check(["anthropic", "openrouter", "openai", "ollama", "custom", "claude-cli", "codex-cli", "gemini-cli"].every((id) => catalog.includes(id)), "Add provider offers hosted, local, custom and CLI configuration", JSON.stringify(catalog));
       await closeProviderPopup(page);
       await openProviderConfiguration(page, "openrouter");
-      check(await page.$eval('[data-provider-popup] [data-provider-default="openrouter"]', (button) => button.disabled), "OpenRouter requires a key and model before becoming the default");
+      check(await page.$eval('[role="dialog"][data-provider-popup] [data-provider-default="openrouter"]', (button) => button.disabled), "OpenRouter requires a key and model before becoming the default");
       await page.waitForSelector("[data-model-search=openrouter]", { timeout: 3000 });
       const text = await page.$eval(providerPopup, (e) => e.innerText);
       const keyLink = await page.$eval(`${providerPopup} a`, (a) => a.href);
@@ -143,7 +144,7 @@ export default [
       await page.keyboard.type("x");
       await page.keyboard.press("Escape");
       await new Promise((r) => setTimeout(r, 400));
-      const after = await page.evaluate(() => [document.querySelector("[data-model-query]")?.value, !!document.querySelector("[data-provider-popup]")]);
+      const after = await page.evaluate(() => [document.querySelector("[data-model-query]")?.value, !!document.querySelector('[role="dialog"][data-provider-popup]')]);
       check(after[0] === "" && after[1], "Escape clears the search first, without closing configuration", JSON.stringify(after));
       const configuration = await page.$(providerPopup);
       await page.keyboard.press("Escape");
@@ -221,21 +222,23 @@ export default [
     async run(page, h) {
       await page.waitForSelector(picker, { timeout: 5000 });
       await page.click(picker);
-      await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
+      await page.waitForSelector('[data-model-menu] [role="option"]', { timeout: 3000 });
       await h.idle();
-      const groups = await page.$$eval("[data-model-menu] [data-model-group]", (els) => els.map((e) => e.textContent));
-      check(groups.join(",") === "Anthropic,OpenRouter", "the menu lists models by provider", groups.join(","));
+      const groups = await page.$$eval('[data-model-menu] [data-model-picker-provider^="api:"]', (els) => els.map((e) => e.getAttribute('aria-label')));
+      check(groups.join(",") === "Anthropic,OpenRouter", "the provider rail lists configured API providers", groups.join(","));
+      await page.click('[data-model-picker-provider="api:openrouter"]');
+      await page.waitForSelector('[data-model-option="openrouter:openai/gpt-5"]');
       const item = await page.$eval('[data-model-option="openrouter:openai/gpt-5"]', (e) => [e.getAttribute("aria-label"), e.textContent.trim()]);
-      check(item[0] === "OpenRouter · GPT-5" || item[0] === "OpenRouter · openai/gpt-5", "OpenRouter's model is said with its provider", JSON.stringify(item));
+      check(/OpenRouter/.test(item[0]) && /GPT-5|openai\/gpt-5/.test(item[0]), "OpenRouter's model is said with its provider", JSON.stringify(item));
       await park(page);
       await h.shot("menu");
       await page.click('[data-model-option="openrouter:openai/gpt-5"]');
       await page.waitForFunction(() => window.__calls.some(([c]) => c === "space_model_set"), { timeout: 3000 });
       let sets = await calls(page, "space_model_set");
       check(sets.at(-1).space === "school" && sets.at(-1).model === "openrouter:openai/gpt-5", "School saves provider:model", JSON.stringify(sets));
-      check(await shellSaid(page, "School now uses OpenRouter · openai/gpt-5."), "and says it with the provider", await shellStatus(page));
+      check(await shellSaid(page, "School now uses OpenRouter · OpenAI: GPT-5."), "and says it with the provider", await shellStatus(page));
       const label = await page.$eval(picker, (b) => [b.getAttribute("aria-label"), b.textContent.trim()]);
-      check(/^Model in School: OpenRouter · openai\/gpt-5$/.test(label[0]) && /OpenRouter · openai\/gpt-5/.test(label[1]), "the button shows the provider and model", JSON.stringify(label));
+      check(/^Model in School: OpenRouter · OpenAI: GPT-5$/.test(label[0]) && /OpenRouter · OpenAI: GPT-5/.test(label[1]), "the button shows the provider and model", JSON.stringify(label));
 
       // Any model: Another model… opens a chooser with every provider that can answer.
       await page.waitForFunction(() => !document.querySelector("[data-model-menu]"), { timeout: 3000 });
@@ -286,14 +289,13 @@ export default [
       const hint = await page.$eval('[data-command="change-model"]', (e) => e.textContent);
       check(/in School: OpenRouter · OpenAI: GPT-5/.test(hint), "Change model… says the space's provider and model, by its name from the list", hint);
       await page.keyboard.press("Enter");
-      await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
+      await page.waitForSelector('[data-model-menu] [role="option"]', { timeout: 3000 });
       await h.idle();
       check(await page.evaluate(() => document.activeElement?.matches('[data-model-search] input')), "the menu opens on its editable search");
-      await h.tab();
-      let f = await page.evaluate(() => document.activeElement?.dataset.modelOption);
-      check(f === "openrouter:openai/gpt-5", "Tab reaches the model in use", f);
+      let f = await page.evaluate(() => document.getElementById(document.activeElement?.getAttribute("aria-activedescendant"))?.dataset.modelOption);
+      check(f === "openrouter:openai/gpt-5", "the inline combobox highlights the model in use", f);
       await page.keyboard.press("ArrowUp");
-      f = await page.evaluate(() => document.activeElement?.dataset.modelOption);
+      f = await page.evaluate(() => document.getElementById(document.activeElement?.getAttribute("aria-activedescendant"))?.dataset.modelOption);
       check(f === "openrouter:anthropic/claude-sonnet-5", "arrows reach the other OpenRouter model", f);
       await park(page);
       await h.shot("menu");

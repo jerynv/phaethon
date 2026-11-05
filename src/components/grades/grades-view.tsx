@@ -132,7 +132,7 @@ export function GradesView({ space }: { space: Space }) {
               <Button
                 key={id}
                 type="button"
-                variant={connIds.length === 1 ? "default" : "outline"}
+                variant="ghost"
                 data-grades-refresh={id}
                 disabled={!!refresh}
                 aria-describedby={refresh?.connection === id ? `${headingId}-progress` : undefined}
@@ -247,7 +247,7 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
         headingProps={{ id: `${id}-h` }}
         size="section"
         actions={<div className="flex flex-col items-end gap-0.5 text-end" data-grades-current="">
-          <p className="text-2xl font-semibold text-ink tabular-nums">
+          <p className="text-2xl font-medium text-ink tabular-nums">
             {percent != null ? pct(percent) : "No grade yet"}
             {letter && <span className="text-xl text-ink-secondary"> {letter}</span>}
           </p>
@@ -269,7 +269,7 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
 
       {course.groups.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <h4 className="text-sm font-semibold text-ink-secondary">{calc.usesWeights ? "How it’s weighted" : "Groups (counted by points)"}</h4>
+          <h4 className="text-sm font-medium text-ink-secondary">{calc.usesWeights ? "How it’s weighted" : "Groups (counted by points)"}</h4>
           <ul className="flex flex-wrap gap-x-6 gap-y-2" data-grades-groups="">
             {calc.groups.map((g) => (
               <li key={g.name} className="flex min-w-0 flex-col gap-1">
@@ -323,19 +323,19 @@ function ItemsTable({ course, captionId }: { course: CourseGrades; captionId: st
         </caption>
         <thead>
           <tr className="border-b border-line bg-surface text-start text-sm text-ink-secondary">
-            <th scope="col" className="px-3 py-2 text-start font-semibold">
+            <th scope="col" className="px-3 py-2 text-start font-medium">
               Assignment
             </th>
-            <th scope="col" className="px-3 py-2 text-end font-semibold">
+            <th scope="col" className="px-3 py-2 text-end font-medium">
               Score
             </th>
-            <th scope="col" className="px-3 py-2 text-end font-semibold">
+            <th scope="col" className="px-3 py-2 text-end font-medium">
               Percent
             </th>
-            <th scope="col" className="px-3 py-2 text-start font-semibold">
+            <th scope="col" className="px-3 py-2 text-start font-medium">
               Due
             </th>
-            <th scope="col" className="px-3 py-2 text-start font-semibold">
+            <th scope="col" className="px-3 py-2 text-start font-medium">
               Status
             </th>
           </tr>
@@ -347,7 +347,7 @@ function ItemsTable({ course, captionId }: { course: CourseGrades; captionId: st
             <tbody key={g || "none"} className="border-b border-line last:border-b-0">
               {byGroup.length > 1 && (
                 <tr>
-                  <th scope="colgroup" colSpan={5} className="bg-surface-sunken px-3 py-1.5 text-start text-sm font-semibold text-ink-secondary">
+                  <th scope="colgroup" colSpan={5} className="bg-surface-sunken px-3 py-1.5 text-start text-sm font-medium text-ink-secondary">
                     {g || "Other"}
                   </th>
                 </tr>

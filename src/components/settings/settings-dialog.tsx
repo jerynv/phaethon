@@ -27,7 +27,7 @@ type FocusTarget = "key" | "model" | "heading";
 const FOCUS_SELECTOR: Record<Exclude<FocusTarget, "heading">, string> = { key: "[data-key-input]", model: "[data-model-select]" };
 
 const SECTIONS: { id: SectionId; label: string; icon: IconName }[] = [
-  { id: "agent", label: "Assistant", icon: "agent" },
+  { id: "agent", label: "Providers", icon: "agent" },
   { id: "appearance", label: "Appearance", icon: "appearance" },
   { id: "accessibility", label: "Accessibility", icon: "accessibility" },
   { id: "spaces", label: "Spaces", icon: "space" },
@@ -68,6 +68,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<SectionId>(lastSection);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [providerBusy, setProviderBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   // Kept apart from `error`: choosing a section or dismissing a banner must not
@@ -247,6 +248,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   );
 
   function onOpenChange(next: boolean) {
+    if (!next && providerBusy) return;
     if (!next) {
       void flushAppearance();
       // A Remove in Settings › Spaces offers Undo until the window closes.
@@ -256,12 +258,12 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   }
 
   const choose = useCallback((id: string) => {
-    if (!isSection(id)) return;
+    if (providerBusy || !isSection(id)) return;
     setAgentFocusRequest(null);
     lastSection = id;
     setSection(id);
     setError("");
-  }, []);
+  }, [providerBusy]);
 
   const nav: SettingsNav = useMemo(
     () => ({
@@ -305,7 +307,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   }
 
   const pages: Record<SectionId, ReactNode> = {
-    agent: <AgentSection headingId={ids.agent} settings={settings} loadError={loadError} retryLoad={load} act={act} focusRequest={agentFocusRequest} onRequestedProviderClose={onRequestedProviderClose} />,
+    agent: <AgentSection headingId={ids.agent} settings={settings} loadError={loadError} retryLoad={load} act={act} focusRequest={agentFocusRequest} onRequestedProviderClose={onRequestedProviderClose} onBusyChange={setProviderBusy} />,
     appearance: <AppearanceSection headingId={ids.appearance} />,
     accessibility: <AccessibilitySection headingId={ids.accessibility} />,
     spaces: <SpacesSection headingId={ids.spaces} editSpace={editSpace} />,
@@ -343,7 +345,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
           onInteractOutside={(e) => e.preventDefault()}
           // Escape in a field with unsaved text (Settings > Spaces) undoes that edit instead of closing.
           onEscapeKeyDown={(e) => {
-            if (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined) e.preventDefault();
+            if (providerBusy || (document.activeElement instanceof HTMLElement && document.activeElement.dataset.dirty !== undefined)) e.preventDefault();
           }}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 m-0! flex flex-col h-[min(var(--ph-settings-height),calc(100dvh-48px))] max-h-none! w-[min(var(--ph-settings-width),calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 overflow-clip p-0! text-ink outline-none max-sm:h-[min(var(--ph-settings-height),calc(100dvh-32px))] max-sm:w-[calc(100%-32px)]",
@@ -360,7 +362,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                 <div className="ms-auto flex shrink-0 items-center gap-3 text-xs text-ink-secondary">
                   <span className="max-sm:hidden"><SaveIndicator /></span>
                   <Dialog.Close asChild>
-                    <Button variant="ghost" size="icon-sm" aria-label="Close settings" title="Close settings (Escape)" className="text-ink-secondary hover:text-ink"><Icon name="close" /></Button>
+                    <Button variant="ghost" size="icon-sm" aria-label="Close settings" disabled={providerBusy} title="Close settings (Escape)" className="text-ink-secondary hover:text-ink"><Icon name="close" /></Button>
                   </Dialog.Close>
                 </div>
               </header>
@@ -379,12 +381,13 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                     {SECTIONS.map((s) => (
                       <Tabs.Trigger
                         key={s.id}
+                        disabled={providerBusy}
                         value={s.id}
                         data-testid={`settings-tab-${s.id}`}
                         // Radix activates on mousedown; click also covers pointer tools that send only clicks.
                         onClick={() => choose(s.id)}
                         className={cn(
-                          "flex min-h-(--ph-control-height) shrink-0 items-center gap-2.5 rounded-md px-2 text-start text-base text-ink-secondary transition-colors duration-(--ph-duration-fast)",
+                          "flex min-h-(--ph-control-height) shrink-0 items-center gap-2.5 rounded-md px-2 text-start text-sm font-normal text-ink-secondary transition-colors duration-(--ph-duration-fast)",
                           "max-md:min-h-(--ph-control-height-sm) max-md:px-2 max-md:[&_svg]:hidden",
                           "hover:bg-hover hover:text-ink",
                           "data-[state=active]:bg-selected data-[state=active]:font-medium data-[state=active]:text-ink",

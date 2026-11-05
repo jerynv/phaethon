@@ -28,6 +28,7 @@ pub mod study;
 pub mod thread;
 pub mod tools;
 pub mod tutor_mode;
+mod ui_diagnostics;
 pub mod updater;
 pub mod vault;
 pub mod viewer;
@@ -40,20 +41,19 @@ use agent::{AgentEvent, ErrorCode, Runs, TurnRequest};
 use agent_loop::{Approvals, LoopRequest};
 use vault::{Backend, Vault};
 
-/// Debug builds only: lets the webview report CSP violations and startup to the
-/// terminal running `tauri dev`, since the WebView console is otherwise invisible
-/// there. A no-op in release builds.
+/// Opt-in local diagnostics: debug builds, or PHAETHON_DIAGNOSTICS in a release
+/// process. Normal release launches do not print webview diagnostics.
 #[tauri::command]
-fn dev_log(message: String) {
-    if cfg!(debug_assertions) {
+fn dev_log(window: tauri::WebviewWindow, message: String) {
+    if cfg!(debug_assertions) || std::env::var_os("PHAETHON_DIAGNOSTICS").is_some() {
         // Bound the size so a runaway frontend cannot flood the terminal.
         let message: String = message.chars().take(2000).collect();
         eprintln!("[webview] {message}");
+        if message.starts_with("ui mounted:") {
+            ui_diagnostics::snapshot(window);
+        }
     }
 }
-
-/// What tauri's freezePrototype does, for the app's own window only (see `run`).
-const FREEZE_PROTOTYPE: &str = "Object.freeze(Object.prototype);";
 
 /// Run `f` on a blocking worker. Every keychain call goes through here (or an async
 /// command's own worker): macOS may stop to ask the person for keychain access, and a
@@ -1185,13 +1185,11 @@ pub fn run() {
                 last_export: Default::default(),
                 full_access_file: app.path().app_data_dir().ok().map(|d| d.join("full-access.json")),
             });
-            // The app's window, from tauri.conf.json, with Object.prototype frozen before
-            // any of its scripts run. Done here rather than with freezePrototype, which
-            // Tauri puts in every window: a course site's sign-in window too, where it
-            // breaks pages that add to their own objects (Duo's prompt drew nothing).
+            // Keep Tauri's configured prototype policy. Freezing Object.prototype breaks
+            // ordinary inherited constructor/toString/valueOf assignments in UI dependencies.
+            // CSP and native command permissions enforce the webview's access boundaries.
             let main = app.config().app.windows.first().cloned().ok_or("no window in tauri.conf.json")?;
             tauri::WebviewWindowBuilder::from_config(app.handle(), &main)?
-                .initialization_script(FREEZE_PROTOTYPE)
                 .build()?;
             Ok(())
         })
@@ -1314,25 +1312,18 @@ pub fn run() {
 
 #[cfg(test)]
 mod window_tests {
-    /// The prototype freeze is the app window's alone: tauri's switch for it stays off (it
-    /// would reach the sign-in window), and the window is built in `run` with it.
+    /// UI libraries use normal inherited property assignment during module initialization.
+    /// The fixture runner reads the same policy from the actual native config.
     #[test]
-    fn only_the_app_window_freezes_its_prototype() {
+    fn app_windows_use_the_configured_prototype_policy() {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["app"]["security"]["freezePrototype"], false);
-        // Each platform's file replaces the window list, so each must say it too.
-        for (name, text) in [
-            ("tauri.conf.json", include_str!("../tauri.conf.json")),
-            ("tauri.macos.conf.json", include_str!("../tauri.macos.conf.json")),
-            ("tauri.windows.conf.json", include_str!("../tauri.windows.conf.json")),
-            ("tauri.linux.conf.json", include_str!("../tauri.linux.conf.json")),
-        ] {
-            let c: serde_json::Value = serde_json::from_str(text).unwrap();
-            assert_eq!(c["app"]["windows"][0]["create"], false, "{name}: the app builds its window itself");
+        let startup = include_str!("lib.rs").split(".setup(|app|").nth(1).unwrap().split(".invoke_handler").next().unwrap();
+        assert!(!startup.contains(".initialization_script("), "native startup must not override the tested config");
+        for text in [include_str!("../tauri.macos.conf.json"), include_str!("../tauri.windows.conf.json"), include_str!("../tauri.linux.conf.json")] {
+            let platform: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert!(platform["app"]["security"]["freezePrototype"].is_null());
         }
-        let src = include_str!("lib.rs");
-        assert!(src.contains(".initialization_script(FREEZE_PROTOTYPE)"));
-        assert!(!include_str!("lms/login.rs").contains("FREEZE_PROTOTYPE"));
     }
 }
 

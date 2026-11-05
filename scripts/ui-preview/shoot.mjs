@@ -138,7 +138,10 @@ if (shard.length !== 2 || !shard.every(Number.isInteger) || shard[0] < 1 || shar
 }
 const chosen = selected.filter((_, index) => index % shard[1] === shard[0] - 1);
 
-const mockJs = readFileSync(join(here, "mock-ipc.js"), "utf8");
+// Match the installed webview before any dependency initializes.
+const nativeConfig = JSON.parse(readFileSync(join(here, "../../src-tauri/tauri.conf.json"), "utf8"));
+const nativeInit = nativeConfig.app.security.freezePrototype ? "Object.freeze(Object.prototype);" : "";
+const mockJs = nativeInit + "\n" + readFileSync(join(here, "mock-ipc.js"), "utf8");
 const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png" };
 let current = { mock: {} };
 const server = createServer((req, res) => {

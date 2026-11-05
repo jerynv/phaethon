@@ -27,4 +27,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 
 // Dev only: confirm the UI actually rendered under the CSP.
-setTimeout(() => void devLog(`ui mounted: ${document.querySelectorAll("button").length} buttons, prototype frozen: ${Object.isFrozen(Object.prototype)}`), 1500);
+setTimeout(() => {
+  const root = document.getElementById("root");
+  const rect = root?.getBoundingClientRect();
+  const style = root && getComputedStyle(root);
+  void devLog(`ui mounted: ${document.querySelectorAll("button").length} buttons, prototype frozen: ${Object.isFrozen(Object.prototype)}, root: ${Math.round(rect?.width ?? 0)}x${Math.round(rect?.height ?? 0)}, visible: ${!!style && style.display !== "none" && style.visibility === "visible" && style.opacity !== "0"}`);
+}, 1500);

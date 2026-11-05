@@ -18,6 +18,24 @@ const conversation = [
 
 export default [
   {
+    name: "native-startup",
+    mock: { threads: {} },
+    async run(page, h) {
+      const state = await page.evaluate(() => ({
+        frozen: Object.isFrozen(Object.prototype),
+        root: document.getElementById("root")?.getBoundingClientRect().toJSON(),
+        buttons: document.querySelectorAll("button").length,
+      }));
+      if (state.frozen || state.buttons < 5 || state.root.width < 600 || state.root.height < 400) {
+        throw new Error(`Native startup did not render: ${JSON.stringify(state)}`);
+      }
+      await h.waitText("Settings");
+      await h.click('[data-testid="open-settings"], [data-testid="titlebar-settings"]');
+      await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
+      await h.waitText("Appearance");
+    },
+  },
+  {
     name: "conversation",
     mock: { threads: { school: conversation } },
     async run(page, h) {

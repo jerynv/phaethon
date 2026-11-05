@@ -2660,6 +2660,7 @@ name = "phaethon"
 version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "futures-util",
  "keyring",
  "libc",

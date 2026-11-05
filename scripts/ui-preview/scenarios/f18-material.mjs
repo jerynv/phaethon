@@ -69,6 +69,7 @@ async function openImport(page) {
   await page.keyboard.type("import courses");
   await page.keyboard.press("Enter");
   await page.waitForSelector(DIALOG, { timeout: 3000 });
+  await page.waitForSelector('[data-existing-site="c1"]', { timeout: 3000 });
 }
 const atStep = (page, s) => waitFor(page, ([D, s]) => document.querySelector(D)?.getAttribute("data-step") === s, [DIALOG, s]);
 
@@ -138,7 +139,7 @@ export default [
       await openImport(page);
       await page.click('[data-existing-site="c1"]');
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
-      await page.click('[data-course="101"]');
+      await page.$eval('[data-course="101"] input', input => { if (!input.checked) input.click(); });
       await page.click("[data-step-next]");
       await atStep(page, "viewers");
       await page.click("[data-step-next]");
@@ -146,13 +147,16 @@ export default [
       await page.click("[data-import-start]");
       check(await waitFor(page, () => document.querySelector("[data-step-title]")?.textContent === "Import finished", undefined, 8000), "the import finishes");
       const r = await text(page, '[data-import-course="101"] [data-material]');
-      check(r?.startsWith("185 pages are handwriting or scans: read with text recognition; expect some mistakes."), "the course's report, in words", r);
+      check(r?.includes("Source files") && !r.includes("expect some mistakes"), "the import points to source files without duplicate tutorial copy", r);
       check((await page.$eval('[data-import-course="101"] [data-material]', (e) => e.getAttribute("data-material"))) === "flagged", "flagged");
       // Which files, one fold below, opened by keyboard.
       await page.focus('[data-import-course="101"] [data-material] summary');
       await page.keyboard.press("Enter");
       const files = await page.$$eval('[data-import-course="101"] [data-material-files] li', (els) => els.map((e) => e.textContent));
-      check(files.length === 3 && files[0] === "notes c241 Fa26 - 20260915.pdf: 10 pages of handwriting or scans (59% of words recognised as the course’s own)", "each file and what it holds", JSON.stringify(files));
+      check(files.length === 3 && files[0].includes("notes c241 Fa26 - 20260915.pdf") && files[0].includes("10 scanned pages"), "each file and what it holds", JSON.stringify(files));
+      await page.click('[data-import-course="101"] [data-material-open]');
+      await page.waitForSelector('[data-file-viewer]');
+      check(await page.evaluate(() => window.__calls.some(([cmd, args]) => cmd === "file_view" && args.space === "school" && args.path.endsWith("files/Notes/handwritten in-class notes/notes c241 Fa26 - 20260915.pdf"))), "the original source opens through the space viewer");
       check(await fits(page), "nothing scrolls sideways");
       await h.shot("report");
     },
@@ -166,14 +170,17 @@ export default [
       await chord(page, ["Meta", ","]);
       await page.waitForSelector('[data-testid="settings-tab-courses"]', { timeout: 3000 });
       await page.$eval('[data-testid="settings-tab-courses"]', (el) => el.click());
-      await page.waitForSelector('[data-access-course="c1/101"] [data-material]', { timeout: 3000 });
-      await page.$$eval('[data-access-course] > details', (disclosures) => disclosures.forEach((details) => { details.open = true; }));
-      const a = await text(page, '[data-access-course="c1/101"] [data-material] ul');
-      const b = await text(page, '[data-access-course="c1/103"] [data-material] ul');
-      check(a === "185 pages are handwriting or scans: read with text recognition; expect some mistakes.", "C241's report under its name", a);
-      check(b?.includes("17 pictures (figures, diagrams or photos): they can’t be read as text."), "and the other course's, pictures included", b);
+      await page.waitForSelector('[data-course-select="c1/101"]', { timeout: 3000 });
+      await page.click('[data-course-select="c1/101"]');
+      await page.click('[data-access-course="c1/101"] [data-material] summary');
+      const a = await text(page, '[data-access-course="c1/101"] [data-material-files]');
+      check(a?.includes("notes c241 Fa26 - 20260915.pdf") && a.includes("10 scanned pages"), "course detail shows its original source filenames with compact metadata", a);
+      await page.click('[data-course-back]');
+      await page.click('[data-course-select="c1/103"]');
+      await page.click('[data-access-course="c1/103"] [data-material] summary');
+      const b = await text(page, '[data-access-course="c1/103"] [data-material-files]');
+      check(b?.includes("WK06_D01_stdlib.pdf") && b.includes("10 images"), "the other course has its own sources and image counts", b);
       check(await fits(page), "nothing scrolls sideways");
-      await page.$eval('[data-access-course="c1/103"]', (e) => e.scrollIntoView({ block: "start" }));
       await h.shot("settings");
     },
   },

@@ -27,16 +27,18 @@ import {
 // backend can honour and restyled with Phaethon tokens. Edit (your messages) and
 // Regenerate (the last reply) fork the saved thread through agent_send's
 // replaceFrom, so they are offered only where the saved position is known.
-// Hidden on purpose: branch picker, feedback, dictation, suggestions and export.
+// Hidden on purpose: branch picker, feedback, suggestions and export.
 
 import { MarkdownText, UserMarkdownText } from "@/components/assistant-ui/elements/markdown-text";
 import { CoursesSuggestion } from "@/components/lms/courses-suggestion";
 import { SpaceMark } from "@/components/shell/space-mark";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu } from "@/components/ui/menu";
+import { NEW_SPACE_EVENT } from "@/lib/chat-actions";
 import { WorkspaceEmpty } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { useComposeRequests } from "@/lib/compose";
-import { findSpace, supportsEducation, useActiveSpaceId } from "@/lib/spaces";
+import { findSpace, supportsEducation, useActiveSpaceId, useSpaces } from "@/lib/spaces";
 import { cn } from "@/lib/utils";
 import type { AgentMessageCustom, ContinueRun } from "@/runtime/agent-adapter";
 import { RECORD_PART, type RecordPartData } from "@/runtime/records";
@@ -182,7 +184,8 @@ function UserEditComposer() {
       <MessageHeading id={headingId}>Editing your message</MessageHeading>
       <ComposerPrimitive.Root
         aria-label="Edit your message"
-        className="flex w-full max-w-(--ph-message-max-width) flex-col gap-2 rounded-(--ph-composer-radius) border border-ink-tertiary bg-raised p-2 shadow"
+        data-composer=""
+        className="flex w-full max-w-(--ph-message-max-width) flex-col gap-2 rounded-(--ph-composer-radius) border border-(--ph-composer-rim) bg-raised p-2"
       >
         <ComposerPrimitive.Input
           ref={inputRef}
@@ -190,20 +193,19 @@ function UserEditComposer() {
           aria-describedby={hintId}
           submitMode="enter"
           data-edit-input=""
-          className="max-h-[calc(min(10lh,40dvh)+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-md text-ink"
+          className="max-h-[calc(min(10lh,40dvh)+var(--ph-space)*3)] min-h-(--ph-control-height-lg) w-full resize-none rounded-[max(0px,calc(var(--ph-composer-radius)-0.5rem))] bg-transparent px-2 py-1.5 text-md text-ink"
         />
         <p id={hintId} className="px-2 text-xs text-ink-secondary">
-          Enter sends the new version, Escape cancels. Phaethon answers it again; the old version stays in this
-          space’s past conversations.
+          Enter to send · Escape to cancel
         </p>
         <div className="flex justify-end gap-2">
           <ComposerPrimitive.Cancel asChild>
-            <Button type="button" variant="outline">
+            <Button type="button" variant="ghost" size="sm">
               Cancel
             </Button>
           </ComposerPrimitive.Cancel>
           <ComposerPrimitive.Send asChild>
-            <Button type="submit">
+            <Button type="submit" size="sm">
               <Icon name="send" />
               Send
             </Button>
@@ -590,9 +592,19 @@ function ReplyAnnouncer({ text, setText, cli }: { text: string; setText: (t: str
 /** The empty conversation offers useful destinations without explaining the shell. */
 function EmptyState({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
   const education = supportsEducation(spaceId);
+  const { spaces } = useSpaces();
   return (
-    <WorkspaceEmpty data-empty-state="" className="group/empty w-full"
+    <WorkspaceEmpty data-empty-state="" className="ph-workspace-empty group/empty w-full"
       title={<span role="heading" aria-level={2}>Start a conversation in {spaceName}</span>}>
+      <DropdownMenu.Root modal={false}>
+        <DropdownMenu.Trigger asChild><Button type="button" variant="ghost" size="sm" data-empty-workspace="" aria-label={`Workspace: ${spaceName}`} className="self-start text-ink-secondary"><Icon name="space" className="size-4" />Workspace<Icon name="chevron-down" className="size-3" /></Button></DropdownMenu.Trigger>
+        <DropdownMenu.Portal><DropdownMenu.Content align="start" sideOffset={6} className="z-50 w-56 max-w-[calc(100vw-2rem)]" aria-label="Choose workspace">
+          {spaces.map((space) => <DropdownMenu.Item key={space.id} onSelect={() => window.dispatchEvent(new CustomEvent("phaethon:choose-space", { detail: space.id }))}
+            className="flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm outline-none data-highlighted:bg-hover" data-choose-workspace={space.id}><SpaceMark hue={space.hue} /><span className="min-w-0 flex-1 truncate">{space.name}</span>{space.id === spaceId && <Icon name="check" className="size-3.5 text-ink-secondary" />}</DropdownMenu.Item>)}
+          <DropdownMenu.Separator className="mx-1 my-1 h-px bg-line" />
+          <DropdownMenu.Item onSelect={() => window.dispatchEvent(new Event(NEW_SPACE_EVENT))} className="flex min-h-(--ph-control-height) cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink-secondary outline-none data-highlighted:bg-hover"><Icon name="plus" className="size-3.5" />New space</DropdownMenu.Item>
+        </DropdownMenu.Content></DropdownMenu.Portal>
+      </DropdownMenu.Root>
       {education && <>
         <CoursesSuggestion spaceId={spaceId} />
         <div className="flex flex-wrap items-center gap-2" aria-label="Learning tools">
@@ -642,7 +654,7 @@ function JumpToLatest({ store, logRef }: { store: ViewportStore | null; logRef: 
     <Button
       type="button"
       variant="outline"
-      className="min-w-0 rounded-full whitespace-nowrap"
+      size="sm" className="min-w-0 rounded-full whitespace-nowrap text-ink-secondary"
       data-jump-latest=""
       onClick={() => {
         store.getState().scrollToBottom();
@@ -830,6 +842,11 @@ export function Thread({
               </div>
             </ThreadPrimitive.Viewport>
             <ReplyAnnouncer text={spoken} setText={setSpoken} cli={cli} />
+            {/* The jump row is outside the editor's 40vh budget, so large text and
+                attachment folding cannot squeeze the toolbar out of its frame. */}
+            <div data-composer-jump-slot="" className="flex h-[calc(var(--ph-control-height-sm)+var(--ph-space)*2)] shrink-0 items-center justify-center">
+              <JumpToLatest store={viewport} logRef={logRef} />
+            </div>
             <Composer
               spaceName={spaceName}
               inputRef={inputRef}
@@ -838,7 +855,6 @@ export function Thread({
               problems={problems}
               clearProblems={clearProblems}
               dragging={dragging}
-              jump={<JumpToLatest store={viewport} logRef={logRef} />}
             />
             <ComposeRequests spaceId={spaceId} inputRef={inputRef} />
             {dragging && (
@@ -849,7 +865,7 @@ export function Thread({
                 // drop zone; the dashed box sits inside it.
                 className="pointer-events-none absolute inset-0 z-20 flex bg-bg p-3"
               >
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-focus text-ink">
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-focus text-ink">
                   <span className="mb-2 flex size-[calc(var(--ph-icon-size-lg)*2)] items-center justify-center rounded-full bg-accent-soft text-accent-soft-ink">
                     <Icon name="attach" className="size-(--ph-icon-size-lg)" />
                   </span>

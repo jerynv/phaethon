@@ -66,6 +66,14 @@ pub struct CourseState {
     /// What each document is made of (typed, handwriting, pictures), from the last import.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material: Option<super::material::Report>,
+    /// The first import of this course was stopped before it finished: what's here
+    /// is real, but the course isn't complete and no space was given it yet.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub partial: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,6 +88,13 @@ pub struct FileRec {
     pub etag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified: Option<String>,
+    /// SHA-256 (hex) of the bytes on disk, to tell changed content from the same
+    /// content sent again when the site gives no usable validator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// The site's version stamp from its file listing (RemoteFile::version).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -144,6 +159,41 @@ impl Store {
     pub fn folders(&self) -> Vec<String> {
         self.connections.iter().flat_map(|c| c.courses.values().map(|s| s.folder.clone())).collect()
     }
+}
+
+// ---- Accounts -----------------------------------------------------------------
+//
+// `<vault>/.phaethon/lms-accounts.json`: which account on its site each connection
+// is, as a fingerprint of the site's own account id (lms::account_fingerprint),
+// never the id itself. A connection missing here was made before this was kept,
+// or is on a site with no account call (Moodle).
+
+pub const ACCOUNTS_FILE: &str = "lms-accounts.json";
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Accounts {
+    /// Connection id → account fingerprint.
+    #[serde(default)]
+    pub connections: BTreeMap<String, String>,
+}
+
+pub fn load_accounts(vault_dir: &Path) -> Result<Accounts, String> {
+    let path = vault_dir.join(crate::tools::STATE_DIR).join(ACCOUNTS_FILE);
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Accounts::default()),
+        Err(e) => return Err(format!("The course site accounts couldn’t be read: {e}")),
+    };
+    if !meta.is_file() || meta.len() > MAX_BYTES {
+        return Err("lms-accounts.json isn’t a plain file Phaethon can read.".into());
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("The course site accounts couldn’t be read: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("lms-accounts.json is damaged ({e}). Remove .phaethon/lms-accounts.json and sign in again."))
+}
+
+pub fn save_accounts(vault_dir: &Path, a: &Accounts) -> Result<(), String> {
+    let json = serde_json::to_vec_pretty(a).map_err(|e| e.to_string())?;
+    names::write(vault_dir, &Path::new(crate::tools::STATE_DIR).join(ACCOUNTS_FILE), &json).map_err(|e| format!("The course site accounts couldn’t be saved: {e}"))
 }
 
 // ---- Grades -----------------------------------------------------------------

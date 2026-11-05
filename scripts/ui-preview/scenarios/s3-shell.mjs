@@ -12,7 +12,8 @@
 import { check, park } from "../audit-fixtures.mjs";
 
 const DAY = 86400000;
-const now = Date.now();
+// Midday keeps neighbouring local-day fixtures away from midnight and DST boundaries.
+const now = new Date().setHours(12, 0, 0, 0);
 const LONG_TITLE = "Can you go through every reading listed for the history seminar";
 const current = [
   { role: "user", text: "What do I have due this week for C241?", attachments: [] },
@@ -76,6 +77,29 @@ const waitActive = (page, want) =>
       want,
     )
     .then(() => true, () => false);
+
+// The runner imports fixtures before executing them; a long shard can cross midnight.
+// Keep the app and mock on the fixture's local day, while advancing real elapsed time.
+function withLocalClock(scenario) {
+  return {
+    ...scenario,
+    async run(page, helpers) {
+      await page.evaluateOnNewDocument((anchor) => {
+        const NativeDate = Date;
+        const started = performance.now();
+        const tick = () => anchor + Math.floor(performance.now() - started);
+        globalThis.Date = new Proxy(NativeDate, {
+          construct(target, args, newTarget) { return Reflect.construct(target, args.length ? args : [tick()], newTarget); },
+          apply() { return new NativeDate(tick()).toString(); },
+          get(target, key, receiver) { return key === "now" ? tick : Reflect.get(target, key, receiver); },
+        });
+      }, now);
+      await page.reload({ waitUntil: "load" });
+      await page.waitForSelector("#root > *", { timeout: 8000 });
+      await scenario.run(page, helpers);
+    },
+  };
+}
 
 export default [
   {
@@ -256,7 +280,10 @@ export default [
       await h.focusVia("[data-conversations-trigger]");
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-conversations-menu] [role="menuitemradio"]', { timeout: 5000 });
-      check(await waitActive(page, "current"), "the menu opens on the open conversation", await active(page));
+      await page.waitForFunction(() => document.activeElement?.matches('[data-history-controls] input[aria-label="Search conversations"]'), { timeout: 3000 });
+      check(await page.evaluate(() => document.activeElement?.matches('[data-history-controls] input[aria-label="Search conversations"]')), "the menu opens on its search field");
+      await page.keyboard.press("ArrowDown");
+      check(await waitActive(page, "current"), "ArrowDown from search reaches the open conversation", await active(page));
       const [yesterday, older] = [String(now - DAY), String(now - 2 * DAY)];
       await page.keyboard.press("ArrowDown");
       check(await waitActive(page, yesterday), "ArrowDown goes to the next conversation, not to a Delete", await active(page));
@@ -545,4 +572,4 @@ export default [
       await h.shot("cli-note");
     },
   },
-];
+].map(withLocalClock);

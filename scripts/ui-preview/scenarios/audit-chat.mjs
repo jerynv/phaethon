@@ -258,12 +258,12 @@ export default [
       await h.idle();
       const lg = await page.evaluate(() => {
         const probe = document.body.appendChild(document.createElement("div"));
-        probe.style.height = "var(--ph-control-height)";
+        probe.style.height = "max(24px, var(--ph-target-min))";
         const px = probe.getBoundingClientRect().height;
         probe.remove();
         return px;
       });
-      check(jump.height >= lg - 0.5, "it is a full-size control, as tall as Send beside it", `${jump.height} vs ${lg}`);
+      check(jump.height >= lg - 0.5, "the compact jump control retains the minimum interactive target", `${jump.height} vs ${lg}`);
       await page.hover("[data-jump-latest]");
       await h.idle();
       await h.shot("jump-hover");

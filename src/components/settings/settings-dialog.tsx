@@ -15,6 +15,7 @@ import { AgentSection, type AgentFocusRequest } from "./agent-section";
 import { AppearanceSection } from "./appearance-section";
 import { CoursesSection } from "./courses-section";
 import { SpacesSection } from "./spaces-section";
+import { UsageDialog } from "./usage-dialog";
 import { NavContext, StatusContext, type SectionId, type SettingsNav, type SettingsStatus } from "./status";
 
 /** Opens Settings from anywhere: `window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: { section } }))`. */
@@ -313,15 +314,19 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
   };
 
   return (
+    <>
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Trigger asChild>
         <Button
           variant="ghost"
+          size="icon-sm"
+          aria-label="Settings"
+          title="Settings"
           data-testid="open-settings"
-          className="h-auto min-h-(--ph-control-height) w-full text-base font-normal text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink [&>.ui-button-face]:justify-start [&>.ui-button-face]:gap-2.5 [&>.ui-button-face]:px-2 [&_svg]:size-(--ph-icon-size-sm)"
+          className="text-ink-secondary hover:text-ink data-[state=open]:bg-selected data-[state=open]:text-ink"
         >
           <Icon name="settings" />
-          Settings
+          <span className="sr-only">Settings</span>
         </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
@@ -417,7 +422,7 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
                       // A tab stop (Radix), so the page scrolls by keyboard. Keep its ring inside the panel.
                       className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] outline-none focus-visible:[outline-offset:calc(-1*(var(--ph-focus-width)+var(--ph-focus-offset)))]! data-[state=inactive]:hidden"
                     >
-                      <div className="flex w-full max-w-(--ph-settings-content-width) flex-col gap-5 px-5 pt-5 pb-6 max-sm:px-4">
+                      <div className="flex w-full max-w-(--ph-settings-content-width) flex-col gap-5 px-6 pt-6 pb-6 max-sm:px-4 max-sm:pt-4">
                         {pages[s.id]}
                       </div>
                     </Tabs.Content>
@@ -434,6 +439,8 @@ export function SettingsDialog({ onChanged }: { onChanged: () => void }) {
         </Dialog.Content></DialogSurface>
       </Dialog.Portal>
     </Dialog.Root>
+    <UsageDialog />
+    </>
   );
 }
 

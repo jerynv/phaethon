@@ -280,6 +280,20 @@ async fn whoami(s: &Session, api: &Api) -> Result<(), LmsError> {
     }
 }
 
+/// The signed-in user's `Identifier` from `GET /d2l/api/lp/(version)/users/whoami`.
+pub async fn account(s: &Session) -> Result<String, LmsError> {
+    let api = Api::discover(s).await?;
+    let me: serde_json::Value = s.get_json(&api.lp("/users/whoami")).await.map_err(|e| match e {
+        LmsError::Forbidden(_) | LmsError::NotFound(_) => LmsError::SignedOut,
+        e => e,
+    })?;
+    match &me["Identifier"] {
+        serde_json::Value::String(id) if !id.trim().is_empty() => Ok(id.trim().to_string()),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        _ => Err(LmsError::Other("Your course site didn’t say who is signed in.".into())),
+    }
+}
+
 pub async fn courses(s: &Session) -> Result<Vec<Course>, LmsError> {
     let api = Api::discover(s).await?;
     whoami(s, &api).await?;
@@ -408,7 +422,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
                     Some(h) => format!("{h}\n{link}"),
                     None => link,
                 });
-                push_file(&mut c, &mut file_urls, RemoteFile { name, folder: None, url, size: None, mime: None, aliases: vec![] });
+                push_file(&mut c, &mut file_urls, RemoteFile { name, folder: None, url, size: None, mime: None, aliases: vec![], version: None });
             }
         }
         Err(e) => fatal(&e)?,
@@ -426,7 +440,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
                     let url = join(base, &api.le(ou, &format!("/dropbox/folders/{}/attachments/{}", f.id, a.file_id)))?;
                     html.push_str(&format!("\n<p><a href=\"{}\">{}</a></p>", escape(url.as_str()), escape(&a.file_name)));
                     let folder = Some(format!("Assignments/{}", clean(&f.name)));
-                    push_file(&mut c, &mut file_urls, RemoteFile { name: clean(&a.file_name), folder, url, size: a.size, mime: None, aliases: vec![] });
+                    push_file(&mut c, &mut file_urls, RemoteFile { name: clean(&a.file_name), folder, url, size: a.size, mime: None, aliases: vec![], version: None });
                 }
                 c.assignments.push(Assignment {
                     title: f.name,
@@ -477,6 +491,7 @@ pub async fn content(s: &Session, course_id: &str) -> Result<CourseContent, LmsE
                         size: a.size,
                         mime: None,
                         aliases: vec![],
+                        version: None,
                     });
                 }
                 c.announcements.push(Announcement { title: n.title, posted: n.start_date.or(n.created_date), html });
@@ -576,7 +591,7 @@ fn walk(
                         *syllabus = Some(format!("<p>The syllabus is the file <a href=\"{}\">{}</a>.</p>", escape(url.as_str()), escape(&name)));
                     }
                     items.push(name.clone());
-                    push_file(c, file_urls, RemoteFile { name, folder: Some(folder.clone()), url, size: None, mime: None, aliases });
+                    push_file(c, file_urls, RemoteFile { name, folder: Some(folder.clone()), url, size: None, mime: None, aliases, version: None });
                 }
                 (TopicKind::Link, Some(at)) if !s.site.owns(&at) && matches!(at.scheme(), "https" | "http") => {
                     if syllabus.is_none() && is_syllabus(&t.title) {

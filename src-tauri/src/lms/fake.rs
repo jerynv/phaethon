@@ -25,6 +25,18 @@ pub fn status(code: u16) -> Reply {
     Reply { status: code, ctype: "application/json", headers: vec![], body: r#"{"errors":[{"message":"no"}]}"#.into() }
 }
 
+/// A body the server starts and then never finishes (a slow download), for cancelling.
+pub fn stalled(ctype: &'static str, first: &str) -> Reply {
+    Reply { status: 200, ctype, headers: vec![(STALL, "1".into())], body: first.into() }
+}
+
+/// `body` with an ETag: the server answers `304` to a request whose If-None-Match matches it.
+pub fn tagged(ctype: &'static str, body: impl Into<String>, etag: &str) -> Reply {
+    Reply { status: 200, ctype, headers: vec![("etag", etag.into())], body: body.into() }
+}
+
+const STALL: &str = "x-fake-stall";
+
 pub fn redirect(to: &str) -> Reply {
     Reply { status: 302, ctype: "text/html", headers: vec![("location", to.into())], body: String::new() }
 }
@@ -34,6 +46,7 @@ pub struct Seen {
     pub method: String,
     pub target: String,
     pub cookie: Option<String>,
+    pub if_none_match: Option<String>,
 }
 
 pub type Log = Arc<Mutex<Vec<Seen>>>;
@@ -62,9 +75,26 @@ pub async fn serve(route: Route) -> (String, Log) {
                 let mut first = head.split_whitespace();
                 let method = first.next().unwrap_or("").to_string();
                 let target = first.next().unwrap_or("/").to_string();
-                let cookie = head.lines().find_map(|l| l.to_ascii_lowercase().starts_with("cookie:").then(|| l[7..].trim().to_string()));
-                seen.lock().unwrap().push(Seen { method, target: target.clone(), cookie });
+                let header = |name: &str| {
+                    head.lines().find_map(|l| l.to_ascii_lowercase().starts_with(&format!("{name}:")).then(|| l[name.len() + 1..].trim().to_string()))
+                };
+                let cookie = header("cookie");
+                let if_none_match = header("if-none-match");
+                seen.lock().unwrap().push(Seen { method, target: target.clone(), cookie, if_none_match: if_none_match.clone() });
                 let r = route(&target);
+                let etag = r.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("etag")).map(|(_, v)| v.clone());
+                if etag.is_some() && etag == if_none_match {
+                    let _ = sock.write_all(format!("HTTP/1.1 304 X\r\netag: {}\r\nconnection: close\r\n\r\n", etag.unwrap_or_default()).as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                    return;
+                }
+                if r.headers.iter().any(|(k, _)| *k == STALL) {
+                    let head = format!("HTTP/1.1 200 X\r\ncontent-type: {}\r\ncontent-length: 100000000\r\nconnection: close\r\n\r\n", r.ctype);
+                    let _ = sock.write_all(head.as_bytes()).await;
+                    let _ = sock.write_all(r.body.as_bytes()).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                    return;
+                }
                 let extra: String = r.headers.iter().map(|(k, v)| format!("{k}: {v}\r\n")).collect();
                 let out = format!(
                     "HTTP/1.1 {} X\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n{extra}\r\n{}",

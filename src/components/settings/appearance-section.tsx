@@ -52,14 +52,14 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
         tokens={APPEARANCE_TOKENS}
         resetTheme
       />
-      <SettingGroup title="Theme">
+      <SettingGroup title="Theme" bare>
         <ThemeRow />
       </SettingGroup>
       <SettingGroup title="Text">
         <ReadingFontRow />
         <TextSizeLink />
       </SettingGroup>
-      <SettingGroup title="Colour">
+      <SettingGroup title="Accent">
         <HueRow
           name="--ph-accent-h"
           presets={ACCENT_PRESETS}
@@ -67,8 +67,8 @@ export function AppearanceSection({ headingId }: { headingId: string }) {
           check={() => "oklch(0.99 0 0)"}
         />
       </SettingGroup>
-      <Details summary="Advanced appearance" className="flex flex-col gap-5">
-        <SettingGroup title="Colour">
+      <Details summary="Advanced appearance" className="mt-1 [&>summary]:text-sm [&>summary]:font-medium [&>div]:space-y-6">
+        <SettingGroup title="Colour tuning">
           <TokenRow name="--ph-accent-c" />
           <HueRow name="--ph-neutral-h" presets={NEUTRAL_PRESETS} swatch={(h) => `oklch(0.9 0.035 ${h})`} check={(h) => `oklch(0.3 0.05 ${h})`} />
           <TokenRow name="--ph-neutral-c" />
@@ -157,7 +157,7 @@ function ThemeRow() {
   const sys = useSystemPrefs();
   const statusId = useId();
   return (
-    <div className="flex flex-col gap-3 px-4 py-3.5">
+    <div className="flex flex-col gap-3">
       <RadioGroup.Root
         aria-label="Theme"
         aria-describedby={statusId}
@@ -166,7 +166,7 @@ function ThemeRow() {
         onKeyDownCapture={radioArrowKeys((v) => setAppearance((p) => ({ ...p, theme: v as ThemePref })))}
         orientation="horizontal"
         loop
-        className="grid grid-cols-3 gap-3"
+        className="grid grid-cols-3 gap-2.5"
       >
         {THEMES.map((t) => (
           <RadioGroup.Item
@@ -174,11 +174,11 @@ function ThemeRow() {
             value={t.value}
             data-theme-card=""
             className={cn(
-              "group flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-raised p-1.5 pb-2 text-left transition-colors duration-(--ph-duration-fast) hover:border-ink-tertiary",
-              "data-[state=checked]:border-accent-fill data-[state=checked]:shadow-[0_0_0_var(--ph-border-width)_var(--ph-accent)]",
+              "group flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-transparent p-1 pb-2 text-left transition-colors duration-(--ph-duration-fast) hover:bg-hover",
+              "data-[state=checked]:border-accent-fill data-[state=checked]:bg-accent-soft/30",
             )}
           >
-            <span data-theme-preview="" className="flex h-(--ph-theme-preview-height) overflow-hidden rounded-md border border-line" aria-hidden="true">
+            <span data-theme-preview="" className="flex aspect-[5/2] w-full overflow-hidden rounded-md" aria-hidden="true">
               {t.value === "system" ? (
                 <>
                   <MiniWindow theme="light" />
@@ -188,7 +188,7 @@ function ThemeRow() {
                 <MiniWindow theme={t.value} />
               )}
             </span>
-            <span className="flex items-start gap-1.5 px-1 text-sm text-ink-secondary group-data-[state=checked]:font-semibold group-data-[state=checked]:text-ink">
+            <span className="flex items-start gap-1.5 px-1 text-sm text-ink-secondary group-data-[state=checked]:font-medium group-data-[state=checked]:text-ink">
               <Icon name={t.icon} className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
               <span className="min-w-0 flex-1 wrap-break-word">{t.label}</span>
               <RadioGroup.Indicator className="mt-0.5 shrink-0 text-accent-ink">

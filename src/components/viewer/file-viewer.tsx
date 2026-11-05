@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { DelimitedPreview, FilePreviewStatus, FilePreviewToolbar, ImagePreview, TextPreview } from "vic-ui";
 
 import { RichMarkdown } from "@/components/assistant-ui/elements/markdown-text";
 import { SyntaxHighlighter } from "@/components/assistant-ui/elements/syntax-highlighter";
@@ -10,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icon } from "@/icons";
-import { bytesToBase64, fileBytes, fileView, imageType, kindOfFile, type FileView, type ViewKind } from "@/lib/files";
+import { fileBytes, fileView, imageType, kindOfFile, type FileView, type ViewKind } from "@/lib/files";
 import { latexCompile, latexPdf, latexSave, type LatexOutcome } from "@/lib/latex";
 import { cn } from "@/lib/utils";
 import { formatBytes, typeLabel } from "@/runtime/attachments";
@@ -19,7 +20,7 @@ import { openSpaceFile } from "@/runtime/records";
 /** What the viewer shows. */
 export type ViewSource =
   /** A file in a space, or a course the space may see (read through the core's walls). */
-  | { kind: "space"; space: string; path: string }
+  | { kind: "space"; space: string; path: string; anchor?: string; headingIndex?: number }
   /** Bytes already here: a file being attached, or one just sent. */
   | { kind: "bytes"; name: string; mediaType?: string; size?: number; load: () => Promise<ArrayBuffer> }
   /** A LaTeX document (or figure) from a reply, compiled to a PDF. `space` lets it be saved. */
@@ -38,7 +39,7 @@ type Loaded =
   | { state: "latex"; outcome: LatexOutcome; pdf: ArrayBuffer | null; text: string };
 
 /** Read what `source` names: text inline, a PDF's or a picture's bytes, a document compiled. */
-function useLoaded(source: ViewSource, compileTex: boolean): Loaded {
+function useLoaded(source: ViewSource, compileTex: boolean, attempt: number): Loaded {
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
   useEffect(() => {
     let stale = false;
@@ -74,7 +75,7 @@ function useLoaded(source: ViewSource, compileTex: boolean): Loaded {
     return () => {
       stale = true;
     };
-  }, [source, compileTex]);
+  }, [source, compileTex, attempt]);
   return loaded;
 }
 
@@ -97,22 +98,21 @@ function CodeView({ text, language, label }: { text: string; language: string | 
   return <SyntaxHighlighter language={language ?? "text"} code={text} components={components} />;
 }
 
-/** A picture, fitted to the viewer or at its own size. */
+/** Ready, permission-checked inputs; Vic owns rendering and its object URLs. */
 function ImageView({ bytes, name, mediaType }: { bytes: ArrayBuffer; name: string; mediaType: string }) {
-  const [actual, setActual] = useState(false);
-  const src = useMemo(() => `data:${imageType(name, mediaType)};base64,${bytesToBase64(bytes)}`, [bytes, name, mediaType]);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex justify-end">
-        <Button type="button" variant="ghost" size="sm" aria-pressed={actual} onClick={() => setActual(!actual)}>
-          {actual ? "Fit to the window" : "Actual size"}
-        </Button>
-      </div>
-      <div tabIndex={0} role="region" aria-label={name} className="min-h-0 flex-1 overflow-auto rounded-lg border border-line bg-surface-sunken p-3">
-        <img src={src} alt={name} className={cn("mx-auto", actual ? "max-w-none" : "max-h-full max-w-full object-contain")} data-viewer-image="" />
-      </div>
-    </div>
-  );
+  const input = useMemo(() => new Uint8Array(bytes), [bytes]);
+  return <ImagePreview input={input} alt={name} mimeType={imageType(name, mediaType)} className="min-h-0 flex-1" />;
+}
+
+function DataView({ view }: { view: FileView }) {
+  const input = useMemo(() => new Blob([view.text ?? ""], { type: "text/plain" }), [view.text]);
+  const extension = view.name.toLowerCase().split(".").pop();
+  if (extension === "csv" || extension === "tsv") {
+    return <DelimitedPreview input={input} name={view.name} delimiter={extension === "tsv" ? "\t" : ","} className="min-h-0 max-h-none flex-1" />;
+  }
+  return view.language
+    ? <CodeView text={view.text ?? ""} language={view.language} label={view.name} />
+    : <TextPreview input={input} name={view.name} className="min-h-0 max-h-none flex-1" />;
 }
 
 /** Why there's no PDF, with the log one fold below. */
@@ -134,19 +134,15 @@ function LatexProblem({ outcome, source }: { outcome: Exclude<LatexOutcome, { st
 }
 
 /** What the viewer shows for each kind of file. */
-function Body({ source, loaded, base, onCompile }: { source: ViewSource; loaded: Loaded; base: string; onCompile: () => void }) {
+function Body({ source, loaded, base, onCompile, onRetry }: { source: ViewSource; loaded: Loaded; base: string; onCompile: () => void; onRetry: () => void }) {
   if (loaded.state === "loading") {
     return (
-      <p role="status" className="text-ink-secondary">
-        {source.kind === "latex" ? "Making the PDF… (this can take a few seconds)" : "Opening…"}
-      </p>
+      <FilePreviewStatus status="loading" title={source.kind === "latex" ? "Making PDF" : "Opening file"} />
     );
   }
   if (loaded.state === "error") {
     return (
-      <p role="alert" className="rounded-md border border-danger bg-danger-soft px-3 py-2 text-danger-ink" data-viewer-error="">
-        {loaded.message}
-      </p>
+      <div data-viewer-error=""><FilePreviewStatus status="error" title="Couldn’t open file" message={loaded.message} onRetry={onRetry} /></div>
     );
   }
   if (loaded.state === "latex") {
@@ -194,7 +190,7 @@ function Body({ source, loaded, base, onCompile }: { source: ViewSource; loaded:
         </div>
       );
     case "text":
-      return <CodeView text={view.text ?? ""} language={view.language} label={view.name} />;
+      return <DataView view={view} />;
     case "other":
       return (
         <p className="text-ink" data-viewer-other="">
@@ -268,7 +264,7 @@ function Actions({ source, loaded }: { source: ViewSource; loaded: Loaded }) {
   };
   const canOpen = loaded.state !== "error";
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
+    <FilePreviewToolbar label="File actions" className="justify-end">
       {said && (
         <p role="alert" className="me-auto text-sm text-danger-ink">
           {said.text}
@@ -281,7 +277,7 @@ function Actions({ source, loaded }: { source: ViewSource; loaded: Loaded }) {
       <Button type="button" variant="outline" disabled={!canOpen} onClick={() => void open(false)} data-viewer-open-app="">
         Open in its app
       </Button>
-    </div>
+    </FilePreviewToolbar>
   );
 }
 
@@ -313,11 +309,38 @@ export function FileViewer({
 function ViewerContent({ source, returnTo }: { source: ViewSource; returnTo?: HTMLElement | null }) {
   // A .tex file from the space can be compiled and shown as its PDF.
   const [compileTex, setCompileTex] = useState(false);
-  const loaded = useLoaded(source, compileTex);
+  const [attempt, setAttempt] = useState(0);
+  const loaded = useLoaded(source, compileTex, attempt);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (source.kind !== "space" || (!source.anchor && source.headingIndex === undefined) || loaded.state !== "file" || loaded.view.kind !== "markdown") return;
+    const target = source.anchor;
+    const frame = requestAnimationFrame(() => {
+      if (source.headingIndex !== undefined) {
+        const heading = contentRef.current?.querySelectorAll<HTMLElement>('[data-viewer-markdown] [data-md-depth="2"]')[source.headingIndex];
+        if (heading) { heading.scrollIntoView({ block: "start", behavior: "instant" }); heading.tabIndex = -1; heading.focus({ preventScroll: true }); return; }
+      }
+      const used = new Map<string, number>();
+      const headings = contentRef.current?.querySelectorAll<HTMLElement>("[data-viewer-markdown] :is(h1,h2,h3,h4,h5,h6)") ?? [];
+      for (const heading of headings) {
+        // Match the importer's Unicode heading anchors, including duplicate titles.
+        const base = (heading.textContent ?? "").toLowerCase().replaceAll(" ", "-").replace(/[^\p{L}\p{N}_-]/gu, "");
+        const n = used.get(base) ?? 0;
+        used.set(base, n + 1);
+        if ((n ? `${base}-${n}` : base) !== target && heading.id !== target) continue;
+        heading.scrollIntoView({ block: "start", behavior: "instant" });
+        heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+        break;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loaded, source]);
   const title = source.kind === "latex" ? source.title : source.kind === "space" ? nameOf(source.path) : source.name;
   const base = source.kind === "space" ? dirOf(source.path) : "";
   return (
     <DialogContent
+      ref={contentRef}
       className="flex h-[calc(100dvh-var(--ph-space)*8)] max-w-(--ph-viewer-width) flex-col gap-3 overflow-hidden"
       data-file-viewer={source.kind === "space" ? source.path : source.kind}
       onCloseAutoFocus={(e) => {
@@ -332,7 +355,7 @@ function ViewerContent({ source, returnTo }: { source: ViewSource; returnTo?: HT
         <DialogDescription className="text-sm wrap-anywhere">{describe(source, loaded)}</DialogDescription>
       </DialogHeader>
       <div className="flex min-h-0 flex-1 flex-col" data-viewer-body="">
-        <Body source={source} loaded={loaded} base={base} onCompile={() => setCompileTex(true)} />
+        <Body source={source} loaded={loaded} base={base} onCompile={() => setCompileTex(true)} onRetry={() => setAttempt((n) => n + 1)} />
       </div>
       <Actions source={source} loaded={loaded} />
     </DialogContent>

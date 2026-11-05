@@ -115,6 +115,28 @@
       if (cmd.startsWith("plugin:window|")) return null;
       switch (cmd) {
         case "dev_log": return;
+        case "voice_dictation_start": return;
+        case "lms_import_cancel": {
+          const running = M.lms?._imports?.[args.connection];
+          if (!running) return false;
+          running.cancelled = true;
+          return true;
+        }
+        case "lms_course_content": {
+          const parts = M.courseAccess?.[args.space]?.[args.course] ?? [];
+          if (!parts.length) throw "This space cannot access that course.";
+          const connId = args.course.split('/')[0];
+          const courseId = args.course.slice(connId.length + 1);
+          const course = M.lms?.courses?.find(c => c.id === courseId);
+          const folder = `courses/${course?.name ?? courseId}`;
+          const entries = M.lmsContent?.[args.course] ?? [
+            { path: `${folder}/overview.md`, title: 'Course overview', kind: 'overview' },
+            { path: `${folder}/modules.md`, title: 'Modules', kind: 'module' },
+            { path: `${folder}/files/syllabus.pdf`, title: 'Syllabus', kind: 'file', bytes: 2048 },
+            { path: `${folder}/assignments.md`, title: 'Assignments', kind: 'assignment' },
+          ];
+          return { entries: entries.filter(e => parts.includes(e.kind === 'module' || e.kind === 'page' ? 'overview' : e.kind === 'file' ? 'files' : e.kind === 'assignment' ? 'assignments' : 'overview')), updated: Date.now() };
+        }
         case "settings_get": return M.prov ? { ...M.settings, ...providerView() } : M.settings;
         case "settings_set_backend": M.settings.backend = args.backend; return;
         case "settings_set_model": M.settings.model = args.model ?? "claude-opus-5-5"; return;
@@ -665,24 +687,34 @@
               c.signedIn = false;
               throw "You’ve been signed out of your course site. Sign in again.";
             }
-            return L.courses.map((x) => ({ ...x, imported: c.courses.includes(x.id) }));
+            return L.courses.map((x) => ({ ...x, imported: !x.partial && c.courses.includes(x.id) }));
           }
           // lms_import: per course a few steps, then its summary; a failed course is an error event and the import goes on.
           for (const s of args.spaces ?? []) spaceOk(s);
           const id = args.onEvent.id ?? Number(String(args.onEvent).split(":")[1]);
           let index = 0;
           const send = (message) => callbacks[id]?.({ index: index++, message });
+          const token = { cancelled: false };
+          (L._imports ??= {})[args.connection] = token;
+          const stopped = () => {
+            if (!token.cancelled) return false;
+            send({ type: "cancelled" }); send({ type: "done" });
+            delete L._imports[args.connection];
+            return true;
+          };
           // As service.rs: the step codes the core sends, each with its own count.
           const STEPS = [["reading", 0, 1], ["reading", 1, 1], ["files", 0, 4], ["files", 2, 4], ["files", 4, 4], ["readings", 0, 1], ["readings", 1, 1], ["writing", 0, 1]];
           for (const courseId of args.courseIds) {
             const course = L.courses.find((x) => x.id === courseId);
             for (let i = 0; i < STEPS.length; i++) {
               await sleep(L.step ?? 60);
+              if (stopped()) return;
               const [step, done, total] = STEPS[i];
               send({ type: "progress", course: courseId, step, done, total });
               if ((courseId === L.failCourse || courseId === L.signedOutAt) && i === 0) break;
             }
             await sleep(L.step ?? 60);
+            if (stopped()) return;
             if (courseId === L.signedOutAt) {
               send({ type: "error", message: "signedOut" });
               break;
@@ -709,6 +741,7 @@
             });
           }
           c.lastSync = Date.now();
+          delete L._imports[args.connection];
           send({ type: "done" });
           return;
         }

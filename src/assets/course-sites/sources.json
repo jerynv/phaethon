@@ -1,5 +1,8 @@
 {
   "iu.svg": "https://brand.iu.edu/",
   "moodle.svg": "https://raw.githubusercontent.com/moodle/moodle/main/.github/moodlelogo.svg",
-  "canvas.svg": "https://raw.githubusercontent.com/instructure/canvas-lms/master/public/images/canvas-logo.svg"
+  "canvas.svg": "https://raw.githubusercontent.com/instructure/canvas-lms/master/public/images/canvas-logo.svg",
+  "canvas-mark.svg": "Square crop of canvas.svg official Canvas mark; same original paths.",
+  "moodle-mark.svg": "Square crop of moodle.svg official Moodle M and cap; same original paths.",
+  "fallbacks": "Blackboard and Brightspace currently use labelled monograms; no third-party logo asset is represented as official."
 }

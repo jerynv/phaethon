@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -73,6 +74,12 @@ pub enum Page {
 /// Recognise `pages` of the PDF at `file` (or, with `pages` = `None`, the
 /// picture at `file`, reported as page 1) in a child process of `exe`.
 pub fn recognise(exe: &Path, file: &Path, pages: Option<&[u32]>) -> BTreeMap<u32, Page> {
+    recognise_until(exe, file, pages, None)
+}
+
+/// [`recognise`], with the child killed as soon as `stop` is set (the pages not
+/// done then come back failed; the caller checks `stop` and discards them).
+pub fn recognise_until(exe: &Path, file: &Path, pages: Option<&[u32]>, stop: Option<&AtomicBool>) -> BTreeMap<u32, Page> {
     let wanted: Vec<u32> = pages.map(|p| p.to_vec()).unwrap_or_else(|| vec![1]);
     let picture = pages.is_none();
     supervise(
@@ -87,6 +94,7 @@ pub fn recognise(exe: &Path, file: &Path, pages: Option<&[u32]>) -> BTreeMap<u32
         &wanted,
         PAGE_TIMEOUT,
         FILE_TIMEOUT,
+        stop,
     )
 }
 
@@ -102,11 +110,12 @@ struct Line {
 /// Run children made by `make` (given the pages still to do) until every page
 /// has an answer: a page that takes longer than `page_limit`, or that the
 /// child dies on, is marked failed and the next child starts after it.
-pub(crate) fn supervise(make: impl Fn(&[u32]) -> Command, pages: &[u32], page_limit: Duration, file_limit: Duration) -> BTreeMap<u32, Page> {
+pub(crate) fn supervise(make: impl Fn(&[u32]) -> Command, pages: &[u32], page_limit: Duration, file_limit: Duration, stop: Option<&AtomicBool>) -> BTreeMap<u32, Page> {
+    let stopped = || stop.is_some_and(|s| s.load(Ordering::SeqCst));
     let started = Instant::now();
     let mut left: Vec<u32> = pages.to_vec();
     let mut out = BTreeMap::new();
-    while !left.is_empty() {
+    while !left.is_empty() && !stopped() {
         let Some(budget) = file_limit.checked_sub(started.elapsed()) else { break };
         let mut cmd = make(&left);
         let mut child = match cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
@@ -134,8 +143,20 @@ pub(crate) fn supervise(make: impl Fn(&[u32]) -> Command, pages: &[u32], page_li
         });
         let deadline = Instant::now() + budget;
         let mut why_stopped = None;
+        // Each page gets `page_limit` from the last answer; waits are short so a stop is seen quickly.
+        let mut page_deadline = Instant::now() + page_limit;
         loop {
-            let wait = page_limit.min(deadline.saturating_duration_since(Instant::now()));
+            if stopped() {
+                why_stopped = Some(super::super::cancel::CANCELLED);
+                break;
+            }
+            let until = page_deadline.min(deadline);
+            let now = Instant::now();
+            if now >= until {
+                why_stopped = Some("recognising its text took too long");
+                break;
+            }
+            let wait = (until - now).min(Duration::from_millis(100));
             match rx.recv_timeout(wait) {
                 Ok(raw) => {
                     let Ok(l) = serde_json::from_str::<Line>(raw.trim()) else { continue };
@@ -147,14 +168,12 @@ pub(crate) fn supervise(make: impl Fn(&[u32]) -> Command, pages: &[u32], page_li
                         (None, None) => Page::Text(String::new()),
                     };
                     out.insert(l.page, page);
+                    page_deadline = Instant::now() + page_limit;
                     if left.is_empty() {
                         break;
                     }
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    why_stopped = Some("recognising its text took too long");
-                    break;
-                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     why_stopped = Some("text recognition stopped on it");
                     break;
@@ -168,13 +187,15 @@ pub(crate) fn supervise(make: impl Fn(&[u32]) -> Command, pages: &[u32], page_li
         drop(reader);
         // The child works in order, so the page it stopped on is the first one left.
         if let Some(why) = why_stopped
+            && why != super::super::cancel::CANCELLED
             && !left.is_empty()
         {
             out.insert(left.remove(0), Page::Failed(why.into()));
         }
     }
+    let why = if stopped() { "the import was cancelled" } else { "there wasn’t time to recognise its text" };
     for p in left {
-        out.insert(p, Page::Failed("there wasn’t time to recognise its text".into()));
+        out.insert(p, Page::Failed(why.into()));
     }
     out
 }
@@ -493,7 +514,7 @@ mod tests {
 
     #[test]
     fn every_page_answered_once() {
-        let r = supervise(sh(r#"for p in "$@"; do echo "{\"page\":$p,\"text\":\"page $p\"}"; done"#), &[2, 5], Duration::from_secs(5), Duration::from_secs(20));
+        let r = supervise(sh(r#"for p in "$@"; do echo "{\"page\":$p,\"text\":\"page $p\"}"; done"#), &[2, 5], Duration::from_secs(5), Duration::from_secs(20), None);
         assert_eq!(r[&2], Page::Text("page 2".into()));
         assert_eq!(r[&5], Page::Text("page 5".into()));
         assert_eq!(r.len(), 2);
@@ -504,7 +525,7 @@ mod tests {
         // Page 3 hangs; every new child starts after the page given up.
         let script = r#"for p in "$@"; do if [ "$p" = 3 ]; then sleep 30; fi; echo "{\"page\":$p,\"text\":\"ok $p\"}"; done"#;
         let started = Instant::now();
-        let r = supervise(sh(script), &[1, 3, 4], Duration::from_millis(700), Duration::from_secs(20));
+        let r = supervise(sh(script), &[1, 3, 4], Duration::from_millis(700), Duration::from_secs(20), None);
         assert_eq!(r[&1], Page::Text("ok 1".into()));
         assert_eq!(r[&3], Page::Failed("recognising its text took too long".into()));
         assert_eq!(r[&4], Page::Text("ok 4".into()));
@@ -512,19 +533,36 @@ mod tests {
     }
 
     #[test]
+    fn a_stop_kills_the_recogniser_at_once() {
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+        let s2 = stop.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            s2.store(true, Ordering::SeqCst);
+        });
+        let started = Instant::now();
+        // Page 1 answers; page 2 would take 30 s.
+        let script = r#"echo '{"page":1,"text":"one"}'; sleep 30; echo '{"page":2,"text":"two"}'"#;
+        let r = supervise(sh(script), &[1, 2], Duration::from_secs(60), Duration::from_secs(600), Some(&stop));
+        assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+        assert_eq!(r[&1], Page::Text("one".into()));
+        assert_eq!(r[&2], Page::Failed("the import was cancelled".into()));
+    }
+
+    #[test]
     fn a_crash_marks_that_page_and_the_file_limit_ends_it() {
         let crash = r#"for p in "$@"; do if [ "$p" = 2 ]; then kill -9 $$; fi; echo "{\"page\":$p,\"text\":\"\"}"; done"#;
-        let r = supervise(sh(crash), &[1, 2, 3], Duration::from_secs(5), Duration::from_secs(20));
+        let r = supervise(sh(crash), &[1, 2, 3], Duration::from_secs(5), Duration::from_secs(20), None);
         assert_eq!(r[&1], Page::Text(String::new()));
         assert_eq!(r[&2], Page::Failed("text recognition stopped on it".into()));
         assert_eq!(r[&3], Page::Text(String::new()));
 
         let started = Instant::now();
-        let r = supervise(sh("sleep 30"), &[1, 2], Duration::from_secs(5), Duration::from_millis(600));
+        let r = supervise(sh("sleep 30"), &[1, 2], Duration::from_secs(5), Duration::from_millis(600), None);
         assert!(started.elapsed() < Duration::from_secs(5));
         assert!(matches!(&r[&1], Page::Failed(_)) && matches!(&r[&2], Page::Failed(_)), "{r:?}");
 
-        let r = supervise(|_: &[u32]| Command::new("/nonexistent/recogniser"), &[7], Duration::from_secs(1), Duration::from_secs(1));
+        let r = supervise(|_: &[u32]| Command::new("/nonexistent/recogniser"), &[7], Duration::from_secs(1), Duration::from_secs(1), None);
         assert!(matches!(&r[&7], Page::Failed(e) if e.contains("couldn’t start")));
     }
 

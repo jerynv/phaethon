@@ -81,8 +81,8 @@ importers:
         specifier: ^0.4.13
         version: 0.4.13(tailwindcss@4.3.3)
       vic-ui:
-        specifier: file:vendor/vic-ui-a2521a9.tgz
-        version: file:vendor/vic-ui-a2521a9.tgz(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@19.3.1)(react@19.3.0)(redux@5.0.1)
+        specifier: file:vendor/vic-ui-603c207.tgz
+        version: file:vendor/vic-ui-603c207.tgz(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@19.3.1)(react@19.3.0)(redux@5.0.1)
       zustand:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
@@ -4100,8 +4100,8 @@ packages:
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
 
-  vic-ui@file:vendor/vic-ui-a2521a9.tgz:
-    resolution: {integrity: sha512-utpbEi0o0hcZ1drdlvEteULht+w+GoG9whFmhfqKy8ItE6H9qX3WjzcKTQCpDHSNmcmU0GaZYbqC4Xa7gwStaw==, tarball: file:vendor/vic-ui-a2521a9.tgz}
+  vic-ui@file:vendor/vic-ui-603c207.tgz:
+    resolution: {integrity: sha512-mnBdRB7lwbJPrOtUBy0UVDOMw3WCB/8eEEDXipFfLbcXPCj4Q9ZMvrkHvtg5fss6Uy+4VZfGmhhL8Ej3QRx7bg==, tarball: file:vendor/vic-ui-603c207.tgz}
     version: 0.1.0
     engines: {node: '>=22'}
     peerDependencies:
@@ -8656,7 +8656,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vic-ui@file:vendor/vic-ui-a2521a9.tgz(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@19.3.1)(react@19.3.0)(redux@5.0.1):
+  vic-ui@file:vendor/vic-ui-603c207.tgz(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@19.3.1)(react@19.3.0)(redux@5.0.1):
     dependencies:
       '@base-ui/react': 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@floating-ui/dom': 1.8.0

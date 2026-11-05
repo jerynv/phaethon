@@ -140,6 +140,37 @@ pub fn temp_for(root: &Path, rel: &Path) -> io::Result<(fs::File, PathBuf, PathB
     unreachable!()
 }
 
+/// Removes a temporary file when dropped (a download abandoned part way, a
+/// cancelled import), unless [`TempGuard::keep`] was called once it was moved.
+#[derive(Debug)]
+pub struct TempGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TempGuard {
+    pub fn new(tmp: &Path) -> TempGuard {
+        TempGuard { path: tmp.to_path_buf(), armed: true }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The file was moved into place (or removed already): nothing to clean up.
+    pub fn keep(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TempGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
 /// Move a finished temporary file into place. A symlink at `dest` is replaced
 /// (rename never follows it); a folder there is refused.
 pub fn finish(tmp: &Path, dest: &Path) -> io::Result<()> {
@@ -162,6 +193,21 @@ pub fn write(root: &Path, rel: &Path, bytes: &[u8]) -> io::Result<()> {
     }
     drop(f);
     finish(&tmp, &dest)
+}
+
+/// [`write`], unless `root/rel` is already a plain file holding exactly `bytes`
+/// (then nothing is touched, so its modified time and any sync stay quiet).
+/// `Ok(true)` when it wrote.
+pub fn write_if_changed(root: &Path, rel: &Path, bytes: &[u8]) -> io::Result<bool> {
+    if same_bytes(&root.join(rel), bytes) {
+        return Ok(false);
+    }
+    write(root, rel, bytes).map(|_| true)
+}
+
+/// True when `path` is a plain file (not a link) whose contents are `bytes`.
+pub fn same_bytes(path: &Path, bytes: &[u8]) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64) && fs::read(path).is_ok_and(|b| b == bytes)
 }
 
 fn nanos() -> u128 {

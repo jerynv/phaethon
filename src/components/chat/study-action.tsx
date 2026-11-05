@@ -180,7 +180,7 @@ export function StudyAction({ code }: { code: string }) {
   return (
     <section
       aria-labelledby={titleId}
-      className="my-4 flex max-w-(--ph-measure) flex-col gap-3 rounded-xl border border-line bg-raised px-4 py-3.5 shadow-sm forced-colors:border-[CanvasText]"
+      className="my-4 flex max-w-(--ph-measure) flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3.5 forced-colors:border-[CanvasText]"
       data-study-action={read.state === "writing" ? "writing" : !plan ? "checking" : run?.at ?? (made ? "made" : busy ? "running" : "ready")}
     >
       <div className="flex items-start gap-3">

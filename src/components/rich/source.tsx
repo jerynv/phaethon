@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
-import { Details } from "@/components/ui/details";
+import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 
 /** Source text as a block that scrolls sideways (and takes focus to, by keyboard). */
@@ -22,10 +22,10 @@ export function SourceBlock({ code, label, className }: { code: string; label: s
 /** "Show the source" folded under a diagram, a figure or a document. */
 export function ShowSource({ code, what, children }: { code: string; what: string; children?: ReactNode }) {
   return (
-    <Details summary={`Show the ${what}’s source`} className="w-full [&>div]:w-full">
-      {children}
-      <SourceBlock code={code} label={`The ${what}’s source`} />
-    </Details>
+    <details className="w-full text-xs text-ink-secondary" data-source-disclosure="">
+      <summary aria-label={`Show the ${what}’s source`} className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm py-1 text-xs text-ink-secondary hover:text-ink [&::-webkit-details-marker]:hidden"><Icon name="file-text" className="size-3" />Source</summary>
+      <div className="pt-1">{children}<SourceBlock code={code} label={`The ${what}’s source`} /></div>
+    </details>
   );
 }
 

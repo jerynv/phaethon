@@ -144,12 +144,15 @@ export function PlanView({ space }: { space: Space }) {
           </div>
         )}
         {courses.length > 0 && <div className="flex min-w-0 items-center gap-2" data-plan-course=""><label htmlFor={`${headingId}-course`} className="shrink-0 text-sm text-ink-secondary">Course</label><NativeSelect id={`${headingId}-course`} value={course ?? ""} onChange={(event) => { setCourse(event.target.value || null); setDay(null); }} data-plan-course-filter="" className="max-w-full min-w-0 w-auto"><option value="">All courses</option>{courses.map((item) => <option key={item.folder} value={item.folder}>{item.name}</option>)}</NativeSelect></div>}
-        <div className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold text-ink">{week === 0 ? "Next seven days" : `${dayName(addDays(today, week * 7))} – ${dayName(addDays(today, week * 7 + 6))}`}</h3><div className="flex gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Previous week" disabled={week === 0} onClick={() => { setWeek((value) => Math.max(0, value - 1)); setDay(null); }}><Icon name="chevron-left" /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => { setWeek((value) => value + 1); setDay(null); }}><Icon name="chevron-right" /></Button></div></div>
-        <nav aria-label="Agenda days" className="grid grid-cols-7 gap-1" data-plan-week="">
+        <div className="flex items-center justify-between gap-2"><h3 className="text-lg font-medium text-ink">{week === 0 ? "Next seven days" : `${dayName(addDays(today, week * 7))} – ${dayName(addDays(today, week * 7 + 6))}`}</h3><div className="flex gap-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Previous week" disabled={week === 0} onClick={() => { setWeek((value) => Math.max(0, value - 1)); setDay(null); }}><Icon name="chevron-left" /></Button><Button type="button" variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => { setWeek((value) => value + 1); setDay(null); }}><Icon name="chevron-right" /></Button></div></div>
+        <nav aria-label="Agenda days" className="grid grid-cols-7 gap-1 rounded-lg bg-surface-sunken p-1" data-plan-week="">
           {Array.from({ length: 7 }, (_, i) => addDays(today, week * 7 + i)).map((date) => {
             const count = agenda.filter((item) => localDay(item.due) === date).length;
             const active = day === date;
-            return <Button key={date} type="button" variant={active ? "default" : "ghost"} aria-pressed={active} onClick={() => setDay(active ? null : date)} className="h-auto [&>.ui-button-face]:h-auto [&>.ui-button-face]:px-1 [&>.ui-button-face]:py-1"><span className="flex flex-col gap-0.5"><span className="text-xs font-normal">{new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })}</span><span className="text-lg tabular-nums">{Number(date.slice(-2))}</span><span className="text-xs font-normal">{count ? `${count} due` : "—"}</span></span></Button>;
+            return <button key={date} type="button" aria-pressed={active} aria-label={`${dayName(date)}${count ? `, ${count} due` : ""}`} onClick={() => setDay(active ? null : date)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-colors", active ? "bg-accent-soft text-accent-soft-ink" : "text-ink-secondary hover:bg-hover")}>
+              <span className="text-xs font-normal">{new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })}</span>
+              <span className="flex items-center gap-1.5 text-lg font-medium tabular-nums text-ink">{Number(date.slice(-2))}{count > 0 && <span className="size-1 rounded-full bg-warning-ink" aria-hidden="true" />}</span>
+            </button>;
           })}
         </nav>
         <ComingUp space={space.id} items={upcoming === null ? null : agenda.filter((item) => day ? localDay(item.due) === day : localDay(item.due) >= addDays(today, week * 7) && localDay(item.due) <= addDays(today, week * 7 + 6))} />
@@ -373,7 +376,7 @@ function ComingUp({ space, items }: { space: string; items: Upcoming[] | null })
   const hidden = hiddenCourses(useCourseReach(space), ["overview", "assignments"]);
   const shown = (items ?? []).slice(0, 12);
   return (
-    <WorkspaceSection title="Agenda" titleId={id} className="gap-2 pt-3" data-plan-upcoming="">
+    <WorkspaceSection title="Agenda" titleId={id} className="gap-2 border-t-0 pt-1" data-plan-upcoming="">
       {items === null ? (
         <p className="text-base text-ink-secondary">Loading…</p>
       ) : shown.length === 0 && hidden ? (
@@ -385,14 +388,13 @@ function ComingUp({ space, items }: { space: string; items: Upcoming[] | null })
           {shown.map((u) => (
             <li key={`${u.link}-${u.due}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
               <div className="flex min-w-0 flex-1 basis-48 flex-col">
-                <span className="text-base font-medium text-ink wrap-break-word">{u.title}</span>
+                <span className="text-base font-normal text-ink wrap-break-word">{u.title}</span>
                 <span className="text-sm text-ink-secondary">
                   {u.course} · due {new Date(u.due).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
                 </span>
               </div>
-              {u.link && <Button type="button" variant="ghost" size="sm" onClick={() => void openFile(space, u.link.split("#")[0])} aria-label={`Details of ${u.title}`}>
+              {u.link && <Button type="button" variant="ghost" size="icon-sm" className="text-ink-secondary" onClick={() => void openFile(space, u.link.split("#")[0])} aria-label={`Details of ${u.title}`}>
                 <Icon name="file-text" />
-                Details
               </Button>}
             </li>
           ))}

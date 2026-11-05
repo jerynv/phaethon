@@ -1,4 +1,4 @@
-import { NativeSelect } from "vic-ui";
+import { Select } from "vic-ui";
 import { useId } from "react";
 
 import { effective, setAppearance, setToken, setWideReading, useAppearance, useSystemPrefs } from "@/theme";
@@ -7,22 +7,23 @@ import type { ReadingFont } from "@/theme/tokens";
 import { SettingGroup, SettingRow, SwitchRow, TokenRow } from "./controls";
 import { SectionReset } from "./section-reset";
 
-const FONTS: { value: ReadingFont; label: string }[] = [
-  { value: "atkinson", label: "Atkinson Hyperlegible" },
-  { value: "opendyslexic", label: "OpenDyslexic" },
-  { value: "lexend", label: "Lexend" },
-  { value: "system", label: "System font" },
+const FONTS: { value: ReadingFont; label: string; family: string }[] = [
+  { value: "atkinson", label: "Atkinson Hyperlegible", family: '"Atkinson Hyperlegible Next Variable", sans-serif' },
+  { value: "opendyslexic", label: "OpenDyslexic", family: '"OpenDyslexic", sans-serif' },
+  { value: "lexend", label: "Lexend", family: '"Lexend Variable", sans-serif' },
+  { value: "system", label: "System font", family: "var(--ph-font-fallback)" },
 ];
 
-/** T3 Code's settings use compact native selectors for finite preference lists. */
+/** Vic renders both the field and floating options; each option previews its real face. */
 export function ReadingFontRow() {
   const a = useAppearance();
   const id = useId();
   return (
     <SettingRow label="Reading font" htmlFor={id}>
-      <NativeSelect id={id} data-reading-font="" value={a.readingFont} onChange={(e) => setAppearance((p) => ({ ...p, readingFont: e.target.value as ReadingFont }))}>
-        {FONTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-      </NativeSelect>
+      <div data-reading-font="">
+        <Select id={id} aria-label="Reading font" value={a.readingFont} onValueChange={(value) => setAppearance((p) => ({ ...p, readingFont: value as ReadingFont }))}
+          items={FONTS.map((font) => ({ value: font.value, text: font.label, label: <span data-font-preview={font.value} style={{ fontFamily: font.family }}>{font.label}</span> }))} />
+      </div>
     </SettingRow>
   );
 }

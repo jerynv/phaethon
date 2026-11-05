@@ -403,7 +403,7 @@ export function ComposerAttachments({ tray }: { tray: AttachmentTray }) {
           // so showing the files never makes the message box taller. In the tray every chip shows
           // whole (else the files fold), so the list never scrolls there.
           folded
-            ? "absolute start-0 bottom-full z-20 mb-2 max-h-[min(20rem,40dvh)] w-full overflow-y-auto rounded-lg border border-line bg-raised shadow-lg"
+            ? "absolute start-0 bottom-full z-20 mb-2 max-h-[min(20rem,40dvh)] w-full overflow-y-auto rounded-lg border border-line bg-surface"
             // Room for two rows of chips (with Larger click targets too) where the window allows it.
             : "max-h-[min(12rem,20dvh)] overflow-hidden",
         )}

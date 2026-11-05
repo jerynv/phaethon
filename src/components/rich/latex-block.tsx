@@ -88,11 +88,11 @@ export function LatexDocumentCard({ source }: { source: string }) {
   return (
     <section
       aria-label={`LaTeX document: ${title}`}
-      className="my-4 flex w-full max-w-(--ph-measure) flex-col gap-2 rounded-xl border border-line bg-raised p-3 shadow-sm first:mt-0"
+      className="my-4 flex w-full max-w-(--ph-measure) flex-col gap-2 rounded-lg bg-surface p-3 first:mt-0"
       data-latex-card=""
     >
       <div className="flex items-start gap-3">
-        <span aria-hidden="true" className="flex size-(--ph-control-height-lg) shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-ink-secondary">
+        <span aria-hidden="true" className="flex size-(--ph-control-height-lg) shrink-0 items-center justify-center rounded-md bg-surface-sunken text-ink-secondary">
           <Icon name="file-text" />
         </span>
         <div className="flex min-w-0 flex-col">

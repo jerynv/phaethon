@@ -1,11 +1,14 @@
 import { Checkbox } from "vic-ui";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
-import { openCourseImport, sitesChanged, useRun, useSitesVersion } from "@/components/lms/import-store";
-import { connectionName, hostOf, kindLabel, plural, whenText } from "@/components/lms/sites";
-import { MaterialLines } from "@/components/study/material-note";
+import { cancelImport, openCourseImport, sitesChanged, useRun, useSitesVersion } from "@/components/lms/import-store";
+import { connectionName, kindLabel, plural, whenText } from "@/components/lms/sites";
+import { MaterialFiles } from "@/components/lms/material-files";
+import { CourseContentBrowser } from "@/components/lms/course-content";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import "@/components/lms/lms.css";
 import { Button } from "@/components/ui/button";
-import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
 import {
   COURSE_PARTS,
@@ -20,7 +23,7 @@ import {
 } from "@/lib/lms";
 import { useActiveSpaceId, useSpaces, type Space } from "@/lib/spaces";
 
-import { SectionHeader, SettingGroup } from "./controls";
+import { SectionHeader } from "./controls";
 import { useStatus } from "./status";
 import { CourseSiteMark } from "./course-site-mark";
 
@@ -36,6 +39,10 @@ export function CoursesSection({ headingId }: { headingId: string }) {
   const [list, setList] = useState<LmsConnection[] | null>(null);
   const [access, setAccess] = useState<CourseAccessView | null>(null);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState("");
+  const [filter, setFilter] = useState("");
+  const [mode, setMode] = useState<"access" | "content">("access");
+  const [overview, setOverview] = useState<"courses" | "sites">("courses");
   const importRef = useRef<HTMLButtonElement>(null);
   const run = useRun();
   const runEnded = run && run.status !== "running" ? run.key : 0;
@@ -54,64 +61,50 @@ export function CoursesSection({ headingId }: { headingId: string }) {
   // Again once an import ends (its last import and courses changed), or a sign-in finished.
   useEffect(load, [load, runEnded, changed]);
 
-  return (
-    <>
-      <SectionHeader
-        id={headingId}
-        title="Course sites"
-        action={<Button ref={importRef} type="button" size="sm" data-sites-import="" onClick={() => openCourseImport({ space: active })}><Icon name="plus" />Connect site</Button>}
-      />
-      {error ? (
-        <p role="alert" className="flex items-start gap-2 px-1 text-sm text-danger-ink">
-          <Icon name="error" className="mt-0.5 shrink-0" />
-          <span className="min-w-0 wrap-break-word">Your course sites couldn’t be read. {error}</span>
-        </p>
-      ) : list === null || access === null ? (
-        <p className="px-1 text-sm text-ink-secondary">Loading…</p>
-      ) : (
-        <>
-          <SettingGroup title="Connected sites">
-            <div data-course-sites="" className="flex flex-col divide-y divide-line">
-              {list.length === 0 && <p className="px-4 pt-3.5 text-sm text-ink-secondary">No course site connected.</p>}
-              {list.map((c) => (
-                <SiteRow key={c.id} space={active} connection={c} onSignedOut={load} />
-              ))}
-            </div>
-          </SettingGroup>
-          {access.courses.length > 0 && (
-            <SettingGroup
-              title="Course access"
-              bare
-            >
-              {access.problems.length > 0 && (
-                <div className="flex flex-col gap-1 rounded-md bg-warning-soft px-3 py-2.5 text-sm text-warning-ink forced-colors:border forced-colors:border-[CanvasText]" data-access-problems="">
-                  <p className="font-medium">Some lines of course-access.json were skipped:</p>
-                  <ul className="flex list-disc flex-col ps-4">
-                    {access.problems.map((p) => (
-                      <li key={p}>{p}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="flex flex-col gap-4">
-                {access.courses.map((c) => (
-                  <AccessGrid
-                    key={c.key}
-                    course={c}
-                    spaces={spaces}
-                    access={access.access}
-                    onSaved={(space, parts) =>
-                      setAccess((a) => (a ? { ...a, access: { ...a.access, [space]: { ...(a.access[space] ?? {}), [c.key]: parts } } } : a))
-                    }
-                  />
-                ))}
-              </div>
-            </SettingGroup>
-          )}
-        </>
-      )}
-    </>
-  );
+  const course = access?.courses.find(c => c.key === selected);
+  const canRead = (id: string) => !!course && (access?.access[id]?.[course.key]?.length ?? 0) > 0;
+  const viewerSpace = canRead(active) ? active : spaces.find(s => canRead(s.id))?.id;
+  const previous = useRef("");
+  useLayoutEffect(() => {
+    if (selected) document.getElementById(headingId)?.focus();
+    else if (previous.current) document.querySelector<HTMLElement>(`[data-course-select="${CSS.escape(previous.current)}"]`)?.focus();
+    previous.current = selected;
+  }, [selected, headingId]);
+
+  return <>
+    <SectionHeader id={headingId} title={course?.name ?? "Course sites"} action={course ? <Button type="button" variant="ghost" size="sm" data-course-back="" onClick={() => setSelected("")}><Icon name="chevron-left" />Courses</Button> : <Button ref={importRef} type="button" size="sm" data-sites-import="" onClick={() => openCourseImport({ space: active })}><Icon name="plus" />Connect site</Button>} />
+    {run?.status === "running" && <div className="flex flex-wrap items-center gap-2 rounded-md bg-accent-soft px-3 py-2 text-sm" data-course-import-active="">
+      <Icon name="spinner" className="size-3.5 shrink-0 text-accent-soft-ink motion-safe:animate-spin" />
+      <span className="min-w-0 flex-1 text-accent-soft-ink">Importing · {run.courses.filter(c => c.result).length}/{run.courses.length} courses</span>
+      <Button type="button" variant="ghost" size="xs" onClick={() => openCourseImport({ space: run.space, at: "run" })}>Details</Button>
+      <Button type="button" variant="ghost" size="xs" className="text-danger-ink" disabled={run.cancelling} onClick={() => void cancelImport()} data-settings-import-cancel="">{run.cancelling ? "Stopping…" : "Stop"}</Button>
+    </div>}
+    {error ? <p role="alert" className="text-sm text-danger-ink">{error}</p> : list === null || access === null ? <p role="status" className="text-sm text-ink-secondary">Loading course sites…</p> : course ? <div className="lms-course-panel flex min-h-0 flex-col gap-3" data-course-detail={course.key}>
+      <div className="flex items-center gap-1 border-b border-line pb-2" role="group" aria-label="Course settings">
+        <button type="button" aria-pressed={mode === "access"} onClick={() => setMode("access")} className={cn("rounded-md px-2.5 py-1.5 text-sm", mode === "access" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Space access</button>
+        <button type="button" aria-pressed={mode === "content"} onClick={() => setMode("content")} data-browse-course="" className={cn("rounded-md px-2.5 py-1.5 text-sm", mode === "content" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Browse content</button>
+      </div>
+      {mode === "access" ? <AccessGrid key={course.key} course={course} spaces={spaces} access={access.access} viewerSpace={viewerSpace} onSaved={(space, parts) => setAccess(a => a ? { ...a, access: { ...a.access, [space]: { ...(a.access[space] ?? {}), [course.key]: parts } } } : a)} /> : viewerSpace ? <CourseContentBrowser key={`${course.key}/${viewerSpace}`} course={course} space={viewerSpace} /> : <p className="text-sm text-ink-secondary">Give a space access to browse this course.</p>}
+    </div> : <>
+      <div className="flex gap-1 border-b border-line pb-2" role="group" aria-label="Course sites view">
+        <button type="button" data-course-overview-tab="courses" aria-pressed={overview === "courses"} onClick={() => setOverview("courses")} className={cn("rounded-md px-2.5 py-1.5 text-sm", overview === "courses" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Courses <span className="ms-1 text-xs text-ink-tertiary">{access.courses.length}</span></button>
+        <button type="button" data-course-overview-tab="sites" aria-pressed={overview === "sites"} onClick={() => setOverview("sites")} className={cn("rounded-md px-2.5 py-1.5 text-sm", overview === "sites" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Connected sites <span className="ms-1 text-xs text-ink-tertiary">{list.length}</span></button>
+      </div>
+      {overview === "sites" ? <div><div data-course-sites="" className="flex flex-col divide-y divide-line">
+        {!list.length && <p className="py-4 text-sm text-ink-secondary">No site connected</p>}
+        {list.map(c => <SiteRow key={c.id} space={active} connection={c} onSignedOut={load} />)}
+      </div></div> : <div className="flex min-h-0 flex-col gap-3" data-course-navigator="">
+        {access.courses.length > 5 && <Input aria-label="Find imported course" placeholder="Find a course…" value={filter} onChange={e => setFilter(e.target.value)} />}
+        <div className="max-h-80 overflow-y-auto overscroll-contain divide-y divide-line" aria-label="Imported courses">
+          {access.courses.filter(c => `${c.name} ${c.code ?? ""} ${c.term ?? ""}`.toLowerCase().includes(filter.toLowerCase())).map(c => <button key={c.key} type="button" data-course-select={c.key} onClick={() => { setSelected(c.key); setMode("access"); }} className="flex w-full min-w-0 items-center gap-3 rounded-md px-1 py-3 text-start hover:bg-hover">
+            <Icon name="book" className="size-4 shrink-0 text-ink-tertiary" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-ink">{c.name}</span><span className="block truncate text-xs text-ink-tertiary">{[c.code, c.term].filter(Boolean).join(" · ")}</span></span><Icon name="chevron-right" className="size-3.5 shrink-0 text-ink-tertiary" />
+          </button>)}
+          {!access.courses.length && <div className="flex items-center justify-between gap-3 py-4"><p className="text-sm text-ink-secondary">No courses imported</p><Button type="button" variant="outline" size="sm" onClick={() => openCourseImport({ space: active })}>Choose courses</Button></div>}
+        </div>
+        {access.problems.length > 0 && <details data-access-problems="" className="text-xs text-warning-ink"><summary>Course access needs attention</summary><ul>{access.problems.map(problem => <li key={problem}>{problem}</li>)}</ul></details>}
+      </div>}
+    </>}
+  </>;
 }
 
 function SiteRow({ space, connection: c, onSignedOut }: { space: string; connection: LmsConnection; onSignedOut: () => void }) {
@@ -133,7 +126,7 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
     setBusy(true);
     try {
       await lmsDisconnect(c.id);
-      say(`Signed out of ${name}. ${n ? `The ${plural(n, "course", "courses")} already imported stay, and so does who can see them.` : ""}`.trim());
+      say(`Signed out of ${name}.`.trim());
       setConfirming(false);
       setBusy(false);
       onSignedOut();
@@ -145,24 +138,21 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
   }
 
   return (
-    <div className="flex flex-col gap-3 px-3.5 py-3" data-site-row={c.id} data-signed-in={c.signedIn ? "" : undefined}>
-      <div className="flex items-center gap-3"><CourseSiteMark connection={c} /><div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <h5 id={nameId} className="text-base font-medium wrap-anywhere text-ink">
+    <div className="lms-connected-row flex flex-wrap items-center gap-2 px-1 py-2.5" data-site-row={c.id} data-signed-in={c.signedIn ? "" : undefined}>
+      <button type="button" onClick={() => openCourseImport({ space, connection: c.id, at: c.signedIn ? "choose" : "signin" })} className="flex min-w-0 flex-[1_1_12rem] items-center gap-3 rounded-md text-start hover:bg-hover"><CourseSiteMark connection={c} /><span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span id={nameId} className="text-sm font-medium wrap-anywhere text-ink">
           {name}
-        </h5>
-        <p className="text-sm wrap-anywhere text-ink-secondary">
-          {kindLabel(c.kind)} · {hostOf(c.address)}
-        </p>
-        <p className="flex items-center gap-1.5 text-xs text-ink-secondary" data-site-status="">
+        </span>
+
+        <span className="flex flex-wrap items-center gap-1.5 text-xs text-ink-secondary" data-site-status="">
           <Icon name={c.signedIn ? "success" : "warning"} className={c.signedIn ? "size-(--ph-icon-size-sm) text-success-ink" : "size-(--ph-icon-size-sm) text-warning-ink"} />
-          {c.signedIn ? "Connected" : "Signed out"}
-          <span aria-hidden="true">·</span><span data-site-imported="">{plural(n, "course", "courses")}{c.lastSync ? ` · ${whenText(c.lastSync)}` : ""}</span>
-        </p>
-      </div></div>
+          <span>{kindLabel(c.kind)}</span><span aria-hidden="true">·</span><span data-site-imported="">{plural(n, "course", "courses")}</span>{c.lastSync && <><span aria-hidden="true">·</span><time dateTime={new Date(c.lastSync).toISOString()} title={whenText(c.lastSync)} data-site-synced="">Updated {new Date(c.lastSync).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></>}<span className="sr-only">{c.signedIn ? "Connected" : "Signed out"}</span>
+        </span>
+      </span></button>
       {confirming ? (
         <div className="flex flex-col gap-2 rounded-md bg-surface px-3 py-2.5" data-site-confirm="">
           <p id={askId} className="text-sm text-ink">
-            Disconnect {name}? Imported courses stay available.
+            Disconnect {name}? Imported files stay available.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button ref={confirmRef} type="button" variant="destructive" size="sm" disabled={busy} aria-describedby={askId} onClick={() => void signOut()} data-site-confirm-yes="">
@@ -186,16 +176,14 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
           {c.signedIn ? (
             <>
               <Button type="button" variant="outline" size="sm" data-site-action="more" onClick={() => openCourseImport({ space, connection: c.id, at: "choose" })}>
-                <Icon name="plus" />Import courses
+                <Icon name="plus" />Courses
               </Button>
               {n > 0 && (
                 <Button type="button" variant="ghost" size="icon-sm" aria-label={`Refresh ${name}`} title="Refresh courses" data-site-action="sync" onClick={() => openCourseImport({ space, connection: c.id, at: "sync" })}>
                   <Icon name="retry" />
                 </Button>
               )}
-              <Button ref={signOutRef} type="button" variant="ghost" size="sm" className="ms-auto" data-site-action="signout" onClick={() => setConfirming(true)}>
-                Disconnect
-              </Button>
+              <Button ref={signOutRef} type="button" variant="ghost" size="icon-sm" aria-label={`Disconnect ${name}`} title="Disconnect" className="text-ink-tertiary" data-site-action="signout" onClick={() => setConfirming(true)}><Icon name="close" /></Button>
             </>
           ) : (
             <Button type="button" variant="outline" size="sm" data-site-action="signin" onClick={() => openCourseImport({ space, connection: c.id, at: "signin" })}>
@@ -225,11 +213,13 @@ function AccessGrid({
   spaces,
   access,
   onSaved,
+  viewerSpace,
 }: {
   course: CourseInfo;
   spaces: readonly Space[];
   access: CourseAccessView["access"];
   onSaved: (space: string, parts: CoursePart[]) => void;
+  viewerSpace?: string;
 }) {
   const { say, fail } = useStatus();
   const captionId = useId();
@@ -289,14 +279,14 @@ function AccessGrid({
   const onFocusCell = (r: number, c: number) => () => setAt([r, c]);
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-line bg-raised px-4 py-3 shadow-sm" data-access-course={course.key}>
+    <div className="flex flex-col gap-2 py-1" data-access-course={course.key}>
       <div className="flex flex-col">
-        <h5 id={captionId} className="text-base font-medium wrap-anywhere text-ink">
+        <h5 id={captionId} className="sr-only">
           {course.name}
         </h5>
         {label && <p className="text-sm text-ink-secondary">{label}</p>}
       </div>
-      <Details summary="Import details"><MaterialLines summary={course.material} details className="flex flex-col" /></Details>
+      <MaterialFiles summary={course.material} space={viewerSpace && partsOf(viewerSpace).includes("files") ? viewerSpace : spaces.find(s => partsOf(s.id).includes("files"))?.id} folder={course.folder} />
       {/* A data table: wider than a narrow window, it scrolls sideways on its own, never the page. */}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <table ref={tableRef} role="grid" aria-labelledby={captionId} onKeyDown={onKeyDown} className="w-max min-w-full border-collapse text-sm" data-access-grid={course.key}>

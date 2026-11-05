@@ -204,7 +204,7 @@ export default [
           scripts: fig.querySelectorAll("script").length,
           problem: document.querySelector("[data-mermaid-problem]")?.textContent ?? "",
           problemSource: document.querySelector("[data-mermaid-problem]")?.closest("figure")?.querySelector("pre")?.textContent ?? "",
-          summary: [...document.querySelectorAll("[data-mermaid] summary")].map((s) => s.textContent),
+          summary: [...document.querySelectorAll("[data-mermaid] summary")].map((s) => s.getAttribute("aria-label") ?? s.textContent),
         };
       });
       check(d.role === "img" && d.name === "Flowchart", "the diagram is an image named by its kind", JSON.stringify(d));
@@ -255,7 +255,7 @@ export default [
       check(await waitFor(page, () => document.querySelector("[data-pdf-zoom]")?.dataset.pdfZoom === "100"), "- on the pages zooms back out");
       await h.shot("viewer");
       await closeViewer(page);
-      check(await page.evaluate(() => document.activeElement?.hasAttribute("data-latex-view")), "Escape closes it and focus is back on View");
+      check(await waitFor(page, () => document.activeElement?.hasAttribute("data-latex-view"), undefined, 1000), "Escape closes it and focus is back on View");
       // Save to space.
       await page.click("[data-latex-save]");
       await page.waitForSelector("[data-latex-saved]", { timeout: 4000 });
@@ -275,7 +275,7 @@ export default [
       await page.waitForSelector("[data-latex-view]:not([disabled])", { timeout: 8000 });
       await page.click("[data-latex-view]");
       await page.waitForSelector("[data-file-viewer] [data-latex-problem='failed']", { timeout: 6000 });
-      const p = await page.$eval("[data-latex-problem]", (d) => ({ alert: d.querySelector('[role="alert"]')?.textContent, summaries: [...d.querySelectorAll("summary")].map((s) => s.textContent) }));
+      const p = await page.$eval("[data-latex-problem]", (d) => ({ alert: d.querySelector('[role="alert"]')?.textContent, summaries: [...d.querySelectorAll("summary")].map((s) => s.getAttribute("aria-label") ?? s.textContent) }));
       check(/doesn’t know the command \\undefinedcommand \(line 4\)/.test(p.alert ?? ""), "it says what's wrong in plain words, with the line", p.alert);
       check(p.summaries.includes("Show LaTeX’s log") && p.summaries.includes("Show the document’s source"), "the log and the source are one fold away", JSON.stringify(p.summaries));
       await h.shot("error");
@@ -287,7 +287,7 @@ export default [
     mock: { settings: SETTINGS, threads: { school: reply(DOC) }, latex: { noEngine: true } },
     async run(page, h) {
       await page.waitForSelector("[data-latex-no-engine]", { timeout: 8000 });
-      const c = await page.$eval("[data-latex-card]", (c) => ({ said: c.querySelector("[data-latex-no-engine]")?.textContent, view: !!c.querySelector("[data-latex-view]"), save: !!c.querySelector("[data-latex-save]"), summary: c.querySelector("summary")?.textContent }));
+      const c = await page.$eval("[data-latex-card]", (c) => ({ said: c.querySelector("[data-latex-no-engine]")?.textContent, view: !!c.querySelector("[data-latex-view]"), save: !!c.querySelector("[data-latex-save]"), summary: c.querySelector("summary")?.getAttribute("aria-label") ?? c.querySelector("summary")?.textContent }));
       check(/no LaTeX on this computer/.test(c.said) && /MacTeX/.test(c.said) && /TeX Live/.test(c.said) && /tectonic/.test(c.said), "it says LaTeX isn't installed and how to get it", c.said);
       check(!c.view && c.save && c.summary === "Show the document’s source", "View is gone; the source can still be saved and shown", JSON.stringify(c));
       check(await noPageScroll(page), "the page never scrolls sideways");
@@ -333,8 +333,8 @@ export default [
       await h.shot("pdf");
       await closeViewer(page);
       // A picture.
-      await openViewer(page, '[data-view-file="attachments/whiteboard.png"]', "[data-viewer-image]");
-      const img = await page.$eval("[data-viewer-image]", (i) => ({ alt: i.alt, ok: i.naturalWidth === 96 }));
+      await openViewer(page, '[data-view-file="attachments/whiteboard.png"]', ".ui-preview-image img");
+      const img = await page.$eval(".ui-preview-image img", (i) => ({ alt: i.alt, ok: i.naturalWidth === 96 }));
       check(img.alt === "whiteboard.png" && img.ok, "a picture opens, named by the file", JSON.stringify(img));
       await closeViewer(page);
       // Code, with its language.
@@ -379,7 +379,7 @@ export default [
         return c.textContent.replace(/\s+/g, " ").trim();
       });
       check(/^whiteboard\.png, PNG.*, open in the viewer$/.test(name), "the chip is named by the file and says it opens in the viewer", name);
-      await openViewer(page, "[data-view-attachment]", "[data-viewer-image]");
+      await openViewer(page, "[data-view-attachment]", ".ui-preview-image img");
       const viewed = await calls(page, "file_view");
       check(viewed.at(-1)?.path === "attachments/whiteboard.png" && viewed.at(-1)?.space === "school", "a sent file opens from where it is saved in the space", JSON.stringify(viewed));
       await h.shot("attachment");
@@ -410,7 +410,7 @@ export default [
       const [title] = await dialogNames(page);
       check(title === "week6.md", "the dialog is named by the file", title);
       await closeViewer(page);
-      check(await page.evaluate(() => document.activeElement?.dataset?.viewFile === "notes/week6.md"), "Escape closes it and focus is back on the link");
+      check(await waitFor(page, () => document.activeElement?.dataset?.viewFile === "notes/week6.md", undefined, 1000), "Escape closes it and focus is back on the link");
     },
   },
 ];

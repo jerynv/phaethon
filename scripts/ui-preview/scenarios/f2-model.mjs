@@ -65,7 +65,7 @@ export default [
       check(items[0][0] === "__default__" && items[0][1] === "true" && /^DefaultClaude Opus 5\.5$/.test(items[0][2]), "Default (Claude Opus 5.5) comes first, and is checked", JSON.stringify(items[0]));
       check(items.length === 4 && items.slice(1).every(([, , t]) => /^Claude /.test(t)), "then each model by its name", JSON.stringify(items));
       const f = await focused(page);
-      check(f.startsWith("menuitemradio|__default__"), "the menu opens on the model in use", f);
+      check(await page.evaluate(() => document.activeElement?.matches('[data-model-search] input')), "the menu opens in editable model search", f);
       await park(page);
       await h.shot("menu");
       await choose(page, "claude-sonnet-5-5");
@@ -157,9 +157,13 @@ export default [
       await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
       await h.idle();
       let f = await focused(page);
-      check(f.startsWith("menuitemradio|__default__"), "the model menu opens with focus on the model in use", f);
+      check(await page.evaluate(() => document.activeElement?.matches('[data-model-search] input')), "the model picker opens in editable search", f);
       await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(() => document.activeElement?.dataset.modelOption === "__default__", { timeout: 3000 });
       await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(() => document.activeElement?.dataset.modelOption === "claude-opus-5-5", { timeout: 3000 });
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(() => document.activeElement?.dataset.modelOption === "claude-sonnet-5-5", { timeout: 3000 });
       f = await focused(page);
       check(f.startsWith("menuitemradio|claude-sonnet-5-5"), "arrows move through the models", f);
       await park(page);

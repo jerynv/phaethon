@@ -33,6 +33,8 @@ async function openCourseSites(page) {
   await chord(page, ["Meta", ","]);
   await page.waitForSelector('[data-testid="settings-tab-courses"]', { timeout: 3000 });
   await page.$eval('[data-testid="settings-tab-courses"]', (el) => el.click());
+  await page.waitForSelector('[data-course-select="c1/101"]', { timeout: 3000 });
+  await page.click('[data-course-select="c1/101"]');
   await page.waitForSelector("[data-access-grid]", { timeout: 3000 });
 }
 
@@ -71,7 +73,7 @@ export default [
       await sleep(500);
       await h.shot("grid");
       // Tab into the grid: the first cell. Arrow down to Work, right to Syllabus, Space checks it.
-      await page.focus('[data-sites-import]');
+      await page.focus('[data-course-back]');
       for (let i = 0; i < 20; i++) {
         if (await page.evaluate((g) => !!document.activeElement?.closest(g), grid)) break;
         await page.keyboard.press("Tab");
@@ -140,15 +142,15 @@ export default [
       const lists = await page.evaluate(() =>
         Object.fromEntries([...document.querySelectorAll("[data-space-courses]")].map((d) => [d.dataset.spaceCourses, [...d.querySelectorAll("[data-space-course]")].map((li) => li.innerText.replace(/\s+/g, " ").trim())])),
       );
-      check(lists.school.length === 2 && lists.school.every((t) => t.endsWith("all of it")), "School sees both courses, all of them", JSON.stringify(lists));
+      check(lists.school.length === 2 && lists.school.every((t) => t.endsWith("Full course")), "School sees both courses, all of them", JSON.stringify(lists));
       check(lists.work.length === 1 && lists.work[0].includes("Discrete Structures for Computer Science") && lists.work[0].endsWith("syllabus, files"), "Work sees one course, in words", JSON.stringify(lists));
       await openSpaceDetails(page, ["work"]);
       await page.$eval('[data-space-courses="work"]', (e) => e.scrollIntoView({ block: "center" }));
       await h.shot("spaces");
       await page.click('[data-space-courses="work"] [data-space-courses-change]');
-      await page.waitForSelector("[data-access-grid]", { timeout: 3000 });
-      const ok = await waitFor(page, () => document.activeElement?.closest('[data-access-row="work"]') != null);
-      check(ok, "Choose which courses Work can see goes to Course sites, at Work’s row");
+      await page.waitForSelector('[data-course-select="c1/101"]', { timeout: 3000 });
+      const ok = await waitFor(page, () => document.activeElement?.getAttribute("data-course-select") === "c1/101");
+      check(ok, "Manage course access opens the relevant course choice");
     },
   },
   {
@@ -190,14 +192,14 @@ export default [
       await page.click("[data-step-next]");
       await page.waitForSelector('[data-course-import][data-step="review"] [data-import-start]', { timeout: 3000 });
       const review = await page.$eval("[data-wizard-review]", (e) => e.innerText.replace(/\s+/g, " "));
-      check(/Who can see them School, Work/.test(review), "the review says who will see them", review);
+      check(/Spaces School, Work/.test(review), "the review says who will see them", review);
       await page.click("[data-import-start]");
       await page.waitForSelector('[data-course-import][data-step="progress"]', { timeout: 3000 });
       const imp = (await calls(page, "lms_import")).at(-1);
-      check(imp.spaces.join() === "school,work" && imp.courseIds.join() === "103", "the core is told who can see the new course", JSON.stringify(imp));
+      check(imp.spaces.join() === "school,work" && imp.courseIds.join() === "101,102,103", "the core is told who can see the new course", JSON.stringify(imp));
       await waitFor(page, () => document.querySelector("[data-step-title]")?.textContent === "Import finished", undefined, 6000);
       const seen = await page.$eval("[data-import-seen-by]", (e) => e.textContent);
-      check(seen === "New courses can be seen in School, Work.", "the summary says who can see them", seen);
+      check(seen === "School · Work", "the summary says who can see them", seen);
       const access = await page.evaluate(() => window.__MOCK__.courseAccess.work["c1/103"]);
       check(access?.length === 6, "Work now sees all of the new course", JSON.stringify(access));
     },
@@ -233,6 +235,8 @@ export default [
       check(t.startsWith("This space can’t see any courses."), "Plan’s Coming up says so too", t);
       await h.shot("plan");
       await page.click(`${shown} [data-plan-view] [data-open-course-access]`);
+      await page.waitForSelector('[data-course-select="c1/101"]', { timeout: 3000 });
+      await page.click('[data-course-select="c1/101"]');
       await page.waitForSelector("[data-access-grid]", { timeout: 3000 });
       check(true, "Choose in Settings opens Course sites");
       // Let Work see the syllabus only, in the grid: the views follow at once, and Grades says it can't see grades.

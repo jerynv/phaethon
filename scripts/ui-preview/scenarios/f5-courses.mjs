@@ -60,6 +60,8 @@ const openFromPalette = async (page) => {
   check(sel?.includes("Import courses"), "the palette offers “Import courses…”");
   await page.keyboard.press("Enter");
   await page.waitForSelector(DIALOG, { timeout: 3000 });
+  const hasConnections = await page.evaluate(() => (window.__MOCK__.lms?.list?.length ?? 0) > 0 || Object.values(window.__MOCK__.lms?.connections ?? {}).some(list => list.length > 0));
+  if (hasConnections) await page.waitForSelector("[data-existing-site]", { timeout: 3000 });
 };
 
 const LMS = {
@@ -89,7 +91,7 @@ export default [
     async run(page, h) {
       await openFromPalette(page);
       let s = await waitStep(page, "kind");
-      check(s.focused && s.title === "Which course site does your school use?" && s.label === "Step 1 of 6", "step 1: its heading has focus", JSON.stringify(s));
+      check(s.focused && s.title === "Connect a course site" && s.label === "Step 1 of 6", "step 1: its heading has focus", JSON.stringify(s));
       // Enter on Continue with nothing chosen: a plain error, tied to the group.
       await tabTo(page, "[data-step-next]");
       await page.keyboard.press("Enter");
@@ -97,7 +99,7 @@ export default [
         const g = document.querySelector('[role="radiogroup"]');
         return { error: document.querySelector("[data-field-error]")?.textContent ?? "", describes: !!document.getElementById(g.getAttribute("aria-describedby") ?? "")?.matches("[data-field-error]"), focus: document.activeElement?.getAttribute("role") };
       });
-      check(err.error.includes("Choose the course site") && err.describes && err.focus === "radio", "nothing chosen: said in words, linked to the choices, focus on them", JSON.stringify(err));
+      check(err.error.includes("Choose a course site") && err.describes && err.focus === "radio", "nothing chosen: said in words, linked to the choices, focus on them", JSON.stringify(err));
       await h.shot("kind");
       // Arrows choose (Canvas is first: ArrowDown then ArrowUp lands back on it, chosen).
       await page.keyboard.press("ArrowDown");
@@ -133,7 +135,7 @@ export default [
       await tabTo(page, "[data-signin-open]");
       await page.keyboard.press("Enter");
       s = await waitStep(page, "choose");
-      check(s.focused && s.title === "Choose courses to import" && s.label === "Step 4 of 6", "signed in: step 4, heading focused", JSON.stringify(s));
+      check(s.focused && s.title === "Choose courses" && s.label === "Step 4 of 6", "signed in: step 4, heading focused", JSON.stringify(s));
       const sent = (await calls(page, "lms_connect")).at(-1);
       check(sent.space === undefined && sent.kind === "canvas" && sent.address === "https://iu.instructure.com", "the core is asked to sign in to that school’s site (for the whole vault)", JSON.stringify(sent));
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
@@ -149,7 +151,7 @@ export default [
       s = await waitStep(page, "viewers");
       check(s.focused && s.label === "Step 5 of 6", "step 5: who can see them, heading focused", JSON.stringify(s));
       const what = await page.evaluate(() => document.querySelector("[data-import-what]")?.textContent);
-      check(what.startsWith("Each course gets a folder with its syllabus, assignments, files and the readings it links to."), "it says what will happen", what);
+      check(!what.includes("Each course gets a folder"), "course assignment avoids repeating import mechanics", what);
       const viewers = await page.evaluate(() => [...document.querySelectorAll("[data-import-viewer]")].filter((l) => l.querySelector("input").checked).map((l) => l.dataset.importViewer));
       check(viewers.join() === "school", "the current space can see them, unless chosen otherwise", viewers.join());
       await h.shot("viewers");
@@ -158,7 +160,7 @@ export default [
       s = await waitStep(page, "review");
       check(s.focused && s.label === "Step 6 of 6", "step 6: the review, heading focused", JSON.stringify(s));
       const review = await page.$eval("[data-wizard-review]", (e) => e.innerText.replace(/\s+/g, " "));
-      check(/Indiana University Bloomington/.test(review) && /Discrete Structures for Computer Science/.test(review) && /Who can see them School/.test(review), "the review names the site, the courses and who sees them", review);
+      check(/Indiana University Bloomington/.test(review) && /Discrete Structures for Computer Science/.test(review) && /Spaces School/.test(review), "the review names the site, the courses and who sees them", review);
       check((await calls(page, "lms_import")).length === 0, "nothing is imported before the last step");
       await h.shot("review");
       await tabTo(page, "[data-import-start]");
@@ -254,8 +256,8 @@ export default [
       await waitFor(page, () => document.activeElement?.matches("[data-signin-cancel]"));
       const w = await page.evaluate(() => ({ text: document.querySelector("[data-signin-waiting]").textContent, role: document.querySelector("[data-signin-waiting]").getAttribute("role"), focus: document.activeElement?.textContent }));
       check(
-        w.role === "status" && w.text.includes("Finish signing in in the window that opened. Phaethon only keeps the session your sign-in creates, in your keychain on this computer, and only uses it to read your courses."),
-        "while waiting it says what to do and what is kept",
+        w.role === "status" && w.text.includes("Finish signing in in the school window."),
+        "while waiting it directs the user to the sign-in window",
         JSON.stringify(w),
       );
       check(w.focus === "Stop waiting", "focus moves to Stop waiting (the one way out while it waits)", w.focus);
@@ -268,7 +270,7 @@ export default [
         const b = document.activeElement;
         return { focus: b.textContent, desc: document.getElementById(b.getAttribute("aria-describedby") ?? "")?.textContent ?? "", step: document.querySelector("[data-course-import]").dataset.step };
       });
-      check(c.step === "signin" && c.focus === "Open sign-in window again" && c.desc.includes("closed before you finished"), "a closed window: said plainly, focus on Open again, which it describes", JSON.stringify(c));
+      check(c.step === "signin" && c.focus === "Open sign-in window again" && c.desc.includes("Sign-in was closed"), "a closed window: said plainly, focus on Open again, which it describes", JSON.stringify(c));
       await sleep(300);
       await h.shot("cancelled");
       // Cancel while waiting: stops waiting; a late answer is ignored.
@@ -308,7 +310,7 @@ export default [
           imported: [...document.querySelectorAll("[data-course-imported]")].length,
         }));
       let s = await st();
-      check(s.checked === "102" && !s.open && s.imported === 2, "only the current course not imported yet is checked; past courses are folded away", JSON.stringify(s));
+      check(s.checked === "101,102,103" && !s.open && s.imported === 2, "imported selections and current courses remain checked; past courses are folded away", JSON.stringify(s));
       // By keyboard: the disclosure, then its Select all.
       await page.focus('[data-past-courses] summary');
       await page.keyboard.press("Enter");
@@ -316,7 +318,7 @@ export default [
       check(s.open, "Enter opens Past courses");
       await page.click('[data-course-group="past courses"] [data-select="all"]');
       s = await st();
-      check(s.checked === "102,90,91", "Select all picks every past course", JSON.stringify(s));
+      check(s.checked === "101,102,103,90,91", "Select all picks every past course", JSON.stringify(s));
       await page.click('[data-course-group="current courses"] [data-select="all"]');
       await page.click('[data-course-group="past courses"] [data-select="none"]');
       s = await st();
@@ -378,7 +380,7 @@ export default [
       await page.click('[data-existing-site="c1"]');
       await waitStep(page, "choose");
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
-      await page.click('[data-course="103"]');
+      await page.$eval('[data-course="103"] input', input => { if (!input.checked) input.click(); });
       await toImport(page);
       await waitStep(page, "progress");
       await waitFor(page, () => !!document.querySelector('[data-import-course="103"][data-state="failed"]'), undefined, 6000);
@@ -400,8 +402,8 @@ export default [
       await page.click('[data-existing-site="c1"]');
       await waitStep(page, "choose");
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
-      await page.click('[data-course="101"]');
-      await page.click('[data-course="103"]');
+      await page.$eval('[data-course="101"] input', input => { if (!input.checked) input.click(); });
+      await page.$eval('[data-course="103"] input', input => { if (!input.checked) input.click(); });
       await toImport(page);
       await waitStep(page, "progress");
       // Mid-import: one bar per course, valued, named by its course.
@@ -448,7 +450,7 @@ export default [
       await page.click('[data-existing-site="c1"]');
       await waitStep(page, "choose");
       await page.waitForSelector("[data-course-list]", { timeout: 3000 });
-      await page.click('[data-course="101"]');
+      await page.$eval('[data-course="101"] input', input => { if (!input.checked) input.click(); });
       await toImport(page);
       await waitFor(page, () => document.querySelector("[data-step-title]")?.textContent === "Import finished", undefined, 6000);
       const sk = await page.$eval('[data-import-course="101"] [data-course-skipped]', (e) => e.textContent);
@@ -483,22 +485,25 @@ export default [
       await chord(page, ["Meta", ","]);
       await page.waitForSelector('[data-testid="settings-tab-courses"]', { timeout: 3000 });
       await page.$eval('[data-testid="settings-tab-courses"]', (el) => el.click());
+      await page.waitForSelector('[data-course-overview-tab="sites"]', { timeout: 3000 });
+      await page.click('[data-course-overview-tab="sites"]');
       await page.waitForSelector('[data-site-row="c1"]', { timeout: 3000 });
       // One list for the whole vault: each site once, whichever space connected it.
       const rows = await page.evaluate(() =>
         [...document.querySelectorAll("[data-course-sites] [data-site-row]")].map((r) => ({
           id: r.dataset.siteRow,
           status: r.querySelector("[data-site-status]").textContent,
+          signedIn: r.hasAttribute("data-signed-in"),
           imported: r.querySelector("[data-site-imported]").textContent,
-          actions: [...r.querySelectorAll("[data-site-action]")].map((b) => b.textContent),
+          actions: [...r.querySelectorAll("[data-site-action]")].map((b) => b.dataset.siteAction),
         })),
       );
       check(rows.length === 2, "both sites are listed once, for the vault", JSON.stringify(rows));
       const iu = rows.find((r) => r.id === "c1");
       const moodle = rows.find((r) => r.id !== "c1");
-      check(iu.status.startsWith("Connected") && iu.imported.startsWith("2 courses"), "IU shows connection status, imported courses and last sync compactly", JSON.stringify(iu));
-      check(iu.actions.length === 3 && iu.actions[0] === "Import courses" && iu.actions[2] === "Disconnect", "Import is the primary action beside compact refresh and disconnect", iu.actions.join("|"));
-      check(moodle.status.startsWith("Signed out") && moodle.actions.join("|") === "Reconnect", "Moodle is signed out and offers Sign in again", JSON.stringify(moodle));
+      check(iu.signedIn && iu.imported.startsWith("2 courses"), "IU shows connection status, imported courses and last sync compactly", JSON.stringify(iu));
+      check(iu.actions.length === 3 && iu.actions[0] === "more" && iu.actions[1] === "sync" && iu.actions[2] === "signout", "Import is the primary action beside compact refresh and disconnect", iu.actions.join("|"));
+      check(!moodle.signedIn && moodle.actions.join("|") === "signin", "Moodle is signed out and offers Sign in again", JSON.stringify(moodle));
       await sleep(400);
       await h.shot("list");
       // Import again: the dialog opens over Settings on the import of the two imported courses.
@@ -515,10 +520,10 @@ export default [
       await page.keyboard.press("Enter");
       await page.waitForSelector("[data-site-confirm]", { timeout: 2000 });
       const ask = await page.evaluate(() => ({ text: document.querySelector("[data-site-confirm] p").textContent, focus: document.activeElement?.textContent }));
-      check(ask.text.includes("Imported courses stay available.") && ask.focus === "Sign out", "Sign out asks first and says the courses stay", JSON.stringify(ask));
+      check(ask.text.includes("Imported files stay available.") && ask.focus === "Sign out", "Sign out asks first and says the courses stay", JSON.stringify(ask));
       await h.shot("confirm");
       await page.keyboard.press("Enter");
-      await page.waitForFunction(() => document.querySelector('[data-site-row="c1"] [data-site-status]')?.textContent.startsWith("Signed out"), { timeout: 3000 });
+      await page.waitForFunction(() => !document.querySelector('[data-site-row="c1"]')?.hasAttribute("data-signed-in"), { timeout: 3000 });
       const after = await page.evaluate(() => ({ actions: [...document.querySelectorAll('[data-site-row="c1"] [data-site-action]')].map((b) => b.textContent), calls: window.__calls.filter((c) => c[0] === "lms_disconnect").map((c) => c[1]) }));
       check(after.calls.length === 1 && after.calls[0].connection === "c1" && after.calls[0].space === undefined, "the core is asked to sign out of that site", JSON.stringify(after.calls));
       check(after.actions.join("|") === "Reconnect", "signed out, the site stays with its courses and offers Sign in again", JSON.stringify(after));
@@ -586,7 +591,7 @@ export default [
       await page.waitForSelector(DIALOG, { timeout: 3000 });
       const s = await waitStep(page, "kind");
       const lead = await page.evaluate(() => document.querySelector("[data-course-import] [data-step-title]").parentElement.textContent);
-      check(s.focused && lead.includes("for the spaces you choose"), "from Work’s menu the import opens, for the spaces chosen", lead);
+      check(s.focused && s.title === "Connect a course site", "from Work’s menu the import opens, for the spaces chosen", lead);
       // Escape returns focus to Work in the sidebar.
       await page.keyboard.press("Escape");
       await page.waitForFunction((D) => !document.querySelector(D), { timeout: 3000 }, DIALOG);

@@ -10,7 +10,8 @@
 import { check, park } from "../audit-fixtures.mjs";
 
 const DAY = 86400000;
-const now = Date.now();
+// Midday keeps neighbouring local-day fixtures away from midnight and DST boundaries.
+const now = new Date().setHours(12, 0, 0, 0);
 const current = [
   { role: "user", text: "What do I have due this week for C241?", attachments: [] },
   { role: "assistant", text: "Problem set 4 on Wednesday, and Test 1 on Thursday.", attachments: [] },
@@ -85,6 +86,29 @@ const choicesFit = (page, id) =>
       scroll: document.documentElement.scrollWidth <= innerWidth,
     };
   }, id);
+
+// The runner imports fixtures before executing them; a long shard can cross midnight.
+// Keep the app and mock on the fixture's local day, while advancing real elapsed time.
+function withLocalClock(scenario) {
+  return {
+    ...scenario,
+    async run(page, helpers) {
+      await page.evaluateOnNewDocument((anchor) => {
+        const NativeDate = Date;
+        const started = performance.now();
+        const tick = () => anchor + Math.floor(performance.now() - started);
+        globalThis.Date = new Proxy(NativeDate, {
+          construct(target, args, newTarget) { return Reflect.construct(target, args.length ? args : [tick()], newTarget); },
+          apply() { return new NativeDate(tick()).toString(); },
+          get(target, key, receiver) { return key === "now" ? tick : Reflect.get(target, key, receiver); },
+        });
+      }, now);
+      await page.reload({ waitUntil: "load" });
+      await page.waitForSelector("#root > *", { timeout: 8000 });
+      await scenario.run(page, helpers);
+    },
+  };
+}
 
 export default [
   {
@@ -327,4 +351,4 @@ export default [
       await h.shot("times");
     },
   },
-];
+].map(withLocalClock);

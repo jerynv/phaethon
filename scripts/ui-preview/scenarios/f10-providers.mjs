@@ -288,8 +288,10 @@ export default [
       await page.keyboard.press("Enter");
       await page.waitForSelector('[data-model-menu] [role="menuitemradio"]', { timeout: 3000 });
       await h.idle();
+      check(await page.evaluate(() => document.activeElement?.matches('[data-model-search] input')), "the menu opens on its editable search");
+      await h.tab();
       let f = await page.evaluate(() => document.activeElement?.dataset.modelOption);
-      check(f === "openrouter:openai/gpt-5", "the menu opens on the model in use", f);
+      check(f === "openrouter:openai/gpt-5", "Tab reaches the model in use", f);
       await page.keyboard.press("ArrowUp");
       f = await page.evaluate(() => document.activeElement?.dataset.modelOption);
       check(f === "openrouter:anthropic/claude-sonnet-5", "arrows reach the other OpenRouter model", f);

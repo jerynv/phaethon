@@ -361,8 +361,8 @@ async fn resource(s: &Session, cm: &Cm, section: &str) -> Result<RemoteFile, Lms
     redirect.query_pairs_mut().append_pair("redirect", "1");
     let found = plugin_files(&html, &cm.url, "/mod_resource/content/").into_iter().next();
     Ok(match found {
-        Some((url, _, name)) => RemoteFile { name, folder, url, size: None, mime: None, aliases: vec![cm.url.clone(), redirect] },
-        None => RemoteFile { name: cm.name.clone(), folder, url: redirect, size: None, mime: None, aliases: vec![cm.url.clone()] },
+        Some((url, _, name)) => RemoteFile { name, folder, url, size: None, mime: None, aliases: vec![cm.url.clone(), redirect], version: None },
+        None => RemoteFile { name: cm.name.clone(), folder, url: redirect, size: None, mime: None, aliases: vec![cm.url.clone()], version: None },
     })
 }
 
@@ -373,7 +373,7 @@ async fn folder(s: &Session, cm: &Cm, section: &str) -> Result<Vec<RemoteFile>, 
         .into_iter()
         .map(|(url, sub, name)| {
             let parts: Vec<&str> = [section, cm.name.as_str()].into_iter().chain(sub.iter().map(String::as_str)).filter(|p| !p.is_empty()).collect();
-            RemoteFile { name, folder: Some(parts.join("/")), url, size: None, mime: None, aliases: vec![] }
+            RemoteFile { name, folder: Some(parts.join("/")), url, size: None, mime: None, aliases: vec![], version: None }
         })
         .collect())
 }

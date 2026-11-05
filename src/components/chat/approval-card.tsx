@@ -54,9 +54,9 @@ function DiffView({ rows }: { rows: DiffRow[] }) {
             key={i}
             data-diff={r.kind}
             className={cn(
-              "flex border-s-4 border-transparent pe-3 whitespace-pre-wrap wrap-anywhere",
-              r.kind === "removed" && "border-danger bg-danger-soft text-danger-ink",
-              r.kind === "added" && "border-success-ink bg-success-soft text-success-ink",
+              "flex pe-3 whitespace-pre-wrap wrap-anywhere",
+              r.kind === "removed" && "bg-danger-soft text-danger-ink",
+              r.kind === "added" && "bg-success-soft text-success-ink",
               r.kind === "same" && "text-ink",
             )}
           >
@@ -181,7 +181,7 @@ export function ApprovalCard() {
       data-action={approval.action}
       data-waiting-card=""
       onKeyDown={onKeyDown}
-      className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line-strong bg-raised shadow"
+      className="flex w-full max-w-(--ph-measure) flex-col rounded-lg border border-line bg-surface"
     >
       <div className="flex items-start gap-3 p-4 pb-3">
         <span

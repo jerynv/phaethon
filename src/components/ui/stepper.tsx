@@ -120,7 +120,7 @@ export function WizardDialogContent({
             <DialogSurface asChild><AlertDialog.Content
               onCloseAutoFocus={(e) => discarding.current && e.preventDefault()}
               data-wizard-discard=""
-              className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-var(--ph-space)*8)] max-w-(--ph-measure) -translate-x-1/2 -translate-y-1/2 flex-col gap-3 m-0! p-5! outline-none"
+              className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-var(--ph-space)*8)] max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col gap-3 m-0! p-5! outline-none"
             >
               <DialogHeading className="p-0!">
               <AlertDialog.Title className="ui-dialog-title">{discard.title}</AlertDialog.Title>

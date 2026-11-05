@@ -133,10 +133,10 @@ export default [
       }));
       check(preview.fit === "cover" && preview.width >= 36 && preview.width <= 48, "draft images use compact thumbnails beside their filenames", preview);
       await page.click('[aria-label="Attached files"] [data-view-attachment]');
-      await page.waitForFunction(() => document.querySelector('[data-viewer-image]')?.naturalWidth === 240);
-      check(await page.$eval('[data-viewer-image]', (image) => image.naturalHeight === 120 && getComputedStyle(image).objectFit === "contain"), "opening the thumbnail preserves the whole original image");
+      await page.waitForFunction(() => document.querySelector('.ui-preview-image img')?.naturalWidth === 240);
+      check(await page.$eval('.ui-preview-image img', (image) => image.naturalHeight === 120 && getComputedStyle(image).objectFit === "contain"), "opening the thumbnail preserves the whole original image");
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[data-viewer-image]'));
+      await page.waitForFunction(() => !document.querySelector('.ui-preview-image img'));
       const collapsed = await page.$('[data-attachment-fold][aria-expanded="false"]');
       if (collapsed && await collapsed.isVisible()) await collapsed.click();
       await page.click('[data-remove-attachment]');

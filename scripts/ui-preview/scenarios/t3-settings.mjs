@@ -3,7 +3,7 @@
 //   t3-undo           Remove in Settings › Spaces has Undo, kept until Settings closes (jordan3)
 //   t3-incoming       each space lists which other spaces can read it (sam3)
 //   t3-provider-controls  compact provider actions have clear accessible names
-//   t3-bounded        Settings leaves the workspace visible and its footer entry aligns left
+//   t3-bounded        Settings leaves the workspace visible and its cog joins footer quick actions
 //   t3-words          MANUAL.md and application folders are easy to find
 //   t3-cli-missing    Claude Code not installed: say how to install, don't switch (linda6)
 //   t3-cli-installed  installed: an explicit default action switches assistants
@@ -48,11 +48,13 @@ export default [
       const sidebar = await page.$eval('[data-testid="open-settings"]', (button) => ({ id: button.closest('nav').id, visible: button.getClientRects().length > 0 }));
       if (!sidebar.visible) await h.click(`button[aria-controls="${sidebar.id}"]`);
       const footer = await page.$eval('[data-testid="open-settings"]', (button) => {
-        const face = button.querySelector('.ui-button-face');
-        const icon = button.querySelector('svg');
-        return { justify: getComputedStyle(face).justifyContent, inset: icon.getBoundingClientRect().left - button.getBoundingClientRect().left, iconWidth: icon.getBoundingClientRect().width };
+        const group = button.closest('[data-sidebar-quick-actions]').getBoundingClientRect();
+        const box = button.getBoundingClientRect();
+        const icon = button.querySelector('svg').getBoundingClientRect();
+        return { label: button.getAttribute('aria-label'), size: button.dataset.size, width: box.width, height: box.height, left: box.left - group.left, inside: box.right <= group.right && box.top >= group.top && box.bottom <= group.bottom, iconCenter: Math.abs((icon.left + icon.width / 2) - (box.left + box.width / 2)) };
       });
-      check(footer.justify === "flex-start" && footer.inset <= footer.iconWidth + 2, "the Settings entry aligns its Vic face and icon to the navigation rail", JSON.stringify(footer));
+      check(footer.label === "Settings" && footer.size === "icon-sm" && footer.width >= 24 && footer.height >= 24 && Math.abs(footer.width - footer.height) <= 1, "Settings is a labelled square cog target", JSON.stringify(footer));
+      check(footer.inside && footer.left <= 16 && footer.iconCenter <= 1, "the cog centers its icon and aligns within the footer quick actions", JSON.stringify(footer));
       await page.click('[data-testid="open-settings"]');
       await page.waitForSelector('[role="dialog"] h3');
       await h.click('[data-testid="settings-tab-appearance"]');

@@ -72,7 +72,7 @@
   position: relative;
   margin-inline: auto;
   background: var(--ph-pdf-paper);
-  box-shadow: var(--ph-shadow);
+  box-shadow: none;
 }
 [data-pdf-page] > canvas {
   display: block;

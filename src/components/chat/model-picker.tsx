@@ -36,6 +36,14 @@ let pendingInstances: Promise<AgentInstanceView[]> | undefined;
 function loadInstances() {
   return pendingInstances ??= agentInstances().finally(() => { pendingInstances = undefined; });
 }
+const pendingCatalogs = new Map<string, Promise<CliModelList>>();
+function loadInstanceCatalog(id: string) {
+  const pending = pendingCatalogs.get(id);
+  if (pending) return pending;
+  const request = invoke<CliModelList>("agent_instance_models", { id }).finally(() => { pendingCatalogs.delete(id); });
+  pendingCatalogs.set(id, request);
+  return request;
+}
 
 type ProviderEntry = { id: string; name: string; logo: ProviderId | CliBackend; cli?: "claude" | "codex" | "gemini"; api?: ProviderId; available: boolean; source?: "system" | "managed"; models: readonly ModelInfo[] };
 type Catalog = { loading: boolean; models: readonly ModelInfo[]; note?: string; defaultModel?: string };
@@ -56,7 +64,8 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [effortTarget, setEffortTarget] = useState<ReasoningTarget | null>(null);
-  const [currentEffort, setCurrentEffort] = useState<string | null>(null);
+  const [savedEffort, setSavedEffort] = useState<{ key: string; value: string | null } | null>(null);
+  const effortRevision = useRef(0);
   const [manual, setManual] = useState<ProviderEntry | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -67,10 +76,15 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   const current = modelOf(s, spaceId);
   const ownCli = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
   const activeKey = activeCli ? activeInstance?.config.id ?? activeCli.id : `api:${splitRef(current.id).provider}`;
-  const activeCatalog = activeCli ? catalogs[activeInstance?.config.id ?? activeCli.id] ?? s.cliModels[activeCli.id] : undefined;
+  // A provider's shared catalog may belong to the previously selected account.
+  // Once the instance is known, only its own metadata can name its default.
+  const activeCatalog = activeCli ? activeInstance ? catalogs[activeInstance.config.id] : s.cliModels[activeCli.id] : undefined;
   const resolvedActive = ownCli?.model ?? activeCatalog?.defaultModel;
   const activeInfo = activeCatalog?.models.find(item => item.id === resolvedActive || item.aliases?.includes(resolvedActive ?? ""));
-  const activeName = activeInfo?.name ?? (activeCli ? ownCli ? cliModelName(activeCli.id, ownCli.model, s) : `${activeCli.name} default` : shortName(modelName(current.id, s.models)));
+  const activeName = activeInfo?.name ?? (activeCli ? ownCli ? activeInstance ? ownCli.model : cliModelName(activeCli.id, ownCli.model, s) : `${activeCli.name} default` : shortName(modelName(current.id, s.models)));
+  const effortKey = JSON.stringify([spaceId, activeKey, activeCli?.id, ownCli?.model ?? null]);
+  const activeEffortKey = useRef(effortKey); activeEffortKey.current = effortKey;
+  const currentEffort = savedEffort?.key === effortKey ? savedEffort.value : null;
   const activeLogo = activeCli ? `${activeCli.id}-cli` as CliBackend : splitRef(current.id).provider;
   const siblingAccounts = activeCli ? instances.filter(item => item.config.cli === activeCli.id) : [];
   const accountNumber = siblingAccounts.findIndex(item => item.config.id === activeInstance?.config.id) + 1;
@@ -114,10 +128,10 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       await loadCliModels(entry.cli, force); return;
     }
     if (entry.api === "anthropic") return;
-    putCatalog(entry.id, { ...catalogRef.current[entry.id], loading: true, defaultModel: catalogRef.current[entry.id]?.defaultModel ?? (entry.cli && entry.id === activeKey ? s.cliModels[entry.cli]?.defaultModel : undefined), models: catalogRef.current[entry.id]?.models ?? (entry.id === activeKey ? entry.models : []) });
+    putCatalog(entry.id, { ...catalogRef.current[entry.id], loading: true, models: catalogRef.current[entry.id]?.models ?? (!entry.cli ? entry.models : []) });
     try {
       let result: CliModelList;
-      if (entry.cli) result = await invoke<CliModelList>("agent_instance_models", { id: entry.id });
+      if (entry.cli) result = await loadInstanceCatalog(entry.id);
       else {
         const models = await listModels(entry.api!);
         rememberNames(entry.api!, models);
@@ -126,6 +140,11 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
       putCatalog(entry.id, { loading: false, models: result.models, note: result.note, defaultModel: result.defaultModel });
     } catch (reason) { putCatalog(entry.id, { loading: false, models: [], note: String(reason) }); }
   }
+  useEffect(() => {
+    if (!activeInstance) return;
+    const entry = entries.find(item => item.id === activeInstance.config.id);
+    if (entry) void loadCatalog(entry);
+  }, [activeInstance?.config.id, entries]);
   const searching = !!query.trim();
   useEffect(() => {
     if (!open) return;
@@ -145,23 +164,25 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   function focusProvider() { (providersRef.current?.querySelector('[aria-pressed="true"]') ?? providersRef.current?.querySelector("button:not(:disabled)"))?.scrollIntoView({ block: "nearest" }); providersRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus(); }
   const options = entries.flatMap<PickerOption>(entry => {
     if (!entry.available) return [];
-    const known = catalogs[entry.id]?.models ?? (entry.cli && entry.id !== activeKey ? [] : entry.models);
+    const catalog = catalogs[entry.id] ?? (entry.cli && entry.id === activeKey && !activeInstance ? s.cliModels[entry.cli] : undefined);
+    const known = catalog?.models ?? (entry.cli ? [] : entry.models);
     const list = [...known];
     const own = entry.id === activeKey ? entry.cli ? ownCli?.model : current.own ? current.id : null : null;
     if (own && !list.some(model => model.id === own || model.aliases?.includes(own))) list.push({ id: own, name: entry.cli ? cliModelName(entry.cli, own, s) : modelName(own, s.models) });
     const rows = [{ id: DEFAULT, name: "Default" }, ...list];
     const siblings = entry.cli ? entries.filter(item => item.cli === entry.cli) : [];
     const accountBadge = siblings.length > 1 ? siblings.findIndex(item => item.id === entry.id) + 1 : null;
-    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <span className="relative inline-flex" title={entry.name}><ProviderLogo provider={entry.logo} className="size-4" />{accountBadge && <span className="ph-model-account-badge" aria-hidden="true">{accountBadge}</span>}</span>, accountName: accountBadge && (searching || rail === "favorites") ? entry.name : undefined, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : (model.id === own || !!model.aliases?.includes(own ?? ""))), detail: model.id === DEFAULT ? entry.cli ? (catalogs[entry.id]?.models.find(item => item.id === catalogs[entry.id]?.defaultModel)?.name ?? entry.name) : modelName(s.defaultModel, s.models) : undefined }));
+    const defaultInfo = catalog?.models.find(item => item.id === catalog.defaultModel || item.aliases?.includes(catalog.defaultModel ?? ""));
+    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <span className="relative inline-flex" title={entry.name}><ProviderLogo provider={entry.logo} className="size-4" />{accountBadge && <span className="ph-model-account-badge" aria-hidden="true">{accountBadge}</span>}</span>, accountName: accountBadge && (searching || rail === "favorites") ? entry.name : undefined, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : (model.id === own || !!model.aliases?.includes(own ?? ""))), detail: model.id === DEFAULT ? entry.cli ? (defaultInfo?.name ?? entry.name) : modelName(s.defaultModel, s.models) : undefined }));
   });
   const shownOptions = searching ? options : rail === "favorites" ? options.filter(option => favorites.has(option.value)) : options.filter(option => option.provider === selected?.id);
   const pickerHeight = Math.min(386, Math.max(220, effortTarget ? 88 + (effortTarget.levels.length + 1) * 32 : 0, 54 + (entries.length + 1) * 38, 82 + Math.max(4, ...entries.map(entry => (catalogs[entry.id]?.models ?? entry.models).length + 1)) * 32));
-  const selectedCatalog = selected ? catalogs[selected.id] ?? (selected.cli && selected.id === activeKey ? s.cliModels[selected.cli] : undefined) : undefined;
+  const selectedCatalog = selected ? catalogs[selected.id] ?? (selected.cli && selected.id === activeKey && !activeInstance ? s.cliModels[selected.cli] : undefined) : undefined;
   const loading = !!selectedCatalog && ("status" in selectedCatalog ? selectedCatalog.status === "loading" : selectedCatalog.loading);
 
   function reasoningFor(entry: ProviderEntry, model: string, focus: boolean): ReasoningTarget | null {
     if (!entry.cli) return null;
-    const catalog = catalogs[entry.id] ?? (entry.id === activeKey ? s.cliModels[entry.cli] : undefined);
+    const catalog = catalogs[entry.id] ?? (entry.id === activeKey && !activeInstance ? s.cliModels[entry.cli] : undefined);
     const resolved = model === DEFAULT ? catalog?.defaultModel : model;
     const info = catalog?.models.find(item => item.id === resolved || item.aliases?.includes(resolved ?? ""));
     if (!info?.reasoningEfforts?.length) return null;
@@ -169,10 +190,19 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
   }
   useEffect(() => {
     let active = true;
-    setCurrentEffort(null);
-    if (activeCli) void invoke<string | null>("space_reasoning_get", { space: spaceId, cli: activeCli.id, model: ownCli?.model ?? null }).then(value => { if (active) setCurrentEffort(value); }, () => {});
+    const revision = ++effortRevision.current;
+    if (activeCli) void invoke<string | null>("space_reasoning_get", { space: spaceId, cli: activeCli.id, model: ownCli?.model ?? null }).then(value => {
+      if (active && revision === effortRevision.current) setSavedEffort({ key: effortKey, value });
+    }, () => {});
     return () => { active = false; };
-  }, [spaceId, activeCli?.id, ownCli?.model]);
+  }, [effortKey]);
+  function reasoningSaved(target: ReasoningTarget, value: string | null) {
+    const key = JSON.stringify([spaceId, target.account, target.cli, target.model]);
+    if (key !== activeEffortKey.current) return;
+    // A read started before this save must not put the old value back.
+    effortRevision.current++;
+    setSavedEffort({ key, value });
+  }
   useEffect(() => {
     if (!open || effortTarget || selected?.id !== activeKey) return;
     const target = selected && reasoningFor(selected, ownCli?.model ?? DEFAULT, false);
@@ -230,7 +260,7 @@ export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; 
             {selectedCatalog?.note && !selectedCatalog.models.length && <p className="ph-model-note" data-cli-models-note={loading ? "loading" : "ready"}>{selectedCatalog.note}</p>}
             {error && <p role="alert" className="ph-model-error">{error}</p>}
           </ModelCombobox>
-          {effortTarget && <ReasoningColumn key={`${effortTarget.account}:${effortTarget.model ?? "default"}`} target={effortTarget} spaceId={spaceId} busy={busy} onBusyChange={setBusy} onSaved={setCurrentEffort} onRequestClose={() => setOpen(false)} onBack={() => searchRef.current?.focus()} />}
+          {effortTarget && <ReasoningColumn key={`${effortTarget.account}:${effortTarget.model ?? "default"}`} target={effortTarget} spaceId={spaceId} busy={busy} onBusyChange={setBusy} onSaved={value => reasoningSaved(effortTarget, value)} onRequestClose={() => setOpen(false)} onBack={() => searchRef.current?.focus()} />}
         </div>
         <div className="ph-model-footer"><AccessPicker spaceId={spaceId} /><div className="ph-model-footer-actions">
           <IconTip label="Refresh models" spoken="Refresh models"><Button type="button" variant="ghost" size="icon-xs" aria-label="Refresh models" data-model-option="__refresh__" disabled={loading || busy || !selected} onClick={() => selected && void loadCatalog(selected, true)}><Icon name="retry" className={loading ? "size-3.5 animate-spin" : "size-3.5"} /></Button></IconTip>

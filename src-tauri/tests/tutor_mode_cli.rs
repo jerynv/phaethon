@@ -41,7 +41,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
         tauri::async_runtime::block_on(agent::run_turn(
             &Runs::default(),
             space,
-            TurnRequest { space_dir: &dir, prompt: "quiz me on graphs", attachments: vec![], replace_from: None, config_dir: None, add_dirs: vec![], model: model.map(str::to_string), full_access: false },
+            TurnRequest { working_dir: None, space_dir: &dir, prompt: "quiz me on graphs", attachments: vec![], replace_from: None, config_dir: None, add_dirs: vec![], model: model.map(str::to_string), full_access: false },
             |e| events.push(e),
         ));
         assert!(matches!(events.last(), Some(AgentEvent::End { .. })), "{events:?}");

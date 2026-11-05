@@ -203,13 +203,14 @@ export async function clickText(page, scope, text) {
 
 /** Show the sidebar if a narrow window started it hidden (A-010), as a person would. */
 export async function showSidebar(page) {
-  if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+  if (await page.evaluate(() => { const sidebar = document.getElementById("spaces-sidebar"); return !sidebar || sidebar.hidden || !sidebar.getClientRects().length; })) {
     await page.click('button[aria-controls="spaces-sidebar"]');
     await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
   }
 }
 
 export async function openSettings(page, h, tab) {
+  await showSidebar(page);
   await h.click('#spaces-sidebar:not([hidden]) [data-testid="open-settings"], header [data-testid="titlebar-settings"]');
   await page.waitForSelector('[role="dialog"]', { timeout: 5000 });
   await h.idle();

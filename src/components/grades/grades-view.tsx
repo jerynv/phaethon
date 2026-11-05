@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
 import { openCourseImport, useSitesVersion } from "@/components/lms/import-store";
@@ -13,6 +13,7 @@ import { lmsConnections, type LmsConnection } from "@/lib/lms";
 import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { useCourseSelection } from "@/lib/course-selection";
 import { CourseBack, CourseGrid } from "@/components/study/course-grid";
 
 import { WhatIf } from "./what-if-panel";
@@ -48,7 +49,6 @@ type Refresh = { connection: string; done: number; total: number } | null;
  */
 export function GradesView({ space }: { space: Space }) {
   const [courses, setCourses] = useState<CourseGrades[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
   const [connections, setConnections] = useState<LmsConnection[]>([]);
   const [error, setError] = useState("");
   const [refresh, setRefresh] = useState<Refresh>(null);
@@ -57,6 +57,12 @@ export function GradesView({ space }: { space: Space }) {
   const [said, setSaid] = useState("");
   const headingId = useId();
   const sites = useSitesVersion();
+  const courseContext = useCourseSelection(space.id, sites);
+  const selectedCourse = courses?.find(course => courseContext.selected?.key === `${course.connection}/${course.courseId}` || courseContext.selected?.folder === course.folder);
+  const setSelected = (id: string | null) => {
+    const course = courses?.find(course => `${course.connection}:${course.courseId}` === id);
+    courseContext.select(course ? { ...course, name: course.course } : null);
+  };
   const signInRef = useRef<HTMLButtonElement>(null);
   const hidden = hiddenCourses(useCourseReach(space.id), "grades");
 
@@ -120,29 +126,22 @@ export function GradesView({ space }: { space: Space }) {
 
   const connIds = [...new Set((courses ?? []).map((c) => c.connection))];
   const outIds = connIds.filter((id) => signedOut.has(id));
+  const refreshActions = (selectedCourse ? [selectedCourse.connection] : connIds).map((id) => (
+    <Button key={id} type="button" variant="ghost" data-grades-refresh={id} disabled={!!refresh}
+      aria-describedby={refresh?.connection === id ? `${headingId}-progress` : undefined} onClick={() => void doRefresh(id)}>
+      <Icon name={refresh?.connection === id ? "spinner" : "retry"} className={refresh?.connection === id ? "motion-safe:animate-spin" : undefined} />
+      {!selectedCourse && connIds.length > 1 ? `Refresh grades from ${school(id)}` : "Refresh grades"}
+    </Button>
+  ));
 
   return (
-    <section aria-labelledby={headingId} data-grades-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
+    <section aria-labelledby={headingId} data-grades-view={space.id} data-course-context={courseContext.selected?.key} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <WorkspacePage>
-        {selected && <CourseBack onBack={() => setSelected(null)} />}
-        <WorkspacePageHeader
+        {!selectedCourse && <WorkspacePageHeader
           title="Grades"
           headingProps={{ id: headingId }}
-          actions={connIds.map((id) => (
-              <Button
-                key={id}
-                type="button"
-                variant="ghost"
-                data-grades-refresh={id}
-                disabled={!!refresh}
-                aria-describedby={refresh?.connection === id ? `${headingId}-progress` : undefined}
-                onClick={() => void doRefresh(id)}
-              >
-                <Icon name={refresh?.connection === id ? "spinner" : "retry"} className={refresh?.connection === id ? "motion-safe:animate-spin" : undefined} />
-                {connIds.length > 1 ? `Refresh grades from ${school(id)}` : "Refresh grades"}
-              </Button>
-          ))}
-        />
+          actions={refreshActions}
+        />}
         <p id={`${headingId}-progress`} role="status" className={cn("text-sm text-ink-secondary", !refresh && !said && "sr-only")} data-grades-status="">
           {refresh ? `Reading your grades from ${school(refresh.connection)}… ${refresh.total ? `${Math.min(refresh.done + 1, refresh.total)} of ${refresh.total} courses` : ""}` : said}
         </p>
@@ -188,7 +187,7 @@ export function GradesView({ space }: { space: Space }) {
             action={<Button type="button" onClick={() => openCourseImport({ space: space.id })}><Icon name="book" />Import courses…</Button>}
           />
         ) : (
-          selected ? courses.filter((c) => `${c.connection}:${c.courseId}` === selected).map((c) => <CourseCard key={selected} space={space.id} course={c} />) : (
+          selectedCourse ? <CourseCard key={`${selectedCourse.connection}/${selectedCourse.courseId}`} space={space.id} course={selectedCourse} headingId={headingId} refreshActions={refreshActions} onBack={() => setSelected(null)} /> : (
             <CourseGrid courses={courses.map((c) => {
               const input = calcInput(c);
               const grade = c.current.percent ?? calculate(input).percent;
@@ -228,8 +227,7 @@ function dueText(due: GradeItem["due"]): string {
   return ms == null ? "" : new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-function CourseCard({ space, course }: { space: string; course: CourseGrades }) {
-  const id = useId();
+function CourseCard({ space, course, headingId, refreshActions, onBack }: { space: string; course: CourseGrades; headingId: string; refreshActions: ReactNode; onBack: () => void }) {
   const input = calcInput(course);
   const calc = calculate(input);
   const moved = trend(input);
@@ -239,14 +237,13 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
   const updated = timeOf(course.updated);
 
   return (
-    <section aria-labelledby={`${id}-h`} className="flex flex-col gap-4 border-t border-line pt-5" data-grades-course={course.courseId}>
+    <section aria-labelledby={headingId} className="flex flex-col gap-6" data-grades-course={course.courseId}>
+      <CourseBack onBack={onBack} />
       <WorkspacePageHeader
         title={course.course}
         description={updated != null ? `Updated ${whenText(updated)}` : undefined}
-        headingAs="h3"
-        headingProps={{ id: `${id}-h` }}
-        size="section"
-        actions={<div className="flex flex-col items-end gap-0.5 text-end" data-grades-current="">
+        headingProps={{ id: headingId, "data-view-focus": "", tabIndex: -1 }}
+        actions={<>{refreshActions}<div className="flex flex-col items-end gap-0.5 text-end" data-grades-current="">
           <p className="text-2xl font-medium text-ink tabular-nums">
             {percent != null ? pct(percent) : "No grade yet"}
             {letter && <span className="text-xl text-ink-secondary"> {letter}</span>}
@@ -258,7 +255,7 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
               {moved.delta > 0 ? "Up" : "Down"} {pct(Math.abs(moved.delta)).replace("%", "")} points after {moved.since}
             </p>
           )}
-        </div>}
+        </div></>}
       />
 
       {course.note && (
@@ -286,7 +283,7 @@ function CourseCard({ space, course }: { space: string; course: CourseGrades }) 
         </div>
       )}
 
-      <ItemsTable course={course} captionId={`${id}-h`} />
+      <ItemsTable course={course} captionId={headingId} />
       <WhatIf space={space} course={course} input={input} sitePercent={site.percent ?? null} />
     </section>
   );

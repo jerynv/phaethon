@@ -367,7 +367,7 @@ export function Composer({
         <div className="group/toolbar flex shrink-0 items-center gap-2">
           <AddMenu onAttach={() => fileInput.current?.click()} space={spaceId} />
           <AttachmentFold tray={tray} />
-          <VoiceInput disabled={isRunning} onTranscript={(text: string) => { const before = aui.composer().getState().text; aui.composer().setText(`${before}${before && !/\s$/.test(before) ? " " : ""}${text}`); inputRef.current?.focus(); }} />
+          <VoiceInput onTranscript={(text: string) => { const before = aui.composer().getState().text; aui.composer().setText(`${before}${before && !/\s$/.test(before) ? " " : ""}${text}`); inputRef.current?.focus(); }} />
           <input
             ref={fileInput}
             type="file"

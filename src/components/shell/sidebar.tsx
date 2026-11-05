@@ -1,18 +1,19 @@
 import { Gauge } from "lucide-react";
+import { Sidebar as VicSidebar, SidebarProvider, SidebarHeader, SidebarContent, SidebarFooter } from "vic-ui";
 import { ContextMenu } from "@/components/ui/menu";
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { relativeDate } from "@/components/chat/conversations-bar";
 import { openCourseImport } from "@/components/lms/import-store";
 import { setSpaceView, useSpaceView } from "@/components/study/space-view";
 import { ViewSwitcher } from "@/components/study/view-switcher";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Icon } from "@/icons";
 import { useSpaceActivity, type SpaceActivity } from "@/lib/activity";
 import { listThreads, type ThreadSummary } from "@/lib/backend";
 import { requestOpenConversation } from "@/lib/open-conversation";
 import { setConversationHost, useConversations } from "@/lib/conversation-nav";
 import { openSettings } from "@/lib/open-settings";
+import { rememberedSpaceExpansion, rememberSpaceExpansion, useConversationUnread } from "@/lib/sidebar-conversations";
 import { holdSpaceOrder, markSpaceUsed, supportsEducation, type Space } from "@/lib/spaces";
 import { platform } from "@/lib/platform";
 import { inTauri } from "@/lib/tauri";
@@ -62,12 +63,6 @@ function activityWords(a: SpaceActivity | undefined): { shown: string; spoken: s
   if (a?.running) return ANSWERING;
   return null;
 }
-
-/** Everything Tab can reach inside `root`, in order. */
-const tabbables = (root: HTMLElement) =>
-  Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(
-    (el) => el.getClientRects().length > 0,
-  );
 
 /** Shift+F10 or the context-menu key: open the focused space's menu. */
 const isMenuKey = (e: KeyboardEvent) => e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey);
@@ -131,20 +126,16 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
     }
   }, [activity]);
 
-  // Switching spaces replaces the hovered view list. Listen on the stable nav itself:
-  // React synthesizes leave from pointerout, which can lose that removed child.
-  useEffect(() => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const enter = () => holdSpaceOrder("pointer", true);
-    const leave = () => holdSpaceOrder("pointer", false);
-    nav.addEventListener("pointerenter", enter);
-    nav.addEventListener("pointerleave", leave);
-    return () => {
-      nav.removeEventListener("pointerenter", enter);
-      nav.removeEventListener("pointerleave", leave);
-    };
-  }, []);
+  // Native boundaries follow the actual library rail/sheet node across responsive remounts.
+  const pointerEnter = useCallback(() => holdSpaceOrder("pointer", true), []);
+  const pointerLeave = useCallback(() => holdSpaceOrder("pointer", false), []);
+  const attachNav = useCallback((node: HTMLElement | null) => {
+    navRef.current?.removeEventListener("pointerenter", pointerEnter);
+    navRef.current?.removeEventListener("pointerleave", pointerLeave);
+    navRef.current = node;
+    node?.addEventListener("pointerenter", pointerEnter);
+    node?.addEventListener("pointerleave", pointerLeave);
+  }, [pointerEnter, pointerLeave]);
 
   // A hidden sidebar holds nothing.
   useEffect(() => {
@@ -192,66 +183,38 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
     }
   }
 
-  function onNavKeyDown(e: KeyboardEvent<HTMLElement>) {
-    // Only keys pressed in the sidebar itself: React also bubbles events from
-    // portals (the Settings dialog), whose keys belong to the dialog.
-    if (!e.currentTarget.contains(e.target as Node)) return;
-    if (e.key === "Escape" && onDismiss) {
-      e.preventDefault();
-      onDismiss();
-      return;
-    }
-    // Over the conversation, Tab cycles inside the sidebar (the conversation behind it is inert).
-    if (e.key === "Tab" && over) {
-      const all = tabbables(e.currentTarget);
-      if (!all.length) return;
-      const first = all[0];
-      const last = all[all.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-  }
-
-  // Opening over the conversation: focus goes to the current space, ready to choose.
+  const hasProtectedLayer = useCallback(() => [...document.querySelectorAll<HTMLElement>('[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]:not([data-state="closed"]), [role="menu"]:not([data-state="closed"]), dialog[open]')]
+    .some(dialog => dialog !== navRef.current), []);
+  const protectedInteraction = useRef(false);
   useEffect(() => {
-    if (!over) return;
-    const nav = navRef.current;
-    if (!nav || nav.contains(document.activeElement)) return;
-    (nav.querySelector<HTMLElement>('[aria-current="page"]') ?? nav.querySelector<HTMLElement>("button"))?.focus();
-  }, [over]);
-
-  // Over the conversation, a press anywhere outside closes it (the toggle toggles it itself;
-  // dialogs and popovers opened from it are not "outside").
-  useEffect(() => {
-    if (!over || !onDismiss) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Element | null;
-      if (!t || navRef.current?.contains(t)) return;
-      if (t.closest(`[aria-controls="${id}"], [role="dialog"], [role="alertdialog"], [role="menu"], [data-radix-popper-content-wrapper], [data-space-action-notice]`)) return;
-      onDismiss();
-      // A press on something that cannot take focus (the dimmed conversation) blurs to the page
-      // after this; put focus back on the toggle then.
-      setTimeout(() => {
-        if (document.activeElement === document.body) document.querySelector<HTMLElement>(`[aria-controls="${id}"]`)?.focus();
-      }, 0);
+    // Remember the layer at the beginning of a user interaction. Radix can
+    // synchronously remove its dialog before Base UI reports that event or
+    // its focus restoration. A subsequent explicit key/press resets the latch.
+    const capture = () => { protectedInteraction.current = hasProtectedLayer(); };
+    window.addEventListener("keydown", capture, true);
+    window.addEventListener("pointerdown", capture, true);
+    return () => {
+      window.removeEventListener("keydown", capture, true);
+      window.removeEventListener("pointerdown", capture, true);
     };
-    document.addEventListener("pointerdown", onDown, true);
-    return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [over, onDismiss, id]);
+  }, [hasProtectedLayer]);
+  const onMobileOpenChange = useCallback((next: boolean) => {
+    if (next || protectedInteraction.current || hasProtectedLayer()) return;
+    // The library still owns trapping, outside press, Escape and focus return;
+    // dismissal of a protected task must not also dismiss its parent sheet.
+    onDismiss?.();
+  }, [onDismiss, hasProtectedLayer]);
 
   return (
     <>
-      {/* Behind the overlaid sidebar: dims the conversation; a press on it closes the sidebar. */}
-      {over && <div aria-hidden="true" data-sidebar-scrim="" className="absolute inset-0 z-20 bg-(--ph-overlay)" />}
-      <nav
-        ref={navRef}
+    <SidebarProvider open={open} openMobile={over} onOpenMobileChange={onMobileOpenChange}
+      mobileBreakpoint={overlay ? 1_000_000 : 0} collapsible="offcanvas" contained
+      className={cn("ph-sidebar-container", overlay && "ph-sidebar-container-overlay")}
+      style={{ "--sidebar-width": "var(--ph-sidebar-width)", "--sidebar-bg": "var(--ph-surface)" } as CSSProperties}>
+      {spaces.map(space => <ConversationStateObserver key={space.id} space={space} active={space.id === activeId} />)}
+      <VicSidebar
+        ref={attachNav}
         id={id}
-        onKeyDown={onNavKeyDown}
         // Keyboard focus holds the order too; pointer boundaries use native listeners above.
         onFocus={(e) => holdSpaceOrder("focus", focusShows(e.target))}
         onBlur={(e) => {
@@ -264,10 +227,10 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
         className={cn(
           // A plain divider to the pane, as a desktop sidebar has; the title bar's leading cluster continues it upward.
           "flex w-(--ph-sidebar-width) shrink-0 flex-col border-e border-line bg-surface text-ink forced-colors:border-[CanvasText]",
-          overlay &&
-            "absolute inset-y-0 start-0 z-30 max-w-[calc(100%-var(--ph-space)*12)] rounded-e-lg border-t shadow-lg",
+          "ph-sidebar",
         )}
       >
+        <SidebarHeader>
         {onSearch && (
           <div className="px-2 pt-2">
             <button
@@ -290,7 +253,8 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
         <h2 id="spaces-heading" className="px-4 pt-3 text-xs font-medium text-ink-secondary">
           Spaces
         </h2>
-        <ScrollArea className="min-h-0 flex-1">
+        </SidebarHeader>
+        <SidebarContent className="min-h-0 flex-1">
           {/* p-2 on every side: the scroll viewport clips, and the focus ring sits outside each item. */}
           <div ref={listRef} onKeyDown={onKeyDown} className="flex flex-col gap-(--ph-sidebar-item-gap) p-2">
             {!loading && spaces.length === 0 && <p className="px-2 py-1.5 text-sm text-ink-secondary">No spaces yet.</p>}
@@ -322,25 +286,59 @@ export function Sidebar({ id, spaces, activeId, onSelect, open, overlay = false,
               <span className="truncate">New space</span>
             </button>
           </div>
-        </ScrollArea>
-        {footer && <div className="flex shrink-0 items-center gap-1 border-t border-line px-3 py-2 forced-colors:border-[CanvasText]" data-sidebar-quick-actions="">
+        </SidebarContent>
+        {footer && <SidebarFooter className="flex shrink-0 items-center gap-1 border-t border-line px-3 py-2 forced-colors:border-[CanvasText]" data-sidebar-quick-actions="">
           {footer}
           <IconTip label="Usage" spoken="Provider usage"><Button type="button" variant="ghost" size="icon-sm" aria-label="Usage" data-sidebar-usage="" className="text-ink-secondary" onClick={() => window.dispatchEvent(new Event("phaethon:open-usage"))}><Gauge className="size-(--ph-icon-size-sm)" style={{ strokeWidth: "var(--ph-icon-stroke)" }} /></Button></IconTip>
           <span className="flex-1" />
           <IconTip label="Updates" spoken="Check for updates"><Button type="button" variant="ghost" size="icon-sm" aria-label="Updates" className="text-ink-secondary" onClick={() => openSettings("about")}><Icon name="download" /></Button></IconTip>
-        </div>}
-      </nav>
+        </SidebarFooter>}
+      </VicSidebar>
+    </SidebarProvider>
       <SpaceActionNotice />
     </>
   );
+}
+
+/** Remains mounted while the library sheet closes or changes desktop/mobile branch. */
+function ConversationStateObserver({ space, active }: { space: Space; active: boolean }) {
+  const nav = useConversations(space.id);
+  const view = useSpaceView(space.id);
+  const [, setUnread] = useConversationUnread(space.id);
+  const currentId = nav?.threads.find(thread => thread.current)?.id;
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    const seen = () => active && view === "chat" && document.hasFocus() && !document.querySelector('[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]');
+    const finished = wasRunning.current && !nav?.running;
+    const acknowledge = () => {
+      setUnread(previous => {
+        const next = new Set(previous);
+        if (currentId && next.delete("$pending")) next.add(currentId);
+        if (finished && !seen()) next.add(currentId ?? "$pending");
+        if (seen()) { if (currentId) next.delete(currentId); next.delete("$pending"); }
+        return next.size === previous.size && [...next].every(id => previous.has(id)) ? previous : next;
+      });
+    };
+    acknowledge(); wasRunning.current = !!nav?.running;
+    const focus = () => { if (seen()) setUnread(previous => { const next = new Set(previous); if (currentId) next.delete(currentId); next.delete("$pending"); return next.size === previous.size ? previous : next; }); };
+    window.addEventListener("focus", focus); document.addEventListener("focusin", focus);
+    return () => { window.removeEventListener("focus", focus); document.removeEventListener("focusin", focus); };
+  }, [nav?.running, active, view, currentId]);
+  return null;
 }
 
 /** T3 Code's SidebarProjectFolderHeader / SidebarThreadRow (MIT), ported
  * to spaces: each parent expands independently and owns its child destinations. */
 function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }) {
   const { onChosen, shown, ...item } = props;
-  const [expanded, setExpanded] = useState(props.active);
-  const [hasUnread, setHasUnread] = useState(false);
+  const [expanded, updateExpanded] = useState(() => rememberedSpaceExpansion(props.space.id, props.active));
+  const setExpanded = (change: boolean | ((previous: boolean) => boolean)) => updateExpanded(previous => {
+    const next = typeof change === "function" ? change(previous) : change;
+    rememberSpaceExpansion(props.space.id, next);
+    return next;
+  });
+  const [unread] = useConversationUnread(props.space.id);
+  const hasUnread = unread.size > 0;
   useEffect(() => {
     if (props.active) setExpanded(true);
   }, [props.active]);
@@ -349,7 +347,7 @@ function SpaceEntry(props: ItemProps & { onChosen?: () => void; shown: boolean }
       <SpaceItem {...item} unread={hasUnread} expanded={expanded} onToggle={() => setExpanded((value) => !value)} onNewChosen={onChosen}
         onSelect={(id) => { setExpanded(true); props.onSelect(id); }} />
       <ul hidden={!expanded || !shown} className="ms-4 ps-1" id={`space-children-${props.space.id}`}>
-        <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} shown={expanded && shown} onUnreadChange={setHasUnread} />
+        <SpaceConversations space={props.space} active={props.active} onSelect={props.onSelect} onChosen={onChosen} shown={expanded && shown} />
       </ul>
     </li>
   );
@@ -375,37 +373,17 @@ const threadRow = cn(
  * SidebarThreadHeader (apps/web/src/components/sidebar/, MIT): one line, the
  * title taking the row; actions in the header, not per row.
  */
-function SpaceConversations({ space, active, onSelect, onChosen, shown: visible, onUnreadChange }: { space: Space; active: boolean; onSelect: (id: string) => void; onChosen?: () => void; shown: boolean; onUnreadChange: (unread: boolean) => void }) {
+function SpaceConversations({ space, active, onSelect, onChosen, shown: visible }: { space: Space; active: boolean; onSelect: (id: string) => void; onChosen?: () => void; shown: boolean }) {
   const nav = useConversations(space.id);
   const rowActivity = useSpaceActivity()[space.id];
   const [hasDraft, setHasDraft] = useState(false);
-  const [unread, setUnread] = useState<ReadonlySet<string>>(() => new Set());
-  const currentId = nav?.threads.find(thread => thread.current)?.id;
-  useEffect(() => onUnreadChange(unread.size > 0), [unread, onUnreadChange]);
-  const wasRunning = useRef(false);
+  const [unread, setUnread] = useConversationUnread(space.id);
   useEffect(() => {
     const read = () => { try { setHasDraft(!!localStorage.getItem(`phaethon:draft:${space.id}`)?.trim()); } catch { setHasDraft(false); } };
     read(); window.addEventListener("phaethon:draft-changed", read); window.addEventListener("storage", read);
     return () => { window.removeEventListener("phaethon:draft-changed", read); window.removeEventListener("storage", read); };
   }, [space.id]);
   const view = useSpaceView(space.id);
-  useEffect(() => {
-    const seen = () => active && view === "chat" && document.hasFocus() && !document.querySelector('[role="dialog"]:not([data-state="closed"]), [role="alertdialog"]');
-    const finished = wasRunning.current && !nav?.running;
-    const acknowledge = () => {
-      setUnread(previous => {
-        const next = new Set(previous);
-        if (currentId && next.delete("$pending")) next.add(currentId);
-        if (finished && !seen()) next.add(currentId ?? "$pending");
-        if (seen()) { if (currentId) next.delete(currentId); next.delete("$pending"); }
-        return next.size === previous.size && [...next].every(id => previous.has(id)) ? previous : next;
-      });
-    };
-    acknowledge(); wasRunning.current = !!nav?.running;
-    const focus = () => { if (seen()) setUnread(previous => { const next = new Set(previous); if (currentId) next.delete(currentId); next.delete("$pending"); return next.size === previous.size ? previous : next; }); };
-    window.addEventListener("focus", focus); document.addEventListener("focusin", focus);
-    return () => { window.removeEventListener("focus", focus); document.removeEventListener("focusin", focus); };
-  }, [nav?.running, active, view, currentId]);
   const [fallback, setFallback] = useState<{ status: "loading" | "ready" | "error"; threads: ThreadSummary[] }>({ status: "loading", threads: [] });
   const [pending, setPending] = useState<"new" | "history" | null>(null);
   useEffect(() => {
@@ -447,7 +425,7 @@ function SpaceConversations({ space, active, onSelect, onChosen, shown: visible,
     <li data-sidebar-conversations={space.id} className="flex flex-col gap-1 pt-0.5 pb-2" onClickCapture={(event) => {
       if ((event.target as Element).closest("[data-view-tab]")) onSelect(space.id);
     }}>
-      {active && supportsEducation(space) && <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} />}
+      {active && supportsEducation(space) && <ViewSwitcher space={space.id} spaceName={space.name} view={view} orientation="vertical" currentConversationShown={shown.some((t) => t.current)} onChosen={onChosen} />}
       {active ? visible && <div ref={host} data-conversations-host="" className="pt-1" /> : <div className="flex items-center justify-between pt-1">
         <button type="button" data-sidebar-history-all={threads.length > RECENT ? "" : undefined} className="min-h-(--ph-control-height-sm) rounded-md px-2 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink"
           onClick={() => { if (active) nav?.showAll(); else { onSelect(space.id); setPending("history"); } }}>Conversations</button>

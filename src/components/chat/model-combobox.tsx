@@ -5,7 +5,7 @@ import { ComboboxEmpty, ComboboxItem, ComboboxList, ComboboxRoot, ComboboxSearch
 import { Icon } from "@/icons";
 import { cn } from "@/lib/utils";
 
-export type PickerOption = { value: string; model: string; name: string; provider: string; providerName: string; logo: ReactNode; selected: boolean; detail?: string };
+export type PickerOption = { value: string; model: string; name: string; provider: string; providerName: string; logo: ReactNode; selected: boolean; accountName?: string; detail?: string };
 
 /** T3's pinned search/list composition, rendered and controlled by Vic's inline
  * Combobox parts. The host filters once and keeps provider/footer layout outside
@@ -52,9 +52,9 @@ export function ModelCombobox({ options, query, onQueryChange, onChoose, favorit
         {filtered.map(option => <div key={option.value} className="ph-model-row-group" role="presentation">
           <ComboboxItem value={option.value} aria-label={`${option.name}, ${option.providerName}`}
             data-model-option={option.model} data-picker-value={option.value} className="ph-model-row">
-            <span className="ph-model-row-logo">{option.logo}</span>
+            <span className="ph-model-row-logo" data-model-account={option.accountName} title={option.providerName}>{option.logo}</span>
             <span className="ph-model-row-name" title={option.name}>{option.name}</span>
-            {option.detail && <span className="ph-model-row-detail">{option.detail}</span>}
+            {(option.accountName || option.detail) && <span className="ph-model-row-detail" title={option.accountName ?? option.detail}>{option.accountName ?? option.detail}</span>}
             {option.selected && <Icon name="check" className="size-3.5 shrink-0 text-ink-secondary" />}
           </ComboboxItem>
           <button type="button" tabIndex={option.selected ? 0 : -1} disabled={busy} className={cn("ph-model-star", favorites.has(option.value) && "is-favorite")}

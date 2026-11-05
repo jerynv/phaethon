@@ -28,7 +28,7 @@ const focused = (page) => page.evaluate(() => {
 const sliderBy = (page, label) =>
   page.evaluateHandle(
     (label) =>
-      [...document.querySelectorAll('[role="dialog"] [role="slider"]')].find((t) =>
+      [...document.querySelectorAll('[role="dialog"] input[type="range"]')].find((t) =>
         (t.getAttribute("aria-labelledby") ?? "").split(" ").some((id) => document.getElementById(id)?.textContent === label),
       ) ?? null,
     label,
@@ -44,9 +44,12 @@ export default [
     themes: ["light", "dark"],
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
-      await page.waitForSelector('[data-testid="open-settings"]');
-      const sidebar = await page.$eval('[data-testid="open-settings"]', (button) => ({ id: button.closest('nav').id, visible: button.getClientRects().length > 0 }));
-      if (!sidebar.visible) await h.click(`button[aria-controls="${sidebar.id}"]`);
+      const settingsVisible = await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="open-settings"]');
+        return !!button && button.getClientRects().length > 0;
+      });
+      if (!settingsVisible) await h.click('button[aria-controls="spaces-sidebar"]');
+      await page.waitForSelector('[data-testid="open-settings"]', { visible: true });
       const footer = await page.$eval('[data-testid="open-settings"]', (button) => {
         const group = button.closest('[data-sidebar-quick-actions]').getBoundingClientRect();
         const box = button.getBoundingClientRect();
@@ -60,7 +63,7 @@ export default [
       await h.click('[data-testid="settings-tab-appearance"]');
       await h.idle();
       const bounds = await page.evaluate(() => {
-        const dialog = document.querySelector('[role="dialog"]').getBoundingClientRect();
+        const dialog = document.querySelector('[role="dialog"]:has([data-settings-header])').getBoundingClientRect();
         const close = document.querySelector('[aria-label="Close settings"]').getBoundingClientRect();
         const panel = document.querySelector('[role="dialog"] [role="tabpanel"]:not([hidden])');
         return { left: dialog.left, top: dialog.top, right: dialog.right, bottom: dialog.bottom, width: dialog.width, height: dialog.height, viewport: [innerWidth, innerHeight], scale: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ph-ui-scale')), closeIn: close.left >= dialog.left && close.top >= dialog.top && close.right <= dialog.right && close.bottom <= dialog.bottom, scrollable: panel.scrollHeight > panel.clientHeight && panel.clientHeight > 100 };
@@ -69,7 +72,7 @@ export default [
       check(bounds.width <= 960 * bounds.scale && bounds.height <= 700 * bounds.scale, "Settings stays within its desktop size limits at the chosen text size", JSON.stringify(bounds));
       check(bounds.closeIn && bounds.scrollable, "Close stays visible while the Settings content scrolls", JSON.stringify(bounds));
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"]:has([data-settings-header])'));
       await page.waitForFunction(() => document.activeElement === document.querySelector('[data-testid="open-settings"]'));
       check(await page.$eval('[data-testid="open-settings"]', (button) => document.activeElement === button), "Escape returns focus to the Settings entry");
     },
@@ -109,7 +112,7 @@ export default [
       await page.click(`${row} [data-revoke="g-cal"]`);
       await page.waitForSelector(`${row} [data-undo="g-cal"]`, { timeout: 3000 });
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 5000 });
+      await page.waitForFunction(() => !document.querySelector('[role="dialog"]:has([data-settings-header])'), { timeout: 5000 });
       await openSettings(page, h, "spaces");
       await openSpaceDetails(page, ["school"]);
       const text = await page.$eval(row, (el) => el.innerText);
@@ -278,12 +281,12 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "accessibility");
       const thumb = await sliderBy(page, "Text size");
-      const track = await thumb.evaluateHandle((t) => t.closest("[data-setting-row]").querySelector("[data-slider-track]"));
+      const track = await thumb.evaluateHandle((t) => t.closest("[data-setting-row]").querySelector(".ui-slider-track"));
       let box = await track.boundingBox();
       // A slip onto the track at 80%: one step toward it, not a jump to 175%.
       await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
       await h.idle();
-      const one = await thumb.evaluate((t) => Number(t.getAttribute("aria-valuenow")));
+      const one = await thumb.evaluate((t) => Number(t.value));
       check(Math.abs(one - 1.05) < 1e-6, "a click on the track moves text size one step (100% to 105%)", `${one}`);
       check(await thumb.evaluate((t) => document.activeElement === t), "and the thumb has focus, so arrows go on from there");
       // Toward the left of the thumb steps down.
@@ -291,7 +294,7 @@ export default [
       box = await track.boundingBox();
       await page.mouse.click(box.x + box.width * 0.02, box.y + box.height / 2);
       await h.idle();
-      const back = await thumb.evaluate((t) => Number(t.getAttribute("aria-valuenow")));
+      const back = await thumb.evaluate((t) => Number(t.value));
       check(Math.abs(back - 1) < 1e-6, "a click left of it steps back down", `${back}`);
       // The thumb still drags.
       box = await track.boundingBox();
@@ -301,7 +304,7 @@ export default [
       await page.mouse.move(box.x + box.width * 0.5, tb.y + tb.height / 2, { steps: 8 });
       await page.mouse.up();
       await h.idle();
-      const dragged = await thumb.evaluate((t) => Number(t.getAttribute("aria-valuenow")));
+      const dragged = await thumb.evaluate((t) => Number(t.value));
       check(dragged > 1.3, "dragging the thumb still moves it as far as you drag", `${dragged}`);
       // Close shows its name on hover.
       await h.hover('button[aria-label="Close settings"]');
@@ -320,10 +323,10 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       const m = await page.evaluate(() => {
-        const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
+        const d = document.querySelector('[role="dialog"]:has([data-settings-header])').getBoundingClientRect();
         const panel = document.querySelector('[role="dialog"] [role="tabpanel"]:not([hidden])').getBoundingClientRect();
-        const tabs = [...document.querySelectorAll('[role="dialog"] [role="tab"]')].map((t) => t.getBoundingClientRect());
-        return { dh: d.height, top: panel.top - d.top, tabsIn: tabs.every((t) => t.right <= d.right + 1 && t.left >= d.left - 1 && t.height >= 24), title: document.querySelector('[role="dialog"] h2')?.textContent };
+        const tabs = [...document.querySelectorAll('[role="dialog"]:has([data-settings-header]) [role="tab"]')].map((t) => t.getBoundingClientRect());
+        return { dh: d.height, top: panel.top - d.top, tabsIn: tabs.every((t) => t.right <= d.right + 1 && t.left >= d.left - 1 && t.height >= 24), title: document.querySelector('[role="dialog"]:has([data-settings-header]) h2')?.textContent };
       });
       console.log(`     header ${Math.round(m.top)} of ${Math.round(m.dh)} px`);
       // Six sections wrap to a second row here (nothing hidden): up to 30% of the window.
@@ -341,7 +344,7 @@ export default [
     async run(page, h) {
       await openSettings(page, h, "agent");
       await openProviderConfiguration(page, "anthropic", { keyboard: true, catalog: true });
-      const setup = await page.$eval('[role="dialog"][data-provider-popup]', (el) => ({ text: el.innerText, key: !!el.querySelector("[data-key-input]"), model: !!el.querySelector("[data-model-select]") }));
+      const setup = await page.$eval(providerPopup, (el) => ({ text: el.innerText, key: !!el.querySelector("[data-key-input]"), model: !!el.querySelector("[data-model-select]") }));
       check(setup.key && setup.model, "keyboard provider selection opens its key and model controls", JSON.stringify(setup));
       check(!/privacy policy|subscription|What is sent/.test(setup.text), "setup keeps its copy focused on configuration", setup.text);
       check((await calls(page, "settings_set_backend")).length === 0 && (await calls(page, "settings_set_provider")).length === 0, "opening setup leaves the default unchanged");

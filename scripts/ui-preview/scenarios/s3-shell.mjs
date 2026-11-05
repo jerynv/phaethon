@@ -110,14 +110,14 @@ export default [
       await h.waitText("Problem set 4");
       await page.waitForSelector("[data-conversation-current]", { timeout: 5000 });
       const selectedSidebar = async (title) => {
-        const hidden = await page.$eval("#spaces-sidebar", (sidebar) => sidebar.hidden);
+        const hidden = await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true));
         if (hidden) await page.click('button[aria-controls="spaces-sidebar"]');
         await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-sidebar-thread][aria-current="page"]', { timeout: 3000 });
         const selected = await page.$$eval('#spaces-sidebar [data-sidebar-thread][aria-current="page"]', (rows) => rows.map((row) => row.querySelector('[data-sidebar-thread-title]').textContent));
         check(selected.length === 1 && selected[0] === title, "exactly one sidebar row names the current conversation", JSON.stringify(selected));
         if (hidden) {
           await page.click('button[aria-controls="spaces-sidebar"]');
-          await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 3000 });
+          await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true), { timeout: 3000 });
         }
       };
       let bar = await barText(page);
@@ -158,7 +158,7 @@ export default [
       await selectedSidebar(bar);
       await menuGone(page);
       await page.click("[data-new-conversation]");
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await page.waitForFunction(() => !document.querySelector("[data-conversation-current]") && document.querySelector('header nav[aria-label="Where you are"] [aria-current="page"]')?.textContent.trim() === "New conversation", { timeout: 3000 });
       check(!(await page.$("[data-conversation-current]")), "a new conversation has no stale current title");
       const identity = await page.$eval('header nav[aria-label="Where you are"]', (nav) => ({ current: [...nav.querySelectorAll('[aria-current="page"]')].map((el) => el.textContent.trim()), titles: nav.querySelectorAll("[data-conversation-current]").length }));
@@ -234,7 +234,7 @@ export default [
       const c2 = await page.$eval('[data-delete-confirm="current"] p', (p) => p.textContent);
       check(c2.endsWith("A new conversation starts in its place."), "deleting the open one says a new one starts", c2);
       await page.click('[data-delete-confirm-button="current"]');
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       const del2 = (await calls(page, "thread_forget")).at(-1);
       check(del2?.id === "current", "the open one is deleted as \"current\"", JSON.stringify(del2));
@@ -537,7 +537,7 @@ export default [
       });
       check(r.chip[2] >= 44 && r.chip[0] >= r.bar[0] && r.chip[1] <= r.bar[1], "the 44 px chip sits inside the title bar", JSON.stringify(r));
       check(r.toggle[0] >= r.bar[0] && r.toggle[1] <= r.bar[1], "the sidebar toggle sits inside the title bar", JSON.stringify(r));
-      if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+      if (await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true))) {
         await page.click('button[aria-controls="spaces-sidebar"]');
         await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
       }

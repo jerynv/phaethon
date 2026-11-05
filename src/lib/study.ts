@@ -354,6 +354,7 @@ export type CitationCheck = {
   path: string;
   name: string;
   at?: string;
+  page?: number;
   before?: string;
   passage?: string;
   after?: string;

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 // The shared, centered content measure follows T3 Code's WorkspacePageContainer pattern.
 export function WorkspacePage({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  return <div className={cn("mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 pt-8 pb-12 sm:px-10", className)} {...props} />;
+  return <div className={cn("ph-workspace-page mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 pt-8 pb-12 sm:px-10", className)} {...props} />;
 }
 
 export function WorkspacePageHeader({ title, description, actions, headingAs: Heading = "h2", headingProps, textClassName, actionsClassName, size = "page", as: Container = "header" }: {
@@ -20,7 +20,7 @@ export function WorkspacePageHeader({ title, description, actions, headingAs: He
   as?: "header" | "div";
 }) {
   return (
-    <Container className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    <Container className={cn("flex flex-wrap items-start justify-between gap-x-6 gap-y-3", size === "page" && "ph-workspace-heading")}>
       <div className={cn("flex min-w-0 flex-1 basis-60 flex-col gap-1", textClassName)}>
         <Heading {...headingProps} className={cn("w-fit max-w-full font-semibold text-ink wrap-break-word", size === "page" ? "text-2xl" : "text-lg", headingProps?.className)}>{title}</Heading>
         {description && <p className="text-sm text-ink-secondary">{description}</p>}

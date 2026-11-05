@@ -6,7 +6,7 @@ import {
   ImageOff, Info, KeyRound, Link, LoaderCircle, LockKeyhole, Maximize2, Mic, Minus,
   MessageSquare, Moon, PanelLeft, Paperclip, Pause, Pencil, Phone, Play, Plus, RotateCcw, Search,
   Settings, ShieldCheck, Square, SquarePen, Sun, SunMoon, ThumbsDown, ThumbsUp, Trash2,
-  TriangleAlert, UserRound, Video, Volume2, Wrench, X, BookOpen, type LucideIcon,
+  TriangleAlert, UserRound, Video, Volume2, Wrench, X, BookOpen, Terminal, type LucideIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,6 +34,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   "image-off": ImageOff, video: Video, audio: AudioLines, folder: Folder,
   "folder-plus": FolderPlus, book: BookOpen, thinking: Brain, tool: Wrench,
   agent: Bot, chat: MessageSquare, "new-chat": SquarePen, spinner: LoaderCircle, voice: Volume2, mic: Mic, phone: Phone,
+  terminal: Terminal,
   info: Info, warning: TriangleAlert, error: CircleAlert, success: CircleCheck,
   shield: ShieldCheck, lock: LockKeyhole, key: KeyRound, link: Link,
   "thumbs-up": ThumbsUp, "thumbs-down": ThumbsDown, settings: Settings,

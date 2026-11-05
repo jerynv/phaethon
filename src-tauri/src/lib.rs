@@ -24,6 +24,7 @@ pub mod secrets;
 pub mod space_add;
 pub mod space_model;
 pub mod spaces;
+pub mod workspace;
 pub mod study;
 pub mod thread;
 pub mod tools;
@@ -84,6 +85,9 @@ struct AppState {
     last_export: std::sync::Mutex<Option<std::path::PathBuf>>,
     /// Which spaces have full access (full_access.rs), on this computer only.
     full_access_file: Option<std::path::PathBuf>,
+    workspace_file: Option<std::path::PathBuf>,
+    workspace_lock: std::sync::Mutex<()>,
+    workspace_choices: std::sync::Mutex<Vec<(String, std::path::PathBuf)>>,
 }
 
 /// Send one message to the agent in `space` and stream the reply over `on_event`.
@@ -187,8 +191,13 @@ async fn agent_send(
                 Ok(home) => home,
                 Err(message) => { fail(ErrorCode::Cli, message); return Ok(()); }
             };
+            let working_dir = match workspace::resolve(state.workspace_file.as_deref(), state.vault.root(), &space, &space_dir) {
+                Ok(dir) => (dir != space_dir).then_some(dir),
+                Err(message) => { fail(ErrorCode::Cli, message); return Ok(()); }
+            };
             let req = TurnRequest {
                 space_dir: &space_dir,
+                working_dir,
                 prompt: &prompt,
                 attachments: refs,
                 replace_from,
@@ -279,6 +288,61 @@ async fn conversations_search(
 #[tauri::command]
 fn spaces_list(state: State<'_, AppState>) -> Result<Vec<spaces::SpaceView>, String> {
     spaces::list(&state.vault)
+}
+
+/// Device-local chosen project; managed conversation/course state remains in the vault.
+#[tauri::command]
+fn space_workspace_get(state: State<'_, AppState>, id: String) -> Result<workspace::WorkspaceView, String> {
+    let dir = state.vault.space_dir(&id)?;
+    let _lock = state.workspace_lock.lock().map_err(|_| "Workspace settings are busy.")?;
+    workspace::get(state.workspace_file.as_deref(), state.vault.root(), &id, &dir)
+}
+
+#[derive(serde::Serialize)]
+struct WorkspaceChoice { token: String, path: String, name: String }
+
+/// The webview supplies a random correlation token, never a filesystem path.
+/// Only a folder approved in the native picker can become a pending choice.
+#[tauri::command]
+async fn workspace_choose(app: tauri::AppHandle, state: State<'_, AppState>, token: String) -> Result<Option<WorkspaceChoice>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    if token.len() != 36 || !token.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') { return Err("Invalid folder choice.".into()); }
+    let mut dialog = app.dialog().file().set_title("Choose a workspace folder");
+    if let Some(window) = app.get_webview_window("main") { dialog = dialog.set_parent(&window); }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    dialog.pick_folder(move |picked| { let _ = tx.send(picked); });
+    let Some(picked) = rx.await.ok().flatten() else { return Ok(None); };
+    let path = picked.into_path().map_err(|_| "That folder is not on this computer.")?;
+    let name = path.file_name().map(|v| v.to_string_lossy().into_owned()).unwrap_or_else(|| "Project".into());
+    let result = WorkspaceChoice { token: token.clone(), path: path.to_string_lossy().into_owned(), name };
+    let mut choices = state.workspace_choices.lock().map_err(|_| "Folder choice is busy.")?;
+    choices.retain(|(key, _)| key != &token);
+    if choices.len() >= 16 { choices.remove(0); }
+    choices.push((token, path));
+    Ok(Some(result))
+}
+
+#[tauri::command]
+fn space_workspace_bind(state: State<'_, AppState>, id: String, token: String) -> Result<workspace::WorkspaceView, String> {
+    let dir = state.vault.space_dir(&id)?;
+    if state.runs.is_running(&id) { return Err("Stop the reply before changing its workspace.".into()); }
+    let mut choices = state.workspace_choices.lock().map_err(|_| "Folder choice is busy.")?;
+    let at = choices.iter().position(|(key, _)| key == &token).ok_or("Choose the folder again.")?;
+    let _lock = state.workspace_lock.lock().map_err(|_| "Workspace settings are busy.")?;
+    let result = workspace::bind(state.workspace_file.as_deref(), state.vault.root(), &id, &choices[at].1)?;
+    choices.remove(at); // Failed writes remain retryable; successful authorization is consumed once.
+    vault::clear_session(&dir);
+    Ok(result)
+}
+
+#[tauri::command]
+fn space_workspace_clear(state: State<'_, AppState>, id: String) -> Result<workspace::WorkspaceView, String> {
+    let dir = state.vault.space_dir(&id)?;
+    if state.runs.is_running(&id) { return Err("Stop the reply before changing its workspace.".into()); }
+    let _lock = state.workspace_lock.lock().map_err(|_| "Workspace settings are busy.")?;
+    let result = workspace::clear(state.workspace_file.as_deref(), state.vault.root(), &id, &dir)?;
+    vault::clear_session(&dir);
+    Ok(result)
 }
 
 /// Create a space. Its folder name is derived from `name`; the result says which.
@@ -1241,6 +1305,9 @@ pub fn run() {
                 isolated_config_root,
                 last_export: Default::default(),
                 full_access_file: app.path().app_data_dir().ok().map(|d| d.join("full-access.json")),
+                workspace_file: app.path().app_data_dir().ok().map(|d| d.join("workspaces.json")),
+                workspace_lock: Default::default(),
+                workspace_choices: Default::default(),
             });
             // Keep Tauri's configured prototype policy. Freezing Object.prototype breaks
             // ordinary inherited constructor/toString/valueOf assignments in UI dependencies.
@@ -1301,6 +1368,10 @@ pub fn run() {
             file_open,
             appearance_set,
             spaces_list,
+            space_workspace_get,
+            workspace_choose,
+            space_workspace_bind,
+            space_workspace_clear,
             space_create,
             space_update,
             space_model_get,

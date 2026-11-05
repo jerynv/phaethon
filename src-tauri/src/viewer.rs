@@ -4,8 +4,9 @@
 //! nothing under `.phaethon/`, no symlink leading out, no `@other/...`), or
 //! `courses/...` where this space may see that course and that part of it
 //! (lms/access.rs), with a course's README filtered as the agent sees it.
-//! Text comes back as text, PDFs and images as bytes, each with a size cap;
-//! anything else is named for what it is so the viewer can offer its app.
+//! Text comes back as text; supported documents and media come back as bytes,
+//! each with a size cap. Classification does not promise renderer or codec
+//! support; anything else is named so the viewer can offer its app.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,18 +19,29 @@ use crate::tools;
 
 /// The most text shown.
 pub const MAX_TEXT: u64 = 1024 * 1024;
-/// The largest PDF or image shown.
+/// The largest encoded binary input supplied to an in-app renderer.
 pub const MAX_BYTES: u64 = 40 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ViewKind {
     Markdown,
     Tex,
     Text,
     Pdf,
     Image,
+    Docx,
+    Spreadsheet,
+    Slides,
+    Audio,
+    Video,
     Other,
+}
+
+impl ViewKind {
+    fn has_bytes(self) -> bool {
+        matches!(self, Self::Pdf | Self::Image | Self::Docx | Self::Spreadsheet | Self::Slides | Self::Audio | Self::Video)
+    }
 }
 
 /// A file as the viewer shows it.
@@ -74,6 +86,20 @@ fn kind_of(real: &Path) -> (ViewKind, &'static str) {
         "bmp" => (ViewKind::Image, "image/bmp"),
         // Shown in an <img>, where an SVG's scripts never run.
         "svg" => (ViewKind::Image, "image/svg+xml"),
+        "docx" => (ViewKind::Docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "xlsx" => (ViewKind::Spreadsheet, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "pptx" => (ViewKind::Slides, "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "mp3" => (ViewKind::Audio, "audio/mpeg"),
+        "m4a" => (ViewKind::Audio, "audio/mp4"),
+        "wav" => (ViewKind::Audio, "audio/wav"),
+        "ogg" | "oga" => (ViewKind::Audio, "audio/ogg"),
+        "opus" => (ViewKind::Audio, "audio/ogg; codecs=opus"),
+        "flac" => (ViewKind::Audio, "audio/flac"),
+        "aac" => (ViewKind::Audio, "audio/aac"),
+        "mp4" | "m4v" => (ViewKind::Video, "video/mp4"),
+        "webm" => (ViewKind::Video, "video/webm"),
+        "ogv" => (ViewKind::Video, "video/ogg"),
+        "mov" => (ViewKind::Video, "video/quicktime"),
         e if TEXT_EXT.contains(&e) => (ViewKind::Text, "text/plain"),
         _ => (ViewKind::Other, "application/octet-stream"),
     }
@@ -132,7 +158,7 @@ pub fn view(space: &Path, courses: &Visible, path: &str) -> Result<FileView, Str
     let size = meta.len();
     let mut view = FileView { path: path.trim().to_string(), name, kind, size, media_type: media.into(), text: None, language: None, too_big: false };
     match kind {
-        ViewKind::Pdf | ViewKind::Image => view.too_big = size > MAX_BYTES,
+        ViewKind::Pdf | ViewKind::Image | ViewKind::Docx | ViewKind::Spreadsheet | ViewKind::Slides | ViewKind::Audio | ViewKind::Video => view.too_big = size > MAX_BYTES,
         ViewKind::Markdown | ViewKind::Tex | ViewKind::Text | ViewKind::Other => {
             if size > MAX_TEXT {
                 view.too_big = kind != ViewKind::Other;
@@ -167,12 +193,12 @@ pub fn view(space: &Path, courses: &Visible, path: &str) -> Result<FileView, Str
     Ok(view)
 }
 
-/// A PDF's or an image's bytes, for the viewer; nothing else comes back this way.
+/// An allowlisted binary viewer input, after the same space and course checks.
 pub fn bytes(space: &Path, courses: &Visible, path: &str) -> Result<Vec<u8>, String> {
     let (real, _) = locate(space, courses, path)?;
     let (kind, _) = kind_of(&real);
-    if !matches!(kind, ViewKind::Pdf | ViewKind::Image) {
-        return Err("Only PDFs and pictures are read this way.".into());
+    if !kind.has_bytes() {
+        return Err("This file type is not a binary preview input.".into());
     }
     let meta = fs::metadata(&real).map_err(|_| format!("“{}” isn’t there any more.", path.trim()))?;
     if !meta.is_file() {
@@ -186,7 +212,7 @@ pub fn bytes(space: &Path, courses: &Visible, path: &str) -> Result<Vec<u8>, Str
 
 // ---- Commands ---------------------------------------------------------------
 
-/// A file in `space` for the viewer (text inline; see `file_bytes` for PDFs and pictures).
+/// A file in `space` for the viewer (text inline; binary inputs use `file_bytes`).
 #[tauri::command]
 pub(crate) async fn file_view(state: tauri::State<'_, crate::AppState>, space: String, path: String) -> Result<FileView, String> {
     let dir = state.vault.space_dir(&space)?;
@@ -194,7 +220,7 @@ pub(crate) async fn file_view(state: tauri::State<'_, crate::AppState>, space: S
     crate::off_main(move || view(&dir, &courses, &path)).await
 }
 
-/// A PDF's or a picture's bytes in `space`, for the viewer.
+/// A supported document's or media file's bytes in `space`, for the viewer.
 #[tauri::command]
 pub(crate) async fn file_bytes(state: tauri::State<'_, crate::AppState>, space: String, path: String) -> Result<tauri::ipc::Response, String> {
     let dir = state.vault.space_dir(&space)?;
@@ -246,6 +272,91 @@ mod tests {
         assert_eq!(bytes(&space, &none, "notes/paper.pdf").unwrap(), b"%PDF-1.7");
         assert!(bytes(&space, &none, "notes/plan.md").is_err(), "text comes back as text only");
         assert!(view(&space, &none, "notes").is_err(), "a folder isn't a file");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn office_and_media_are_bounded_binary_inputs_not_text() {
+        let dir = vault("rich-inputs");
+        let space = dir.join("spaces/school");
+        let none = Visible::default();
+        // Deliberately valid UTF-8: these formats must not enter text sniffing.
+        let payload = b"renderer owns decoding, not the host";
+        for (name, kind, media) in [
+            ("notes/paper.DOCX", ViewKind::Docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            ("notes/data.xlsx", ViewKind::Spreadsheet, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("notes/lecture.pptx", ViewKind::Slides, "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+            ("notes/lecture.mp3", ViewKind::Audio, "audio/mpeg"),
+            ("notes/lecture.m4a", ViewKind::Audio, "audio/mp4"),
+            ("notes/lecture.wav", ViewKind::Audio, "audio/wav"),
+            ("notes/lecture.ogg", ViewKind::Audio, "audio/ogg"),
+            ("notes/lecture.oga", ViewKind::Audio, "audio/ogg"),
+            ("notes/lecture.opus", ViewKind::Audio, "audio/ogg; codecs=opus"),
+            ("notes/lecture.flac", ViewKind::Audio, "audio/flac"),
+            ("notes/lecture.aac", ViewKind::Audio, "audio/aac"),
+            ("notes/lecture.mp4", ViewKind::Video, "video/mp4"),
+            ("notes/lecture.m4v", ViewKind::Video, "video/mp4"),
+            ("notes/lecture.webm", ViewKind::Video, "video/webm"),
+            ("notes/lecture.ogv", ViewKind::Video, "video/ogg"),
+            ("notes/lecture.mov", ViewKind::Video, "video/quicktime"),
+        ] {
+            fs::write(space.join(name), payload).unwrap();
+            let v = view(&space, &none, name).unwrap();
+            assert_eq!((v.kind, v.media_type.as_str(), v.size), (kind, media, payload.len() as u64), "{name}");
+            assert!(v.text.is_none() && v.language.is_none() && !v.too_big, "{name}");
+            assert_eq!(bytes(&space, &none, name).unwrap(), payload, "{name}");
+            assert_eq!(serde_json::to_value(&v).unwrap()["kind"], format!("{kind:?}").to_lowercase(), "serialized viewer contract");
+        }
+        for ext in ["docx", "xlsx", "pptx", "mp3", "mp4"] {
+            let name = format!("big.{ext}");
+            fs::File::create(space.join(&name)).unwrap().set_len(MAX_BYTES + 1).unwrap();
+            let v = view(&space, &none, &name).unwrap();
+            assert!(v.too_big && v.text.is_none(), "{name} is classified without loading");
+            assert!(bytes(&space, &none, &name).unwrap_err().contains("larger than the viewer shows"), "{name}");
+        }
+        // Legacy Office, macro-enabled packages and arbitrary archives are not
+        // made eligible merely because more binary renderers were added.
+        for ext in ["doc", "xls", "ppt", "docm", "xlsm", "pptm", "zip", "bin", "exe"] {
+            let name = format!("unsupported.{ext}");
+            fs::write(space.join(&name), [0u8, 255]).unwrap();
+            assert_eq!(view(&space, &none, &name).unwrap().kind, ViewKind::Other, "{name}");
+            assert!(bytes(&space, &none, &name).is_err(), "{name} is not an allowlisted byte input");
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn binary_previews_keep_space_and_course_part_boundaries() {
+        let dir = vault("rich-walls");
+        let space = dir.join("spaces/school");
+        fs::write(dir.join("spaces/work/private.docx"), b"private document").unwrap();
+        fs::write(space.join(".phaethon/private.docx"), b"private state").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("spaces/work/private.docx"), space.join("notes/escape.docx")).unwrap();
+        for path in ["../work/private.docx", ".phaethon/private.docx", "@work/private.docx", "notes/escape.docx"] {
+            assert!(view(&space, &Visible::default(), path).is_err(), "{path}");
+            assert!(bytes(&space, &Visible::default(), path).is_err(), "{path}");
+        }
+        for course in ["Calculus", "Physics"] {
+            fs::create_dir_all(dir.join("courses").join(course).join("files")).unwrap();
+            fs::write(dir.join("courses").join(course).join("files/lecture.docx"), b"course document").unwrap();
+        }
+        let syllabus_only = fixture(&dir, "school", &[("Calculus", &[Part::Syllabus])]);
+        let path = "courses/Calculus/files/lecture.docx";
+        assert!(view(&space, &syllabus_only, path).is_err(), "files require their own part grant");
+        assert!(bytes(&space, &syllabus_only, path).is_err());
+        let files = fixture(&dir, "school", &[("Calculus", &[Part::Files])]);
+        assert_eq!(view(&space, &files, path).unwrap().kind, ViewKind::Docx);
+        assert_eq!(bytes(&space, &files, path).unwrap(), b"course document");
+        for hidden in ["courses/Physics/files/lecture.docx", "courses/Calculus/../Physics/files/lecture.docx"] {
+            assert!(view(&space, &files, hidden).is_err(), "{hidden}");
+            assert!(bytes(&space, &files, hidden).is_err(), "{hidden}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.join("spaces/work/private.docx"), dir.join("courses/Calculus/files/escape.docx")).unwrap();
+            assert!(bytes(&space, &files, "courses/Calculus/files/escape.docx").is_err());
+        }
         fs::remove_dir_all(&dir).unwrap();
     }
 

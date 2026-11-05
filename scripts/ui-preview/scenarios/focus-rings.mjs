@@ -71,7 +71,7 @@ export default [
       await closeProviderPopup(page);
       await page.keyboard.press("Escape");
       await h.idle();
-      check(!(await page.$('[role="dialog"]')) && await page.evaluate(() => !document.getElementById("root").inert && document.activeElement?.matches('[data-testid="open-settings"], [data-testid="titlebar-settings"]')), "Escape restores the original Settings control and releases the page");
+      check(!(await page.$('[role="dialog"]:has([data-settings-header])')) && await page.evaluate(() => !document.getElementById("root").inert && document.activeElement?.matches('[data-testid="open-settings"], [data-testid="titlebar-settings"]')), "Escape restores the original Settings control and releases the page");
     },
   },
   {

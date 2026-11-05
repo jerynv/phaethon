@@ -87,7 +87,7 @@ export default [
     async run(page, h) {
       const opener = await open(page, h, "appearance");
       const before = await css(page, "--ph-accent-h");
-      const thumbs = await page.$$('[role="slider"]');
+      const thumbs = await page.$$('input[type="range"]');
       let hue = null;
       for (const t of thumbs) {
         const label = await t.evaluate((el) => (el.getAttribute("aria-labelledby") ?? "").split(" ").map((id) => document.getElementById(id)?.textContent).join(" "));
@@ -110,9 +110,9 @@ export default [
       // panel scrolls lands at stale coordinates, so this uses element.click().)
       await page.$eval('button[aria-label^="Reset accent colour"]', (el) => { el.focus(); el.click(); });
       await new Promise((r) => setTimeout(r, 900));
-      const focusAfterReset = await page.evaluate(() => document.activeElement?.getAttribute("role"));
+      const focusAfterReset = await hue.evaluate((input) => document.activeElement === input);
       console.log(`     focus after reset: ${focusAfterReset}`);
-      if (focusAfterReset !== "slider") throw new Error("focus was lost after Reset");
+      if (!focusAfterReset) throw new Error("focus was lost after Reset");
       const after = await css(page, "--ph-accent-h");
       const saves2 = await page.evaluate(() => window.__calls.filter(([c]) => c === "appearance_set").map(([, a]) => a.appearance));
       console.log(`     after reset: --ph-accent-h="${after}" last save=${JSON.stringify(saves2.at(-1))}`);

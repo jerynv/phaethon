@@ -75,7 +75,7 @@ const firstRun = (name, scale) => ({
       const card = document.querySelector("[data-setup-card]");
       return {
         empty: !!log.querySelector("[data-empty-state]"),
-        generic: log.innerText.includes("Start a conversation"),
+        generic: !!log.querySelector("[data-empty-state]"),
         first: firstHeading?.textContent,
         tutorial: !!card.querySelector("details") || /subscription|few dollars|spending limit|never syncs/.test(card.textContent),
         connect: card.querySelector('button[type="submit"]')?.textContent.trim(),
@@ -544,7 +544,7 @@ const ROUND3 = [
     async run(page, h) {
       await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
       const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
-      check(text.includes("Start a conversation in School") && !text.includes("can’t change") && !text.includes("intake.pdf"), "the empty workspace contains no permission essay or file inventory", text);
+      check(text.includes("Start in School") && !text.includes("can’t change") && !text.includes("intake.pdf"), "the empty workspace contains no permission essay or file inventory", text);
       check(await page.$eval('[data-model-picker="school"]', (picker) => picker.getAttribute("aria-label").includes("Claude Code")), "the model control identifies Claude Code");
       await h.click('[data-space-pane][data-shown] [data-model-picker]');
       await page.waitForSelector('[data-model-menu] [data-access-picker]');
@@ -952,7 +952,7 @@ export default [
     async run(page, h) {
       await page.waitForSelector('[data-empty-state]', { timeout: 5000 });
       const text = await page.$eval('[data-empty-state]', (empty) => empty.textContent);
-      check(text.includes("Start a conversation in School") && !text.includes("before it reads another space"), "an empty workspace stays concise without permission promises", text);
+      check(text.includes("Start in School") && !text.includes("before it reads another space"), "an empty workspace stays concise without permission promises", text);
       await h.click('[data-space-pane][data-shown] [data-model-picker]');
       await page.waitForSelector('[data-model-menu] [data-access-picker]');
       check(await page.$eval('[data-model-menu] [data-access-picker]', (picker) => picker.getAttribute("aria-label") === "Access: Space access"), "permissions remain inspectable without an essay");

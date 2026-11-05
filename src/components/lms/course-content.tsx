@@ -26,7 +26,7 @@ export function CourseContentBrowser({ course, space }: { course: CourseInfo; sp
     return () => { live = false; };
   }, [course.key, space]);
   const filtered = useMemo(() => content?.entries.filter(entry => (group === "all" || entry.kind === group) && `${entry.title} ${entry.path}`.toLowerCase().includes(query.toLowerCase())) ?? [], [content, query, group]);
-  const open = (entry: CourseContentEntry) => file.open({ kind: "space", space, path: entry.path, anchor: entry.anchor, headingIndex: entry.headingIndex });
+  const open = (entry: CourseContentEntry) => file.open({ kind: "space", space, path: entry.path, anchor: entry.anchor, headingIndex: entry.headingIndex, textPath: entry.text });
   return <div className="flex min-h-0 flex-col gap-3" data-course-content={course.key}>
     {context && <p className="flex items-center gap-1.5 text-xs text-ink-secondary" data-course-view-context={space}><Icon name="folder" className="size-3.5 shrink-0" />Viewing as <span className="font-medium text-ink">{context}</span></p>}
     <Input aria-label="Search course content" placeholder="Search files, modules and pages…" value={query} onChange={e => setQuery(e.target.value)} />

@@ -194,6 +194,8 @@
 /* ---- Phaethon accessibility baseline ---- */
 
 /* Focus rings are optional. The preference also covers Vic's own indicators. */
+:root[data-focus-rings="on"] .ui-slider-thumb:has(:focus-visible),
+:root[data-focus-rings="on"] label:has(> input[type="radio"]:focus-visible),
 :root[data-focus-rings="on"] :focus-visible {
   outline: var(--ph-focus-width) solid var(--ph-focus) !important;
   outline-offset: var(--ph-focus-offset) !important;
@@ -203,6 +205,7 @@
   outline: none !important;
 }
 :root:not([data-focus-rings="on"]) :is(
+  .ui-slider-thumb:has(:focus-visible),
   .ui-file-button:has(input:focus-visible),
   .ui-choice-card:has(input:focus-visible),
   .ui-list-row:has(.ui-list-row-link:focus-visible)

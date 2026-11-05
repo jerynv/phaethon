@@ -10,7 +10,9 @@
 //! `write_file` never accepts an `@` path.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
@@ -24,6 +26,13 @@ const MAX_LIST: usize = 500;
 const MAX_HITS: usize = 200;
 /// Files `search_files` skips because they are too big to be notes.
 const MAX_SEARCH_FILE: u64 = 2 * 1024 * 1024;
+const MAX_SEARCH_FILES: usize = 2_000;
+const MAX_SEARCH_ENTRIES: usize = 20_000;
+const MAX_SEARCH_WINDOWS: usize = 100_000;
+const MAX_SEARCH_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_SEARCH_OUTPUT: usize = 128 * 1024;
+const SEARCH_WINDOW_LINES: usize = 8;
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(3);
 /// Characters of a request_access reason kept for the user.
 const MAX_REASON: usize = 500;
 
@@ -86,7 +95,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "search_files",
-            "description": "Find lines containing some text (case-insensitive) in the text files of this space. Returns path:line: text. With path \"@<space>/<folder>\" it searches a granted folder of another space instead.",
+            "description": "Search text files up to 2 MiB, including imported OCR text. One word matches literal lines; multiple words match across nearby lines and their heading, ranked by relevance. Returns path:line: text, with an explicit notice if scan or output limits are reached. Narrow path/query to continue. With path \"@<space>/<folder>\" it searches a granted folder of another space instead.",
             "eager_input_streaming": true,
             "input_schema": {
                 "type": "object",
@@ -538,55 +547,39 @@ fn read_here(ctx: &Ctx, rel: &str) -> Result<String, String> {
 }
 
 fn search_here(ctx: &Ctx, query: &str, rel: &str) -> Result<String, String> {
-    if query.is_empty() {
-        return Err("query must not be empty".into());
-    }
-    let mut hits = vec![];
+    let mut hits = Search::new(query)?;
     if let Some(clean) = course_path(rel) {
         match ctx.courses.place(&clean, true)? {
-            Place::Root => search_courses(&ctx.courses, None, query, &mut hits),
-            Place::Course { seen, real, .. } => search_courses(&ctx.courses, Some((seen, real)), query, &mut hits),
+            Place::Root => search_courses(&ctx.courses, None, &mut hits),
+            Place::Course { seen, real, .. } => search_courses(&ctx.courses, Some((seen, real)), &mut hits),
         }
     } else {
         let root = resolve(&ctx.space, "", true)?;
         let start = resolve(&ctx.space, rel, true)?;
         let whole = start == root;
-        walk_search(&root, start, query, "", whole, &mut hits);
+        walk_search(&root, start, "", whole, None, &mut hits);
         if whole {
-            search_courses(&ctx.courses, None, query, &mut hits);
+            search_courses(&ctx.courses, None, &mut hits);
         }
     }
-    Ok(found(hits, query))
+    Ok(found(hits))
 }
 
 /// Search the courses a space may see (or one course from `start`), only the
 /// parts it may see, README as it may see it.
-fn search_courses(courses: &Visible, only: Option<(&access::Seen, PathBuf)>, query: &str, hits: &mut Vec<String>) {
-    let needle = query.to_lowercase();
-    let list: Vec<(&access::Seen, PathBuf, PathBuf)> = match only {
-        Some((seen, start)) => courses.dir_of(seen).map(|d| vec![(seen, d, start)]).unwrap_or_default(),
-        None => courses.courses.iter().filter_map(|c| courses.dir_of(c).map(|d| (c, d.clone(), d))).collect(),
-    };
-    for (seen, dir, start) in list {
-        for (sub, real) in courses.walk(seen, &dir, &start, 10_000) {
-            if hits.len() >= MAX_HITS {
-                return;
-            }
-            if fs::symlink_metadata(&real).map(|m| m.len()).unwrap_or(u64::MAX) > MAX_SEARCH_FILE {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&real) else { continue };
-            let text = access::filter_text(seen, &sub, text);
-            let shown = format!("{}/{}/{}", crate::lms::store::COURSES_DIR, seen.folder(), sub.to_string_lossy());
-            for (i, line) in text.lines().enumerate() {
-                if line.to_lowercase().contains(&needle) {
-                    hits.push(format!("{shown}:{}: {}", i + 1, line.trim()));
-                    if hits.len() >= MAX_HITS {
-                        return;
-                    }
-                }
-            }
+fn search_courses(courses: &Visible, only: Option<(&access::Seen, PathBuf)>, hits: &mut Search<'_>) {
+    if let Some((seen, start)) = only {
+        if let Some(dir) = courses.dir_of(seen) {
+            let prefix = format!("{}/{}/", crate::lms::store::COURSES_DIR, seen.folder());
+            walk_search(&dir, start, &prefix, false, Some((courses, seen)), hits);
         }
+        return;
+    }
+    for seen in &courses.courses {
+        if hits.stopped() { break; }
+        let Some(dir) = courses.dir_of(seen) else { continue };
+        let prefix = format!("{}/{}/", crate::lms::store::COURSES_DIR, seen.folder());
+        walk_search(&dir, dir.clone(), &prefix, false, Some((courses, seen)), hits);
     }
 }
 
@@ -653,32 +646,179 @@ fn search(space: &Path, query: &str, rel: &str) -> Result<String, String> {
 
 /// Search from `start`, showing each hit's path relative to `root` after `prefix`.
 fn search_at(root: &Path, start: PathBuf, query: &str, prefix: &str) -> Result<String, String> {
-    if query.is_empty() {
-        return Err("query must not be empty".into());
-    }
-    let mut hits = vec![];
-    walk_search(root, start, query, prefix, false, &mut hits);
-    Ok(found(hits, query))
+    let mut hits = Search::new(query)?;
+    walk_search(root, start, prefix, false, None, &mut hits);
+    Ok(found(hits))
 }
 
-fn found(hits: Vec<String>, query: &str) -> String {
-    if hits.is_empty() {
-        return format!("No lines contain \u{201c}{query}\u{201d}.");
+struct SearchHit {
+    score: usize,
+    path: String,
+    line: usize,
+    text: String,
+}
+
+fn hit_order(a: &SearchHit, b: &SearchHit) -> std::cmp::Ordering {
+    b.score.cmp(&a.score).then(a.path.cmp(&b.path)).then(a.line.cmp(&b.line))
+}
+
+/// Keep the strongest results from the entire bounded scan, not an alphabetical prefix.
+struct Search<'a> {
+    query: &'a str,
+    phrase: String,
+    terms: Vec<String>,
+    multi: bool,
+    hits: Vec<SearchHit>,
+    total: usize,
+    entries: usize,
+    files: usize,
+    windows: usize,
+    bytes: u64,
+    started: Instant,
+    stop: bool,
+    limits: std::collections::BTreeSet<&'static str>,
+}
+
+impl<'a> Search<'a> {
+    fn new(query: &'a str) -> Result<Self, String> {
+        if query.trim().is_empty() { return Err("query must not be empty".into()); }
+        if query.len() > 2_048 { return Err("query is too long; use at most 2048 bytes and narrow the folder.".into()); }
+        let phrase = query.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+        let multi = query.split_whitespace().count() > 1;
+        let terms = if multi {
+            phrase.split(|c: char| !c.is_alphanumeric() && c != '_').filter(|term| !term.is_empty()).map(str::to_string)
+                .collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>()
+        } else { vec![phrase.clone()] };
+        if terms.is_empty() || terms.len() > 16 { return Err("Use between 1 and 16 search terms.".into()); }
+        Ok(Self { query, phrase, terms, multi, hits: vec![], total: 0, entries: 0, files: 0, windows: 0, bytes: 0, started: Instant::now(), stop: false, limits: Default::default() })
     }
-    hits.join("\n")
+
+    fn limited(&mut self, reason: &'static str) { self.limits.insert(reason); self.stop = true; }
+
+    fn stopped(&mut self) -> bool {
+        if self.started.elapsed() >= SEARCH_TIMEOUT { self.limited("3-second scan budget"); }
+        self.stop
+    }
+
+    fn reserve_entry(&mut self) -> bool {
+        if self.stopped() { return false; }
+        if self.entries >= MAX_SEARCH_ENTRIES { self.limits.insert("20,000-entry discovery budget"); return false; }
+        self.entries += 1;
+        true
+    }
+
+    fn text(&mut self, file: &Path, size: u64) -> Option<String> {
+        if self.stopped() || size > MAX_SEARCH_FILE { return None; }
+        if self.files >= MAX_SEARCH_FILES { self.limited("2,000-file scan budget"); return None; }
+        if size > MAX_SEARCH_BYTES.saturating_sub(self.bytes) { self.limited("32 MiB text scan budget"); return None; }
+        self.files += 1;
+        let mut bytes = Vec::new();
+        let limit = (MAX_SEARCH_FILE + 1).min(MAX_SEARCH_BYTES.saturating_sub(self.bytes) + 1);
+        if fs::File::open(file).and_then(|file| file.take(limit).read_to_end(&mut bytes)).is_err() { return None; }
+        self.bytes += bytes.len() as u64;
+        if self.bytes > MAX_SEARCH_BYTES { self.limited("32 MiB text scan budget"); return None; }
+        if bytes.len() as u64 > MAX_SEARCH_FILE || bytes.contains(&0) { return None; }
+        String::from_utf8(bytes).ok()
+    }
+
+    fn mask(&self, text: &str) -> u32 {
+        self.terms.iter().enumerate().fold(0, |mask, (i, term)| mask | if text.contains(term) { 1 << i } else { 0 })
+    }
+
+    fn add(&mut self, hit: SearchHit) {
+        self.total += 1;
+        if self.hits.len() < MAX_HITS { self.hits.push(hit); return; }
+        let worst = self.hits.iter().enumerate().max_by(|(_, a), (_, b)| hit_order(a, b)).map(|(i, _)| i).unwrap();
+        if hit_order(&hit, &self.hits[worst]).is_lt() { self.hits[worst] = hit; }
+    }
+
+    fn collect(&mut self, path: &str, text: &str) {
+        let lines = text.lines().take(MAX_SEARCH_WINDOWS.saturating_sub(self.windows) + SEARCH_WINDOW_LINES).collect::<Vec<_>>();
+        let mut heading = "";
+        let mut heading_mask = 0;
+        let mut fenced = false;
+        for (i, line) in lines.iter().enumerate() {
+            if self.stopped() { break; }
+            if self.windows >= MAX_SEARCH_WINDOWS { self.limited("100,000-line/window scan budget"); break; }
+            self.windows += 1;
+            let trimmed = line.trim();
+            if trimmed.starts_with("```") || trimmed.starts_with("~~~") { fenced = !fenced; }
+            let is_heading = !fenced && markdown_heading(line);
+            if is_heading { heading = trimmed; heading_mask = self.mask(&trimmed.to_lowercase()); }
+            let normalized = line.to_lowercase();
+            if !self.multi {
+                if normalized.contains(&self.phrase) {
+                    self.add(SearchHit { score: 10_000 + heading_mask.count_ones() as usize * 100 + if is_heading { 100 } else { 0 }, path: path.into(), line: i + 1, text: excerpt(trimmed, 600) });
+                }
+                continue;
+            }
+            // A candidate begins on a matching line. Blank prefixes cannot create duplicate hits.
+            if self.mask(&normalized) == 0 { continue; }
+            let mut body = Vec::new();
+            let mut normalized_body = String::new();
+            for (j, next) in lines[i..].iter().take(SEARCH_WINDOW_LINES).enumerate() {
+                if j > 0 && markdown_heading(next) { break; }
+                let next = next.trim();
+                if !next.is_empty() { body.push(next); normalized_body.push_str(&next.to_lowercase()); normalized_body.push(' '); }
+            }
+            if (self.mask(&normalized_body) | heading_mask) != (1 << self.terms.len()) - 1 { continue; }
+            let phrase = normalized_body.split_whitespace().collect::<Vec<_>>().join(" ").contains(&self.phrase);
+            let frequency = self.terms.iter().map(|term| normalized_body.matches(term).count().min(10)).sum::<usize>();
+            let score = usize::from(phrase) * 10_000 + heading_mask.count_ones() as usize * 100 + frequency;
+            let content = body.join(" | ");
+            let content = if !heading.is_empty() && !is_heading { format!("[{}] {content}", excerpt(heading.trim_start_matches('#').trim(), 120)) } else { content };
+            self.add(SearchHit { score, path: path.into(), line: i + 1, text: excerpt(&content, 600) });
+        }
+    }
+}
+
+fn markdown_heading(line: &str) -> bool {
+    let line = line.trim_start();
+    let level = line.bytes().take_while(|byte| *byte == b'#').count();
+    (1..=6).contains(&level) && line.as_bytes().get(level).is_some_and(u8::is_ascii_whitespace)
+}
+
+fn excerpt(text: &str, bytes: usize) -> String {
+    if text.len() <= bytes { return text.to_string(); }
+    let mut end = bytes.saturating_sub('…'.len_utf8());
+    while !text.is_char_boundary(end) { end -= 1; }
+    format!("{}…", &text[..end])
+}
+
+fn found(mut search: Search<'_>) -> String {
+    search.hits.sort_by(hit_order);
+    let mut out = String::new();
+    let mut shown = 0;
+    for hit in search.hits {
+        let row = format!("{}:{}: {}", hit.path, hit.line, hit.text);
+        if out.len() + row.len() + 1 > MAX_SEARCH_OUTPUT - 1_024 { search.limits.insert("128 KiB output budget"); break; }
+        if !out.is_empty() { out.push('\n'); }
+        out.push_str(&row);
+        shown += 1;
+    }
+    if shown == 0 { out = format!("No lines contain \u{201c}{}\u{201d}.", search.query); }
+    if search.total > shown {
+        out.push_str(&format!("\nShowing {shown} of {} matching {} in scanned content.", search.total, if search.multi { "chunks" } else { "lines" }));
+    }
+    if !search.limits.is_empty() {
+        out.push_str(&format!("\nSearch is partial: {} reached after {} files and {} lines/windows. Narrow the path or query to continue.", search.limits.into_iter().collect::<Vec<_>>().join(", "), search.files, search.windows));
+    }
+    out
 }
 
 /// The walk behind a search. `hide_courses`: leave out a folder of `root`
 /// named like the courses (in a space they are searched as courses instead).
-fn walk_search(root: &Path, start: PathBuf, query: &str, prefix: &str, hide_courses: bool, hits: &mut Vec<String>) {
-    let needle = query.to_lowercase();
+fn walk_search(root: &Path, start: PathBuf, prefix: &str, hide_courses: bool, course: Option<(&Visible, &access::Seen)>, hits: &mut Search<'_>) {
+    if !hits.reserve_entry() { return; }
     let mut stack = vec![start];
     while let Some(p) = stack.pop() {
-        if hits.len() >= MAX_HITS {
-            break;
-        }
+        if hits.stopped() { break; }
         // symlink_metadata: never follow a link while walking.
         let Ok(meta) = p.symlink_metadata() else { continue };
+        let sub = p.strip_prefix(root).unwrap_or(&p);
+        if let Some((_, seen)) = course {
+            if !sub.as_os_str().is_empty() && (sub.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')) || !seen.can(access::part_of(sub))) { continue; }
+        }
         if meta.is_dir() {
             if p.file_name().is_some_and(|n| n == STATE_DIR) {
                 continue;
@@ -687,21 +827,23 @@ fn walk_search(root: &Path, start: PathBuf, query: &str, prefix: &str, hide_cour
                 continue;
             }
             if let Ok(rd) = fs::read_dir(&p) {
-                let mut kids: Vec<_> = rd.filter_map(Result::ok).map(|e| e.path()).collect();
+                let mut kids = Vec::new();
+                for entry in rd.filter_map(Result::ok) {
+                    if !hits.reserve_entry() { break; }
+                    kids.push(entry.path());
+                }
                 kids.sort();
                 stack.extend(kids.into_iter().rev());
             }
         } else if meta.is_file() && meta.len() <= MAX_SEARCH_FILE {
-            let Ok(text) = fs::read_to_string(&p) else { continue };
-            let shown = format!("{prefix}{}", p.strip_prefix(root).unwrap_or(&p).display());
-            for (i, line) in text.lines().enumerate() {
-                if line.to_lowercase().contains(&needle) {
-                    hits.push(format!("{shown}:{}: {}", i + 1, line.trim()));
-                    if hits.len() >= MAX_HITS {
-                        break;
-                    }
-                }
-            }
+            let shown = format!("{prefix}{}", sub.display());
+            // Course access is rechecked at the actual read boundary, including aliases/symlinks.
+            let file = if let Some((courses, _)) = course {
+                match courses.place(Path::new(&shown), true) { Ok(Place::Course { real, .. }) => real, _ => continue }
+            } else { p.clone() };
+            let Some(text) = hits.text(&file, meta.len()) else { continue };
+            let text = match course { Some((_, seen)) => access::filter_text(seen, sub, text), None => text };
+            hits.collect(&shown, &text);
         }
     }
 }
@@ -799,6 +941,93 @@ mod tests {
         run(&s, &Call::Write { path: "drafts/b.md".into(), contents: "new".into() }).unwrap();
         assert_eq!(fs::read_to_string(s.join("drafts/b.md")).unwrap(), "new");
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn academic_search_matches_nearby_terms_and_ranks_heading_context() {
+        let dir = space("ranked-search");
+        let root = dir.join("space");
+        fs::write(root.join("a-notes.md"), "A derivative of the composite function\nuses the chain rule.\n").unwrap();
+        fs::write(root.join("z-lecture.pdf.md"), "# Chain rule\nA derivative can be taken\nfor a composite function.\n").unwrap();
+        let out = search(&root, "chain rule derivative composite", "").unwrap();
+        assert!(out.lines().next().unwrap().starts_with("z-lecture.pdf.md:1:"), "heading context ranks ahead of incidental prose: {out}");
+        assert!(out.contains("a-notes.md:1:"), "non-contiguous words match across nearby lines: {out}");
+        assert!(out.contains("[Chain rule]"), "the answer retains the source heading: {out}");
+        assert!(out.contains("derivative") && out.contains("composite"));
+        fs::write(root.join("zz-exact.md"), "chain rule derivative composite\n").unwrap();
+        let exact = search(&root, "chain rule derivative composite", "").unwrap();
+        assert!(exact.lines().next().unwrap().starts_with("zz-exact.md:1:"), "an exact phrase outranks scattered terms: {exact}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn search_does_not_join_distant_sections_and_keeps_single_word_lines() {
+        let dir = space("search-sections");
+        let root = dir.join("space");
+        fs::write(root.join("sections.md"), "# Chain rule\nA derivative.\n## Another topic\nA composite object.\n").unwrap();
+        assert!(search(&root, "chain derivative composite", "").unwrap().starts_with("No lines contain"));
+        assert_eq!(search(&root, "WORLD", "notes/a.md").unwrap(), "notes/a.md:1: Hello world");
+        assert!(search(&root, "   ", "").is_err());
+        assert!(search(&root, &(0..17).map(|n| format!("term{n}")).collect::<Vec<_>>().join(" "), "").is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ranked_search_scans_past_the_first_two_hundred_hits_and_says_what_was_cut() {
+        let dir = space("search-top-k");
+        let root = dir.join("space");
+        for n in 0..205 { fs::write(root.join(format!("a{n:03}.md")), "A derivative before the chain rule\nfor a composite function.\n").unwrap(); }
+        fs::write(root.join("z-best.pdf.md"), "# Chain rule derivative composite\nA worked example.\n").unwrap();
+        let out = search(&root, "chain rule derivative composite", "").unwrap();
+        assert!(out.lines().next().unwrap().starts_with("z-best.pdf.md:1:"), "a late high-quality result must survive top-k: {out}");
+        assert_eq!(out.lines().filter(|line| line.contains(".md:")).count(), MAX_HITS);
+        assert!(out.contains("Showing 200 of 206 matching chunks in scanned content."), "explicit limit: {out}");
+        assert!(!out.contains("Search is partial"), "the corpus was fully scanned; only output was capped");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn search_budgets_and_unicode_snippets_are_explicit_and_bounded() {
+        let mut search = Search::new("évidence").unwrap();
+        search.collect("notes.md", &format!("évidence {}", "é".repeat(1_000)));
+        let hit = &search.hits[0].text;
+        assert!(hit.len() <= 600 && hit.ends_with('…'));
+        search.windows = MAX_SEARCH_WINDOWS;
+        search.collect("later.md", "évidence");
+        let out = found(search);
+        assert!(out.contains("Search is partial: 100,000-line/window scan budget reached"), "{out}");
+        assert!(out.contains("Narrow the path or query"));
+        let mut stopped = Search::new("anything").unwrap();
+        stopped.entries = MAX_SEARCH_ENTRIES;
+        assert!(!stopped.reserve_entry());
+        assert!(found(stopped).contains("20,000-entry discovery budget"));
+        let mut timed = Search::new("anything").unwrap();
+        timed.started = Instant::now() - SEARCH_TIMEOUT;
+        assert!(timed.stopped());
+        assert!(found(timed).contains("3-second scan budget"));
+        let mut output = Search::new("word").unwrap();
+        for n in 0..MAX_HITS { output.add(SearchHit { score: 0, path: format!("{}-{n}.md", "a".repeat(1_000)), line: 1, text: "word".repeat(150) }); }
+        let out = found(output);
+        assert!(out.len() <= MAX_SEARCH_OUTPUT);
+        assert!(out.contains("128 KiB output budget"));
+    }
+
+    #[test]
+    fn academic_search_includes_only_authorized_ocr_and_filters_readme_parts() {
+        use crate::lms::access::Part;
+        let (dir, ctx) = courses_ctx("ranked-ocr", &[Part::Overview, Part::Files]);
+        let calc = dir.join("courses/Calculus II");
+        fs::write(calc.join("files/Notes/series.pdf.md"), "# Chain rule\nA derivative of\na composite function.\n").unwrap();
+        fs::write(calc.join("syllabus.md"), "chain rule derivative composite HIDDEN SYLLABUS").unwrap();
+        fs::write(dir.join("courses/Linear Algebra/syllabus.md"), "chain rule derivative composite HIDDEN COURSE").unwrap();
+        let out = run_in(&ctx, &Call::Search { query: "chain rule derivative composite".into(), path: String::new() }).unwrap();
+        assert!(out.contains("courses/Calculus II/files/Notes/series.pdf.md:1:"), "permitted OCR text copy: {out}");
+        assert!(!out.contains("HIDDEN") && !out.contains("syllabus.md") && !out.contains("Linear Algebra"), "hidden parts cannot contribute ranking context: {out}");
+        assert!(run_in(&ctx, &Call::Search { query: "chain rule".into(), path: "courses/Calculus II/syllabus.md".into() }).is_err());
+        assert!(run_in(&ctx, &Call::Search { query: "chain rule".into(), path: "courses/Linear Algebra".into() }).is_err());
+        let grades = run_in(&ctx, &Call::Search { query: "91%".into(), path: String::new() }).unwrap();
+        assert!(grades.starts_with("No lines contain"), "README grade filtering remains intact: {grades}");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use phaethon_lib::agent::sign_in::{self, SignInStatus};
 use phaethon_lib::agent::{self, AgentEvent, Cli, ErrorCode, Runs, TurnRequest};
-use phaethon_lib::thread::{self, Record};
+use phaethon_lib::thread::{self, Record, ToolStatus};
 use phaethon_lib::tutor_mode::{self, Mode};
 use phaethon_lib::vault::{self, Vault};
 use phaethon_lib::{memory, space_model, study};
@@ -182,7 +182,7 @@ impl Fixture {
             &self.runs,
             "school",
             self.cli,
-            TurnRequest {
+            TurnRequest { working_dir: None,
                 space_dir: &self.dir,
                 prompt,
                 attachments: vec![],
@@ -487,6 +487,35 @@ unsafe fn libc_killpg(pid: u32) -> i32 {
 #[test]
 fn codex_conversations_are_read_only_recorded_resumed_and_stoppable() {
     conversations_work_with(Cli::Codex, "PHAETHON_CODEX_BIN", CODEX);
+    // Keep the binary override in this same test, so two Codex fixtures do
+    // not race over the process-global debug CLI override.
+    for (tag, tail, expected) in [
+        ("tool-failure", "echo '{\"type\":\"item.completed\",\"item\":{\"id\":\"c1\",\"type\":\"command_execution\",\"exit_code\":1,\"status\":\"completed\",\"aggregated_output\":\"private output\"}}'\necho '{\"type\":\"turn.completed\"}'", ToolStatus::Failed),
+        ("tool-missing-result", "echo '{\"type\":\"item.completed\",\"item\":{\"id\":\"text\",\"type\":\"agent_message\",\"text\":\"Text is not a tool result\"}}'\necho '{\"type\":\"turn.completed\"}'", ToolStatus::Incomplete),
+        ("tool-cli-exit", "exit 1", ToolStatus::Failed),
+        ("tool-cancel", "exec sleep 30", ToolStatus::Cancelled),
+    ] {
+        let f = Fixture::new(Cli::Codex, tag);
+        let script = format!("cat >/dev/null\necho '{{\"type\":\"item.started\",\"item\":{{\"id\":\"c1\",\"type\":\"command_execution\",\"command\":\"TOKEN=private-value run.sh\",\"status\":\"in_progress\"}}}}'\n{tail}\n");
+        unsafe { std::env::set_var("PHAETHON_CODEX_BIN", fake(&f.root, "codex", &script)); }
+        let mut events = vec![];
+        tauri::async_runtime::block_on(agent::run_cli_turn(&f.runs, "school", Cli::Codex, TurnRequest { working_dir: None,
+            space_dir: &f.dir, prompt: "test tool state", attachments: vec![], replace_from: None, config_dir: Some(f.home()), add_dirs: vec![], model: None, full_access: false,
+        }, |event| {
+            if expected == ToolStatus::Cancelled && matches!(event, AgentEvent::ToolStart { .. }) { assert!(f.runs.cancel("school")); }
+            events.push(event);
+        }));
+        assert!(events.iter().any(|event| matches!(event, AgentEvent::ToolEnd { id, status, .. } if id == "codex:c1" && *status == expected)), "{tag}: {events:?}");
+        let saved = thread::load(&f.dir).unwrap();
+        let ui = thread::to_ui(&saved);
+        let records = &ui.last().expect("record-only replies remain visible").records;
+        assert_eq!(records.iter().filter(|record| matches!(record, Record::Tool { id, status, .. } if id == "codex:c1" && *status == expected)).count(), 1, "{tag}: {records:?}");
+        let persisted = serde_json::to_string(&saved).unwrap();
+        assert!(!persisted.contains("private-value") && !persisted.contains("private output"), "arguments and output are not persisted");
+        assert!(!serde_json::to_string(&thread::for_provider(&saved)).unwrap().contains("phaethon_record"));
+        assert!(!f.runs.is_running("school"));
+        fs::remove_dir_all(&f.root).unwrap();
+    }
 }
 
 #[test]

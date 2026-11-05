@@ -19,7 +19,7 @@ const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) 
 const space = (id) => `#spaces-sidebar [data-space-id="${id}"]`;
 const MENU = "[data-space-menu]";
 const showSidebar = async (page) => {
-  if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+  if (await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true))) {
     await page.click('button[aria-controls="spaces-sidebar"]');
     await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
   }

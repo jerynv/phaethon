@@ -12,10 +12,13 @@ export type AccessAnswer = "once" | "always" | "deny";
  * thread_load, so the receipts survive a reload.
  */
 export type ChatRecord =
+  | { kind: "tool"; id: string; category: "read" | "list" | "search" | "command" | "write" | "other"; label: string; target?: string; status: "running" | "success" | "failed" | "cancelled" | "incomplete"; detail?: string }
   | { kind: "approval"; path: string; action: "create" | "replace"; allowed: boolean }
   | { kind: "access"; space: string; path: string; answer: AccessAnswer }
   | { kind: "read"; space: string; path: string; tool: "read" | "list" | "search"; query?: string }
   | { kind: "stopped" };
+
+export type ToolRecord = Extract<ChatRecord, { kind: "tool" }>;
 
 /** A record as a data part of a reply: `id` makes "say it once" possible. */
 export type RecordPartData = { id: string; record: ChatRecord };

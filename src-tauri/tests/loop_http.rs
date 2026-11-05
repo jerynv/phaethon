@@ -105,6 +105,9 @@ async fn write_with_approval_over_http() {
     assert!(saved[1].to_string().contains("phaethon_record"));
     let ui = thread::to_ui(&saved);
     assert_eq!(ui[1].text, "I'll write the plan.\n\nSaved plans/week.md.");
-    assert_eq!((ui[1].index, ui[1].records.clone()), (1, vec![receipt]));
+    assert_eq!(ui[1].index, 1);
+    assert_eq!(ui[1].records[0], receipt);
+    assert!(matches!(&ui[1].records[1], Record::Tool { category: phaethon_lib::thread::ToolCategory::Write, target: Some(path), status: phaethon_lib::thread::ToolStatus::Success, .. } if path == "plans/week.md"));
+    assert_eq!(ui[1].records.len(), 2, "the durable approval and observed tool result survive together");
     std::fs::remove_dir_all(&vault).unwrap();
 }

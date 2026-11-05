@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{AgentEvent, Outcome, shown_path};
+use super::{AgentEvent, Outcome, ToolEvents, ToolStatus, shown_path};
 
 pub const MISSING_CLI_MESSAGE: &str =
     "Codex was not found. Install Codex, then sign in to it in Settings › Assistant.";
@@ -185,11 +185,12 @@ pub(super) struct Parser {
     /// The last error event's words, for a run that ends without a result.
     last_error: String,
     result: Option<Outcome>,
+    tools: ToolEvents,
 }
 
 impl Parser {
     pub(super) fn new(space_dir: &Path) -> Self {
-        Self { space_dir: space_dir.to_path_buf(), granted: vec![], thread_id: None, emitted_text: false, last_error: String::new(), result: None }
+        Self { space_dir: space_dir.to_path_buf(), granted: vec![], thread_id: None, emitted_text: false, last_error: String::new(), result: None, tools: ToolEvents::default() }
     }
 
     pub(super) fn feed(&mut self, line: &str) -> Vec<AgentEvent> {
@@ -202,7 +203,7 @@ impl Parser {
                 self.thread_id = Some(s(&v, "thread_id")).filter(|t| !t.is_empty());
                 vec![]
             }
-            Some("item.started") => self.tool(&v["item"]).into_iter().collect(),
+            Some("item.started") => self.tool(&v["item"]),
             Some("item.completed") if v["item"]["type"] == "agent_message" => {
                 let text = s(&v["item"], "text");
                 if text.is_empty() {
@@ -211,6 +212,18 @@ impl Parser {
                 let delta = if self.emitted_text { format!("\n\n{text}") } else { text };
                 self.emitted_text = true;
                 vec![AgentEvent::Text { delta }]
+            }
+            Some("item.completed") => {
+                let item = &v["item"];
+                // A completed event can be the first event for a fast tool.
+                let mut events = self.tool(item);
+                let command = item["type"] == "command_execution";
+                let code = item["exit_code"].as_i64();
+                let failed = item["status"] == "failed" || !item["error"].is_null() || code.is_some_and(|code| code != 0);
+                let status = if failed { ToolStatus::Failed } else if command && code.is_none() { ToolStatus::Incomplete } else { ToolStatus::Success };
+                let detail = code.map(|code| format!("Exit code {code}")).or_else(|| failed.then(|| "Tool reported an error".into()));
+                events.extend(self.tools.end("codex", item["id"].as_str().unwrap_or(""), status, detail));
+                events
             }
             // Not shown: "Reconnecting... 2/5" and the like say what Codex tries; turn.failed says the end.
             Some("error") => {
@@ -231,16 +244,16 @@ impl Parser {
     }
 
     /// What Codex is doing, for the item that just started.
-    fn tool(&self, item: &Value) -> Option<AgentEvent> {
+    fn tool(&mut self, item: &Value) -> Vec<AgentEvent> {
         let s = |k: &str| item.get(k).and_then(Value::as_str).unwrap_or("");
         let label = match s("type") {
             "command_execution" => command_label(s("command"), &self.space_dir, &self.granted),
             "web_search" => format!("Searching the web for \u{201c}{}\u{201d}", s("query")),
             "mcp_tool_call" => format!("Using tool {}", s("tool")),
             "file_change" => "Changing files".into(),
-            _ => return None,
+            _ => return vec![],
         };
-        Some(AgentEvent::Tool { label })
+        self.tools.start("codex", s("id"), s("type"), item, &self.space_dir, &self.granted, label)
     }
 
     pub(super) fn finish(self) -> Outcome {
@@ -295,10 +308,28 @@ mod tests {
             vec![
                 AgentEvent::Text { delta: "Let me look.".into() },
                 AgentEvent::Tool { label: "Running cat notes.md".into() },
+                AgentEvent::ToolStart { id: "codex:item_2".into(), category: crate::thread::ToolCategory::Command, label: "Running command".into(), target: None },
+                AgentEvent::ToolEnd { id: "codex:item_2".into(), status: ToolStatus::Success, detail: Some("Exit code 0".into()) },
                 AgentEvent::Text { delta: "\n\nok".into() },
             ]
         );
         assert_eq!(out, Outcome::Success { session_id: Some("01a12a0f-1b21-7df3-be2d-95a5eb36b479".into()) });
+    }
+
+    #[test]
+    fn failed_command_keeps_its_exit_code_without_output_or_arguments() {
+        let mut parser = Parser::new(Path::new(SPACE));
+        let mut log = super::super::ToolLog::default();
+        let mut events = vec![];
+        for line in [
+            r#"{"type":"item.started","item":{"id":"c1","type":"command_execution","command":"TOKEN=private-value sh run.sh","status":"in_progress"}}"#,
+            r#"{"type":"item.completed","item":{"id":"c1","type":"command_execution","command":"TOKEN=private-value sh run.sh","aggregated_output":"private full output","exit_code":1,"status":"completed"}}"#,
+        ] { for event in parser.feed(line) { log.emit(event, &mut |event| events.push(event)); } }
+        assert_eq!(log.records, vec![crate::thread::Record::Tool { id: "codex:c1".into(), category: crate::thread::ToolCategory::Command, label: "Running command".into(), target: None, status: ToolStatus::Failed, detail: Some("Exit code 1".into()) }]);
+        let saved = serde_json::to_string(&log.records).unwrap();
+        assert!(!saved.contains("private-value") && !saved.contains("private full output"));
+        assert!(matches!(events.last(), Some(AgentEvent::Record { .. })));
+        assert!(parser.feed(r#"{"type":"item.completed","item":{"id":"c1","type":"command_execution","exit_code":1}}"#).is_empty());
     }
 
     /// Captured from codex-cli 0.162 with no login: retries, then turn.failed.

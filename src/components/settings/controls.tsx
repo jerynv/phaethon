@@ -3,14 +3,11 @@
  * switches. Every control applies its change at once (see src/theme) and shows
  * its default, with a Reset when it differs.
  *
- * Slider and RadioGroup are Radix primitives (MIT, WorkOS); their
- * keyboard models are Radix's: arrows, Page Up/Down, Home/End on sliders;
- * arrows within a radio group (made to choose as they move, see
- * radioArrowKeys). Vic Switch uses a native button: Space and Enter toggle it.
+ * Vic radios keep native keyboard selection. The stepped slider retains its
+ * pointer policy until the upstream reusable slider contract is adopted.
  */
-import { RadioGroup, Slider } from "radix-ui";
-import { Card, Switch } from "vic-ui";
-import { Fragment, useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { Radio, Slider, Switch, SettingsSection, SettingsGroup, SettingsRow } from "vic-ui";
+import { Fragment, useId, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/icons";
@@ -39,16 +36,8 @@ export function SectionHeader({
   description?: ReactNode;
   action?: ReactNode;
 }) {
-  // Hierarchy and spacing ported from T3 Code's settingsLayout.tsx (MIT).
-  return (
-    <div data-section-header="" className="flex min-h-8 items-start justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <h3 id={id} tabIndex={-1} className="w-fit max-w-full rounded-xs text-xl font-medium tracking-tight text-ink">{title}</h3>
-        {description && <p className="mt-1 max-w-(--ph-measure) text-sm text-ink-secondary">{description}</p>}
-      </div>
-      {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
-    </div>
-  );
+  return <SettingsSection data-section-header="" title={title} titleId={id} description={description} actions={action}
+    headingLevel={3} headingProps={{ tabIndex: -1, className: "text-xl! font-medium! tracking-tight" }} />;
 }
 
 /**
@@ -74,21 +63,8 @@ export function SettingGroup({
   action?: ReactNode;
 }) {
   const ownId = useId();
-  const id = titleId ?? ownId;
-  return (
-    <div data-settings-group="" className="flex flex-col gap-2.5">
-      <div className="flex min-h-7 items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-        <h4 id={id} className="text-sm font-medium text-ink">
-          {title}
-        </h4>
-        {description && <p className="text-xs text-ink-secondary">{description}</p>}
-        </div>
-        {action && <div className="flex shrink-0 items-center gap-1">{action}</div>}
-      </div>
-      {bare ? children : <Card look="lifted" flush className="rounded-xl border border-line shadow-none!" data-settings-container=""><div className="flex flex-col">{children}</div></Card>}
-    </div>
-  );
+  return <SettingsGroup data-settings-group="" title={title} titleId={titleId ?? ownId} description={description} actions={action}
+    headingLevel={4} headingProps={{ className: "text-base! font-medium!" }} surface={bare ? "flat" : "bordered"}>{children}</SettingsGroup>;
 }
 
 /**
@@ -119,22 +95,9 @@ export function SettingRow({
   /** The token this row sets, so another page can find and focus it. */
   token?: string;
 }) {
-  const LabelTag = htmlFor ? "label" : "span";
-  return (
-    <div data-setting-row="" data-token={token} className={cn("flex gap-x-6 gap-y-2 px-3.5 py-3", stacked ? "flex-col" : alignStart ? "flex-wrap items-start" : "flex-wrap items-center")}>
-      <div className={cn("flex min-w-(--ph-settings-label-min) flex-1 flex-col gap-0.5", alignStart && !stacked && "pt-1.5")}>
-        <LabelTag id={labelId} htmlFor={htmlFor} className="text-sm font-normal text-ink">
-          {label}
-        </LabelTag>
-        {description && (
-          <p id={descriptionId} className="max-w-(--ph-measure) text-xs text-ink-secondary">
-            {description}
-          </p>
-        )}
-      </div>
-      <div className={cn("flex flex-col gap-2", stacked ? "w-full" : "w-(--ph-settings-control-width) max-w-full")}>{children}</div>
-    </div>
-  );
+  return <SettingsRow data-setting-row="" data-token={token} label={label} labelId={labelId} htmlFor={htmlFor}
+    description={description} descriptionId={descriptionId} stacked={stacked} align={alignStart ? "start" : "center"}
+    style={{ "--settings-control-width": "var(--ph-settings-control-width)" } as React.CSSProperties}>{children}</SettingsRow>;
 }
 
 /**
@@ -153,7 +116,7 @@ export function DefaultOrReset({ changed, onReset, what, defaultText }: { change
         const row = e.currentTarget.closest("[data-setting-row]");
         onReset();
         say(`${what[0].toUpperCase()}${what.slice(1)} reset to ${defaultText}.`);
-        requestAnimationFrame(() => row?.querySelector<HTMLElement>('[role="slider"]')?.focus());
+        requestAnimationFrame(() => row?.querySelector<HTMLElement>('input[type="range"]')?.focus());
       }}
       aria-label={`Reset ${what} to ${defaultText}`}
       className="-my-1 -mr-1.5 min-h-(--ph-target-min) text-accent-ink"
@@ -180,18 +143,6 @@ function useTokenNumber(name: string) {
   return { spec, value, set, changed: value !== spec.default };
 }
 
-/** How far one press on a slider's track moves it: one step, or a twentieth of the range when steps are tiny (a hue). */
-function clickStep(min: number, max: number, step: number) {
-  const steps = (max - min) / step;
-  return steps <= 25 ? step : Math.max(step, Math.round((max - min) / 20 / step) * step);
-}
-
-/** `v` clamped to [min, max] and snapped to the slider's steps (no float dust: 1.05, not 1.0500000000000003). */
-function snapToStep(v: number, min: number, max: number, step: number) {
-  const snapped = min + Math.round((Math.min(max, Math.max(min, v)) - min) / step) * step;
-  return Math.round(Math.min(max, snapped) * 1e4) / 1e4;
-}
-
 export function TokenSlider({
   label,
   labelId,
@@ -216,71 +167,9 @@ export function TokenSlider({
   /** A custom track (the hue rainbow). Hides the filled range. */
   trackStyle?: React.CSSProperties;
 }) {
-  const thumbRef = useRef<HTMLSpanElement>(null);
-
-  /**
-   * A press on the track (not the thumb) moves one click step toward the
-   * pointer instead of jumping there: a slip of a shaky hand never takes text
-   * size from 100% to 175% at once. Pressing again keeps stepping; dragging
-   * the thumb and the keys work as before. Focus goes to the thumb, so the
-   * arrow keys carry on from there.
-   */
-  function stepTowardPointer(e: PointerEvent<HTMLSpanElement>) {
-    if (e.button !== 0 || thumbRef.current?.contains(e.target as Node)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const box = e.currentTarget.getBoundingClientRect();
-    let frac = box.width > 0 ? (e.clientX - box.left) / box.width : 0.5;
-    if (getComputedStyle(e.currentTarget).direction === "rtl") frac = 1 - frac;
-    const at = min + Math.min(1, Math.max(0, frac)) * (max - min);
-    const by = clickStep(min, max, step);
-    const target = Math.abs(at - value) <= by ? at : value + Math.sign(at - value) * by;
-    const next = snapToStep(target, min, max, step);
-    if (next !== value) onChange(next);
-    thumbRef.current?.focus();
-  }
-
-  return (
-    <Slider.Root
-      value={[value]}
-      min={min}
-      max={max}
-      step={step}
-      onValueChange={([v]) => onChange(v)}
-      onPointerDownCapture={stepTowardPointer}
-      className="group/slider relative flex h-(--ph-slider-row) w-full touch-none items-center select-none"
-    >
-      <Slider.Track
-        data-slider-track=""
-        data-hue-track={trackStyle ? "" : undefined}
-        className={cn(
-          "relative h-1! grow overflow-hidden rounded-full",
-          trackStyle ? "" : "bg-line-strong group-hover/slider:bg-ink-tertiary",
-        )}
-        style={trackStyle}
-      >
-        {!trackStyle && <Slider.Range data-slider-range="" className="absolute h-full rounded-full bg-accent-fill" />}
-      </Slider.Track>
-      <Slider.Thumb
-        ref={thumbRef}
-        data-slider-thumb=""
-        aria-label={labelId ? undefined : label}
-        aria-labelledby={labelId}
-        aria-describedby={descriptionId}
-        aria-valuetext={valueText}
-        className="relative grid size-(--ph-slider-thumb) min-h-(--ph-target-min) min-w-(--ph-target-min) cursor-grab place-items-center rounded-full active:cursor-grabbing"
-      >
-        <span
-          data-slider-thumb-visual=""
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none block size-3.5 shrink-0 rounded-full border bg-raised transition-colors duration-(--ph-duration-fast) group-hover/slider:bg-accent-soft",
-            trackStyle ? "border-ink" : "border-accent-fill",
-          )}
-        />
-      </Slider.Thumb>
-    </Slider.Root>
-  );
+  return <Slider value={value} min={min} max={max} step={step} valueText={valueText} onValueChange={onChange}
+    aria-label={labelId ? undefined : label} aria-labelledby={labelId} aria-describedby={descriptionId}
+    trackStyle={trackStyle} trackPress="step" className="w-full" />;
 }
 
 /** A full row for one number or length token: label, description, slider, value, Reset. */
@@ -355,37 +244,6 @@ function QuickPicks({
 
 // ---- Radio groups ----
 
-const ARROW_STEP: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
-
-/**
- * The ARIA radio pattern for a Radix RadioGroup: an arrow key moves focus to
- * the next or previous radio AND checks it, in the same key press, wrapping at
- * the ends (Left/Right flip in right-to-left text). Tab still enters and
- * leaves the group in one stop (Radix keeps a roving tabindex on the checked
- * radio). Pass the result as `onKeyDownCapture` on RadioGroup.Root.
- *
- * Why not Radix alone: it moves focus on a timer and checks the radio only if
- * the arrow key is still held when that timer fires, so a quick tap (or a
- * switch device, or a scripted key press) can move focus without choosing.
- * This handler stops the key before Radix sees it, so `onPick` runs once.
- */
-export function radioArrowKeys(onPick: (value: string) => void) {
-  return (e: KeyboardEvent<HTMLElement>) => {
-    let step = ARROW_STEP[e.key];
-    if (!step || e.altKey || e.ctrlKey || e.metaKey) return;
-    const group = e.currentTarget;
-    const items = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]:not([disabled])')];
-    const from = items.indexOf(document.activeElement as HTMLButtonElement);
-    if (from < 0) return;
-    if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && getComputedStyle(group).direction === "rtl") step = -step;
-    e.preventDefault();
-    e.stopPropagation();
-    const next = items[(from + step + items.length) % items.length];
-    next.focus();
-    if (next.getAttribute("aria-checked") !== "true") onPick(next.value);
-  };
-}
-
 // ---- Hue picking ----
 
 const HUE_STOPS = Array.from({ length: 13 }, (_, i) => `oklch(0.66 0.11 ${i * 30})`).join(", ");
@@ -412,36 +270,21 @@ export function HueSwatches({
   checkColour: (h: number) => string;
 }) {
   const match = presets.find((p) => p.value === Math.round(value));
+  const groupName = useId();
   return (
-    <RadioGroup.Root
-      aria-label={label}
-      value={match ? String(match.value) : ""}
-      onValueChange={(v) => onPick(Number(v))}
-      onKeyDownCapture={radioArrowKeys((v) => onPick(Number(v)))}
-      orientation="horizontal"
-      loop
-      className="flex flex-wrap gap-x-1 gap-y-2"
-    >
+    <fieldset role="radiogroup" aria-label={label} className="m-0 flex min-w-0 flex-wrap gap-x-1 gap-y-2 border-0 p-0">
       {presets.map((p) => (
-        <RadioGroup.Item
-          key={p.label}
-          value={String(p.value)}
-          data-swatch-item=""
-          className="group flex min-w-(--ph-target-min) flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs text-ink-secondary hover:bg-hover hover:text-ink data-[state=checked]:font-semibold data-[state=checked]:text-ink"
-        >
-          <span
-            data-swatch=""
-            className="grid size-(--ph-swatch-size) place-items-center rounded-full ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
-            style={{ background: swatchColour(p.value), color: checkColour(p.value) }}
-          >
-            <RadioGroup.Indicator>
-              <Icon name="check" className="size-(--ph-icon-size-sm)" />
-            </RadioGroup.Indicator>
+        <label key={p.label} data-swatch-item="" data-state={match?.value === p.value ? "checked" : "unchecked"}
+          className="group relative flex min-w-(--ph-target-min) cursor-pointer flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs font-normal text-ink-secondary hover:bg-hover hover:text-ink data-[state=checked]:text-ink">
+          <Radio name={groupName} value={String(p.value)} checked={match?.value === p.value} aria-label={p.label} className="sr-only!" onChange={() => onPick(p.value)} />
+          <span data-swatch="" className="grid size-(--ph-swatch-size) place-items-center rounded-full ring-offset-2 ring-offset-raised group-data-[state=checked]:ring-2 group-data-[state=checked]:ring-ink"
+            style={{ background: swatchColour(p.value), color: checkColour(p.value) }}>
+            {match?.value === p.value && <Icon name="check" className="size-(--ph-icon-size-sm)" />}
           </span>
           {p.label}
-        </RadioGroup.Item>
+        </label>
       ))}
-    </RadioGroup.Root>
+    </fieldset>
   );
 }
 

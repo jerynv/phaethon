@@ -32,7 +32,7 @@ const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) 
 const space = (id) => `#spaces-sidebar [data-space-id="${id}"]`;
 const pane = (id) => `[data-space-pane="${id}"]`;
 const showSidebar = async (page) => {
-  if (await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden)) {
+  if (await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true))) {
     await page.click('button[aria-controls="spaces-sidebar"]');
     await page.waitForSelector("#spaces-sidebar:not([hidden])", { timeout: 5000 });
   }
@@ -222,11 +222,11 @@ export default [
       const o = await page.evaluate(() => ({
         main: document.getElementById("main").getBoundingClientRect().width,
         inert: document.getElementById("main").inert,
-        focus: document.activeElement?.getAttribute("data-space-id"),
+        focus: document.activeElement?.hasAttribute("data-sidebar-search"),
         expanded: document.querySelector('button[aria-controls="spaces-sidebar"]').getAttribute("aria-expanded"),
       }));
       check(Math.abs(o.main - before) < 1, "the conversation keeps its width under the open sidebar", `${before} -> ${o.main}`);
-      check(o.inert && o.focus === "school" && o.expanded === "true", "the conversation is inert, focus is on the current space, the toggle says expanded", JSON.stringify(o));
+      check(o.inert && o.focus === true && o.expanded === "true", "the conversation is inert, focus is on the library’s first Search control, the toggle says expanded", JSON.stringify(o));
       await h.shot("open");
       // Tab cycles inside.
       const seen = new Set();
@@ -237,14 +237,14 @@ export default [
       check(seen.size === 1 && seen.has("in"), "Tab stays inside the open sidebar", [...seen].join());
       await page.keyboard.press("Escape");
       await h.idle();
-      let a = await page.evaluate(() => ({ hidden: document.getElementById("spaces-sidebar").hidden, toggle: document.activeElement?.getAttribute("aria-controls") }));
+      let a = await page.evaluate(() => ({ hidden: (document.getElementById("spaces-sidebar")?.hidden ?? true), toggle: document.activeElement?.getAttribute("aria-controls") }));
       check(a.hidden && a.toggle === "spaces-sidebar", "Escape closes it and focus returns to the toggle", JSON.stringify(a));
       await page.click('button[aria-controls="spaces-sidebar"]');
-      await page.waitForSelector("[data-sidebar-scrim]", { timeout: 5000 });
+      await page.waitForSelector("[data-sidebar-backdrop]", { timeout: 5000 });
       const vw = page.viewport().width;
       await page.mouse.click(vw - 20, 300);
       await h.idle();
-      a = await page.evaluate(() => ({ hidden: document.getElementById("spaces-sidebar").hidden, toggle: document.activeElement?.getAttribute("aria-controls"), inert: document.getElementById("main").inert }));
+      a = await page.evaluate(() => ({ hidden: (document.getElementById("spaces-sidebar")?.hidden ?? true), toggle: document.activeElement?.getAttribute("aria-controls"), inert: document.getElementById("main").inert }));
       check(a.hidden && a.toggle === "spaces-sidebar" && !a.inert, "a click outside closes it, focus on the toggle, conversation usable again", JSON.stringify(a));
       await park(page);
     },
@@ -256,7 +256,7 @@ export default [
     mock: { threads: { school: SCHOOL }, grants: { school: [{ id: "g-cal", from: "work", path: "calendar", created: "2026-10-09T15:20:00Z", scope: "always" }] } },
     async run(page, h) {
       await h.idle();
-      if (!(await page.evaluate(() => document.getElementById("spaces-sidebar").hidden))) await page.click('button[aria-controls="spaces-sidebar"]');
+      if (!(await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true)))) await page.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
       const t = await page.evaluate(() => [...document.querySelectorAll("header button[aria-keyshortcuts]")].map((b) => `${b.textContent.trim()}|${b.getAttribute("aria-label") ?? ""}`));
       check(t.length === 2 && t[0].endsWith("|Show sidebar") && t[1].endsWith("|Settings"), "compact title bar controls retain descriptive accessible names", t.join());

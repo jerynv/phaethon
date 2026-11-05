@@ -11,7 +11,7 @@ import { closeProviderPopup, openProviderConfiguration, useProviderDefault } fro
 
 const calls = (page, cmd) => page.evaluate((cmd) => window.__calls.filter(([c]) => c === cmd).map(([, a]) => a), cmd);
 const shown = "[data-space-pane][data-shown]";
-const providerPopup = '[role="dialog"][data-provider-popup]';
+const providerPopup = '[data-provider-detail] [data-provider-popup]';
 const picker = `${shown} [data-model-picker]`;
 const settingsSaid = (page, text, timeout = 4000) =>
   page
@@ -24,18 +24,15 @@ const shellStatus = (page) => page.evaluate(() => document.querySelector("[data-
 const searchStatus = (page) => page.$eval("[data-model-search-status]", (e) => e.textContent);
 const activeOption = (page) =>
   page.$eval("[data-model-query]", (i) => document.getElementById(i.getAttribute("aria-activedescendant") ?? "")?.dataset.modelChoice ?? null);
-const popupGeometry = (page) => page.$eval(providerPopup, (dialog) => {
-  const rect = (element) => element.getBoundingClientRect().toJSON();
-  const viewport = dialog.querySelector('[data-provider-popup-body] .ui-scroll-area-viewport');
+const popupGeometry = (page) => page.$eval(providerPopup, (editor) => {
+  const rect = element => element.getBoundingClientRect().toJSON();
+  const dialog = editor.closest('[role="dialog"]');
+  const viewport = editor.closest('[role="tabpanel"]');
   return {
-    popup: rect(dialog),
-    header: rect(dialog.querySelector('[data-slot="dialog-header"]')),
-    footer: rect(dialog.querySelector('[data-slot="dialog-footer"]')),
-    viewport: rect(viewport),
-    modelList: rect(dialog.querySelector('[data-model-search] [role="listbox"]')),
-    buttons: [...dialog.querySelectorAll('[data-slot="dialog-footer"] button')].map(rect),
-    scrollTop: viewport.scrollTop,
-    scrolls: viewport.scrollHeight > viewport.clientHeight,
+    popup: rect(dialog), header: rect(dialog.querySelector('[data-settings-header]')),
+    viewport: rect(viewport), modelList: rect(editor.querySelector('[data-model-search] [role="listbox"]')),
+    buttons: [...editor.querySelectorAll('button')].filter(button => button.getClientRects().length > 0).map(rect),
+    scrollTop: viewport.scrollTop, scrolls: viewport.scrollHeight > viewport.clientHeight,
     window: { width: innerWidth, height: innerHeight },
   };
 });
@@ -77,7 +74,7 @@ export default [
       check(["anthropic", "openrouter", "openai", "ollama", "custom", "claude-cli", "codex-cli", "gemini-cli"].every((id) => catalog.includes(id)), "Add provider offers hosted, local, custom and CLI configuration", JSON.stringify(catalog));
       await closeProviderPopup(page);
       await openProviderConfiguration(page, "openrouter");
-      check(await page.$eval('[role="dialog"][data-provider-popup] [data-provider-default="openrouter"]', (button) => button.disabled), "OpenRouter requires a key and model before becoming the default");
+      check(await page.$eval('[data-provider-detail] [data-provider-popup] [data-provider-default="openrouter"]', (button) => button.disabled), "OpenRouter requires a key and model before becoming the default");
       await page.waitForSelector("[data-model-search=openrouter]", { timeout: 3000 });
       const text = await page.$eval(providerPopup, (e) => e.innerText);
       const keyLink = await page.$eval(`${providerPopup} a`, (a) => a.href);
@@ -144,15 +141,11 @@ export default [
       await page.keyboard.type("x");
       await page.keyboard.press("Escape");
       await new Promise((r) => setTimeout(r, 400));
-      const after = await page.evaluate(() => [document.querySelector("[data-model-query]")?.value, !!document.querySelector('[role="dialog"][data-provider-popup]')]);
+      const after = await page.evaluate(() => [document.querySelector("[data-model-query]")?.value, !!document.querySelector('[data-provider-detail] [data-provider-popup]')]);
       check(after[0] === "" && after[1], "Escape clears the search first, without closing configuration", JSON.stringify(after));
-      const configuration = await page.$(providerPopup);
       await page.keyboard.press("Escape");
-      await page.waitForFunction((dialog) => !dialog.isConnected, { timeout: 3000 }, configuration);
-      check(!!(await page.$('[role="dialog"]')), "closing provider configuration returns to Settings");
-      await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector('[role="dialog"]'), { timeout: 3000 }).catch(() => {});
-      check(!(await page.$('[role="dialog"]')), "the next Escape closes Settings");
+      await page.waitForFunction(() => !document.querySelector('[data-settings-header]'), { timeout: 3000 });
+      check(!(await page.$('[data-provider-configuration="openrouter"]')), "the next Escape closes Settings and its inline provider editor together");
     },
   },
   {
@@ -199,7 +192,8 @@ export default [
       const f = await page.evaluate(() => document.activeElement?.hasAttribute("data-provider-check"));
       check(f, "focus stays on Check again");
       // Reopening configuration refreshes the list without changing the default.
-      await closeProviderPopup(page);
+      // Leave the inline editor before reopening it, rather than closing a removed nested modal.
+      await h.click('[data-provider-configure="claude-cli"]');
       await openProviderConfiguration(page, "ollama");
       await page.waitForFunction(() => /2 models/.test(document.querySelector("[data-model-search-status]")?.textContent ?? ""), { timeout: 3000 });
       await page.click('[data-model-choice="qwen3:8b"]');
@@ -342,29 +336,26 @@ export default [
       });
       check(layout.count === 120 && layout.scrolls, "the full model list scrolls instead of compressing its rows", JSON.stringify(layout));
       check(layout.bad.length === 0, "model titles and identifiers fit their rows without overlapping the next option", JSON.stringify(layout.bad.slice(0, 3)));
-      await page.$eval('[data-provider-popup-body] .ui-scroll-area-viewport', (viewport) => {
+      await page.$eval('[role="tabpanel"][data-state="active"]', (viewport) => {
         viewport.scrollTop = 0;
       });
       await h.idle();
       const beforeScroll = await popupGeometry(page);
-      await page.$eval('[data-provider-popup-body] .ui-scroll-area-viewport', (viewport) => {
+      await page.$eval('[role="tabpanel"][data-state="active"]', (viewport) => {
         viewport.scrollTop = viewport.scrollHeight;
       });
       await h.idle();
       const afterScroll = await popupGeometry(page);
-      check(afterScroll.scrolls && afterScroll.scrollTop > beforeScroll.scrollTop + 1, "the provider body scrolls from its beginning to its end");
-      check(["header", "footer"].every((part) => Math.abs(beforeScroll[part].top - afterScroll[part].top) <= 1 && Math.abs(beforeScroll[part].bottom - afterScroll[part].bottom) <= 1), "provider header and footer stay fixed while the body scrolls");
+      check(afterScroll.scrolls && afterScroll.scrollTop > beforeScroll.scrollTop + 1, "the Settings panel scrolls the inline provider editor from beginning to end");
+      check(Math.abs(beforeScroll.header.top - afterScroll.header.top) <= 1 && Math.abs(beforeScroll.header.bottom - afterScroll.header.bottom) <= 1, "the Settings header stays fixed while the inline editor scrolls");
       for (const geometry of [beforeScroll, afterScroll]) {
-        const { popup, header, footer, viewport, modelList, buttons, window } = geometry;
+        const { popup, header, viewport, buttons, window } = geometry;
         const inside = (bounds, container) => bounds.top >= container.top - 1 && bounds.bottom <= container.bottom + 1 && bounds.left >= container.left - 1 && bounds.right <= container.right + 1;
         const screen = { top: 0, left: 0, right: window.width, bottom: window.height };
-        check([header, footer, ...buttons].every((bounds) => inside(bounds, popup) && inside(bounds, screen)) && buttons.every((bounds) => inside(bounds, footer)), "provider header, footer and action buttons remain visible inside the popup");
-        check(header.bottom <= viewport.top + 1 && viewport.bottom <= footer.top + 1, "the provider scroll viewport stays between its header and footer");
-        const visibleModelTop = Math.max(modelList.top, viewport.top);
-        const visibleModelBottom = Math.min(modelList.bottom, viewport.bottom);
-        check(visibleModelBottom <= visibleModelTop || (header.bottom <= visibleModelTop + 1 && visibleModelBottom <= footer.top + 1), "the visible model list does not overlap provider header or footer");
+        check(inside(header, popup) && inside(header, screen) && inside(viewport, popup) && header.bottom <= viewport.top + 1, "the dedicated Settings header and scroll panel stay inside the window without overlapping");
+        check(buttons.every(bounds => bounds.left >= popup.left - 1 && bounds.right <= popup.right + 1), "inline provider actions do not clip horizontally");
       }
-      check(Math.max(afterScroll.modelList.top, afterScroll.viewport.top) < Math.min(afterScroll.modelList.bottom, afterScroll.viewport.bottom), "the model list remains reachable at the end of the provider body");
+      check(Math.max(afterScroll.modelList.top, afterScroll.viewport.top) < Math.min(afterScroll.modelList.bottom, afterScroll.viewport.bottom), "the model list remains reachable at the end of the inline editor");
     },
   },
 ];

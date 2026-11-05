@@ -9,7 +9,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { notifyGrantsChanged } from "@/lib/grants";
 import { inTauri } from "@/lib/tauri";
 
-import { RECORD_PART, loadUiThread, type AccessAnswer, type ChatRecord, type RecordPartData } from "./records";
+import { RECORD_PART, loadUiThread, type AccessAnswer, type ChatRecord, type RecordPartData, type ToolRecord } from "./records";
 import type { ThreadIndex } from "./thread-index";
 
 export type { AccessAnswer } from "./records";
@@ -18,6 +18,8 @@ export type { AccessAnswer } from "./records";
 type AgentEvent =
   | { kind: "text"; delta: string }
   | { kind: "tool"; label: string }
+  | ({ kind: "toolStart" } & Omit<ToolRecord, "kind" | "status" | "detail">)
+  | { kind: "toolEnd"; id: string; status: Exclude<ToolRecord["status"], "running">; detail?: string }
   | {
       kind: "approval";
       id: string;
@@ -227,6 +229,7 @@ export function createAgentAdapter(
         ? parts.reduce((n, p) => n + (p.type === "text" ? p.text.length : 0), 0)
         : undefined;
       let toolStatus: string | undefined;
+      let currentToolId: string | undefined;
       let approval: PendingApproval | undefined;
       let accessRequest: PendingAccessRequest | undefined;
       let errorCode: string | undefined;
@@ -240,10 +243,25 @@ export function createAgentAdapter(
           custom: { toolStatus, approval, accessRequest, errorCode, retryAfterSecs, at, continuedAfter } satisfies AgentMessageCustom,
         },
       });
-      const settle = () => {
+      const settle = (status: "failed" | "cancelled" | "incomplete" = "incomplete") => {
         toolStatus = undefined;
+        currentToolId = undefined;
         approval = undefined;
         accessRequest = undefined;
+        parts = parts.map((part) => {
+          if (part.type !== "data" || part.name !== RECORD_PART) return part;
+          const data = part.data as RecordPartData;
+          return data.record.kind === "tool" && data.record.status === "running"
+            ? { ...part, data: { ...data, record: { ...data.record, status } } } : part;
+        });
+      };
+      const record = (next: ChatRecord) => {
+        const index = next.kind === "tool" ? parts.findIndex((part) => part.type === "data" && part.name === RECORD_PART && (part.data as RecordPartData).record.kind === "tool" && ((part.data as RecordPartData).record as ToolRecord).id === next.id) : -1;
+        if (index >= 0) {
+          parts = parts.map((part, i) => i === index ? { type: "data", name: RECORD_PART, data: { ...(part as { data: RecordPartData }).data, record: next } } : part);
+        } else {
+          parts = [...parts, { type: "data", name: RECORD_PART, data: { id: `rec-${++recordSeq}`, record: next } satisfies RecordPartData }];
+        }
       };
       /** "Waiting for you to ..." is over once the card is answered. */
       const clearWaiting = () => {
@@ -274,6 +292,18 @@ export function createAgentAdapter(
               toolStatus = e.label;
               yield update();
               break;
+            case "toolStart":
+              currentToolId = e.id;
+              record({ kind: "tool", id: e.id, category: e.category, label: e.label, target: e.target, status: "running" });
+              yield update();
+              break;
+            case "toolEnd": {
+              if (currentToolId === e.id) { toolStatus = undefined; currentToolId = undefined; }
+              const prior = parts.find((part) => part.type === "data" && part.name === RECORD_PART && (part.data as RecordPartData).record.kind === "tool" && ((part.data as RecordPartData).record as ToolRecord).id === e.id);
+              if (prior?.type === "data") record({ ...((prior.data as RecordPartData).record as ToolRecord), status: e.status, detail: e.detail });
+              yield update();
+              break;
+            }
             case "approval":
               approval = {
                 id: e.id,
@@ -307,26 +337,25 @@ export function createAgentAdapter(
               yield update();
               break;
             case "record": {
-              const data: RecordPartData = { id: `rec-${++recordSeq}`, record: e.record };
-              parts = [...parts, { type: "data", name: RECORD_PART, data }];
+              record(e.record);
               yield update();
               break;
             }
             case "error":
-              settle();
+              settle("failed");
               errorCode = e.code;
               retryAfterSecs = e.retryAfterSecs;
               ended = { type: "incomplete", reason: "error", error: e.message };
               yield { ...update(), status: ended };
               break;
             case "cancelled":
-              settle();
+              settle("cancelled");
               ended = { type: "incomplete", reason: "cancelled" };
               yield { ...update(), status: ended };
               break;
             case "end":
               // The reply's time is when it finished, as the backend saves it.
-              toolStatus = undefined;
+              settle();
               at = Date.now();
               yield ended ? { ...update(), status: ended } : update();
               return;

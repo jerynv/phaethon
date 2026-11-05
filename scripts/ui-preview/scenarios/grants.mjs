@@ -163,7 +163,7 @@ export default [
     mock: { threads: { school: thread }, settings, grants: grants() },
     async run(page, h) {
       // A narrow window starts with the sidebar hidden already; a wide one hides it with the toggle.
-      if (!(await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden))) await h.click('button[aria-controls="spaces-sidebar"]');
+      if (!(await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true)))) await h.click('button[aria-controls="spaces-sidebar"]');
       await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
       await h.click(CHIP);
       await page.waitForSelector(POPOVER, { timeout: 5000 });

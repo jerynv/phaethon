@@ -77,9 +77,9 @@ const tabOrder = (page) =>
   page.evaluate(() => {
     const sel = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select, [tabindex]';
     return Array.from(document.querySelectorAll(sel))
-      .filter((el) => !el.closest("[hidden]") && el.getAttribute("tabindex") !== "-1")
+      .filter((el) => !el.closest("[hidden], [inert]") && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden" && el.getAttribute("tabindex") !== "-1")
       .map((el) => {
-        const where = el.closest("header") ? "header" : el.closest("nav") ? "nav" : el.closest("main") ? "main" : "root";
+        const where = el.closest("#spaces-sidebar") ? "nav" : el.closest("header") ? "header" : el.closest("nav") ? "nav" : el.closest("main") ? "main" : "root";
         const name = el.getAttribute("aria-label") || el.textContent.trim().slice(0, 24) || el.getAttribute("placeholder") || el.tagName;
         return `${where}:${name}${where === "root" && el.getAttribute("href") !== "#main" ? ` ${el.outerHTML.slice(0, 160)}` : ""}`;
       });
@@ -115,8 +115,8 @@ export default [
     mock: { threads: { school: thread } },
     async run(page, h) {
       // A narrow window starts with the sidebar hidden already; a wide one hides it with the toggle.
-      if (!(await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden))) await h.click('button[aria-controls="spaces-sidebar"]');
-      await page.waitForSelector("#spaces-sidebar[hidden]", { timeout: 5000 });
+      if (!(await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true)))) await h.click('button[aria-controls="spaces-sidebar"]');
+      await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true), { timeout: 5000 });
       // The sidebar's Settings entry went with it; the title bar carries one instead.
       await page.waitForSelector('header [data-testid="titlebar-settings"]', { timeout: 5000 });
       await page.mouse.move(600, 400); // leave the toggle, so no tooltip
@@ -146,7 +146,7 @@ export default [
       if (!(order[0] ?? "").includes("Skip to conversation")) throw new Error(`first Tab stop is "${order[0]}", not the skip link`);
       const zones = order.map((o) => o.split(":")[0]);
       // A narrow window starts with the sidebar hidden, so its nav is out of the order.
-      const navShown = await page.evaluate(() => !document.getElementById("spaces-sidebar")?.hidden);
+      const navShown = await page.evaluate(() => !(document.getElementById("spaces-sidebar")?.hidden ?? true));
       const want = navShown ? ["root", "header", "nav", "main"] : ["root", "header", "main"];
       const firsts = want.map((z) => zones.indexOf(z));
       if (firsts.some((i, k) => i < 0 || (k > 0 && i < firsts[k - 1]))) throw new Error(`Tab order is not ${want.join(" > ")}`);
@@ -166,12 +166,12 @@ export default [
     mock: { threads: { school: thread, work: thread } },
     async run(page, h) {
       await h.idle();
-      const narrow = await page.evaluate(() => document.getElementById("spaces-sidebar")?.hidden);
+      const narrow = await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true));
       await showSidebar(page);
       await h.click('#spaces-sidebar [data-space-id="work"]');
       await h.idle();
       const after = await page.evaluate(() => ({
-        hidden: document.getElementById("spaces-sidebar")?.hidden,
+        hidden: (document.getElementById("spaces-sidebar")?.hidden ?? true),
         title: document.getElementById("space-title")?.textContent,
         focus: document.activeElement?.id || document.activeElement?.tagName,
       }));
@@ -186,7 +186,7 @@ export default [
         await page.keyboard.press("Escape");
         await h.idle();
         const esc = await page.evaluate(() => ({
-          hidden: document.getElementById("spaces-sidebar")?.hidden,
+          hidden: (document.getElementById("spaces-sidebar")?.hidden ?? true),
           onToggle: document.activeElement?.getAttribute("aria-controls") === "spaces-sidebar",
         }));
         console.log(`     Escape in the sidebar: ${JSON.stringify(esc)}`);

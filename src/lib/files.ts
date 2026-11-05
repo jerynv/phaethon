@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /** Mirrors `ViewKind` in src-tauri/src/viewer.rs. */
-export type ViewKind = "markdown" | "tex" | "text" | "pdf" | "image" | "other";
+export type ViewKind = "markdown" | "tex" | "text" | "pdf" | "image" | "docx" | "spreadsheet" | "slides" | "audio" | "video" | "other";
+
+export const isByteKind = (kind: ViewKind) => ["pdf", "image", "docx", "spreadsheet", "slides", "audio", "video"].includes(kind);
+
+/** Host admission before fetching/copying; optional renderers may impose lower limits. */
+export const previewByteLimit = (kind: ViewKind) => (kind === "image" ? 20 : ["docx", "spreadsheet", "slides"].includes(kind) ? 10 : 40) * 1024 * 1024;
 
 /** Mirrors `FileView` in src-tauri/src/viewer.rs. */
 export type FileView = {
@@ -29,9 +34,14 @@ const TEXT_EXT = new Set([
 /** What a file the viewer gets as bytes (an attachment) is, by its media type or name. */
 export function kindOfFile(name: string, mediaType: string | undefined): ViewKind {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  const mt = mediaType ?? "";
+  const mt = (mediaType ?? "").toLowerCase().split(";")[0].trim();
   if (mt === "application/pdf" || ext === "pdf") return "pdf";
-  if (mt.startsWith("image/") && /^(png|jpe?g|gif|webp|bmp|svg)$/.test(ext || "png")) return "image";
+  if (/^(png|jpe?g|gif|webp|bmp|svg)$/.test(ext) && (!mt || mt.startsWith("image/") || mt === "application/octet-stream")) return "image";
+  if (ext === "docx" || mt === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "docx";
+  if (ext === "xlsx" || mt === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") return "spreadsheet";
+  if (ext === "pptx" || mt === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "slides";
+  if (/^(mp3|m4a|aac|wav|ogg|oga|flac|opus)$/.test(ext)) return "audio";
+  if (/^(mp4|m4v|mov|webm|ogv)$/.test(ext)) return "video";
   if (ext === "md" || ext === "markdown" || mt === "text/markdown") return "markdown";
   if (ext === "tex" || ext === "latex") return "tex";
   if (mt.startsWith("text/") || mt === "application/json" || TEXT_EXT.has(ext)) return "text";

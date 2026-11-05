@@ -97,14 +97,14 @@ export default [
       await page.keyboard.press("Enter");
       const err = await page.evaluate(() => {
         const g = document.querySelector('[role="radiogroup"]');
-        return { error: document.querySelector("[data-field-error]")?.textContent ?? "", describes: !!document.getElementById(g.getAttribute("aria-describedby") ?? "")?.matches("[data-field-error]"), focus: document.activeElement?.getAttribute("role") };
+        return { error: document.querySelector("[data-field-error]")?.textContent ?? "", describes: !!document.getElementById(g.getAttribute("aria-describedby") ?? "")?.matches("[data-field-error]"), focus: document.activeElement?.matches('input[type="radio"]') ? "radio" : document.activeElement?.getAttribute("role") };
       });
       check(err.error.includes("Choose a course site") && err.describes && err.focus === "radio", "nothing chosen: said in words, linked to the choices, focus on them", JSON.stringify(err));
       await h.shot("kind");
       // Arrows choose (Canvas is first: ArrowDown then ArrowUp lands back on it, chosen).
       await page.keyboard.press("ArrowDown");
       await page.keyboard.press("ArrowUp");
-      const chosen = await page.evaluate(() => document.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute("data-kind"));
+      const chosen = await page.evaluate(() => document.querySelector('input[type="radio"]:checked')?.closest('[data-kind]')?.getAttribute('data-kind'));
       check(chosen === "canvas", "the arrow keys choose a site", chosen);
       await tabTo(page, "[data-step-next]");
       await page.keyboard.press("Enter");
@@ -572,7 +572,7 @@ export default [
       await page.keyboard.press("Escape");
       await page.waitForFunction((D) => !document.querySelector(D), { timeout: 3000 }, DIALOG);
       // A space's menu, by keyboard: Shift+F10 on Work, then Import courses….
-      const sidebarShown = await page.evaluate(() => !document.getElementById("spaces-sidebar")?.hidden);
+      const sidebarShown = await page.evaluate(() => !(document.getElementById("spaces-sidebar")?.hidden ?? true));
       if (!sidebarShown) await chord(page, ["Meta", "\\"]);
       await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-space-id="work"]', { timeout: 3000 });
       await page.focus('[data-space-id="work"]');

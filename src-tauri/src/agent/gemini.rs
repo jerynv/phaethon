@@ -196,11 +196,12 @@ pub(super) struct Parser {
     after_tool: bool,
     last_error: String,
     result: Option<Outcome>,
+    tools: super::ToolEvents,
 }
 
 impl Parser {
     pub(super) fn new(space_dir: &Path) -> Self {
-        Self { space_dir: space_dir.to_path_buf(), granted: vec![], session_id: None, emitted_text: false, after_tool: false, last_error: String::new(), result: None }
+        Self { space_dir: space_dir.to_path_buf(), granted: vec![], session_id: None, emitted_text: false, after_tool: false, last_error: String::new(), result: None, tools: super::ToolEvents::default() }
     }
 
     pub(super) fn feed(&mut self, line: &str) -> Vec<AgentEvent> {
@@ -225,7 +226,16 @@ impl Parser {
             }
             Some("tool_use") => {
                 self.after_tool = true;
-                vec![AgentEvent::Tool { label: tool_label(&s(&v, "tool_name"), &v["parameters"], &self.space_dir, &self.granted) }]
+                self.tools.start("gemini", &s(&v, "tool_id"), &s(&v, "tool_name"), &v["parameters"], &self.space_dir, &self.granted, tool_label(&s(&v, "tool_name"), &v["parameters"], &self.space_dir, &self.granted))
+            }
+            Some("tool_result") => {
+                let status = match v["status"].as_str() {
+                    Some("success") => super::ToolStatus::Success,
+                    Some("error" | "failed") => super::ToolStatus::Failed,
+                    Some("cancelled") => super::ToolStatus::Cancelled,
+                    _ => super::ToolStatus::Incomplete,
+                };
+                self.tools.end("gemini", &s(&v, "tool_id"), status, (status == super::ToolStatus::Failed).then(|| "Tool reported an error".into()))
             }
             Some("error") => {
                 self.last_error = s(&v, "message");
@@ -312,11 +322,28 @@ mod tests {
                 AgentEvent::Text { delta: "Let me ".into() },
                 AgentEvent::Text { delta: "look.".into() },
                 AgentEvent::Tool { label: "Reading file notes.md".into() },
+                AgentEvent::ToolStart { id: "gemini:t1".into(), category: crate::thread::ToolCategory::Read, label: "Reading file".into(), target: Some("notes.md".into()) },
+                AgentEvent::ToolEnd { id: "gemini:t1".into(), status: super::super::ToolStatus::Success, detail: None },
                 AgentEvent::Tool { label: "Searching files for \u{201c}graph\u{201d}".into() },
+                AgentEvent::ToolStart { id: "gemini:t2".into(), category: crate::thread::ToolCategory::Search, label: "Searching".into(), target: None },
                 AgentEvent::Text { delta: "\n\nok".into() },
             ]
         );
         assert_eq!(out, Outcome::Success { session_id: Some("72fe4cc9-dcc1-4ea2-8509-2354f70dc649".into()) });
+    }
+
+    #[test]
+    fn tool_result_errors_and_unknown_statuses_are_not_successes() {
+        let mut parser = Parser::new(Path::new(SPACE));
+        for (id, raw_status, expected) in [("failed-1", "error", super::super::ToolStatus::Failed), ("unknown-1", "new-status", super::super::ToolStatus::Incomplete)] {
+            let start = serde_json::json!({"type":"tool_use", "tool_id":id, "tool_name":"read_file", "parameters":{"file_path":"notes.md"}}).to_string();
+            assert!(matches!(parser.feed(&start).last(), Some(AgentEvent::ToolStart { .. })));
+            assert!(parser.feed(&start).is_empty());
+            let end = serde_json::json!({"type":"tool_result", "tool_id":id, "status":raw_status, "output":"private source content"}).to_string();
+            let events = parser.feed(&end);
+            assert!(matches!(events.as_slice(), [AgentEvent::ToolEnd { status, .. }] if *status == expected));
+            assert!(!serde_json::to_string(&events).unwrap().contains("private source content"));
+        }
     }
 
     #[test]

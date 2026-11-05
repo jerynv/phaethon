@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/course-reach";
+import { useSitesVersion } from "@/components/lms/import-store";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
 import { Details } from "@/components/ui/details";
@@ -14,6 +15,7 @@ import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { courseMatches } from "@/components/study/course-grid";
+import { useCourseSelection } from "@/lib/course-selection";
 
 import { start as startTimer, useFocusTimer } from "./focus-timer-store";
 import { FocusTimer } from "./focus-timer";
@@ -57,11 +59,19 @@ export function PlanView({ space }: { space: Space }) {
   const [decks, setDecks] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
-  const [course, setCourse] = useState<string | null>(null);
+  const sites = useSitesVersion();
+  const courseContext = useCourseSelection(space.id, sites);
+  const selected = courses.find(c => c.folder.replace(/^courses\//, "") === courseContext.selected?.folder.replace(/^courses\//, ""));
+  const course = selected?.folder ?? null;
+  const setCourse = (folder: string | null) => courseContext.select(courses.find(c => c.folder === folder) ?? null);
   const [day, setDay] = useState<string | null>(null);
   const [week, setWeek] = useState(0);
   const headingId = useId();
   const today = localDay(Date.now());
+  const weekStart = addDays(today, week * 7);
+  const weekEnd = addDays(weekStart, 6);
+  const selectedDay = day ?? weekStart;
+  useEffect(() => setDay(null), [courseContext.selected?.key]);
 
   const load = useCallback(async () => {
     try {
@@ -113,18 +123,18 @@ export function PlanView({ space }: { space: Space }) {
     }
   }
 
-  const selected = courses.find((c) => c.folder === course);
   const matches = (name?: string) => !course || courseMatches(name, course, selected?.name ?? "");
   const visiblePlan = { ...plan, days: plan.days.map((d) => ({ ...d, sessions: d.sessions.filter((s) => matches(s.course)) })).filter((d) => d.sessions.length) };
-  const todays = visiblePlan.days.find((d) => d.day === today)?.sessions ?? [];
-  const dueToday = (upcoming ?? []).filter((u) => localDay(u.due) === today && matches(u.folder));
+  const daySessions = visiblePlan.days.find((d) => d.day === selectedDay)?.sessions ?? [];
+  const dayDue = (upcoming ?? []).filter((u) => localDay(u.due) === selectedDay && matches(u.folder));
+  const weekPlan = { ...visiblePlan, days: visiblePlan.days.filter(d => d.day >= weekStart && d.day <= weekEnd) };
   // FullCalendar's event-array pattern: deadlines and saved exams share one dated agenda.
   const agenda = [...(upcoming ?? []), ...exams.map((e) => ({ course: courses.find((c) => c.folder === e.course)?.name ?? e.course ?? "Exam", folder: e.course ?? "", title: e.title, due: new Date(`${e.date}T12:00:00`).getTime(), link: "" }))]
     .filter((item) => localDay(item.due) >= today && (!course || matches(item.folder)))
     .sort((a, b) => a.due - b.due);
 
   return (
-    <section aria-labelledby={headingId} data-plan-view={space.id} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
+    <section aria-labelledby={headingId} data-plan-view={space.id} data-course-context={courseContext.selected?.key} className="flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
       <WorkspacePage className="gap-4">
         <WorkspacePageHeader
           title="Plan"
@@ -148,19 +158,19 @@ export function PlanView({ space }: { space: Space }) {
         <nav aria-label="Agenda days" className="grid grid-cols-7 gap-1 rounded-lg bg-surface-sunken p-1" data-plan-week="">
           {Array.from({ length: 7 }, (_, i) => addDays(today, week * 7 + i)).map((date) => {
             const count = agenda.filter((item) => localDay(item.due) === date).length;
-            const active = day === date;
-            return <button key={date} type="button" aria-pressed={active} aria-label={`${dayName(date)}${count ? `, ${count} due` : ""}`} onClick={() => setDay(active ? null : date)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-colors", active ? "bg-accent-soft text-accent-soft-ink" : "text-ink-secondary hover:bg-hover")}>
+            const active = selectedDay === date;
+            return <button key={date} data-plan-agenda-day={date} type="button" aria-pressed={active} aria-label={`${dayName(date)}${count ? `, ${count} due` : ""}`} onClick={() => setDay(active ? null : date)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-colors", active ? "bg-accent-soft text-accent-soft-ink" : "text-ink-secondary hover:bg-hover")}>
               <span className="text-xs font-normal">{new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })}</span>
               <span className="flex items-center gap-1.5 text-lg font-medium tabular-nums text-ink">{Number(date.slice(-2))}{count > 0 && <span className="size-1 rounded-full bg-warning-ink" aria-hidden="true" />}</span>
             </button>;
           })}
         </nav>
-        <ComingUp space={space.id} items={upcoming === null ? null : agenda.filter((item) => day ? localDay(item.due) === day : localDay(item.due) >= addDays(today, week * 7) && localDay(item.due) <= addDays(today, week * 7 + 6))} />
-        <Today space={space.id} sessions={todays} due={dueToday} done={done} onToggle={toggleDone} loading={upcoming === null} />
+        <ComingUp space={space.id} items={upcoming === null ? null : agenda.filter((item) => day ? localDay(item.due) === day : localDay(item.due) >= weekStart && localDay(item.due) <= weekEnd)} />
+        <Today space={space.id} date={selectedDay} today={today} sessions={daySessions} due={dayDue} done={done} onToggle={toggleDone} loading={upcoming === null} />
         <Details summary="Exams"><Exams key={course ?? "all"} space={space} exams={exams} courses={courses} onChange={setExams} visibleCourse={course ?? undefined} /></Details>
         <Schedule
           space={space.id}
-          plan={visiblePlan}
+          plan={weekPlan}
           st={st}
           done={done}
           onState={(s) => void saveState(s)}
@@ -220,33 +230,33 @@ function SessionRow({ space, s, done, onToggle, focus }: { space: string; s: Ses
   );
 }
 
-function Today({ space, sessions, due, done, onToggle, loading }: { space: string; sessions: Session[]; due: Upcoming[]; done: Set<string>; onToggle: (s: Session, on: boolean) => void; loading: boolean }) {
+function Today({ space, date, today, sessions, due, done, onToggle, loading }: { space: string; date: string; today: string; sessions: Session[]; due: Upcoming[]; done: Set<string>; onToggle: (s: Session, on: boolean) => void; loading: boolean }) {
   const id = useId();
   const left = sessions.filter((s) => !done.has(s.id)).length;
   return (
     <WorkspaceSection
-      title="Today"
+      title={date === today ? "Today" : dayName(date)}
       titleId={id}
-      data-plan-today=""
+      data-plan-today={date}
       actions={sessions.length > 0 && <p className="text-sm text-ink-secondary">{left === 0 ? "All done" : `${left} of ${sessions.length} left`}</p>}
     >
       {loading ? (
         <p className="text-base text-ink-secondary">Loading…</p>
       ) : sessions.length === 0 && due.length === 0 ? (
-        <p className="text-base text-ink-secondary">Nothing planned for today.</p>
+        <p className="text-base text-ink-secondary">{date === today ? "Nothing planned for today." : "Nothing planned for this day."}</p>
       ) : (
         <>
           {sessions.length > 0 && (
             <ul aria-labelledby={id} className="flex flex-col divide-y divide-line">
               {sessions.map((s) => (
-                <SessionRow key={s.id} space={space} s={s} done={done.has(s.id)} onToggle={onToggle} focus />
+                <SessionRow key={s.id} space={space} s={s} done={done.has(s.id)} onToggle={onToggle} focus={date === today} />
               ))}
             </ul>
           )}
           {due.length > 0 && (
             <p className="flex items-start gap-2 text-base text-ink" data-plan-due-today="">
               <Icon name="warning" className="mt-0.5 shrink-0 text-warning-ink" />
-              <span>Due today: {due.map((u) => `${u.title} (${u.course})`).join("; ")}.</span>
+              <span>{date === today ? "Due today" : `Due ${dayName(date)}`}: {due.map((u) => `${u.title} (${u.course})`).join("; ")}.</span>
             </p>
           )}
         </>
@@ -265,6 +275,7 @@ function Exams({ space, exams, courses, onChange, visibleCourse }: { space: Spac
   const dateRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const today = localDay(Date.now());
+  const filteredExams = exams.filter(exam => !visibleCourse || exam.course === visibleCourse);
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -309,11 +320,11 @@ function Exams({ space, exams, courses, onChange, visibleCourse }: { space: Spac
 
   return (
     <WorkspaceSection title="Exams" titleId={id} data-plan-exams="">
-      {exams.length === 0 ? (
+      {filteredExams.length === 0 ? (
         <p className="text-sm text-ink-secondary">No exams yet.</p>
       ) : (
         <ul ref={listRef} aria-labelledby={id} className="flex flex-col divide-y divide-line">
-          {exams.filter((exam) => !visibleCourse || exam.course === visibleCourse).map((x, i) => (
+          {filteredExams.map((x, i) => (
             <li key={x.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" data-exam={x.id}>
               <div className="flex min-w-0 flex-1 basis-48 flex-col">
                 <span className={cn("text-base font-medium wrap-break-word", x.date < today ? "text-ink-secondary" : "text-ink")}>{x.title}</span>
@@ -416,8 +427,6 @@ function Schedule({
   saved: string;
 }) {
   const id = useId();
-  const [all, setAll] = useState(false);
-  const days = all ? plan.days : plan.days.slice(0, 7);
   return (
     <WorkspaceSection
       title="Schedule"
@@ -482,11 +491,11 @@ function Schedule({
         </p>
       )}
       {plan.days.length === 0 ? (
-        <p className="text-base text-ink-secondary">Nothing to plan yet. Add an exam, or import courses with due dates.</p>
+        <p className="text-base text-ink-secondary">No study sessions this week.</p>
       ) : (
         <ol className="flex flex-col gap-3" aria-label="Schedule by day" data-plan-days="">
-          {days.map((d) => (
-            <li key={d.day} className="flex flex-col">
+          {plan.days.map((d) => (
+            <li key={d.day} className="flex flex-col" data-plan-date={d.day}>
               <h4 className="text-base font-medium text-ink">{dayName(d.day)}</h4>
               <ul className="flex flex-col divide-y divide-line">
                 {d.sessions.map((s) => (
@@ -496,14 +505,6 @@ function Schedule({
             </li>
           ))}
         </ol>
-      )}
-      {plan.days.length > 7 && (
-        <div>
-          <Button type="button" variant="ghost" size="sm" aria-expanded={all} onClick={() => setAll(!all)}>
-            <Icon name={all ? "chevron-up" : "chevron-down"} />
-            {all ? "Show the next week only" : `Show all ${plan.days.length} days`}
-          </Button>
-        </div>
       )}
     </WorkspaceSection>
   );

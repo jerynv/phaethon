@@ -41,7 +41,7 @@ const rows = (page) =>
   );
 
 async function expectComposerReachable(page, h) {
-  await page.waitForFunction(() => document.getElementById("spaces-sidebar")?.hidden && !document.querySelector("[data-sidebar-scrim], [data-conversations-menu]") && document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
+  await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true) && !document.querySelector("[data-sidebar-backdrop], [data-conversations-menu]") && document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
   await h.click("[data-composer-input]");
   expect(await page.$eval("[data-composer-input]", (input) => document.activeElement === input), "the composer cannot receive pointer focus after dismissing the sidebar");
 }
@@ -98,7 +98,7 @@ export default [
         await showSidebar(page);
         if (fromMenu) await h.click("#spaces-sidebar [data-conversations-trigger]");
         await h.click(fromMenu ? "[data-conversations-menu] [data-menu-new-conversation]" : "#spaces-sidebar [data-new-conversation]");
-        await h.waitText("Start a conversation in School");
+        await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
         await expectComposerReachable(page, h);
         expect((await calls(page, "thread_new")).length === (fromMenu ? 2 : 1), "New conversation from the overlaid sidebar did not call thread_new once");
       }
@@ -133,7 +133,7 @@ export default [
       for (const view of ["study", "grades", "plan"]) {
         await h.click(`[data-view-tab="${view}"]`);
         await page.waitForSelector(`[data-space-pane][data-shown] [data-space-view="${view}"][data-view-shown]`, { timeout: 5000 });
-        if (await page.$eval("#spaces-sidebar", (sidebar) => sidebar.hidden)) {
+        if (await page.evaluate(() => (document.getElementById("spaces-sidebar")?.hidden ?? true))) {
           await page.click('button[aria-controls="spaces-sidebar"]');
         }
         await page.waitForSelector('#spaces-sidebar:not([hidden]) [data-sidebar-thread="current"]', { timeout: 5000 });
@@ -207,7 +207,7 @@ export default [
 
       // New conversation from the sidebar.
       await h.click("#spaces-sidebar [data-new-conversation]");
-      await h.waitText("Start a conversation in School");
+      await page.waitForSelector('[data-space-pane="school"][data-shown] [data-empty-state] [data-empty-workspace][aria-label="Workspace: School"]', { timeout: 5000 });
       expect((await calls(page, "thread_new")).length === 1, "the sidebar’s New conversation did not call thread_new");
       await page.waitForFunction(() => document.activeElement?.matches("[data-composer-input]"), { timeout: 3000 });
       expect((await crumb(page)) === "New conversation", `breadcrumb on a new conversation reads “${await crumb(page)}”`);
@@ -258,7 +258,7 @@ export default [
       await page.waitForSelector("#spaces-sidebar[data-overlay]:not([hidden]) [data-sidebar-thread]", { timeout: 5000 });
       await h.click(`[data-sidebar-thread="${archive[0].id}"]`);
       await h.waitText("characteristic polynomial");
-      await page.waitForFunction(() => document.getElementById("spaces-sidebar")?.hidden, { timeout: 3000 });
+      await page.waitForFunction(() => (document.getElementById("spaces-sidebar")?.hidden ?? true), { timeout: 3000 });
       expect((await calls(page, "thread_open")).length === 1, "thread_open not called from the narrow sidebar");
       await page.waitForSelector("[data-space-pane][data-shown] [data-space-header] [data-conversations-trigger]", { timeout: 3000 });
       await h.idle();

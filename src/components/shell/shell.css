@@ -66,3 +66,21 @@
 .ph-workspace-empty { position: relative; isolation: isolate; padding-block: 3rem; }
 .ph-workspace-empty::before { content: ""; pointer-events: none; position: absolute; inset: -1rem -1.5rem; z-index: -1; mask-image: radial-gradient(ellipse at center, black, transparent 72%); background: radial-gradient(ellipse at 22% 44%, color-mix(in oklch, var(--ph-accent-soft) 38%, transparent), transparent 62%), radial-gradient(ellipse at 78% 22%, color-mix(in oklch, var(--ph-ink-secondary) 8%, transparent), transparent 58%); }
 .ph-workspace-empty .ui-empty-title { font-size: var(--ph-text-xl); font-weight: 500; }
+.ph-workspace-page { container: workspace / inline-size; }
+@container workspace (max-width: 48rem) {
+  .ph-workspace-heading { flex-direction: column; align-items: stretch; }
+  .ph-workspace-heading > :first-child { flex-basis: auto; }
+}
+
+/* Vic owns the rail, sheet, scroll viewport and modal lifecycle. The App row owns placement. */
+.ph-sidebar-container { flex: 0 0 auto; width: auto; min-width: 0; align-self: stretch; }
+.ph-sidebar-container-overlay { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+.ph-sidebar-container .ui-sidebar-header { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.ph-sidebar-container .ui-sidebar-content { padding: 0; }
+.ph-sidebar-container .ui-sidebar-viewport { padding-inline: 0; }
+.ph-sidebar-container .ui-sidebar-list { padding: 0; }
+.ph-sidebar-container .ui-sidebar-footer { flex-direction: row; }
+.ph-sidebar-container .ui-sidebar-sheet { pointer-events: auto; max-width: calc(100% - var(--ph-space) * 12); }
+.ph-sidebar-container .ui-sidebar-sheet > .ui-sidebar-header { padding-inline-end: 2.5rem; }
+.ph-sidebar-container .ui-sidebar-backdrop { background: var(--ph-overlay); backdrop-filter: none; }
+.ph-sidebar-container .ui-sidebar-backdrop[data-open] { opacity: 1; }

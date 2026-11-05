@@ -5,6 +5,7 @@ import { openCourseImport, useSitesVersion } from "@/components/lms/import-store
 import { connectionName, isSignedOut, whenText } from "@/components/lms/sites";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
+import { CourseCatalog, courseCatalogIdentity } from "@/components/ui/course-catalog";
 import { WorkspaceEmpty, WorkspacePage, WorkspacePageHeader } from "@/components/ui/workspace-page";
 import { Details } from "@/components/ui/details";
 import { Icon } from "@/icons";
@@ -14,7 +15,7 @@ import type { Space } from "@/lib/spaces";
 import { inTauri } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useCourseSelection } from "@/lib/course-selection";
-import { CourseBack, CourseGrid } from "@/components/study/course-grid";
+import { CourseBack } from "@/components/study/course-grid";
 
 import { WhatIf } from "./what-if-panel";
 import { calculate, letterFor, pct, trend, type CalcInput } from "./what-if";
@@ -55,6 +56,7 @@ export function GradesView({ space }: { space: Space }) {
   const [signedOut, setSignedOut] = useState<Set<string>>(new Set());
   const [problem, setProblem] = useState("");
   const [said, setSaid] = useState("");
+  const [courseQuery, setCourseQuery] = useState("");
   const headingId = useId();
   const sites = useSitesVersion();
   const courseContext = useCourseSelection(space.id, sites);
@@ -187,12 +189,12 @@ export function GradesView({ space }: { space: Space }) {
             action={<Button type="button" onClick={() => openCourseImport({ space: space.id })}><Icon name="book" />Import courses…</Button>}
           />
         ) : (
-          selectedCourse ? <CourseCard key={`${selectedCourse.connection}/${selectedCourse.courseId}`} space={space.id} course={selectedCourse} headingId={headingId} refreshActions={refreshActions} onBack={() => setSelected(null)} /> : (
-            <CourseGrid courses={courses.map((c) => {
+          selectedCourse ? <CourseCard key={`${selectedCourse.connection}/${selectedCourse.courseId}`} space={space.id} course={selectedCourse} title={courseContext.selected?.name ?? selectedCourse.course} headingId={headingId} refreshActions={refreshActions} onBack={() => setSelected(null)} /> : (
+            <CourseCatalog query={courseQuery} onQueryChange={setCourseQuery} summaryLabel="Grade" courses={courses.map((c) => {
               const input = calcInput(c);
               const grade = c.current.percent ?? calculate(input).percent;
               const graded = c.items.filter((item) => item.graded && !item.excused).length;
-              return { id: `${c.connection}:${c.courseId}`, name: c.course, detail: `${graded}/${c.items.length} graded`, metric: grade != null ? pct(grade) : "—", progress: grade ?? undefined };
+              return { id: `${c.connection}:${c.courseId}`, ...courseCatalogIdentity(courseContext.courses, { ...c, name: c.course }), detail: `${graded}/${c.items.length} graded`, metric: grade != null ? pct(grade) : "—" };
             })} onOpen={setSelected} />
           )
         )}
@@ -227,7 +229,7 @@ function dueText(due: GradeItem["due"]): string {
   return ms == null ? "" : new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-function CourseCard({ space, course, headingId, refreshActions, onBack }: { space: string; course: CourseGrades; headingId: string; refreshActions: ReactNode; onBack: () => void }) {
+function CourseCard({ space, course, title, headingId, refreshActions, onBack }: { space: string; course: CourseGrades; title: string; headingId: string; refreshActions: ReactNode; onBack: () => void }) {
   const input = calcInput(course);
   const calc = calculate(input);
   const moved = trend(input);
@@ -240,7 +242,7 @@ function CourseCard({ space, course, headingId, refreshActions, onBack }: { spac
     <section aria-labelledby={headingId} className="flex flex-col gap-6" data-grades-course={course.courseId}>
       <CourseBack onBack={onBack} />
       <WorkspacePageHeader
-        title={course.course}
+        title={title}
         description={updated != null ? `Updated ${whenText(updated)}` : undefined}
         headingProps={{ id: headingId, "data-view-focus": "", tabIndex: -1 }}
         actions={<>{refreshActions}<div className="flex flex-col items-end gap-0.5 text-end" data-grades-current="">

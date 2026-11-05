@@ -6,6 +6,7 @@ import { hiddenCourses, NoCourseAccess, useCourseReach } from "@/components/lms/
 import { openCourseImport, useRun, useSitesVersion } from "@/components/lms/import-store";
 import { announce } from "@/components/shell/announcer";
 import { Button } from "@/components/ui/button";
+import { CourseCatalog, courseCatalogIdentity } from "@/components/ui/course-catalog";
 import { WorkspaceEmpty, WorkspacePage, WorkspacePageHeader, WorkspaceSection } from "@/components/ui/workspace-page";
 import { Icon } from "@/icons";
 import { studyOverview, type Attempt, type DeckSummary, type Quiz, type QuizSummary } from "@/lib/study";
@@ -16,7 +17,7 @@ import { useCourseSelection } from "@/lib/course-selection";
 
 import { DeckEditor } from "./deck-editor";
 import { CourseMaterials } from "./course-materials";
-import { CourseBack, CourseGrid, courseMatches } from "./course-grid";
+import { CourseBack, courseMatches } from "./course-grid";
 import { MakeDialog, type Made, type MakeKind, type MakeRequest } from "./make-dialog";
 import { QuizView } from "./quiz-view";
 import { ReviewSession } from "./review-session";
@@ -38,6 +39,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   const [error, setError] = useState("");
   const [courses, setCourses] = useState<CourseFolder[] | null>(null);
   const [courseTab, setCourseTab] = useState("practice");
+  const [courseQuery, setCourseQuery] = useState("");
   const [screen, setScreen] = useState<Screen>({ at: "hub" });
   const [make, setMake] = useState<MakeRequest | null>(null);
   const makeKey = useRef(1);
@@ -202,11 +204,11 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
   } else if (!course) {
     const choices = [...(courses ?? [])];
     if (overview.decks.some((d) => !d.course) || overview.quizzes.some((q) => !q.course)) choices.push({ name: "General study", folder: "uncategorized" });
-    body = choices.length ? <CourseGrid courses={choices.map((c) => {
+    body = choices.length ? <CourseCatalog query={courseQuery} onQueryChange={setCourseQuery} summaryLabel="Practice" courses={choices.map((c) => {
       const decks = overview.decks.filter((d) => courseMatches(d.course, c.folder, c.name));
       const quizzes = overview.quizzes.filter((q) => courseMatches(q.course, c.folder, c.name));
       const due = decks.reduce((n, d) => n + d.due, 0);
-      return { id: c.folder, name: c.name, detail: `${plural(decks.length, "deck")} · ${plural(quizzes.length, "quiz", "quizzes")}`, metric: due ? `${due} due` : undefined };
+      return { id: c.folder, ...courseCatalogIdentity(courseContext.courses, c), detail: `${plural(decks.length, "deck")} · ${plural(quizzes.length, "quiz", "quizzes")}`, metric: due ? `${due} due` : decks.length ? "Up to date" : undefined };
     })} onOpen={(folder) => { setCourseTab("practice"); setCourse(folder); }} /> : <Empty space={space} hasCourses={false} loading={courses === null} onMake={openMake} />;
   } else {
     const selected = courses?.find((c) => c.folder === course);
@@ -268,7 +270,7 @@ export function StudyView({ space, shown }: { space: Space; shown: boolean }) {
     <WorkspacePage data-study-hub={space.id} data-course-context={courseContext.selected?.key}>
       {course && <CourseBack onBack={() => { setCourseTab("practice"); setCourse(null); }} />}
       <WorkspacePageHeader
-        title={course ? courses?.find((c) => c.folder === course)?.name ?? "General study" : "Study"}
+        title={course ? courseContext.selected?.name ?? courses?.find((c) => c.folder === course)?.name ?? "General study" : "Study"}
         headingProps={{ ref: headingRef, tabIndex: -1, "data-view-focus": "" }}
         actions={courseTab === "practice" && overview && ((courses?.length ?? 0) > 0 || overview.decks.length > 0 || overview.quizzes.length > 0) && (
           <>

@@ -668,6 +668,86 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn configured_connections_discover_models_from_their_own_executable_and_arguments() {
+        use crate::agent_instances::{self, Instance};
+        use crate::vault::Vault;
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "phaethon-configured-models-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let vault = Vault::at(root.join("vault"));
+        vault.ensure_initialized().unwrap();
+        let binary = root.join("custom assistant with spaces");
+        std::fs::write(&binary, r#"#!/bin/sh
+[ "$1" = '--connection' ] || exit 11
+account=$2
+shift 2
+case "$account" in
+  'School account') model=school-model ;;
+  'Work account') model=work-model ;;
+  *) exit 12 ;;
+esac
+case "$1" in
+  -p)
+    [ -n "$CLAUDE_CONFIG_DIR" ] || exit 13
+    IFS= read -r request
+    printf '%s\n' "$request" > "$CLAUDE_CONFIG_DIR/catalog-requests.jsonl"
+    printf '{"type":"control_response","response":{"subtype":"success","request_id":"phaethon-models","response":{"models":[{"value":"default","resolvedModel":"%s"},{"value":"%s","displayName":"%s","supportsEffort":true,"supportedEffortLevels":["low","high"]}]}}}\n' "$model" "$model" "$account"
+    ;;
+  app-server)
+    [ -n "$CODEX_HOME" ] || exit 14
+    while IFS= read -r request; do
+      printf '%s\n' "$request" >> "$CODEX_HOME/catalog-requests.jsonl"
+      case "$request" in
+        *'"method":"initialize"'*) printf '%s\n' '{"id":1,"result":{}}' ;;
+        *'"method":"model/list"'*)
+          printf '{"id":2,"result":{"data":[{"model":"%s","displayName":"%s","isDefault":true,"defaultReasoningEffort":"high","supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"high"}]}],"nextCursor":null}}\n' "$model" "$account"
+          break ;;
+      esac
+    done
+    ;;
+  *) exit 15 ;;
+esac
+"#).unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        for cli in [Cli::Claude, Cli::Codex] {
+            for (account, expected) in [("School account", "school-model"), ("Work account", "work-model")] {
+                let instance = agent_instances::save(&vault, Some(&root), Instance {
+                    id: format!("{}-{expected}", cli.id()), cli: cli.id().into(), name: account.into(),
+                    binary: binary.display().to_string(), args: vec!["--connection".into(), account.into()],
+                }).unwrap();
+                let home = agent_instances::require_home(&vault, Some(&root), &instance).unwrap().unwrap();
+                let result = list(cli, Some(&home)).await;
+                assert_eq!(result.default_model.as_deref(), Some(expected), "{cli:?}: {result:?}");
+                assert_eq!(result.models.len(), 1);
+                assert_eq!(result.models[0].id, expected);
+                assert_eq!(result.models[0].name, account);
+                assert_eq!(result.models[0].reasoning_efforts, ["low", "high"]);
+                assert!(result.note.is_none());
+                let requests: Vec<Value> = std::fs::read_to_string(home.join("catalog-requests.jsonl"))
+                    .unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+                match cli {
+                    Cli::Claude => {
+                        assert_eq!(requests.len(), 1);
+                        assert_eq!(requests[0]["request"]["subtype"], "initialize");
+                    }
+                    Cli::Codex => {
+                        assert_eq!(requests.len(), 3);
+                        assert!(requests.iter().all(|r| ["initialize", "initialized", "model/list"].contains(&r["method"].as_str().unwrap())));
+                    }
+                    Cli::Gemini => unreachable!(),
+                }
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn claude_discovery_sends_only_initialize_and_discards_account_metadata() {
         let input_path = std::env::temp_dir().join(format!(
             "phaethon-model-request-{}-{}",

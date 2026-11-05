@@ -1,0 +1,24 @@
+.course-content-browser { display: flex; min-height: 0; flex-direction: column; gap: 0.75rem; container-type: inline-size; }
+.course-content-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; }
+.course-content-list { max-height: min(22rem, 52dvh); min-height: 0; overscroll-behavior: contain; }
+.course-content-list ul { margin: 0; padding: 0; list-style: none; }
+.course-content-row { width: 100%; font-weight: 400; }
+.course-content-row > .ui-button-face { display: grid; width: 100%; grid-template-columns: 1rem minmax(0, 1fr) 4.5rem 3.5rem 0.75rem; align-items: center; gap: 0.5rem; min-height: max(2rem, var(--ph-target-min)); text-align: start; }
+.course-content-icon { width: 1rem; height: 1rem; color: var(--ph-ink-tertiary); }
+.course-content-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ph-text-sm); color: var(--ph-ink); }
+.course-content-kind, .course-content-size { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ph-text-xs); color: var(--ph-ink-tertiary); }
+.course-content-size { text-align: end; font-variant-numeric: tabular-nums; }
+.course-content-empty { display: flex; min-height: 7rem; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; }
+.course-content-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+/* Inside Settings the index owns the remaining space; paging stays reachable
+   while the native list scrolls, instead of creating two long scroll regions. */
+[role="tabpanel"]:has(> div > .lms-course-panel .course-content-browser) > div { height: 100%; min-height: 0; }
+.lms-course-panel:has(> .course-content-browser) { flex: 1; }
+.lms-course-panel > .course-content-browser { flex: 1; }
+.lms-course-panel .course-content-list { flex: 1; max-height: none; min-height: 4rem; }
+@container (max-width: 26rem) {
+  .course-content-toolbar { grid-template-columns: minmax(0, 1fr); }
+  .course-content-toolbar > :last-child { justify-self: start; }
+  .course-content-row > .ui-button-face { grid-template-columns: 1rem minmax(0, 1fr) 3.5rem 0.75rem; }
+  .course-content-kind { display: none; }
+}

@@ -20,10 +20,14 @@ export default [
         return items.map(track => {
           const knob = luminance(getComputedStyle(track.querySelector(".ui-switch-knob")).backgroundColor);
           const fill = luminance(getComputedStyle(track).backgroundColor);
-          return (Math.max(knob, fill) + .05) / (Math.min(knob, fill) + .05);
+          let parent = track.parentElement;
+          while (parent && getComputedStyle(parent).backgroundColor === "rgba(0, 0, 0, 0)") parent = parent.parentElement;
+          const surface = luminance(getComputedStyle(parent ?? document.body).backgroundColor);
+          const ratio = (a, b) => (Math.max(a, b) + .05) / (Math.min(a, b) + .05);
+          return { knob: ratio(knob, fill), track: ratio(fill, surface) };
         });
       });
-      check(contrast.length > 0 && contrast.every(value => value >= 3), "off-state knobs stay identifiable against the flat track", JSON.stringify(contrast));
+      check(contrast.length > 0 && contrast.every(value => value.knob >= 3 && value.track >= 3), "off-state knob and rimless track remain identifiable", JSON.stringify(contrast));
       await h.shot("flat-off");
       const selector = `${PANEL} [data-switch]`;
       const before = await page.$eval(selector, el => el.getAttribute("aria-checked"));
@@ -41,11 +45,13 @@ export default [
       const hierarchy = await page.$eval(PANEL, (panel) => ({
         page: parseFloat(getComputedStyle(panel.querySelector('[data-section-header] h3')).fontSize),
         section: parseFloat(getComputedStyle(panel.querySelector('[data-settings-group] h4')).fontSize),
+        sectionWeight: parseFloat(getComputedStyle(panel.querySelector('[data-settings-group] h4')).fontWeight),
+        labelWeight: parseFloat(getComputedStyle(panel.querySelector('[data-setting-row] > div:first-child > :is(label, span)')).fontWeight),
         label: parseFloat(getComputedStyle(panel.querySelector('[data-setting-row] > div:first-child > :is(label, span)')).fontSize),
         themes: [...panel.querySelectorAll('[data-theme-preview]')].map((preview) => { const box = preview.getBoundingClientRect(); return box.width / box.height; }),
         nativeFont: !!panel.querySelector('[data-reading-font] select'),
       }));
-      check(hierarchy.page > hierarchy.section && hierarchy.section > hierarchy.label, "page, group and control labels form a clear type hierarchy", JSON.stringify(hierarchy));
+      check(hierarchy.page > hierarchy.section && hierarchy.section >= hierarchy.label && hierarchy.sectionWeight > hierarchy.labelWeight, "page, group and control labels form a clear type hierarchy", JSON.stringify(hierarchy));
       check(hierarchy.themes.every((ratio) => ratio > 2.4 && ratio < 2.6), "theme previews share a deliberate wide ratio", JSON.stringify(hierarchy.themes));
       check(!hierarchy.nativeFont, "the reading font uses Vic's drawn select");
       await h.shot("appearance");
@@ -82,12 +88,14 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      const row = await page.waitForSelector('[data-agent-instance-add]', { visible: true });
+      const row = await page.waitForSelector('[data-provider-add]', { visible: true });
       await row.evaluate((element) => element.scrollIntoView({ block: "center" }));
       const box = await row.boundingBox();
       await page.mouse.click(box.x + box.width - 14, box.y + box.height / 2);
-      await page.waitForSelector('[data-agent-instance-popup]');
-      check(await page.$eval('[data-instance-name]', (input) => input.value === ""), "the entire Add connection row opens a fresh configuration");
+      await page.waitForSelector('[data-provider-catalog]');
+      await page.click('[data-provider-catalog-select="claude-cli"]');
+      await page.waitForSelector('[role="dialog"] [data-instance-name]');
+      check(await page.$eval('[data-instance-name]', (input) => input.value === ""), "the compact Add connection action opens a fresh configuration");
       check(!(await page.$('[data-instance-usage]')), "new connection setup does not include usage");
       check(!(await page.$('[data-agent-instance-popup] details[open]')), "optional launch settings do not overwhelm connection creation");
       await h.shot("add-connection");

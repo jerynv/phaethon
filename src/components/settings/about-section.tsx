@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Card } from "vic-ui";
 
 import { Details } from "@/components/ui/details";
 import { Button } from "@/components/ui/button";
@@ -71,12 +72,12 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
       <UpdatesGroup />
 
       <div className="flex flex-col gap-2">
-        <div className="flex flex-col gap-0.5 px-1">
-          <h4 id={filesHeading} data-files-heading="" tabIndex={-1} className="self-start rounded-xs text-md font-semibold text-ink">
+        <div className="flex flex-col gap-0.5">
+          <h4 id={filesHeading} data-files-heading="" tabIndex={-1} className="self-start rounded-xs text-sm font-medium text-ink">
             Files
           </h4>
         </div>
-        <div data-about-files="" className="flex flex-col divide-y divide-line/60">
+        <Card look="lifted" flush className="rounded-xl border border-line shadow-none!"><div data-about-files="" className="flex flex-col">
           <SettingRow label="Phaethon folder">
             {vault ? <CopyPath path={vault} what="your Phaethon folder" /> : <span className="text-sm text-ink-secondary">Not available in this preview.</span>}
           </SettingRow>
@@ -89,7 +90,7 @@ export function AboutSection({ headingId, settings }: { headingId: string; setti
           <SettingRow label="Attachments">
             <PathText path="spaces/<space>/attachments/" />
           </SettingRow>
-        </div>
+        </div></Card>
       </div>
 
       <Details summary="Legal" className="text-xs text-ink-secondary"><p>Phaethon is available under the MIT licence.</p><p>Atkinson Hyperlegible by the Braille Institute. OpenDyslexic by Abbie Gonzalez. Lexend by Bonnie Shaver-Troup and Thomas Jockin.</p></Details>

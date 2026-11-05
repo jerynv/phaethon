@@ -42,19 +42,19 @@ export default [
   {
     name: 'workspace-r2-api-catalog-keyboard',
     sizes: [[1100, 720]],
-    mock: { settings: { ...SETTINGS, model: 'api-model-0' }, threads: {}, models: Array.from({ length: 120 }, (_, i) => ({ id: `api-model-${i}`, name: `API model ${i}` })) },
+    mock: { settings: { ...SETTINGS, model: 'claude-api-model-0' }, threads: {}, models: Array.from({ length: 120 }, (_, i) => ({ id: `claude-api-model-${i}`, name: `API model ${i}` })) },
     async run(page, h) {
       await page.waitForSelector(`${shown} [data-model-picker]`);
       await h.focusVia(`${shown} [data-model-picker]`);
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => document.activeElement?.matches('[data-model-search] input'));
-      check(await page.$$eval('[data-model-menu] [role="menuitemradio"]', (rows) => rows.length === 121), 'the API provider exposes all 120 models beyond its former 60-model cap');
+      check(await page.$$eval('[data-model-menu] [role="option"]', (rows) => rows.length === 121), 'the API provider exposes all 120 models beyond its former 60-model cap');
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('End');
-      check(await page.evaluate(() => document.activeElement?.getAttribute('data-model-option') === 'api-model-119'), 'keyboard discovery reaches the API catalog final model');
+      check(await page.evaluate(() => document.getElementById(document.activeElement?.getAttribute('aria-activedescendant'))?.getAttribute('data-model-option') === 'claude-api-model-119'), 'keyboard discovery reaches the API catalog final model');
       await h.shot('api-catalog-last-model');
       await page.keyboard.press('Enter');
-      await page.waitForFunction(() => window.__calls.some(([cmd, args]) => cmd === 'space_model_set' && args.model === 'api-model-119'));
+      await page.waitForFunction(() => window.__calls.some(([cmd, args]) => cmd === 'space_model_set' && args.model === 'claude-api-model-119'));
       await page.waitForFunction(() => !document.querySelector('[data-model-menu]') && document.activeElement?.matches('[data-model-picker]'));
       check(true, 'the API selection persists and restores the model trigger');
     },
@@ -68,10 +68,10 @@ export default [
       await h.focusVia(`${shown} [data-model-picker]`);
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => document.activeElement?.matches('[data-model-search] input'));
-      check(await page.$$eval('[data-model-menu] [role="menuitemradio"]', (rows) => rows.length === 121), 'all 120 models are discoverable, with no silent catalog cap');
+      check(await page.$$eval('[data-model-menu] [role="option"]', (rows) => rows.length === 121), 'all 120 models are discoverable, with no silent catalog cap');
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('End');
-      check(await page.evaluate(() => document.activeElement?.getAttribute('data-model-option') === 'model-119'), 'End reaches the final catalog model through the bounded scroll area');
+      check(await page.evaluate(() => document.getElementById(document.activeElement?.getAttribute('aria-activedescendant'))?.getAttribute('data-model-option') === 'model-119'), 'End reaches the final catalog model through the bounded scroll area');
       await h.shot('cli-catalog-last-model');
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => window.__calls.some(([cmd, args]) => cmd === 'space_model_set' && args.model === 'codex:model-119'));
@@ -79,13 +79,10 @@ export default [
       await h.focusVia(`${shown} [data-model-picker]`);
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => document.activeElement?.matches('[data-model-search] input'));
-      await page.keyboard.press('Tab');
-      check(await page.evaluate(() => document.activeElement?.getAttribute('data-model-option') === 'model-119'), 'Tab reaches the selected model');
-      await h.tab(-1);
-      await page.waitForFunction(() => document.activeElement?.matches('[data-model-search] input'));
+      check(await page.evaluate(() => document.getElementById(document.activeElement?.getAttribute('aria-activedescendant'))?.getAttribute('data-model-option') === 'model-119'), 'the editable combobox highlights the selected model');
       await page.keyboard.type('Model 118');
       await page.keyboard.press('ArrowDown');
-      check(await page.evaluate(() => document.activeElement?.getAttribute('data-model-option') === 'model-118'), 'search arrow navigation reaches a model beyond the former cap');
+      check(await page.evaluate(() => document.getElementById(document.activeElement?.getAttribute('aria-activedescendant'))?.getAttribute('data-model-option') === 'model-118'), 'search arrow navigation reaches a model beyond the former cap');
       await page.keyboard.press('Enter');
       await page.waitForFunction(() => window.__calls.some(([cmd, args]) => cmd === 'space_model_set' && args.model === 'codex:model-118'));
       await page.waitForFunction(() => !document.querySelector('[data-model-menu]') && document.activeElement?.matches('[data-model-picker]'));
@@ -159,10 +156,13 @@ export default [
       await page.waitForSelector('[data-model-option="gpt-6-astra"]');
       await h.click('[data-model-search] input');
       await page.type('[data-model-search] input', 'Astra');
-      check(await page.$$eval('[data-model-menu] [role="menuitemradio"][data-model-option]', (rows) => rows.length === 2 && rows.some((row) => row.textContent.includes('GPT-6-Astra'))), 'model search filters the CLI catalog while retaining its default');
+      check(await page.$$eval('[data-model-menu] [role="option"][data-model-option]', (rows) => rows.length === 1 && rows.some((row) => row.textContent.includes('GPT-6-Astra'))), 'model search filters actual catalog rows across providers');
       const color = await page.$eval('[data-access-picker] svg', (icon) => getComputedStyle(icon).color);
-      const regular = await page.$eval('[data-access-picker]', (el) => getComputedStyle(el).color);
-      check(color !== regular, 'full access has a semantic colour indicator');
+      const danger = await page.$eval('[data-access-picker]', (el) => {
+        const probe = document.createElement('span'); probe.style.color = 'var(--ph-danger-ink)'; el.append(probe);
+        const expected = getComputedStyle(probe).color; probe.remove(); return expected;
+      });
+      check(color === danger, 'full access uses the semantic danger colour', JSON.stringify({ color, danger }));
       await h.shot('model-and-permissions');
       await page.evaluate(() => {
         window.__accessPointer = [];

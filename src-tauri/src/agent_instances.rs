@@ -27,6 +27,37 @@ pub fn cli(id: &str) -> Result<Cli, String> {
 }
 
 pub fn list(vault: &Vault) -> Vec<Instance> {
+    list_at(vault, crate::vault::home_dir().as_deref())
+}
+
+const SYSTEM_IDS: [&str; 2] = ["codex-system", "gemini-system"];
+
+fn system_instance(id: &str) -> Option<Instance> {
+    let c = match id {
+        "codex-system" => Cli::Codex,
+        "gemini-system" => Cli::Gemini,
+        _ => return None,
+    };
+    Some(Instance {
+        id: id.into(),
+        cli: c.id().into(),
+        name: format!("{} · System", c.name()),
+        binary: String::new(),
+        args: vec![],
+    })
+}
+
+fn system_home(user_home: Option<&Path>, id: &str) -> Option<PathBuf> {
+    let user_home = user_home?;
+    match id {
+        "codex-system" => Some(user_home.join(".codex")).filter(|path| path.is_dir()),
+        // GEMINI_CLI_HOME is the parent home, not the .gemini configuration directory.
+        "gemini-system" if user_home.join(".gemini").is_dir() => Some(user_home.into()),
+        _ => None,
+    }
+}
+
+fn list_at(vault: &Vault, user_home: Option<&Path>) -> Vec<Instance> {
     let mut instances: Vec<Instance> = Cli::ALL
         .into_iter()
         .map(|c| Instance {
@@ -37,9 +68,13 @@ pub fn list(vault: &Vault) -> Vec<Instance> {
             args: vec![],
         })
         .collect();
-    if let Some(raw) = vault.settings().agent_instances {
+    let settings = vault.settings();
+    if let Some(raw) = settings.agent_instances {
         if let Ok(saved) = serde_json::from_value::<Vec<Instance>>(raw) {
-            for instance in saved.into_iter().filter(|i| validate(i).is_ok()) {
+            for instance in saved
+                .into_iter()
+                .filter(|i| !SYSTEM_IDS.contains(&i.id.as_str()) && validate(i).is_ok())
+            {
                 if let Some(old) = instances.iter_mut().find(|i| i.id == instance.id) {
                     *old = instance;
                 } else {
@@ -48,10 +83,26 @@ pub fn list(vault: &Vault) -> Vec<Instance> {
             }
         }
     }
+    for id in SYSTEM_IDS {
+        let config = system_instance(id).expect("known system connection");
+        let explicitly_selected = settings
+            .active_agent_instances
+            .as_ref()
+            .and_then(|selection| selection.get(&config.cli))
+            .and_then(|selection| selection.as_str())
+            == Some(id);
+        // A missing selected home stays unavailable; it must not become another account.
+        if explicitly_selected || system_home(user_home, id).is_some() {
+            instances.push(config);
+        }
+    }
     instances
 }
 
 fn validate(i: &Instance) -> Result<(), String> {
+    if SYSTEM_IDS.contains(&i.id.as_str()) {
+        return Err("System CLI configuration is computed from its existing home.".into());
+    }
     cli(&i.cli)?;
     if Cli::ALL
         .into_iter()
@@ -100,6 +151,10 @@ fn validate(i: &Instance) -> Result<(), String> {
 }
 
 pub fn selected(vault: &Vault, c: Cli) -> Instance {
+    selected_at(vault, c, crate::vault::home_dir().as_deref())
+}
+
+fn selected_at(vault: &Vault, c: Cli, user_home: Option<&Path>) -> Instance {
     let settings = vault.settings();
     let id = settings
         .active_agent_instances
@@ -107,7 +162,7 @@ pub fn selected(vault: &Vault, c: Cli) -> Instance {
         .and_then(|v| v.get(c.id()))
         .and_then(|v| v.as_str())
         .unwrap_or(c.id());
-    list(vault)
+    list_at(vault, user_home)
         .into_iter()
         .find(|i| i.id == id && i.cli == c.id())
         .unwrap_or_else(|| Instance {
@@ -120,7 +175,21 @@ pub fn selected(vault: &Vault, c: Cli) -> Instance {
 }
 
 pub fn home(vault: &Vault, root: Option<&Path>, instance: &Instance) -> Option<PathBuf> {
+    home_at(vault, root, instance, crate::vault::home_dir().as_deref())
+}
+
+fn home_at(
+    vault: &Vault,
+    root: Option<&Path>,
+    instance: &Instance,
+    user_home: Option<&Path>,
+) -> Option<PathBuf> {
     let c = cli(&instance.cli).ok()?;
+    if let Some(system) = system_instance(&instance.id) {
+        return (system.cli == instance.cli)
+            .then(|| system_home(user_home, &instance.id))
+            .flatten();
+    }
     if instance.id == c.id() {
         if !c.own_home() && !vault.settings().isolate_claude_config {
             return None;
@@ -141,7 +210,16 @@ pub fn require_home(
     root: Option<&Path>,
     instance: &Instance,
 ) -> Result<Option<PathBuf>, String> {
-    let path = home(vault, root, instance);
+    require_home_at(vault, root, instance, crate::vault::home_dir().as_deref())
+}
+
+fn require_home_at(
+    vault: &Vault,
+    root: Option<&Path>,
+    instance: &Instance,
+    user_home: Option<&Path>,
+) -> Result<Option<PathBuf>, String> {
+    let path = home_at(vault, root, instance, user_home);
     if instance.id != instance.cli && path.is_none() {
         return Err(
             "Phaethon cannot find a local configuration folder for this connection.".into(),
@@ -155,6 +233,9 @@ pub fn save(
     root: Option<&Path>,
     mut instance: Instance,
 ) -> Result<Instance, String> {
+    if SYSTEM_IDS.contains(&instance.id.as_str()) {
+        return Err("System CLI connections are managed by their CLI. Add a separate connection to customize a launch.".into());
+    }
     instance.name = instance.name.trim().into();
     instance.binary = instance.binary.trim().into();
     validate(&instance)?;
@@ -168,6 +249,8 @@ pub fn save(
     } else {
         all.push(instance.clone());
     }
+    // System connections are computed from existing homes, never persisted configuration.
+    all.retain(|entry| !SYSTEM_IDS.contains(&entry.id.as_str()));
     // Legacy Claude uses the person's own config. Custom launch options get their own home.
     if let Some(dir) = home(vault, root, &instance) {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -214,10 +297,13 @@ pub fn select(vault: &Vault, id: &str) -> Result<(), String> {
 }
 
 pub fn remove(vault: &Vault, id: &str) -> Result<(), String> {
-    if Cli::ALL.into_iter().any(|c| c.id() == id) {
+    if SYSTEM_IDS.contains(&id) || Cli::ALL.into_iter().any(|c| c.id() == id) {
         return Err("Built-in assistants cannot be removed.".into());
     }
-    let all: Vec<_> = list(vault).into_iter().filter(|i| i.id != id).collect();
+    let all: Vec<_> = list(vault)
+        .into_iter()
+        .filter(|i| i.id != id && !SYSTEM_IDS.contains(&i.id.as_str()))
+        .collect();
     vault
         .set_setting(
             "agentInstances",
@@ -264,18 +350,24 @@ pub struct UsageWindow {
 /// Port of T3's Claude control get_usage and Codex account/rateLimits/read probes.
 /// Initialization and account metadata only: no user message or model turn is submitted.
 pub async fn usage(c: Cli, home: Option<&Path>) -> Usage {
-    let failed = |reason: &str| Usage {
+    if c == Cli::Gemini {
+        return unavailable_usage("Gemini CLI does not expose account limits.");
+    }
+    let Some(bin) = binary(c, home) else {
+        return unavailable_usage("Assistant executable not found.");
+    };
+    usage_from_command(c, agent::command(c, &bin, &std::env::temp_dir(), home)).await
+}
+
+fn unavailable_usage(reason: &str) -> Usage {
+    Usage {
         available: false,
         windows: vec![],
         reason: Some(reason.into()),
-    };
-    if c == Cli::Gemini {
-        return failed("Gemini CLI does not expose account limits.");
     }
-    let Some(bin) = binary(c, home) else {
-        return failed("Assistant executable not found.");
-    };
-    let mut cmd = agent::command(c, &bin, &std::env::temp_dir(), home);
+}
+
+async fn usage_from_command(c: Cli, mut cmd: tokio::process::Command) -> Usage {
     if c == Cli::Claude {
         cmd.args([
             "-p",
@@ -318,11 +410,11 @@ pub async fn usage(c: Cli, home: Option<&Path>) -> Usage {
         result
     }).await.ok().flatten();
     let Some(value) = result else {
-        return failed("Usage is unavailable. Refresh to try again.");
+        return unavailable_usage("Usage is unavailable. Refresh to try again.");
     };
     let windows = parse_usage(c, &value);
     if windows.is_empty() {
-        failed("This account does not report usage windows.")
+        unavailable_usage("This account does not report usage windows.")
     } else {
         Usage {
             available: true,
@@ -333,50 +425,104 @@ pub async fn usage(c: Cli, home: Option<&Path>) -> Usage {
 }
 
 fn parse_usage(c: Cli, value: &serde_json::Value) -> Vec<UsageWindow> {
+    if c == Cli::Codex {
+        return codex_usage_windows(value);
+    }
     let mut out = vec![];
-    let names = if c == Cli::Claude {
-        vec![
-            ("five_hour", "5 hours"),
-            ("seven_day", "7 days"),
-            ("seven_day_sonnet", "Sonnet · 7 days"),
-        ]
-    } else {
-        vec![("primary", "Session"), ("secondary", "Weekly")]
-    };
+    let names = [
+        ("five_hour", "5 hours"),
+        ("seven_day", "7 days"),
+        ("seven_day_sonnet", "Sonnet · 7 days"),
+    ];
     for (key, label) in names {
-        let v = if c == Cli::Claude {
-            &value["rate_limits"][key]
-        } else {
-            &value["rateLimits"][key]
-        };
-        let Some(percent) = v[if c == Cli::Claude {
-            "utilization"
-        } else {
-            "usedPercent"
-        }]
-        .as_f64()
-        .filter(|p| p.is_finite()) else {
+        let v = &value["rate_limits"][key];
+        let Some(percent) = v["utilization"].as_f64().filter(|p| p.is_finite()) else {
             continue;
-        };
-        let resets_at = if c == Cli::Claude {
-            v["resets_at"]
-                .as_str()
-                .map(|s| serde_json::Value::String(s.into()))
-        } else {
-            v["resetsAt"].as_i64().map(serde_json::Value::from)
         };
         out.push(UsageWindow {
             label: label.into(),
             used_percent: percent.clamp(0.0, 100.0),
-            resets_at,
+            resets_at: v["resets_at"]
+                .as_str()
+                .map(|s| serde_json::Value::String(s.into())),
         });
     }
     out
 }
 
+/// T3 Code's codexRateLimitsToLimits/codexRateLimitsToWindows (MIT, 7f6f47b):
+/// the legacy snapshot can describe a model pool, not the account allowance.
+fn codex_usage_windows(value: &serde_json::Value) -> Vec<UsageWindow> {
+    let snapshot = value["rateLimitsByLimitId"]
+        .get("codex")
+        .filter(|snapshot| snapshot.is_object())
+        .unwrap_or(&value["rateLimits"]);
+    if snapshot["limitId"].as_str().is_some_and(|id| id != "codex") {
+        return vec![];
+    }
+    let monthly_plan = matches!(snapshot["planType"].as_str(), Some("free" | "go"));
+    let mut out = vec![];
+    for (key, fallback_mins) in [
+        ("primary", if monthly_plan { 43_200.0 } else { 300.0 }),
+        ("secondary", 10_080.0),
+    ] {
+        let window = &snapshot[key];
+        let Some(percent) = window["usedPercent"].as_f64().filter(|p| p.is_finite()) else {
+            continue;
+        };
+        let duration = window["windowDurationMins"]
+            .as_f64()
+            .filter(|mins| mins.is_finite() && *mins > 0.0)
+            .unwrap_or(fallback_mins);
+        let label = if duration >= 43_200.0 {
+            "Monthly"
+        } else if duration >= 10_080.0 {
+            "Weekly"
+        } else {
+            "Session"
+        };
+        out.push(UsageWindow {
+            label: label.into(),
+            used_percent: percent.clamp(0.0, 100.0),
+            resets_at: codex_reset_at(window),
+        });
+    }
+    let credit = &snapshot["individualLimit"];
+    if let Some(remaining) = credit["remainingPercent"]
+        .as_f64()
+        .filter(|p| p.is_finite())
+    {
+        out.push(UsageWindow {
+            label: "Monthly credit limit".into(),
+            used_percent: (100.0 - remaining).clamp(0.0, 100.0),
+            resets_at: codex_reset_at(credit),
+        });
+    }
+    out
+}
+
+fn codex_reset_at(window: &serde_json::Value) -> Option<serde_json::Value> {
+    window["resetsAt"]
+        .as_i64()
+        .filter(|seconds| *seconds > 0)
+        .map(serde_json::Value::from)
+}
+
 pub fn launch(home: Option<&Path>) -> Option<Instance> {
+    launch_at(home, crate::vault::home_dir().as_deref())
+}
+
+fn launch_at(home: Option<&Path>, user_home: Option<&Path>) -> Option<Instance> {
+    let home = home?;
+    // An immutable identity preserves account-specific session tags and command env cleanup
+    // without reading or writing a phaethon-instance.json in another CLI's existing home.
+    for id in SYSTEM_IDS {
+        if system_home(user_home, id).as_deref() == Some(home) {
+            return system_instance(id);
+        }
+    }
     let value: Instance =
-        serde_json::from_slice(&std::fs::read(home?.join("phaethon-instance.json")).ok()?).ok()?;
+        serde_json::from_slice(&std::fs::read(home.join("phaethon-instance.json")).ok()?).ok()?;
     validate(&value).ok()?;
     Some(value)
 }
@@ -434,6 +580,8 @@ pub struct InstanceView {
     pub plan: Option<String>,
     pub selected: bool,
     pub managed_home: bool,
+    pub source: &'static str,
+    pub read_only: bool,
 }
 
 pub async fn views(vault: &Vault, root: Option<&Path>) -> Vec<InstanceView> {
@@ -452,6 +600,10 @@ pub async fn views(vault: &Vault, root: Option<&Path>) -> Vec<InstanceView> {
         };
         let selected = selected(vault, c).id == config.id
             && agent::Cli::of(vault.settings().backend) == Some(c);
+        let read_only = SYSTEM_IDS.contains(&config.id.as_str());
+        let system = read_only
+            || (c == Cli::Claude && config.id == c.id() && !vault.settings().isolate_claude_config);
+        let managed_home = home.is_some() && !system;
         out.push(InstanceView {
             config,
             installed,
@@ -459,7 +611,9 @@ pub async fn views(vault: &Vault, root: Option<&Path>) -> Vec<InstanceView> {
             account,
             plan,
             selected,
-            managed_home: home.is_some(),
+            managed_home,
+            source: if system { "system" } else { "managed" },
+            read_only,
         });
     }
     out
@@ -468,6 +622,218 @@ pub async fn views(vault: &Vault, root: Option<&Path>) -> Vec<InstanceView> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn system_fixture(label: &str) -> (PathBuf, Vault, PathBuf, PathBuf) {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "phaethon-system-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        let vault = Vault::at(root.join("vault"));
+        vault.ensure_initialized().unwrap();
+        let user_home = root.join("user");
+        let config_root = root.join("app-config");
+        std::fs::create_dir_all(&user_home).unwrap();
+        (root, vault, user_home, config_root)
+    }
+
+    #[test]
+    fn existing_system_homes_are_listed_without_replacing_or_selecting_managed_accounts() {
+        let (root, vault, user_home, config_root) = system_fixture("list");
+        assert!(!list_at(&vault, Some(&user_home))
+            .iter()
+            .any(|entry| SYSTEM_IDS.contains(&entry.id.as_str())));
+        std::fs::create_dir_all(user_home.join(".codex")).unwrap();
+        std::fs::create_dir_all(user_home.join(".gemini")).unwrap();
+        let before = std::fs::read(vault.root().join(".phaethon/settings.json")).ok();
+        let entries = list_at(&vault, Some(&user_home));
+        for id in ["codex", "gemini", "codex-system", "gemini-system"] {
+            assert_eq!(entries.iter().filter(|entry| entry.id == id).count(), 1);
+        }
+        assert_eq!(
+            entries.iter().filter(|entry| entry.cli == "claude").count(),
+            1
+        );
+        assert_eq!(
+            selected_at(&vault, Cli::Codex, Some(&user_home)).id,
+            "codex"
+        );
+        assert_eq!(
+            before,
+            std::fs::read(vault.root().join(".phaethon/settings.json")).ok()
+        );
+        assert!(
+            !config_root.exists(),
+            "listing does not create app or system metadata"
+        );
+        assert!(!user_home.join(".codex/phaethon-instance.json").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn system_cli_home_environment_and_session_identity_stay_separate_from_managed() {
+        let (root, vault, user_home, config_root) = system_fixture("environment");
+        std::fs::create_dir_all(user_home.join(".codex")).unwrap();
+        std::fs::create_dir_all(user_home.join(".gemini")).unwrap();
+        for (id, c, expected_system_home) in [
+            ("codex-system", Cli::Codex, user_home.join(".codex")),
+            ("gemini-system", Cli::Gemini, user_home.clone()),
+        ] {
+            let system = system_instance(id).unwrap();
+            let system_path =
+                home_at(&vault, Some(&config_root), &system, Some(&user_home)).unwrap();
+            assert_eq!(system_path, expected_system_home);
+            let managed = Instance {
+                id: c.id().into(),
+                cli: c.id().into(),
+                name: c.name().into(),
+                binary: String::new(),
+                args: vec![],
+            };
+            let managed_path =
+                home_at(&vault, Some(&config_root), &managed, Some(&user_home)).unwrap();
+            assert_ne!(system_path, managed_path);
+            let launch = launch_at(Some(&system_path), Some(&user_home)).unwrap();
+            assert_eq!(launch.id, id);
+            assert_ne!(
+                format!("{}-{}", c.id(), launch.id),
+                c.id(),
+                "system sessions cannot reuse the managed namespace"
+            );
+            for path in [&system_path, &managed_path] {
+                let cmd = agent::command(c, &root.join("fake-cli"), &root, Some(path));
+                assert!(cmd
+                    .as_std()
+                    .get_envs()
+                    .any(|(key, value)| key == c.config_var() && value == Some(path.as_os_str())));
+                assert!(!path.join("phaethon-instance.json").exists());
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn computed_system_connections_cannot_be_saved_removed_or_poisoned() {
+        let (root, vault, user_home, config_root) = system_fixture("readonly");
+        std::fs::create_dir_all(user_home.join(".codex")).unwrap();
+        let marker = user_home.join(".codex/phaethon-instance.json");
+        let poison = serde_json::json!({"id":"codex-system","cli":"claude","name":"Wrong account","binary":"/not-the-system-cli","args":["--wrong-account"]});
+        let contents = serde_json::to_vec(&poison).unwrap();
+        std::fs::write(&marker, &contents).unwrap();
+        vault
+            .set_setting("agentInstances", serde_json::json!([poison]))
+            .unwrap();
+        let system = list_at(&vault, Some(&user_home))
+            .into_iter()
+            .find(|entry| entry.id == "codex-system")
+            .unwrap();
+        assert_eq!(system.cli, "codex");
+        assert!(system.binary.is_empty() && system.args.is_empty());
+        assert!(save(&vault, Some(&config_root), system.clone()).is_err());
+        assert!(remove(&vault, "codex-system").is_err());
+        let virtual_launch = launch_at(Some(&user_home.join(".codex")), Some(&user_home)).unwrap();
+        assert_eq!(virtual_launch.id, "codex-system");
+        assert!(virtual_launch.binary.is_empty() && virtual_launch.args.is_empty());
+        assert_eq!(std::fs::read(marker).unwrap(), contents);
+        assert!(!config_root.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn saving_managed_connections_never_persists_computed_system_entries() {
+        let (root, vault, _, config_root) = system_fixture("persistence");
+        save(
+            &vault,
+            Some(&config_root),
+            Instance {
+                id: "codex-work".into(),
+                cli: "codex".into(),
+                name: "Work".into(),
+                binary: String::new(),
+                args: vec![],
+            },
+        )
+        .unwrap();
+        let stored = vault.settings().agent_instances.unwrap();
+        assert!(!stored
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| SYSTEM_IDS.contains(&entry["id"].as_str().unwrap_or_default())));
+        assert!(config_root
+            .join("vault-instance-codex-work/phaethon-instance.json")
+            .is_file());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_selected_system_home_fails_without_switching_to_another_account() {
+        let (root, vault, user_home, config_root) = system_fixture("missing");
+        std::fs::create_dir_all(user_home.join(".codex")).unwrap();
+        vault
+            .set_setting(
+                "activeAgentInstances",
+                serde_json::json!({"codex":"codex-system"}),
+            )
+            .unwrap();
+        std::fs::remove_dir(user_home.join(".codex")).unwrap();
+        let selected = selected_at(&vault, Cli::Codex, Some(&user_home));
+        assert_eq!(selected.id, "codex-system");
+        assert!(require_home_at(&vault, Some(&config_root), &selected, Some(&user_home)).is_err());
+        assert!(!config_root.exists());
+        assert!(!user_home.join(".codex").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn usage_queries_read_the_chosen_home_without_mixing_system_and_managed_accounts() {
+        use std::os::unix::fs::PermissionsExt;
+        let (root, vault, user_home, config_root) = system_fixture("usage");
+        std::fs::create_dir_all(user_home.join(".codex")).unwrap();
+        let system = system_instance("codex-system").unwrap();
+        let managed = Instance {
+            id: "codex".into(),
+            cli: "codex".into(),
+            name: "Codex".into(),
+            binary: String::new(),
+            args: vec![],
+        };
+        let system_path = require_home_at(&vault, Some(&config_root), &system, Some(&user_home))
+            .unwrap()
+            .unwrap();
+        let managed_path = require_home_at(&vault, Some(&config_root), &managed, Some(&user_home))
+            .unwrap()
+            .unwrap();
+        std::fs::create_dir_all(&managed_path).unwrap();
+        for (path, percent) in [(&system_path, 76), (&managed_path, 0)] {
+            std::fs::write(path.join("usage.json"), serde_json::to_vec(&serde_json::json!({"rateLimits":{"primary":{"usedPercent":percent,"windowDurationMins":10080}}})).unwrap()).unwrap();
+        }
+        let binary = root.join("fake-codex");
+        std::fs::write(&binary, r##"#!/bin/sh
+[ "$1" = 'app-server' ] || exit 9
+while IFS= read -r line; do
+  case "$line" in
+    *account/rateLimits/read*) printf '{"id":2,"result":'; cat "$CODEX_HOME/usage.json"; printf '}\n' ;;
+    *initialize*) printf '%s\n' '{"id":1,"result":{}}' ;;
+  esac
+done
+"##).unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for (path, expected) in [(&system_path, 76.0), (&managed_path, 0.0)] {
+            let command = agent::command(Cli::Codex, &binary, &root, Some(path));
+            let usage = usage_from_command(Cli::Codex, command).await;
+            assert!(usage.available);
+            assert_eq!(usage.windows.len(), 1);
+            assert_eq!(usage.windows[0].label, "Weekly");
+            assert_eq!(usage.windows[0].used_percent, expected);
+            assert!(!path.join("phaethon-instance.json").exists());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn launch_arguments_preserve_protocol_and_are_not_shell_parsed() {
         let mut i = Instance {
@@ -548,13 +914,135 @@ mod tests {
             &serde_json::json!({"rateLimits":{"primary":{"usedPercent":42,"resetsAt":1793854800}}}),
         );
         assert_eq!(codex[0].used_percent, 42.0);
-        assert!(
-            parse_usage(
-                Cli::Claude,
-                &serde_json::json!({"rate_limits_available":false})
-            )
-            .is_empty()
+        assert!(parse_usage(
+            Cli::Claude,
+            &serde_json::json!({"rate_limits_available":false})
+        )
+        .is_empty());
+    }
+
+    // Protocol fields and expected normalization follow T3 Code's
+    // apps/server/src/provider/codexUsageLimits{,.test}.ts at 7f6f47b and
+    // codex-cli 0.166.0's generated GetAccountRateLimitsResponse schema.
+    #[test]
+    fn codex_usage_prefers_the_main_account_bucket_over_a_model_bucket() {
+        let windows = parse_usage(
+            Cli::Codex,
+            &serde_json::json!({
+                "rateLimits": {
+                    "limitId": "codex_bengalfox",
+                    "primary": {"usedPercent": 0, "windowDurationMins": 300},
+                    "secondary": {"usedPercent": 0, "windowDurationMins": 10080}
+                },
+                "rateLimitsByLimitId": {
+                    "codex_bengalfox": {"secondary": {"usedPercent": 0}},
+                    "codex": {
+                        "limitId": "codex", "planType": "plus",
+                        "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1784000000},
+                        "secondary": {"usedPercent": 67, "windowDurationMins": 10080, "resetsAt": 1784500000}
+                    }
+                }
+            }),
         );
+        assert_eq!(windows.len(), 2);
+        assert_eq!(
+            (windows[0].label.as_str(), windows[0].used_percent),
+            ("Session", 12.0)
+        );
+        assert_eq!(
+            (windows[1].label.as_str(), windows[1].used_percent),
+            ("Weekly", 67.0)
+        );
+        assert_eq!(windows[1].resets_at, Some(serde_json::json!(1784500000)));
+    }
+
+    #[test]
+    fn model_only_codex_limits_are_not_presented_as_account_allowance() {
+        for bucket_map in [
+            serde_json::Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({
+                "codex_bengalfox": {"secondary": {"usedPercent": 0}}
+            }),
+        ] {
+            assert!(parse_usage(
+                Cli::Codex,
+                &serde_json::json!({
+                    "rateLimits": {"limitId": "codex_bengalfox", "secondary": {"usedPercent": 0}},
+                    "rateLimitsByLimitId": bucket_map
+                })
+            )
+            .is_empty());
+        }
+    }
+
+    #[test]
+    fn codex_window_labels_follow_duration_and_plan_instead_of_array_position() {
+        let swapped = parse_usage(
+            Cli::Codex,
+            &serde_json::json!({"rateLimits": {
+                "primary": {"usedPercent": 47, "windowDurationMins": 10080},
+                "secondary": {"usedPercent": 12, "windowDurationMins": 300}
+            }}),
+        );
+        assert_eq!(
+            swapped
+                .iter()
+                .map(|window| window.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Weekly", "Session"]
+        );
+        for plan in ["free", "go"] {
+            let monthly = parse_usage(
+                Cli::Codex,
+                &serde_json::json!({"rateLimits": {
+                    "planType": plan, "primary": {"usedPercent": 80, "resetsAt": null}
+                }}),
+            );
+            assert_eq!(monthly[0].label, "Monthly");
+            assert_eq!(monthly[0].used_percent, 80.0);
+        }
+    }
+
+    #[test]
+    fn codex_individual_monthly_credit_allowance_is_not_dropped() {
+        let windows = parse_usage(
+            Cli::Codex,
+            &serde_json::json!({
+                "rateLimits": {"limitId": "spark"},
+                "rateLimitsByLimitId": {"codex": {
+                    "limitId": "codex", "planType": "enterprise_cbp_usage_based",
+                    "primary": null, "secondary": null,
+                    "individualLimit": {"remainingPercent": 99, "resetsAt": 1784500000}
+                }}
+            }),
+        );
+        assert_eq!(windows.len(), 1);
+        assert_eq!(
+            (windows[0].label.as_str(), windows[0].used_percent),
+            ("Monthly credit limit", 1.0)
+        );
+        assert_eq!(windows[0].resets_at, Some(serde_json::json!(1784500000)));
+    }
+
+    #[test]
+    fn missing_codex_windows_are_not_zero_filled_or_borrowed_from_other_buckets() {
+        let windows = parse_usage(
+            Cli::Codex,
+            &serde_json::json!({
+                "rateLimits": {"primary": {"usedPercent": 5}, "secondary": {"usedPercent": 0}},
+                "rateLimitsByLimitId": {"codex": {"primary": {"usedPercent": 42}, "secondary": null}}
+            }),
+        );
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].used_percent, 42.0);
+        assert!(parse_usage(
+            Cli::Codex,
+            &serde_json::json!({"rateLimits": {
+                "primary": {"usedPercent": null}, "secondary": {"resetsAt": 1784500000}
+            }})
+        )
+        .is_empty());
     }
 
     #[cfg(unix)]

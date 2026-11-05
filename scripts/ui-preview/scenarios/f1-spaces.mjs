@@ -170,10 +170,12 @@ export default [
       check((await focused(page)) === "space:work", "ArrowDown from More goes to the next space", await focused(page));
       await page.keyboard.press("ArrowUp");
       check((await focused(page)) === "space:school", "ArrowUp goes back to the previous space", await focused(page));
-      // Tab enters the current space's tools; More remains outside the Tab order.
+      // The shelf New action is first, then the selected tool; More stays out of Tab order.
       await page.focus(space("school"));
       await page.keyboard.press("Tab");
-      check(await page.evaluate(() => document.activeElement?.matches('#spaces-sidebar [data-sidebar-conversations="school"] [data-view-tab="chat"][aria-selected="true"]')), "Tab enters School’s selected Chat tool");
+      check(await page.evaluate(() => document.activeElement?.matches('#spaces-sidebar [data-new-conversation]') && document.activeElement.parentElement?.querySelector('[data-space-id]')?.getAttribute('data-space-id') === 'school' ), "Tab reaches the current space's New conversation action");
+      await page.keyboard.press("Tab");
+      check(await page.evaluate(() => document.activeElement?.matches('#spaces-sidebar [data-sidebar-conversations="school"] [data-view-tab="chat"][aria-selected="true"]')), "the next Tab enters School’s selected Chat tool");
     },
   },
   {

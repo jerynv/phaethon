@@ -22,8 +22,6 @@ export default [
       await page.waitForSelector(dialog);
       await h.click('[data-instance-select]');
       await page.waitForFunction(() => window.__calls.some(([name, args]) => name === "agent_instance_select" && args.id === "codex-work"));
-      await page.keyboard.press("Escape");
-      await page.waitForFunction((selector) => !document.querySelector(selector), {}, dialog);
       await h.click('[data-settings-header] button[aria-label="Close settings"]');
       await h.click('[data-model-picker="school"]');
       await page.waitForSelector('[data-model-option="work-model"]');
@@ -61,15 +59,19 @@ export default [
     mock: { settings: SETTINGS, threads: {} },
     async run(page, h) {
       await openSettings(page, h, "agent");
-      await h.click('[data-agent-instance-add]');
+      await h.click('[data-provider-add]');
+      await h.click('[data-provider-catalog-select="claude-cli"]');
       await page.waitForSelector(dialog);
-      await page.select('[data-instance-cli]', "codex");
+      await h.click('[data-instance-cli] [role="combobox"]');
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
       await page.type('[data-instance-name]', "Codex · Work");
       await page.$$eval(`${dialog} summary`, (items) => items.find((item) => item.textContent.includes("Launch options")).click());
       await page.type('[data-instance-binary]', "/opt/company/bin/codex");
       await page.type('[data-instance-args]', "--config\nname=a value with spaces");
       await h.click('[data-instance-save]');
-      await page.waitForSelector('[data-instance-select]');
+      await page.waitForFunction(() => document.querySelectorAll('[role="dialog"]').length === 1);
+      await page.waitForSelector('[data-provider-detail] [data-instance-select]');
       const saved = (await calls(page, "agent_instance_save"))[0]?.instance;
       check(saved.cli === "codex" && saved.name === "Codex · Work" && saved.binary === "/opt/company/bin/codex", "a named connection saves its assistant and executable", JSON.stringify(saved));
       check(saved.args.length === 2 && saved.args[1] === "name=a value with spaces", "arguments preserve spaces as literal argv entries", JSON.stringify(saved.args));
@@ -77,7 +79,7 @@ export default [
       await h.click('[data-instance-remove]');
       check((await calls(page, "agent_instance_remove")).length === 0, "Remove asks before changing saved connections");
       await h.click('[data-instance-remove-confirm]');
-      await page.waitForFunction(() => !document.querySelector('[data-agent-instance-popup]'));
+      await page.waitForFunction((id) => !document.querySelector(`[data-agent-instance="${id}"]`), {}, saved.id);
       check((await calls(page, "agent_instance_remove"))[0]?.id === saved.id, "Remove deletes only the custom connection");
     },
   },
@@ -111,35 +113,31 @@ export default [
     name: "agent-instances-usage-race",
     sizes: [[1100, 720]],
     mock: {
-      settings: { ...SETTINGS, backend: "claude-cli" }, threads: {}, slow: { agent_instance_usage: 1600 },
+      settings: { ...SETTINGS, backend: "claude-cli" }, threads: {},
       instanceUsage: {
         claude: { available: true, windows: [{ label: "Claude window", usedPercent: 81, resetsAt: null }], reason: null },
         codex: { available: true, windows: [{ label: "Codex window", usedPercent: 12, resetsAt: null }], reason: null },
       },
     },
     async run(page, h) {
-      await openSettings(page, h, "agent");
       await page.evaluate(() => {
         const invoke = window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
-        window.__completedUsage = [];
         window.__TAURI_INTERNALS__.invoke = async (command, args) => {
           const result = await invoke(command, args);
-          if (command === "agent_instance_usage") window.__completedUsage.push(args.id);
+          if (command === "agent_instance_usage" && args.id === "claude") await new Promise((resolve) => { window.__releaseClaudeUsage = resolve; });
           return result;
         };
+        window.dispatchEvent(new CustomEvent("phaethon:open-usage"));
       });
-      await h.click('[data-settings-header] button[aria-label="Close settings"]');
-      await page.evaluate(() => window.dispatchEvent(new CustomEvent("phaethon:open-usage")));
-      await page.waitForFunction(() => window.__calls.some(([command, args]) => command === "agent_instance_usage" && args.id === "claude"));
-      await page.evaluate(() => { window.__MOCK__.slow.agent_instance_usage = 0; });
-      await h.click('[data-usage-account] [role="combobox"]');
-      await page.waitForSelector('[role="option"]', { visible: true });
-      await page.$$eval('[role="option"]', (options) => options.find((option) => option.textContent.trim() === "Codex").click());
-      await page.waitForFunction(() => document.querySelector('[data-instance-usage]')?.textContent.includes("12% used"));
-      await page.waitForFunction(() => window.__completedUsage.includes("claude"));
+      await page.waitForFunction(() => document.querySelector('[data-usage-account="codex"]')?.textContent.includes("12% used"));
+      check(!!(await page.$('[data-usage-account="claude"] [role="status"]')), "a slow account keeps its own pending state while the other account completes");
+      await page.evaluate(() => window.__releaseClaudeUsage());
+      await page.waitForFunction(() => document.querySelector('[data-usage-account="claude"]')?.textContent.includes("81% used"));
       const shown = await page.$eval('[data-instance-usage]', (usage) => usage.textContent);
-      check(shown.includes("Codex window") && shown.includes("12% used") && !shown.includes("81%"), "a slow previous account cannot overwrite the current account’s usage", shown);
-      check(await page.$eval('[aria-label="Refresh usage"]', (button) => !button.disabled), "only the latest usage request controls its loading state");
+      check(shown.includes("Codex window") && shown.includes("12% used") && shown.includes("81% used"), "late usage belongs to its own account and cannot replace another account", shown);
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Refresh usage"]')?.disabled);
+      check(!(await page.$('[data-usage-dialog] [role="combobox"]')), "all account usage stays visible without switching a dropdown");
+      await h.shot("all-account-race");
     },
   },
   {

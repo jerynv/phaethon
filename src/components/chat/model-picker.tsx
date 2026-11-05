@@ -1,9 +1,7 @@
-import { AccessPicker } from "./access-picker";
-import { useFullAccess } from "@/lib/full-access";
-import { Input } from "@/components/ui/input";
-import { NativeSelect } from "vic-ui";
-import { DropdownMenu } from "@/components/ui/menu";
+import { invoke } from "@tauri-apps/api/core";
+import { Star } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { NativeSelect } from "vic-ui";
 
 import { ModelSearch } from "@/components/settings/model-search";
 import { ProviderLogo } from "@/components/provider-logo";
@@ -11,370 +9,208 @@ import { announce } from "@/components/shell/announcer";
 import type { Command } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Popover } from "@/components/ui/menu";
 import { IconTip } from "@/components/ui/tooltip";
-import { Icon, type IconName } from "@/icons";
-import { cn } from "@/lib/utils";
-import { cliOf, type CliBackend, type ProviderId } from "@/lib/backend";
-import {
-  changedText,
-  choosableProviders,
-  cliModelName,
-  loadCliModels,
-  modelGroups,
-  modelName,
-  modelOf,
-  setSpaceModel,
-  splitCliRef,
-  splitRef,
-  toRef,
-  useModels,
-  type ModelsState,
-} from "@/lib/space-model";
+import { Icon } from "@/icons";
+import { agentInstances, cliOf, listModels, selectAgentInstance, setBackend, SETTINGS_CHANGED_EVENT, type AgentInstanceView, type CliBackend, type CliModelList, type ModelInfo, type ProviderId } from "@/lib/backend";
+import { changedText, choosableProviders, cliModelName, loadCliModels, modelGroups, modelName, modelOf, refreshModels, rememberNames, setSpaceModel, splitCliRef, splitRef, toRef, useModels, type ModelsState } from "@/lib/space-model";
 import type { Space } from "@/lib/spaces";
 
-/** Fired on window to open a space's model menu (the command palette's "Change model…"). */
+import { AccessPicker } from "./access-picker";
+import { ModelCombobox, type PickerOption } from "./model-combobox";
+import "./model-picker.css";
+
 export const OPEN_MODEL_PICKER_EVENT = "phaethon:open-model-picker";
-export const openModelPicker = (spaceId: string) =>
-  window.dispatchEvent(new CustomEvent<string>(OPEN_MODEL_PICKER_EVENT, { detail: spaceId }));
-
+export const openModelPicker = (spaceId: string) => window.dispatchEvent(new CustomEvent<string>(OPEN_MODEL_PICKER_EVENT, { detail: spaceId }));
 const DEFAULT = "__default__";
-
-/** "Claude Opus 5.5" → "Opus 5.5": the composer's toolbar has little room. */
 const shortName = (name: string) => name.replace(/^Claude\s+/, "");
-const OTHER = "__other__";
+const favoriteKey = "phaethon:model-favorites:v1";
+const optionKey = (provider: string, model: string) => JSON.stringify([provider, model]);
+function readFavorites(): Set<string> {
+  try { const saved: unknown = JSON.parse(localStorage.getItem(favoriteKey) ?? "[]"); return new Set(Array.isArray(saved) ? saved.filter((value): value is string => typeof value === "string") : []); } catch { return new Set(); }
+}
 
-/**
- * The model that answers in this space, as a small button in the composer's
- * toolbar that opens a menu: Use the default first, then each model. A choice
- * is saved in the space (so each space keeps its own) and applies from the
- * next message; a reply already running keeps its model. With a CLI
- * answering (Claude Code, Codex, Gemini CLI), the CLI's own models instead.
+let pendingInstances: Promise<AgentInstanceView[]> | undefined;
+function loadInstances() {
+  return pendingInstances ??= agentInstances().finally(() => { pendingInstances = undefined; });
+}
+
+type ProviderEntry = { id: string; name: string; logo: ProviderId | CliBackend; cli?: "claude" | "codex" | "gemini"; api?: ProviderId; available: boolean; source?: "system" | "managed"; models: readonly ModelInfo[] };
+type Catalog = { loading: boolean; models: readonly ModelInfo[]; note?: string };
+
+/** Actual T3 ProviderModelPicker/ModelPickerContent/ModelPickerSidebar composition (MIT):
+ * a provider rail, pinned editable combobox, compact model rows and a separate footer.
+ * Account browsing is read-only. Choosing a model commits the real assistant instance.
  */
 export function ModelPicker({ spaceId, spaceName, running }: { spaceId: string; spaceName: string; running: boolean }) {
   const s = useModels();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const fullAccess = useFullAccess(spaceId);
-  useEffect(() => { if (!open) setQuery(""); }, [open]);
-  const [other, setOther] = useState(false);
+  const [rail, setRail] = useState("");
+  const [instances, setInstances] = useState<AgentInstanceView[]>([]);
+  const [catalogs, setCatalogs] = useState<Record<string, Catalog>>({});
+  const catalogRef = useRef(catalogs); catalogRef.current = catalogs;
+  const [favorites, setFavorites] = useState<Set<string>>(readFavorites);
   const [error, setError] = useState("");
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [manual, setManual] = useState<ProviderEntry | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const onOpen = (e: Event) => {
-      if ((e as CustomEvent<string>).detail === spaceId) setOpen(true);
-    };
-    window.addEventListener(OPEN_MODEL_PICKER_EVENT, onOpen);
-    return () => window.removeEventListener(OPEN_MODEL_PICKER_EVENT, onOpen);
-  }, [spaceId]);
-
-  if (s.status === "loading") return null;
-  // An assistant this version doesn't know picks its own model too.
-  if (s.backend !== "phaethon" && !cliOf(s.backend)) return null;
-  if (s.backend !== "phaethon") return <CliModelPicker s={s} spaceId={spaceId} spaceName={spaceName} running={running} open={open} setOpen={setOpen} contentRef={contentRef} />;
-
+  const searchRef = useRef<HTMLInputElement>(null);
+  const providersRef = useRef<HTMLDivElement>(null);
+  const browsed = useRef(false);
+  const activeCli = cliOf(s.backend);
+  const activeInstance = instances.find(item => item.selected && item.config.cli === activeCli?.id);
   const current = modelOf(s, spaceId);
-  const name = modelName(current.id, s.models);
-  const defaultName = modelName(s.defaultModel, s.models);
-  const label = `Model in ${spaceName}: ${name}${current.own ? "" : ", the default"}`;
+  const ownCli = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
+  const activeKey = activeCli ? activeInstance?.config.id ?? activeCli.id : `api:${splitRef(current.id).provider}`;
+  const activeName = activeCli ? ownCli ? cliModelName(activeCli.id, ownCli.model, s) : `${activeCli.name} default` : shortName(modelName(current.id, s.models));
+  const activeLogo = activeCli ? `${activeCli.id}-cli` as CliBackend : splitRef(current.id).provider;
+  const siblingAccounts = activeCli ? instances.filter(item => item.config.cli === activeCli.id) : [];
+  const accountNumber = siblingAccounts.findIndex(item => item.config.id === activeInstance?.config.id) + 1;
+  const label = activeCli ? `Model in ${spaceName}: ${activeInstance?.config.name ?? activeCli.name} · ${ownCli ? activeName : "Default"}` : `Model in ${spaceName}: ${modelName(current.id, s.models)}${!current.own ? ", the default" : ""}`;
 
-  async function choose(value: string): Promise<boolean> {
-    const model = value === DEFAULT ? null : value;
-    if (model === (current.own ? current.id : null)) return true;
-    setError("");
-    try {
-      await setSpaceModel(spaceId, model);
-      announce(`${changedText(spaceName, model, s)}${running ? " The reply now running keeps its model." : ""}`);
-      return true;
-    } catch (e) {
-      const message = `The model couldn’t be changed. ${String(e)}`;
-      setError(message);
-      announce(message);
-      return false;
-    }
-  }
-  const groups = modelGroups(s).map((group) => ({ ...group, models: group.models.filter((model) => `${group.name} ${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) })).filter((group) => group.models.length);
-  const canChooseOther = choosableProviders(s).length > 0;
+  const entries = useMemo<ProviderEntry[]>(() => {
+    const api = modelGroups(s).filter(group => s.backend === "phaethon" || s.providers.some(provider => provider.id === group.provider && provider.ready)).map(group => ({ id: `api:${group.provider}`, name: group.name, logo: group.provider, api: group.provider, available: true, models: group.models }));
+    const accounts: ProviderEntry[] = instances.map(item => ({ id: item.config.id, name: item.config.name, logo: `${item.config.cli}-cli`, cli: item.config.cli, available: item.installed && item.loggedIn !== false, source: item.source ?? (item.managedHome ? "managed" : "system"), models: s.cliModels[item.config.cli]?.models ?? [] }));
+    if (activeCli && !accounts.some(item => item.id === activeKey)) accounts.unshift({ id: activeKey, name: activeCli.name, logo: `${activeCli.id}-cli`, cli: activeCli.id, available: true, models: s.cliModels[activeCli.id]?.models ?? [] });
+    return [...api, ...accounts];
+  }, [s, instances, activeKey, activeCli?.id]);
+  const selected = entries.find(entry => entry.id === rail) ?? entries.find(entry => entry.id === activeKey) ?? entries[0];
 
-  return (
-    <>
-    <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
-      <IconTip label={label} spoken="Change which model answers here">
-        <DropdownMenu.Trigger asChild>
-          <Button
-            ref={triggerRef}
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label={label}
-            data-model-picker={spaceId}
-            data-model={current.id}
-            className="min-w-0 shrink px-2 text-sm font-medium"
-          >
-            <ProviderLogo provider={splitRef(current.id).provider} className="size-4" />
-            <span className="truncate">{shortName(name)}</span>
-            {fullAccess && <Icon name="shield" className="size-3 text-danger-ink" />}
-            <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
-          </Button>
-        </DropdownMenu.Trigger>
-      </IconTip>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          ref={contentRef}
-          onFocusCapture={(event) => {
-            if (event.target !== event.currentTarget) return;
-            if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
-            // Redirect the controller's initial container focus before its row roving handler.
-            event.stopPropagation();
-            event.currentTarget.querySelector<HTMLInputElement>('[data-model-search] input')?.focus();
-          }}
-          side="top"
-          align="end"
-          sideOffset={6}
-          collisionPadding={8}
-          aria-label={`Model in ${spaceName}`}
-          data-model-menu=""
-          className={MENU}
-          onKeyDownCapture={modelMenuKeyboard}
-          // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
-          onCloseAutoFocus={(e) => other && e.preventDefault()}
-        >
-          <ModelSearchInput value={query} onChange={setQuery} />
-          <MenuHeader spaceName={spaceName} note={running ? "Next message" : undefined} />
-          {error && <MenuError error={error} />}
-          <DropdownMenu.RadioGroup value={current.own ? current.id : DEFAULT} onValueChange={(v) => void choose(v)} className="min-h-0 overflow-y-auto overscroll-contain">
-            <ModelItem value={DEFAULT} title="Default" hint={defaultName} spoken={`Use the default, ${defaultName}`} />
-            {groups.map((g) => (
-              <DropdownMenu.Group key={g.provider} aria-label={groups.length > 1 ? g.name : undefined}>
-                <Separator />
-                {groups.length > 1 && (
-                  <DropdownMenu.Label aria-hidden className={GROUP_LABEL} data-model-group={g.provider}>
-                    <ProviderLogo provider={g.provider} className="size-4" />
-                    {g.name}
-                  </DropdownMenu.Label>
-                )}
-                {g.models.map((m) => (
-                  <ModelItem
-                    key={m.id}
-                    value={m.id}
-                    title={m.name}
-                    provider={g.provider}
-                    // Grouped under the provider's name on screen; said in full.
-                    spoken={g.provider === "anthropic" ? undefined : modelName(m.id, s.models)}
-                  />
-                ))}
-              </DropdownMenu.Group>
-            ))}
-          </DropdownMenu.RadioGroup>
-          <Separator /><AccessPicker spaceId={spaceId} nested />
-          {groups.length === 0 && <p className="px-2.5 py-2 text-sm text-ink-secondary">No matching models.</p>}
-          {canChooseOther && (
-            <MenuFooter>
-              <MenuAction
-                option={OTHER}
-                icon="search"
-                onSelect={() => {
-                  setOpen(false);
-                  setOther(true);
-                }}
-              >
-                Another model…
-              </MenuAction>
-            </MenuFooter>
-          )}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-    {other && (
-      <OtherModelDialog
-        s={s}
-        spaceName={spaceName}
-        current={current.id}
-        onClose={() => {
-          setOther(false);
-          requestAnimationFrame(() => triggerRef.current?.focus());
-        }}
-        onChoose={choose}
-      />
-    )}
-    </>
-  );
-}
-
-/**
- * A CLI answers (Claude Code, Codex, Gemini CLI): the model button offers the
- * CLI's own default first, then the models the CLI itself says it offers
- * (asked once, again on Refresh the list or when Settings opens; a note says
- * in words when it can't list them), the model this space chose if it isn't
- * listed, then Another model… to type a name the CLI knows. Passed on as
- * `-m` / `--model`; saved in the space, apart from Phaethon's own choice.
- */
-function CliModelPicker({
-  s,
-  spaceId,
-  spaceName,
-  running,
-  open,
-  setOpen,
-  contentRef,
-}: {
-  s: ModelsState;
-  spaceId: string;
-  spaceName: string;
-  running: boolean;
-  open: boolean;
-  setOpen: (o: boolean) => void;
-  contentRef: React.RefObject<HTMLDivElement | null>;
-}) {
-  const [query, setQuery] = useState("");
-  const fullAccess = useFullAccess(spaceId);
-  useEffect(() => { if (!open) setQuery(""); }, [open]);
-  const cli = cliOf(s.backend)!;
-  const cliProvider: CliBackend = `${cli.id}-cli`;
-  const [typing, setTyping] = useState(false);
-  const [error, setError] = useState("");
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const own = s.own[spaceId] ? splitCliRef(s.own[spaceId]) : null;
-  const list = s.cliModels[cli.id];
-  const ownName = own ? cliModelName(cli.id, own.model, s) : "";
-  const name = own ? ownName : `${cli.name} default`;
-  const label = `Model in ${spaceName}: ${own ? `${cli.name} · ${ownName}` : `${cli.name} default, the model ${cli.name} chooses`}`;
   useEffect(() => {
-    if (open) void loadCliModels(cli.id);
-  }, [open, cli.id]);
+    const show = (event: Event) => { if ((event as CustomEvent<string>).detail === spaceId) setOpen(true); };
+    window.addEventListener(OPEN_MODEL_PICKER_EVENT, show);
+    return () => window.removeEventListener(OPEN_MODEL_PICKER_EVENT, show);
+  }, [spaceId]);
+  useEffect(() => {
+    if (!open) { setQuery(""); browsed.current = false; return; }
+    setRail(activeKey); setError(""); setFavorites(readFavorites());
+    let active = true;
+    void loadInstances().then(items => { if (active) { setInstances(items); if (!browsed.current) setRail(items.find(item => item.selected && item.config.cli === activeCli?.id)?.config.id ?? activeKey); } }, () => {});
+    return () => { active = false; };
+  }, [open]);
 
-  /** `atField`: the dialog shows (and says) a refusal at its own field, so the menu doesn't too. */
-  async function choose(model: string | null, atField = false): Promise<string> {
-    if (model === (own?.model ?? null)) return "";
-    try {
-      await setSpaceModel(spaceId, model ? `${cli.id}:${model}` : null);
-      announce(
-        `${model ? `${spaceName} now uses ${cli.name} · ${cliModelName(cli.id, model, s)}.` : `${spaceName} now uses ${cli.name}’s own default model.`}${running ? " The reply now running keeps its model." : ""}`,
-      );
-      setError("");
-      return "";
-    } catch (e) {
-      if (!atField) {
-        const message = `The model couldn’t be changed. ${String(e)}`;
-        setError(message);
-        announce(message);
-      }
-      return String(e);
+  // Keep the closed composer identity current too; opening the picker is not
+  // required to discover which account will handle the next request.
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { void loadInstances().then(items => { if (active) setInstances(items); }, () => {}); };
+    refresh();
+    window.addEventListener(SETTINGS_CHANGED_EVENT, refresh);
+    return () => { active = false; window.removeEventListener(SETTINGS_CHANGED_EVENT, refresh); };
+  }, []);
+
+  const putCatalog = (id: string, value: Catalog) => { catalogRef.current = { ...catalogRef.current, [id]: value }; setCatalogs(catalogRef.current); };
+  async function loadCatalog(entry: ProviderEntry, force = false) {
+    if (!entry.available || (!force && catalogRef.current[entry.id])) return;
+    if (entry.cli && entry.id === activeKey && !instances.some(item => item.config.id === entry.id)) {
+      await loadCliModels(entry.cli, force); return;
     }
+    if (entry.api === "anthropic") return;
+    putCatalog(entry.id, { loading: true, models: catalogRef.current[entry.id]?.models ?? (entry.id === activeKey ? entry.models : []) });
+    try {
+      let result: CliModelList;
+      if (entry.cli) result = await invoke<CliModelList>("agent_instance_models", { id: entry.id });
+      else {
+        const models = await listModels(entry.api!);
+        rememberNames(entry.api!, models);
+        result = { models: models.map(model => ({ ...model, id: toRef(entry.api!, model.id) })) };
+      }
+      putCatalog(entry.id, { loading: false, models: result.models, note: result.note });
+    } catch (reason) { putCatalog(entry.id, { loading: false, models: [], note: String(reason) }); }
   }
+  const searching = !!query.trim();
+  useEffect(() => {
+    if (!open) return;
+    if (searching || rail === "favorites") {
+      for (const entry of entries) if (searching || [...favorites].some(key => key.startsWith(JSON.stringify([entry.id]).slice(0, -1) + ","))) void loadCatalog(entry);
+    } else if (selected) void loadCatalog(selected);
+  }, [open, rail, activeKey, searching, entries]);
 
-  return (
-    <>
-      <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
-        <IconTip label={label} spoken="Change which model answers here">
-          <DropdownMenu.Trigger asChild>
-            <Button
-              ref={triggerRef}
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={label}
-              data-model-picker={spaceId}
-              data-model={own ? s.own[spaceId] : ""}
-              className="min-w-0 shrink px-2 text-sm font-medium"
-            >
-              <ProviderLogo provider={cliProvider} className="size-4" />
-              <span className="truncate">{name}</span>
-              {fullAccess && <Icon name="shield" className="size-3 text-danger-ink" />}
-              <Icon name="chevron-down" className="size-(--ph-icon-size-sm)" />
-            </Button>
-          </DropdownMenu.Trigger>
-        </IconTip>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content
-            ref={contentRef}
-            onFocusCapture={(event) => {
-              if (event.target !== event.currentTarget) return;
-              if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
-              // Redirect the controller's initial container focus before its row roving handler.
-              event.stopPropagation();
-              event.currentTarget.querySelector<HTMLInputElement>('[data-model-search] input')?.focus();
-            }}
-            side="top"
-            align="end"
-            sideOffset={6}
-            collisionPadding={8}
-            aria-label={`Model in ${spaceName}`}
-            data-model-menu=""
-            className={MENU}
-            onKeyDownCapture={modelMenuKeyboard}
-            // Another model… opens a dialog with focus in its field: the closing menu mustn't take focus back to its button, or the first keys typed land there.
-            onCloseAutoFocus={(e) => typing && e.preventDefault()}
-          >
-            <ModelSearchInput value={query} onChange={setQuery} />
-            <MenuHeader
-              spaceName={spaceName}
-              provider={cliProvider}
-              note={running ? "Next message" : undefined}
-            />
-            {error && <MenuError error={error} />}
-            <DropdownMenu.RadioGroup value={own ? own.model : DEFAULT} onValueChange={(v) => void choose(v === DEFAULT ? null : v)} className="min-h-0 overflow-y-auto overscroll-contain">
-              <ModelItem value={DEFAULT} title="Default" hint={cli.name} spoken={`${cli.name}’s own default`} />
-              {!!list?.models.length && <Separator />}
-              {list?.models.filter((m) => `${m.name} ${m.id}`.toLowerCase().includes(query.toLowerCase())).map((m) => (
-                <ModelItem key={m.id} value={m.id} title={m.name} provider={cliProvider} spoken={`${cli.name} · ${m.name}`} />
-              ))}
-              {own && !list?.models.some((m) => m.id === own.model) && <ModelItem value={own.model} title={own.model} spoken={`${cli.name} · ${own.model}`} />}
-            </DropdownMenu.RadioGroup>
-            {(list?.status === "loading" || list?.note) && (
-              <p className="mx-1 mt-1 flex shrink-0 items-center gap-2 px-2.5 py-1 text-xs text-ink-secondary" data-cli-models-note={list.status}>
-                <Icon name={list.status === "loading" ? "spinner" : "info"} className={cn("mt-0.5 size-(--ph-icon-size-sm) shrink-0", list.status === "loading" && "motion-safe:animate-spin")} />
-                <span className="min-w-0 truncate" title={list.note}>{list.status === "loading" ? `Refreshing ${cli.name} models…` : list.note}</span>
-              </p>
-            )}
-            <Separator /><AccessPicker spaceId={spaceId} nested />
-            <MenuFooter>
-            <MenuAction
-              option="__refresh__"
-              icon="retry"
-              busy={list?.status === "loading"}
-              onSelect={(e) => {
-                // Stays open: the list is asked again in place, and focus stays here.
-                e.preventDefault();
-                if (list?.status === "loading") return;
-                void loadCliModels(cli.id, true).then((after) =>
-                  announce(after?.models.length ? `${cli.name} offers ${after.models.length} models.` : (after?.note ?? `${cli.name} listed no models.`)),
-                );
-              }}
-            >
-              {list?.status === "loading" ? "Refreshing the list…" : "Refresh the list"}
-            </MenuAction>
-            <MenuAction
-              option={OTHER}
-              icon="edit"
-              onSelect={() => {
-                setOpen(false);
-                setTyping(true);
-              }}
-            >
-              Another model…
-            </MenuAction>
-            </MenuFooter>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-      {typing && (
-        <CliModelDialog
-          cli={cli}
-          spaceName={spaceName}
-          current={own?.model ?? ""}
-          onClose={() => {
-            setTyping(false);
-            requestAnimationFrame(() => triggerRef.current?.focus());
-          }}
-          onChoose={(m) => choose(m, true)}
-        />
-      )}
-    </>
-  );
+  function toggleFavorite(key: string) {
+    setFavorites(previous => {
+      const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem(favoriteKey, JSON.stringify([...next])); } catch { /* A preference must not block model selection. */ }
+      return next;
+    });
+  }
+  function browse(id: string) { browsed.current = true; setRail(id); setQuery(""); searchRef.current?.focus(); }
+  function focusProvider() { (providersRef.current?.querySelector('[aria-pressed="true"]') ?? providersRef.current?.querySelector("button:not(:disabled)"))?.scrollIntoView({ block: "nearest" }); providersRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus(); }
+  const options = entries.flatMap<PickerOption>(entry => {
+    if (!entry.available) return [];
+    const known = catalogs[entry.id]?.models ?? (entry.cli && entry.id !== activeKey ? [] : entry.models);
+    const list = [...known];
+    const own = entry.id === activeKey ? entry.cli ? ownCli?.model : current.own ? current.id : null : null;
+    if (own && !list.some(model => model.id === own)) list.push({ id: own, name: entry.cli ? cliModelName(entry.cli, own, s) : modelName(own, s.models) });
+    const rows = [{ id: DEFAULT, name: "Default" }, ...list];
+    return rows.map(model => ({ value: optionKey(entry.id, model.id), model: model.id, name: model.name, provider: entry.id, providerName: `${entry.name} ${entry.cli ?? entry.api ?? ""}`.trim(), logo: <ProviderLogo provider={entry.logo} className="size-4" />, selected: entry.id === activeKey && (model.id === DEFAULT ? !current.own : model.id === own), detail: model.id === DEFAULT ? entry.cli ? entry.name : modelName(s.defaultModel, s.models) : undefined }));
+  });
+  const shownOptions = searching ? options : rail === "favorites" ? options.filter(option => favorites.has(option.value)) : options.filter(option => option.provider === selected?.id);
+  const pickerHeight = Math.min(386, Math.max(220, 54 + (entries.length + 1) * 38, 82 + Math.max(4, ...entries.map(entry => (catalogs[entry.id]?.models ?? entry.models).length + 1)) * 32));
+  const selectedCatalog = selected ? catalogs[selected.id] ?? (selected.cli && selected.id === activeKey ? s.cliModels[selected.cli] : undefined) : undefined;
+  const loading = !!selectedCatalog && ("status" in selectedCatalog ? selectedCatalog.status === "loading" : selectedCatalog.loading);
+
+  async function choose(entry: ProviderEntry, model: string): Promise<string> {
+    if (busy) return "A model change is already being saved.";
+    const previousInstance = activeInstance?.config.id;
+    const switching = entry.cli ? entry.id !== activeKey || s.backend === "phaethon" : s.backend !== "phaethon";
+    setBusy(true); setError("");
+    try {
+      if (entry.cli && switching) { await selectAgentInstance(entry.id); window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: { what: "backend" } })); await refreshModels(); await loadCliModels(entry.cli, true); }
+      else if (!entry.cli && switching) { await setBackend("phaethon"); await refreshModels(); }
+      await setSpaceModel(spaceId, model === DEFAULT ? null : entry.cli ? `${entry.cli}:${model}` : model);
+      const changed = entry.cli ? model === DEFAULT ? `${spaceName} now uses ${cliOf(`${entry.cli}-cli`)!.name}’s own default model.` : `${spaceName} now uses ${cliOf(`${entry.cli}-cli`)!.name} · ${cliModelName(entry.cli, model, s)}.` : changedText(spaceName, model === DEFAULT ? null : model, s);
+      announce(changed + (running ? " The reply now running keeps its model." : ""));
+      setOpen(false); return "";
+    } catch (reason) {
+      let message = String(reason);
+      if (switching) {
+        try { if (previousInstance) await selectAgentInstance(previousInstance); else await setBackend(s.backend); await refreshModels(); }
+        catch (restoreError) { message += ` Previous assistant could not be restored: ${String(restoreError)}`; }
+      }
+      setError(`The model couldn’t be changed. ${message}`); return message;
+    } finally { setBusy(false); }
+  }
+  if (s.status === "loading" || (s.backend !== "phaethon" && !activeCli)) return null;
+  return <>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <IconTip label={label} spoken="Choose provider and model"><Popover.Trigger asChild>
+        <Button ref={triggerRef} type="button" variant="ghost" size="sm" aria-label={label} data-model-picker={spaceId} data-model={s.backend === "phaethon" ? current.id : current.own ? current.id : ""} className="min-w-0 shrink px-2 text-sm font-normal text-ink-secondary">
+          <span className="relative inline-flex"><ProviderLogo provider={activeLogo} className="size-4" />{siblingAccounts.length > 1 && accountNumber > 0 && <span className="ph-model-account-badge" aria-hidden="true">{accountNumber}</span>}</span><span className="truncate">{siblingAccounts.length > 1 && activeInstance ? `${activeInstance.config.name.replace(/^(Codex|Claude Code|Gemini CLI)\s*[·:—-]?\s*/i, "").trim() || activeInstance.config.name} · ${ownCli ? activeName : "Default"}` : activeName}</span><Icon name="chevron-down" className="size-3 text-ink-tertiary" />
+        </Button>
+      </Popover.Trigger></IconTip>
+      <Popover.Portal><Popover.Content side="top" align="end" sideOffset={7} collisionPadding={8} className="ph-model-picker" style={{ height: `min(${pickerHeight}px, calc(100dvh - 16px))` }} data-model-menu="" aria-label={`Model in ${spaceName}`}
+        onOpenAutoFocus={event => { event.preventDefault(); searchRef.current?.focus(); }} onCloseAutoFocus={event => { if (manual) event.preventDefault(); }}>
+        <div className="ph-model-picker-content" data-model-picker-content="">
+          <div ref={providersRef} role="toolbar" aria-label="Providers" aria-orientation="vertical" className="ph-model-providers" data-model-picker-sidebar=""
+            onKeyDown={event => {
+              if (event.key === "ArrowRight") { event.preventDefault(); searchRef.current?.focus(); return; }
+              if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+              event.preventDefault(); const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]; const at = buttons.indexOf(document.activeElement as HTMLButtonElement); const next = buttons[(at + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]; if (next) { next.click(); next.focus(); }
+            }}>
+            <button type="button" className="ph-model-provider" data-model-picker-provider="favorites" tabIndex={rail === "favorites" ? 0 : -1} aria-label="Favorites" title="Favorites" aria-pressed={rail === "favorites"} onClick={() => browse("favorites")}><Star size={18} strokeWidth={1.5} /></button>
+            <span className="ph-model-provider-rule" aria-hidden="true" />
+            {entries.map(entry => <button key={entry.id} type="button" className="ph-model-provider" data-model-picker-provider={entry.id} aria-label={entry.name} title={entry.available ? entry.name + (entry.source ? ` · ${entry.source === "system" ? "System" : "Managed"}` : "") : `${entry.name} · Sign in or install in Settings`} aria-pressed={rail !== "favorites" && entry.id === selected?.id} tabIndex={rail !== "favorites" && entry.id === selected?.id ? 0 : -1} disabled={!entry.available || busy} onClick={() => browse(entry.id)}>
+              <ProviderLogo provider={entry.logo} className="size-5" />
+              {entry.cli && entries.filter(item => item.cli === entry.cli).length > 1 && <span className="ph-model-account-badge" aria-hidden="true">{entries.filter(item => item.cli === entry.cli).findIndex(item => item.id === entry.id) + 1}</span>}
+            </button>)}
+          </div>
+          <ModelCombobox options={shownOptions} query={query} onQueryChange={setQuery} onChoose={option => { const entry = entries.find(item => item.id === option.provider); if (entry) void choose(entry, option.model); }} favorites={favorites} onFavorite={toggleFavorite} searchRef={searchRef} onFocusProviders={focusProvider} onRequestClose={() => setOpen(false)} busy={busy} loading={loading}>
+            {selectedCatalog?.note && <p className="ph-model-note" data-cli-models-note={loading ? "loading" : "ready"}>{selectedCatalog.note}</p>}
+            {error && <p role="alert" className="ph-model-error">{error}</p>}
+          </ModelCombobox>
+        </div>
+        <div className="ph-model-footer"><AccessPicker spaceId={spaceId} /><div className="ph-model-footer-actions">
+          <IconTip label="Refresh models" spoken="Refresh models"><Button type="button" variant="ghost" size="icon-xs" aria-label="Refresh models" data-model-option="__refresh__" disabled={loading || busy || !selected} onClick={() => selected && void loadCatalog(selected, true)}><Icon name="retry" className={loading ? "size-3.5 animate-spin" : "size-3.5"} /></Button></IconTip>
+          <IconTip label="Custom model" spoken="Custom model"><Button type="button" variant="ghost" size="icon-xs" aria-label="Custom model" data-model-option="__other__" disabled={busy || !selected || (!selected.cli && !choosableProviders(s).length)} onClick={() => { setOpen(false); setManual(selected ?? null); }}><Icon name="plus" className="size-3.5" /></Button></IconTip>
+        </div></div>
+      </Popover.Content></Popover.Portal>
+    </Popover.Root>
+    {manual?.cli && <CliModelDialog cli={cliOf(`${manual.cli}-cli`)!} spaceName={spaceName} current={manual.id === activeKey ? ownCli?.model ?? "" : ""} onClose={() => { setManual(null); requestAnimationFrame(() => triggerRef.current?.focus()); }} onChoose={model => choose(manual, model)} />}
+    {manual?.api && <OtherModelDialog s={s} spaceName={spaceName} current={manual.id === activeKey ? current.id : toRef(manual.api, "")} onClose={() => { setManual(null); requestAnimationFrame(() => triggerRef.current?.focus()); }} onChoose={async ref => { const provider = splitRef(ref).provider; const entry = entries.find(item => item.api === provider); return !!entry && !(await choose(entry, ref)); }} />}
+  </>;
 }
-
 /** A model's name for a CLI, typed: Save (or Enter) passes it on from the next message; Escape closes. */
 function CliModelDialog({
   cli,
@@ -568,124 +404,4 @@ function modelCommands(s: ModelsState, space: Space | undefined): Command[] {
     });
   }
   return list;
-}
-
-/** T3 Code's ModelListRow (MIT): the same compact name/check shape in every provider. */
-function ModelItem({ value, title, hint, spoken, provider }: { value: string; title: string; hint?: string; spoken?: string; provider?: ProviderId | CliBackend }) {
-  return (
-    <DropdownMenu.RadioItem value={value} textValue={title} aria-label={spoken} data-model-option={value}
-      className="flex min-h-(--ph-control-height) cursor-default items-center gap-3 rounded-md px-2.5 py-1.5 text-sm outline-none select-none data-highlighted:bg-hover">
-      {provider && <ProviderLogo provider={provider} className="size-4 opacity-75" />}
-      <span className="min-w-0 flex-1 truncate font-normal">{title}</span>
-      {hint && <span className="max-w-[45%] truncate text-xs text-ink-secondary">{hint}</span>}
-      <DropdownMenu.ItemIndicator className="flex shrink-0 items-center"><Icon name="check" className="size-3.5 text-ink-secondary" /></DropdownMenu.ItemIndicator>
-    </DropdownMenu.RadioItem>
-  );
-}
-
-const MENU =
-  "z-50 flex max-h-(--radix-dropdown-menu-content-available-height) w-[calc(18rem*var(--ph-ui-scale))] max-w-(--radix-dropdown-menu-content-available-width) flex-col overflow-hidden overscroll-contain outline-none origin-(--radix-dropdown-menu-content-transform-origin) animate-in duration-(--ph-duration-fast) fade-in-0 zoom-in-[0.97] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-[0.97]";
-const GROUP_LABEL = "flex items-center gap-2 px-2.5 pt-2 pb-1 text-sm font-medium text-ink-secondary";
-
-function Separator() {
-  return <DropdownMenu.Separator className="mx-1 my-1.5 h-px shrink-0 bg-line forced-colors:bg-[CanvasText]" />;
-}
-
-/** "Model" over the space's name, and when a change takes effect. */
-function MenuHeader({ spaceName, note, provider }: { spaceName: string; note?: string; provider?: ProviderId | CliBackend }) {
-  return (
-    <div className="flex flex-col gap-0.5 px-2.5 pt-1.5 pb-2">
-      <DropdownMenu.Label className="text-xs font-medium text-ink-secondary">Model</DropdownMenu.Label>
-      <span className="sr-only">in {spaceName}</span>
-      {note && <p className="flex items-start gap-2 text-sm text-ink-secondary" data-model-note="">
-        {provider && <ProviderLogo provider={provider} className="mt-0.5 size-4" />}
-        {note}
-      </p>}
-    </div>
-  );
-}
-
-function MenuError({ error }: { error: string }) {
-  return (
-    <p role="alert" className="mx-1 mb-1.5 flex items-start gap-2 rounded-md bg-danger-soft px-2.5 py-2 text-sm text-danger-ink">
-      <Icon name="error" className="mt-0.5 size-(--ph-icon-size-sm) shrink-0" />
-      <span className="min-w-0 wrap-anywhere">{error}</span>
-    </p>
-  );
-}
-
-/** The menu's actions, set apart beneath the models. */
-function MenuFooter({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      <Separator />
-      {children}
-    </>
-  );
-}
-
-function MenuAction({
-  option,
-  icon,
-  busy,
-  onSelect,
-  children,
-}: {
-  option: string;
-  icon: IconName;
-  busy?: boolean;
-  onSelect: (e: Event) => void;
-  children: string;
-}) {
-  return (
-    <DropdownMenu.Item
-      data-model-option={option}
-      textValue={children.replace(/…$/, "")}
-      aria-disabled={busy || undefined}
-      onSelect={onSelect}
-      className="flex min-h-(--ph-control-height) cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base text-ink-secondary outline-none select-none data-highlighted:bg-hover data-highlighted:text-ink aria-disabled:cursor-progress"
-    >
-      <Icon name={busy ? "spinner" : icon} className={cn("size-(--ph-icon-size-sm) shrink-0", busy && "animate-spin")} />
-      <span>{children}</span>
-    </DropdownMenu.Item>
-  );
-}
-
-/** Port of T3 ModelPickerContent's pinned ComboboxSearchInput (MIT). */
-function ModelSearchInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <div className="sticky top-0 z-10 shrink-0 bg-raised p-1" data-model-search="">
-    <Input aria-label="Search models" placeholder="Search models…" autoComplete="off" value={value} onChange={(event) => onChange(event.target.value)}
-      onKeyDown={(event) => { if (event.key === "Escape") return; event.stopPropagation();
-        if (event.key === "ArrowDown" || (event.key === "Enter" && value.trim())) {
-          event.preventDefault();
-          const root = event.currentTarget.closest('[data-model-menu]');
-          const query = value.trim().toLocaleLowerCase();
-          const result = query
-            ? root?.querySelector<HTMLElement>('[role="menuitemradio"][data-model-option]:not([data-model-option="__default__"])') ?? ("default".includes(query) ? root?.querySelector<HTMLElement>('[data-model-option="__default__"]') : null)
-            : root?.querySelector<HTMLElement>('[role="menuitemradio"]');
-          if (event.key === "Enter") result?.click(); else result?.focus();
-        }
-      }} />
-  </div>;
-}
-
-/** Editable search + a roving result + footer controls form one keyboard path. */
-function modelMenuKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
-  const root = event.currentTarget;
-  const active = document.activeElement as HTMLElement | null;
-  if ((event.key === "Home" || event.key === "End") && active?.matches('[role="menuitemradio"]')) {
-    const rows = [...root.querySelectorAll<HTMLElement>('[role="menuitemradio"]:not([data-disabled])')];
-    const target = event.key === "Home" ? rows[0] : rows.at(-1);
-    event.preventDefault(); event.stopPropagation();
-    target?.focus(); target?.scrollIntoView({ block: "nearest" });
-    return;
-  }
-  if (event.key !== "Tab") return;
-  const row = active?.closest<HTMLElement>('[role="menuitemradio"]') ?? root.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') ?? root.querySelector<HTMLElement>('[role="menuitemradio"]');
-  const controls = [root.querySelector<HTMLElement>('[data-model-search] input'), row, root.querySelector<HTMLElement>('[data-access-picker]'), ...root.querySelectorAll<HTMLElement>('[role="menuitem"][data-model-option]')]
-    .filter((node): node is HTMLElement => !!node && node.getClientRects().length > 0 && !node.hasAttribute('data-disabled'));
-  if (!controls.length) return;
-  event.preventDefault(); event.stopPropagation();
-  const at = active ? controls.indexOf(active) : -1;
-  controls[(at + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
 }

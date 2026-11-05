@@ -93,6 +93,8 @@ export type AgentInstanceView = {
   plan: string | null;
   selected: boolean;
   managedHome: boolean;
+  source: "system" | "managed";
+  readOnly: boolean;
 };
 export const agentInstances = () => invoke<AgentInstanceView[]>("agent_instances_list");
 export const saveAgentInstance = (instance: AgentInstanceConfig) => invoke<AgentInstanceConfig>("agent_instance_save", { instance });

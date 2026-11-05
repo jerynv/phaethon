@@ -52,7 +52,7 @@ export function AccessPicker({ spaceId, nested = false }: { spaceId: string; nes
   return <DropdownMenu.Root modal={false}>
     <DropdownMenu.Trigger asChild><Button type="button" variant="ghost" size="xs" data-access-picker="" aria-disabled={busy} aria-busy={busy}
       aria-label={`Access: ${full ? "Full access" : "Space access"}`} className={full ? "text-danger-ink" : "text-ink-secondary"}>
-      <Icon name={full ? "shield" : "lock"} className="size-3.5" /><span>{full ? "Full access" : "Space access"}</span><Icon name="chevron-down" className="size-3" />
+      <Icon name={full ? "shield" : "lock"} className={full ? "size-3.5 text-danger-ink" : "size-3.5 text-ink-secondary"} /><span>{full ? "Full access" : "Space access"}</span><Icon name="chevron-down" className="size-3" />
     </Button></DropdownMenu.Trigger>
     <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={6} data-access-menu="" className="z-50 w-72">{choices}</DropdownMenu.Content></DropdownMenu.Portal>
   </DropdownMenu.Root>;

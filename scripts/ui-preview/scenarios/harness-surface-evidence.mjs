@@ -46,8 +46,8 @@ export default [{
     await h.shot("attachment-menu");
     await page.keyboard.press("Escape");
     await h.click(`${shown} [data-model-picker]`);
-    await page.waitForSelector('[data-model-menu] [role="menuitemradio"]');
-    const models = await page.$$eval('[data-model-menu] [role="menuitemradio"]', (rows) => rows.map((row) => ({ text: row.textContent, height: row.getBoundingClientRect().height })));
+    await page.waitForSelector('[data-model-menu] [role="option"]');
+    const models = await page.$$eval('[data-model-menu] [role="option"]', (rows) => rows.map((row) => ({ text: row.textContent, height: row.getBoundingClientRect().height })));
     check(models.length === 4 && Math.max(...models.map((row) => row.height)) - Math.min(...models.map((row) => row.height)) <= 1, "models share one consistent row height", JSON.stringify(models));
     check(models.every((row) => !/workhorse|previous generation|most capable|quickest/i.test(row.text)), "model rows contain names without marketing copy");
     await h.shot("model-menu");

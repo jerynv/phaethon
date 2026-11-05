@@ -347,7 +347,7 @@ export const TOKENS: readonly TokenSpec[] = [
     min: 1.25,
     max: 2.25,
     step: 0.25,
-    default: 2,
+    default: 1.5,
     format: (v) => `${v === 2 ? "Regular" : v < 2 ? "Thinner" : "Thicker"} (${v})`,
   },
 ];

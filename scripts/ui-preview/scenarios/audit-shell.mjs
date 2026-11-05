@@ -480,7 +480,9 @@ export default [
         d.places = [...new Set([...d.places, ...before.places])].sort();
         d.unruled.push(...before.unruled);
       }
-      check(["popover", "sidebar", "title bar"].every((p) => d.places.includes(p)), "space dots show in the title bar, sidebar and popover", d.places.join(", "));
+      check(["popover", "title bar"].every((p) => d.places.includes(p)), "space dots show in the title bar and popover", d.places.join(", "));
+      await showSidebar(page);
+      check(await page.$$eval('#spaces-sidebar [data-space-item] [data-space-id] svg', icons => icons.length > 0 && icons.every(icon => getComputedStyle(icon).stroke !== 'none')), "sidebar folder glyphs retain a visible drawn stroke");
       check(!d.missingCss.length, "the stylesheet defines the dots' forced-colours rules (own colour, CanvasText edge)", `${d.missingCss.join(", ")}; ${d.cssLength} characters of CSS read`);
       check(!d.unruled.length, "every space dot carries those forced-colours rules", d.unruled.join(", "));
       if (d.forced) {

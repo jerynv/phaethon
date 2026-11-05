@@ -1,4 +1,4 @@
-import { Checkbox } from "vic-ui";
+import { Card, Checkbox } from "vic-ui";
 import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { cancelImport, openCourseImport, sitesChanged, useRun, useSitesVersion } from "@/components/lms/import-store";
@@ -80,27 +80,27 @@ export function CoursesSection({ headingId }: { headingId: string }) {
       <Button type="button" variant="ghost" size="xs" className="text-danger-ink" disabled={run.cancelling} onClick={() => void cancelImport()} data-settings-import-cancel="">{run.cancelling ? "Stopping…" : "Stop"}</Button>
     </div>}
     {error ? <p role="alert" className="text-sm text-danger-ink">{error}</p> : list === null || access === null ? <p role="status" className="text-sm text-ink-secondary">Loading course sites…</p> : course ? <div className="lms-course-panel flex min-h-0 flex-col gap-3" data-course-detail={course.key}>
-      <div className="flex items-center gap-1 border-b border-line pb-2" role="group" aria-label="Course settings">
+      <div className="flex w-fit items-center gap-1 rounded-lg bg-selected p-1" role="group" aria-label="Course settings">
         <button type="button" aria-pressed={mode === "access"} onClick={() => setMode("access")} className={cn("rounded-md px-2.5 py-1.5 text-sm", mode === "access" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Space access</button>
         <button type="button" aria-pressed={mode === "content"} onClick={() => setMode("content")} data-browse-course="" className={cn("rounded-md px-2.5 py-1.5 text-sm", mode === "content" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Browse content</button>
       </div>
       {mode === "access" ? <AccessGrid key={course.key} course={course} spaces={spaces} access={access.access} viewerSpace={viewerSpace} onSaved={(space, parts) => setAccess(a => a ? { ...a, access: { ...a.access, [space]: { ...(a.access[space] ?? {}), [course.key]: parts } } } : a)} /> : viewerSpace ? <CourseContentBrowser key={`${course.key}/${viewerSpace}`} course={course} space={viewerSpace} /> : <p className="text-sm text-ink-secondary">Give a space access to browse this course.</p>}
     </div> : <>
-      <div className="flex gap-1 border-b border-line pb-2" role="group" aria-label="Course sites view">
+      <div className="flex w-fit gap-1 rounded-lg bg-selected p-1" role="group" aria-label="Course sites view">
         <button type="button" data-course-overview-tab="courses" aria-pressed={overview === "courses"} onClick={() => setOverview("courses")} className={cn("rounded-md px-2.5 py-1.5 text-sm", overview === "courses" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Courses <span className="ms-1 text-xs text-ink-tertiary">{access.courses.length}</span></button>
         <button type="button" data-course-overview-tab="sites" aria-pressed={overview === "sites"} onClick={() => setOverview("sites")} className={cn("rounded-md px-2.5 py-1.5 text-sm", overview === "sites" ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover")}>Connected sites <span className="ms-1 text-xs text-ink-tertiary">{list.length}</span></button>
       </div>
-      {overview === "sites" ? <div><div data-course-sites="" className="flex flex-col divide-y divide-line">
+      {overview === "sites" ? <Card look="lifted" flush className="rounded-xl border border-line shadow-none!"><div data-course-sites="" className="flex flex-col gap-1 p-1">
         {!list.length && <p className="py-4 text-sm text-ink-secondary">No site connected</p>}
         {list.map(c => <SiteRow key={c.id} space={active} connection={c} onSignedOut={load} />)}
-      </div></div> : <div className="flex min-h-0 flex-col gap-3" data-course-navigator="">
+      </div></Card> : <div className="flex min-h-0 flex-col gap-3" data-course-navigator="">
         {access.courses.length > 5 && <Input aria-label="Find imported course" placeholder="Find a course…" value={filter} onChange={e => setFilter(e.target.value)} />}
-        <div className="max-h-80 overflow-y-auto overscroll-contain divide-y divide-line" aria-label="Imported courses">
-          {access.courses.filter(c => `${c.name} ${c.code ?? ""} ${c.term ?? ""}`.toLowerCase().includes(filter.toLowerCase())).map(c => <button key={c.key} type="button" data-course-select={c.key} onClick={() => { setSelected(c.key); setMode("access"); }} className="flex w-full min-w-0 items-center gap-3 rounded-md px-1 py-3 text-start hover:bg-hover">
+        <Card look="lifted" flush className="rounded-xl border border-line shadow-none!"><div className="max-h-80 overflow-y-auto overscroll-contain p-1" aria-label="Imported courses">
+          {access.courses.filter(c => `${c.name} ${c.code ?? ""} ${c.term ?? ""}`.toLowerCase().includes(filter.toLowerCase())).map(c => <button key={c.key} type="button" data-course-select={c.key} onClick={() => { setSelected(c.key); setMode("access"); }} className="flex w-full min-w-0 items-center gap-3 rounded-md px-3 py-2.5 text-start hover:bg-hover">
             <Icon name="book" className="size-4 shrink-0 text-ink-tertiary" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-ink">{c.name}</span><span className="block truncate text-xs text-ink-tertiary">{[c.code, c.term].filter(Boolean).join(" · ")}</span></span><Icon name="chevron-right" className="size-3.5 shrink-0 text-ink-tertiary" />
           </button>)}
           {!access.courses.length && <div className="flex items-center justify-between gap-3 py-4"><p className="text-sm text-ink-secondary">No courses imported</p><Button type="button" variant="outline" size="sm" onClick={() => openCourseImport({ space: active })}>Choose courses</Button></div>}
-        </div>
+        </div></Card>
         {access.problems.length > 0 && <details data-access-problems="" className="text-xs text-warning-ink"><summary>Course access needs attention</summary><ul>{access.problems.map(problem => <li key={problem}>{problem}</li>)}</ul></details>}
       </div>}
     </>}
@@ -138,7 +138,7 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
   }
 
   return (
-    <div className="lms-connected-row flex flex-wrap items-center gap-2 px-1 py-2.5" data-site-row={c.id} data-signed-in={c.signedIn ? "" : undefined}>
+    <div className="lms-connected-row flex flex-wrap items-center gap-2 rounded-lg px-3 py-2.5" data-site-row={c.id} data-signed-in={c.signedIn ? "" : undefined}>
       <button type="button" onClick={() => openCourseImport({ space, connection: c.id, at: c.signedIn ? "choose" : "signin" })} className="flex min-w-0 flex-[1_1_12rem] items-center gap-3 rounded-md text-start hover:bg-hover"><CourseSiteMark connection={c} /><span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span id={nameId} className="text-sm font-medium wrap-anywhere text-ink">
           {name}
@@ -178,11 +178,11 @@ function SiteRow({ space, connection: c, onSignedOut }: { space: string; connect
               <Button type="button" variant="outline" size="sm" data-site-action="more" onClick={() => openCourseImport({ space, connection: c.id, at: "choose" })}>
                 <Icon name="plus" />Courses
               </Button>
-              {n > 0 && (
+              {n > 0 ? (
                 <Button type="button" variant="ghost" size="icon-sm" aria-label={`Refresh ${name}`} title="Refresh courses" data-site-action="sync" onClick={() => openCourseImport({ space, connection: c.id, at: "sync" })}>
                   <Icon name="retry" />
                 </Button>
-              )}
+              ) : <span className="size-(--ph-control-height-sm) shrink-0" aria-hidden="true" />}
               <Button ref={signOutRef} type="button" variant="ghost" size="icon-sm" aria-label={`Disconnect ${name}`} title="Disconnect" className="text-ink-tertiary" data-site-action="signout" onClick={() => setConfirming(true)}><Icon name="close" /></Button>
             </>
           ) : (

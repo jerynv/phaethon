@@ -1,6 +1,6 @@
 // Shell round 2 (persona fixes S1–S6), all behaviour checks: check(...) fails the run.
 //   s2-panes-*     every visited space stays mounted: a waiting card, a draft, live state (S1)
-//   s2-activity    the sidebar's "Answering…" / "Needs you", names and announcements (S1)
+//   s2-activity    compact running/needs-you marks, spoken names and announcements (S1)
 //   s2-switch-*    "Work, 2 messages" and the window title (S4)
 //   s2-overlay     the narrow window's sidebar lies over the conversation (S2)
 //   s2-labels      title bar buttons carry words when the sidebar is not docked (S2)
@@ -164,15 +164,18 @@ export default [
         page.$eval(sel, (b) => {
           // Elements are separate boxes here (grid items, sr-only text): a space between them, as Chromium adds.
           const t = (n) => (n.nodeType === 3 ? n.textContent : n.nodeType !== 1 || n.getAttribute("aria-hidden") === "true" ? "" : [...n.childNodes].map(t).join(" "));
-          return `${t(b).replace(/\s+/g, " ").trim()} | ${b.querySelector("[data-space-activity]")?.textContent ?? ""}`;
+          const mark = b.querySelector('[data-space-activity]');
+          return { spoken: t(b).replace(/\s+/g, ' ').trim(), state: b.getAttribute('data-space-status'), icon: mark?.querySelector('svg')?.getAttribute('data-icon'), decorative: mark?.getAttribute('aria-hidden') === 'true' };
         });
       let n = await named(space("work"));
-      check(n === "Work, answering, Projects, meetings, follow-ups | Answering…", "Work reads \"Work, answering, …\" and shows Answering…", n);
+      check(n.spoken === "Work, answering, Projects, meetings, follow-ups", "Work retains its complete spoken answering name", JSON.stringify(n));
+      check(n.state === 'running' && n.icon === 'spinner' && n.decorative, 'running is visible as a decorative compact spinner', JSON.stringify(n));
       await h.shot("answering");
       await page.evaluate(() => window.__setSpaceActivity("work", { running: true, needsYou: true }));
       check(await said(page, "Work needs your answer."), "a background space that needs you is announced", await status(page));
       n = await named(space("work"));
-      check(n === "Work, needs your answer, Projects, meetings, follow-ups | Needs you", "Work's name says it needs your answer; it shows Needs you", n);
+      check(n.spoken === "Work, needs your answer, Projects, meetings, follow-ups", "Work's spoken name says it needs your answer", JSON.stringify(n));
+      check(n.state === 'needs-you' && n.icon === 'warning' && n.decorative, 'needs-you is visible as a compact warning mark', JSON.stringify(n));
       await h.shot("needs-you");
       await page.evaluate(() => window.__setSpaceActivity("work", { running: false, needsYou: false }));
       check(await said(page, "The reply in Work has ended."), "a background reply ending is announced", await status(page));

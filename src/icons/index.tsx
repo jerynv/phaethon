@@ -5,7 +5,7 @@ import {
   Ellipsis, File, FilePlus2, FileText, Folder, FolderOpen, FolderPlus, Image,
   ImageOff, Info, KeyRound, Link, LoaderCircle, LockKeyhole, Maximize2, Mic, Minus,
   MessageSquare, Moon, PanelLeft, Paperclip, Pause, Pencil, Phone, Play, Plus, RotateCcw, Search,
-  Settings2, ShieldCheck, Square, SquarePen, Sun, SunMoon, ThumbsDown, ThumbsUp, Trash2,
+  Settings, ShieldCheck, Square, SquarePen, Sun, SunMoon, ThumbsDown, ThumbsUp, Trash2,
   TriangleAlert, UserRound, Video, Volume2, Wrench, X, BookOpen, type LucideIcon,
 } from "lucide-react";
 
@@ -36,7 +36,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   agent: Bot, chat: MessageSquare, "new-chat": SquarePen, spinner: LoaderCircle, voice: Volume2, mic: Mic, phone: Phone,
   info: Info, warning: TriangleAlert, error: CircleAlert, success: CircleCheck,
   shield: ShieldCheck, lock: LockKeyhole, key: KeyRound, link: Link,
-  "thumbs-up": ThumbsUp, "thumbs-down": ThumbsDown, settings: Settings2,
+  "thumbs-up": ThumbsUp, "thumbs-down": ThumbsDown, settings: Settings,
   appearance: SunMoon, accessibility: Accessibility, sidebar: PanelLeft,
   space: FolderOpen, user: UserRound, sun: Sun, moon: Moon,
   "window-minimize": Minus, "window-maximize": Square,

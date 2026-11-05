@@ -51,7 +51,7 @@
   --ph-leading-normal: 1.55;
   --ph-weight-normal: 400;
   --ph-weight-medium: 500;
-  --ph-weight-semibold: 620;
+  --ph-weight-semibold: 600;
   --ph-weight-bold: 700;
   --ph-tracking-tight: -0.01em;
   --ph-tracking-normal: 0;
@@ -90,7 +90,7 @@
   --ph-icon-size-sm: calc(14px * var(--ph-ui-scale));
   --ph-icon-size: calc(16px * var(--ph-ui-scale));
   --ph-icon-size-lg: calc(20px * var(--ph-ui-scale));
-  --ph-icon-stroke: 2;
+  --ph-icon-stroke: 1.5;
 
   /* ---- Layout ---- */
   --ph-titlebar-height: calc(40px * max(1, var(--ph-ui-scale)));

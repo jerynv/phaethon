@@ -406,7 +406,9 @@ export default [
       const name = ax?.name?.value ?? "";
       const desc = ax?.description?.value ?? "";
       check(name === "New conversation", "the button is named by its words", name);
-      check(desc === "Command N", "while its tooltip shows, it is described only by the shortcut, in words", desc);
+      check(desc === "New conversation in School", "the shelf tooltip names its action and target space", desc);
+      const shortcut = await page.$eval('[data-new-conversation]', button => button.getAttribute('aria-keyshortcuts'));
+      check(shortcut === 'Meta+N', 'the reachable shelf action retains its actual keyboard shortcut', shortcut);
       await h.shot("tip");
     },
   },
@@ -431,12 +433,16 @@ export default [
         const name = [...b.querySelectorAll('[aria-hidden="true"]')].find((s) => s.textContent === "Psychology").parentElement;
         const badge = b.querySelector("[data-space-activity]").getBoundingClientRect();
         const box = b.getBoundingClientRect();
-        return { cut: name.scrollWidth > name.clientWidth + 1, badgeIn: badge.right <= box.right + 0.5 && badge.left >= box.left, badge: b.querySelector("[data-space-activity]").textContent };
+        const mark = b.querySelector('[data-space-activity]');
+        const spoken = node => node.nodeType === 3 ? node.textContent : node.nodeType !== 1 || node.getAttribute('aria-hidden') === 'true' ? '' : [...node.childNodes].map(spoken).join(' ');
+        return { cut: name.scrollWidth > name.clientWidth + 1, badgeIn: badge.right <= box.right + 0.5 && badge.left >= box.left, icon: mark.querySelector('svg')?.getAttribute('data-icon'), state: b.getAttribute('data-space-status'), spoken: spoken(b).replace(/\s+/g, ' ').trim() };
       });
       check(!r.cut, "the space's name shows whole while it needs you", JSON.stringify(r));
-      check(r.badgeIn && r.badge === "Needs you", "\"Needs you\" still shows, inside the item", JSON.stringify(r));
+      check(r.badgeIn && r.state === 'needs-you' && r.icon === 'warning', 'the warning mark remains visible and contained inside the item', JSON.stringify(r));
+      check(r.spoken === 'Psychology, needs your answer, PSY101 lectures and essays', 'the complete needs-you name remains available without a repeated visual badge', JSON.stringify(r));
       await page.evaluate(() => window.__setSpaceActivity("psych", { running: true, needsYou: false }));
       await h.idle();
+      check(await page.$eval('[data-space-id="psych"]', button => button.getAttribute('data-space-status') === 'running' && !!button.querySelector('[data-space-activity] [data-icon="spinner"]')), 'the answering spinner replaces the needs-you warning');
       await h.shot("answering");
     },
   },

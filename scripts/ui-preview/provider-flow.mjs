@@ -27,8 +27,20 @@ export async function useProviderDefault(page, id, { keyboard = false } = {}) {
 }
 
 export async function closeProviderPopup(page, { keyboard = false } = {}) {
-  const dialog = await page.$(providerPopup);
-  const button = await page.$(`${providerPopup} [data-slot="dialog-footer"] > button:last-child`);
+  const modal = await page.$('[role="dialog"][data-provider-popup]');
+  if (!modal) {
+    // Existing CLI management is now inline. On narrow layouts, Back returns
+    // to the account list; on desktop both list and detail remain available.
+    const back = await page.$('[data-provider-detail] .provider-detail-back');
+    if (back && await back.isVisible()) await back.click();
+    return;
+  }
+  const dialog = modal;
+  const buttons = await modal.$$('[data-slot="dialog-footer"] button');
+  let button;
+  for (const candidate of buttons) {
+    if (await candidate.evaluate(node => ["Done", "Cancel"].includes(node.textContent.trim()))) button = candidate;
+  }
   if (!button) throw new Error("Provider dialog has no Done or Cancel button");
   const name = await button.evaluate((node) => node.textContent.trim());
   if (name !== "Done" && name !== "Cancel") throw new Error(`Unexpected provider dialog close button: ${name}`);

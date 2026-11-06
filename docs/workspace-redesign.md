@@ -1,5 +1,15 @@
 # Personal workspace redesign
 
+## Canonical Vic upgrade — installed
+
+Baseline `1701592`, branch `feat/vic-ui-migration`. The supplied `0b295253` release is installed from `vendor/vic-ui-0b29525.tgz`, with package/lockfile and vendor/architecture records updated. Independently verified SHA256 `d8b2750a79e771d8bbd1450b8a07f562580132f3740f9c49195dcecffe093666` and all258 safe regular archive entries. Actual installed runtime exposes177 exports, preserves all142 preceding names, and loads all optional preview subpaths. Both the supplied canonical and historical typed consumers pass strict Bundler/NodeNext with skipLibCheck:false. Proof: `/tmp/phaethon-canonical-package-proof.json`, consumer location `/tmp/phaethon-canonical-consumer-path`. New optional controls are available; no claim that every new control is already used. Existing host permissions, loading, classification, downloads and account controllers are unchanged.
+
+Design/TypeScript/Vite and35JS units pass. General-page checks:60captures/0 failures across light/dark and1100×720/640×480; root inspected representative settings, models, accessibility, courses, Study, Plan and chat. Focused sidebar/account-reasoning/course-content/Office-media checks:70/0. Complete Chromium suite:1000checkpoints/0 failures (269/245/253/233). Results `/tmp/phaethon-canonical-ui-results.json`; logs `/tmp/phaethon-canonical-{build,units,pages,focused,full-1,full-2,full-3,full-4}.log`. No application Rust changed; existing native behavioral evidence remains applicable. Native release bundle built successfully.
+
+Updated personal app is installed at `/Applications/Phaethon.app`, launched PID7062. Source and installed executable SHA256 `db12d1939acf40b2a52824a52068c0624b8f02af976b3d34a0867c8cf9bcae24`; code signature verifies. Prior app preserved at `~/Library/Application Support/Phaethon App Backups/20261105-191040/Phaethon.app`. Vault/preferences/conversations were not moved. Root inspected the actual native window:91buttons,1100×720, visible, prototype unfrozen. Proof `/tmp/phaethon-canonical-native-proof.json`; private snapshot stays outside Git. All owned test/build processes finished; installed app intentionally runs. No workers restarted, no Phaethon publication, pre-existing untracked `CLAUDE.md` untouched.
+
+This compatible package increment is complete. Real new-account sign-in, live LMS/Keychain and physical media/microphone operations were not repeated; fixture checks do not establish those interactions. Any further UI work should start with a concrete reported flow in this installed build.
+
 ## R6 visible product corrections — installed
 
 The user rejected another verification-only handback. This increment makes actual product changes from `add3ca2`:

@@ -979,20 +979,29 @@ async fn drive(
             let _ = child.kill().await;
         }
         // Always reap the child so it never lingers as a zombie.
-        child.wait().await.ok()
+        let status = child.wait().await.ok();
+        // A descendant that ignored SIGTERM outlives the CLI; end the rest of its group.
+        if let Some(pid) = pid {
+            signal_group(pid, Signal::Kill);
+        }
+        status
     } else {
         status
     };
     runs.set_pid(space_id, None);
+
+    if cancelled {
+        // A stopped turn reports no stderr, and a descendant may still hold it open.
+        if let Some(t) = stderr_task {
+            t.abort();
+        }
+        // The CLI may not have saved the turn; the caller keeps the previous session.
+        return Attempt::Stopped;
+    }
     let stderr = match stderr_task {
         Some(t) => t.await.unwrap_or_default(),
         None => String::new(),
     };
-
-    if cancelled {
-        // The CLI may not have saved the turn; the caller keeps the previous session.
-        return Attempt::Stopped;
-    }
 
     let outcome = parser.finish();
     let logged_out = || fail_not_logged_in(cli, req.config_dir.as_deref());

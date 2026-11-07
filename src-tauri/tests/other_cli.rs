@@ -129,6 +129,7 @@ fn fake(root: &Path, name: &str, body: &str) -> PathBuf {
     fs::write(&bin, format!("#!/bin/sh\nd='{}'\n\
 if [ -f \"$d/block-stdin\" ]; then touch \"$d/ready\"; exec sleep 30; fi\n\
 if [ -f \"$d/close-stdout\" ]; then cat > /dev/null; exec 1>&-; touch \"$d/ready\"; exec sleep 30; fi\n\
+if [ -f \"$d/orphan-stderr\" ]; then cat > /dev/null; (trap '' TERM; exec sleep 30) & touch \"$d/ready\"; exec sleep 30; fi\n\
 {body}", root.display())).unwrap();
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
     bin
@@ -384,8 +385,9 @@ fn conversations_work_with(cli: Cli, bin_var: &str, script: &str) {
         assert_eq!(listed.note, None);
         assert_eq!(fs::read_to_string(f.root.join("models-home")).unwrap(), f.home().to_str().unwrap());
     }
-    // Stop also works while stdin is blocked and after stdout has closed.
-    for flag in ["block-stdin", "close-stdout"] {
+    // Stop also works while stdin is blocked, after stdout has closed, and
+    // when a descendant ignores SIGTERM while holding stderr open.
+    for flag in ["block-stdin", "close-stdout", "orphan-stderr"] {
         fs::write(f.root.join(flag), "").unwrap();
         let ready = f.root.join("ready");
         let canceller = f.runs.clone();

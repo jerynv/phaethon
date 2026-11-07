@@ -50,7 +50,7 @@ fn texts(m: &Value) -> Vec<&str> {
 
 #[test]
 fn the_folder_name_is_claude_codes() {
-    assert_eq!(project_dir_name(Path::new("/Users/jeryn/Phaethon/default/spaces/school")), "-Users-jeryn-Phaethon-default-spaces-school");
+    assert_eq!(project_dir_name(Path::new("/Users/student/Phaethon/default/spaces/school")), "-Users-student-Phaethon-default-spaces-school");
     assert_eq!(project_dir_name(Path::new("/a b/c_d.e/ü")), "-a-b-c-d-e--");
 }
 

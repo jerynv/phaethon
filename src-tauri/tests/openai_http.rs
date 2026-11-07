@@ -135,7 +135,7 @@ async fn streaming_text_with_the_key_only_in_its_header() {
     let (base, seen, task) = server(vec![stream(&[
         delta(json!({"role": "assistant", "content": ""})),
         delta(json!({"content": "Hello"})),
-        delta(json!({"content": ", Jeryn — café."})),
+        delta(json!({"content": ", Sam — café."})),
         finish("stop"),
         json!({"choices": [], "usage": {"prompt_tokens": 9, "completion_tokens": 4}}),
     ])])
@@ -144,8 +144,8 @@ async fn streaming_text_with_the_key_only_in_its_header() {
     let (turn, streamed) = ask(&p, "hi").await;
     task.await.unwrap();
     let turn = turn.unwrap();
-    assert_eq!(streamed, "Hello, Jeryn — café.");
-    assert_eq!(turn.content, vec![json!({"type": "text", "text": "Hello, Jeryn — café."})]);
+    assert_eq!(streamed, "Hello, Sam — café.");
+    assert_eq!(turn.content, vec![json!({"type": "text", "text": "Hello, Sam — café."})]);
     assert_eq!(turn.stop_reason, "end_turn");
     let s = seen.lock().unwrap()[0].clone();
     assert_eq!(s.path(), "/v1/chat/completions");

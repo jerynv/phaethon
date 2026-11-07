@@ -1,11 +1,11 @@
 {
  "id": "_4711_1",
  "uuid": "7c1a7f0e2b0b4c55a3a7d6f1e0c9b8a2",
- "externalId": "jv1234",
- "userName": "jv1234",
+ "externalId": "sstudent",
+ "userName": "sstudent",
  "name": {
-  "given": "Jeryn",
-  "family": "Vicari"
+  "given": "Sam",
+  "family": "Student"
  },
  "availability": {
   "available": "Yes"

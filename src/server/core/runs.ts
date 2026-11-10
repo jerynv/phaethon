@@ -1,6 +1,7 @@
 import { Refusal } from "../rpc/registry.ts";
 import { log } from "../log.ts";
 import { onStop } from "../lifecycle.ts";
+import { reportGroups } from "../host.ts";
 
 /**
  * At most one running thing per key: a turn in a space (key = space id), a
@@ -19,16 +20,39 @@ export type Run = {
 
 const runs = new Map<string, Run>();
 
+function report(): void {
+  const all: number[] = [];
+  for (const run of runs.values()) all.push(...run.groups);
+  reportGroups(all);
+}
+
+/** A set of process groups that tells the desktop shell whenever it changes. */
+class GroupSet extends Set<number> {
+  override add(pgid: number): this {
+    super.add(pgid);
+    report();
+    return this;
+  }
+  override delete(pgid: number): boolean {
+    const had = super.delete(pgid);
+    if (had) report();
+    return had;
+  }
+}
+
 /** Claims `key`, or returns undefined when something already runs there. */
 export function claim(key: string): Run | undefined {
   if (runs.has(key)) return undefined;
-  const run: Run = { key, abort: new AbortController(), groups: new Set() };
+  const run: Run = { key, abort: new AbortController(), groups: new GroupSet() };
   runs.set(key, run);
   return run;
 }
 
 export function release(run: Run): void {
-  if (runs.get(run.key) === run) runs.delete(run.key);
+  if (runs.get(run.key) === run) {
+    runs.delete(run.key);
+    if (run.groups.size) report();
+  }
 }
 
 export function isRunning(key: string): boolean {

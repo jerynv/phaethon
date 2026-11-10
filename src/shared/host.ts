@@ -1,15 +1,22 @@
 /**
  * The private control channel between Electron's main process and the Node
- * core (JSON lines on file descriptor 3). Only main can open native dialogs and
+ * core (messages over the utility process's parent port). Only main can open native dialogs and
  * browser windows, and only the core may hold credentials, so anything that
  * needs both (a folder the user picked, cookies from a course-site sign-in)
  * travels here and never through the renderer.
  */
 
 /** main → core, once, before anything else. */
-export type HostHello = { t: "hello"; token: string; origins: string[]; appVersion: string; platform: string };
-/** core → main, once it listens. */
-export type CoreReady = { t: "ready"; port: number };
+export type HostHello = { t: "hello"; appVersion: string; platform: string };
+/** core → main, once it accepts connections. */
+export type CoreReady = { t: "ready" };
+/** main → core: a renderer connection; the MessagePort travels with this message. */
+export type HostConnect = { t: "connect" };
+/**
+ * core → main: the process groups the core's children lead right now. Main
+ * kills them if the core itself dies, so no agent outlives a crashed core.
+ */
+export type CoreGroups = { t: "groups"; pgids: number[] };
 
 /** core → main request, answered by a `HostReply` with the same id. */
 export type HostRequest = { t: "hreq"; id: number; op: HostOp };
@@ -42,5 +49,5 @@ export type HostEventBody =
   | { kind: "windowClosed"; window: number }
   | { kind: "quitting" };
 
-export type HostToCore = HostHello | HostReply | HostEvent;
-export type CoreToHost = CoreReady | HostRequest;
+export type HostToCore = HostHello | HostReply | HostEvent | HostConnect;
+export type CoreToHost = CoreReady | HostRequest | CoreGroups;

@@ -6,9 +6,9 @@ Owner request: rewrite everything in TypeScript; make the agent reason instead o
 
 ```
 Electron main (src/desktop)          Node core (src/server)                  Renderer (src/web)
- ├─ app:// protocol, CSP header       ├─ HTTP + WebSocket on 127.0.0.1:0       React 19 + Vite
- ├─ spawns core: process.execPath     ├─ invoke(name,args) router (allow-list) shadcn base-mira + @base-ui/react
- │   ELECTRON_RUN_AS_NODE=1, fd 3     ├─ Channel streams (per-call ids)        T3/coss ui components (MIT)
+ ├─ app:// protocol, CSP header       ├─ MessagePort per renderer (WS only standalone)React 19 + Vite
+ ├─ utilityProcess core, MessagePorts ├─ invoke(name,args) router (allow-list) shadcn base-mira + @base-ui/react
+ │   kills reported groups on crash   ├─ Channel streams (per-call ids)        T3/coss ui components (MIT)
  ├─ native dialogs, folder picker     ├─ vault, spaces, threads, grants        own timeline/composer
  ├─ LMS sign-in windows (cookies)     ├─ providers + agent loop
  └─ updater                           ├─ CLI backends (claude, codex, gemini)
@@ -16,9 +16,9 @@ Electron main (src/desktop)          Node core (src/server)                  Ren
                                       └─ keychain (@napi-rs/keyring)
 ```
 
-- The core is a separate Node process (Electron's own binary in node mode), so provider keys stay out of the renderer exactly as they stayed in Rust before.
-- Main ↔ core: a private JSON-lines control channel on fd 3. Main sends the session token and native-only results (folder-picker approvals, LMS cookies). The renderer never receives credentials.
-- Renderer ↔ core: WebSocket `ws://127.0.0.1:<port>/ws?token=…`, token compared with `timingSafeEqual`, Origin checked. Frames: `{id, cmd, args}` → `{id, ok}` | `{id, err}`; channel messages `{ch, msg}`. Command names, camelCase argument names, return JSON and Channel message JSON stay identical to the Tauri commands (114 of them), so every spec row maps one-to-one.
+- The core is an Electron utility process (`utilityProcess.fork`, so the RunAsNode fuse can stay off), so provider keys stay out of the renderer exactly as they stayed in Rust before.
+- Main ↔ core: the utility process parent port. Main forwards native-only results (folder-picker choices, LMS sign-in cookies) and kills the process groups the core reports if the core dies. The renderer never receives credentials.
+- Renderer ↔ core: a MessagePort main hands to the main window only (no TCP port, no token). A WebSocket transport with a token (`timingSafeEqual`) and Origin check exists only for standalone use (tests; later Tailscale). Frames: `{id, cmd, args}` → `{id, ok}` | `{id, err}`; channel messages `{ch, msg}`. Command names, camelCase argument names, return JSON and Channel message JSON stay identical to the Tauri commands (114 of them), so every spec row maps one-to-one.
 - The same server can later serve the built UI over Tailscale for mobile.
 
 ## Compatibility (existing users' data)

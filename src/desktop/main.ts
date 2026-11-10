@@ -30,10 +30,10 @@ let mainWindow: BrowserWindow | undefined;
 const signInWindows = new Map<number, BrowserWindow>();
 let quitting = false;
 
-function csp(port: number): string {
+function csp(): string {
   return [
     "default-src 'self'",
-    `connect-src 'self' http://127.0.0.1:${port} ws://127.0.0.1:${port}`,
+    "connect-src 'self'",
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
     "font-src 'self' data:",
@@ -47,7 +47,7 @@ function csp(port: number): string {
   ].join("; ");
 }
 
-function serveApp(port: number): void {
+function serveApp(): void {
   protocol.handle(SCHEME, async (request) => {
     const url = new URL(request.url);
     const root = path.resolve(webRoot);
@@ -56,7 +56,7 @@ function serveApp(port: number): void {
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, "index.html");
     const response = await net.fetch(pathToFileURL(file).toString());
     const headers = new Headers(response.headers);
-    headers.set("Content-Security-Policy", csp(port));
+    headers.set("Content-Security-Policy", csp());
     headers.set("X-Content-Type-Options", "nosniff");
     return new Response(response.body, { status: response.status, headers });
   });
@@ -116,6 +116,8 @@ function createMainWindow(): BrowserWindow {
 }
 
 async function capture(window: BrowserWindow): Promise<void> {
+  const [w, h] = (process.env.PHAETHON_CAPTURE_SIZE ?? "1280x800").split("x").map(Number);
+  window.setContentSize(w || 1280, h || 800);
   window.webContents.setFrameRate(30);
   await new Promise<void>((resolve) => window.webContents.once("did-finish-load", () => resolve()));
   await new Promise((r) => setTimeout(r, Number(process.env.PHAETHON_CAPTURE_DELAY || 4000)));
@@ -206,9 +208,11 @@ async function handle(op: HostOp): Promise<unknown> {
   }
 }
 
-ipcMain.handle("phaethon:connection", (event) => {
-  if (!core || event.sender !== mainWindow?.webContents) throw new Error("The core isn't running.");
-  return { url: `ws://127.0.0.1:${core.port}/ws`, token: core.token };
+// The renderer asks for a connection; it gets a MessagePort straight to the core. Only the main
+// window's own frame may ask.
+ipcMain.on("phaethon:connect", (event) => {
+  if (!core || event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) return;
+  event.sender.postMessage("phaethon:port", null, [core.connect()]);
 });
 
 app.on("second-instance", () => {
@@ -221,10 +225,8 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(async () => {
-  const origins = devUrl ? [new URL(devUrl).origin] : [APP_ORIGIN];
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),
-    origins,
     appVersion: app.getVersion(),
     handle,
     onExit: (code) => {
@@ -234,7 +236,7 @@ app.whenReady().then(async () => {
       }
     },
   });
-  serveApp(core.port);
+  serveApp();
   mainWindow = createMainWindow();
   mainWindow.on("closed", () => (mainWindow = undefined));
   if (captureTo) void capture(mainWindow);

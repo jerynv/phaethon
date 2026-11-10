@@ -35,9 +35,11 @@ export type HostOp =
   | { op: "openExternal"; url: string }
   /** Opens a sign-in window with its own cookie partition. Resolves with a window id. */
   | { op: "windowOpen"; url: string; title: string; partition: string; width?: number; height?: number }
-  /** Cookies the window's session holds for `url`. */
-  | { op: "windowCookies"; window: number; url: string }
+  /** Cookies the window's session holds for `url`, or every cookie it holds when `url` is left out. */
+  | { op: "windowCookies"; window: number; url?: string }
   | { op: "windowClose"; window: number }
+  /** Brings an open sign-in window to the front. */
+  | { op: "windowFocus"; window: number }
   /** Drops a sign-in partition's cookies and storage. */
   | { op: "partitionClear"; partition: string }
   | { op: "focusApp" };

@@ -108,7 +108,7 @@ if (scenario === "fresh") {
   prov.openrouter = { hasKey: true, url: null, model: "openai/gpt-5.5" };
   prov.ollama = { hasKey: false, url: null, model: "llama3.2:3b" };
   builtIns();
-  Object.assign(inst("claude")!.state, { loggedIn: true, account: "jeryn@iu.edu", plan: "Max" });
+  Object.assign(inst("claude")!.state, { loggedIn: true, account: "student@example.edu", plan: "Max" });
   Object.assign(inst("codex")!.state, { loggedIn: true, account: null, plan: null });
   instances.push({
     config: { id: "claude-work", cli: "claude", name: "Work", binary: "", args: [] },
@@ -130,7 +130,7 @@ if (scenario === "fresh") {
     settings.active.codex = "codex";
     cliModel.school = { codex: "gpt-6.1-sol" };
     reasoning.school = { codex: { "gpt-6.1-sol": "high" } };
-    workspaces.school = { path: "/Users/jeryn/Code/c241-homework", available: false };
+    workspaces.school = { path: "/Users/student/Code/c241-homework", available: false };
     fullAccess.add("school");
   }
   if (scenario === "notready") {
@@ -161,7 +161,7 @@ function settingsView() {
     providerReady: chosen.ready && !!chosen.model,
     providers,
     appearance: {},
-    vaultPath: "/Users/jeryn/Phaethon/default",
+    vaultPath: "/Users/student/Phaethon/default",
     version: "0.2.0",
   };
 }
@@ -367,7 +367,7 @@ const handlers: Record<string, (args: Args) => unknown> = {
     });
     signIns.delete(String(id));
     if (cancelled) return { status: "cancelled", message: i.config.cli === "claude" ? "Sign-in stopped." : `Signing in to ${i.config.name} was stopped.` };
-    Object.assign(i.state, { loggedIn: true, account: i.config.cli === "claude" ? "jeryn.work@example.com" : null, plan: i.config.cli === "claude" ? "Pro" : null });
+    Object.assign(i.state, { loggedIn: true, account: i.config.cli === "claude" ? "student.work@example.com" : null, plan: i.config.cli === "claude" ? "Pro" : null });
     return { status: "signedIn", message: i.config.cli === "claude" ? "Signed in to Claude Code." : `Signed in to ${i.config.name} for this Phaethon folder.` };
   },
   async agent_instance_sign_in_cancel({ id }) {
@@ -449,21 +449,21 @@ const handlers: Record<string, (args: Args) => unknown> = {
     await wait(150);
     const s = space(id);
     const w = workspaces[s.id];
-    return w ? { path: w.path, kind: "folder", available: w.available } : { path: `/Users/jeryn/Phaethon/default/spaces/${s.id}`, kind: "managed", available: true };
+    return w ? { path: w.path, kind: "folder", available: w.available } : { path: `/Users/student/Phaethon/default/spaces/${s.id}`, kind: "managed", available: true };
   },
   async workspace_choose({ token }) {
     await wait(500);
-    return { token, path: "/Users/jeryn/Code/phaethon-notes", name: "phaethon-notes" };
+    return { token, path: "/Users/student/Code/phaethon-notes", name: "phaethon-notes" };
   },
   async space_workspace_bind({ id }) {
     const s = space(id);
-    workspaces[s.id] = { path: "/Users/jeryn/Code/phaethon-notes", available: true };
+    workspaces[s.id] = { path: "/Users/student/Code/phaethon-notes", available: true };
     return { path: workspaces[s.id]!.path, kind: "folder", available: true };
   },
   async space_workspace_clear({ id }) {
     const s = space(id);
     delete workspaces[s.id];
-    return { path: `/Users/jeryn/Phaethon/default/spaces/${s.id}`, kind: "managed", available: true };
+    return { path: `/Users/student/Phaethon/default/spaces/${s.id}`, kind: "managed", available: true };
   },
 };
 

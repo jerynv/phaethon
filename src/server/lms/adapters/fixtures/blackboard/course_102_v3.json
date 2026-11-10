@@ -1,0 +1,17 @@
+{
+ "id": "_102_1",
+ "uuid": "c3",
+ "externalId": "C241-FA26",
+ "courseId": "CSCI-C241-FA26",
+ "name": "Discrete Structures",
+ "organization": false,
+ "ultraStatus": "Ultra",
+ "availability": {
+  "available": "Yes",
+  "duration": {
+   "type": "DateRange",
+   "start": "2026-08-20T04:00:00.000Z",
+   "end": "2099-12-20T05:00:00.000Z"
+  }
+ }
+}

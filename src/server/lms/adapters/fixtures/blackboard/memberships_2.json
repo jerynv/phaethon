@@ -1,0 +1,57 @@
+{
+ "results": [
+  {
+   "id": "_9003_1",
+   "userId": "_4711_1",
+   "courseId": "_101_1",
+   "availability": {
+    "available": "Yes"
+   },
+   "courseRoleId": "Student",
+   "course": {
+    "id": "_101_1",
+    "courseId": "PSY-P101-SP26",
+    "name": "Introductory Psychology",
+    "organization": false,
+    "ultraStatus": "Classic",
+    "termId": "_9_1",
+    "availability": {
+     "available": "Yes",
+     "duration": {
+      "type": "Term"
+     }
+    }
+   }
+  },
+  {
+   "id": "_9004_1",
+   "userId": "_4711_1",
+   "courseId": "_102_1",
+   "availability": {
+    "available": "Yes"
+   },
+   "courseRoleId": "Student"
+  },
+  {
+   "id": "_9005_1",
+   "userId": "_4711_1",
+   "courseId": "_103_1",
+   "availability": {
+    "available": "Yes"
+   },
+   "courseRoleId": "Student",
+   "course": {
+    "id": "_103_1",
+    "courseId": "HIST-H105-FA26",
+    "name": "American History",
+    "organization": false,
+    "availability": {
+     "available": "No",
+     "duration": {
+      "type": "Continuous"
+     }
+    }
+   }
+  }
+ ]
+}

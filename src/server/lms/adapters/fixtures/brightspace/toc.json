@@ -1,0 +1,54 @@
+{
+  "Modules": [
+    {
+      "ModuleId": 200, "Title": "Week 2: Series", "SortOrder": 2, "StartDateTime": null, "EndDateTime": null, "IsHidden": false, "IsLocked": false,
+      "PacingStartDate": null, "PacingEndDate": null, "DefaultPath": "/content/enforced/6606-M301-F26-12345/Week2/", "LastModifiedDate": "2026-09-01T12:00:00.000Z",
+      "Modules": [],
+      "Topics": [
+        { "TopicId": 2101, "Identifier": "2101", "TypeIdentifier": "Link", "Title": "Homework 1 (submit here)", "Bookmarked": false, "Unread": true,
+          "Url": "/d2l/common/dialogs/quickLink/quickLink.d2l?ou=6606&type=dropbox&rcode=TENANT-41", "SortOrder": 1, "StartDateTime": null, "EndDateTime": null,
+          "ActivityId": "https://ids.brightspace.com/activities/dropbox/A1B2-41", "CompletionType": 2, "IsExempt": false, "IsHidden": false, "IsLocked": false, "IsBroken": false,
+          "ToolId": 2000, "ToolItemId": 41, "ActivityType": 3, "GradeItemId": 900, "LastModifiedDate": "2026-09-01T12:00:00.000Z" },
+        { "TopicId": 2102, "Identifier": "2102", "TypeIdentifier": "Link", "Title": "Pearson MyLab", "Bookmarked": false, "Unread": true,
+          "Url": "/d2l/le/lti/6606/toolLaunch/77/1234", "SortOrder": 2, "StartDateTime": null, "EndDateTime": null,
+          "ActivityId": null, "CompletionType": 1, "IsExempt": false, "IsHidden": false, "IsLocked": false, "IsBroken": false,
+          "ToolId": null, "ToolItemId": null, "ActivityType": 27, "GradeItemId": null, "LastModifiedDate": "2026-09-01T12:00:00.000Z" }
+      ]
+    },
+    {
+      "ModuleId": 100, "Title": "Week 1: Integration review", "SortOrder": 1, "StartDateTime": null, "EndDateTime": null, "IsHidden": false, "IsLocked": false,
+      "PacingStartDate": null, "PacingEndDate": null, "DefaultPath": "/content/enforced/6606-M301-F26-12345/Week1/", "LastModifiedDate": "2026-08-20T12:00:00.000Z",
+      "Modules": [
+        {
+          "ModuleId": 110, "Title": "Readings", "SortOrder": 1, "StartDateTime": null, "EndDateTime": null, "IsHidden": false, "IsLocked": false,
+          "PacingStartDate": null, "PacingEndDate": null, "DefaultPath": "/content/enforced/6606-M301-F26-12345/Week1/Readings/", "LastModifiedDate": "2026-08-20T12:00:00.000Z",
+          "Modules": [],
+          "Topics": [
+            { "TopicId": 1101, "Identifier": "1101", "TypeIdentifier": "Link", "Title": "OpenStax Calculus Volume 2", "Bookmarked": false, "Unread": true,
+              "Url": "https://openstax.org/details/books/calculus-volume-2", "SortOrder": 1, "StartDateTime": null, "EndDateTime": null,
+              "ActivityId": null, "CompletionType": 1, "IsExempt": false, "IsHidden": false, "IsLocked": false, "IsBroken": false,
+              "ToolId": null, "ToolItemId": null, "ActivityType": 2, "GradeItemId": null, "LastModifiedDate": "2026-08-20T12:00:00.000Z" },
+            { "TopicId": 1102, "Identifier": "1102", "TypeIdentifier": "File", "Title": "Section 3.1 notes", "Bookmarked": false, "Unread": true,
+              "Url": "/content/enforced/6606-M301-F26-12345/Week1/Readings/3.1%20notes.pdf", "SortOrder": 2, "StartDateTime": null, "EndDateTime": null,
+              "ActivityId": null, "CompletionType": 1, "IsExempt": false, "IsHidden": false, "IsLocked": false, "IsBroken": false,
+              "ToolId": null, "ToolItemId": null, "ActivityType": 1, "GradeItemId": null, "LastModifiedDate": "2026-08-20T12:00:00.000Z" },
+            { "TopicId": 1103, "Identifier": "1103", "TypeIdentifier": "File", "Title": "Answer key (hidden)", "Bookmarked": false, "Unread": true,
+              "Url": "/content/enforced/6606-M301-F26-12345/Week1/Readings/key.pdf", "SortOrder": 3, "StartDateTime": null, "EndDateTime": null,
+              "ActivityId": null, "CompletionType": 1, "IsExempt": false, "IsHidden": true, "IsLocked": false, "IsBroken": false,
+              "ToolId": null, "ToolItemId": null, "ActivityType": 1, "GradeItemId": null, "LastModifiedDate": "2026-08-20T12:00:00.000Z" }
+          ]
+        }
+      ],
+      "Topics": [
+        { "TopicId": 1001, "Identifier": "1001", "TypeIdentifier": "File", "Title": "Course Syllabus", "Bookmarked": false, "Unread": false,
+          "Url": "/content/enforced/6606-M301-F26-12345/Syllabus%20M301.pdf", "SortOrder": 1, "StartDateTime": null, "EndDateTime": null,
+          "ActivityId": null, "CompletionType": 1, "IsExempt": false, "IsHidden": false, "IsLocked": false, "IsBroken": false,
+          "ToolId": null, "ToolItemId": null, "ActivityType": 1, "GradeItemId": null, "LastModifiedDate": "2026-08-20T12:00:00.000Z" },
+        { "TopicId": 1002, "Identifier": "1002", "TypeIdentifier": "File", "Title": "Welcome", "Bookmarked": false, "Unread": false,
+          "Url": "/content/enforced/6606-M301-F26-12345/Week1/welcome.html", "SortOrder": 2, "StartDateTime": null, "EndDateTime": null,
+          "ActivityId": null, "CompletionType": 1, "IsExempt": false, "IsHidden": false, "IsLocked": false, "IsBroken": false,
+          "ToolId": null, "ToolItemId": null, "ActivityType": 1, "GradeItemId": null, "LastModifiedDate": "2026-08-20T12:00:00.000Z" }
+      ]
+    }
+  ]
+}

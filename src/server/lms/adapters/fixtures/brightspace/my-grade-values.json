@@ -1,0 +1,18 @@
+[
+  {
+    "PointsNumerator": 18, "PointsDenominator": 20, "WeightedNumerator": 9, "WeightedDenominator": 10,
+    "GradeObjectIdentifier": "501", "GradeObjectName": "Problem Set 1", "GradeObjectType": 1, "GradeObjectTypeName": "Numeric",
+    "DisplayedGrade": "18 / 20", "Comments": { "Text": "Good work.\r\nShow the steps next time.", "Html": "<p>Good work.</p><p>Show the steps next time.</p>" },
+    "PrivateComments": { "Text": "", "Html": "" }, "LastModified": "2026-09-20T12:00:00.000Z", "LastModifiedBy": 7, "ReleasedDate": "2026-09-20T12:00:00.000Z"
+  },
+  {
+    "PointsNumerator": 42, "PointsDenominator": 50, "WeightedNumerator": 25.2, "WeightedDenominator": 30,
+    "GradeObjectIdentifier": "510", "GradeObjectName": "Midterm", "GradeObjectType": 1, "GradeObjectTypeName": "Numeric",
+    "DisplayedGrade": "B", "Comments": { "Text": "", "Html": "" }, "PrivateComments": { "Text": "", "Html": "" }
+  },
+  {
+    "PointsNumerator": 27, "PointsDenominator": 30, "WeightedNumerator": 54, "WeightedDenominator": 60,
+    "GradeObjectIdentifier": "600", "GradeObjectName": "Exams", "GradeObjectType": 9, "GradeObjectTypeName": "Category",
+    "DisplayedGrade": "90 %", "Comments": { "Text": "", "Html": "" }
+  }
+]

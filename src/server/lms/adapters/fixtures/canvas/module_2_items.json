@@ -1,0 +1,8 @@
+[
+  { "id": 21, "module_id": 2, "position": 1, "title": "Homework 2", "type": "Assignment", "content_id": 7002,
+    "html_url": "{BASE}/courses/1001/modules/items/21", "url": "{BASE}/api/v1/courses/1001/assignments/7002" },
+  { "id": 22, "module_id": 2, "position": 2, "title": "Quiz 1", "type": "Quiz", "content_id": 3,
+    "html_url": "{BASE}/courses/1001/modules/items/22", "url": "{BASE}/api/v1/courses/1001/quizzes/3" },
+  { "id": 23, "module_id": 2, "position": 3, "title": "Bonus project", "type": "Assignment", "content_id": 7003,
+    "html_url": "{BASE}/courses/1001/modules/items/23", "url": "{BASE}/api/v1/courses/1001/assignments/7003" }
+]

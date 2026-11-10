@@ -1,0 +1,21 @@
+{
+ "results": [
+  {
+   "id": "_9_1",
+   "parentId": "_6_1",
+   "title": "Chapter 1",
+   "body": "",
+   "position": 0,
+   "hasChildren": false,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-file",
+    "file": {
+     "fileName": "chapter1.pdf"
+    }
+   }
+  }
+ ]
+}

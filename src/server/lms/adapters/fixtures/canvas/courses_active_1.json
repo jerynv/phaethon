@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1001,
+    "name": "Data Structures",
+    "account_id": 1,
+    "uuid": "Xm3s9cU1kq2Jt0aBzW6eYpLr4HvN8dQf",
+    "start_at": null,
+    "end_at": null,
+    "course_code": "C343",
+    "workflow_state": "available",
+    "default_view": "modules",
+    "enrollment_term_id": 5,
+    "restrict_enrollments_to_course_dates": false,
+    "time_zone": "America/Indiana/Indianapolis",
+    "enrollments": [{ "type": "student", "role": "StudentEnrollment", "role_id": 3, "user_id": 42, "enrollment_state": "active" }],
+    "term": { "id": 5, "name": "Fall 2026", "start_at": "2026-08-24T04:00:00Z", "end_at": "2099-12-20T05:00:00Z", "workflow_state": "active" }
+  },
+  {
+    "id": 1002,
+    "name": "Calculus II",
+    "account_id": 1,
+    "start_at": "2026-08-24T04:00:00Z",
+    "end_at": null,
+    "course_code": "M212",
+    "workflow_state": "available",
+    "default_view": "wiki",
+    "enrollment_term_id": 5,
+    "restrict_enrollments_to_course_dates": false,
+    "enrollments": [{ "type": "student", "role": "StudentEnrollment", "enrollment_state": "active" }],
+    "term": { "id": 5, "name": "Fall 2026", "start_at": "2026-08-24T04:00:00Z", "end_at": "2099-12-20T05:00:00Z", "workflow_state": "active" }
+  }
+]

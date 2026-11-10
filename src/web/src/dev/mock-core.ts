@@ -209,3 +209,12 @@ export function installMockCore(): void {
   (window as unknown as { WebSocket: unknown }).WebSocket = FakeSocket;
   console.info(`[mock core] ${Object.keys(handlers).length} commands from ./mocks`);
 }
+
+/** The mock's URL options (`#mock&scenario=…&thread=…`), for mock modules that offer variants. */
+export function mockParams(): URLSearchParams {
+  return new URLSearchParams(location.hash.slice(1).replace(/^mock&?/, ""));
+}
+
+export function mockScenario(): string {
+  return mockParams().get("scenario") ?? "";
+}

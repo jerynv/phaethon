@@ -80,7 +80,8 @@ export class ApiModel implements Model {
 
   async complete(system: string, user: string): Promise<string> {
     try {
-      const req: Parameters<typeof completeText>[0] = { space: this.space, system, messages: [{ role: "user", content: user }] };
+      // Mapping, writing items with their derivations and judging them are all reasoning work.
+      const req: Parameters<typeof completeText>[0] = { space: this.space, system, messages: [{ role: "user", content: user }], effort: "high" };
       if (this.model) req.model = this.model;
       if (this.signal) req.signal = this.signal;
       return (await completeText(req)).text;

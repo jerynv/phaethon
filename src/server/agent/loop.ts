@@ -196,6 +196,12 @@ export async function runOwnTurn(t: OwnTurn): Promise<void> {
   }
   try {
     save(space, msgs);
+    if (t.mode.kind === "answer") {
+      // The question's record now says how it went; the open reply shows that at once.
+      const callId = t.mode.call.id;
+      const marked = records(msgs).find((r) => r.kind === "check" && r.id === callId);
+      if (marked) emit({ kind: "record", record: marked as UiRecord });
+    }
   } catch (e) {
     return storage(`The conversation could not be saved, so nothing was sent: ${messageOf(e)}`);
   }

@@ -4,3 +4,7 @@
  * later modules' startup tasks read the vault).
  */
 import "./system/commands.ts";
+import "./latex/commands.ts";
+import "./voice/commands.ts";
+import "./diagnostics/commands.ts";
+import "./updater/commands.ts";

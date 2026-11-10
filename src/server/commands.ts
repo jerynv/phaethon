@@ -4,3 +4,4 @@
  * later modules' startup tasks read the vault).
  */
 import "./system/commands.ts";
+import "./study/commands.ts";

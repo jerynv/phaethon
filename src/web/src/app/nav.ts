@@ -15,6 +15,9 @@ export type View =
 
 export type SettingsSection = "appearance" | "assistant" | "agents" | "spaces" | "courses" | "about";
 
+/** What a space is doing, for the sidebar: replying, or waiting on the person (approval, question). */
+export type Activity = "answering" | "needsYou";
+
 type NavState = {
   spaceId: string;
   view: View;
@@ -25,6 +28,14 @@ type NavState = {
   closeSettings(): void;
   openFile(path: string, spaceId?: string): void;
   closeFile(): void;
+  /** Bumped when the current conversation changed outside the chat (opened, new, deleted): the chat reloads. */
+  threadVersion: number;
+  bumpThread(): void;
+  /** Bumped when the conversation list may have changed (a turn ended, a title changed): the sidebar reloads. */
+  threadListVersion: number;
+  bumpThreadList(): void;
+  activity: Record<string, Activity | undefined>;
+  setActivity(spaceId: string, activity: Activity | undefined): void;
 };
 
 export const useNav = create<NavState>((set, get) => ({
@@ -37,4 +48,10 @@ export const useNav = create<NavState>((set, get) => ({
   closeSettings: () => set({ settings: null }),
   openFile: (path, spaceId) => set({ file: { path, spaceId: spaceId ?? get().spaceId } }),
   closeFile: () => set({ file: null }),
+  threadVersion: 0,
+  bumpThread: () => set((s) => ({ threadVersion: s.threadVersion + 1 })),
+  threadListVersion: 0,
+  bumpThreadList: () => set((s) => ({ threadListVersion: s.threadListVersion + 1 })),
+  activity: {},
+  setActivity: (spaceId, activity) => set((s) => ({ activity: { ...s.activity, [spaceId]: activity } })),
 }));

@@ -79,13 +79,32 @@ function hardenContents(window: BrowserWindow, allowedOrigin: string): void {
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (new URL(url).origin !== allowedOrigin) {
+    let origin: string | null = null;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      // Not a URL: never navigate to it.
+    }
+    if (origin !== allowedOrigin) {
       event.preventDefault();
-      if (isSafeExternal(url)) void shell.openExternal(url);
+      if (origin && isSafeExternal(url)) void shell.openExternal(url);
     }
   });
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
 }
+
+/**
+ * Web permissions are denied unless listed: the app's own pages only need to
+ * copy to the clipboard, and course-site sign-in pages need nothing (no
+ * camera, microphone, location, notifications or devices).
+ */
+function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>): void {
+  target.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
+  target.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+  target.setDevicePermissionHandler(() => false);
+}
+const APP_PERMISSIONS = new Set(["clipboard-sanitized-write"]);
+const NO_PERMISSIONS = new Set<string>();
 
 function createMainWindow(): BrowserWindow {
   const min = { width: 380, height: 480 };
@@ -197,6 +216,7 @@ async function handle(op: HostOp): Promise<unknown> {
         parent: mainWindow,
         webPreferences: { partition: op.partition, contextIsolation: true, nodeIntegration: false, sandbox: true },
       });
+      lockPermissions(window.webContents.session, NO_PERMISSIONS);
       const id = window.id;
       signInWindows.set(id, window);
       // Web pages and the in-page documents SSO frames are built from; never files, app links or the app.
@@ -284,6 +304,7 @@ app.on("web-contents-created", (_e, contents) => {
 });
 
 app.whenReady().then(async () => {
+  lockPermissions(session.defaultSession, APP_PERMISSIONS);
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),
     appVersion: app.getVersion(),

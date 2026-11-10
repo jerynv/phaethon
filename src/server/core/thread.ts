@@ -157,8 +157,10 @@ export type PendingQuestion =
 
 /**
  * The tool_use block of the question the conversation is waiting on, if any:
- * the last assistant message asked it, and everything after that message is
- * tool results for its other calls (never this one, never new user input).
+ * a question call in the last assistant message that no later tool result
+ * answers, with nothing after that message but tool results (no new user
+ * input). When a reply asked more than one, the loop refused the extra ones
+ * with an error result, so the one left without a result is the open one.
  */
 export function openQuestionCall(messages: Message[]): { index: number; block: Block } | undefined {
   let a = messages.length - 1;
@@ -166,11 +168,13 @@ export function openQuestionCall(messages: Message[]): { index: number; block: B
   if (a < 0) return undefined;
   const calls = messages[a].content.filter((b) => b.type === "tool_use" && QUESTION_TOOLS.has(String(b.name)));
   if (!calls.length) return undefined;
-  const block = calls[calls.length - 1];
+  const answered = new Set<unknown>();
   for (const m of messages.slice(a + 1)) {
-    if (!m.content.every((b) => b.type === "tool_result" && b.tool_use_id !== block.id)) return undefined;
+    if (!m.content.every((b) => b.type === "tool_result")) return undefined;
+    for (const b of m.content) answered.add(b.tool_use_id);
   }
-  return { index: a, block };
+  const open = calls.filter((b) => !answered.has(b.id));
+  return open.length ? { index: a, block: open[open.length - 1] } : undefined;
 }
 
 /** The question as the student sees it (no answer key). */

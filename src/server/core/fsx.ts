@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -60,14 +61,21 @@ export function prettyJson(value: unknown): string {
 }
 
 /**
- * Writes `<file>.tmp` (or the given temp name) and renames it over `file`,
- * creating the parent folder. `newline` appends "\n" (only where the Rust core did).
+ * Writes a fresh temporary file beside `file` and renames it over `file`,
+ * creating the parent folder. The temporary file gets a unique name (the
+ * given one, or `<file>.tmp`, plus a random suffix) and is created
+ * exclusively, so a link planted at that name can't redirect the write.
  */
 export function writeFileAtomic(file: string, data: string | Uint8Array, options: { tmp?: string; mode?: number } = {}): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = options.tmp ?? `${file}.tmp`;
+  const tmp = `${options.tmp ?? `${file}.tmp`}.${process.pid}.${randomBytes(6).toString("hex")}`;
   try {
-    fs.writeFileSync(tmp, data, options.mode !== undefined ? { mode: options.mode } : undefined);
+    const fd = fs.openSync(tmp, "wx", options.mode ?? 0o666);
+    try {
+      fs.writeFileSync(fd, data);
+    } finally {
+      fs.closeSync(fd);
+    }
     fs.renameSync(tmp, file);
   } catch (e) {
     try {

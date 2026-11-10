@@ -27,7 +27,9 @@ import { Scripted } from "./testing.ts";
 
 const asked: unknown[] = [];
 let completeReply: { text: string } | Error = { text: "{\"ok\":1}" };
+let seesPictures = false;
 vi.mock("../providers/complete.ts", () => ({
+  completeSeesPictures: () => seesPictures,
   completeText: async (req: unknown) => {
     asked.push(req);
     if (completeReply instanceof Error) throw completeReply;
@@ -72,10 +74,15 @@ describe("model", () => {
     expect(blocks[0]).toEqual({ type: "text", text: "Picture: courses/C/files/n.pdf, page 2" });
     expect(blocks[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBO" } });
     expect(blocks[2]).toEqual({ type: "text", text: "read it" });
-    // completeText takes no pictures yet: the API model is asked without them.
+    // A model that can't see pictures is asked without them; one that can gets them before the question.
     expect(m.showsPictures()).toBe(false);
     await m.completeSeeing("sys", "read it", [pic]);
     expect(asked.at(-1)).toMatchObject({ messages: [{ role: "user", content: "read it" }] });
+    seesPictures = true;
+    expect(m.showsPictures()).toBe(true);
+    await m.completeSeeing("sys", "read it", [pic]);
+    expect(asked.at(-1)).toMatchObject({ messages: [{ role: "user", content: blocks }] });
+    seesPictures = false;
     completeReply = new Error("Phaethon couldn’t reach Anthropic.");
     await expect(m.complete("s", "u")).rejects.toBe("Phaethon couldn’t reach Anthropic.");
     // No provider set up and no Claude Code to fall back on: the provider's reason.

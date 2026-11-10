@@ -19,7 +19,7 @@ import {
   type Message,
   type Record_,
 } from "../core/thread.ts";
-import { expandForProvider } from "../attachments/attachments.ts";
+import { expandForProvider, preparePdfTexts } from "../attachments/attachments.ts";
 import { addAlways, checkRequest, covers } from "../grants/grants.ts";
 import { readSettings } from "../settings/settings.ts";
 import { cutAt } from "../threads/store.ts";
@@ -279,6 +279,8 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
 
     let turn: ModelTurn;
     try {
+      // Models other than Anthropic's get an attached PDF as its text.
+      if (provider.id !== "anthropic") await preparePdfTexts(space, msgs, signal);
       turn = await provider.turn({ system, messages: wireFor(space, msgs, provider), tools, effort }, onDelta, signal);
     } catch (e) {
       const partialBlocks: Block[] = partials.filter((p) => p.trim()).map((p) => ({ type: "text", text: p.trimEnd() }));

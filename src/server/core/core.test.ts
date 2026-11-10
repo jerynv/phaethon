@@ -7,6 +7,7 @@ import { checkApiKey, keychainGet, keychainSet, providerAccount, resetMemoryKeyc
 import { ensureVault, isValidSpaceId, spaceDir, spacesRoot } from "./vault.ts";
 import { claim, release, whileIdle, BUSY } from "./runs.ts";
 import { forProvider, shortTitle, userMessage } from "./thread.ts";
+import { writeFileAtomic } from "./fsx.ts";
 
 const env = tempHome();
 afterAll(() => env.cleanup());
@@ -80,5 +81,20 @@ describe("thread", () => {
       { role: "user", content: [{ type: "text", text: "hi" }] },
     ]);
     expect(shortTitle("a".repeat(70))).toBe("a".repeat(59) + "…");
+  });
+});
+
+describe("atomic writes", () => {
+  it("never write through a link planted at a temporary name", () => {
+    const root = spaceDir("work");
+    const outside = path.join(env.home, "outside.txt");
+    fs.writeFileSync(outside, "keep me");
+    const target = path.join(root, "notes.md");
+    fs.symlinkSync(outside, `${target}.tmp`);
+    fs.symlinkSync(outside, path.join(root, ".notes.md.phaethon-tmp"));
+    writeFileAtomic(target, "new");
+    writeFileAtomic(target, "newer", { tmp: path.join(root, ".notes.md.phaethon-tmp") });
+    expect(fs.readFileSync(outside, "utf8")).toBe("keep me");
+    expect(fs.readFileSync(target, "utf8")).toBe("newer");
   });
 });

@@ -39,9 +39,10 @@ export type Record_ =
   | { kind: "imported"; from: string; session: string; title?: string }
   // New in the TypeScript core: lesson tools (see src/server/agent).
   | { kind: "lessonPlan"; id: string; goal: string; map: string; nodes: { id: string; label: string }[] }
-  | { kind: "check"; id: string; question: string; answered?: boolean; correct?: boolean; confidence?: number };
+  | { kind: "check"; id: string; question: string; answered?: boolean; correct?: boolean; confidence?: number }
+  | { kind: "progress"; text: string };
 
-export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stopped", "deniedEarlier", "imported", "lessonPlan", "check"]);
+export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stopped", "deniedEarlier", "imported", "lessonPlan", "check", "progress"]);
 /** Records kept on disk but never shown. */
 export const HIDDEN_RECORDS = new Set(["deniedEarlier", "imported"]);
 
@@ -139,4 +140,99 @@ export function shortTitle(text: string): string {
   const chars = [...collapsed];
   if (chars.length <= 60) return collapsed;
   return chars.slice(0, 59).join("").trimEnd() + "…";
+}
+
+// ---------------------------------------------------------------------------
+// Lesson questions (agent worker). A `check` or `explain_back` tool call ends
+// the turn; until the student answers, the call has no tool_result. These
+// helpers find that open question so `thread_load` can show it again after a
+// reload (`UiMessage.pending`). The answer key and explanation never leave
+// the core.
+
+export const QUESTION_TOOLS = new Set(["check", "explain_back"]);
+
+export type PendingQuestion =
+  | { kind: "check"; question: { id: string; role: "predict" | "check"; question: string; options: { value: string; label: string }[]; multiSelect: boolean } }
+  | { kind: "explainBack"; question: { id: string; question: string } };
+
+/**
+ * The tool_use block of the question the conversation is waiting on, if any:
+ * the last assistant message asked it, and everything after that message is
+ * tool results for its other calls (never this one, never new user input).
+ */
+export function openQuestionCall(messages: Message[]): { index: number; block: Block } | undefined {
+  let a = messages.length - 1;
+  while (a >= 0 && messages[a].role === "user") a--;
+  if (a < 0) return undefined;
+  const calls = messages[a].content.filter((b) => b.type === "tool_use" && QUESTION_TOOLS.has(String(b.name)));
+  if (!calls.length) return undefined;
+  const block = calls[calls.length - 1];
+  for (const m of messages.slice(a + 1)) {
+    if (!m.content.every((b) => b.type === "tool_result" && b.tool_use_id !== block.id)) return undefined;
+  }
+  return { index: a, block };
+}
+
+/** The question as the student sees it (no answer key). */
+export function questionView(block: Block): PendingQuestion | undefined {
+  const input = (block.input ?? {}) as Record<string, unknown>;
+  const id = String(block.id ?? "");
+  const question = typeof input.question === "string" ? input.question : "";
+  if (block.name === "explain_back") return { kind: "explainBack", question: { id, question } };
+  if (block.name !== "check") return undefined;
+  // The saved call is what the model sent; weaker models send arrays and booleans as JSON strings.
+  const loose = (v: unknown) => {
+    if (typeof v !== "string") return v;
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  };
+  const rawOptions = loose(input.options);
+  const options = Array.isArray(rawOptions)
+    ? rawOptions
+        .filter((o): o is Record<string, unknown> => !!o && typeof o === "object")
+        .map((o) => ({ value: String(o.value ?? o.label ?? ""), label: String(o.label ?? o.value ?? "") }))
+    : [];
+  return {
+    kind: "check",
+    question: { id, role: loose(input.role) === "predict" ? "predict" : "check", question, options, multiSelect: loose(input.multiSelect) === true },
+  };
+}
+
+export function pendingQuestion(messages: Message[]): PendingQuestion | undefined {
+  const open = openQuestionCall(messages);
+  return open ? questionView(open.block) : undefined;
+}
+
+/** Marks the last shown assistant message with the open question. `ui` is `toUi(messages)`. */
+export function attachPending<T extends { role: Role; pending?: unknown }>(ui: T[], messages: Message[]): T[] {
+  const pending = pendingQuestion(messages);
+  if (!pending) return ui;
+  for (let i = ui.length - 1; i >= 0; i--) {
+    if (ui[i].role === "assistant") {
+      ui[i].pending = pending;
+      break;
+    }
+    if (ui[i].role === "user") break;
+  }
+  return ui;
+}
+
+/**
+ * The texts a message shows, in order: its `text` blocks and what the model
+ * delivered with `send_to_user` (a tool call whose input is prose for the
+ * user). `toUi` uses this so a reload shows what was streamed.
+ */
+export function shownTexts(message: Message): string[] {
+  const out: string[] = [];
+  for (const b of message.content) {
+    if (b.type === "text" && typeof b.text === "string" && b.text.trim()) out.push(b.text);
+    else if (message.role === "assistant" && b.type === "tool_use" && b.name === "send_to_user") {
+      const text = (b.input as { message?: unknown } | undefined)?.message;
+      if (typeof text === "string" && text.trim()) out.push(text);
+    }
+  }
+  return out;
 }

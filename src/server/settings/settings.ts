@@ -211,3 +211,12 @@ export function isValidAppearance(value: unknown): boolean {
     return false;
   }
 }
+
+/** A raw settings map (providerModels, providerUrls) as string → string, ignoring anything else. */
+export function stringMap(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const [k, v] of Object.entries(value)) if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}

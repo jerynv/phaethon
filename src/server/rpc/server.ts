@@ -3,16 +3,25 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { BYTES_KEY, isChannelRef, type ClientFrame, type ServerFrame } from "#shared/wire.ts";
-import { Channel } from "./channel.ts";
-import { handlerFor, messageOf, Refusal } from "./registry.ts";
+import { attach } from "./connection.ts";
 import { log } from "../log.ts";
+
+/**
+ * The WebSocket transport, used when the core runs on its own: tests, and a
+ * page the core serves itself (later, the phone over Tailscale). The desktop
+ * app doesn't use it: its renderer talks to the core over a MessagePort and
+ * the core opens no port at all.
+ */
 
 export type ServeOptions = {
   host: string;
   port: number;
   token: string;
-  /** Origins a browser may connect from. A request with no Origin (not a browser) still needs the token. */
+  /**
+   * Origins a browser may connect from, besides the page's own. A request with
+   * no Origin (a non-browser client such as a test) still needs the token; a
+   * `null` Origin is refused.
+   */
   origins: string[];
   /** Serve a built UI from this folder (tests, and later the phone over Tailscale). */
   webRoot?: string;
@@ -62,12 +71,6 @@ function sameToken(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-function encodeResult(value: unknown): unknown {
-  if (value instanceof Uint8Array) return { [BYTES_KEY]: Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString("base64") };
-  if (value instanceof ArrayBuffer) return { [BYTES_KEY]: Buffer.from(value).toString("base64") };
-  return value === undefined ? null : value;
-}
-
 export function serve(options: ServeOptions): Promise<{ port: number; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -102,7 +105,7 @@ export function serve(options: ServeOptions): Promise<{ port: number; close: () 
     const url = new URL(req.url ?? "/", "http://localhost");
     const origin = req.headers.origin;
     const selfOrigin = `http://${req.headers.host}`;
-    const originOk = !origin || origin === selfOrigin || options.origins.includes(origin);
+    const originOk = origin === undefined || (origin !== "null" && (origin === selfOrigin || options.origins.includes(origin)));
     const token = url.searchParams.get("token") ?? "";
     if (url.pathname !== "/ws" || !originOk || !sameToken(token, options.token)) {
       log.warn("refused a connection", { path: url.pathname, origin, originOk });
@@ -133,63 +136,13 @@ export function serve(options: ServeOptions): Promise<{ port: number; close: () 
 }
 
 function connection(ws: WebSocket): void {
-  const abort = new AbortController();
-  const channels = new Map<number, Channel>();
-  const send = (frame: ServerFrame): boolean => {
-    if (ws.readyState !== ws.OPEN) return false;
-    ws.send(JSON.stringify(frame));
-    return true;
-  };
-
-  const revive = (value: unknown): unknown => {
-    if (isChannelRef(value)) {
-      const id = value.__phaethonChannel;
-      const channel = new Channel(id, (msg) => send({ t: "ch", ch: id, msg }));
-      channels.set(id, channel);
-      channel.onClose(() => channels.delete(id));
-      return channel;
-    }
-    if (Array.isArray(value)) return value.map(revive);
-    if (value && typeof value === "object") {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value)) out[k] = revive(v);
-      return out;
-    }
-    return value;
-  };
-
-  ws.on("message", async (data) => {
-    let frame: ClientFrame;
-    try {
-      frame = JSON.parse(String(data)) as ClientFrame;
-    } catch {
-      return;
-    }
-    if (frame.t === "ping") {
-      send({ t: "pong" });
-      return;
-    }
-    if (frame.t === "close") {
-      channels.get(frame.ch)?.close();
-      return;
-    }
-    if (frame.t !== "req") return;
-    const handler = handlerFor(frame.cmd);
-    if (!handler) {
-      send({ t: "err", id: frame.id, error: `Unknown command ${frame.cmd}.` });
-      return;
-    }
-    try {
-      const value = await handler(revive(frame.args ?? {}), { signal: abort.signal });
-      send({ t: "ok", id: frame.id, value: encodeResult(value) });
-    } catch (e) {
-      if (!(e instanceof Refusal) && typeof e !== "string") log.error(`command ${frame.cmd} failed`, e);
-      send({ t: "err", id: frame.id, error: messageOf(e) });
-    }
-  });
-
-  ws.on("close", () => {
-    abort.abort();
-    for (const channel of [...channels.values()]) channel.close();
+  attach({
+    send: (text) => {
+      if (ws.readyState !== ws.OPEN) return false;
+      ws.send(text);
+      return true;
+    },
+    onMessage: (listener) => ws.on("message", (data) => listener(String(data))),
+    onClose: (listener) => ws.on("close", listener),
   });
 }

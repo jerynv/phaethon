@@ -1,57 +1,84 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { createInterface } from "node:readline";
-import type { Duplex } from "node:stream";
+import { MessageChannelMain, utilityProcess, type MessagePortMain, type UtilityProcess } from "electron";
 import type { CoreToHost, HostEventBody, HostOp, HostToCore } from "../shared/host.ts";
 
 /**
- * Starts the Node core as a child of the desktop shell, using Electron's own
- * binary in Node mode. The token goes over fd 3 (never argv or env), and the
- * core answers with the port it bound. Only this one PID is ever signalled.
+ * Runs the Node core as an Electron utility process (no RunAsNode fuse, no
+ * TCP port). Main talks to it over the parent port; each renderer gets its
+ * own MessagePort to it. The core reports the process groups its agents lead,
+ * and main kills them if the core dies, so nothing outlives a crash.
  */
 export type CoreProcess = {
-  port: number;
-  token: string;
-  child: ChildProcess;
+  child: UtilityProcess;
   emit(event: HostEventBody): void;
+  /** A new port for a renderer, already connected to the core. */
+  connect(): MessagePortMain;
   stop(): Promise<void>;
 };
 
+function killGroups(pgids: Iterable<number>): void {
+  for (const pgid of pgids) {
+    try {
+      if (process.platform === "win32") process.kill(pgid, "SIGKILL");
+      else process.kill(-pgid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
 export function startCore(options: {
   entry: string;
-  origins: string[];
   appVersion: string;
   handle: (op: HostOp) => Promise<unknown>;
-  onExit: (code: number | null) => void;
+  onExit: (code: number) => void;
 }): Promise<CoreProcess> {
-  const token = randomBytes(32).toString("hex");
-  const child = spawn(process.execPath, [options.entry], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PHAETHON_HOST_FD: "3" },
-    stdio: ["ignore", "inherit", "inherit", "pipe"],
-    windowsHide: true,
+  const child = utilityProcess.fork(options.entry, [], {
+    serviceName: "Phaethon core",
+    stdio: "inherit",
+    env: { ...process.env },
   });
-  const pipe = child.stdio[3] as Duplex;
-  const write = (frame: HostToCore) => pipe.write(JSON.stringify(frame) + "\n");
+  const write = (frame: HostToCore, transfer: MessagePortMain[] = []) => child.postMessage(frame, transfer);
+  let groups: number[] = [];
+  let stopping = false;
 
   return new Promise((resolve, reject) => {
     let ready = false;
-    const lines = createInterface({ input: pipe });
-    lines.on("line", (text) => {
-      let frame: CoreToHost;
-      try {
-        frame = JSON.parse(text) as CoreToHost;
-      } catch {
-        return;
-      }
+    child.on("message", (frame: CoreToHost) => {
+      if (!frame || typeof frame !== "object") return;
       if (frame.t === "ready" && !ready) {
         ready = true;
         resolve({
-          port: frame.port,
-          token,
           child,
           emit: (event) => write({ t: "hevt", event }),
-          stop: () => stopChild(child),
+          connect: () => {
+            const { port1, port2 } = new MessageChannelMain();
+            write({ t: "connect" }, [port1]);
+            return port2;
+          },
+          stop: () =>
+            new Promise<void>((done) => {
+              stopping = true;
+              if (child.pid === undefined) return done();
+              const timer = setTimeout(() => {
+                child.kill();
+                killGroups(groups);
+              }, 5000);
+              child.once("exit", () => {
+                clearTimeout(timer);
+                done();
+              });
+              // SIGTERM lets the core stop its agents itself.
+              try {
+                process.kill(child.pid, "SIGTERM");
+              } catch {
+                child.kill();
+              }
+            }),
         });
+        return;
+      }
+      if (frame.t === "groups") {
+        groups = frame.pgids;
         return;
       }
       if (frame.t === "hreq") {
@@ -63,21 +90,12 @@ export function startCore(options: {
       }
     });
     child.once("exit", (code) => {
+      // Whatever the core's agents were doing, they don't outlive it.
+      killGroups(groups);
+      groups = [];
       if (!ready) reject(new Error(`The core exited before it was ready (code ${code}).`));
-      options.onExit(code);
+      else if (!stopping) options.onExit(code);
     });
-    write({ t: "hello", token, origins: options.origins, appVersion: options.appVersion, platform: process.platform });
-  });
-}
-
-function stopChild(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
-  return new Promise((resolve) => {
-    const killTimer = setTimeout(() => child.kill("SIGKILL"), 5000);
-    child.once("exit", () => {
-      clearTimeout(killTimer);
-      resolve();
-    });
-    child.kill("SIGTERM");
+    write({ t: "hello", appVersion: options.appVersion, platform: process.platform });
   });
 }

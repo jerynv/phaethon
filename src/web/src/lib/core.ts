@@ -1,20 +1,26 @@
-import { BYTES_KEY, CHANNEL_KEY, isBytesRef, type ClientFrame, type CoreConnection, type ServerFrame } from "#shared/wire.ts";
+import { BYTES_KEY, CHANNEL_KEY, isBytesRef, type ClientFrame, type ServerFrame } from "#shared/wire.ts";
 
 /**
  * The renderer's connection to the Node core. `invoke` and `Channel` keep the
  * shape of Tauri's API (`invoke(name, args)`, `new Channel<T>()` with
  * `onmessage`), so every command in the porting spec is called the same way.
  *
- * The desktop preload provides the address and token. A page the core serves
- * itself (tests, later the phone) reads them from its URL fragment:
- * `#core=ws://127.0.0.1:1234/ws&token=…`, or connects back to its own origin.
+ * In the desktop app the connection is a MessagePort the shell hands over
+ * (no network port, no token). A page the core serves itself (tests, later
+ * the phone) uses a WebSocket and reads its token from the URL fragment:
+ * `#token=…` (optionally `&core=ws://host:port/ws`).
  */
 
-type DesktopBridge = { connection(): Promise<CoreConnection>; platform: string };
+type DesktopBridge = { connect(): void; platform: string };
 declare global {
   interface Window {
     phaethonDesktop?: DesktopBridge;
   }
+}
+
+/** What carries frames to the core. */
+interface Transport {
+  send(text: string): void;
 }
 
 export class Channel<T = unknown> {
@@ -35,18 +41,20 @@ export class Channel<T = unknown> {
   }
 }
 
+export type CoreStatus = "connecting" | "open" | "lost";
+
 let nextChannel = 1;
 let nextRequest = 1;
 const channels = new Map<number, Channel<unknown>>();
 const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
-let socket: WebSocket | undefined;
-let opening: Promise<WebSocket> | undefined;
 const queue: string[] = [];
 const statusListeners = new Set<(status: CoreStatus) => void>();
-export type CoreStatus = "connecting" | "open" | "lost";
+let transport: Transport | undefined;
+let opening: Promise<Transport> | undefined;
 let status: CoreStatus = "connecting";
 
 function setStatus(next: CoreStatus) {
+  if (status === next) return;
   status = next;
   for (const listener of statusListeners) listener(next);
 }
@@ -64,15 +72,6 @@ export function isDesktop(): boolean {
   return Boolean(window.phaethonDesktop);
 }
 
-async function connection(): Promise<CoreConnection> {
-  if (window.phaethonDesktop) return window.phaethonDesktop.connection();
-  const params = new URLSearchParams(location.hash.slice(1));
-  const token = params.get("token") ?? sessionStorage.getItem("phaethon.token") ?? "";
-  if (params.get("token")) sessionStorage.setItem("phaethon.token", token);
-  const url = params.get("core") ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
-  return { url, token };
-}
-
 function decode(value: unknown): unknown {
   if (isBytesRef(value)) {
     const binary = atob(value[BYTES_KEY]);
@@ -81,48 +80,6 @@ function decode(value: unknown): unknown {
     return bytes.buffer;
   }
   return value;
-}
-
-function open(): Promise<WebSocket> {
-  if (socket && socket.readyState === WebSocket.OPEN) return Promise.resolve(socket);
-  opening ??= (async () => {
-    const { url, token } = await connection();
-    const ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`);
-    await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error("Phaethon's core isn't reachable."));
-    });
-    ws.onmessage = (event) => receive(JSON.parse(String(event.data)) as ServerFrame);
-    ws.onclose = () => {
-      socket = undefined;
-      opening = undefined;
-      for (const waiting of pending.values()) waiting.reject("Phaethon's core stopped responding. Try again.");
-      pending.clear();
-      setStatus("lost");
-      // Streams can't resume across a reconnect; their owners see the lost status.
-      channels.clear();
-      setTimeout(() => void open().catch(() => {}), 800);
-    };
-    socket = ws;
-    setStatus("open");
-    for (const frame of queue.splice(0)) ws.send(frame);
-    return ws;
-  })().catch((e) => {
-    opening = undefined;
-    setStatus("lost");
-    setTimeout(() => void open().catch(() => {}), 1500);
-    throw e;
-  });
-  return opening;
-}
-
-function sendFrame(frame: ClientFrame): void {
-  const text = JSON.stringify(frame);
-  if (socket && socket.readyState === WebSocket.OPEN) socket.send(text);
-  else {
-    queue.push(text);
-    void open().catch(() => {});
-  }
 }
 
 function receive(frame: ServerFrame): void {
@@ -136,6 +93,78 @@ function receive(frame: ServerFrame): void {
     pending.delete(frame.id);
     if (frame.t === "ok") waiting.resolve(decode(frame.value));
     else waiting.reject(frame.error);
+  }
+}
+
+function lost(): void {
+  transport = undefined;
+  opening = undefined;
+  for (const waiting of pending.values()) waiting.reject("Phaethon's core stopped responding. Try again.");
+  pending.clear();
+  // Streams can't resume across a reconnect; their owners see the lost status.
+  channels.clear();
+  setStatus("lost");
+  setTimeout(() => void open().catch(() => {}), 800);
+}
+
+function desktopTransport(bridge: DesktopBridge): Promise<Transport> {
+  return new Promise((resolve) => {
+    const onPort = (event: MessageEvent) => {
+      if (event.source !== window || event.origin !== location.origin) return;
+      if ((event.data as { phaethon?: string } | null)?.phaethon !== "core-port") return;
+      const port = event.ports[0];
+      if (!port) return;
+      window.removeEventListener("message", onPort);
+      port.onmessage = (e) => receive(JSON.parse(String(e.data)) as ServerFrame);
+      port.start();
+      resolve({ send: (text) => port.postMessage(text) });
+    };
+    window.addEventListener("message", onPort);
+    bridge.connect();
+  });
+}
+
+async function socketTransport(): Promise<Transport> {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const fromUrl = params.get("token");
+  if (fromUrl) sessionStorage.setItem("phaethon.token", fromUrl);
+  const token = fromUrl ?? sessionStorage.getItem("phaethon.token") ?? "";
+  const url = params.get("core") ?? `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+  const ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`);
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error("Phaethon's core isn't reachable."));
+  });
+  ws.onmessage = (event) => receive(JSON.parse(String(event.data)) as ServerFrame);
+  ws.onclose = lost;
+  return { send: (text) => ws.send(text) };
+}
+
+function open(): Promise<Transport> {
+  if (transport) return Promise.resolve(transport);
+  opening ??= (window.phaethonDesktop ? desktopTransport(window.phaethonDesktop) : socketTransport()).then(
+    (t) => {
+      transport = t;
+      setStatus("open");
+      for (const frame of queue.splice(0)) t.send(frame);
+      return t;
+    },
+    (e) => {
+      opening = undefined;
+      setStatus("lost");
+      setTimeout(() => void open().catch(() => {}), 1500);
+      throw e;
+    },
+  );
+  return opening;
+}
+
+function sendFrame(frame: ClientFrame): void {
+  const text = JSON.stringify(frame);
+  if (transport) transport.send(text);
+  else {
+    queue.push(text);
+    void open().catch(() => {});
   }
 }
 

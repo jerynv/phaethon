@@ -1,55 +1,53 @@
 import { randomBytes } from "node:crypto";
-import { connectHost } from "./host.ts";
+import { connectHost, parentPort } from "./host.ts";
 import { log } from "./log.ts";
 import { runStart, runStop } from "./lifecycle.ts";
 import { serve } from "./rpc/server.ts";
 import "./commands.ts";
 
 /**
- * The Node core. Under the desktop shell it is started with
- * `PHAETHON_HOST_FD=3`, receives its token over that pipe and reports its port
- * back. Standalone (tests, development in a browser) it takes
- * PHAETHON_TOKEN / PHAETHON_PORT / PHAETHON_ORIGINS / PHAETHON_WEB_ROOT and
- * prints one JSON line `{"t":"ready","port":…,"token":…}` on stdout.
+ * The Node core.
+ *
+ * Under the desktop shell it runs as an Electron utility process: the shell
+ * says hello over the parent port, and each renderer connection arrives as a
+ * MessagePort. No TCP port is opened.
+ *
+ * Standalone (tests, development in a browser, later the phone) it serves a
+ * WebSocket, configured with PHAETHON_TOKEN / PHAETHON_PORT / PHAETHON_BIND /
+ * PHAETHON_ORIGINS / PHAETHON_WEB_ROOT, and prints one JSON line
+ * `{"t":"ready","port":…,"token":…}` on stdout.
  */
 async function main(): Promise<void> {
-  const hostFd = process.env.PHAETHON_HOST_FD ? Number(process.env.PHAETHON_HOST_FD) : undefined;
-  let token: string;
-  let origins: string[];
-  let ready: (port: number) => void;
+  const parent = parentPort();
+  let stopServer: () => Promise<void> = async () => {};
 
-  if (hostFd !== undefined) {
-    const connected = await connectHost(hostFd);
-    token = connected.hello.token;
-    origins = connected.hello.origins;
-    process.env.PHAETHON_VERSION = connected.hello.appVersion;
-    ready = connected.ready;
+  if (parent) {
+    const { hello, ready } = await connectHost(parent);
+    process.env.PHAETHON_VERSION = hello.appVersion;
+    await runStart();
+    ready();
   } else {
-    token = process.env.PHAETHON_TOKEN || randomBytes(32).toString("hex");
-    origins = (process.env.PHAETHON_ORIGINS ?? "").split(",").filter(Boolean);
-    ready = (port) => process.stdout.write(JSON.stringify({ t: "ready", port, token }) + "\n");
+    const token = process.env.PHAETHON_TOKEN || randomBytes(32).toString("hex");
+    await runStart();
+    const server = await serve({
+      host: process.env.PHAETHON_BIND || "127.0.0.1",
+      port: Number(process.env.PHAETHON_PORT || 0),
+      token,
+      origins: (process.env.PHAETHON_ORIGINS ?? "").split(",").filter(Boolean),
+      webRoot: process.env.PHAETHON_WEB_ROOT || undefined,
+    });
+    stopServer = server.close;
+    process.stdout.write(JSON.stringify({ t: "ready", port: server.port, token }) + "\n");
+    log.info("core ready", { port: server.port });
   }
-
-  await runStart();
-
-  const server = await serve({
-    host: process.env.PHAETHON_BIND || "127.0.0.1",
-    port: Number(process.env.PHAETHON_PORT || 0),
-    token,
-    origins,
-    webRoot: process.env.PHAETHON_WEB_ROOT || undefined,
-  });
 
   const stop = async (signal: string) => {
     log.info(`stopping (${signal})`);
     await runStop();
-    await server.close();
+    await stopServer();
     process.exit(0);
   };
   for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.on(signal, () => void stop(signal));
-
-  ready(server.port);
-  log.info("core ready", { port: server.port });
 }
 
 main().catch((e) => {

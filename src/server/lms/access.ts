@@ -523,14 +523,33 @@ export function view(space?: string | null): AccessView {
 
 // ---- The interface other modules use ------------------------------------------------
 
-/** The courses `space` may see (rebuilt on every call). */
-export function visibleCourses(space: string): Visible {
-  return visible(space);
+export type VisibleCourse = { folder: string; name: string; code?: string };
+
+/** The courses `space` may see (rebuilt on every call): folder under `courses/`, name and code. */
+export function visibleCourses(space: string): VisibleCourse[] {
+  return visible(space).courses.map((c) => ({ folder: c.state.folder, name: c.state.name, ...(c.state.code ? { code: c.state.code } : {}) }));
 }
 
-/** Resolve a `courses/...` path for the agent's file tools and file_open, with every check above. */
-export function resolveCoursePath(space: string, rel: string, mustExist: boolean): Place {
+/** Where a `courses/...` path lands, with every check above (the course part included). */
+export function placeCoursePath(space: string, rel: string, mustExist: boolean): Place {
   return visible(space).place(rel, mustExist);
+}
+
+/**
+ * The real path of a visible `courses/...` file or folder for the agent's file
+ * tools and file_open, or a Refusal. Plain `courses` is the vault's courses folder.
+ */
+export function resolveCoursePath(space: string, rel: string, mustExist: boolean): string {
+  const place = placeCoursePath(space, rel, mustExist);
+  return place.kind === "root" ? path.join(vaultRoot(), COURSES_DIR) : place.real;
+}
+
+/** A course file's text as `space` may see it (README.md drops parts the space can't see); other text as is. */
+export function filterCourseText(space: string, rel: string, text: string): string {
+  const parts = comps(rel);
+  if (parts.length < 3 || parts[0].toLowerCase() !== COURSES_DIR) return text;
+  const seen = visible(space).get(parts[1]);
+  return seen ? filterText(seen, parts.slice(2).join("/"), text) : text;
 }
 
 /** The prompt's course index for `space`, or null when it sees no course. */

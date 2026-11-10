@@ -32,6 +32,7 @@ asarUnpack:
   - "**/node_modules/@napi-rs/**"
   - "**/node_modules/tesseract.js/**"
   - "**/node_modules/tesseract.js-core/**"
+  - "**/node_modules/@tesseract.js-data/**"
 
 # Packaged builds only: the binary can't be turned into a plain Node, takes no
 # Node options or inspector flags from outside, and runs only the app in its

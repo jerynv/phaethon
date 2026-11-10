@@ -40,14 +40,41 @@ export type HostOp =
   | { op: "windowClose"; window: number }
   /** Drops a sign-in partition's cookies and storage. */
   | { op: "partitionClear"; partition: string }
-  | { op: "focusApp" };
+  | { op: "focusApp" }
+  /** Asks the release feed for a newer version; nothing is downloaded. */
+  | { op: "updateCheck" }
+  /** Downloads the update the last check found and verifies it; progress arrives as `updateProgress` events. */
+  | { op: "updateDownload" }
+  /** Quits and installs the downloaded update, then starts the new version. */
+  | { op: "updateInstall" }
+  /** macOS: starts the system's dictation in the focused field. */
+  | { op: "dictationStart" }
+  /** Diagnostics: a PNG of the main window to $PHAETHON_SNAPSHOT_PATH, only when main's own environment names one. */
+  | { op: "snapshot" };
+
+/**
+ * Where updates come from: the project's GitHub releases. electron-builder.yml
+ * `publish` names the same repository (a test checks they agree).
+ */
+export const UPDATE_FEED = { provider: "github", owner: "jerynv", repo: "phaethon" } as const;
+
+/** An update error as electron-updater raised it; the core puts it in words. */
+export type UpdateError = { message: string; code?: string; statusCode?: number };
+export type UpdateFound = { version: string; notes: string | null; date: string | null };
+export type UpdateCheckResult =
+  | { kind: "available"; update: UpdateFound }
+  | { kind: "none" }
+  | { kind: "failed"; error: UpdateError };
+export type UpdateDownloadResult = { kind: "ok" } | { kind: "failed"; error: UpdateError };
 
 export type HostCookie = { name: string; value: string; domain: string; path: string; secure: boolean; httpOnly: boolean; expires?: number };
 
 export type HostEventBody =
   | { kind: "windowNavigated"; window: number; url: string }
   | { kind: "windowClosed"; window: number }
-  | { kind: "quitting" };
+  | { kind: "quitting" }
+  /** Download progress of `updateDownload`, in bytes (`total` when the server said). */
+  | { kind: "updateProgress"; received: number; total: number | null };
 
 export type HostToCore = HostHello | HostReply | HostEvent | HostConnect;
 export type CoreToHost = CoreReady | HostRequest | CoreGroups;

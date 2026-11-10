@@ -29,13 +29,15 @@ function killGroups(pgids: Iterable<number>): void {
 export function startCore(options: {
   entry: string;
   appVersion: string;
+  /** Extra environment for the core (whether this is a packaged release). */
+  env?: Record<string, string>;
   handle: (op: HostOp) => Promise<unknown>;
   onExit: (code: number) => void;
 }): Promise<CoreProcess> {
   const child = utilityProcess.fork(options.entry, [], {
     serviceName: "Phaethon core",
     stdio: "inherit",
-    env: { ...process.env },
+    env: { ...process.env, ...options.env },
   });
   const write = (frame: HostToCore, transfer: MessagePortMain[] = []) => child.postMessage(frame, transfer);
   let groups: number[] = [];

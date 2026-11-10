@@ -1,9 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, protocol, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, session, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { HostOp } from "../shared/host.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
+import { updateCheck, updateDownload, updateInstall } from "./updater.ts";
+import { keepWindowState, loadWindowState } from "./window-state.ts";
 
 /**
  * Phaethon's desktop shell. It owns windows and native dialogs, serves the UI
@@ -86,11 +88,14 @@ function hardenContents(window: BrowserWindow, allowedOrigin: string): void {
 }
 
 function createMainWindow(): BrowserWindow {
+  const min = { width: 380, height: 480 };
+  const saved = captureTo ? null : loadWindowState(min);
   const window = new BrowserWindow({
     width: 1240,
     height: 820,
-    minWidth: 380,
-    minHeight: 480,
+    ...saved?.bounds,
+    minWidth: min.width,
+    minHeight: min.height,
     title: "Phaethon",
     show: false,
     paintWhenInitiallyHidden: Boolean(captureTo),
@@ -108,8 +113,11 @@ function createMainWindow(): BrowserWindow {
   });
   const origin = devUrl ? new URL(devUrl).origin : APP_ORIGIN;
   hardenContents(window, origin);
+  if (!captureTo) keepWindowState(window);
   window.once("ready-to-show", () => {
-    if (!captureTo) window.show();
+    if (captureTo) return;
+    if (saved?.maximized) window.maximize();
+    window.show();
   });
   void window.loadURL(devUrl ?? `${APP_ORIGIN}/index.html`);
   return window;
@@ -124,6 +132,20 @@ async function capture(window: BrowserWindow): Promise<void> {
   const image = await window.webContents.capturePage();
   fs.writeFileSync(captureTo!, image.toPNG());
   app.quit();
+}
+
+/** Diagnostics: the main window as a PNG, only where main's own environment says (never a path from the page). */
+async function snapshot(): Promise<null> {
+  const to = process.env.PHAETHON_SNAPSHOT_PATH;
+  if (!to || !mainWindow) return null;
+  try {
+    const image = await mainWindow.webContents.capturePage();
+    fs.writeFileSync(to, image.toPNG());
+    console.error("[webview] native snapshot written: true");
+  } catch {
+    console.error("[webview] native snapshot written: false");
+  }
+  return null;
 }
 
 function parentWindow(): BrowserWindow | undefined {
@@ -205,6 +227,22 @@ async function handle(op: HostOp): Promise<unknown> {
       mainWindow?.show();
       mainWindow?.focus();
       return null;
+    case "updateCheck":
+      return updateCheck();
+    case "updateDownload":
+      return updateDownload((event) => core?.emit(event));
+    case "updateInstall":
+      return updateInstall();
+    case "dictationStart":
+      if (process.platform !== "darwin") throw new Error("Use your operating system's dictation shortcut in the message field.");
+      if (!mainWindow) throw new Error("Dictation did not start.");
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+      // The same action AppKit's Edit › Start Dictation sends to the focused field.
+      Menu.sendActionToFirstResponder("startDictation:");
+      return null;
+    case "snapshot":
+      return snapshot();
   }
 }
 
@@ -228,6 +266,7 @@ app.whenReady().then(async () => {
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),
     appVersion: app.getVersion(),
+    env: { PHAETHON_PACKAGED: app.isPackaged ? "1" : "" },
     handle,
     onExit: (code) => {
       if (!quitting) {

@@ -1,0 +1,78 @@
+{
+ "results": [
+  {
+   "id": "_301_1",
+   "name": "Homework 1",
+   "contentId": "_4_1",
+   "score": {
+    "possible": 10.0
+   },
+   "availability": {
+    "available": "Yes"
+   },
+   "grading": {
+    "type": "Attempts",
+    "due": "2026-10-20T03:59:00.000Z",
+    "attemptsAllowed": 1,
+    "scoringModel": "Last"
+   }
+  },
+  {
+   "id": "_302_1",
+   "name": "Quiz 1",
+   "contentId": "_8_1",
+   "score": {
+    "possible": 20.0
+   },
+   "availability": {
+    "available": "Yes"
+   },
+   "grading": {
+    "type": "Attempts",
+    "due": "2026-10-15T03:59:00.000Z"
+   }
+  },
+  {
+   "id": "_303_1",
+   "name": "Midterm exam",
+   "description": "<p>In class, bring a calculator.</p>",
+   "score": {
+    "possible": 100.0
+   },
+   "availability": {
+    "available": "Yes"
+   },
+   "grading": {
+    "type": "Manual",
+    "due": "2026-10-28T16:00:00.000Z"
+   }
+  },
+  {
+   "id": "_304_1",
+   "name": "Weighted Total",
+   "score": {
+    "possible": 0.0
+   },
+   "availability": {
+    "available": "Yes"
+   },
+   "grading": {
+    "type": "Calculated",
+    "due": "2026-12-20T05:00:00.000Z"
+   }
+  },
+  {
+   "id": "_305_1",
+   "name": "Participation",
+   "score": {
+    "possible": 5.0
+   },
+   "availability": {
+    "available": "Yes"
+   },
+   "grading": {
+    "type": "Manual"
+   }
+  }
+ ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "id": 88001,
+    "course_id": 1001,
+    "user_id": 42,
+    "type": "StudentEnrollment",
+    "enrollment_state": "active",
+    "role": "StudentEnrollment",
+    "grades": {
+      "html_url": "{BASE}/courses/1001/grades/42",
+      "current_grade": "B+",
+      "current_score": 88.42,
+      "final_grade": "C",
+      "final_score": 74.1,
+      "current_points": 168.0,
+      "unposted_current_grade": null,
+      "unposted_current_score": null,
+      "unposted_final_grade": null,
+      "unposted_final_score": null
+    }
+  }
+]

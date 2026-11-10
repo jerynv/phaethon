@@ -105,7 +105,8 @@ export async function agentSend(args: SendArgs): Promise<void> {
       const cli = CLIS[settings.backend];
       const meta = readSpaceMeta(space);
       const model = meta.cliModels[cli] ?? null;
-      const reasoning = cliReasoningFor(meta.cliReasoning, cli, model);
+      // The CLI turn reads the space's reasoning level for this model itself.
+      const reasoning = undefined;
       // runCliTurn sends its own single `end`.
       return await runCliTurn(
         {
@@ -175,12 +176,3 @@ commands({
   lesson_answer: (args: AnswerArgs) => lessonAnswer(args),
 });
 
-/** `cliReasoning[cli][model]`, else `cliReasoning[cli]["$default"]` (space.json); anything malformed reads as none. */
-function cliReasoningFor(saved: unknown, cli: string, model: string | null): string | null {
-  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return null;
-  const table = (saved as Record<string, unknown>)[cli];
-  if (!table || typeof table !== "object" || Array.isArray(table)) return null;
-  const t = table as Record<string, unknown>;
-  const value = (model ? t[model] : undefined) ?? t["$default"];
-  return typeof value === "string" ? value : null;
-}

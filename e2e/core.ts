@@ -16,6 +16,8 @@ export type Core = {
   open(page: Page, options?: { onboarding?: boolean }): Promise<void>;
   /** Requests the fake provider received (system prompt, effort, tools). */
   requests(): Array<Record<string, unknown>>;
+  /** What the core wrote to stderr. */
+  log(): string;
   stop(): Promise<void>;
 };
 
@@ -37,6 +39,11 @@ export async function startCore(options: { script?: object; setup?: (home: strin
       PHAETHON_KEYRING: "memory",
       PHAETHON_WEB_ROOT: path.join(root, "dist/web"),
       ...(scriptFile ? { PHAETHON_FAKE_PROVIDER: scriptFile } : {}),
+      // Never touch the CLIs installed on this machine: point each at a path that doesn't exist.
+      PHAETHON_TEST: "1",
+      PHAETHON_CLAUDE_BIN: path.join(home, "no-claude"),
+      PHAETHON_CODEX_BIN: path.join(home, "no-codex"),
+      PHAETHON_GEMINI_BIN: path.join(home, "no-gemini"),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -68,7 +75,9 @@ export async function startCore(options: { script?: object; setup?: (home: strin
       if (!scriptFile || !fs.existsSync(`${scriptFile}.requests.jsonl`)) return [];
       return fs.readFileSync(`${scriptFile}.requests.jsonl`, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
     },
+    log: () => log,
     async stop() {
+      if (process.env.E2E_CORE_LOG) process.stderr.write(log);
       if (child.exitCode === null) {
         child.kill("SIGTERM");
         await new Promise((r) => child.once("exit", r));

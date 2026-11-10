@@ -136,6 +136,10 @@ export function serve(options: ServeOptions): Promise<{ port: number; close: () 
 }
 
 function connection(ws: WebSocket): void {
+  ws.on("error", (e) => log.warn("connection error", { message: e.message }));
+  ws.on("close", (code) => {
+    log.debug("connection closed", { code });
+  });
   attach({
     send: (text) => {
       if (ws.readyState !== ws.OPEN) return false;

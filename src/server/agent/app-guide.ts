@@ -11,13 +11,13 @@ export const ACTIONS: [id: string, does: string][] = [
   ["add-folder", "the user picks a folder and it is copied, with everything in it, into this space's files/ folder"],
   ["attach-files", "opens the file picker to attach files to their next message"],
   ["show-folder", "opens this space's folder in Finder (File Explorer, Files)"],
-  ["import-courses", "imports courses from a course site"],
+  ["import-courses", "opens Courses, where the user connects a course site and imports courses"],
   ["new-space", "makes a new space"],
   ["settings-assistant", "opens Settings › Assistant"],
-  ["settings-appearance", "opens Settings › Appearance"],
-  ["settings-accessibility", "opens Settings › Accessibility"],
+  ["settings-appearance", "opens Settings › Appearance & accessibility"],
+  ["settings-accessibility", "opens Settings › Appearance & accessibility"],
   ["settings-spaces", "opens Settings › Spaces"],
-  ["settings-courses", "opens Settings › Course sites"],
+  ["settings-courses", "opens Settings › Courses"],
   ["settings-about", "opens Settings › About"],
 ];
 
@@ -31,22 +31,24 @@ For example, someone who wants to bring in a folder of school files gets add-fol
 
 export const PLACES = `# Where things are in Phaethon
 
-Use this to tell the user exactly where a control is, by its name as it appears. Never say you can't see the app, and never guess at buttons not listed here.
+Use this to tell the user exactly where a control is, by its name as it appears. Never say you can't see the app, and never guess at buttons not listed here. "⌘" is Ctrl on Windows and Linux.
 
-- Spaces: the sidebar on the left lists them; ⌘1…9 goes to one. Each space has a menu (its … button, a right-click, or Shift+F10): Show in Finder, Add files…, Add a folder…, Export… (the whole space as a .zip), Import courses…, Course access…, Edit name and colour…. New space… is in the command palette (⌘K).
-- Files in a space: the space is a folder on the computer. Add files… and Add a folder… (in the + button beside the message box, and in the space's menu) copy files or a whole folder into the space's files/ folder, where you can read them; the originals stay where they were. Hidden files and links are left out; up to 5000 files and 1 GB at once. Anything put in the space's folder by hand (Show in Finder) can be read too.
-- Attaching to a message: + › Attach files…, or drag files onto the conversation. Up to 10 files per message: images, PDFs, Word documents and text. Attached files are saved in the space's attachments/ folder. A folder can't be attached: add it to the space instead.
-- Beside the message box: Dictate message, the model for this space (its menu includes Permissions), and the tutor mode (Normal, Quiz me, Explain it back, Socratic, Exam cram).
-- Views in each space: Chat; spaces with Education enabled also have Study (flashcards, quizzes, review), Grades and Plan in the sidebar. Enable Education in the space editor.
-- Command palette: ⌘K finds any space or command. ⌘N new conversation, ⌘⇧F search conversations, ⌘/ every keyboard shortcut.
-- The sidebar footer has Settings (cog, or ⌘,), Usage and update actions. Usage shows account limits separately from provider management. Settings has these sections:
-  - Assistant: which assistant answers (Phaethon's own assistant, with a provider such as Anthropic, OpenAI, OpenRouter, Groq, or Ollama and LM Studio on this computer; or Claude Code, Codex or Gemini CLI on this computer, signed in there), the provider's API key and the default model.
-  - Appearance: theme (light, dark or the computer's), colour, and layout (density, roundness, sidebar width).
-  - Accessibility: increase contrast, reading font (Atkinson Hyperlegible, OpenDyslexic, Lexend, the system font), text size with line, letter and word spacing, larger click targets, reduce motion, wide reading.
-  - Spaces: each space's name, description and colour; which other spaces it may read (read-only, and removable) and which courses it sees; and Full access (Give full access…), which lets Claude Code, Codex or Gemini CLI in that space read and change anything on this Mac and use the internet without asking, on this Mac only, through the permission selector. The model menu includes Permissions; full access has a red indicator.
-  - Course sites: connect Canvas, Brightspace, Moodle or Blackboard; who can see each course.
-  - About: the version, the licence, where the Phaethon folder is, and updates.
-- Another space's files can't be read by default; the user can give read-only access when asked, and remove it in Settings › Spaces.`;
+- The sidebar on the left, from the top: the space switcher (the current space's name), New chat, Search, the space's views, its conversations, and Settings at the bottom. ⌘B (or ⌘\\) hides and shows it; on a narrow window it opens as a panel.
+- Space switcher menu: every space (⌘1…9 jumps to one), then for the current space Show in Finder, Add files…, Add a folder… and Export… (the whole space as a .zip), then New space… and Edit spaces….
+- Files in a space: the space is a folder on the computer. Add files… and Add a folder… copy files or a whole folder into the space's files/ folder, where you can read them; the originals stay where they were. Hidden files and links are left out; up to 5000 files and 1 GB at once. Anything put in the space's folder by hand (Show in Finder) can be read too.
+- Attaching to a message: the paperclip in the message box, dragging files onto the conversation, or pasting. Up to 10 files per message: images, PDFs, Word documents and text. Attached files are saved in the space's attachments/ folder. A folder can't be attached: add it to the space instead.
+- In the message box: the paperclip, the model this space uses, and in spaces with Education the tutor mode (Normal, Quiz me, Explain it back, Socratic, Exam cram). Enter sends, Shift+Enter makes a new line, Esc stops a reply.
+- Views: Chat in every space; spaces with Education also have Study (flashcards, quizzes, review), Grades, Plan and Courses. ⌘⌥1…5 switches view. Education is turned on in Settings › Spaces.
+- Conversations: New chat (⌘N), Search (⌘K or ⌘⇧F) across this space or all of them; each conversation in the list can be deleted from its menu.
+- Courses view: connect Canvas, Brightspace, Moodle or Blackboard, import courses, choose which parts of each course each space can see, and browse what was imported.
+- Settings (⌘,) has these sections:
+  - Appearance & accessibility: theme (light, dark or the computer's), contrast, text size, reading font (Atkinson Hyperlegible, OpenDyslexic, Lexend, the system font), focus rings, larger click targets, reduce motion.
+  - Assistant: who answers (Phaethon's own agent with a provider such as Anthropic, OpenAI, OpenRouter, Groq, or Ollama and LM Studio on this computer; or Claude Code, Codex or Gemini CLI on this computer, signed in there), providers and their API keys, the default model and this space's model.
+  - Coding agents: Claude Code, Codex and Gemini CLI: installed or not, sign in and out, accounts, and for the space its model, reasoning level, workspace folder and Full access (which lets the coding agent in that space read and change anything on this computer and use the internet without asking); also which other spaces may read this one (read-only, removable).
+  - Spaces: each space's name, description, colour and Education.
+  - Courses: course sites and who can see each course.
+  - About: the version, where the Phaethon folder is, and updates.
+- Another space's files can't be read by default; the user can give read-only access when asked, and remove it in Settings › Coding agents.`;
 
 /** The own loop's section: the buttons plus a pointer to the app_guide tool. */
 export function appGuidePromptSection(): string {

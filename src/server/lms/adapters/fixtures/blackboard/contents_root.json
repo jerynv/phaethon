@@ -1,0 +1,49 @@
+{
+ "results": [
+  {
+   "id": "_1_1",
+   "title": "Week 1",
+   "body": "<p>Start here for the first week.</p>",
+   "created": "2026-08-01T00:00:00.000Z",
+   "position": 0,
+   "hasChildren": true,
+   "hasGradebookColumns": false,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-folder"
+   }
+  },
+  {
+   "id": "_2_1",
+   "title": "Syllabus",
+   "body": "<p>Required textbook: <a href=\"https://openstax.org/details/books/calculus-volume-2\">Calculus Volume 2</a>, ISBN 978-1-947172-14-2.</p>",
+   "position": 1,
+   "hasChildren": false,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-document"
+   }
+  },
+  {
+   "id": "_3_1",
+   "title": "OpenStax Calculus",
+   "body": "",
+   "position": 2,
+   "hasChildren": false,
+   "availability": {
+    "available": "Yes"
+   },
+   "contentHandler": {
+    "id": "resource/x-bb-externallink",
+    "url": "https://openstax.org/books/calculus-volume-2/pages/1-introduction"
+   }
+  }
+ ],
+ "paging": {
+  "nextPage": "/learn/api/public/v1/courses/_100_1/contents?limit=200&offset=3"
+ }
+}

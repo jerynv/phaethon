@@ -1,0 +1,6 @@
+{
+  "page_id": 301, "url": "reading-guide", "title": "Reading guide", "created_at": "2026-08-20T14:00:00Z",
+  "updated_at": "2026-08-22T09:30:00Z", "hide_from_students": false, "editing_roles": "teachers", "published": true,
+  "front_page": false, "html_url": "{BASE}/courses/1001/pages/reading-guide", "locked_for_user": false,
+  "body": "<p>Read chapter 1 of the textbook before Tuesday.</p>"
+}

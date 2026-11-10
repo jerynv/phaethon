@@ -1,0 +1,10 @@
+[
+  { "id": "home", "html_url": "/courses/1001", "full_url": "{BASE}/courses/1001", "position": 1, "visibility": "public", "label": "Home", "type": "internal" },
+  { "id": "announcements", "html_url": "/courses/1001/announcements", "position": 2, "visibility": "public", "label": "Announcements", "type": "internal" },
+  { "id": "assignments", "html_url": "/courses/1001/assignments", "position": 3, "visibility": "public", "label": "Assignments", "type": "internal" },
+  { "id": "modules", "html_url": "/courses/1001/modules", "position": 4, "visibility": "public", "label": "Modules", "type": "internal" },
+  { "id": "files", "html_url": "/courses/1001/files", "position": 5, "visibility": "public", "label": "Files", "type": "internal" },
+  { "id": "syllabus", "html_url": "/courses/1001/assignments/syllabus", "position": 6, "visibility": "public", "label": "Syllabus", "type": "internal" },
+  { "id": "pages", "html_url": "/courses/1001/wiki", "position": 7, "visibility": "admins", "hidden": true, "label": "Pages", "type": "internal" },
+  { "id": "context_external_tool_77", "html_url": "/courses/1001/external_tools/77", "position": 8, "visibility": "public", "label": "McGraw Hill Connect", "type": "external" }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "id": 9001, "assignment_id": 7001, "user_id": 42, "score": 9.0, "grade": "9", "entered_score": 9.0,
+    "submitted_at": "2026-09-10T02:00:00Z", "graded_at": "2026-09-12T15:00:00Z", "posted_at": "2026-09-12T15:00:00Z",
+    "workflow_state": "graded", "late": false, "missing": false, "excused": false, "seconds_late": 0,
+    "submission_comments": [
+      { "id": 1, "author_id": 7, "author_name": "Prof. Ada", "comment": "Nice proof.\n  Watch the base case.", "created_at": "2026-09-12T15:00:00Z" }
+    ],
+    "assignment": { "id": 7001, "name": "Homework 1", "points_possible": 10.0, "due_at": "2026-09-10T03:59:00Z", "assignment_group_id": 301, "published": true }
+  },
+  {
+    "id": 9002, "assignment_id": 7002, "user_id": 42, "score": 7.0, "grade": "7",
+    "submitted_at": "2026-09-18T05:30:00Z", "workflow_state": "graded", "late": true, "missing": false, "excused": false, "seconds_late": 5400,
+    "submission_comments": [],
+    "assignment": { "id": 7002, "name": "Homework 2", "points_possible": 10.0, "due_at": "2026-09-17T03:59:00Z", "assignment_group_id": 301, "published": true }
+  },
+  {
+    "id": 9003, "assignment_id": 7003, "user_id": 42, "score": 0.0, "grade": "0",
+    "submitted_at": null, "workflow_state": "graded", "late": false, "missing": true, "excused": false,
+    "submission_comments": [],
+    "assignment": { "id": 7003, "name": "Homework 3", "points_possible": 10.0, "due_at": "2026-09-24T03:59:00Z", "assignment_group_id": 301, "published": true }
+  },
+  {
+    "id": 9004, "assignment_id": 7004, "user_id": 42, "score": null, "grade": null,
+    "submitted_at": null, "workflow_state": "unsubmitted", "late": false, "missing": false, "excused": true,
+    "submission_comments": [],
+    "assignment": { "id": 7004, "name": "Homework 4", "points_possible": 10.0, "due_at": "2026-10-01T03:59:00Z", "assignment_group_id": 301, "published": true }
+  },
+  {
+    "id": 9005, "assignment_id": 7005, "user_id": 42, "score": null, "grade": null,
+    "submitted_at": "2026-10-02T14:00:00Z", "workflow_state": "graded", "posted_at": null, "late": false, "missing": false, "excused": false,
+    "submission_comments": [],
+    "assignment": { "id": 7005, "name": "Midterm", "points_possible": 150.0, "due_at": "2026-10-02T16:00:00Z", "assignment_group_id": 302, "published": true }
+  },
+  {
+    "id": 9006, "assignment_id": 7006, "user_id": 42, "score": 152.0, "grade": "A-",
+    "submitted_at": null, "workflow_state": "graded", "late": false, "missing": false, "excused": false,
+    "submission_comments": [{ "id": 2, "author_name": "Prof. Ada", "comment": "Strong work on graphs." }],
+    "assignment": { "id": 7006, "name": "Quiz week 3 (paper)", "points_possible": 160.0, "due_at": null, "assignment_group_id": 302, "published": true }
+  },
+  {
+    "id": 9007, "assignment_id": 7007, "user_id": 42, "score": null, "grade": null,
+    "submitted_at": null, "workflow_state": "unsubmitted", "late": false, "missing": false, "excused": null,
+    "submission_comments": [],
+    "assignment": { "id": 7007, "name": "Final exam", "points_possible": 200.0, "due_at": "2026-12-15T17:00:00Z", "assignment_group_id": 302, "published": true }
+  }
+]

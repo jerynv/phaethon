@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "userId": "_4711_1", "columnId": "_801_1", "status": "Graded",
+      "displayGrade": { "scaleType": "Tabular", "score": 432.0, "text": "B+" }, "text": "B+", "score": 432.0, "overridden": "", "exempt": false, "changeIndex": 9
+    },
+    {
+      "userId": "_4711_1", "columnId": "_802_1", "status": "Graded",
+      "displayGrade": { "scaleType": "Score", "score": 18.0, "text": "18.00" }, "text": "18.00", "score": 18.0,
+      "feedback": "<p>Clear write-up.</p> <p>Label your axes.</p>", "exempt": false, "changeIndex": 4
+    },
+    {
+      "userId": "_4711_1", "columnId": "_803_1", "status": "NeedsGrading", "exempt": false, "changeIndex": 5
+    },
+    {
+      "userId": "_4711_1", "columnId": "_804_1", "status": "Graded",
+      "displayGrade": { "scaleType": "Tabular", "score": 90.0, "text": "A-" }, "text": "A-", "score": 90.0, "exempt": false, "changeIndex": 6
+    }
+  ],
+  "paging": {}
+}

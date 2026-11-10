@@ -1,0 +1,4 @@
+[
+  { "id": 301, "name": "Homework", "position": 1, "group_weight": 40.0, "sis_source_id": null, "integration_data": {}, "rules": {} },
+  { "id": 302, "name": "Exams", "position": 2, "group_weight": 60.0, "sis_source_id": null, "integration_data": {}, "rules": {} }
+]

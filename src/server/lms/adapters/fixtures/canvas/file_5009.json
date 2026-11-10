@@ -1,0 +1,5 @@
+{
+  "id": 5009, "uuid": "a9", "folder_id": 11, "display_name": "Chapter 1 notes.pdf", "filename": "ch1.pdf",
+  "content-type": "application/pdf", "url": "{BASE}/files/5009/download?download_frd=1&verifier=Ch1", "size": 120044,
+  "updated_at": "2026-08-21T10:00:00Z", "locked": false, "hidden": true, "hidden_for_user": false, "locked_for_user": false, "mime_class": "pdf"
+}

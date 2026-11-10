@@ -1,0 +1,8 @@
+{
+  "id": 1001,
+  "name": "Data Structures",
+  "course_code": "C343",
+  "workflow_state": "available",
+  "default_view": "modules",
+  "syllabus_body": "<h2>C343 Syllabus</h2>\n<p>Required textbook: <a href=\"https://open.example.org/books/ods-java.pdf\" target=\"_blank\" rel=\"noopener\">Open Data Structures (Java edition, PDF)</a>, Pat Morin, ISBN 978-1-927356-38-8.</p>\n<p>Course schedule: <a class=\"instructure_file_link instructure_scribd_file\" title=\"schedule.pdf\" href=\"{BASE}/courses/1001/files/5003?verifier=Zx9&amp;wrap=1\" data-api-endpoint=\"{BASE}/api/v1/courses/1001/files/5003\" data-api-returntype=\"File\">schedule.pdf</a></p>\n<p>Before week 1 read <a href=\"/courses/1001/files/5009/download?wrap=1\">Chapter 1 notes</a>.</p>\n<p><img src=\"https://cdn.example.org/logo.png\" alt=\"Department logo\"></p>"
+}

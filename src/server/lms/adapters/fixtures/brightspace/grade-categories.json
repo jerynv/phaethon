@@ -1,0 +1,17 @@
+[
+  {
+    "Id": 600, "Name": "Exams", "ShortName": "Exams", "CanExceedMax": false, "ExcludeFromFinalGrade": false, "StartDate": null, "EndDate": null,
+    "Weight": 60, "MaxPoints": 100, "AutoPoints": true, "WeightDistributionType": 1, "NumberOfHighestToDrop": 0, "NumberOfLowestToDrop": 0,
+    "Grades": [
+      { "MaxPoints": 50, "CanExceedMaxPoints": false, "IsBonus": false, "ExcludeFromFinalGradeCalculation": false, "GradeSchemeId": 0, "Id": 510, "Name": "Midterm", "ShortName": "", "GradeType": "Numeric", "CategoryId": 600, "Weight": 30 },
+      { "MaxPoints": 50, "CanExceedMaxPoints": false, "IsBonus": false, "ExcludeFromFinalGradeCalculation": false, "GradeSchemeId": 0, "Id": 511, "Name": "Final Exam", "ShortName": "", "GradeType": "Numeric", "CategoryId": 600, "Weight": 30 }
+    ]
+  },
+  {
+    "Id": 601, "Name": "Problem Sets", "ShortName": "PS", "Weight": 40, "MaxPoints": 100,
+    "Grades": [
+      { "MaxPoints": 20, "Id": 501, "Name": "Problem Set 1", "GradeType": "Numeric", "CategoryId": 601, "Weight": 20 },
+      { "MaxPoints": 20, "Id": 502, "Name": "Problem Set 2", "GradeType": "Numeric", "CategoryId": 601, "Weight": 20 }
+    ]
+  }
+]

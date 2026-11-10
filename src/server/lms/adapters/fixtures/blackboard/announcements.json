@@ -1,0 +1,32 @@
+{
+ "results": [
+  {
+   "id": "_701_1",
+   "title": "Office hours moved",
+   "body": "<p>This week only: Thursday 2pm. Slides: <a href=\"@X@EmbeddedFile.requestUrlStub@X@bbcswebdav/xid-90_1\">here</a></p>",
+   "creator": "_12_1",
+   "draft": false,
+   "availability": {
+    "duration": {
+     "type": "Restricted",
+     "start": "2026-10-05T13:00:00.000Z"
+    }
+   },
+   "created": "2026-10-04T20:00:00.000Z",
+   "modified": "2026-10-04T20:00:00.000Z",
+   "position": 1
+  },
+  {
+   "id": "_700_1",
+   "title": "Welcome to Calculus II",
+   "body": "<p>Read the syllabus first.</p>",
+   "availability": {
+    "duration": {
+     "type": "Permanent"
+    }
+   },
+   "created": "2026-08-20T12:00:00.000Z",
+   "position": 2
+  }
+ ]
+}

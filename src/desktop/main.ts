@@ -169,16 +169,34 @@ async function handle(op: HostOp): Promise<unknown> {
         width: op.width ?? 980,
         height: op.height ?? 760,
         title: op.title,
+        minWidth: 480,
+        minHeight: 480,
+        center: true,
         parent: mainWindow,
         webPreferences: { partition: op.partition, contextIsolation: true, nodeIntegration: false, sandbox: true },
       });
       const id = window.id;
       signInWindows.set(id, window);
+      // Web pages and the in-page documents SSO frames are built from; never files, app links or the app.
+      const signInAllowed = (url: string) => {
+        try {
+          return ["https:", "http:", "about:", "blob:", "data:"].includes(new URL(url).protocol);
+        } catch {
+          return false;
+        }
+      };
       window.webContents.setWindowOpenHandler(({ url }) => {
         // Sign-in pages sometimes open their identity provider in a popup; keep it in the same window.
-        void window.loadURL(url);
+        if (/^https?:/i.test(url)) void window.loadURL(url);
         return { action: "deny" };
       });
+      window.webContents.on("will-navigate", (event, url) => {
+        if (!signInAllowed(url)) event.preventDefault();
+      });
+      window.webContents.on("will-redirect", (event, url) => {
+        if (!signInAllowed(url)) event.preventDefault();
+      });
+      window.webContents.on("will-attach-webview", (event) => event.preventDefault());
       const navigated = (url: string) => core?.emit({ kind: "windowNavigated", window: id, url });
       window.webContents.on("did-navigate", (_e, url) => navigated(url));
       window.webContents.on("did-navigate-in-page", (_e, url) => navigated(url));
@@ -192,9 +210,12 @@ async function handle(op: HostOp): Promise<unknown> {
     case "windowCookies": {
       const window = signInWindows.get(op.window);
       if (!window) throw new Error("That sign-in window is closed.");
-      const cookies = await window.webContents.session.cookies.get({ url: op.url });
+      const cookies = await window.webContents.session.cookies.get(op.url ? { url: op.url } : {});
       return cookies.map((c) => ({ name: c.name, value: c.value, domain: c.domain ?? "", path: c.path ?? "/", secure: c.secure ?? false, httpOnly: c.httpOnly ?? false, expires: c.expirationDate }));
     }
+    case "windowFocus":
+      signInWindows.get(op.window)?.focus();
+      return null;
     case "windowClose":
       signInWindows.get(op.window)?.close();
       return null;

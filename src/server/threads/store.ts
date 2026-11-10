@@ -14,6 +14,8 @@ import {
   type Block,
   type Message,
   type Record_,
+  attachPending,
+  shownTexts,
 } from "../core/thread.ts";
 import { spaceDir } from "../core/vault.ts";
 import { covers } from "../grants/grants.ts";
@@ -219,9 +221,8 @@ export function toUi(msgs: Message[]): UiMessage[] {
   msgs.forEach((m, index) => {
     if (m.role === "assistant" && replyStart === undefined) replyStart = index;
     const blocks = Array.isArray(m.content) ? m.content : [];
-    const texts = blocks
-      .filter((b) => b && b.type === "text" && typeof b.text === "string" && !BLANK.test(b.text as string))
-      .map((b) => b.text as string);
+    // Text blocks, plus what the model sent with send_to_user (shown like text).
+    const texts = shownTexts({ ...m, content: blocks.filter(Boolean) }).filter((t) => !BLANK.test(t));
     const files = blocks.filter((b) => b && isAttachmentRef(b)).map((b) => ({
       name: typeof b.name === "string" ? b.name : "",
       path: typeof b.path === "string" ? b.path : "",
@@ -252,7 +253,8 @@ export function toUi(msgs: Message[]): UiMessage[] {
       }
     }
   });
-  return out;
+  // An unanswered lesson question stays open after a reload.
+  return attachPending(out, msgs);
 }
 
 // ---- Records -------------------------------------------------------------------

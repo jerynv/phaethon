@@ -1,19 +1,24 @@
 // STUB: owned by lms
 import { Refusal } from "../rpc/registry.ts";
 
-/**
- * Placeholder for the course-access layer so storage code typechecks and runs
- * before the lms worker's branch is merged. The real module replaces this file.
- * With the stub, no space sees any course.
- */
+export type VisibleCourse = { folder: string; name: string; code?: string };
 
-export function visibleCourses(_space: string): { courses: unknown[] } {
-  return { courses: [] };
+/** Courses this space may see (only the parts it may see are reachable through `resolveCoursePath`). */
+export function visibleCourses(_space: string): VisibleCourse[] {
+  return [];
 }
 
-/** The real path of a visible `courses/...` path (folder or file), or a Refusal. */
+/**
+ * A `courses/...` path the agent's tools or file_open accept → the real file or
+ * folder, refusing parts the space can't see. `rel` starts with `courses`.
+ */
 export function resolveCoursePath(_space: string, rel: string, _mustExist: boolean): string {
-  throw new Refusal(`"${rel}" isn’t among the courses this space can see`);
+  throw new Refusal(`"${rel}" does not exist`);
+}
+
+/** Hides lines about parts the space can't see (README.md); other text is returned as is. ASSUMED addition (filter_text). */
+export function filterCourseText(_space: string, _rel: string, text: string): string {
+  return text;
 }
 
 export function courseIndexForPrompt(_space: string): string | null {

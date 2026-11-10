@@ -15,6 +15,8 @@ const common = {
   sourcemap: true,
   packages: "external",
   alias: { "#shared": path.join(root, "src/shared") },
+  // Prompt fragments (src/server/agent/prompts/*.md) are bundled as text.
+  loader: { ".md": "text" },
   logLevel: "info",
 };
 

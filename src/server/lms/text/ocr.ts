@@ -1,6 +1,6 @@
 import path from "node:path";
 import { createInterface } from "node:readline";
-import { childCommand, killGroup, spawnGroup } from "./child-process.ts";
+import { childCommand, startChild, type ChildSpec } from "./child-process.ts";
 import { FILE_TIMEOUT_MS, MAX_OCR_PAGES, MAX_PAGE_TEXT, PAGE_TIMEOUT_MS } from "./constants.ts";
 
 /**
@@ -29,7 +29,7 @@ function cap(t: string): string {
   return b.subarray(0, cut).toString("utf8");
 }
 
-export type Make = (left: number[]) => { cmd: string; args: string[]; env?: NodeJS.ProcessEnv };
+export type Make = (left: number[]) => ChildSpec;
 
 /**
  * Runs children made by `make` (given the pages still to do) until every page
@@ -44,7 +44,7 @@ export async function supervise(make: Make, pages: number[], pageLimitMs: number
     const budget = fileLimitMs - (Date.now() - started);
     if (budget < 0) break;
     const c = make(left);
-    const child = spawnGroup(c.cmd, c.args, c.env);
+    const child = startChild(c);
     const spawned = await new Promise<Error | null>((resolve) => {
       child.once("spawn", () => resolve(null));
       child.once("error", (e) => resolve(e));
@@ -123,7 +123,7 @@ export async function supervise(make: Make, pages: number[], pageLimitMs: number
       if (!left.length) break;
     }
     signal?.removeEventListener("abort", onAbort);
-    killGroup(child);
+    child.kill();
     lines.close();
     child.stdout?.destroy();
     child.stderr?.destroy();
@@ -142,10 +142,7 @@ export async function supervise(make: Make, pages: number[], pageLimitMs: number
 export function recognise(file: string, pages: number[] | null, signal?: AbortSignal): Promise<Map<number, OcrPage>> {
   const wanted = pages ?? [1];
   return supervise(
-    (left) => {
-      const c = childCommand("ocr", pages ? [file, "--pages", left.join(",")] : [file]);
-      return { cmd: c.cmd, args: c.args, env: c.env };
-    },
+    (left) => childCommand("ocr", pages ? [file, "--pages", left.join(",")] : [file]),
     wanted,
     PAGE_TIMEOUT_MS,
     FILE_TIMEOUT_MS,

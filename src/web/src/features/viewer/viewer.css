@@ -1,0 +1,30 @@
+/* pdf.js text layer: invisible text over the drawn page, selectable and read by screen readers. */
+.ph-pdf-text {
+  text-align: initial;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+}
+.ph-pdf-text :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.ph-pdf-text > :not(.markedContent),
+.ph-pdf-text .markedContent span:not(.markedContent) {
+  z-index: 1;
+}
+.ph-pdf-text span.markedContent {
+  top: 0;
+  height: 0;
+}
+.ph-pdf-text ::selection {
+  background: color-mix(in srgb, Highlight 35%, transparent);
+}
+.ph-pdf-text br::selection {
+  background: transparent;
+}

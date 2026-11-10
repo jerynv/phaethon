@@ -313,7 +313,7 @@ export async function preparePdfTexts(space: string, msgs: { content: Block[] }[
       if (pdfTexts.has(key)) continue;
       try {
         const { extract } = await import("../lms/text/index.ts");
-        const text = await extract(real, signal);
+        const text = await extract(real, signal, "pdf");
         pdfTexts.set(key, text.length > PDF_TEXT_MAX ? `${text.slice(0, PDF_TEXT_MAX)}\n\n[The rest of this PDF is left out.]` : text);
       } catch {
         if (signal?.aborted) return;

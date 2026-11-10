@@ -94,8 +94,8 @@ function hardenContents(window: BrowserWindow, allowedOrigin: string): void {
 }
 
 /**
- * Web permissions are denied unless listed: the app's own pages only need to
- * copy to the clipboard, and course-site sign-in pages need nothing (no
+ * Web permissions are denied unless listed: the app's own pages only copy to
+ * the clipboard and show video full screen, and course-site sign-in pages need nothing (no
  * camera, microphone, location, notifications or devices).
  */
 function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>): void {
@@ -103,7 +103,7 @@ function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>)
   target.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
   target.setDevicePermissionHandler(() => false);
 }
-const APP_PERMISSIONS = new Set(["clipboard-sanitized-write"]);
+const APP_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
 const NO_PERMISSIONS = new Set<string>();
 
 function createMainWindow(): BrowserWindow {

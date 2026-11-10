@@ -117,7 +117,8 @@ function scanTags(xml: string, textTag: string, onTag: (name: string, out: strin
   return out.join("");
 }
 
-const rustTrimEndLine = (s: string) => s.replace(/[\t\n\v\f\r \u0085   -     　]+$/u, "");
+const TRAILING_WS = new RegExp("[\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+$", "u");
+const rustTrimEndLine = (s: string) => s.replace(TRAILING_WS, "");
 
 /** The text of a .docx: each paragraph on its own line, tabs and line breaks kept. */
 export function docxText(bytes: Buffer): string {

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { OCR_DPI, OCR_MAX_SIDE } from "./constants.ts";
-import { openPdf, renderGrey, type PdfDocument } from "./pdf.ts";
+import { closePdf, openPdf, renderGrey, type PdfDocument } from "./pdf.ts";
 import { pagePicture } from "./pictures.ts";
 import { PdfDoc } from "./pdfobj.ts";
 
@@ -239,7 +239,7 @@ export class OcrPdf {
   }
 
   async close(): Promise<void> {
-    await this.doc.destroy().catch(() => {});
+    await closePdf(this.doc);
   }
 }
 

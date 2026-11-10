@@ -1,0 +1,263 @@
+/* Reading text in the conversation: Markdown replies, code, math, diagrams. */
+
+.ph-md {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+.ph-md > :first-child {
+  margin-top: 0;
+}
+.ph-md > :last-child {
+  margin-bottom: 0;
+}
+.ph-md p,
+.ph-md ul,
+.ph-md ol,
+.ph-md blockquote,
+.ph-md table,
+.ph-md pre,
+.ph-md .ph-block {
+  margin: 0.75em 0;
+}
+.ph-md ul,
+.ph-md ol {
+  padding-inline-start: 1.5em;
+}
+.ph-md ul {
+  list-style: disc;
+}
+.ph-md ol {
+  list-style: decimal;
+}
+.ph-md li + li {
+  margin-top: 0.25em;
+}
+.ph-md li > ul,
+.ph-md li > ol {
+  margin: 0.25em 0;
+}
+.ph-md li::marker {
+  color: var(--muted-foreground);
+}
+.ph-md [data-level] {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 1.4em 0 0.5em;
+  letter-spacing: -0.005em;
+}
+.ph-md [data-level="1"] {
+  font-size: 1.3em;
+}
+.ph-md [data-level="2"] {
+  font-size: 1.15em;
+}
+.ph-md [data-level="3"] {
+  font-size: 1.05em;
+}
+.ph-md [data-level="4"],
+.ph-md [data-level="5"],
+.ph-md [data-level="6"] {
+  font-size: 1em;
+}
+.ph-md strong {
+  font-weight: 650;
+}
+.ph-md a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+  text-underline-offset: 0.18em;
+}
+.ph-md a:hover {
+  text-decoration-color: currentColor;
+}
+.ph-md blockquote {
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 0.9em;
+  color: var(--muted-foreground);
+}
+.ph-md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.5em 0;
+}
+.ph-md :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.3rem;
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+.ph-md table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+  width: max-content;
+  min-width: 100%;
+}
+.ph-md th,
+.ph-md td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4em 0.75em;
+  text-align: start;
+  vertical-align: top;
+}
+.ph-md th {
+  font-weight: 600;
+  border-bottom-color: color-mix(in oklab, var(--foreground) 22%, transparent);
+}
+.ph-md input[type="checkbox"] {
+  margin-inline-end: 0.4em;
+  vertical-align: -0.1em;
+}
+.ph-md img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+}
+
+/* Display math gets a box that scrolls sideways and can take focus. */
+.ph-md .katex-display {
+  margin: 0.9em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0.1em;
+}
+.ph-md .katex {
+  font-size: 1.08em;
+}
+.ph-md .ph-math-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ph-md .ph-math-display:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Code highlighted by shiki with both themes; the page's theme picks one. */
+.ph-code pre.shiki {
+  background: transparent !important;
+  margin: 0;
+}
+.ph-code .shiki,
+.ph-code .shiki span {
+  color: var(--shiki-light);
+}
+.dark .ph-code .shiki,
+.dark .ph-code .shiki span {
+  color: var(--shiki-dark);
+}
+@media (forced-colors: active) {
+  .ph-code .shiki span {
+    color: CanvasText !important;
+  }
+}
+
+.ph-mermaid svg {
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  display: block;
+}
+
+/* The streaming caret: one quiet bar after the last word, none when motion is reduced. */
+.ph-streaming .ph-md > p:last-child::after,
+.ph-streaming .ph-md > :is(ul, ol):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-inline-start: 0.15em;
+  vertical-align: -0.12em;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.45;
+  animation: ph-caret 1s steps(2, start) infinite;
+}
+@keyframes ph-caret {
+  to {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-streaming .ph-md > p:last-child::after,
+  .ph-streaming .ph-md > :is(ul, ol):last-child > li:last-child::after {
+    animation: none;
+  }
+}
+
+/* The confidence slider: native range, drawn to match. */
+.ph-range {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 1.5rem;
+  background: transparent;
+  cursor: pointer;
+}
+.ph-range::-webkit-slider-runnable-track {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--primary) 0 var(--fill, 0%), var(--input) var(--fill, 0%) 100%);
+}
+.ph-range::-moz-range-track {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--input);
+}
+.ph-range::-moz-range-progress {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.ph-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: -0.4375rem;
+  border-radius: 999px;
+  background: var(--background);
+  border: 2px solid var(--primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.ph-range::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--background);
+  border: 2px solid var(--primary);
+}
+.ph-range[data-unset]::-webkit-slider-thumb {
+  border-style: dashed;
+  border-color: var(--muted-foreground);
+}
+.ph-range:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+  border-radius: 0.5rem;
+}
+@media (forced-colors: active) {
+  .ph-range::-webkit-slider-runnable-track {
+    background: CanvasText;
+  }
+}
+.ph-range[aria-invalid="true"] {
+  outline: 2px solid var(--destructive);
+  outline-offset: 4px;
+  border-radius: 0.5rem;
+}
+
+/* App components inside a reply (a study card, buttons) keep their own spacing. */
+.ph-md .ph-ui :is(p, ul, ol, blockquote, table, pre) {
+  margin: 0;
+}
+.ph-md .ph-ui :is(ul, ol) {
+  list-style: none;
+  padding: 0;
+}
+.ph-md .ph-ui li + li {
+  margin-top: 0.25rem;
+}

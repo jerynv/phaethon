@@ -34,6 +34,3 @@ export function isChannelRef(v: unknown): v is ChannelRef {
 export function isBytesRef(v: unknown): v is BytesRef {
   return typeof v === "object" && v !== null && typeof (v as Record<string, unknown>)[BYTES_KEY] === "string";
 }
-
-/** How the renderer finds the core: the desktop preload hands this over; a served page reads it from its URL. */
-export type CoreConnection = { url: string; token: string };

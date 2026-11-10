@@ -137,6 +137,9 @@ function denied(msgs: Message[], space: string, p: string): boolean {
   return records(msgs).some((r) => (r.kind === "access" && r.answer === "deny" && r.space === space && covers(r.path, p)) || (r.kind === "deniedEarlier" && r.space === space && covers(r.path, p)));
 }
 
+/** Tools whose call the user sees as a card rather than a work-log step. */
+const LESSON_CARDS = new Set(["check", "explain_back", "plan_lesson"]);
+
 export async function runOwnTurn(t: OwnTurn): Promise<void> {
   const { space, provider, events, run } = t;
   const signal = run.abort.signal;
@@ -360,7 +363,9 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
       const wasCancelled = signal.aborted;
       const act = activity(name);
       const shownTarget = activityTarget(use.input, ctx.root);
-      if (!wasCancelled) emit({ kind: "toolStart", id: activityId, category: act.category, label: act.label, ...(shownTarget ? { target: shownTarget } : {}) });
+      // Lesson tools appear as their own card (question, plan), not as a step in the work log.
+      const logged = !LESSON_CARDS.has(name);
+      if (!wasCancelled && logged) emit({ kind: "toolStart", id: activityId, category: act.category, label: act.label, ...(shownTarget ? { target: shownTarget } : {}) });
 
       let outcome: { block: Block | undefined; status: "success" | "failed" | "cancelled" };
       if (wasCancelled) outcome = { block: result(STOPPED, true), status: "cancelled" };
@@ -388,7 +393,7 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
         });
       }
       if (outcome.block) results.push(outcome.block);
-      if (!wasCancelled) {
+      if (!wasCancelled && logged) {
         const detail = outcome.status === "failed" ? "Tool reported an error" : undefined;
         emit({ kind: "toolEnd", id: activityId, status: outcome.status, ...(detail ? { detail } : {}) });
         addRecord({ kind: "tool", id: activityId, category: act.category as ToolCategory, label: clip(act.label), status: outcome.status, ...(shownTarget ? { target: shownTarget } : {}), ...(detail ? { detail } : {}) });

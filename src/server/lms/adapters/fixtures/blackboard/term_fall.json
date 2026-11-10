@@ -1,0 +1,13 @@
+{
+ "id": "_10_1",
+ "externalId": "FA26",
+ "name": "Fall 2026",
+ "availability": {
+  "available": "Yes",
+  "duration": {
+   "type": "DateRange",
+   "start": "2026-08-20T04:00:00.000Z",
+   "end": "2099-12-20T05:00:00.000Z"
+  }
+ }
+}

@@ -1,0 +1,15 @@
+{
+  "PagingInfo": { "Bookmark": "6612", "HasMoreItems": false },
+  "Items": [
+    {
+      "OrgUnit": { "Id": 6610, "Type": { "Id": 3, "Code": "Course Offering", "Name": "Course Offering" }, "Name": "Intro to Programming", "Code": "C211-SP25-40011", "HomeUrl": "/d2l/home/6610", "ImageUrl": null },
+      "Access": { "IsActive": true, "StartDate": "2025-01-13T05:00:00.000Z", "EndDate": "2025-05-10T03:59:00.000Z", "CanAccess": true, "ClasslistRoleName": "Student", "LISRoles": ["urn:lti:role:ims/lis/Learner"], "LastAccessed": "2025-05-01T12:00:00.000Z" },
+      "PinDate": null
+    },
+    {
+      "OrgUnit": { "Id": 6612, "Type": { "Id": 3, "Code": "Course Offering", "Name": "Course Offering" }, "Name": "Discrete Structures (not open yet)", "Code": "C241-SP27", "HomeUrl": "/d2l/home/6612", "ImageUrl": null },
+      "Access": { "IsActive": false, "StartDate": null, "EndDate": null, "CanAccess": false, "ClasslistRoleName": "Student", "LISRoles": [], "LastAccessed": null },
+      "PinDate": null
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+[
+  { "Id": 501, "IsHidden": false, "Attachments": [ { "FileId": 77, "FileName": "Week 1 slides.pptx", "Size": 1048576 } ],
+    "Title": "Welcome to M301", "Body": { "Text": "Welcome! Office hours are Tuesdays.", "Html": "<p>Welcome! Office hours are <strong>Tuesdays</strong>.</p>" },
+    "CreatedBy": 30001, "CreatedDate": "2026-08-23T15:00:00.000Z", "LastModifiedBy": 30001, "LastModifiedDate": "2026-08-23T15:00:00.000Z",
+    "StartDate": "2026-08-24T13:00:00.000Z", "EndDate": null, "IsGlobal": false, "IsPublished": true, "ShowOnlyInCourseOfferings": false, "IsAuthorInfoShown": true, "IsPinned": false },
+  { "Id": 502, "IsHidden": false, "Attachments": [],
+    "Title": "Draft: exam room", "Body": { "Text": "TBD", "Html": "<p>TBD</p>" },
+    "CreatedBy": 30001, "CreatedDate": "2026-10-01T15:00:00.000Z", "LastModifiedBy": 30001, "LastModifiedDate": "2026-10-01T15:00:00.000Z",
+    "StartDate": null, "EndDate": null, "IsGlobal": false, "IsPublished": false, "ShowOnlyInCourseOfferings": false, "IsAuthorInfoShown": true, "IsPinned": false }
+]

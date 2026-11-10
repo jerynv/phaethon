@@ -1,0 +1,61 @@
+{
+ "results": [
+  {
+   "id": "_9001_1",
+   "userId": "_4711_1",
+   "courseId": "_100_1",
+   "dataSourceId": "_2_1",
+   "created": "2026-08-10T14:00:00.000Z",
+   "availability": {
+    "available": "Yes"
+   },
+   "courseRoleId": "Student",
+   "lastAccessed": "2026-10-08T18:22:11.000Z",
+   "course": {
+    "id": "_100_1",
+    "uuid": "a1",
+    "externalId": "MATH-M212-FA26",
+    "courseId": "MATH-M212-FA26",
+    "name": "Calculus II",
+    "description": "",
+    "created": "2026-07-01T00:00:00.000Z",
+    "organization": false,
+    "ultraStatus": "Ultra",
+    "allowGuests": false,
+    "readOnly": false,
+    "termId": "_10_1",
+    "availability": {
+     "available": "Yes",
+     "duration": {
+      "type": "Term"
+     }
+    },
+    "externalAccessUrl": "https://learn.example.edu/ultra/courses/_100_1/cl/outline"
+   }
+  },
+  {
+   "id": "_9002_1",
+   "userId": "_4711_1",
+   "courseId": "_200_1",
+   "availability": {
+    "available": "Yes"
+   },
+   "courseRoleId": "Student",
+   "course": {
+    "id": "_200_1",
+    "courseId": "ORG-LIBRARY",
+    "name": "Library Orientation",
+    "organization": true,
+    "availability": {
+     "available": "Yes",
+     "duration": {
+      "type": "Continuous"
+     }
+    }
+   }
+  }
+ ],
+ "paging": {
+  "nextPage": "/learn/api/public/v1/users/_4711_1/courses?expand=course&limit=100&offset=100"
+ }
+}

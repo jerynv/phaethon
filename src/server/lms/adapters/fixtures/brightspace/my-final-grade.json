@@ -1,0 +1,5 @@
+{
+  "PointsNumerator": 86.5, "PointsDenominator": 100, "WeightedNumerator": 86.5, "WeightedDenominator": 100,
+  "GradeObjectIdentifier": "999", "GradeObjectName": "Final Calculated Grade", "GradeObjectType": 7, "GradeObjectTypeName": "Final Calculated",
+  "DisplayedGrade": "B+", "Comments": { "Text": "", "Html": "" }
+}

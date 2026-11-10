@@ -21,6 +21,9 @@ const common = {
 const jobs = [
   { ...common, entryPoints: ["src/server/main.ts"], outfile: "dist/server/main.mjs", format: "esm",
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } },
+  // Reads PDFs and recognises text in a separate process (src/server/lms/text/child-process.ts finds it beside the core).
+  { ...common, entryPoints: ["src/server/lms/text/child.ts"], outfile: "dist/server/text-child.mjs", format: "esm",
+    banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" } },
   { ...common, entryPoints: ["src/desktop/main.ts"], outfile: "dist/desktop/main.cjs", format: "cjs", external: ["electron"] },
   { ...common, entryPoints: ["src/desktop/preload.ts"], outfile: "dist/desktop/preload.cjs", format: "cjs", external: ["electron"] },
 ];

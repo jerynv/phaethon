@@ -13,3 +13,4 @@ import "../grants/commands.ts";
 import "../fullaccess/commands.ts";
 import "../workspace/commands.ts";
 import "../files/commands.ts";
+import "./model-commands.ts";

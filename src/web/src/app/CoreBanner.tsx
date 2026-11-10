@@ -14,7 +14,12 @@ export function CoreBanner() {
   const [status, setStatus] = useState<CoreStatus>(coreStatus());
   const [graceOver, setGraceOver] = useState(false);
 
-  useEffect(() => onCoreStatus(setStatus), []);
+  useEffect(() => {
+    const off = onCoreStatus(setStatus);
+    // The connection may have opened between render and this effect.
+    setStatus(coreStatus());
+    return off;
+  }, []);
   useEffect(() => {
     const t = setTimeout(() => setGraceOver(true), GRACE_MS);
     return () => clearTimeout(t);

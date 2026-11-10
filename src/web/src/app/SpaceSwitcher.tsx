@@ -1,7 +1,11 @@
-import { ChevronsUpDownIcon, PlusIcon, Settings2Icon } from "lucide-react";
+import { ArchiveIcon, ChevronsUpDownIcon, FilePlusIcon, FolderOpenIcon, FolderPlusIcon, PlusIcon, Settings2Icon } from "lucide-react";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuRadioItemIndicator, MenuSeparator, MenuShortcut, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { announce } from "@/lib/announce";
+import { errorText } from "@/lib/core";
+import { fileManagerName } from "@/lib/platform";
+import { api } from "./api";
 import { useNav, type Activity } from "./nav";
 import { useShell } from "./shell-store";
 import { SpaceMark } from "./SpaceMark";
@@ -102,6 +106,30 @@ export function SpaceSwitcher() {
             })}
           </MenuRadioGroup>
         </MenuGroup>
+        {current ? (
+          <>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>{current.name}</MenuGroupLabel>
+              <MenuItem onClick={() => void spaceAction(() => api.showSpace(current.id))}>
+                <FolderOpenIcon />
+                Show in {fileManagerName()}
+              </MenuItem>
+              <MenuItem onClick={() => void addFiles(current.id, current.name, false)}>
+                <FilePlusIcon />
+                Add files…
+              </MenuItem>
+              <MenuItem onClick={() => void addFiles(current.id, current.name, true)}>
+                <FolderPlusIcon />
+                Add a folder…
+              </MenuItem>
+              <MenuItem onClick={() => void exportSpace(current.id)}>
+                <ArchiveIcon />
+                Export…
+              </MenuItem>
+            </MenuGroup>
+          </>
+        ) : null}
         <MenuSeparator />
         <MenuItem onClick={() => setNewSpaceOpen(true)}>
           <PlusIcon />
@@ -114,4 +142,31 @@ export function SpaceSwitcher() {
       </MenuPopup>
     </Menu>
   );
+}
+
+async function spaceAction(run: () => Promise<unknown>): Promise<void> {
+  try {
+    await run();
+  } catch (e) {
+    announce(errorText(e));
+    window.alert(errorText(e));
+  }
+}
+
+async function addFiles(id: string, name: string, folder: boolean): Promise<void> {
+  await spaceAction(async () => {
+    const added = await api.addToSpace(id, folder);
+    if (!added) return;
+    const skipped = added.skipped ? `, ${added.skipped} left out` : "";
+    announce(`Added ${added.files} ${added.files === 1 ? "file" : "files"} to ${name}${skipped}.`);
+  });
+}
+
+async function exportSpace(id: string): Promise<void> {
+  await spaceAction(async () => {
+    const done = await api.exportSpace(id);
+    if (!done) return;
+    announce(`Exported ${done.files} ${done.files === 1 ? "file" : "files"} to ${done.fileName}.`);
+    await api.showExport();
+  });
 }

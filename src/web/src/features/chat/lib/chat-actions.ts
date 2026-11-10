@@ -52,13 +52,12 @@ export function actionLabel(id: ChatActionId, fileManager: string): string {
     case "settings-assistant":
       return "Settings: Assistant";
     case "settings-appearance":
-      return "Settings: Appearance";
     case "settings-accessibility":
-      return "Settings: Accessibility";
+      return "Settings: Appearance & accessibility";
     case "settings-spaces":
       return "Settings: Spaces";
     case "settings-courses":
-      return "Settings: Course sites";
+      return "Settings: Courses";
     case "settings-about":
       return "Settings: About";
   }

@@ -1,11 +1,11 @@
-import path from "node:path";
 import type { AccessAnswer, AgentEvent } from "../../shared/agent.ts";
+import { requireHome, selected } from "../cli/instances.ts";
 import { Channel, CollectingChannel } from "../rpc/channel.ts";
-import { commands, messageOf, Refusal } from "../rpc/registry.ts";
+import { commands, messageOf, Refusal, type CallContext } from "../rpc/registry.ts";
 import { answer as deliver } from "../core/pending.ts";
 import { BUSY, cancel, claim, release, type Run } from "../core/runs.ts";
 import { ATTACHMENT_TYPE, load, openQuestionCall, type Block } from "../core/thread.ts";
-import { appFiles, spaceDir, vaultName } from "../core/vault.ts";
+import { spaceDir } from "../core/vault.ts";
 import { saveUploads, type Upload } from "../attachments/attachments.ts";
 import { runCliTurn } from "../cli/turn.ts";
 import { isFullAccess } from "../fullaccess/fullaccess.ts";
@@ -63,7 +63,16 @@ async function ownTurn(space: string, events: Channel<AgentEvent>, mode: TurnMod
   await runOwnTurn({ space, provider, events, run, mode });
 }
 
-export async function agentSend(args: SendArgs): Promise<void> {
+/** When the window that started a turn goes away, the turn stops (nothing could answer its questions). */
+function stopWith(signal: AbortSignal | undefined, run: Run): () => void {
+  if (!signal) return () => {};
+  const stop = () => run.abort.abort();
+  if (signal.aborted) stop();
+  else signal.addEventListener("abort", stop, { once: true });
+  return () => signal.removeEventListener("abort", stop);
+}
+
+export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<void> {
   const events = args.onEvent ?? new CollectingChannel<AgentEvent>();
   const end = () => events.send({ kind: "end", sessionId: null });
   const { space } = args;
@@ -82,27 +91,41 @@ export async function agentSend(args: SendArgs): Promise<void> {
     events.send({ kind: "error", code: "cli", message: CLI_CONTINUE });
     return end();
   }
-  let attachments: Block[] = [];
-  if (continueFrom === undefined) {
+  // A coding agent answers with the account chosen for it; a connection without its folder can't start.
+  const cli = settings.backend === "phaethon" ? null : CLIS[settings.backend];
+  let configDir: string | null = null;
+  if (cli) {
     try {
-      attachments = saveUploads(space, args.attachments ?? []);
+      configDir = requireHome(selected(cli));
     } catch (e) {
-      events.send({ kind: "error", code: "attachment", message: messageOf(e) });
+      events.send({ kind: "error", code: "cli", message: messageOf(e) });
       return end();
     }
-    if (replaceFrom !== undefined && args.keepAttachments?.length) attachments = [...keptAttachments(space, replaceFrom, args.keepAttachments), ...attachments];
   }
   const run = claim(space);
   if (!run) {
     events.send({ kind: "error", code: "busy", message: BUSY_TURN });
     return end();
   }
+  const unhook = stopWith(signal, run);
+  // Saved only once the space is ours, so a refused send leaves no files behind.
+  let attachments: Block[] = [];
+  if (continueFrom === undefined) {
+    try {
+      attachments = saveUploads(space, args.attachments ?? []);
+    } catch (e) {
+      unhook();
+      release(run);
+      events.send({ kind: "error", code: "attachment", message: messageOf(e) });
+      return end();
+    }
+    if (replaceFrom !== undefined && args.keepAttachments?.length) attachments = [...keptAttachments(space, replaceFrom, args.keepAttachments), ...attachments];
+  }
   try {
-    if (settings.backend === "phaethon") {
+    if (!cli) {
       const mode: TurnMode = continueFrom !== undefined ? { kind: "continue", from: continueFrom } : { kind: "prompt", prompt: String(args.prompt ?? ""), attachments, replaceFrom };
       await ownTurn(space, events, mode, run);
     } else {
-      const cli = CLIS[settings.backend];
       const meta = readSpaceMeta(space);
       const model = meta.cliModels[cli] ?? null;
       // The CLI turn reads the space's reasoning level for this model itself.
@@ -117,7 +140,7 @@ export async function agentSend(args: SendArgs): Promise<void> {
           prompt: String(args.prompt ?? ""),
           attachments,
           replaceFrom,
-          configDir: cli === "claude" && settings.isolateClaudeConfig ? path.join(appFiles.claudeConfigRoot(), vaultName()) : null,
+          configDir,
           addDirs: [...cliDirs(space), ...fullyVisibleCourseDirs(space)],
           model,
           reasoning,
@@ -130,6 +153,7 @@ export async function agentSend(args: SendArgs): Promise<void> {
   } catch (e) {
     events.send({ kind: "error", code: "provider", message: messageOf(e) });
   } finally {
+    unhook();
     release(run);
     try {
       touchSpace(space);
@@ -143,12 +167,13 @@ export async function agentSend(args: SendArgs): Promise<void> {
 type AnswerArgs = { space: string; id: string; answer: unknown; onEvent?: Channel<AgentEvent> };
 
 /** Returns false (and sends nothing) when that question isn't waiting any more. */
-export async function lessonAnswer(args: AnswerArgs): Promise<boolean> {
+export async function lessonAnswer(args: AnswerArgs, signal?: AbortSignal): Promise<boolean> {
   const { space, id } = args;
   spaceDir(space);
   if (readSettings().backend !== "phaethon") throw new Refusal(CLI_ANSWER);
   const run = claim(space);
   if (!run) throw new Refusal(BUSY);
+  const unhook = stopWith(signal, run);
   const events = args.onEvent ?? new CollectingChannel<AgentEvent>();
   try {
     const open = openQuestionCall(load(space));
@@ -157,6 +182,7 @@ export async function lessonAnswer(args: AnswerArgs): Promise<boolean> {
     const answer = cleanAnswer(args.answer, call);
     await ownTurn(space, events, { kind: "answer", call, answer }, run);
   } finally {
+    unhook();
     release(run);
   }
   events.send({ kind: "end", sessionId: null });
@@ -166,13 +192,13 @@ export async function lessonAnswer(args: AnswerArgs): Promise<boolean> {
 const ANSWERS: AccessAnswer[] = ["once", "always", "deny"];
 
 commands({
-  agent_send: (args: SendArgs) => agentSend(args),
+  agent_send: (args: SendArgs, ctx: CallContext) => agentSend(args, ctx.signal),
   agent_cancel: ({ space }: { space: string }) => cancel(String(space)),
   agent_approve: ({ space, id, allow }: { space: string; id: string; allow: boolean }) => deliver(String(space), `write:${id}`, allow === true),
   agent_access_answer: ({ space, id, answer }: { space: string; id: string; answer: AccessAnswer }) => {
     if (!ANSWERS.includes(answer)) throw new Refusal("That isn’t an answer Phaethon knows.");
     return deliver(String(space), `access:${id}`, answer);
   },
-  lesson_answer: (args: AnswerArgs) => lessonAnswer(args),
+  lesson_answer: (args: AnswerArgs, ctx: CallContext) => lessonAnswer(args, ctx.signal),
 });
 

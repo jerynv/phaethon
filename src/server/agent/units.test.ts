@@ -254,3 +254,17 @@ describe("compaction", () => {
     updateSpaceMeta("school", { tutorMode: undefined });
   });
 });
+
+describe("two questions in one reply", () => {
+  it("keeps the one the loop accepted open after it refused the other", () => {
+    const q = (id: string) => ({ type: "tool_use", id, name: "check", input: { role: "check", question: `Q ${id}`, options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], explanation: "e", correctAnswer: "a" } });
+    const msgs: Message[] = [
+      { role: "user", content: [{ type: "text", text: "teach me" }] },
+      { role: "assistant", content: [q("first"), q("second")] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "second", content: "Not run: one question at a time.", is_error: true }] },
+    ];
+    const pending = pendingQuestion(msgs);
+    expect(pending?.kind).toBe("check");
+    expect(pending && "question" in pending ? pending.question.id : undefined).toBe("first");
+  });
+});

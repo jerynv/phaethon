@@ -286,14 +286,61 @@ export function saveUploads(space: string, uploads: Upload[]): Block[] {
 
 export type Sight = { images: boolean; pdf: boolean };
 
+/**
+ * Text of attached PDFs, for models that can't take a PDF itself (every
+ * provider but Anthropic). Read once in the text child and kept by path,
+ * size and modification time; `preparePdfTexts` fills it before a request.
+ */
+const PDF_TEXT_MAX = 200_000;
+const pdfTexts = new Map<string, string | null>();
+const pdfKey = (real: string, st: fs.Stats) => `${real}\0${st.size}\0${st.mtimeMs}`;
+
+/** Reads the text of every PDF attached in `msgs` that isn't read yet (failures are remembered as unreadable). */
+export async function preparePdfTexts(space: string, msgs: { content: Block[] }[], signal?: AbortSignal): Promise<void> {
+  const dir = spaceDir(space);
+  for (const m of msgs) {
+    for (const b of m.content) {
+      if (!isAttachmentRef(b) || storedKind(typeof b.media_type === "string" ? b.media_type : "") !== "pdf") continue;
+      let real: string;
+      let st: fs.Stats;
+      try {
+        real = resolveIn(dir, String(b.path ?? ""), true);
+        st = fs.statSync(real);
+      } catch {
+        continue;
+      }
+      const key = pdfKey(real, st);
+      if (pdfTexts.has(key)) continue;
+      try {
+        const { extract } = await import("../lms/text/index.ts");
+        const text = await extract(real, signal);
+        pdfTexts.set(key, text.length > PDF_TEXT_MAX ? `${text.slice(0, PDF_TEXT_MAX)}\n\n[The rest of this PDF is left out.]` : text);
+      } catch {
+        if (signal?.aborted) return;
+        pdfTexts.set(key, null);
+      }
+    }
+  }
+}
+
+function pdfText(real: string): string | null | undefined {
+  try {
+    return pdfTexts.get(pdfKey(real, fs.statSync(real)));
+  } catch {
+    return undefined;
+  }
+}
+
 function expandOne(dir: string, b: Block, sees: Sight): Block {
   const p = typeof b.path === "string" ? b.path : "";
   const name = typeof b.name === "string" ? b.name : p;
   const mediaType = typeof b.media_type === "string" ? b.media_type : "";
   const missing = (): Block => ({ type: "text", text: `[The attached file ${name} is no longer in this space.]` });
   let bytes: Buffer;
+  let real: string;
   try {
-    bytes = fs.readFileSync(resolveIn(dir, p, true));
+    real = resolveIn(dir, p, true);
+    bytes = fs.readFileSync(real);
   } catch {
     return missing();
   }
@@ -303,7 +350,10 @@ function expandOne(dir: string, b: Block, sees: Sight): Block {
       if (!sees.images) return { type: "text", text: `[The attached picture ${name} isn’t shown: this model can’t see pictures.]` };
       return { type: "image", source: { type: "base64", media_type: mediaType, data: bytes.toString("base64") } };
     case "pdf":
-      if (!sees.pdf) return { type: "text", text: `[The attached PDF ${name} isn’t shown: this model can’t read PDFs.]` };
+      if (!sees.pdf) {
+        const text = pdfText(real);
+        return text ? textDoc(text) : { type: "text", text: `[The attached PDF ${name} couldn’t be read as text.]` };
+      }
       return { type: "document", title: name, source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } };
     case "docx":
       try {

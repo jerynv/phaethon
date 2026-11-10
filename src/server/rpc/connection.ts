@@ -38,7 +38,8 @@ export function attach(link: Link): void {
     if (Array.isArray(value)) return value.map(revive);
     if (value && typeof value === "object") {
       const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value)) out[k] = revive(v);
+      // defineProperty, so a "__proto__" key stays a plain key instead of setting the prototype.
+      for (const [k, v] of Object.entries(value)) Object.defineProperty(out, k, { value: revive(v), enumerable: true, writable: true, configurable: true });
       return out;
     }
     return value;

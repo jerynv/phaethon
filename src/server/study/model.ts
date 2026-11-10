@@ -6,7 +6,8 @@ import type { CliId as Cli } from "../cli/cli.ts";
 import { cliCommand } from "../cli/instances.ts";
 import { appFiles, spaceDir, vaultName } from "../core/vault.ts";
 import { homeDir } from "../env.ts";
-import { completeText } from "../providers/complete.ts";
+import { completeSeesPictures, completeText } from "../providers/complete.ts";
+import type { Block } from "../core/thread.ts";
 import { Refusal } from "../rpc/registry.ts";
 import { readSettings, type VaultSettings } from "../settings/settings.ts";
 import { readSpaceMeta } from "../spaces/meta.ts";
@@ -79,10 +80,11 @@ export class ApiModel implements Model {
     private readonly fallback?: () => Model | null,
   ) {}
 
-  async complete(system: string, user: string): Promise<string> {
+  async complete(system: string, user: string, pictures: Picture[] = []): Promise<string> {
     try {
       // Mapping, writing items with their derivations and judging them are all reasoning work.
-      const req: Parameters<typeof completeText>[0] = { space: this.space, system, messages: [{ role: "user", content: user }], effort: "high" };
+      const content = pictures.length ? (pictureBlocks(user, pictures) as Block[]) : user;
+      const req: Parameters<typeof completeText>[0] = { space: this.space, system, messages: [{ role: "user", content }], effort: "high" };
       if (this.model) req.model = this.model;
       if (this.signal) req.signal = this.signal;
       return (await completeText(req)).text;
@@ -97,11 +99,13 @@ export class ApiModel implements Model {
   }
 
   showsPictures(): boolean {
-    return false;
+    const req: { space: string; model?: string } = { space: this.space };
+    if (this.model) req.model = this.model;
+    return completeSeesPictures(req);
   }
 
-  completeSeeing(system: string, user: string, _pictures: Picture[]): Promise<string> {
-    return this.complete(system, user);
+  completeSeeing(system: string, user: string, pictures: Picture[]): Promise<string> {
+    return this.complete(system, user, this.showsPictures() ? pictures : []);
   }
 }
 

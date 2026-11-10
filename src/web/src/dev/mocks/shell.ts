@@ -96,7 +96,7 @@ const settings = {
   providerReady: false,
   providers: [],
   appearance: {} as unknown,
-  vaultPath: "/Users/you/Phaethon/default",
+  vaultPath: "/Users/student/Phaethon/default",
   version: "0.2.0",
 };
 

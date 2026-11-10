@@ -31,7 +31,10 @@ export type MockContext = {
   sleep(ms: number): Promise<void>;
   state: Record<string, unknown>;
 };
+/** A Channel argument as handlers receive it (channel references in args are revived into these). */
+export type MockChannel = { send(message: unknown): void; readonly closed: boolean; onClose(fn: () => void): void };
 export type MockHandler = (args: any, ctx: MockContext) => unknown;
+export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export type MockHandlers = Record<string, MockHandler>;
 
 type MockControl = {
@@ -94,9 +97,8 @@ export function installMockCore(): void {
   window.__mock = control;
   window.__phaethon = { nav: useNav };
 
-  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
   class FakeSocket {
+    private readonly channels = new Map<number, { closed: boolean; listeners: Array<() => void> }>();
     static readonly CONNECTING = 0;
     static readonly OPEN = 1;
     static readonly CLOSING = 2;
@@ -138,21 +140,55 @@ export function installMockCore(): void {
       this.drop();
     }
 
+    /** A live channel object for a reference the renderer sent. */
+    private mockChannel(ch: number): MockChannel {
+      const entry = this.channels.get(ch) ?? { closed: false, listeners: [] };
+      this.channels.set(ch, entry);
+      return {
+        send: (msg: unknown) => {
+          if (!entry.closed) this.emit({ t: "ch", ch, msg: encode(msg) });
+        },
+        get closed() {
+          return entry.closed;
+        },
+        onClose: (fn) => {
+          if (entry.closed) fn();
+          else entry.listeners.push(fn);
+        },
+      };
+    }
+
+    private revive(value: unknown): unknown {
+      if (value && typeof value === "object" && typeof (value as Record<string, unknown>)[CHANNEL_KEY] === "number") {
+        return this.mockChannel((value as Record<string, number>)[CHANNEL_KEY]);
+      }
+      if (Array.isArray(value)) return value.map((v) => this.revive(v));
+      if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, this.revive(v)]));
+      return value;
+    }
+
     send(text: string) {
       const frame = JSON.parse(text) as ClientFrame;
+      if (frame.t === "close") {
+        const entry = this.channels.get(frame.ch);
+        if (entry && !entry.closed) {
+          entry.closed = true;
+          for (const fn of entry.listeners.splice(0)) fn();
+        }
+        return;
+      }
       if (frame.t !== "req") return;
-      const { id, cmd, args } = frame;
+      const { id, cmd } = frame;
+      const args = this.revive(frame.args) as Record<string, unknown>;
       control.calls.push([cmd, args]);
       const ctx: MockContext = {
         state,
         sleep,
+        // Channel arguments arrive already revived; this also accepts a raw reference.
         channel: (ref) => {
+          if (ref && typeof (ref as MockChannel).send === "function") return ref as MockChannel;
           const ch = (ref as Record<string, unknown> | null)?.[CHANNEL_KEY];
-          return {
-            send: (msg: unknown) => {
-              if (typeof ch === "number") this.emit({ t: "ch", ch, msg: encode(msg) });
-            },
-          };
+          return typeof ch === "number" ? this.mockChannel(ch) : { send: () => {} };
         },
       };
       void (async () => {

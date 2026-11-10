@@ -59,19 +59,10 @@ export class TimeoutError extends Error {}
  * optional total timeout. `signal` cancels.
  */
 export async function request(url: string, init: RequestInit & { timeoutMs?: number }, signal?: AbortSignal): Promise<Response> {
-  const ctrl = new AbortController();
-  const onAbort = () => ctrl.abort(signal?.reason);
-  if (signal?.aborted) ctrl.abort(signal.reason);
-  signal?.addEventListener("abort", onAbort, { once: true });
-  let timer: NodeJS.Timeout | undefined;
-  if (init.timeoutMs) timer = setTimeout(() => ctrl.abort(new TimeoutError("timed out")), init.timeoutMs);
-  try {
-    const { timeoutMs: _t, ...rest } = init;
-    return await fetch(url, { ...rest, redirect: "manual", signal: ctrl.signal });
-  } finally {
-    if (timer) clearTimeout(timer);
-    signal?.removeEventListener("abort", onAbort);
-  }
+  const { timeoutMs, ...rest } = init;
+  // The caller's signal stays attached for the whole body, so a cancel also stops a stream in progress.
+  const signals = [signal, timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined].filter((s): s is AbortSignal => !!s);
+  return fetch(url, { ...rest, redirect: "manual", signal: signals.length ? AbortSignal.any(signals) : undefined });
 }
 
 /** Reads a whole small body, for errors and JSON replies; never throws. */

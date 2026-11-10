@@ -9,6 +9,9 @@
   "homepage": "https://github.com/jerynv/phaethon",
   "type": "module",
   "main": "dist/desktop/main.cjs",
+  "imports": {
+    "#shared/*": "./src/shared/*"
+  },
   "packageManager": "pnpm@10.34.9",
   "engines": {
     "node": ">=22.12"

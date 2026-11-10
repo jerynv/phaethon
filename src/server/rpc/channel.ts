@@ -7,10 +7,12 @@ export class Channel<T = unknown> {
   #closed = false;
   #onClose: Array<() => void> = [];
 
-  constructor(
-    readonly id: number,
-    private readonly deliver: (msg: T) => boolean,
-  ) {}
+  readonly id: number;
+  private readonly deliver: (msg: T) => boolean;
+  constructor(id: number, deliver: (msg: T) => boolean) {
+    this.id = id;
+    this.deliver = deliver;
+  }
 
   send(msg: T): void {
     if (this.#closed) return;

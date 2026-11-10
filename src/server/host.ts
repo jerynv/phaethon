@@ -39,7 +39,10 @@ class ParentHost implements Host {
   #pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
   #listeners = new Set<(event: HostEventBody) => void>();
 
-  constructor(private readonly parent: PortLike) {}
+  private readonly parent: PortLike;
+  constructor(parent: PortLike) {
+    this.parent = parent;
+  }
 
   write(frame: CoreToHost): void {
     this.parent.postMessage(frame);

@@ -11,3 +11,4 @@ import "./diagnostics/commands.ts";
 import "./updater/commands.ts";
 import "./study/commands.ts";
 import "./agent/commands.ts";
+import "./cli/commands.ts";

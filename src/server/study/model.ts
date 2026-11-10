@@ -1,8 +1,9 @@
-import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findBinary, spawnInGroup, stopGroup, type Cli } from "../cli/process.ts";
+import { findBinary, spawnInGroup, stopGroup, type GroupChild } from "../cli/process.ts";
+import type { CliId as Cli } from "../cli/cli.ts";
+import { cliCommand } from "../cli/instances.ts";
 import { appFiles, spaceDir, vaultName } from "../core/vault.ts";
 import { homeDir } from "../env.ts";
 import { completeText } from "../providers/complete.ts";
@@ -363,62 +364,44 @@ async function runOnce(
   opts: { cwd: string; configDir: string | null; env?: Record<string, string>; signal?: AbortSignal },
 ): Promise<Ran> {
   if (opts.signal?.aborted) throw "Stopped.";
-  let child: ChildProcess;
+  // The CLI's environment (credential variables scrubbed, its config home set) comes from the CLI module.
+  const env = { ...cliCommand(cli, bin, opts.cwd, opts.configDir).env, ...(opts.env ?? {}) };
+  // The group wrapper starts even when the CLI is gone, so look first.
+  if (!isExecutable(bin)) throw MISSING[cli];
+  let gc: GroupChild;
   try {
-    const spawnOpts: Parameters<typeof spawnInGroup>[2] = { cli, cwd: opts.cwd, configDir: opts.configDir, stdin: input };
-    if (opts.env) spawnOpts.env = opts.env;
-    child = spawnInGroup(bin, args, spawnOpts);
+    gc = await spawnInGroup(bin, args, { cwd: opts.cwd, env, input, cli });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") throw MISSING[cli];
     throw `Could not start ${NAMES[cli]}: ${errText(e)}`;
   }
-  return new Promise<Ran>((resolve, reject) => {
-    const out: Buffer[] = [];
-    const err: Buffer[] = [];
-    let outLen = 0;
-    let errLen = 0;
-    let settled = false;
-    child.stdout?.on("data", (b: Buffer) => {
-      if (outLen >= CLI_OUTPUT_MAX) return;
-      const keep = b.subarray(0, CLI_OUTPUT_MAX - outLen);
-      out.push(keep);
-      outLen += keep.length;
-    });
-    child.stderr?.on("data", (b: Buffer) => {
-      if (errLen >= STDERR_MAX) return;
-      const keep = b.subarray(0, STDERR_MAX - errLen);
-      err.push(keep);
-      errLen += keep.length;
-    });
-    const finish = (f: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      opts.signal?.removeEventListener("abort", onAbort);
-      f();
-    };
-    const timer = setTimeout(() => {
-      void stopGroup(child);
-      finish(() => reject(`${NAMES[cli]} took too long to answer, so it was stopped. Try fewer cards or questions.`));
-    }, CLI_TIMEOUT_MS);
-    const onAbort = () => {
-      void stopGroup(child);
-      finish(() => reject("Stopped."));
-    };
-    opts.signal?.addEventListener("abort", onAbort);
-    child.on("error", (e: NodeJS.ErrnoException) => {
-      finish(() => reject(e.code === "ENOENT" ? MISSING[cli] : `Could not start ${NAMES[cli]}: ${e.message}`));
-    });
-    child.on("close", (code) => {
-      finish(() =>
-        resolve({
-          stdout: new TextDecoder().decode(Buffer.concat(out)),
-          stderr: new TextDecoder().decode(Buffer.concat(err)),
-          code,
-        }),
-      );
-    });
+  const out: Buffer[] = [];
+  let outLen = 0;
+  gc.stdout.on("data", (b: Buffer) => {
+    if (outLen >= CLI_OUTPUT_MAX) return;
+    const keep = b.subarray(0, CLI_OUTPUT_MAX - outLen);
+    out.push(keep);
+    outLen += keep.length;
   });
+  let stopped: string | undefined;
+  const stop = (why: string) => {
+    if (stopped) return;
+    stopped = why;
+    void stopGroup(gc);
+  };
+  const timer = setTimeout(() => stop(`${NAMES[cli]} took too long to answer, so it was stopped. Try fewer cards or questions.`), CLI_TIMEOUT_MS);
+  const onAbort = () => stop("Stopped.");
+  opts.signal?.addEventListener("abort", onAbort);
+  try {
+    const exit = await gc.exited;
+    const stderr = (await gc.stderrText()).slice(0, STDERR_MAX);
+    if (stopped) throw stopped;
+    return { stdout: new TextDecoder().decode(Buffer.concat(out)), stderr, code: exit.code };
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onAbort);
+    gc.dispose();
+  }
 }
 
 // ---- CLI models -------------------------------------------------------------------

@@ -112,6 +112,8 @@ export function AssistantRow(p: Props) {
               case "thinking":
                 return <Thinking key={s.key} text={s.text} live={streaming && i === segs.length - 1} />;
               case "record":
+                // While the question's card is open below, its record would only repeat it.
+                if (s.record.kind === "check" && m.question?.question.id === s.record.id) return null;
                 return <RecordLine key={s.key} record={s.record} />;
             }
           })}

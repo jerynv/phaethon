@@ -1,0 +1,123 @@
+# Builds Phaethon for macOS (arm64 and x64), Windows (x64) and Linux (AppImage
+# and deb, x64) and uploads the installers and the updater's latest*.yml files
+# to a draft GitHub release for the tag. Publishing the draft is what makes it
+# the update everyone gets: electron-updater reads the latest published release
+# of jerynv/phaethon, never a draft or a prerelease.
+#
+# Optional macOS signing and notarization (repository secrets, as before):
+# APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_ID,
+# APPLE_PASSWORD (an app-specific password) and APPLE_TEAM_ID. Without a
+# certificate the macOS build is signed ad hoc: Gatekeeper warns on first open,
+# and macOS can't install updates in place (people download the new version).
+#
+# Phaethon 0.1.x (Tauri) installs read latest.json and can't update to these
+# builds; they need one manual install.
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: The tag matches package.json
+        id: version
+        shell: bash
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match package.json version $version." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # One draft for every build to upload into, so parallel jobs don't each make their own.
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release create "v$VERSION" --draft --title "Phaethon $VERSION" --target "$GITHUB_SHA" --notes \
+              "Pre-alpha desktop build. Phaethon is still in development and is not ready for real data.
+
+          Download the installer for your operating system from the assets below. Future releases can update from inside the app.
+
+          Phaethon 0.1.x can't update itself to this version: download and install it once by hand."
+          fi
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac --arm64 --x64
+            # Both architectures' prebuilt native modules, for the x64 build on an arm64 runner.
+            install: pnpm install --frozen-lockfile --cpu=arm64 --cpu=x64
+          - os: windows-latest
+            target: --win --x64
+            install: pnpm install --frozen-lockfile
+          - os: ubuntu-latest
+            target: --linux --x64
+            install: pnpm install --frozen-lockfile
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: ${{ matrix.install }}
+
+      - name: Apple signing when available
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ACCOUNT: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          put() {
+            local delimiter="EOF_$(uuidgen)"
+            printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
+          }
+          if [[ -z "$CERTIFICATE" ]]; then
+            echo "No Apple certificate: the build is signed ad hoc."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          put CSC_LINK "$CERTIFICATE"
+          [[ -n "$CERTIFICATE_PASSWORD" ]] && put CSC_KEY_PASSWORD "$CERTIFICATE_PASSWORD"
+          if [[ -n "$APPLE_ACCOUNT" && -n "$APPLE_APP_PASSWORD" && -n "$TEAM_ID" ]]; then
+            put APPLE_ID "$APPLE_ACCOUNT"
+            put APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_PASSWORD"
+            put APPLE_TEAM_ID "$TEAM_ID"
+          else
+            echo "No notarization credentials: the build is signed but not notarized."
+          fi
+
+      - run: pnpm build
+
+      - name: Package and upload to the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-builder ${{ matrix.target }} --publish always

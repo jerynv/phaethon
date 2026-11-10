@@ -49,7 +49,7 @@ export function abortion(signal: AbortSignal): Promise<"abort"> {
  * closes its stdin so it can shut down cleanly, gives it a moment, then stops
  * the whole group.
  */
-export async function finishChild(gc: GroupChild, run: Run, graceMs = 3000): Promise<void> {
+export async function finishChild(gc: GroupChild, run: Run, graceMs = 1500): Promise<void> {
   try {
     gc.stdin?.end();
   } catch {

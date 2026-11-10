@@ -1,0 +1,98 @@
+{
+  "assets": [
+    {
+      "name": "anthropic",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/anthropic.svg",
+      "bytes": 368,
+      "viewBox": "0 0 24 24",
+      "paths": 1
+    },
+    {
+      "name": "gemini",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/gemini-color.svg",
+      "bytes": 2836,
+      "viewBox": "0 0 24 24",
+      "paths": 4
+    },
+    {
+      "name": "together",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/together-color.svg",
+      "bytes": 582,
+      "viewBox": "0 0 24 24",
+      "paths": 2
+    },
+    {
+      "name": "mistral",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/mistral-color.svg",
+      "bytes": 655,
+      "viewBox": "0 0 24 24",
+      "paths": 5
+    },
+    {
+      "name": "deepseek",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/deepseek-color.svg",
+      "bytes": 2164,
+      "viewBox": "0 0 24 24",
+      "paths": 1
+    },
+    {
+      "name": "xai",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/xai.svg",
+      "bytes": 372,
+      "viewBox": "0 0 24 24",
+      "paths": 1
+    },
+    {
+      "name": "ollama",
+      "url": "https://raw.githubusercontent.com/lobehub/lobe-icons/ea434b96e75813517b377825e01c0df61dee8836/packages/static-svg/icons/ollama.svg",
+      "bytes": 3290,
+      "viewBox": "0 0 24 24",
+      "paths": 1
+    },
+    {
+      "name": "groq",
+      "url": "https://groq.com/favicon.svg",
+      "bytes": 362,
+      "viewBox": "0 0 33 33",
+      "paths": 3
+    },
+    {
+      "name": "lmstudio",
+      "url": "https://lmstudio.ai/assets/marketing/brand/download/logos/lm-studio-icon-color.svg",
+      "bytes": 2405,
+      "viewBox": "0 0 512 512",
+      "paths": 1
+    },
+    {
+      "name": "openrouter-light",
+      "url": "https://openrouter.ai/brand/logos/transparent/glyph/svg/glyph-grape.svg",
+      "bytes": 563,
+      "viewBox": "0 0 1024 730",
+      "paths": 1
+    },
+    {
+      "name": "openrouter-dark",
+      "url": "https://openrouter.ai/brand/logos/transparent/glyph/svg/glyph-volt.svg",
+      "bytes": 563,
+      "viewBox": "0 0 1024 730",
+      "paths": 1
+    },
+    {
+      "name": "openai",
+      "url": "https://github.com/pingdotgg/t3code/blob/7f6f47b27b44456f1c8214d3b566b375c09f629e/apps/web/src/components/Icons.tsx#L405",
+      "bytes": 2467,
+      "viewBox": "100 100 411 411"
+    },
+    {
+      "name": "claude",
+      "url": "https://github.com/pingdotgg/t3code/blob/7f6f47b27b44456f1c8214d3b566b375c09f629e/apps/web/src/components/Icons.tsx#L420",
+      "bytes": 1994,
+      "viewBox": "0 0 256 257"
+    }
+  ],
+  "collection": {
+    "repo": "https://github.com/lobehub/lobe-icons",
+    "commit": "ea434b96e75813517b377825e01c0df61dee8836",
+    "license": "MIT"
+  }
+}

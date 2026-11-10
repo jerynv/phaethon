@@ -1,0 +1,6 @@
+/**
+ * Loads every module that registers commands or lifecycle tasks. Each line is
+ * owned by the module it imports; keep them in this order (storage first, since
+ * later modules' startup tasks read the vault).
+ */
+import "./system/commands.ts";

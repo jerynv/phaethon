@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
  */
 
 export type Seen = { method: string; url: string; headers: http.IncomingHttpHeaders; text: string; json: any };
-export type Reply = { status?: number; headers?: Record<string, string>; chunks?: (string | Buffer)[]; body?: string; delayMs?: number };
+export type Reply = { status?: number; headers?: Record<string, string>; chunks?: (string | Buffer)[]; body?: string; delayMs?: number; holdAfter?: { chunk: number; ms: number } };
 
 export async function fakeServer(replies: (Reply | ((seen: Seen) => Reply))[]) {
   const seen: Seen[] = [];
@@ -29,9 +29,10 @@ export async function fakeServer(replies: (Reply | ((seen: Seen) => Reply))[]) {
     if (r.delayMs) await new Promise((ok) => setTimeout(ok, r.delayMs));
     res.writeHead(r.status ?? 200, r.headers ?? { "content-type": "text/event-stream" });
     if (r.chunks) {
-      for (const c of r.chunks) {
+      for (const [i, c] of r.chunks.entries()) {
+        if (res.destroyed) break;
         res.write(c);
-        await new Promise((ok) => setTimeout(ok, 2));
+        await new Promise((ok) => setTimeout(ok, r.holdAfter?.chunk === i ? r.holdAfter.ms : 2));
       }
       res.end();
     } else res.end(r.body ?? "");

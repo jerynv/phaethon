@@ -35,7 +35,9 @@ export type UiRecord =
   | { kind: "read"; space: string; path: string; tool: "read" | "list" | "search"; query?: string }
   | { kind: "stopped" }
   | { kind: "lessonPlan"; id: string; goal: string; map: string; nodes: { id: string; label: string }[] }
-  | { kind: "check"; id: string; question: string; answered?: boolean; correct?: boolean; confidence?: number };
+  | { kind: "check"; id: string; question: string; answered?: boolean; correct?: boolean; confidence?: number }
+  /** A progress note the model wrote between tool calls (saved so a reload shows what was streamed). */
+  | { kind: "progress"; text: string };
 
 /** A graded question the model asked with the `check` tool; the turn ends until it's answered. */
 export type CheckQuestion = {

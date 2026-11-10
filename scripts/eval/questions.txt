@@ -1,0 +1,4 @@
+Why does the contrapositive of a conditional statement always have the same truth value as the statement itself?
+Why is the square of an odd integer always odd?
+Why is the composition of two injective functions injective?
+Why does a square matrix with determinant zero have no inverse?

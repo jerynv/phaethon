@@ -1,12 +1,7 @@
-// STUB: owned by agent
+// STUB: owned by agent worker
 import { Refusal } from "../rpc/registry.ts";
 
-/**
- * Placeholder for one non-streaming completion with the vault's provider, so
- * storage code (clearing a conversation into memory) typechecks before the
- * agent worker's branch is merged. The real module replaces this file.
- */
-export async function completeText(_req: {
+export type CompleteRequest = {
   space?: string;
   model?: string;
   system: string;
@@ -14,6 +9,9 @@ export async function completeText(_req: {
   maxTokens?: number;
   effort?: "low" | "medium" | "high";
   signal?: AbortSignal;
-}): Promise<{ text: string; model: string }> {
-  throw new Refusal("Phaethon has no model set up to do that yet.");
+};
+
+/** One non-streaming completion with the vault's configured provider. */
+export async function completeText(_req: CompleteRequest): Promise<{ text: string; model: string }> {
+  throw new Refusal("No model is set up: add an API key in Settings, or switch to Claude Code.");
 }

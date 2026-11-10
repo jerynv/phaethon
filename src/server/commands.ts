@@ -9,3 +9,4 @@ import "./latex/commands.ts";
 import "./voice/commands.ts";
 import "./diagnostics/commands.ts";
 import "./updater/commands.ts";
+import "./study/commands.ts";

@@ -2,7 +2,7 @@
 
 An open-source, accessible, desktop-first life OS: a workspace where an AI agent helps you run the parts of your life you choose to give it.
 
-**Status: pre-alpha.** In the desktop app, each space chats through Phaethon's own agent with your Anthropic API key (kept in the system keychain), or through the official `claude` CLI you logged into yourself. Either way the agent sees only that space's folder under `~/Phaethon/default/spaces/`, and Phaethon's agent asks before changing any file. In a plain browser the chat falls back to a local echo stub. Nothing here is ready for real data.
+**Status: pre-alpha.** Each space chats through Phaethon's own agent with a provider you choose (Anthropic, OpenAI, OpenRouter, Groq, local models through Ollama or LM Studio, and more; keys stay in the system keychain), or through a coding agent you signed in to yourself (Claude Code, Codex or Gemini CLI). Either way the agent sees only that space's folder under `~/Phaethon/default/spaces/`, and Phaethon's agent asks before changing any file. Nothing here is ready for real data.
 
 ## What it is
 
@@ -11,38 +11,37 @@ An open-source, accessible, desktop-first life OS: a workspace where an AI agent
 - **Bring your own agent backend.** Either the official `claude` CLI that you logged into yourself, or your own API key stored in the OS keychain. Phaethon never reads, stores or relays a subscription OAuth token.
 - **Accessible from day one.** WCAG 2.2 AA is the floor, across blind and low-vision, motor and switch, Deaf and hard-of-hearing, cognitive, and speech disabilities. See [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md).
 
-Design details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
 ## Stack
 
-- [Tauri 2](https://tauri.app) with a Rust core (`src-tauri/`)
-- React 19 + TypeScript + Vite, managed with pnpm
-- [shadcn/ui](https://ui.shadcn.com) on Radix primitives, Tailwind CSS v4
-- [assistant-ui](https://github.com/assistant-ui/assistant-ui) (`@assistant-ui/react`) for the chat surface
-- React Aria where Radix lacks a component
+Everything is TypeScript:
 
-[LibreChat](https://github.com/LibreChat-AI/LibreChat) (MIT) is used as a design reference only. No code is vendored from it; if any is copied later, its MIT notice goes with it.
+- [Electron](https://www.electronjs.org) shell (`src/desktop/`): windows, native dialogs, course-site sign-in windows, the updater. The UI is served from `app://phaethon` under a strict CSP.
+- A Node core (`src/server/`) running as an Electron utility process: the vault, spaces, conversations, providers and Phaethon's agent loop, the coding-agent backends, course import, study tools. The renderer reaches it over a MessagePort; no network port is opened.
+- React 19 + Vite UI (`src/web/`), [shadcn/ui](https://ui.shadcn.com) in its Base UI style on [`@base-ui/react`](https://base-ui.com), Tailwind CSS v4, lucide icons. Several primitives and patterns are adapted from [T3 Code](https://github.com/pingdotgg/t3code) (MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+- The agent's teaching method (premises, justified steps, checks, lesson plans and graded questions) reimplements ideas from [LearnHarness](https://github.com/amosblomqvist/learnharness); no code or prompt text is copied from it.
+
+Design details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/TYPESCRIPT-REWRITE.md](docs/TYPESCRIPT-REWRITE.md).
 
 ## Download
 
-Installers for macOS (Apple silicon and Intel `.dmg`), Windows (`-setup.exe` or `.msi`) and Linux (`.AppImage`, `.deb`, `.rpm`) are on the [latest release](https://github.com/jerynv/phaethon/releases/latest). Once installed, Phaethon checks for signed updates itself (Settings › About).
+Installers for macOS (Apple silicon and Intel `.dmg`), Windows (`-setup.exe`) and Linux (`.AppImage`, `.deb`) are on the [latest release](https://github.com/jerynv/phaethon/releases/latest). Once installed, Phaethon checks for updates itself (Settings › About). Versions before 0.2 were built with Tauri and can't update themselves to this one: install it once by hand.
 
 The macOS build isn't notarized yet, so the first open is blocked: open it once, then choose **Open Anyway** in System Settings › Privacy & Security.
 
 ## Running it
 
-Prerequisites: Node 20+, pnpm, a Rust toolchain via [rustup](https://rustup.rs), and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS (Xcode Command Line Tools on macOS). For the agent: Claude Code (the `claude` CLI), run once as `claude` in a terminal to log in.
+Prerequisites: Node 22.12+ and pnpm. For a coding-agent backend, install that CLI and sign in to it in a terminal.
 
 ```sh
 pnpm install
-pnpm tauri dev          # desktop app with hot reload
-pnpm dev                # frontend only, in a browser at http://localhost:1420
-pnpm build              # typecheck + production frontend build
-pnpm tauri build        # release bundle (.app / .dmg / .msi / .AppImage)
-
-cd src-tauri && cargo test                                       # unit tests, no network
-cd src-tauri && cargo test --test claude_cli -- --ignored --test-threads=1   # real CLI, uses your login (4 short prompts)
+pnpm dev            # desktop app with hot reload
+pnpm test           # core and UI unit tests (no network, no real keychain)
+pnpm test:ui        # build, then end-to-end UI tests against the real core with a scripted model
+pnpm dist           # installer for this machine (release/)
+node scripts/capture.mjs shot.png   # screenshot of the real app, headless
 ```
+
+`node scripts/eval/reasoning.mjs <promptA.txt> <promptB.txt>` grades how two system prompts explain things, blind, through your own Claude Code login (a few short calls; never run in CI).
 
 ## License
 

@@ -33,7 +33,7 @@ export function recoveryFor(code: ErrorCode | "ipc" | undefined, settings: Setti
     case "apiKey":
       return { title: "Your API key was refused", body: `${name} didn’t accept the key saved in Settings. Check it or paste a new one, then send again.`, actions: ["settings", "retry"] };
     case "billing":
-      return { title: `Your ${name} account is out of credit`, body: `Add credit to the ${name} account your key belongs to, then send again. Phaethon itself never charges you.`, actions: ["retry"] };
+      return { title: `Your ${name} account is out of credit`, body: `Add credit to the ${name} account your key belongs to, then send again.`, actions: ["retry"] };
     case "rateLimit":
       return {
         title: `${name} asked Phaethon to slow down`,
@@ -43,7 +43,7 @@ export function recoveryFor(code: ErrorCode | "ipc" | undefined, settings: Setti
     case "unavailable":
       return local
         ? { title: `${name} had a problem`, body: "Check that it’s running and the model is loaded, then send again.", actions: ["retry"] }
-        : { title: `${name}’s service is busy or down`, body: `This is on ${name}’s side and usually passes within minutes. Send again in a little while.`, actions: ["retry"] };
+        : { title: `${name}’s service is busy or down`, body: "It usually passes within minutes. Send again in a little while.", actions: ["retry"] };
     case "badRequest":
       return { title: `${name} couldn’t accept this message`, body: "Something in the message or its files wasn’t accepted. Try a shorter message or fewer files.", actions: ["retry"], ownWords: true };
     case "provider":

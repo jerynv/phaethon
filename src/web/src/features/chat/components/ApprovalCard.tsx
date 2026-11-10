@@ -148,8 +148,7 @@ export function ApprovalCard({
               <span aria-hidden className="ms-1.5 font-mono text-xs">
                 <span className="text-success-foreground">+{counts.added}</span> <span className="text-destructive-foreground">−{counts.removed}</span>
               </span>
-            ) : null}{" "}
-            Nothing changes unless you allow it.
+            ) : null}
           </p>
         </div>
       </div>

@@ -538,7 +538,7 @@ function Exams({ space, data, today, matches, onChange }: { space: string; data:
     setProblem(null);
     const exam: Exam = { id: `e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, title: title.trim().slice(0, 120), date, ...(course ? { course } : {}) };
     if (await save([...data.exams, exam])) {
-      announce(`${exam.title} added for ${dayName(date)}. The schedule now includes it.`);
+      announce(`${exam.title} added for ${dayName(date)}.`);
       setTitle("");
       setDate("");
       titleRef.current?.focus();
@@ -546,7 +546,7 @@ function Exams({ space, data, today, matches, onChange }: { space: string; data:
   };
 
   return (
-    <Section title="Exams" description="The schedule plans review sessions before each one.">
+    <Section title="Exams">
       {exams.length > 0 && (
         <ul ref={listRef} className="divide-y overflow-hidden rounded-xl border bg-card">
           {exams.map((e, i) => {

@@ -242,7 +242,6 @@ export function AppearanceSettings() {
           <SettingsRow
             title="Motion"
             labelId={ids.motion}
-            description="Reduced makes transitions instant."
             control={
               <SegmentedControl<AccessPref>
                 aria-labelledby={ids.motion}
@@ -273,7 +272,7 @@ export function AppearanceSettings() {
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
         <p aria-live="polite" className={cn("text-sm", saveState.status === "error" ? "text-destructive-foreground" : "text-muted-foreground")}>
-          {saveState.status === "error" ? `Not saved: ${saveState.error}` : saveState.status === "saving" ? "Saving…" : saveState.status === "saved" ? "Saved" : ""}
+          {saveState.status === "error" ? `Not saved: ${saveState.error}` : ""}
         </p>
         <Button variant="outline" disabled={isDefaultAppearance(a)} onClick={() => setAppearance((p) => resetAppearance(p))}>
           <RotateCcwIcon />

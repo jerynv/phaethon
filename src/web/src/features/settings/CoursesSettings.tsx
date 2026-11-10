@@ -19,7 +19,7 @@ export function CoursesSettings() {
     <SettingsPage>
       <SettingsSection
         title="Course sites"
-        description="Connect Canvas, Brightspace, Moodle or Blackboard, import courses, and choose which spaces see them, from a school space’s Courses view."
+        description="Connect Canvas, Brightspace, Moodle or Blackboard from a school space’s Courses view."
       >
         {school.length > 0 ? (
           <SettingsGroup>

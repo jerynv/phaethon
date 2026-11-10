@@ -347,7 +347,6 @@ function ModelsSection({ settings, spaceId, onSaid }: { settings: Settings; spac
           ) : (
             <Row
               title={`Model in ${spaceName}`}
-              description="Only this space. Takes effect from the next message."
               control={
                 <div className="w-full @min-[34rem]/row:w-72">
                   <ModelSelect

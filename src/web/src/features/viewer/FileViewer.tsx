@@ -137,7 +137,7 @@ function Body({ loaded, space, path, onRetry }: { loaded: Loaded; space: string;
         </div>
       );
     default:
-      return <Problem title="This kind of file opens in its own app" message="Phaethon can’t show it here. Use Open to see it in the app your computer uses for it." />;
+      return <Problem title="This kind of file opens in its own app" message="Use Open to see it in the app your computer uses for it." />;
   }
 }
 

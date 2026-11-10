@@ -103,7 +103,7 @@ export function CoursesView({ spaceId }: { spaceId: string }) {
         <EmptyState
           icon={<GraduationCapIcon />}
           title="Connect your course site"
-          description="Sign in to Canvas, Brightspace, Moodle or Blackboard and Phaethon imports your courses: syllabus, assignments, files and grades, as plain files in your vault."
+          description="Sign in to Canvas, Brightspace, Moodle or Blackboard and Phaethon imports your courses: syllabus, assignments, files and grades."
         >
           <Button onClick={() => open({})} data-import-open="">
             Connect a course site
@@ -280,7 +280,7 @@ function CourseDetail({
           <p className="rounded-xl border border-dashed px-4 py-3.5 text-sm text-muted-foreground">No space sees this course yet. Give one access below to browse it.</p>
         )}
       </Section>
-      <Section title="Who can see it" description="A space sees only the parts checked here; its assistant can’t read the rest.">
+      <Section title="Who can see it" description="A space sees only the parts checked here.">
         <AccessTable course={course} spaces={data.spaces} access={data.view.access} onChange={onAccess} />
       </Section>
     </>

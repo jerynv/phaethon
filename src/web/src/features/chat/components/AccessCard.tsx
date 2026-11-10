@@ -45,7 +45,6 @@ export function AccessCard({
 
   const kind = pathKind(request.path);
   const Icon = kind === "file" ? FileTextIcon : kind === "folder" ? FolderIcon : LayersIcon;
-  const what = kind === "space" ? `everything in ${target.name}` : `a ${kind} in ${target.name}`;
   const clean = request.path.replace(/\/+$/, "");
 
   const answer = async (choice: AccessAnswer) => {
@@ -79,7 +78,7 @@ export function AccessCard({
             Phaethon wants to read from {target.name}
           </h3>
           <p id={descId} className="text-sm text-muted-foreground">
-            It asked to read {what}{target.known ? "" : ", a space that isn’t in your Phaethon folder"}. Nothing there is shared unless you allow it.
+            {target.known ? null : `${target.name} isn’t in your Phaethon folder.`}
           </p>
         </div>
       </div>
@@ -104,7 +103,7 @@ export function AccessCard({
           <Checkbox id={keepId} checked={keep} onCheckedChange={(v) => setKeep(Boolean(v))} className="mt-0.5" />
           <span>
             Always let {from.name} read {clean ? <span className="font-mono text-[0.8125rem]">{target.name}/{clean}</span> : `all of ${target.name}`}
-            <span className="block text-muted-foreground">You can take it back in Settings › Spaces.</span>
+            <span className="block text-muted-foreground">You can take it back in Settings › Coding agents.</span>
           </span>
         </label>
       </div>

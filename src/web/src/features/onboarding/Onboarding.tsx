@@ -121,9 +121,6 @@ export function Onboarding({ onFinish }: { onFinish(result: OnboardingResult): v
                 <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1} className="font-semibold text-2xl tracking-tight outline-none">
                   Choose how Phaethon answers
                 </h1>
-                <p className="reading max-w-prose text-muted-foreground">
-                  Use your own key from a provider, a model on this computer, or a coding agent you already signed in to.
-                </p>
               </div>
               <div className="min-h-24">
                 <AssistantSettings />

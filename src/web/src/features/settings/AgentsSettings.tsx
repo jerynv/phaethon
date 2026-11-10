@@ -15,7 +15,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/c
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { AccountDialog, UsageDialog, type AccountTarget } from "./agents/AccountDialog";
-import { CLI_IDS, CLI_INFO, type InstanceView } from "./agents/api";
+import { CLI_IDS, type InstanceView } from "./agents/api";
 import { CliCard } from "./agents/CliCard";
 import { Grants } from "./agents/Grants";
 import { SpaceAgentSettings } from "./agents/SpaceAgentSettings";
@@ -56,7 +56,7 @@ export function AgentsSettings({ spaceId }: { spaceId?: string }) {
   return (
     <div className="flex flex-col gap-8">
       {region}
-      <Section title="On this computer" description="Each signs in with its own login, in your browser." headingId="agents-clis">
+      <Section title="On this computer" headingId="agents-clis">
         {agents.status === "error" && !agents.instances.length ? (
           <Alert variant="error">
             <AlertTitle>The coding agents couldn’t be checked</AlertTitle>
@@ -101,7 +101,6 @@ export function AgentsSettings({ spaceId }: { spaceId?: string }) {
 
       <Section
         title={spaceId ? `In ${spaceName}` : "In a space"}
-        description={cli ? `${CLI_INFO[cli].name} answers now.` : "Model and reasoning show here while a coding agent answers."}
         headingId="agents-space"
         action={
           spaceId || spaces.length < 2 ? null : (

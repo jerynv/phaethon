@@ -622,7 +622,6 @@ function ExamStep({
               </div>
             </Disclosure>
           )}
-          {view?.state === "stale" && <p className="text-muted-foreground">The course changed since this was read; it’s read again when you make this.</p>}
         </div>
       )}
 

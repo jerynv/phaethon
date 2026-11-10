@@ -162,7 +162,6 @@ function CliModelRows({ space, spaceName, cli, onSaid }: { space: string; spaceN
     <>
       <Row
         title="Model"
-        description={`What ${name} uses in ${spaceName}.`}
         control={
           <div className="w-full @min-[34rem]/row:w-72">
             <ModelSelect
@@ -275,7 +274,7 @@ function WorkspaceRow({ space, onSaid }: { space: string; onSaid: (t: string) =>
         ws ? (
           <span id={pathId} className="flex flex-col gap-0.5">
             <span className="font-mono text-sm [overflow-wrap:anywhere] text-foreground/80">{ws.path}</span>
-            <span>{ws.kind === "managed" ? "The space’s own folder." : "Coding agents work here; the conversation stays in the space."}</span>
+            <span>{ws.kind === "managed" ? "The space’s own folder." : null}</span>
           </span>
         ) : (
           <Skeleton className="mt-1 h-4 w-64 max-w-full" />
@@ -355,7 +354,7 @@ function FullAccessRow({ space, spaceName, onSaid }: { space: string; spaceName:
         </span>
       }
       descriptionId={descId}
-      description="A coding agent here can read and change any file on this computer, run any command and use the internet, without asking. Phaethon’s own agent keeps asking."
+      description="A coding agent here can read and change any file on this computer, run any command and use the internet, without asking."
       control={
         on === null ? (
           <Skeleton className="h-5 w-9 rounded-full" />

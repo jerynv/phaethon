@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { SettingsGroup, SettingsPage, SettingsRow, SettingsSection } from "@/components/ui/settings";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { announce } from "@/lib/announce";
 import { errorText } from "@/lib/core";
 import { fileManagerName } from "@/lib/platform";
 
@@ -123,7 +122,6 @@ function SpaceEditor({ space, onBack }: { space: SpaceView; onBack(): void }) {
       await update(space.id, patch);
       if (done) {
         setMessage({ kind: "ok", text: done });
-        announce(done);
       }
     } catch (e) {
       setMessage({ kind: "error", text: errorText(e) });

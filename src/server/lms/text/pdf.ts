@@ -24,7 +24,7 @@ export type PdfPage = {
 export type PdfDocument = {
   numPages: number;
   getPage(n: number): Promise<PdfPage>;
-  destroy(): Promise<void>;
+  loadingTask: { destroy(): Promise<void> };
   canvasFactory: { create(w: number, h: number): { canvas: { width: number; height: number }; context: CanvasContext } };
 };
 type CanvasContext = {
@@ -68,6 +68,11 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
     if (err?.name === "PasswordException") throw new Error("the PDF is password protected");
     throw new Error(`it couldn’t be read as a PDF (${err?.message ?? String(e)})`);
   }
+}
+
+/** Frees a document and its worker. */
+export async function closePdf(doc: PdfDocument): Promise<void> {
+  await doc.loadingTask.destroy().catch(() => {});
 }
 
 /** A page's text layer as lines: items joined, a new line where the text says so or moves to another line. */
@@ -149,15 +154,12 @@ export async function pdfPagesHere(bytes: Buffer): Promise<Layer[]> {
     });
     return out;
   } finally {
-    await doc.destroy().catch(() => {});
+    await closePdf(doc);
   }
 }
 
-/**
- * Page `n` drawn in grey as a PNG at `dpi`, its longest side at most `maxSide`
- * pixels. Null when there is no such page.
- */
-export async function renderGrey(doc: PdfDocument, n: number, dpi: number, maxSide: number): Promise<Buffer | null> {
+/** Page `n` drawn in grey: width, height and one byte per pixel, rows top to bottom. Null when there is no such page. */
+export async function renderGreyPixels(doc: PdfDocument, n: number, dpi: number, maxSide: number): Promise<{ w: number; h: number; grey: Buffer } | null> {
   if (n < 1 || n > doc.numPages) return null;
   const page = await doc.getPage(n);
   const base = page.getViewport({ scale: 1 });
@@ -174,5 +176,11 @@ export async function renderGrey(doc: PdfDocument, n: number, dpi: number, maxSi
   const grey = Buffer.alloc(w * h);
   for (let i = 0, j = 0; j < grey.length; i += 4, j++) grey[j] = Math.round(0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]);
   page.cleanup();
-  return encodePng(w, h, 1, grey, false);
+  return { w, h, grey };
+}
+
+/** Page `n` drawn in grey as a PNG at `dpi`, its longest side at most `maxSide` pixels. Null when there is no such page. */
+export async function renderGrey(doc: PdfDocument, n: number, dpi: number, maxSide: number): Promise<Buffer | null> {
+  const px = await renderGreyPixels(doc, n, dpi, maxSide);
+  return px ? encodePng(px.w, px.h, 1, px.grey, false) : null;
 }

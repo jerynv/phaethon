@@ -373,7 +373,7 @@ async function textCopy(root: string, rel: string, signal: AbortSignal): Promise
   }
 }
 
-type Got = { kind: "same"; rec: FileRec } | { kind: "written"; rec: FileRec } | { kind: "skipped"; why: string } | { kind: "cancelled" };
+export type Got = { kind: "same"; rec: FileRec } | { kind: "written"; rec: FileRec } | { kind: "skipped"; why: string } | { kind: "cancelled" };
 
 function downloadError(name: string, e: LmsError | Error): string {
   if (isLmsError(e, "signedOut")) return `${name}: couldn’t be downloaded (sign in again if this keeps happening)`;
@@ -388,7 +388,7 @@ function downloadError(name: string, e: LmsError | Error): string {
  * version or HTTP validators; otherwise the body is read while hashed, and only
  * different bytes replace the file on disk.
  */
-async function fetchFile(session: Session, root: string, f: RemoteFile, rel: string, old: FileRec | undefined, opts: Options): Promise<Got> {
+export async function fetchFile(session: Session, root: string, f: RemoteFile, rel: string, old: FileRec | undefined, opts: Options): Promise<Got> {
   const dest = path.join(root, rel);
   let verified: FileRec | undefined;
   if (old && old.path === rel && old.sha256 !== undefined && (await fileHexAsync(dest)) === old.sha256) verified = old;

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { letters, MAX_READ, PICTURE_BYTES, PICTURE_DPI, PICTURE_SIDE, PICTURES_MAX, SPARSE } from "./constants.ts";
-import { openPdf, pageText, renderGrey } from "./pdf.ts";
+import { closePdf, openPdf, pageText, renderGrey } from "./pdf.ts";
 import { pagePicture } from "./pictures.ts";
 import { PdfDoc } from "./pdfobj.ts";
 import { pngSizeOf } from "./png.ts";
@@ -64,7 +64,7 @@ export async function pagePicturesHere(file: string, pages: number[]): Promise<P
       if (picked) out.push({ page: p, mime: picked.mime, data: picked.bytes.toString("base64") });
     }
   } finally {
-    await doc.destroy().catch(() => {});
+    await closePdf(doc);
   }
   return out;
 }

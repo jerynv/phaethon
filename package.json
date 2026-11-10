@@ -6,6 +6,7 @@
   "description": "An accessible, desktop-first AI agent workspace.",
   "license": "MIT",
   "author": "Jeryn Vicari",
+  "homepage": "https://github.com/jerynv/phaethon",
   "type": "module",
   "main": "dist/desktop/main.cjs",
   "packageManager": "pnpm@10.34.9",

@@ -1,0 +1,86 @@
+# Packaging for Phaethon's desktop app. `pnpm dist` builds for this machine;
+# .github/workflows/release.yml builds every platform and uploads to a draft
+# GitHub release, which is what the in-app updater reads once it's published.
+appId: io.github.jerynv.phaethon
+productName: Phaethon
+copyright: Copyright © 2026 Jeryn Vicari
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+  # Renderer-only packages: Vite already bundled them into dist/web, so they
+  # don't ship again (a test fails if the core or the shell imports one).
+  - "!**/node_modules/{mermaid,@mermaid-js,cytoscape,cytoscape-fcose,cytoscape-cose-bilkent,elkjs}/**"
+  - "!**/node_modules/{react,react-dom,react-markdown,rehype-katex,remark-gfm,remark-math,katex}/**"
+  - "!**/node_modules/{lucide-react,@base-ui,shiki,@shikijs,class-variance-authority,tailwind-merge,docx-preview,zustand}/**"
+  - "!**/node_modules/{@fontsource,@fontsource-variable}/**"
+
+asar: true
+# The native modules are prebuilt N-API binaries for each platform; nothing to compile.
+npmRebuild: false
+# Native modules and packages that start their own workers or read wasm from
+# disk must sit outside the archive.
+asarUnpack:
+  - "**/node_modules/@napi-rs/**"
+  - "**/node_modules/tesseract.js/**"
+  - "**/node_modules/tesseract.js-core/**"
+
+# Packaged builds only: the binary can't be turned into a plain Node, takes no
+# Node options or inspector flags from outside, and runs only the app in its
+# (integrity-checked) asar. The core runs as a utility process, so it needs none of these.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
+
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  # zip is what the updater installs on macOS; dmg is for people.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: true
+  perMachine: false
+
+linux:
+  executableName: phaethon
+  category: Education
+  synopsis: An accessible, desktop-first AI agent workspace.
+  maintainer: Jeryn Vicari
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+
+deb:
+  # LaTeX documents compile inside bubblewrap on Linux.
+  recommends:
+    - bubblewrap
+
+publish:
+  provider: github
+  owner: jerynv
+  repo: phaethon
+  releaseType: draft

@@ -21,6 +21,11 @@ describe("attached PDFs for models without PDF input", () => {
     const [m] = expandForProvider("school", msgs, { images: true, pdf: false });
     expect(m.content[0]).toMatchObject({ type: "document", title: "week3.pdf", source: { type: "text" } });
     expect(JSON.stringify(m.content[0])).toContain("Week 3: Hash tables and their load factor");
+    // Named without its extension, it is still read as the PDF it was saved as.
+    fs.writeFileSync(path.join(dir, "attachments", "download"), testPdf("Lecture 9: Recurrences"));
+    const bare = [{ role: "user" as const, content: [{ type: "phaethon_attachment", path: "attachments/download", media_type: "application/pdf", name: "download" }] }];
+    await preparePdfTexts("school", bare);
+    expect(JSON.stringify(expandForProvider("school", bare, { images: true, pdf: false })[0].content[0])).toContain("Lecture 9: Recurrences");
     // Anthropic still gets the PDF itself.
     const [a] = expandForProvider("school", msgs, { images: true, pdf: true });
     expect(a.content[0]).toMatchObject({ type: "document", source: { type: "base64", media_type: "application/pdf" } });

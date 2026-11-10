@@ -76,11 +76,15 @@ function readCapped(file: string): Buffer {
  * why there is none. Stops as soon as `signal` aborts, rejecting with
  * "cancelled", so no half-made copy is written.
  */
-export async function extract(file: string, signal?: AbortSignal): Promise<string> {
+/**
+ * A document's text, by its extension, or as `as` says when the caller knows
+ * the type already (an attachment named without its extension).
+ */
+export async function extract(file: string, signal?: AbortSignal, as?: "pdf"): Promise<string> {
   if (cancelled(signal)) throw new Error(CANCELLED);
   let r: string;
   try {
-    r = await extractInner(file, signal);
+    r = as === "pdf" ? await pdfText(file, signal) : await extractInner(file, signal);
   } catch (e) {
     if (cancelled(signal)) throw new Error(CANCELLED);
     throw e instanceof Error ? new Error(e.message) : new Error(String(e));

@@ -14,11 +14,11 @@ test("a reply streams in, renders math, and is still there after a reload", asyn
     const box = page.getByRole("textbox", { name: /message/i });
     await box.fill("Why does strong induction fit recurrences?");
     await box.press("Enter");
-    await expect(page.getByText("That is why it fits recurrences.")).toBeVisible();
+    await expect(page.getByLabel("Phaethon replied").getByText("That is why it fits recurrences.")).toBeVisible();
     await expect(page.locator(".katex").first()).toBeVisible();
     await page.screenshot({ path: "test-results/chat-reply.png" });
     await page.reload();
-    await expect(page.getByText("That is why it fits recurrences.")).toBeVisible();
+    await expect(page.getByLabel("Phaethon replied").getByText("That is why it fits recurrences.")).toBeVisible();
     await expect(page.getByRole("main").getByText("Why does strong induction fit recurrences?").last()).toBeVisible();
     const req = core.requests()[0] as { system?: string };
     expect(String(req?.system ?? JSON.stringify(req))).toContain("Explaining something");
@@ -47,7 +47,7 @@ test("a write waits for approval and lands in the space only when allowed", asyn
     expect(fs.existsSync(file)).toBe(false);
     await page.screenshot({ path: "test-results/chat-approval.png" });
     await allow.click();
-    await expect(page.getByText("Saved notes/summary.md.")).toBeVisible();
+    await expect(page.getByLabel("Phaethon replied").getByText("Saved notes/summary.md.")).toBeVisible();
     expect(fs.readFileSync(file, "utf8")).toBe("# Summary\n");
   } finally {
     await core.stop();

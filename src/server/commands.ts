@@ -3,6 +3,7 @@
  * owned by the module it imports; keep them in this order (storage first, since
  * later modules' startup tasks read the vault).
  */
+import "./spaces/storage.ts";
 import "./system/commands.ts";
 import "./latex/commands.ts";
 import "./voice/commands.ts";

@@ -4,7 +4,6 @@ import { CHAT_ACTION_IDS, MAX_ACTIONS, SETTINGS_SECTION, actionLabel, fileManage
 import { admit, attachmentKind, attachmentProblem, formatBytes, mediaTypeOf, typeLabel } from "./attachments.ts";
 import { diffLines, diffSummary, foldDiff } from "./diff.ts";
 import { escapeCurrencyDollars, normalizeMathDelimiters, prepareMath } from "./math.ts";
-import { plainText, spokenReply } from "./spoken.ts";
 import { planSentence, questionBefore, readBlock, type StudyPlan } from "./study-chat.ts";
 import { citationOf, citationsIn, citeName, holdPartialCitation, markCitations } from "./study-cite.ts";
 import { spacePathOf } from "../../viewer/kinds.ts";
@@ -180,15 +179,6 @@ describe("attachments", () => {
     expect(out.ok.map((x) => x.name)).toEqual(["a.txt", "d.md"]);
     expect(out.problems[0]).toBe("2 files can’t be attached: b.zip and c.exe. Attach images, PDFs, Word documents, or text or code files.");
     expect(out.problems[1]).toBe("A message can carry up to 10 files, so e.md wasn’t added.");
-  });
-});
-
-describe("spoken", () => {
-  test("markdown is spoken as plain words, and long replies only in part", () => {
-    expect(plainText("## Plan\n- **one**\n- `two`\n```js\nx\n```\n[link](a.md)")).toBe("Plan. one two (code) link");
-    expect(plainText("Buttons\n```phaethon-actions\nadd-files\n```")).toBe("Buttons");
-    const long = "First sentence here. ".repeat(20);
-    expect(spokenReply(long).endsWith("The rest is in the conversation.")).toBe(true);
   });
 });
 

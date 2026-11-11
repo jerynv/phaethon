@@ -30,7 +30,7 @@ Electron main (src/desktop)          Node core (src/server)                  Ren
 
 ## Agent quality (LearnHarness techniques, reimplemented; LearnHarness is AGPL so no code or prompt text is copied)
 
-1. Fragment-composed system prompt (`src/server/agent/prompts/*.md`): identity, accuracy, voice, a reasoning method (premises → one justified step at a time → conclusion → one application check), formatting that stays screen-reader friendly. "Keep replies short" is replaced by "length follows the material, no padding".
+1. Fragment-composed system prompt (`src/server/agent/prompts/*.md`): identity, accuracy, voice, a reasoning method (premises → one justified step at a time → conclusion → one application check). "Keep replies short" is replaced by "length follows the material, no padding".
 2. Effort per turn kind: `high` for tutor and planning turns, `medium` for chat; reasoning effort for OpenAI-compatible reasoning models.
 3. Between-tool prose is not lost: `send_to_user` tool for Claude models and thinking `display: "updates"` rendered as progress lines.
 4. Tool-argument healing and error-back with fix instructions for weak/local models.
@@ -47,10 +47,10 @@ Electron main (src/desktop)          Node core (src/server)                  Ren
 
 ## UI
 
-shadcn `base-mira` style on `@base-ui/react`, coss/T3 ui primitives (MIT, notices kept), Tailwind v4, lucide icons. Own chat timeline (no assistant-ui), react-markdown + KaTeX + mermaid. Screens: onboarding, chat (timeline, composer, model picker, approvals, access requests, question/plan cards), sidebar (spaces, conversations, search), study (hub, deck editor, review, quiz, make), grades (what-if), plan (exams, schedule, focus), courses (import, access), settings (appearance & accessibility, assistant/providers, CLI agents, spaces, about/updates), file viewer. WCAG 2.2 AA stays the floor; reading font, text scale, contrast, motion and focus-ring preferences carry over.
+Being rebuilt from scratch; see [UI-REBUILD.md](UI-REBUILD.md).
 
 ## Verification
 
 - Core: vitest; Rust unit tests ported as acceptance tests; fake HTTP servers for providers and LMS; fake CLIs for backends.
-- UI: Playwright (Chromium) scenarios against the real core with scripted fake providers, plus axe.
+- UI: Playwright (Chromium) scenarios against the real core with scripted fake providers.
 - Desktop: the real Electron app launched headless (offscreen + SwiftShader) and captured.

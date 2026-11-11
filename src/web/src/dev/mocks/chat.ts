@@ -474,7 +474,21 @@ const FILES: Record<string, { name: string; kind: string; mediaType: string; tex
   "scripts/check.py": { name: "check.py", kind: "text", mediaType: "text/x-python", language: "python", text: "def is_injective(f, domain):\n    seen = set()\n    for x in domain:\n        if f(x) in seen:\n            return False\n        seen.add(f(x))\n    return True\n" },
 };
 
+const picks: Record<string, { backend: string; model: string | null; effort: string | null }> = {};
+let lastPick: { backend: string; model: string | null; effort: string | null } = { backend: "phaethon", model: "claude-sonnet-5-5", effort: null };
+
 export default {
+  thread_model_get: (args: Record<string, unknown>) => {
+    const own = picks[String(args.space)];
+    return own ? { pick: own, saved: true } : { pick: lastPick, saved: false };
+  },
+  thread_model_set: async (args: Record<string, unknown>) => {
+    await sleep(60);
+    const pick = args.pick as { backend: string; model: string | null; effort: string | null };
+    picks[String(args.space)] = pick;
+    lastPick = pick;
+    return { pick, saved: true };
+  },
   spaces_list: () => [
     { id: "school", name: "School", description: "Courses, notes and exam prep for the fall term.", hue: 255, educationEnabled: true, lastUsed: now },
     { id: "work", name: "Work", description: "", hue: 35, educationEnabled: false, lastUsed: now - 86_400_000 },

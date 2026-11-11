@@ -52,8 +52,16 @@ test("search finds a conversation in any space", async ({ page }) => {
   await expect(page.getByText("Sure.")).toBeVisible();
 });
 
-test("first run asks for a heading and can be finished", async ({ page }) => {
+test("first run walks through to the app, keeping the vault's spaces", async ({ page }) => {
   core = await startCore();
   await core.open(page, { onboarding: true });
-  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Welcome to Phaethon" })).toBeVisible();
+  await page.getByRole("button", { name: "Get started" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "How should Phaethon answer?" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  // A fresh vault already has School and Work, so the last step offers them.
+  await expect(page.getByRole("heading", { level: 1, name: "Your spaces" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("navigation", { name: "Spaces and conversations" })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("phaethon.onboarded"))).toBe("1");
 });

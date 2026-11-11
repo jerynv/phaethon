@@ -51,3 +51,6 @@ export const studyQuizSubmit = (space: string, path: string, answers: Record<str
   stream("study_quiz_submit", { space, path, answers }, onEvent);
 export const studyReviewMistakes = (space: string, attemptPath: string, onEvent: (e: StudyEvent) => void) =>
   stream("study_review_mistakes", { space, attemptPath }, onEvent);
+
+/** Map what a course teaches and what each test covers, so a quiz for a test can be grounded. */
+export const studyScopeBuild = (space: string, course: string, onEvent: (e: StudyEvent) => void) => stream("study_scope_build", { space, course }, onEvent);

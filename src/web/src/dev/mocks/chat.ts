@@ -349,7 +349,7 @@ async function run(args: Record<string, unknown>) {
   }
 
   if (p.includes("settings") || p.includes("key")) {
-    const reply = "Keys live in **Settings › Assistant**, and you can bring files into this space from your computer.\n\n```phaethon-actions\nsettings-assistant\nadd-files\nshow-folder\n```";
+    const reply = "Keys live in **Settings › Providers**, and you can bring files into this space from your computer.\n\n```phaethon-actions\nsettings-assistant\nadd-files\nshow-folder\n```";
     await say(ch, turn, reply, 8);
     return end(ch, space, turn, saveTurn(space, prompt, reply, [], replaceFrom));
   }

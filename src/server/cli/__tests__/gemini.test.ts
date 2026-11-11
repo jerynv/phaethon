@@ -114,7 +114,7 @@ describe("Gemini CLI conversations", () => {
 
   it("say a signed-out Gemini CLI isn't signed in, and explain an ineligible account", async () => {
     process.env.FAKE_LOGGED_IN = "0";
-    const signedOut = [{ code: "notLoggedIn", message: "Gemini CLI isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Assistant, then send your message again." }];
+    const signedOut = [{ code: "notLoggedIn", message: "Gemini CLI isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Coding agents, then send your message again." }];
     // Resuming (session/load) and starting afresh (session/new) both say so.
     expect(readCliSession(school, "gemini")).not.toBeNull();
     expect(errors(await send(gemini("hello")))).toEqual(signedOut);

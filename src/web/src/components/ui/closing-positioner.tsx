@@ -1,3 +1,4 @@
+// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { useState, type ComponentProps, type CSSProperties } from "react";
 
 const PLACEMENT_KEYS = ["position", "top", "right", "bottom", "left", "transform"] as const;

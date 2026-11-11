@@ -207,7 +207,7 @@ done
     const dir = home(saved)!;
     const walled = await send(request("claude", "school", "hi", { configDir: dir }));
     expect(errors(walled)).toEqual([
-      { code: "cli", message: "This connection’s launch arguments could let Claude Code change files or reach beyond the space, so nothing was sent: --dangerously-skip-permissions. Remove them in Settings › Assistant, or turn on full access for this space." },
+      { code: "cli", message: "This connection’s launch arguments could let Claude Code change files or reach beyond the space, so nothing was sent: --dangerously-skip-permissions. Remove them in Settings › Coding agents, or turn on full access for this space." },
     ]);
     expect(log.runs()).toBe(0);
     const full = await send(request("claude", "school", "hi", { configDir: dir, fullAccess: true }));

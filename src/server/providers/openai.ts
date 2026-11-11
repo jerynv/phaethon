@@ -131,7 +131,7 @@ export function httpError(p: Preset, model: string, hasKey: boolean, status: num
   const { detail, code } = detailOf(body);
   const w = who(p);
   if (status === 402 || code === "insufficient_quota") return new ProviderError("billing", `Your ${p.name} account is out of credit or has a billing problem. Add credit with ${p.name}, then try again.`);
-  if (status === 401 && !hasKey) return new ProviderError("auth", `${w} asked for an API key. Add one in Settings › Assistant.`);
+  if (status === 401 && !hasKey) return new ProviderError("auth", `${w} asked for an API key. Add one in Settings › Providers.`);
   if (status === 401) return new ProviderError("auth", `${w} didn’t accept your API key. Check it in Settings.`);
   if (status === 403) return new ProviderError("auth", `${w} refused this request. ${detail}`.trim());
   if (status === 404) {

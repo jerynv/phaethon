@@ -56,7 +56,7 @@ describe("plain helpers", () => {
     expect(notLoggedInMessage("claude", null)).toBe(NOT_LOGGED_IN_MESSAGE);
     for (const cli of ["codex", "gemini"] as const) {
       const said = notLoggedInMessage(cli, "/x/default-codex");
-      expect(said).toMatch(/isn’t signed in for this Phaethon folder.*Settings › Assistant/);
+      expect(said).toMatch(/isn’t signed in for this Phaethon folder.*Settings › Coding agents/);
       expect(said).not.toContain("/x/");
     }
     expect(notLoggedInMessage("claude", "/x/default")).toBe(NOT_LOGGED_IN_MESSAGE);

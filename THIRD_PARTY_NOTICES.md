@@ -82,12 +82,10 @@ SOFTWARE.
 
 ## Fonts (SIL Open Font License 1.1)
 
-Bundled into the UI from the Fontsource packages, for the reading-font setting:
+Bundled into the UI from the Fontsource packages, as the interface and code typefaces:
 
-- **Atkinson Hyperlegible Next**: Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
-- **Atkinson Hyperlegible Mono**: Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono)
-- **Lexend**: Copyright 2019 The Lexend Project Authors (https://github.com/googlefonts/lexend)
-- **OpenDyslexic**: Copyright (c) 2019-07-29, Abbie Gonzalez (https://abbiecod.es), with Reserved Font Name OpenDyslexic
+- **Inter**: Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+- **JetBrains Mono**: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
 ```
 -----------------------------------------------------------
@@ -185,6 +183,7 @@ holders as listed, under the MIT license text that follows the list.
 
 - **React, React DOM**: Copyright (c) Meta Platforms, Inc. and affiliates.
 - **Base UI (@base-ui/react)**: Copyright (c) 2019 Material-UI SAS
+- **Phosphor Icons (@phosphor-icons/react)**: Copyright (c) 2020 Phosphor Icons
 - **KaTeX**: Copyright (c) 2013-2020 Khan Academy and other contributors
 - **rehype-katex**: Copyright (c) Junyoung Choi
 - **remark-math**: Copyright (c) Junyoung Choi

@@ -58,7 +58,7 @@ export function ChatActions({ code, space }: { code: string; space: string }) {
       {ids.map((id) => (
         <Button key={id} size="xs" variant="outline" onClick={() => run(id)}>
           {icon(id)}
-          {actionLabel(id, fileManagerName()).replace("Settings: Appearance & accessibility", "Settings: Appearance")}
+          {actionLabel(id, fileManagerName())}
         </Button>
       ))}
     </div>

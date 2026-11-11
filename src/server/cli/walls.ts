@@ -74,5 +74,5 @@ export function wallBreakingArg(cli: CliId, args: string[]): string | null {
 }
 
 export function wallBreakingMessage(cli: CliId, arg: string): string {
-  return `This connection’s launch arguments could let ${cliName(cli)} change files or reach beyond the space, so nothing was sent: ${arg}. Remove them in Settings › Assistant, or turn on full access for this space.`;
+  return `This connection’s launch arguments could let ${cliName(cli)} change files or reach beyond the space, so nothing was sent: ${arg}. Remove them in Settings › Coding agents, or turn on full access for this space.`;
 }

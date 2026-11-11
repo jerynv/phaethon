@@ -1,3 +1,4 @@
+// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import {
   createContext,

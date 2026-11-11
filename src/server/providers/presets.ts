@@ -121,7 +121,7 @@ export function modelForSpace(space: string | undefined, settings: VaultSettings
     }
   }
   const ref = defaultRef(settings);
-  if (!ref) throw new Refusal(`Choose which ${chosen(settings).name} model answers, in Settings › Assistant.`);
+  if (!ref) throw new Refusal(`Choose which ${chosen(settings).name} model answers, in Settings › Providers.`);
   return ref;
 }
 
@@ -183,10 +183,10 @@ export function baseUrl(settings: VaultSettings, pre: Preset): string {
     try {
       return checkBase(saved);
     } catch {
-      throw new Refusal(`The address saved for ${pre.name} isn’t one Phaethon can use. Fix it in Settings › Assistant.`);
+      throw new Refusal(`The address saved for ${pre.name} isn’t one Phaethon can use. Fix it in Settings › Providers.`);
     }
   }
-  if (pre.id === "custom") throw new Refusal("Add your server’s address in Settings › Assistant first.");
+  if (pre.id === "custom") throw new Refusal("Add your server’s address in Settings › Providers first.");
   return pre.base;
 }
 
@@ -224,10 +224,10 @@ export function unbindCustomKey(saved: string, base: string): string {
     v = undefined;
   }
   if (!v || typeof v.origin !== "string" || typeof v.key !== "string") {
-    throw new Refusal("The key saved for your own server can’t be read. Save it again in Settings › Assistant.");
+    throw new Refusal("The key saved for your own server can’t be read. Save it again in Settings › Providers.");
   }
   if (v.origin !== origin(base)) {
-    throw new Refusal(`The key for your own server was saved for ${v.origin}, and the address is now ${origin(base) ?? base}. Save the key again for the new address in Settings › Assistant.`);
+    throw new Refusal(`The key for your own server was saved for ${v.origin}, and the address is now ${origin(base) ?? base}. Save the key again for the new address in Settings › Providers.`);
   }
   return v.key;
 }

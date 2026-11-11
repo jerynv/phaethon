@@ -116,8 +116,10 @@ function createMainWindow(): BrowserWindow {
     minWidth: min.width,
     minHeight: min.height,
     title: "Phaethon",
+    // Hidden until the first paint, then shown by ready-to-show. Don't set
+    // paintWhenInitiallyHidden: false; Electron never fires ready-to-show then,
+    // and the window stays hidden for good.
     show: false,
-    paintWhenInitiallyHidden: Boolean(captureTo),
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#17171a" : "#fafafa",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -294,10 +296,16 @@ ipcMain.on("phaethon:connect", (event) => {
   event.sender.postMessage("phaethon:port", null, [core.connect()]);
 });
 
-app.on("second-instance", () => {
-  if (mainWindow?.isMinimized()) mainWindow.restore();
-  mainWindow?.focus();
-});
+function bringBack(): void {
+  if (!mainWindow || captureTo) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+app.on("second-instance", bringBack);
+// macOS: clicking the Dock icon brings the window back.
+app.on("activate", bringBack);
 
 app.on("web-contents-created", (_e, contents) => {
   contents.on("will-attach-webview", (event) => event.preventDefault());

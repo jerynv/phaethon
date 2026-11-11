@@ -25,7 +25,10 @@ import { covers } from "../grants/grants.ts";
  * are kept whole in `.phaethon/threads/<id>.json`. Starting a new conversation
  * or reopening an old one moves files by rename, so nothing is ever rewritten
  * or lost. Each conversation keeps its CLI session beside it
- * (`.phaethon/session` for the current one, `threads/<id>.session` for others).
+ * (`.phaethon/session` for the current one, `threads/<id>.session` for others),
+ * and the model chosen for it the same way (`.phaethon/model`,
+ * `threads/<id>.model`; see `pick.ts`). Neither name ends in `.json`, so the
+ * listing and older cores never mistake them for conversations.
  *
  * Functions take a space id; the `*In` variants take its folder (already
  * resolved with `spaceDir`).
@@ -59,6 +62,8 @@ const archiveDir = (dir: string) => path.join(stateDir(dir), "threads");
 const archived = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.json`);
 const archivedSession = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.session`);
 export const sessionFile = (dir: string) => path.join(stateDir(dir), "session");
+const archivedPick = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.model`);
+export const pickFile = (dir: string) => path.join(stateDir(dir), "model");
 
 /** `digits` or `digits-digits`, each 1 to 20 ASCII digits; anything else never becomes a path. */
 export function isValidThreadId(id: string): boolean {
@@ -165,6 +170,49 @@ function sessionFromArchive(dir: string, id: string): void {
   const kept = archivedSession(dir, id);
   if (isRegularFile(kept)) fs.renameSync(kept, sessionFile(dir));
   else dropSession(dir, sessionFile(dir));
+}
+
+// ---- Model choice ---------------------------------------------------------------
+
+/** The model choice saved for the current conversation, as raw JSON (validated by `pick.ts`). */
+export function readPickRawIn(dir: string): unknown {
+  try {
+    const p = pickFile(dir);
+    if (!isRegularFile(p) || fs.statSync(p).size > 4096) return undefined;
+    return JSON.parse(fs.readFileSync(p, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Saves (or with null clears) the current conversation's model choice. */
+export function writePickRawIn(dir: string, value: unknown): void {
+  if (value === null || value === undefined) {
+    removeIfThere(pickFile(dir));
+    return;
+  }
+  fs.mkdirSync(stateDir(dir), { recursive: true });
+  const file = pickFile(dir);
+  fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(value)}\n`);
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+function pickToArchive(dir: string, id: string): void {
+  try {
+    if (isRegularFile(pickFile(dir))) fs.renameSync(pickFile(dir), archivedPick(dir, id));
+  } catch {
+    // Losing the choice only means the conversation falls back to the default model.
+  }
+}
+
+function pickFromArchive(dir: string, id: string): void {
+  try {
+    const kept = archivedPick(dir, id);
+    if (isRegularFile(kept)) fs.renameSync(kept, pickFile(dir));
+    else removeIfThere(pickFile(dir));
+  } catch {
+    // As above.
+  }
 }
 
 // ---- Messages ------------------------------------------------------------------
@@ -347,6 +395,7 @@ function archiveCurrent(dir: string): string | null {
   } catch {
     // Losing the session only means the CLI starts afresh.
   }
+  pickToArchive(dir, id);
   return id;
 }
 
@@ -429,6 +478,8 @@ export function listThreads(space: string): ThreadSummary[] {
 export function startNewIn(dir: string): void {
   archiveCurrent(dir);
   dropSession(dir, sessionFile(dir));
+  // An empty conversation's choice is not carried into the next one (it starts from the last pick).
+  removeIfThere(pickFile(dir));
 }
 
 export function startNew(space: string): void {
@@ -449,6 +500,7 @@ export function openThreadIn(dir: string, id: string): void {
       try {
         fs.renameSync(archived(dir, moved), currentFile(dir));
         sessionFromArchive(dir, moved);
+        pickFromArchive(dir, moved);
       } catch {
         // Both files are still in the archive; nothing is lost.
       }
@@ -456,6 +508,7 @@ export function openThreadIn(dir: string, id: string): void {
     throw e;
   }
   sessionFromArchive(dir, id);
+  pickFromArchive(dir, id);
 }
 
 export function openThread(space: string, id: string): void {
@@ -472,6 +525,7 @@ export function deleteThreadIn(dir: string, id: string): void {
     }
     removeIfThere(currentFile(dir));
     dropSession(dir, sessionFile(dir));
+    removeIfThere(pickFile(dir));
     return;
   }
   if (!isValidThreadId(id)) throw notAnId();
@@ -479,6 +533,7 @@ export function deleteThreadIn(dir: string, id: string): void {
   if (!isRegularFile(chosen)) throw gone();
   fs.rmSync(chosen);
   dropSession(dir, archivedSession(dir, id));
+  removeIfThere(archivedPick(dir, id));
 }
 
 export function deleteThread(space: string, id: string): void {

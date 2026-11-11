@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { isNotFound, writeJsonAtomic } from "./fsx.ts";
 import { spaceDir } from "./vault.ts";
+import type { QuestionRole } from "../../shared/agent.ts";
 
 /**
  * The current conversation of a space, `<space>/.phaethon/thread.json`: an
@@ -151,8 +152,11 @@ export function shortTitle(text: string): string {
 
 export const QUESTION_TOOLS = new Set(["check", "explain_back"]);
 
+/** A saved check call's role; anything unknown (older or healed calls) reads as a plain check. */
+const questionRole = (v: unknown): QuestionRole => (v === "probe" || v === "predict" ? v : "check");
+
 export type PendingQuestion =
-  | { kind: "check"; question: { id: string; role: "predict" | "check"; question: string; options: { value: string; label: string }[]; multiSelect: boolean } }
+  | { kind: "check"; question: { id: string; role: QuestionRole; question: string; options: { value: string; label: string }[]; multiSelect: boolean } }
   | { kind: "explainBack"; question: { id: string; question: string } };
 
 /**
@@ -201,7 +205,7 @@ export function questionView(block: Block): PendingQuestion | undefined {
     : [];
   return {
     kind: "check",
-    question: { id, role: loose(input.role) === "predict" ? "predict" : "check", question, options, multiSelect: loose(input.multiSelect) === true },
+    question: { id, role: questionRole(loose(input.role)), question, options, multiSelect: loose(input.multiSelect) === true },
   };
 }
 

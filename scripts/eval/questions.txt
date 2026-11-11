@@ -2,3 +2,7 @@ Why does the contrapositive of a conditional statement always have the same trut
 Why is the square of an odd integer always odd?
 Why is the composition of two injective functions injective?
 Why does a square matrix with determinant zero have no inverse?
+Why is the derivative of e^x equal to e^x?
+What does it mean for a set of vectors to be linearly independent, and why does anyone care?
+Why does merge sort take O(n log n) time?
+I don't get induction. Why does proving P(1) and "P(k) implies P(k+1)" prove P(n) for every n?

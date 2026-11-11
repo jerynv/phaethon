@@ -13,6 +13,8 @@
  *  - broken: settings and CLI status can't be read.
  * Keys are never stored here beyond "has one".
  */
+import shell from "./shell";
+
 type Args = Record<string, unknown>;
 type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "together" | "mistral" | "deepseek" | "xai" | "ollama" | "lmstudio" | "custom";
 
@@ -280,6 +282,37 @@ const handlers: Record<string, (args: Args) => unknown> = {
   async spaces_list() {
     return SPACES;
   },
+  /** spaces_list above wins over the shell's, so edits and new spaces land here too (and in the shell's list, for its threads). */
+  async space_update(args) {
+    await wait(150);
+    const s = space(args.id);
+    const a = args as { name?: string; description?: string; hue?: number; educationEnabled?: boolean };
+    if (a.name !== undefined) {
+      if (!a.name.trim()) throw "A space needs a name.";
+      s.name = a.name.trim();
+    }
+    if (a.description !== undefined) s.description = a.description.trim();
+    if (a.hue !== undefined) s.hue = Math.round(a.hue);
+    if (a.educationEnabled !== undefined) s.educationEnabled = a.educationEnabled;
+    try {
+      (shell.space_update as (x: unknown) => unknown)(args);
+    } catch {
+      // not one of the shell's spaces
+    }
+    return { ...s };
+  },
+  async space_create(args) {
+    await wait(200);
+    const made = (shell.space_create as (x: unknown) => (typeof SPACES)[number])(args);
+    SPACES.push({ ...made });
+    return made;
+  },
+  async space_export({ id }) {
+    await wait(900);
+    const s = space(id);
+    return { fileName: `${s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-2026-11-11.zip`, files: 128 };
+  },
+  async export_show() {},
   async space_models_list() {
     const cli = cliOf();
     if (cli) return Object.fromEntries(Object.entries(cliModel).filter(([, m]) => m[cli]).map(([s, m]) => [s, `${cli}:${m[cli]}`]));

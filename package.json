@@ -82,6 +82,9 @@
       "esbuild",
       "@napi-rs/canvas",
       "@napi-rs/keyring"
-    ]
+    ],
+    "overrides": {
+      "rehype-katex>katex": "$katex"
+    }
   }
 }

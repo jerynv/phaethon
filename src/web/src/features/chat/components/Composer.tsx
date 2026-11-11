@@ -177,7 +177,7 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
 
   return (
     <div className={cn("mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-1.5", !hero && "px-4 pb-4")}>
-      {status !== "open" ? <ConnectionLost /> : null}
+      {status === "lost" ? <ConnectionLost /> : null}
       {edit ? (
         <div className="flex items-center gap-2 px-1 text-muted-foreground text-xs">
           <PencilIcon className="size-3" />

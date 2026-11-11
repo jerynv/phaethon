@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempHome } from "../../../tests/harness.ts";
 import { cleanRel, resolveIn } from "./resolve.ts";
-import { checkApiKey, keychainGet, keychainSet, providerAccount, resetMemoryKeychain } from "./secrets.ts";
+import { checkApiKey, keychainGet, keychainSet, parsePassword, providerAccount, resetMemoryKeychain, SecurityToolStore, type SecurityRun, type Store } from "./secrets.ts";
 import { ensureVault, isValidSpaceId, spaceDir, spacesRoot } from "./vault.ts";
 import { claim, release, whileIdle, BUSY } from "./runs.ts";
 import { forProvider, shortTitle, userMessage } from "./thread.ts";
@@ -61,6 +61,83 @@ describe("secrets", () => {
     expect(providerAccount("anthropic")).toBe("default/provider/anthropic");
     keychainSet(providerAccount("anthropic"), "sk-abc");
     expect(keychainGet(providerAccount("anthropic"))).toBe("sk-abc");
+  });
+});
+
+describe("macOS keychain through the security tool", () => {
+  // A stand-in for /usr/bin/security over one keychain, printing what the real tool prints (checked on macOS 27).
+  function fakeSecurity(entries: Map<string, { value: string; comment: string | null }>) {
+    const calls: string[][] = [];
+    const run: SecurityRun = (args) => {
+      calls.push(args);
+      const flag = (f: string) => args[args.indexOf(f) + 1]!;
+      const key = `${flag("-s")}\0${flag("-a")}`;
+      const entry = entries.get(key);
+      const missing = { status: 44, stdout: "", stderr: "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.\n" };
+      switch (args[0]) {
+        case "find-generic-password": {
+          if (!entry) return missing;
+          const stdout = `keychain: "login.keychain-db"\nattributes:\n    "icmt"<blob>=${entry.comment === null ? "<NULL>" : `"${entry.comment}"`}\n`;
+          if (!args.includes("-g")) return { status: 0, stdout, stderr: "" };
+          const plain = /^[\x20-\x7e]*$/.test(entry.value) && !entry.value.includes("\\");
+          const hex = Buffer.from(entry.value, "utf8").toString("hex").toUpperCase();
+          return { status: 0, stdout, stderr: plain ? `password: ${entry.value ? `"${entry.value}"` : ""}\n` : `password: 0x${hex}  "…"\n` };
+        }
+        case "add-generic-password":
+          if (entry) return { status: 45, stdout: "", stderr: "security: SecKeychainItemCreateFromContent (<default>): The specified item already exists in the keychain.\n" };
+          entries.set(key, { value: Buffer.from(flag("-X"), "hex").toString("utf8"), comment: flag("-j") });
+          return { status: 0, stdout: "", stderr: "" };
+        case "delete-generic-password":
+          if (!entry) return missing;
+          entries.delete(key);
+          return { status: 0, stdout: "", stderr: "password has been deleted.\n" };
+      }
+      throw new Error(`unexpected ${args[0]}`);
+    };
+    return { run, calls };
+  }
+  const noLegacy: Store = { get: () => null, set: () => {}, delete: () => false };
+
+  it("round-trips any value and reports missing entries", () => {
+    const { run } = fakeSecurity(new Map());
+    const store = new SecurityToolStore(run, noLegacy);
+    expect(store.get("phaethon", "default/provider/anthropic")).toBeNull();
+    for (const value of ["sk-ant-123", 'a"b', "back\\slash", '{"cookies":[{"name":"é","value":"x"}],"csrf":null}', ""]) {
+      store.set("phaethon", "acct", value);
+      expect(store.get("phaethon", "acct")).toBe(value);
+    }
+    expect(store.delete("phaethon", "acct")).toBe(true);
+    expect(store.delete("phaethon", "acct")).toBe(false);
+  });
+
+  it("rewrites an entry an earlier build saved, reading it through the keychain API once", () => {
+    const entries = new Map([["phaethon\0default/lms/canvas", { value: "old-session", comment: null }]]);
+    const { run, calls } = fakeSecurity(entries);
+    let legacyReads = 0;
+    const legacy: Store = { get: () => (legacyReads++, "old-session"), set: () => {}, delete: () => false };
+    const store = new SecurityToolStore(run, legacy);
+    expect(store.get("phaethon", "default/lms/canvas")).toBe("old-session");
+    expect(store.get("phaethon", "default/lms/canvas")).toBe("old-session");
+    expect(legacyReads).toBe(1);
+    expect(entries.get("phaethon\0default/lms/canvas")).toEqual({ value: "old-session", comment: "phaethon:security" });
+    expect(calls.some((c) => c.includes("-w"))).toBe(false);
+  });
+
+  it("passes the tool's error on without the secret", () => {
+    const run: SecurityRun = () => ({ status: 36, stdout: "", stderr: "security: SecKeychainItemCreateFromContent (<default>): User interaction is not allowed.\n" });
+    expect(() => new SecurityToolStore(run, noLegacy).set("phaethon", "acct", "sk-secret")).toThrow("User interaction is not allowed.");
+    try {
+      new SecurityToolStore(run, noLegacy).set("phaethon", "acct", "sk-secret");
+    } catch (e) {
+      expect((e as Error).message).not.toContain("sk-secret");
+    }
+  });
+
+  it("parses both forms the tool prints", () => {
+    expect(parsePassword('password: "a"b"\n')).toBe('a"b');
+    expect(parsePassword('password: 0x615C62  "a\\134b"\n')).toBe("a\\b");
+    expect(parsePassword("password: \n")).toBe("");
+    expect(() => parsePassword("nothing")).toThrow("the keychain returned no password");
   });
 });
 

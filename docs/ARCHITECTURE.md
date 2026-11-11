@@ -92,6 +92,7 @@ Isolation is enforced by the host process, not by asking the model to behave.
 | Space vs space (CLI) | The agent process is spawned with its working directory set to `spaces/<name>/` and `--restricted`, which confines the CLI's file tools to the working directory | **one positive check**: asked from `work` to read an absolute path in `school`, the agent did not return the file's contents (`tests/claude_cli.rs`, `work_cannot_read_school`). Not yet proven exhaustively (symlinks, Glob/Grep paths, vault-shared files are not reachable yet) |
 | Secrets | Keychain entries namespaced `Phaethon/<vault-id>/<space-id>/<name>`; one space cannot request another's entries | design |
 | Secrets vs sync | Secrets live only in the OS keychain and are **never** written into the vault folder, so they never sync | design |
+| Secrets on macOS | Written and read through `/usr/bin/security` (`SecurityToolStore` in `core/secrets.ts`): ad-hoc-signed builds change signature on every update, so entries tied to the app made macOS ask for the login password again after each one. The trade-off is that any program running as the user can read them the same way; a Developer ID signature would restore app-only access | built |
 | Core as gatekeeper | All filesystem and process access from the UI goes through core commands, which validate paths against the active vault and space | enforced by `src/server/core/vault.ts` and `resolve.ts` |
 
 ## Sync

@@ -465,7 +465,56 @@ async function pngBytes(): Promise<ArrayBuffer> {
   return (await c.convertToBlob({ type: "image/png" })).arrayBuffer();
 }
 
-const FILES: Record<string, { name: string; kind: string; mediaType: string; text?: string; language?: string }> = {
+type MockFile = { name: string; kind: string; mediaType: string; text?: string; language?: string; size?: number; tooBig?: boolean; pages?: number };
+
+/** Files under a course folder (Courses › content), made up from the name. */
+function courseFile(path: string): MockFile | null {
+  const name = path.split("/").pop() ?? path;
+  const ext = name.toLowerCase().split(".").pop();
+  if (name === "Rosen chapter 2.pdf") return { name, kind: "pdf", mediaType: "application/pdf", size: 8_800_000, pages: 14 };
+  if (ext === "pdf") return { name, kind: "pdf", mediaType: "application/pdf", size: 3_300_000, pages: 3 };
+  if (ext === "docx") return { name, kind: "docx", mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+  if (ext === "md") {
+    const title = name === "syllabus.md" ? "Syllabus" : name === "overview.md" ? "Overview" : name.replace(/\.md$/, "").replace(/-/g, " ");
+    return {
+      name,
+      kind: "markdown",
+      mediaType: "text/markdown",
+      text: `# ${title}\n\nCSCI-C 241 · Fall 2026 · Tuesdays and Thursdays, 9:45–11:00 in Luddy 1106.\n\n## Grading\n\n| Part | Weight |\n|---|---|\n| Problem sets | 40% |\n| Labs | 20% |\n| Test 1 and Test 2 | 20% |\n| Final exam | 20% |\n\n## Week 3: Functions\n\nA function $f: A \\to B$ is **injective** when $f(a) = f(b)$ implies $a = b$, and **surjective** when every $b \\in B$ has a preimage.\n\n$$|\\mathcal{P}(S)| = 2^{|S|}$$\n\n- Read Rosen §2.3 before Thursday.\n- Homework 5 is due Friday at 11:59 PM.\n\n~~~python\ndef is_injective(f, domain):\n    return len({f(x) for x in domain}) == len(domain)\n~~~\n`,
+    };
+  }
+  if (name === "Lecture recording week 4.mp4") return { name, kind: "video", mediaType: "video/mp4", size: 412_000_000, tooBig: true };
+  if (ext === "xlsx") return { name, kind: "spreadsheet", mediaType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", size: 21_000 };
+  return null;
+}
+
+/** A PDF of `n` letter pages with a heading and some lines each. */
+function manyPagesPdf(n: number, title: string): Uint8Array {
+  const esc = (t: string) => t.replace(/[()\\]/g, (c) => `\\${c}`);
+  const objs: string[] = ["<< /Type /Catalog /Pages 2 0 R >>", ""];
+  const kids: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const page = 3 + i * 2;
+    kids.push(`${page} 0 R`);
+    const body = [`BT /F1 20 Tf 60 730 Td (${esc(i === 0 ? title.replace(/\.pdf$/, "") : `Section 2.${i}`)}) Tj ET`, ...Array.from({ length: 22 }, (_, k) => `BT /F1 11 Tf 60 ${690 - k * 26} Td (${esc(`Line ${k + 1} of page ${i + 1}: sets, functions, sequences and sums.`)}) Tj ET`)].join("\n");
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${3 + n * 2} 0 R >> >> /Contents ${page + 1} 0 R >>`);
+    objs.push(`<< /Length ${body.length} >>\nstream\n${body}\nendstream`);
+  }
+  objs[1] = `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${n} >>`;
+  objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>");
+  let out = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objs.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return strToU8(out);
+}
+
+const FILES: Record<string, MockFile> = {
   "notes/week6.md": { name: "week6.md", kind: "markdown", mediaType: "text/markdown", text: NOTES_AFTER },
   [`${C241}/files/Lecture 7 Functions.pdf`]: { name: "Lecture 7 Functions.pdf", kind: "pdf", mediaType: "application/pdf" },
   [`${C241}/files/Lecture 7 Functions.md`]: { name: "Lecture 7 Functions.md", kind: "markdown", mediaType: "text/markdown", text: "# Lecture 7: Functions\n\nA function is injective if f(a) = f(b) implies a = b.\n\nSee also [the homework](HW6.docx)." },
@@ -606,14 +655,16 @@ export default {
   file_view: async (args: Record<string, unknown>) => {
     await sleep(200);
     const path = String(args.path);
-    const f = FILES[path];
+    const f = FILES[path] ?? courseFile(path);
     if (!f) throw `${path} isn’t in this space.`;
-    const size = f.text?.length ?? (f.kind === "pdf" ? pdfBytes().length : 48_000);
-    return { path, name: f.name, kind: f.kind, size, mediaType: f.mediaType, text: f.text ?? null, language: f.language ?? null, tooBig: false };
+    const size = f.size ?? f.text?.length ?? (f.kind === "pdf" ? pdfBytes().length : 48_000);
+    return { path, name: f.name, kind: f.kind, size, mediaType: f.mediaType, text: f.text ?? null, language: f.language ?? null, tooBig: !!f.tooBig };
   },
   file_bytes: async (args: Record<string, unknown>) => {
+    await sleep(150);
     const path = String(args.path);
-    const f = FILES[path];
+    const f = FILES[path] ?? courseFile(path);
+    if (f?.pages) return manyPagesPdf(f.pages, f.name);
     if (f?.kind === "pdf") return pdfBytes();
     if (f?.kind === "docx") return docxBytes();
     if (f?.kind === "image") return pngBytes();

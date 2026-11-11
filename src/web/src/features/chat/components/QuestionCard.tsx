@@ -1,7 +1,7 @@
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
-import { CheckIcon, CircleAlertIcon, LightbulbIcon, MessageSquareQuoteIcon, PlusIcon, SendHorizontalIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, CompassIcon, LightbulbIcon, MessageSquareQuoteIcon, PlusIcon, SendHorizontalIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import type { LessonAnswer } from "#shared/agent.ts";
@@ -112,8 +112,9 @@ export function QuestionCard({ pending, onAnswer }: { pending: PendingQuestion; 
     }
   };
 
-  const Icon = isCheck ? (check?.role === "predict" ? LightbulbIcon : CheckIcon) : MessageSquareQuoteIcon;
-  const kicker = isCheck ? (check?.role === "predict" ? "Before we start: your guess" : "Quick check") : "Explain it back";
+  const role = check?.role ?? "check";
+  const Icon = !isCheck ? MessageSquareQuoteIcon : role === "predict" ? LightbulbIcon : role === "probe" ? CompassIcon : CheckIcon;
+  const kicker = !isCheck ? "Explain it back" : role === "predict" ? "Before we start: your guess" : role === "probe" ? "Where you’re starting" : "Quick check";
 
   return (
     <form

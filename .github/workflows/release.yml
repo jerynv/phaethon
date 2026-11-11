@@ -9,6 +9,10 @@
 # APPLE_PASSWORD (an app-specific password) and APPLE_TEAM_ID. Without a
 # certificate the macOS build is signed ad hoc: Gatekeeper warns on first open,
 # and macOS can't install updates in place (people download the new version).
+# Ad hoc signing is required, not optional: flipping the fuses rewrites Electron
+# Framework, and Apple Silicon kills a binary whose code no longer matches its
+# signature. Ad hoc builds turn hardened runtime off, because its library
+# validation rejects frameworks that don't share a Team ID.
 #
 # Phaethon 0.1.x (Tauri) installs read latest.json and can't update to these
 # builds; they need one manual install.
@@ -86,6 +90,15 @@ jobs:
 
       - run: ${{ matrix.install }}
 
+      # The app icon is an Icon Composer bundle, which only actool 26+ compiles.
+      - name: Xcode 26 or later
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$xcode"
+          xcrun actool --version | grep -A1 short-bundle-version
+
       - name: Apple signing when available
         if: runner.os == 'macOS'
         shell: bash
@@ -103,6 +116,7 @@ jobs:
           if [[ -z "$CERTIFICATE" ]]; then
             echo "No Apple certificate: the build is signed ad hoc."
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "MAC_SIGN_ARGS=-c.mac.identity=- -c.mac.hardenedRuntime=false" >> "$GITHUB_ENV"
             exit 0
           fi
           put CSC_LINK "$CERTIFICATE"
@@ -120,4 +134,4 @@ jobs:
       - name: Package and upload to the draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec electron-builder ${{ matrix.target }} --publish always
+        run: pnpm exec electron-builder ${{ matrix.target }} ${{ env.MAC_SIGN_ARGS }} --publish always

@@ -162,12 +162,12 @@ export const LESSON_TOOLS: ToolDef[] = [
   {
     name: "check",
     description:
-      'Ask the user one multiple-choice question and end the turn; their answer, how sure they were and their reasoning come back as the result. Teach before a "check"; a "predict" comes before the step it sets up. Don\'t add an "I don\'t know" option; the app adds one.',
+      'Ask the user one multiple-choice question and end the turn; their answer, how sure they were and their reasoning come back as the result. A "probe" finds what the user already knows before you plan; a "predict" comes before the step it sets up; a "check" comes after a step is taught. Don\'t add an "I don\'t know" option; the app adds one.',
     eager_input_streaming: true,
     input_schema: {
       type: "object",
       properties: {
-        role: { type: "string", enum: ["predict", "check"], description: '"predict" before teaching a step, "check" after it.' },
+        role: { type: "string", enum: ["probe", "predict", "check"], description: '"probe" to measure what they know before a plan, "predict" before teaching a step, "check" after it.' },
         nodeId: { type: "string", description: "The plan_lesson node this question is about, when there is a plan." },
         question: { type: "string", description: "The question, in Markdown; math in KaTeX." },
         options: {

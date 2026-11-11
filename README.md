@@ -1,4 +1,9 @@
-# Phaethon
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.png">
+    <img src="docs/brand/banner-light.png" width="100%" alt="Phaethon: an accessible, desktop-first AI workspace that teaches you why, not just what.">
+  </picture>
+</h1>
 
 An open-source, accessible, desktop-first life OS: a workspace where an AI agent helps you run the parts of your life you choose to give it.
 
@@ -18,7 +23,7 @@ Everything is TypeScript:
 - [Electron](https://www.electronjs.org) shell (`src/desktop/`): windows, native dialogs, course-site sign-in windows, the updater. The UI is served from `app://phaethon` under a strict CSP.
 - A Node core (`src/server/`) running as an Electron utility process: the vault, spaces, conversations, providers and Phaethon's agent loop, the coding-agent backends, course import, study tools. The renderer reaches it over a MessagePort; no network port is opened.
 - React 19 + Vite UI (`src/web/`), [shadcn/ui](https://ui.shadcn.com) in its Base UI style on [`@base-ui/react`](https://base-ui.com), Tailwind CSS v4, lucide icons. Several primitives and patterns are adapted from [T3 Code](https://github.com/pingdotgg/t3code) (MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
-- The agent's teaching method (premises, justified steps, checks, lesson plans and graded questions) reimplements ideas from [LearnHarness](https://github.com/amosblomqvist/learnharness); no code or prompt text is copied from it.
+- The agent's teaching method (measuring before teaching, grounded and motivated steps, lesson plans, graded questions and rationed hints) reimplements ideas from [LearnHarness](https://github.com/amosblomqvist/learnharness); no code or prompt text is copied from it.
 
 Design details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/TYPESCRIPT-REWRITE.md](docs/TYPESCRIPT-REWRITE.md).
 

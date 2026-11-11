@@ -1,7 +1,7 @@
 // Blind before/after check of how Phaethon explains things. It answers each
 // question in questions.txt twice through the Claude Code CLI you are signed
 // in to (one system prompt per side), then asks a second model to grade the
-// pairs, shuffled, on correctness, reasoning, teaching and concision.
+// pairs, shuffled, on correctness, understanding, motivation and readability.
 //
 //   node scripts/eval/reasoning.mjs <promptA.txt> <promptB.txt> [model] [judgeModel]
 //
@@ -32,7 +32,13 @@ const ask = (system, prompt, m) =>
 
 const questions = fs.readFileSync(path.join(here, "questions.txt"), "utf8").trim().split("\n");
 const sides = { A: fs.readFileSync(a, "utf8"), B: fs.readFileSync(b, "utf8") };
-let grading = `Grade tutor answers for a university student. For each question, grade both answers 1-10 on correctness, reasoning (derives the result from stated premises, each step justified), teaching (the student learns why and can apply it) and concision (no padding). Reply with JSON only: [{"q":n,"X":{...},"Y":{...},"better":"X"|"Y"}].\n\n`;
+const CRITERIA = ["correctness", "understanding", "motivation", "readability"];
+let grading = `Grade tutor answers for a university student who asked the question and doesn't yet know the answer. For each question, grade both answers 1-10 on:
+- correctness: everything stated is true, and nothing load-bearing is missing.
+- understanding: after reading it, would this student see why the result has to be true, and could they apply it to a case the answer didn't cover?
+- motivation: does each move have a visible reason, or do steps and tricks appear from nowhere?
+- readability: is it a clear explanation a student would want to read, free of padding, meta-narration and scaffolding that doesn't help?
+Reply with JSON only: [{"q":n,"X":{"correctness":n,"understanding":n,"motivation":n,"readability":n},"Y":{...},"better":"X"|"Y"}].\n\n`;
 const order = [];
 questions.forEach((q, i) => {
   const flip = Math.random() < 0.5;
@@ -43,15 +49,18 @@ questions.forEach((q, i) => {
 });
 const verdict = JSON.parse(ask("You are a careful, strict grader. Output only JSON.", grading, judge).replace(/^```json\s*|```\s*$/g, ""));
 const tally = { A: 0, B: 0 };
-const reasoning = { A: [], B: [] };
+const scores = Object.fromEntries(CRITERIA.map((c) => [c, { A: [], B: [] }]));
 verdict.forEach((v, i) => {
   const flip = order[i];
   const side = (label) => (label === "X" ? (flip ? "B" : "A") : flip ? "A" : "B");
   tally[side(v.better)]++;
-  reasoning[side("X")].push(v.X.reasoning);
-  reasoning[side("Y")].push(v.Y.reasoning);
+  for (const c of CRITERIA) {
+    scores[c][side("X")].push(v.X[c]);
+    scores[c][side("Y")].push(v.Y[c]);
+  }
 });
 const avg = (xs) => (xs.reduce((s, x) => s + x, 0) / xs.length).toFixed(2);
 console.log(`Better answer: A ${tally.A}, B ${tally.B} (of ${questions.length})`);
-console.log(`Mean reasoning score: A ${avg(reasoning.A)}, B ${avg(reasoning.B)}`);
+for (const c of CRITERIA) console.log(`Mean ${c}: A ${avg(scores[c].A)}, B ${avg(scores[c].B)}`);
+if (process.env.EVAL_KEEP) fs.writeFileSync(process.env.EVAL_KEEP, grading + "\n\n## Verdict\n" + JSON.stringify({ order, verdict }, null, 2));
 fs.rmSync(work, { recursive: true, force: true });

@@ -56,7 +56,7 @@ describe("argument healing", () => {
     const problems = schemaProblems({ role: "guess", question: "q", options: "nope", extra: 1 }, checkSchema);
     expect(problems).toContain('unexpected field "extra"; the fields are role, nodeId, question, options, multiSelect, explanation, correctAnswer');
     expect(problems).toContain('"explanation" is required');
-    expect(problems.some((p) => p.startsWith('"role" must be one of "predict", "check"'))).toBe(true);
+    expect(problems.some((p) => p.startsWith('"role" must be one of "probe", "predict", "check"'))).toBe(true);
     expect(problems.some((p) => p.startsWith('"options" must be a JSON array with 2 to 6 items (not a string holding one)'))).toBe(true);
   });
 });
@@ -266,5 +266,31 @@ describe("two questions in one reply", () => {
     const pending = pendingQuestion(msgs);
     expect(pending?.kind).toBe("check");
     expect(pending && "question" in pending ? pending.question.id : undefined).toBe("first");
+  });
+});
+
+describe("question roles", () => {
+  const ask = (role: unknown): Message[] => [
+    { role: "user", content: [{ type: "text", text: "teach me limits" }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "p1", name: "check", input: { role, question: "Q", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], explanation: "e", correctAnswer: "a" } }] },
+  ];
+  const roleOf = (msgs: Message[]) => {
+    const p = pendingQuestion(msgs);
+    return p?.kind === "check" ? p.question.role : undefined;
+  };
+
+  it("keeps a probe, a prediction and a check apart after a reload", () => {
+    expect(roleOf(ask("probe"))).toBe("probe");
+    expect(roleOf(ask("predict"))).toBe("predict");
+    expect(roleOf(ask("check"))).toBe("check");
+  });
+
+  it("reads an unknown or missing role as a check", () => {
+    expect(roleOf(ask("guess"))).toBe("check");
+    expect(roleOf(ask(undefined))).toBe("check");
+  });
+
+  it("accepts probe in the check tool's schema", () => {
+    expect(schemaProblems({ role: "probe", question: "q", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], explanation: "e", correctAnswer: "a" }, checkSchema)).toEqual([]);
   });
 });

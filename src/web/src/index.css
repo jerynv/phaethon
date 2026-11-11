@@ -1,1 +1,505 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "katex/dist/katex.min.css";
+
+/* Tokens and base styles. The values are the design spec in docs/UI-REBUILD.md. */
+
+@custom-variant dark (&:is(.dark, .dark *));
+
+:root {
+  --radius: 0.5rem;
+  --control-radius: 0.4375rem;
+  --sidebar-width: 15.5rem;
+  --titlebar-height: 2.5rem;
+  --chat-max-width: 46rem;
+  --command-shell-inset: 0.5rem;
+  --command-content-inset: 0.75rem;
+  --z-sheet: 46;
+  --app-scrollbar-thumb: rgb(0 0 0 / 14%);
+  --app-scrollbar-thumb-hover: rgb(0 0 0 / 24%);
+
+  --background: #ffffff;
+  --foreground: var(--color-zinc-900);
+  --sidebar: var(--color-zinc-50);
+  --sidebar-foreground: var(--color-zinc-800);
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.52 0.19 262);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-zinc-100);
+  --secondary-foreground: var(--color-zinc-800);
+  --muted: var(--color-zinc-100);
+  --muted-foreground: var(--color-zinc-500);
+  --subtle-foreground: var(--color-zinc-400);
+  --accent: color-mix(in srgb, var(--color-zinc-100) 80%, var(--color-zinc-200));
+  --accent-foreground: var(--color-zinc-900);
+  --row-selected: color-mix(in srgb, var(--color-zinc-200) 60%, var(--color-zinc-100));
+  --message: var(--color-zinc-100);
+  --border: var(--color-zinc-200);
+  --input: var(--color-zinc-300);
+  --ring: var(--primary);
+  --code: color-mix(in srgb, var(--color-zinc-50) 70%, var(--color-zinc-100));
+
+  --destructive: var(--color-red-600);
+  --destructive-foreground: var(--color-red-700);
+  --error: var(--color-red-600);
+  --error-foreground: var(--color-red-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+  --success: var(--color-emerald-600);
+  --success-foreground: var(--color-emerald-700);
+  --info: var(--color-blue-600);
+  --info-foreground: var(--color-blue-700);
+
+  /* T3 Code's components read these "contrast" aliases; we have one contrast level. */
+  --contrast-foreground: var(--foreground);
+  --contrast-muted-foreground: var(--muted-foreground);
+}
+
+.dark {
+  color-scheme: dark;
+  --app-scrollbar-thumb: rgb(255 255 255 / 10%);
+  --app-scrollbar-thumb-hover: rgb(255 255 255 / 18%);
+
+  --background: #0c0c0d;
+  --foreground: var(--color-zinc-100);
+  --sidebar: #111112;
+  --sidebar-foreground: var(--color-zinc-200);
+  --card: #161618;
+  --popover: #18181a;
+  --primary: oklch(0.64 0.17 262);
+  --primary-foreground: #ffffff;
+  --secondary: rgb(255 255 255 / 6%);
+  --secondary-foreground: var(--color-zinc-100);
+  --muted: rgb(255 255 255 / 5%);
+  --muted-foreground: var(--color-zinc-400);
+  --subtle-foreground: var(--color-zinc-500);
+  --accent: rgb(255 255 255 / 6%);
+  --accent-foreground: var(--color-zinc-100);
+  --row-selected: rgb(255 255 255 / 8%);
+  --message: #1c1c1f;
+  --border: rgb(255 255 255 / 8%);
+  --input: rgb(255 255 255 / 11%);
+  --code: #131315;
+
+  --destructive: var(--color-red-500);
+  --destructive-foreground: var(--color-red-400);
+  --error: var(--color-red-500);
+  --error-foreground: var(--color-red-400);
+  --warning: var(--color-amber-400);
+  --warning-foreground: var(--color-amber-400);
+  --success: var(--color-emerald-400);
+  --success-foreground: var(--color-emerald-400);
+  --info: var(--color-blue-400);
+  --info-foreground: var(--color-blue-400);
+}
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* The type scale (docs/UI-REBUILD.md › Typeface and type scale). */
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.375rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.875rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-row-selected: var(--row-selected);
+  --color-message: var(--message);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-code: var(--code);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-surface: color-mix(in srgb, var(--error) 7%, transparent);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-sidebar-control-surface: var(--muted);
+  --color-placeholder: var(--subtle-foreground);
+  --color-icon-muted: var(--subtle-foreground);
+  --color-secondary-label: var(--muted-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 6px);
+  --radius-3xl: calc(var(--radius) + 10px);
+
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-skeleton: skeleton 2.4s infinite;
+  --animate-status-pulse: status-pulse 2s infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-indeterminate: indeterminate 1.4s var(--ease-drawer) infinite;
+
+  /* One stepped breath for every skeleton (after T3 Code): a few frames per cycle, not one per vsync. */
+  @keyframes skeleton {
+    0%,
+    42% {
+      opacity: 1;
+      animation-timing-function: steps(4);
+    }
+    50%,
+    92% {
+      opacity: 0.55;
+      animation-timing-function: steps(4);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes status-pulse {
+    0%,
+    40% {
+      opacity: 1;
+      animation-timing-function: steps(6);
+    }
+    50%,
+    90% {
+      opacity: 0.45;
+      animation-timing-function: steps(6);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+  @keyframes indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
+  }
+}
+
+/* Popovers and menus: flat, one hairline, a soft drop in light mode only. */
+@utility dropdown-glass {
+  background: var(--popover);
+  border: 1px solid var(--border);
+}
+
+@utility dialog-glass {
+  background: var(--popover);
+}
+
+@utility dialog-backdrop {
+  background: rgb(0 0 0 / 28%);
+  .dark & {
+    background: rgb(0 0 0 / 60%);
+  }
+}
+
+@utility surface-glass {
+  background: var(--background);
+}
+
+@utility alert-glass {
+  background: var(--card);
+}
+
+/* "Thinking": the label's own colour with a light sweep through it. */
+@utility text-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 40%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 60%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+/* Drag regions for the frameless title bar (macOS). */
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  *,
+  ::before,
+  ::after {
+    outline-offset: -2px;
+  }
+  html {
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01", "calt";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground text-sm;
+    overscroll-behavior: none;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+    font-feature-settings: "calt" 0;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
+  :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus-visible {
+    @apply outline-none ring-0;
+  }
+  /* Thin, quiet scrollbars everywhere. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-scrollbar-thumb) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--app-scrollbar-thumb);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-scrollbar-thumb-hover);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- Chat prose (docs/UI-REBUILD.md › Typeface; Overflow) ------------------ */
+@layer components {
+  .markdown {
+    font-size: var(--text-base);
+    line-height: 1.6;
+    color: var(--foreground);
+    overflow-wrap: anywhere;
+  }
+  .markdown > :first-child {
+    margin-top: 0;
+  }
+  .markdown > :last-child {
+    margin-bottom: 0;
+  }
+  .markdown p {
+    margin: 0.55em 0;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3,
+  .markdown h4 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 1.2em 0 0.4em;
+  }
+  .markdown h1 {
+    font-size: 1.0625rem;
+    line-height: 1.625rem;
+  }
+  .markdown h2 {
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+  }
+  .markdown h3,
+  .markdown h4 {
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+  }
+  .markdown ul,
+  .markdown ol {
+    margin: 0.5em 0;
+    padding-left: 1.35em;
+  }
+  .markdown ul {
+    list-style: disc;
+  }
+  .markdown ol {
+    list-style: decimal;
+  }
+  .markdown li {
+    margin: 0.2em 0;
+  }
+  .markdown li::marker {
+    color: var(--subtle-foreground);
+  }
+  .markdown blockquote {
+    margin: 0.75em 0;
+    padding-left: 0.85em;
+    border-left: 2px solid var(--border);
+    color: var(--muted-foreground);
+  }
+  .markdown hr {
+    margin: 1.25em 0;
+    border-color: var(--border);
+  }
+  .markdown strong {
+    font-weight: 600;
+  }
+  .markdown .md-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--primary) 35%, transparent);
+    text-underline-offset: 2px;
+  }
+  .markdown .md-link:hover {
+    text-decoration-color: currentColor;
+  }
+  .markdown .md-inline-code {
+    font-size: 0.86em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    overflow-wrap: anywhere;
+  }
+  .md-code {
+    margin: 0.75em 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--code);
+  }
+  .md-code-body {
+    overflow-x: auto;
+    padding: 0.7rem 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+  .md-code-body pre {
+    background: transparent !important;
+    margin: 0;
+  }
+  .md-code-body .shiki,
+  .md-code-body .shiki span {
+    color: var(--shiki-light);
+  }
+  .dark .md-code-body .shiki,
+  .dark .md-code-body .shiki span {
+    color: var(--shiki-dark);
+  }
+  .md-table-wrap {
+    margin: 0.75em 0;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .md-table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    line-height: 1.25rem;
+  }
+  .md-table-wrap th {
+    font-weight: 500;
+    text-align: left;
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  .md-table-wrap th,
+  .md-table-wrap td {
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .md-table-wrap tr:last-child td {
+    border-bottom: 0;
+  }
+  .markdown .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.35em 0;
+    margin: 0.6em 0;
+  }
+  .markdown .katex {
+    font-size: 1.06em;
+  }
+}

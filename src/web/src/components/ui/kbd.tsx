@@ -1,0 +1,38 @@
+import type * as React from "react";
+
+import { cn } from "@/lib/utils";
+
+function Kbd({
+  className,
+  variant = "default",
+  ...props
+}: React.ComponentProps<"kbd"> & {
+  /** `outline` draws a physical key, so the hint stays distinct inside surrounding text. */
+  variant?: "default" | "outline";
+}) {
+  return (
+    <kbd
+      className={cn(
+        "pointer-events-none inline-flex h-[18px] min-w-[18px] select-none items-center justify-center gap-1 rounded-[4px] px-1 font-medium font-sans text-muted-foreground text-3xs tabular-nums [&_svg:not([class*='size-'])]:size-3",
+        variant === "outline"
+          ? "border border-b-2 border-foreground/15 px-1.5"
+          : "bg-foreground/[0.07]",
+        className,
+      )}
+      data-slot="kbd"
+      {...props}
+    />
+  );
+}
+
+function KbdGroup({ className, ...props }: React.ComponentProps<"kbd">) {
+  return (
+    <kbd
+      className={cn("inline-flex items-center gap-0.5", className)}
+      data-slot="kbd-group"
+      {...props}
+    />
+  );
+}
+
+export { Kbd, KbdGroup };

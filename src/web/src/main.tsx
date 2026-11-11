@@ -1,10 +1,22 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { applyTheme, useTheme } from "./app/theme";
 import "./index.css";
 
-// The UI is being rebuilt from scratch; see docs/UI-REBUILD.md.
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <main className="grid h-dvh place-items-center text-sm text-neutral-500">Phaethon</main>
-  </StrictMode>,
-);
+// The right theme before the first paint (the vault's choice arrives a moment later).
+applyTheme(useTheme.getState().choice);
+
+async function start() {
+  if (import.meta.env.DEV && location.hash.startsWith("#mock")) {
+    const { installMockCore } = await import("./dev/mock-core");
+    installMockCore();
+  }
+  const { App } = await import("./app/App");
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+void start();

@@ -126,7 +126,7 @@ def banner(dark: bool) -> Image.Image:
 
     title = font(176, 700)
     tag = font(56, 400)
-    lines = ["An accessible, desktop-first AI workspace", "that teaches you why, not just what."]
+    lines = ["A minimal, desktop-first AI workspace", "that teaches you why, not just what."]
     d = ImageDraw.Draw(im)
     text_w = max(d.textlength("Phaethon", font=title), *(d.textlength(l, font=tag) for l in lines))
     icon_size, gap = 440, 100

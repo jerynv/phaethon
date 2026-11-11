@@ -39,11 +39,13 @@ export type UiRecord =
   /** A progress note the model wrote between tool calls (saved so a reload shows what was streamed). */
   | { kind: "progress"; text: string };
 
+export type QuestionRole = "probe" | "predict" | "check";
+
 /** A graded question the model asked with the `check` tool; the turn ends until it's answered. */
 export type CheckQuestion = {
   id: string;
-  /** "predict" asks before teaching (no wrong answer), "check" tests what was just taught. */
-  role: "predict" | "check";
+  /** "probe" measures what the user already knows before a plan, "predict" asks before teaching (no wrong answer), "check" tests what was just taught. */
+  role: QuestionRole;
   question: string;
   options: { value: string; label: string }[];
   multiSelect: boolean;

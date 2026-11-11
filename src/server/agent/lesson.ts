@@ -1,4 +1,4 @@
-import type { CheckQuestion, LessonAnswer } from "../../shared/agent.ts";
+import type { CheckQuestion, LessonAnswer, QuestionRole } from "../../shared/agent.ts";
 import { Refusal } from "../rpc/registry.ts";
 import { records, type Block, type Message } from "../core/thread.ts";
 import { healInput } from "./heal.ts";
@@ -97,7 +97,7 @@ export function validatePlan(input: PlanInput): ParsedMap {
 }
 
 export type CheckInput = {
-  role: "predict" | "check";
+  role: QuestionRole;
   nodeId?: string;
   question: string;
   options: { value: string; label: string }[];

@@ -112,7 +112,9 @@ export const useChats = create<Chats>((set, get) => {
       const cur = get().bySpace[space] ?? EMPTY;
       if (cur.running) return;
       const user: Message = { role: "user", key: newKey("u"), text: input.prompt, attachments: input.shown, at: Date.now() };
-      const base = input.replaceFrom !== undefined ? cur.messages.filter((m) => m.index === undefined || m.index < input.replaceFrom!) : cur.messages;
+      // Editing or retrying cuts the conversation at that message, unsaved replies after it included.
+      const cut = input.replaceFrom === undefined ? -1 : cur.messages.findIndex((m) => m.index !== undefined && m.index >= input.replaceFrom!);
+      const base = cut >= 0 ? cur.messages.slice(0, cut) : cur.messages;
       patch(space, () => ({ messages: [...base, user, startReply()], running: true, startedAt: Date.now(), status: "ready" }));
       await stream(space, (ch) =>
         chat.agentSend({

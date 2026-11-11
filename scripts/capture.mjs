@@ -1,7 +1,8 @@
 // Launches the real desktop app headless (offscreen, software GL), waits, and
 // saves a screenshot of the main window. Usage:
 //   node scripts/capture.mjs <out.png> [delayMs]
-// Set PHAETHON_HOME to run against a throwaway home folder.
+// Set PHAETHON_HOME to run against a throwaway home folder; PHAETHON_CAPTURE_SKIP_SETUP=1 skips
+// first-run setup and PHAETHON_CAPTURE_THEME=dark|light picks the theme.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import electron from "electron";

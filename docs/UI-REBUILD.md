@@ -161,3 +161,14 @@ Agent errors map their `ErrorCode` to a title and an action: `noApiKey`/`apiKey`
 ## Per-conversation model
 
 Each conversation remembers the provider/model (and reasoning effort) it uses. A new conversation starts with the last one picked anywhere. Coding agents (Claude Code, Codex, Gemini CLI) are entries in the same picker. The core keeps the choice next to the conversation (`.phaethon/model` for the current one, `threads/<id>.model` for archived ones), moving with it like the CLI session file, so existing thread files are untouched and old cores ignore it; with no choice saved the old behaviour applies (vault backend and space model).
+
+## Where things are (Nov 11, 2026)
+
+- Tokens and prose styles: `src/web/src/index.css`. Primitives: `src/web/src/components/ui/` (T3 Code, MIT). Shared pieces: `components/errors.tsx`, `skeletons.tsx`, `toast.tsx`, `truncate.tsx`, `provider-icon.tsx`.
+- Shell: `app/` (`Shell`, `Sidebar`, `Header`, `CommandPalette`, `store.ts`). Chat: `features/chat/` (`store.ts` per-space state, `catalog.ts` + `components/ModelPicker.tsx` per-conversation model). Study, Grades, Plan, Courses, the file viewer, first run and Settings live under `features/`.
+- Checks: `pnpm typecheck`, `pnpm test`, `pnpm test:ui` (Playwright specs in `e2e/*.spec.ts` against the real core with `PHAETHON_FAKE_PROVIDER`), `node scripts/capture.mjs out.png` for the real Electron window (`PHAETHON_CAPTURE_SKIP_SETUP=1`, `PHAETHON_CAPTURE_THEME=dark|light`). `pnpm dev`'s Vite page with `#mock` runs the UI against the fake core in `dev/mocks/`.
+
+### Known gaps
+- Cancelling a course-site sign-in only stops waiting: the core has no `lms_connect_cancel`, so the sign-in window stays until closed.
+- Cancelling deck or quiz generation from Study stops listening; there is no core cancel for `study_make_deck` / `study_make_quiz` yet.
+- Teaching turns (tutor and plan) always reason at high effort; the composer's effort applies to plain chat.

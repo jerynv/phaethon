@@ -149,6 +149,16 @@ async function capture(window: BrowserWindow): Promise<void> {
   window.setContentSize(w || 1280, h || 800);
   window.webContents.setFrameRate(30);
   await new Promise<void>((resolve) => window.webContents.once("did-finish-load", () => resolve()));
+  // PHAETHON_CAPTURE_SKIP_SETUP=1: capture the app itself rather than first-run setup (and PHAETHON_CAPTURE_THEME=dark|light).
+  if (process.env.PHAETHON_CAPTURE_SKIP_SETUP === "1" || process.env.PHAETHON_CAPTURE_THEME) {
+    const theme = process.env.PHAETHON_CAPTURE_THEME === "dark" ? "dark" : process.env.PHAETHON_CAPTURE_THEME === "light" ? "light" : null;
+    await window.webContents.executeJavaScript(
+      `${process.env.PHAETHON_CAPTURE_SKIP_SETUP === "1" ? 'localStorage.setItem("phaethon.onboarded","1");' : ""}${theme ? `localStorage.setItem("phaethon.theme",${JSON.stringify(theme)});` : ""}true`,
+    );
+    const reloaded = new Promise<void>((resolve) => window.webContents.once("did-finish-load", () => resolve()));
+    window.webContents.reload();
+    await reloaded;
+  }
   await new Promise((r) => setTimeout(r, Number(process.env.PHAETHON_CAPTURE_DELAY || 4000)));
   const image = await window.webContents.capturePage();
   fs.writeFileSync(captureTo!, image.toPNG());

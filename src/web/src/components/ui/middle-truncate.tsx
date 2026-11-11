@@ -43,10 +43,10 @@ export function MiddleTruncate({
       {split ? (
         <>
           {/* The tail carries the ellipsis so it sits flush; a CSS ellipsis leaves a ragged gap. */}
-          <span ref={headRef} className="peer min-w-0 overflow-hidden">
+          <span ref={headRef} className="peer min-w-0 overflow-hidden whitespace-pre">
             {split.head}
           </span>
-          <span className="shrink-0 peer-data-overflow:before:content-['…']">{split.tail}</span>
+          <span className="shrink-0 whitespace-pre peer-data-overflow:before:content-['…']">{split.tail}</span>
         </>
       ) : (
         // Keyed so React does not reuse the head node and its imperative clip.

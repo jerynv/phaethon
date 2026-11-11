@@ -21,7 +21,7 @@ export function Header({ title, actions }: { title?: ReactNode; actions?: ReactN
   const view = useNav((s) => s.view);
   const setView = useNav((s) => s.setView);
   return (
-    <header className={cn("app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 px-3", !sidebarOpen && isMac() && "pl-[84px]")}>
+    <header className={cn("@container/header app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 px-3", !sidebarOpen && isMac() && "pl-[84px]")}>
       {!sidebarOpen ? (
         <IconButton label="Show sidebar" keys={keysFor("sidebar").keys} onClick={toggle}>
           <PanelLeftIcon strokeWidth={1.75} />
@@ -31,7 +31,7 @@ export function Header({ title, actions }: { title?: ReactNode; actions?: ReactN
         {space ? (
           <>
             <SpaceAvatar name={space.name} hue={space.hue} />
-            <Truncate className="max-w-40 shrink-0 text-muted-foreground">{space.name}</Truncate>
+            <Truncate className="max-w-40 shrink text-muted-foreground @max-[30rem]/header:hidden">{space.name}</Truncate>
             {title ? <span className="text-subtle-foreground">/</span> : null}
           </>
         ) : null}
@@ -52,7 +52,7 @@ export function Header({ title, actions }: { title?: ReactNode; actions?: ReactN
               )}
             >
               <v.icon className="size-3.5" />
-              <span className="max-[860px]:hidden">{v.label}</span>
+              <span className="@max-[44rem]/header:hidden">{v.label}</span>
             </button>
           ))}
         </div>

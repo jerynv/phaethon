@@ -90,6 +90,15 @@ jobs:
 
       - run: ${{ matrix.install }}
 
+      # The app icon is an Icon Composer bundle, which only actool 26+ compiles.
+      - name: Xcode 26 or later
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$xcode"
+          xcrun actool --version | grep -A1 short-bundle-version
+
       - name: Apple signing when available
         if: runner.os == 'macOS'
         shell: bash

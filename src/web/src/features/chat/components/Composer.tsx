@@ -165,6 +165,8 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
     }
     const shown: Attachment[] = [...kept, ...files.map((f) => ({ name: f.file.name, mediaType: mediaTypeOf(f.file), previewUrl: f.previewUrl, size: f.file.size }))];
     const prompt = text;
+    // The hero composer unmounts as the timeline appears, so clear the draft now, not in an effect.
+    drafts.set(space.id, "");
     setText("");
     setFiles([]);
     setKept([]);

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { AccessAnswer, AgentEvent, LessonAnswer } from "#shared/agent.ts";
 import { useNav } from "@/app/store";
-import { Channel, errorText } from "@/lib/core";
+import { Channel, errorText, onCoreStatus } from "@/lib/core";
 import * as chat from "./api";
 import { applyEvent, continueReply, fromUi, mergeSaved, newKey, startReply, type Attachment, type AssistantMessage, type Message } from "./lib/timeline";
 
@@ -76,15 +76,32 @@ export const useChats = create<Chats>((set, get) => {
     void useNav.getState().loadThreads(space);
   };
 
-  /** Runs one streamed call that ends with `end`, whatever the outcome. */
+  /**
+   * Runs one streamed call. The turn is over when its `end` event arrives
+   * (the call itself may resolve earlier or later), or when the call fails.
+   */
   const stream = async (space: string, start: (ch: Channel<AgentEvent>) => Promise<unknown>) => {
-    const ch = new Channel<AgentEvent>(onEvent(space));
+    const apply = onEvent(space);
+    let ended!: () => void;
+    const end = new Promise<void>((r) => (ended = r));
+    const ch = new Channel<AgentEvent>((e) => {
+      apply(e);
+      if (e.kind === "end") ended();
+    });
+    // Streams can't survive a lost connection; the turn is shown as failed rather than left hanging.
+    const unwatch = onCoreStatus((st) => {
+      if (st !== "lost") return;
+      apply({ kind: "error", code: "ipc", message: "The connection to Phaethon’s core dropped during this reply." } as unknown as AgentEvent);
+      ended();
+    });
     try {
       await start(ch);
+      await end;
     } catch (e) {
-      onEvent(space)({ kind: "error", code: "provider", message: errorText(e) });
-      onEvent(space)({ kind: "end", sessionId: null });
+      apply({ kind: "error", code: "provider", message: errorText(e) });
+      apply({ kind: "end", sessionId: null });
     } finally {
+      unwatch();
       ch.close();
       patch(space, () => ({ running: false, startedAt: undefined }));
       await settle(space);

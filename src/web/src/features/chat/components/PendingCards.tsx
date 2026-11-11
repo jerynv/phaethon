@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
 import { diffCounts, diffLines, foldDiff } from "../lib/diff";
+import { Markdown } from "./Markdown";
 import type { PendingAccess, PendingApproval, PendingQuestion } from "../lib/timeline";
 
 /** The frame every "needs you" card shares: an icon, a title line, a body, actions at the bottom right. */
@@ -121,7 +122,7 @@ const CONFIDENCE = [
   { value: 100, label: "Certain" },
 ];
 
-export function QuestionCard({ question, disabled, onAnswer }: { question: PendingQuestion; disabled: boolean; onAnswer: (a: LessonAnswer) => Promise<void> }) {
+export function QuestionCard({ question, space, disabled, onAnswer }: { question: PendingQuestion; space: string; disabled: boolean; onAnswer: (a: LessonAnswer) => Promise<void> }) {
   const [chosen, setChosen] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [confidence, setConfidence] = useState<number | null>(null);
@@ -149,7 +150,7 @@ export function QuestionCard({ question, disabled, onAnswer }: { question: Pendi
         </>
       }
     >
-      <p className="mb-2.5 text-base [overflow-wrap:anywhere]">{q.question}</p>
+      <Markdown inline text={q.question} space={space} messageKey={q.id} className="mb-2.5" />
       {check ? (
         <div className="flex flex-col gap-1">
           {check.options.map((o) => {
@@ -166,7 +167,7 @@ export function QuestionCard({ question, disabled, onAnswer }: { question: Pendi
                 <span className={cn("mt-0.5 flex size-3.5 shrink-0 items-center justify-center border", check.multiSelect ? "rounded-[3px]" : "rounded-full", on ? "border-primary bg-primary" : "border-input")}>
                   {on ? <span className={cn("bg-primary-foreground", check.multiSelect ? "h-1.5 w-1.5 rounded-[1px]" : "size-1.5 rounded-full")} /> : null}
                 </span>
-                <span className="min-w-0 [overflow-wrap:anywhere]">{o.label}</span>
+                <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0 text-sm" />
               </button>
             );
           })}

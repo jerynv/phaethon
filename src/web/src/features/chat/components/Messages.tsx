@@ -132,7 +132,7 @@ export function AssistantMessage({
             return <RecordLine key={s.key} record={s.record} spaceName={spaceName} />;
         }
       })}
-      {streaming && (segs.length === 0 || m.toolStatus) ? (
+      {streaming && (segs.length === 0 || (m.toolStatus && !(lastSeg?.type === "work" && lastSeg.tools.some((t) => t.status === "running")))) ? (
         <div className="flex h-6 items-center gap-2 text-sm">
           <span className="text-shimmer font-medium">{m.toolStatus ?? "Thinking"}</span>
           <Elapsed since={startedAt} />
@@ -140,7 +140,7 @@ export function AssistantMessage({
       ) : null}
       {m.approval ? <ApprovalCard approval={m.approval} onAnswer={(allow) => chats().approve(space, m.approval!.id, allow)} /> : null}
       {m.access ? <AccessCard access={m.access} spaceName={spaceName} onAnswer={(a) => chats().answerAccess(space, m.access!.id, a)} /> : null}
-      {m.question && last ? <QuestionCard question={m.question} disabled={running} onAnswer={(a) => chats().answerLesson(space, m.question!.question.id, a)} /> : null}
+      {m.question && last ? <QuestionCard question={m.question} space={space} disabled={running} onAnswer={(a) => chats().answerLesson(space, m.question!.question.id, a)} /> : null}
       {err && m.error ? (
         <SurfaceError
           className="my-2"

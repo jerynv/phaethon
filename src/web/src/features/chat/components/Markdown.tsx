@@ -1,4 +1,5 @@
 import { memo, type ReactNode } from "react";
+import { cn } from "@/lib/utils";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -53,11 +54,28 @@ function makeComponents(ctx: Ctx): Components {
   };
 }
 
-export const Markdown = memo(function Markdown({ text, space, streaming = false, messageKey }: { text: string; space: string; streaming?: boolean; messageKey: string }): ReactNode {
+export const Markdown = memo(function Markdown({
+  text,
+  space,
+  streaming = false,
+  messageKey,
+  inline = false,
+  className,
+}: {
+  text: string;
+  space: string;
+  streaming?: boolean;
+  messageKey: string;
+  /** Short text (a question, an option): no paragraph margins, wraps like a span. */
+  inline?: boolean;
+  className?: string;
+}): ReactNode {
   const source = markCitations(prepareMath(streaming ? holdPartialCitation(text) : text, streaming));
+  const components = makeComponents({ space, streaming, messageKey });
+  if (inline) components.p = ({ children }) => <span>{children}</span>;
   return (
-    <div className="markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }]]} components={makeComponents({ space, streaming, messageKey })}>
+    <div className={cn("markdown", inline && "markdown-inline", className)}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }]]} components={components}>
         {source}
       </ReactMarkdown>
     </div>

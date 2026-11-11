@@ -225,7 +225,7 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
         <textarea
           ref={area}
           value={text}
-          rows={hero ? 2 : 1}
+          rows={2}
           aria-label="Message"
           placeholder={edit ? "Edit your message" : `Message ${space.name}`}
           onChange={(e) => setText(e.target.value)}
@@ -253,16 +253,17 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
           </Tooltip>
           <input ref={picker} type="file" multiple hidden onChange={(e) => (add([...(e.target.files ?? [])]), (e.target.value = ""))} />
-          {pick ? (
-            <>
-              <ModelPicker pick={pick} onPick={setPick} disabled={busy} />
-              <EffortPicker pick={pick} onPick={setPick} disabled={busy} />
-            </>
-          ) : (
-            <span className="h-7 w-28 animate-skeleton rounded-md bg-muted" />
-          )}
           {space.educationEnabled ? <TutorPicker space={space.id} disabled={busy} /> : null}
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex min-w-0 items-center gap-0.5">
+            {pick ? (
+              <>
+                <ModelPicker pick={pick} onPick={setPick} disabled={busy} />
+                <EffortPicker pick={pick} onPick={setPick} disabled={busy} />
+              </>
+            ) : (
+              <span className="h-7 w-28 animate-skeleton rounded-md bg-muted" />
+            )}
+            <span className="w-1" />
             {busy ? (
               <Tooltip>
                 <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85" />}>

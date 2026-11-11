@@ -82,7 +82,7 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
         {current?.need ? <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-label={current.need} /> : null}
         <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.25} />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="start" padding="none" className="w-[30rem] max-w-[calc(100vw-2rem)]" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
+      <PopoverPopup side="top" align="end" padding="none" className="w-[30rem] max-w-[calc(100vw-2rem)]" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
         <div className="flex h-[21rem] max-h-(--available-height) min-h-0">
           <div className="flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r bg-muted/40 py-1.5" role="tablist" aria-label="Providers">
             <RailButton active={rail === "all"} label="All models" onClick={() => setRail("all")}>
@@ -248,7 +248,7 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
         <EffortGlyph level={level} levels={model.efforts} className="size-3.5" />
         <span className="max-[620px]:hidden">{EFFORT_LABEL[level] ?? level}</span>
       </PopoverTrigger>
-      <PopoverPopup side="top" align="start" padding="none" className="w-44">
+      <PopoverPopup side="top" align="end" padding="none" className="w-44">
         <div className="p-1">
           <div className="px-2 pt-1 pb-1.5 font-medium text-2xs text-muted-foreground">Reasoning</div>
           {model.efforts.map((e) => (

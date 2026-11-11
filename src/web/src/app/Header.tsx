@@ -21,7 +21,7 @@ export function Header({ title, actions }: { title?: ReactNode; actions?: ReactN
   const view = useNav((s) => s.view);
   const setView = useNav((s) => s.setView);
   return (
-    <header className={cn("app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b px-3", !sidebarOpen && isMac() && "pl-[84px]")}>
+    <header className={cn("app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 px-3", !sidebarOpen && isMac() && "pl-[84px]")}>
       {!sidebarOpen ? (
         <IconButton label="Show sidebar" keys={keysFor("sidebar").keys} onClick={toggle}>
           <PanelLeftIcon strokeWidth={1.75} />

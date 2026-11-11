@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, session, shell } from "electron";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { HostOp } from "../shared/host.ts";
@@ -20,7 +21,9 @@ const captureTo = process.env.PHAETHON_CAPTURE;
 
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }]);
 
-// Headless capture (scripts/capture.mjs) renders offscreen and skips the single-instance lock.
+// Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
+// a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
+if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));
 if (!captureTo && !app.requestSingleInstanceLock()) {
   app.quit();
 }

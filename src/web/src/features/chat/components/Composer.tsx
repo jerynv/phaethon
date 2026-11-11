@@ -284,7 +284,7 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
         <p className="flex items-center gap-1.5 px-1 text-warning-foreground text-xs">
           <span className="size-1.5 rounded-full bg-warning" />
           <span className="min-w-0 truncate">
-            {group.name}: {group.need.toLowerCase()}
+            {group.name} · {group.need}
           </span>
           <button type="button" className="shrink-0 font-medium underline-offset-2 hover:underline" onClick={() => openSettings(group.needAction ?? "providers")}>
             Set up

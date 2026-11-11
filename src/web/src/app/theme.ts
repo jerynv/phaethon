@@ -27,7 +27,8 @@ export const useTheme = create<Theme>((set, get) => ({
   hydrate(appearance) {
     const a = appearance && typeof appearance === "object" ? (appearance as Record<string, unknown>) : {};
     const t = a.theme;
-    const choice: ThemeChoice = t === "light" || t === "dark" ? t : "system";
+    // The vault's choice wins; with none saved there, the one remembered on this computer stays.
+    const choice: ThemeChoice = t === "light" || t === "dark" || t === "system" ? t : get().choice;
     set({ appearance: a, choice });
     try {
       localStorage.setItem(KEY, choice);

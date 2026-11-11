@@ -1,4 +1,9 @@
-# Phaethon
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.png">
+    <img src="docs/brand/banner-light.png" width="100%" alt="Phaethon: an accessible, desktop-first AI workspace that teaches you why, not just what.">
+  </picture>
+</h1>
 
 An open-source, accessible, desktop-first life OS: a workspace where an AI agent helps you run the parts of your life you choose to give it.
 

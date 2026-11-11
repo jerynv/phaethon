@@ -47,6 +47,10 @@ electronFuses:
 
 mac:
   category: public.app-category.productivity
+  # Icon Composer bundle for macOS 26 and later (compiled by actool, so the
+  # build needs Xcode 26+); build/icon.icns is the DMG's volume icon. Every icon
+  # comes from build/brand/mark.png via scripts/brand/build-icons.py.
+  icon: icon.icon
   hardenedRuntime: true
   # zip is what the updater installs on macOS; dmg is for people.
   target:
@@ -59,6 +63,9 @@ win:
   target:
     - target: nsis
       arch: [x64]
+
+dmg:
+  icon: icon.icns
 
 nsis:
   oneClick: true

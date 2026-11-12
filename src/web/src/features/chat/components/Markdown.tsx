@@ -1,4 +1,5 @@
-import { memo, type ReactNode } from "react";
+import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
+import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -21,6 +22,34 @@ import { StudyBlock } from "./StudyBlock";
  */
 
 type Ctx = { space: string; streaming: boolean; messageKey: string };
+
+const KATEX_OPTIONS = { throwOnError: false, strict: "ignore", errorColor: "var(--error-foreground)" } as const;
+
+/**
+ * KaTeX breaks inline math only after relations and operators, so one
+ * unbreakable piece (a long \text{}, an inline matrix, a formula that
+ * failed and shows its source) can be wider than the message and push the
+ * whole conversation sideways. Those few get `katex-wide`: their own
+ * sideways scroll, like display math. Rechecked when the text or width changes.
+ */
+function useWideMath(source: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box || !source.includes("$")) return;
+    const check = () => {
+      const width = box.clientWidth;
+      for (const k of box.querySelectorAll<HTMLElement>(".katex")) {
+        if (k.parentElement?.closest(".katex-display")) continue;
+        k.classList.remove("katex-wide");
+        if (k.getBoundingClientRect().width > width + 4) k.classList.add("katex-wide");
+      }
+    };
+    check();
+    return observeResize(box, check);
+  }, [source]);
+  return ref;
+}
 
 function makeComponents(ctx: Ctx): Components {
   return {
@@ -73,9 +102,10 @@ export const Markdown = memo(function Markdown({
   const source = markCitations(prepareMath(streaming ? holdPartialCitation(text) : text, streaming));
   const components = makeComponents({ space, streaming, messageKey });
   if (inline) components.p = ({ children }) => <span>{children}</span>;
+  const ref = useWideMath(source);
   return (
-    <div className={cn("markdown", inline && "markdown-inline", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }]]} components={components}>
+    <div ref={ref} className={cn("markdown", inline && "markdown-inline", className)}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]} rehypePlugins={[[rehypeKatex, KATEX_OPTIONS]]} components={components}>
         {source}
       </ReactMarkdown>
     </div>

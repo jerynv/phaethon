@@ -493,14 +493,57 @@
   .md-table-wrap tr:last-child td {
     border-bottom: 0;
   }
+  /* Side padding holds KaTeX's 2 px spacer beside equation numbers, so a
+     formula that fits never becomes a scroller that jiggles under a trackpad. */
   .markdown .katex-display {
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 0.35em 0;
+    padding: 0.35em 4px;
     margin: 0.6em 0;
+    overscroll-behavior-x: contain;
   }
   .markdown .katex {
     font-size: 1.06em;
+  }
+  /* An inline formula wider than the message (see useWideMath). */
+  .markdown .katex-wide {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    vertical-align: middle;
+    padding: 0.15em 2px;
+    overscroll-behavior-x: contain;
+  }
+  /* A formula KaTeX couldn't read shows its source, wrapping, with the
+     reason on hover (KaTeX puts it in the title). */
+  .markdown .katex-error {
+    font-family: var(--font-mono);
+    font-size: 0.84em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-decoration: underline wavy color-mix(in srgb, var(--error-foreground) 45%, transparent);
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+  /* Display math that failed sits alone under the message: a small framed block. */
+  .markdown > .katex-error {
+    display: block;
+    margin: 0.6em 0;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--error-foreground) 22%, transparent);
+    border-radius: 8px;
+    background: var(--color-error-surface);
+    text-decoration: none;
+  }
+  .markdown > .katex-error::before {
+    content: "Couldn’t draw this formula";
+    display: block;
+    margin-bottom: 0.25rem;
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    color: var(--muted-foreground);
   }
 }
 

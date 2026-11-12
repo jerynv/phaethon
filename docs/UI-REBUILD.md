@@ -154,6 +154,8 @@ Agent errors map their `ErrorCode` to a title and an action: `noApiKey`/`apiKey`
 | Paths | start truncation keeping the end (`…/courses/m301/hw6.pdf`) |
 | Chat prose | wraps; long tokens break with `overflow-wrap: anywhere` |
 | Code blocks, tables, display math | scroll horizontally inside their own frame; the page never scrolls sideways |
+| Inline math | breaks after relations and operators (KaTeX); a piece too wide to break gets its own sideways scroll (`katex-wide`, set by `useWideMath` in `Markdown.tsx`) |
+| Math KaTeX can't read | its source in mono, wrapping, wavy-underlined, with KaTeX's reason on hover; display math in a small framed block captioned "Couldn’t draw this formula". While a reply streams, an unclosed `$$` block is held back so nothing half-drawn flashes |
 | User messages | wrap; longer than 12 lines clamp with a "Show more" toggle |
 | Error and tool details | 2-line clamp with expander; tool output in a mono block that scrolls at 240 px |
 | Toasts | title one line, description up to 3 lines |

@@ -129,7 +129,7 @@ export function ChatView({ space }: { space: SpaceView }) {
         </div>
       ) : (
         <>
-          <div ref={box} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
+          <div ref={box} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]">
             {showSkeleton ? <SkeletonTurns /> : null}
             <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-5 px-4 pt-6 pb-8">
               {chat.messages.map((m, i) =>

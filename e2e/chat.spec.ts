@@ -92,3 +92,26 @@ test("long words and long messages never widen the page", async ({ page }) => {
   });
   expect(overflow).toEqual({ page: 0, timeline: 0 });
 });
+
+test("math that fails or runs long stays inside the message", async ({ page }) => {
+  const reply = String.raw`Broken: $\frac{1}{$ then text.
+
+$$\sum_{i=1}^{n} \frac{i}{2 + \left( x$$
+
+$$\begin{align} a &= b \\ c &= d \end{align}$$
+
+Long: $\mathrm{${"averyveryverylongword".repeat(8)}}$ done.`;
+  core = await startCore({ script: { claude: true, steps: [{ text: reply }] } });
+  await core.open(page);
+  await composer(page).fill("show me some math");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Couldn’t draw this formula").or(page.locator(".markdown > .katex-error"))).toBeVisible();
+  const m = await page.evaluate(() => {
+    const md = document.querySelector('[data-role="assistant"] .markdown') as HTMLElement;
+    const scroller = md.closest(".overflow-y-auto") as HTMLElement;
+    const displays = [...md.querySelectorAll<HTMLElement>(".katex-display")].map((d) => d.scrollWidth - d.clientWidth);
+    return { message: md.scrollWidth - md.clientWidth, timeline: scroller.scrollWidth - scroller.clientWidth, displays, wide: md.querySelectorAll(".katex-wide").length };
+  });
+  // The fitting display (with equation numbers) is not a scroller; the long inline formula scrolls on its own.
+  expect(m).toEqual({ message: 0, timeline: 0, displays: [0], wide: 1 });
+});

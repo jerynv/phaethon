@@ -2,7 +2,7 @@ import { commands, messageOf, Refusal } from "../rpc/registry.ts";
 import { whileIdle } from "../core/runs.ts";
 import { spaceDir } from "../core/vault.ts";
 import { effectivePick, parsePick, savePick } from "./pick.ts";
-import { deleteThreadIn, listThreadsIn, loadIn, openThreadIn, startNewIn, toUi } from "./store.ts";
+import { deleteThreadIn, listThreadsIn, loadIn, openThreadIn, startNewIn, toUi, updateMetaIn } from "./store.ts";
 
 function wrap<T>(prefix: string, f: () => T): T {
   try {
@@ -45,6 +45,21 @@ commands({
       wrap("That conversation couldn’t be deleted", () => deleteThreadIn(dir, String(id)));
       return null;
     });
+  },
+});
+
+commands({
+  /** Gives a conversation its own title; an empty one goes back to the title from its first message. */
+  thread_rename: ({ space, id, title }: { space: string; id: string; title: unknown }) => {
+    const dir = spaceDir(space);
+    if (typeof title !== "string") throw new Refusal("A title has to be text.");
+    return wrap("That conversation couldn’t be renamed", () => updateMetaIn(dir, String(id), { title }));
+  },
+
+  /** Pins a conversation to the top of its space, or unpins it. */
+  thread_pin: ({ space, id, pinned }: { space: string; id: string; pinned: unknown }) => {
+    const dir = spaceDir(space);
+    return wrap("That conversation couldn’t be pinned", () => updateMetaIn(dir, String(id), { pinned: pinned ? Date.now() : null }));
   },
 });
 

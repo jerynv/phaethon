@@ -26,6 +26,8 @@ type Nav = {
   viewer: { space: string; path: string } | null;
   /** Bumped when a conversation was opened or started, so the chat reloads. */
   threadEpoch: Record<string, number>;
+  /** Spaces whose current conversation got a reply while its chat wasn't on screen. */
+  unread: Record<string, true>;
 
   loadSpaces(): Promise<void>;
   selectSpace(id: string, view?: View): void;
@@ -34,6 +36,10 @@ type Nav = {
   newChat(space: string): Promise<void>;
   openThread(space: string, id: string): Promise<void>;
   deleteThread(space: string, id: string): Promise<void>;
+  renameThread(space: string, id: string, title: string): Promise<void>;
+  pinThread(space: string, id: string, pinned: boolean): Promise<void>;
+  /** A reply finished in `space`: marked unread unless its chat is on screen. */
+  replied(space: string): void;
   toggleCollapsed(space: string): void;
   toggleSidebar(): void;
   openSettings(section?: SettingsSection): void;
@@ -74,6 +80,7 @@ export const useNav = create<Nav>((set, get) => ({
   paletteOpen: false,
   viewer: null,
   threadEpoch: {},
+  unread: {},
 
   async loadSpaces() {
     set((s) => ({ spaces: { ...s.spaces, loading: true, error: undefined } }));
@@ -93,12 +100,14 @@ export const useNav = create<Nav>((set, get) => ({
     const space = get().spaces.data?.find((s) => s.id === id);
     const next = view ?? (space?.educationEnabled ? get().view : "chat");
     set({ activeSpace: id, view: next, settings: null });
+    seen();
     writeJson(LAST_SPACE, id);
     void api.touchSpace(id).catch(() => {});
   },
 
   setView(view) {
     set({ view, settings: null });
+    seen();
   },
 
   async loadThreads(space) {
@@ -131,6 +140,31 @@ export const useNav = create<Nav>((set, get) => ({
     await get().loadThreads(space);
   },
 
+  async renameThread(space, id, title) {
+    const t = title.trim();
+    patchThread(space, id, (x) => ({ ...x, title: t || x.title, renamed: !!t }));
+    try {
+      await api.renameThread(space, id, t);
+    } finally {
+      await get().loadThreads(space);
+    }
+  },
+
+  async pinThread(space, id, pinned) {
+    patchThread(space, id, (x) => ({ ...x, pinned: pinned ? Date.now() : undefined }));
+    try {
+      await api.pinThread(space, id, pinned);
+    } finally {
+      await get().loadThreads(space);
+    }
+  },
+
+  replied(space) {
+    const s = get();
+    if (s.activeSpace === space && s.view === "chat" && !s.settings) return;
+    set({ unread: { ...s.unread, [space]: true } });
+  },
+
   toggleCollapsed(space) {
     const collapsed = { ...get().collapsed, [space]: !get().collapsed[space] };
     set({ collapsed });
@@ -148,6 +182,7 @@ export const useNav = create<Nav>((set, get) => ({
   },
   closeSettings() {
     set({ settings: null });
+    seen();
   },
   setPalette(open) {
     set({ paletteOpen: open });
@@ -168,4 +203,22 @@ export function useActiveSpace(): SpaceView | undefined {
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
   window.__phaethon = { ...(window.__phaethon ?? {}), nav: useNav };
+}
+
+/** The active space's chat is on screen: its reply has been seen. */
+function seen() {
+  const s = useNav.getState();
+  const space = s.activeSpace;
+  if (!space || s.view !== "chat" || s.settings || !s.unread[space]) return;
+  const { [space]: _, ...rest } = s.unread;
+  useNav.setState({ unread: rest });
+}
+
+/** Changes one row of a space's list right away (the core's answer replaces it). */
+function patchThread(space: string, id: string, f: (t: ThreadSummary) => ThreadSummary) {
+  useNav.setState((s) => {
+    const cur = s.threads[space];
+    if (!cur?.data) return {};
+    return { threads: { ...s.threads, [space]: { ...cur, data: cur.data.map((t) => (t.id === id ? f(t) : t)) } } };
+  });
 }

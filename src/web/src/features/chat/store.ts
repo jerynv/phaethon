@@ -74,6 +74,7 @@ export const useChats = create<Chats>((set, get) => {
       // What's on screen stays; the next load reads the file again.
     }
     void useNav.getState().loadThreads(space);
+    useNav.getState().replied(space);
   };
 
   /**

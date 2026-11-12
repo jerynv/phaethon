@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { errorText } from "@/lib/core";
-import { cn } from "@/lib/utils";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { Header } from "./Header";
 import { matchShortcut } from "./shortcuts";
@@ -86,6 +86,7 @@ function Main() {
 export function Shell() {
   useShortcuts();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
+  const toggleSidebar = useNav((s) => s.toggleSidebar);
   const settings = useNav((s) => s.settings);
   const viewer = useNav((s) => s.viewer);
   if (settings) {
@@ -97,12 +98,8 @@ export function Shell() {
     );
   }
   return (
-    <div className="flex h-full">
-      <div className={cn("h-full shrink-0 overflow-hidden border-r transition-[width] duration-200 ease-drawer", sidebarOpen ? "w-(--sidebar-width)" : "w-0 border-r-0")}>
-        <div className="h-full w-(--sidebar-width)">
-          <Sidebar />
-        </div>
-      </div>
+    <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar}>
+      <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col bg-background">
         <Main />
       </main>
@@ -112,6 +109,6 @@ export function Shell() {
         </Suspense>
       ) : null}
       <CommandPalette />
-    </div>
+    </SidebarProvider>
   );
 }

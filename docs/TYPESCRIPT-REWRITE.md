@@ -8,7 +8,7 @@ Owner request: rewrite everything in TypeScript; make the agent reason instead o
 Electron main (src/desktop)          Node core (src/server)                  Renderer (src/web)
  ├─ app:// protocol, CSP header       ├─ MessagePort per renderer (WS only standalone)React 19 + Vite
  ├─ utilityProcess core, MessagePorts ├─ invoke(name,args) router (allow-list) shadcn base-mira + @base-ui/react
- │   kills reported groups on crash   ├─ Channel streams (per-call ids)        T3/coss ui components (MIT)
+ │   kills reported groups on crash   ├─ Channel streams (per-call ids)        T3 Code ui components (MIT)
  ├─ native dialogs, folder picker     ├─ vault, spaces, threads, grants        own timeline/composer
  ├─ LMS sign-in windows (cookies)     ├─ providers + agent loop
  └─ updater                           ├─ CLI backends (claude, codex, gemini)

@@ -37,7 +37,7 @@ Written after studying T3 Code's web app (`apps/web`, commit d2c2595, Nov 11 202
 
 - **Base UI primitives wrapped in thin shadcn-style files**, one per component, `data-slot` on every part, variants with `cva`, `cn()` = `tailwind-merge` extended with the extra font sizes. Copied (trimmed of T3-only hooks) into `components/ui/`: button, tooltip, menu, popover, dialog, select, switch, checkbox, input, textarea, kbd, badge, skeleton, spinner, empty, alert, scroll-area, separator, collapsible, toggle-group, middle-truncate, group. Toasts are a smaller rewrite on Base UI's Toast.
 - **Compact geometry tokens** (`--control-radius`, row insets) so sidebar, menus and composer controls line up.
-- **Sidebar** = flat list on a slightly tinted panel, 28 px rows, the selected row lifted one step, actions revealed on hover, relative time in the row's trailing slot with tabular numbers.
+- **Sidebar** = flat list on a slightly tinted panel, 28 px rows, the selected row lifted one step, actions revealed on hover, relative time in the row's trailing slot with tabular numbers. Built from the parts in `components/ui/sidebar.tsx` (after T3 Code and shadcn/ui): provider, offcanvas panel, rail, groups, menu rows with a badge and hover actions laid over it (the badge keeps its width, so titles never reflow). A status gutter left of each conversation shows one mark: working (pulsing dot), new reply while you were elsewhere (dot), or pinned (Phosphor `PushPinSimple`, filled). Conversations rename in place from their menu, pin to the top of their space and delete after a confirm; a collapsed space shows its count and the new-reply dot.
 - **Composer** = a raised card with one hairline outline; the controls row under the text sits inside the card: model picker (provider logo + model name + chevron), effort, then actions on the right. The model picker is a popover: provider rail on the left, search on top, model rows (logo · name · check), effort column on the right for models that have it.
 - **Timeline** = user turns in a muted bubble aligned right, assistant turns as bare prose full width, tool work as a single collapsible "work group" line, errors as an in-place alert that clamps long messages with an expander.
 - **Skeletons** use one stepped opacity breath (`animate-skeleton`, steps(4)) instead of a shimmer, so many bars cost a few frames per cycle.
@@ -66,7 +66,7 @@ Prose headings inside chat: h1 17/26 600, h2 15/24 600, h3 14/22 600; never larg
 
 - 4 px grid. Controls are 28 px (`h-7`) by default and 24 px (`h-6`) in toolbars; rows (sidebar, menus, lists) are 28 px; settings rows 44 px minimum with 12 px vertical padding.
 - Title bar 40 px (macOS traffic lights sit inside the sidebar's top 40 px, inset 76 px).
-- Sidebar 248 px (resizable 200–360), main gutter 16 px, chat column max 46 rem (736 px), settings content max 42 rem.
+- Sidebar 248 px (drag its edge to resize, 216–420, kept on this computer; double-click the edge for 248), main gutter 16 px, chat column max 46 rem (736 px), settings content max 42 rem.
 - Gaps: 2 px between rows, 6 px between controls in a row, 12 px between groups, 24 px between sections.
 
 ## Colour tokens
@@ -107,6 +107,8 @@ Chosen per place; within one surface the stroke and size are consistent. Lucide 
 | Search | Lucide `Search` | |
 | Sidebar toggle | Lucide `PanelLeft` | mirrors the panel it moves |
 | Settings | Lucide `Settings2` | sliders read as preferences, not system |
+| Conversation menu: Rename · Reset title · Pin / Unpin · Delete | Lucide `PencilLine` · `RotateCcw` · `Pin` / `PinOff` · `Trash2` | |
+| Pinned mark | Phosphor `PushPinSimple` (fill) 12 px | reads at gutter size where Lucide's outline pin doesn't |
 | Space switcher | coloured square with the space initial + Lucide `ChevronsUpDown` | spaces are identities, not files |
 | Views: Chat · Study · Grades · Plan · Courses | Lucide `MessageSquare` · Phosphor `Cards` · Lucide `ChartNoAxesColumn` · Lucide `CalendarDays` · Phosphor `GraduationCap` | flashcards and courses have no exact Lucide glyph |
 | Attach | Lucide `Paperclip` | |
@@ -161,6 +163,10 @@ Agent errors map their `ErrorCode` to a title and an action: `noApiKey`/`apiKey`
 ## Per-conversation model
 
 Each conversation remembers the provider/model (and reasoning effort) it uses. A new conversation starts with the last one picked anywhere. Coding agents (Claude Code, Codex, Gemini CLI) are entries in the same picker. The core keeps the choice next to the conversation (`.phaethon/model` for the current one, `threads/<id>.model` for archived ones), moving with it like the CLI session file, so existing thread files are untouched and old cores ignore it; with no choice saved the old behaviour applies (vault backend and space model).
+
+## Conversation titles and pins
+
+A conversation's own title and its pin live beside it like its model (`.phaethon/meta` for the current one, `threads/<id>.meta` for archived ones, JSON `{title?, pinned?}`), written by `thread_rename` (empty goes back to the title from the first message) and `thread_pin`. `threads_list` reports `title` (the given one when set), `renamed` and `pinned`. Old cores ignore the file.
 
 ## Where things are (Nov 11, 2026)
 

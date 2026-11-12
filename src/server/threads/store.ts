@@ -25,7 +25,11 @@ import { covers } from "../grants/grants.ts";
  * are kept whole in `.phaethon/threads/<id>.json`. Starting a new conversation
  * or reopening an old one moves files by rename, so nothing is ever rewritten
  * or lost. Each conversation keeps its CLI session beside it
- * (`.phaethon/session` for the current one, `threads/<id>.session` for others).
+ * (`.phaethon/session` for the current one, `threads/<id>.session` for others),
+ * and the model chosen for it the same way (`.phaethon/model`,
+ * `threads/<id>.model`; see `pick.ts`), and its title and pin the same way
+ * (`.phaethon/meta`, `threads/<id>.meta`). No sidecar name ends in `.json`,
+ * so the listing and older cores never mistake one for a conversation.
  *
  * Functions take a space id; the `*In` variants take its folder (already
  * resolved with `spaceDir`).
@@ -35,7 +39,11 @@ export const CURRENT_ID = "current";
 export const STALE_EDIT =
   "That message can’t be changed: the conversation has changed since it was shown. Reload the conversation and try again.";
 
-export type ThreadSummary = { id: string; title: string; updated: number; messages: number; current: boolean };
+/** `pinned` is when it was pinned (ms), absent when it isn't; `renamed` when the title was given by hand. */
+export type ThreadSummary = { id: string; title: string; updated: number; messages: number; current: boolean; pinned?: number; renamed?: boolean };
+
+/** What the person set on a conversation by hand. */
+export type ThreadMeta = { title?: string; pinned?: number };
 
 /** A store failure with the kind the Rust `io::ErrorKind` carried (callers and tests match on it). */
 export class StoreError extends Error {
@@ -59,6 +67,10 @@ const archiveDir = (dir: string) => path.join(stateDir(dir), "threads");
 const archived = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.json`);
 const archivedSession = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.session`);
 export const sessionFile = (dir: string) => path.join(stateDir(dir), "session");
+const archivedPick = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.model`);
+export const pickFile = (dir: string) => path.join(stateDir(dir), "model");
+const archivedMeta = (dir: string, id: string) => path.join(archiveDir(dir), `${id}.meta`);
+export const metaFile = (dir: string) => path.join(stateDir(dir), "meta");
 
 /** `digits` or `digits-digits`, each 1 to 20 ASCII digits; anything else never becomes a path. */
 export function isValidThreadId(id: string): boolean {
@@ -165,6 +177,121 @@ function sessionFromArchive(dir: string, id: string): void {
   const kept = archivedSession(dir, id);
   if (isRegularFile(kept)) fs.renameSync(kept, sessionFile(dir));
   else dropSession(dir, sessionFile(dir));
+}
+
+// ---- Model choice ---------------------------------------------------------------
+
+/** The model choice saved for the current conversation, as raw JSON (validated by `pick.ts`). */
+export function readPickRawIn(dir: string): unknown {
+  try {
+    const p = pickFile(dir);
+    if (!isRegularFile(p) || fs.statSync(p).size > 4096) return undefined;
+    return JSON.parse(fs.readFileSync(p, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Saves (or with null clears) the current conversation's model choice. */
+export function writePickRawIn(dir: string, value: unknown): void {
+  if (value === null || value === undefined) {
+    removeIfThere(pickFile(dir));
+    return;
+  }
+  fs.mkdirSync(stateDir(dir), { recursive: true });
+  const file = pickFile(dir);
+  fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(value)}\n`);
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+/** Sidecars that travel with a conversation: [current path, archived path]. Losing one only loses a choice. */
+const SIDECARS: [(dir: string) => string, (dir: string, id: string) => string][] = [
+  [pickFile, archivedPick],
+  [metaFile, archivedMeta],
+];
+
+function sidecarsToArchive(dir: string, id: string): void {
+  for (const [cur, arch] of SIDECARS) {
+    try {
+      if (isRegularFile(cur(dir))) fs.renameSync(cur(dir), arch(dir, id));
+    } catch {
+      // The conversation falls back to the default model, title or place.
+    }
+  }
+}
+
+function sidecarsFromArchive(dir: string, id: string): void {
+  for (const [cur, arch] of SIDECARS) {
+    try {
+      const kept = arch(dir, id);
+      if (isRegularFile(kept)) fs.renameSync(kept, cur(dir));
+      else removeIfThere(cur(dir));
+    } catch {
+      // As above.
+    }
+  }
+}
+
+function removeSidecars(dir: string, id: string): void {
+  for (const [cur, arch] of SIDECARS) removeIfThere(id === CURRENT_ID ? cur(dir) : arch(dir, id));
+}
+
+// ---- Title and pin -------------------------------------------------------------
+
+const TITLE_MAX = 120;
+
+function metaPath(dir: string, id: string): string {
+  if (id === CURRENT_ID) return metaFile(dir);
+  if (!isValidThreadId(id)) throw notAnId();
+  if (!isRegularFile(archived(dir, id))) throw gone();
+  return archivedMeta(dir, id);
+}
+
+function readMetaAt(p: string): ThreadMeta {
+  try {
+    if (!isRegularFile(p) || fs.statSync(p).size > 4096) return {};
+    const v = JSON.parse(fs.readFileSync(p, "utf8")) as { title?: unknown; pinned?: unknown } | null;
+    if (!v || typeof v !== "object") return {};
+    const out: ThreadMeta = {};
+    if (typeof v.title === "string" && v.title.trim()) out.title = cleanTitle(v.title);
+    if (typeof v.pinned === "number" && Number.isFinite(v.pinned) && v.pinned > 0) out.pinned = Math.floor(v.pinned);
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** One line, no runs of spaces, at most 120 characters. */
+export function cleanTitle(title: string): string {
+  return [...title.split(/\p{White_Space}+/u).filter(Boolean).join(" ")].slice(0, TITLE_MAX).join("");
+}
+
+/** The title and pin set on `"current"` or an archived conversation. */
+export function readMetaIn(dir: string, id: string): ThreadMeta {
+  return readMetaAt(metaPath(dir, id));
+}
+
+/** Merges `change` into a conversation's title and pin; an empty title or `pinned: null` clears that part. */
+export function updateMetaIn(dir: string, id: string, change: { title?: string | null; pinned?: number | null }): ThreadMeta {
+  const p = metaPath(dir, id);
+  const next = readMetaAt(p);
+  if (change.title !== undefined) {
+    const t = change.title === null ? "" : cleanTitle(change.title);
+    if (t) next.title = t;
+    else delete next.title;
+  }
+  if (change.pinned !== undefined) {
+    if (change.pinned === null) delete next.pinned;
+    else next.pinned = Math.floor(change.pinned);
+  }
+  if (next.title === undefined && next.pinned === undefined) {
+    removeIfThere(p);
+    return next;
+  }
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(`${p}.tmp`, `${JSON.stringify(next)}\n`);
+  fs.renameSync(`${p}.tmp`, p);
+  return next;
 }
 
 // ---- Messages ------------------------------------------------------------------
@@ -347,6 +474,7 @@ function archiveCurrent(dir: string): string | null {
   } catch {
     // Losing the session only means the CLI starts afresh.
   }
+  sidecarsToArchive(dir, id);
   return id;
 }
 
@@ -372,7 +500,7 @@ function importedTitle(msgs: Message[]): string | undefined {
   return undefined;
 }
 
-function summary(p: string, id: string, current: boolean): ThreadSummary {
+function summary(p: string, id: string, current: boolean, meta: ThreadMeta): ThreadSummary {
   let title: string;
   let messages: number;
   try {
@@ -384,7 +512,10 @@ function summary(p: string, id: string, current: boolean): ThreadSummary {
     title = "A conversation that couldn’t be read";
     messages = 0;
   }
-  return { id, title, updated: mtimeMs(p), messages, current };
+  const out: ThreadSummary = { id, title: meta.title ?? title, updated: mtimeMs(p), messages, current };
+  if (meta.title) out.renamed = true;
+  if (meta.pinned) out.pinned = meta.pinned;
+  return out;
 }
 
 function existsFollowing(p: string): boolean {
@@ -400,7 +531,7 @@ export function listThreadsIn(dir: string): ThreadSummary[] {
   const cur = currentFile(dir);
   const out: ThreadSummary[] = [
     existsFollowing(cur)
-      ? summary(cur, CURRENT_ID, true)
+      ? summary(cur, CURRENT_ID, true, readMetaAt(metaFile(dir)))
       : { id: CURRENT_ID, title: "New conversation", updated: Date.now(), messages: 0, current: true },
   ];
   let names: string[];
@@ -415,7 +546,7 @@ export function listThreadsIn(dir: string): ThreadSummary[] {
     if (!name.endsWith(".json")) continue;
     const id = name.slice(0, -5);
     const p = path.join(archiveDir(dir), name);
-    if (isValidThreadId(id) && isRegularFile(p)) rest.push(summary(p, id, false));
+    if (isValidThreadId(id) && isRegularFile(p)) rest.push(summary(p, id, false, readMetaAt(archivedMeta(dir, id))));
   }
   rest.sort((a, b) => b.updated - a.updated || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   return out.concat(rest);
@@ -429,6 +560,8 @@ export function listThreads(space: string): ThreadSummary[] {
 export function startNewIn(dir: string): void {
   archiveCurrent(dir);
   dropSession(dir, sessionFile(dir));
+  // An empty conversation's choices are not carried into the next one (it starts from the last pick).
+  removeSidecars(dir, CURRENT_ID);
 }
 
 export function startNew(space: string): void {
@@ -449,6 +582,7 @@ export function openThreadIn(dir: string, id: string): void {
       try {
         fs.renameSync(archived(dir, moved), currentFile(dir));
         sessionFromArchive(dir, moved);
+        sidecarsFromArchive(dir, moved);
       } catch {
         // Both files are still in the archive; nothing is lost.
       }
@@ -456,6 +590,7 @@ export function openThreadIn(dir: string, id: string): void {
     throw e;
   }
   sessionFromArchive(dir, id);
+  sidecarsFromArchive(dir, id);
 }
 
 export function openThread(space: string, id: string): void {
@@ -472,6 +607,7 @@ export function deleteThreadIn(dir: string, id: string): void {
     }
     removeIfThere(currentFile(dir));
     dropSession(dir, sessionFile(dir));
+    removeSidecars(dir, CURRENT_ID);
     return;
   }
   if (!isValidThreadId(id)) throw notAnId();
@@ -479,6 +615,7 @@ export function deleteThreadIn(dir: string, id: string): void {
   if (!isRegularFile(chosen)) throw gone();
   fs.rmSync(chosen);
   dropSession(dir, archivedSession(dir, id));
+  removeSidecars(dir, id);
 }
 
 export function deleteThread(space: string, id: string): void {

@@ -1,364 +1,318 @@
-/**
- * Grades for one space: each course's current grade at a glance, then one
- * course's groups, items and the what-if panel. Refreshing reads the course
- * site again, with progress, and says what was newly graded.
- */
-import { ArrowDownRightIcon, ArrowUpRightIcon, BadgeCheckIcon, ChevronRightIcon, ClockIcon, FileWarningIcon, MessageSquareTextIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-
-import { useNav } from "@/app/nav";
+import { ChartNoAxesColumnIcon, MessageSquareTextIcon, RotateCcwIcon, RotateCwIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { SpaceView } from "@/app/api";
+import { Header } from "@/app/Header";
+import { useNav } from "@/app/store";
+import { cleanMessage, SurfaceError } from "@/components/errors";
+import { Truncate } from "@/components/truncate";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { errorText } from "@/lib/core";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { JobBar } from "@/features/study/components/parts";
+import { useLoad } from "@/features/study/use-load";
+import { useDelayed } from "@/hooks/use-delayed";
+import { relativeTime } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-
-import { lmsConnections } from "../courses/api";
-import { hiddenCourses } from "../courses/lib/reach";
-import { courseKey, sameFolder } from "../courses/lib/selection";
-import { connectionName, isSignedOut, plural, whenText } from "../courses/lib/sites";
-import type { LmsConnection } from "../courses/lib/types";
-import { announce } from "../courses/shared/announce";
-import { useCourseContext } from "../courses/shared/course-context";
-import { CourseFilter } from "../courses/shared/CourseFilter";
-import { EduPage, EmptyState, ErrorState, LoadingRows, Meter, PageHeader, Progress, Section } from "../courses/shared/kit";
-import { NoCourseAccess } from "../courses/shared/NoCourseAccess";
-import { useSitesVersion } from "../courses/shared/signals";
 import { lmsGrades, lmsGradesRefresh } from "./api";
-import { itemPercent, newlyGraded, newlyText, scoreText } from "./lib/newly";
+import { newlyGraded, scoreText } from "./lib/newly";
+import { calcItems, itemWeights, keyedItems, loadSeen, saveSeen, weightText } from "./lib/table";
 import type { CourseGradeView, GradeItem } from "./lib/types";
-import { calculate, letterFor, pct, timeOf, trend, type CalcInput } from "./lib/what-if";
-import { WhatIfPanel } from "./WhatIfPanel";
+import { calculate, FINAL, letterFor, pct, whatIf } from "./lib/what-if";
 
-/** The calculator's input: items keyed by index, since titles repeat. */
-function calcInput(c: CourseGradeView): CalcInput {
-  return {
-    groups: c.groups,
-    items: c.items.map((i, n) => ({ key: String(n), title: i.title, group: i.group, score: i.score, possible: i.possible, percent: i.percent, graded: i.graded, excused: i.excused, due: timeOf(i.due) })),
-  };
-}
+type Refresh = { done: number; total: number; course?: string };
 
-function shownGrade(c: CourseGradeView): { percent: number | null; letter: string | null; label: string } {
-  const site = c.current.percent ?? null;
-  const calc = calculate(calcInput(c)).percent;
-  const percent = site ?? calc;
-  return {
-    percent,
-    letter: c.current.letter ?? (percent != null ? letterFor(percent) : null),
-    label: site != null ? "Course grade" : calc != null ? "Calculated grade" : "Not graded",
-  };
-}
+/**
+ * Grades per course: a compact table (assignment, category, score, weight),
+ * the course total, scores to try on what isn't graded yet ("what if"), and
+ * marks on what was graded since the last look. Refreshing reads the course
+ * sites again, course by course.
+ */
+export function GradesView({ space }: { space: SpaceView }) {
+  const grades = useLoad(() => lmsGrades(space.id), [space.id]);
+  const skeleton = useDelayed(grades.loading && !grades.data);
+  const [seen] = useState(() => loadSeen(space.id));
+  const [refresh, setRefresh] = useState<Refresh | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const latest = useRef<CourseGradeView[] | undefined>(undefined);
+  latest.current = grades.data;
 
-type Refresh = { connection: string; done: number; total: number } | null;
+  // What was graded since the last visit (or, on a first visit, by a refresh); the visit counts as seen when the page closes.
+  const [first, setFirst] = useState<CourseGradeView[] | null>(null);
+  if (!seen && !first && grades.data) setFirst(grades.data);
+  const baseline = seen ?? first;
+  const fresh = useMemo(() => {
+    if (!baseline || !grades.data) return new Set<GradeItem>();
+    return new Set(newlyGraded(baseline, grades.data).map((n) => n.item));
+  }, [baseline, grades.data]);
+  useEffect(() => () => void (latest.current && saveSeen(space.id, latest.current)), [space.id]);
 
-export function GradesView({ spaceId }: { spaceId: string }) {
-  const space = spaceId;
-  const [courses, setCourses] = useState<CourseGradeView[] | null>(null);
-  const [connections, setConnections] = useState<LmsConnection[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [refresh, setRefresh] = useState<Refresh>(null);
-  const [status, setStatus] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
-  const [signedOut, setSignedOut] = useState<string[]>([]);
-  const ctx = useCourseContext(space);
-  const version = useSitesVersion();
-  const go = useNav((s) => s.go);
-  const signInRef = useRef<HTMLButtonElement>(null);
+  const data = grades.data;
+  const updated = data?.length ? Math.max(...data.map((c) => c.updated)) : null;
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [g, c] = await Promise.all([lmsGrades(space), lmsConnections().catch(() => [] as LmsConnection[])]);
-      setCourses(g);
-      setConnections(c);
-      setSignedOut(c.filter((x) => !x.signedIn).map((x) => x.id));
-      return g;
-    } catch (e) {
-      setError(errorText(e));
-      return null;
+  const runRefresh = async () => {
+    if (!data?.length) return;
+    setRefreshError(null);
+    const connections = [...new Set(data.map((c) => c.connection))];
+    const total = data.length;
+    let done = 0;
+    setRefresh({ done: 0, total });
+    let failed: string | null = null;
+    for (const connection of connections) {
+      const end = await lmsGradesRefresh(space.id, connection, (e) => {
+        if (e.type === "progress") setRefresh({ done: done + e.done, total, course: data.find((c) => c.courseId === e.course)?.course });
+        else if (e.type === "course") grades.setData((d) => d?.map((c) => (c.connection === e.grades.connection && c.courseId === e.grades.courseId ? e.grades : c)));
+        else if (e.type === "error") failed = e.message;
+      });
+      done += data.filter((c) => c.connection === connection).length;
+      if (end.kind === "rejected") failed = cleanMessage(end.error);
+      if (failed) break;
     }
-  }, [space]);
-  useEffect(() => {
-    setCourses(null);
-  }, [space]);
-  useEffect(() => void load(), [load, version]);
-
-  const selected = courses && ctx.selected ? courses.find((c) => courseKey(c.connection, c.courseId) === ctx.selected!.key || sameFolder(c.folder, ctx.selected!.folder)) : undefined;
-  const usedConnections = connections.filter((c) => courses?.some((g) => g.connection === c.id) && (!selected || selected.connection === c.id));
-
-  const doRefresh = async (conn: LmsConnection) => {
-    const name = connectionName(conn);
-    const before = courses ?? [];
-    setStatus(null);
-    setRefresh({ connection: conn.id, done: 0, total: 0 });
-    announce(`Reading your grades from ${name}…`);
-    let failure: string | null = null;
-    const end = await lmsGradesRefresh(space, conn.id, (e) => {
-      if (e.type === "progress") setRefresh({ connection: conn.id, done: e.done, total: e.total });
-      else if (e.type === "error" && !failure) failure = e.message;
-    });
-    if (end.kind === "rejected") failure = errorText(end.error);
     setRefresh(null);
-    if (failure && isSignedOut(failure)) {
-      setSignedOut((s) => [...new Set([...s, conn.id])]);
-      const text = `You’ve been signed out of ${name}. Sign in again, then refresh.`;
-      setStatus({ text, tone: "warn" });
-      announce(text);
-      requestAnimationFrame(() => signInRef.current?.focus());
-      return;
-    }
-    const after = await load();
-    if (failure) {
-      const text = `Some grades couldn’t be read from ${name}. ${failure}`;
-      setStatus({ text, tone: "warn" });
-      announce(text);
-      return;
-    }
-    const fresh = after ? newlyGraded(before, after) : [];
-    const text = `Grades updated from ${name}. ${
-      fresh.length ? `New: ${fresh.slice(0, 3).map(newlyText).join("; ")}${fresh.length > 3 ? `, and ${fresh.length - 3} more` : ""}.` : "No new grades."
-    }`;
-    setStatus({ text, tone: "ok" });
-    announce(text);
+    if (failed) setRefreshError(failed);
   };
-
-  const hidden = hiddenCourses(ctx.reach, "grades");
-  const options = (courses ?? []).map((c) => ({ folder: c.folder, name: c.course, key: courseKey(c.connection, c.courseId) }));
 
   return (
-    <EduPage>
-      <PageHeader
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Header
         title="Grades"
-        back={selected ? { label: "All courses", onClick: () => ctx.select(null) } : undefined}
-        focusKey={selected ? selected.courseId : undefined}
         actions={
-          courses && courses.length > 0 ? (
+          data?.length ? (
             <>
-              <CourseFilter options={options} value={selected?.folder ?? null} onChange={(o) => ctx.select(o ? { key: o.key, folder: o.folder, name: o.name } : null)} />
-              {usedConnections.map((c) => (
-                <Button key={c.id} variant="outline" disabled={!!refresh} onClick={() => void doRefresh(c)} data-grades-refresh={c.id}>
-                  <RefreshCwIcon aria-hidden className={cn(refresh?.connection === c.id && "motion-safe:animate-spin")} />
-                  {usedConnections.length > 1 ? `Refresh from ${connectionName(c)}` : "Refresh"}
-                </Button>
-              ))}
+              {updated && !refresh ? <span className="mr-1 text-2xs text-muted-foreground tabular-nums max-[980px]:hidden">Updated {relativeTime(updated).toLowerCase()}</span> : null}
+              <Button size="xs" variant="outline" disabled={!!refresh} onClick={() => void runRefresh()}>
+                {refresh ? <Spinner size="xs" /> : <RotateCwIcon />}
+                {refresh ? "Refreshing…" : "Refresh"}
+              </Button>
             </>
-          ) : undefined
+          ) : null
         }
       />
-
-      {refresh && (
-        <div className="-mt-4 flex flex-col gap-2" data-grades-refreshing="">
-          <Progress value={refresh.total ? refresh.done / refresh.total : null} label="Reading grades" valueText={refresh.total ? `${refresh.done} of ${refresh.total} courses` : undefined} />
-          <p className="text-sm text-muted-foreground">
-            Reading your grades{refresh.total ? `: ${refresh.done + 1 > refresh.total ? refresh.total : refresh.done + 1} of ${plural(refresh.total, "course")}` : "…"}
-          </p>
-        </div>
-      )}
-      {status && !refresh && (
-        <p className={cn("-mt-4 flex items-start gap-2 text-sm", status.tone === "ok" ? "text-muted-foreground" : "text-warning-foreground")} data-grades-status="">
-          {status.tone === "ok" ? <BadgeCheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-success-foreground" /> : <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />}
-          {status.text}
-        </p>
-      )}
-
-      {connections
-        .filter((c) => signedOut.includes(c.id) && courses?.some((g) => g.connection === c.id))
-        .map((c) => (
-          <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/32 bg-warning-surface px-4 py-3 text-sm" data-grades-signed-out={c.id}>
-            <span className="text-warning-foreground">Signed out of {connectionName(c)}. These grades are from the last time you were signed in.</span>
-            <Button ref={signInRef} size="sm" variant="outline" onClick={() => go({ kind: "courses" })}>
-              Sign in again
-            </Button>
+      <div className="relative min-h-0 flex-1 overflow-y-auto">
+        {refresh ? (
+          <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur-sm">
+            <JobBar value={refresh.total ? refresh.done / refresh.total : 0} />
+            <div className="mx-auto flex h-8 max-w-4xl items-center gap-3 px-4 text-muted-foreground text-xs">
+              <span className="min-w-0 flex-1 truncate">{refresh.course ? `Reading grades for ${refresh.course}…` : "Reading your course sites…"}</span>
+              <span className="shrink-0 tabular-nums">
+                {Math.min(refresh.done, refresh.total)}/{refresh.total}
+              </span>
+            </div>
           </div>
-        ))}
-
-      {error ? (
-        <ErrorState title={`The grades in this space couldn’t be read.`} message={error} onRetry={() => void load()} />
-      ) : !courses ? (
-        <LoadingRows rows={3} label="Loading grades" />
-      ) : courses.length === 0 ? (
-        hidden ? (
-          <NoCourseAccess why={hidden} part="grades" />
-        ) : (
-          <EmptyState icon={<BadgeCheckIcon />} title="No grades here yet" description="Import a course from your course site and its grades show here, with what-if math for what isn’t graded yet.">
-            <Button onClick={() => go({ kind: "courses" })}>Import courses</Button>
-          </EmptyState>
-        )
-      ) : selected ? (
-        <CourseGrades key={`${selected.connection}/${selected.courseId}`} space={space} c={selected} />
-      ) : (
-        <ul className="grid gap-3 sm:grid-cols-2" aria-label="Courses">
-          {courses.map((c) => (
-            <CourseCard key={`${c.connection}/${c.courseId}`} c={c} onOpen={() => ctx.select({ key: courseKey(c.connection, c.courseId), connection: c.connection, courseId: c.courseId, folder: c.folder, name: c.course })} />
-          ))}
-        </ul>
-      )}
-    </EduPage>
-  );
-}
-
-function CourseCard({ c, onOpen }: { c: CourseGradeView; onOpen: () => void }) {
-  const g = shownGrade(c);
-  const counted = c.items.filter((i) => i.graded && !i.excused).length;
-  const t = trend(calcInput(c));
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="group flex h-full w-full flex-col gap-3 rounded-2xl border bg-card p-5 text-start outline-none transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
-        data-grade-course={c.courseId}
-      >
-        <span className="flex w-full items-start justify-between gap-3">
-          <span className="min-w-0 text-[0.9375rem] font-semibold text-foreground">{c.course}</span>
-          <ChevronRightIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
-        </span>
-        <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold tracking-tight text-foreground tabular-nums">{g.percent == null ? "—" : pct(g.percent)}</span>
-          {g.letter && g.percent != null && <span className="text-lg font-medium text-muted-foreground">{g.letter}</span>}
-        </span>
-        <span className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span>{g.label}</span>
-          {c.items.length > 0 && <span>{counted} of {plural(c.items.length, "item")} graded</span>}
-          {t && Math.abs(t.delta) >= 0.05 && (
-            <span className={cn("inline-flex items-center gap-0.5", t.delta > 0 ? "text-success-foreground" : "text-destructive-foreground")}>
-              {t.delta > 0 ? <ArrowUpRightIcon aria-hidden className="size-3.5" /> : <ArrowDownRightIcon aria-hidden className="size-3.5" />}
-              {t.delta > 0 ? "Up" : "Down"} {Math.abs(Math.round(t.delta * 10) / 10)} after {t.since}
-            </span>
-          )}
-        </span>
-        {c.note && <span className="text-sm text-muted-foreground">{c.note}</span>}
-      </button>
-    </li>
-  );
-}
-
-function CourseGrades({ space, c }: { space: string; c: CourseGradeView }) {
-  const input = calcInput(c);
-  const g = shownGrade(c);
-  const r = calculate(input);
-  const t = trend(input);
-  const declared = c.groups.map((x) => x.name);
-  const groupNames = [...declared, ...new Set(c.items.map((i) => i.group ?? "").filter((n) => !declared.includes(n)))];
-  const byGroup = groupNames.map((name) => ({ name, items: c.items.map((item, n) => ({ item, n })).filter(({ item }) => (item.group ?? "") === name) })).filter((x) => x.items.length);
-  const weighted = r.usesWeights;
-
-  return (
-    <>
-      <section aria-label="Course grade" className="flex flex-col gap-4 rounded-2xl border bg-card p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-foreground">{c.course}</h2>
-          <p className="flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tracking-tight text-foreground tabular-nums">{g.percent == null ? "—" : pct(g.percent)}</span>
-            {g.letter && g.percent != null && <span className="text-xl font-medium text-muted-foreground">{g.letter}</span>}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {g.label}
-            {t && Math.abs(t.delta) >= 0.05 && ` · ${t.delta > 0 ? "Up" : "Down"} ${Math.abs(Math.round(t.delta * 10) / 10)} points after ${t.since}`}
-          </p>
-          {c.note && <p className="text-sm text-muted-foreground">{c.note}</p>}
+        ) : null}
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6">
+          {grades.error ? <SurfaceError title="Couldn’t load your grades" message={cleanMessage(grades.error)} onRetry={grades.reload} /> : null}
+          {refreshError ? <RefreshError message={refreshError} onRetry={() => void runRefresh()} onDismiss={() => setRefreshError(null)} /> : null}
+          {skeleton ? <GradesSkeleton /> : null}
+          {data && !data.length ? (
+            <Empty className="min-h-[60vh]">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <ChartNoAxesColumnIcon />
+                </EmptyMedia>
+                <EmptyTitle>No grades here yet</EmptyTitle>
+                <EmptyDescription>Connect your course site and import your courses to see their grades here.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button size="sm" onClick={() => useNav.getState().setView("courses")}>
+                  Open courses
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : null}
+          {data?.map((c) => <CourseCard key={`${c.connection}/${c.courseId}`} course={c} fresh={fresh} />)}
         </div>
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <ClockIcon aria-hidden className="size-3.5" />
-          Updated {whenText(c.updated)}
-        </p>
-      </section>
+      </div>
+    </div>
+  );
+}
 
-      {r.groups.length > 0 && (
-        <Section title={weighted ? "How it’s weighted" : "Groups (counted by points)"}>
-          <ul className="grid gap-x-6 gap-y-3 rounded-2xl border bg-card p-5 sm:grid-cols-2">
-            {r.groups.map((grp) => (
-              <li key={grp.name} className="flex flex-col gap-1.5">
-                <span className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="font-medium text-foreground">{grp.name}</span>
-                  <span className="text-muted-foreground tabular-nums">{grp.percent == null ? "nothing graded" : `average ${pct(grp.percent)}`}</span>
+function RefreshError({ message, onRetry, onDismiss }: { message: string; onRetry: () => void; onDismiss: () => void }) {
+  const signedOut = /signed ?out|sign in again/i.test(message);
+  return (
+    <SurfaceError
+      title={signedOut ? "Your course site signed you out" : "Couldn’t refresh your grades"}
+      message={signedOut ? "Sign in again from Courses, then refresh. The grades below are from the last time they were read." : `${message} The grades below are from the last time they were read.`}
+      actions={signedOut ? [{ label: "Open courses", onClick: () => useNav.getState().setView("courses"), primary: true }, { label: "Dismiss", onClick: onDismiss }] : [{ label: "Dismiss", onClick: onDismiss }]}
+      onRetry={signedOut ? undefined : onRetry}
+    />
+  );
+}
+
+function CourseCard({ course, fresh }: { course: CourseGradeView; fresh: Set<GradeItem> }) {
+  const [scores, setScores] = useState<Record<string, string>>({});
+  const input = useMemo(() => ({ groups: course.groups, items: calcItems(course) }), [course]);
+  const weights = useMemo(() => itemWeights(course), [course]);
+  const r = useMemo(() => whatIf(input, { scores, finalWeight: "", finalScore: "", target: "A", on: FINAL }), [input, scores]);
+  const groups = useMemo(() => calculate(input).groups.filter((g) => g.counted > 0 || g.weight), [input]);
+  const keyed = keyedItems(course.items);
+  const current = course.current.percent ?? r.now;
+  const letter = course.current.letter ?? (current != null ? letterFor(current) : undefined);
+  const edited = Object.values(scores).some((s) => s.trim());
+
+  return (
+    <section className="overflow-hidden rounded-xl border bg-card">
+      <div className="flex items-center gap-3 border-b px-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <Truncate className="font-medium text-sm">{course.course}</Truncate>
+          {groups.length ? (
+            <div className="flex min-w-0 gap-3 overflow-hidden text-2xs text-muted-foreground tabular-nums">
+              {groups.map((g) => (
+                <span key={g.name} className="shrink-0 whitespace-nowrap">
+                  {g.name}
+                  {g.weight ? <span className="text-subtle-foreground"> {g.weight}%</span> : null}
+                  <span className="text-foreground/80"> {g.percent != null ? pct(g.percent) : "–"}</span>
                 </span>
-                <Meter value={(grp.percent ?? 0) / 100} />
-                <span className="text-sm text-muted-foreground">{weighted ? ((grp.weight ?? 0) > 0 ? `${grp.weight}% of the grade` : "Not counted in the weighted grade") : "By points"}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {edited ? (
+          <Button size="xs" variant="ghost-muted" onClick={() => setScores({})}>
+            <RotateCcwIcon />
+            Reset
+          </Button>
+        ) : null}
+        <div className="flex shrink-0 items-baseline gap-1.5 tabular-nums">
+          {r.changed && r.projected != null ? (
+            <Tooltip>
+              <TooltipTrigger render={<span className="rounded-md bg-primary/8 px-1.5 font-semibold text-lg text-primary" />}>
+                {pct(r.projected)} <span className="font-medium text-xs">{letterFor(r.projected)}</span>
+              </TooltipTrigger>
+              <TooltipPopup>With the scores you tried; now {current != null ? pct(current) : "–"}</TooltipPopup>
+            </Tooltip>
+          ) : (
+            <>
+              <span className="font-semibold text-lg">{current != null ? pct(current) : "–"}</span>
+              {letter ? <span className="font-medium text-muted-foreground text-xs">{letter}</span> : null}
+            </>
+          )}
+        </div>
+      </div>
+      {course.note && !course.items.length ? (
+        <p className="px-4 py-3 text-muted-foreground text-xs [overflow-wrap:anywhere]">{course.note}</p>
+      ) : !course.items.length ? (
+        <p className="px-4 py-3 text-muted-foreground text-xs">Nothing graded or assigned yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[34rem] text-sm">
+            <thead>
+              <tr className="text-2xs text-muted-foreground">
+                <th className="h-7 pl-4 text-left font-medium">Assignment</th>
+                <th className="h-7 w-40 pl-3 text-left font-medium">Category</th>
+                <th className="h-7 w-28 pl-3 text-right font-medium">Score</th>
+                <th className="h-7 w-20 pr-4 pl-3 text-right font-medium">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keyed.map(({ key, item }) => {
+                const open = !item.graded && !item.excused;
+                const typed = scores[key] ?? "";
+                const bad = r.bad.includes(key);
+                return (
+                  <tr key={key} className={cn("border-t", item.excused && "text-muted-foreground")}>
+                    <td className="h-8 max-w-0 pl-4">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <Truncate className="min-w-0">{item.title}</Truncate>
+                        {item.missing ? <Badge variant="error" size="sm">Missing</Badge> : null}
+                        {item.late ? <Badge variant="warning" size="sm">Late</Badge> : null}
+                        {item.excused ? <Badge variant="secondary" size="sm">Excused</Badge> : null}
+                        {fresh.has(item) ? <Badge variant="info" size="sm">New</Badge> : null}
+                        {item.comments.length ? <Comments comments={item.comments} /> : null}
+                      </div>
+                    </td>
+                    <td className="h-8 max-w-0 pl-3">
+                      <Truncate className="text-muted-foreground text-xs">{item.group ?? "–"}</Truncate>
+                    </td>
+                    <td className="h-8 pl-3 text-right tabular-nums">
+                      {open ? (
+                        <span className="inline-flex items-center justify-end gap-1">
+                          <input
+                            aria-label={`Try a score for ${item.title}`}
+                            inputMode="decimal"
+                            placeholder="–"
+                            value={typed}
+                            onChange={(e) => setScores((s) => ({ ...s, [key]: e.target.value }))}
+                            className={cn(
+                              "h-6 w-12 rounded-md border border-transparent bg-transparent px-1.5 text-right text-sm tabular-nums outline-none placeholder:text-subtle-foreground hover:border-input focus:border-ring",
+                              typed.trim() && !bad && "border-primary/40 bg-primary/8 text-primary",
+                              bad && "border-destructive/60 bg-destructive/6 text-destructive-foreground",
+                            )}
+                          />
+                          <span className="text-muted-foreground text-xs">{item.possible ? `/${item.possible}` : "%"}</span>
+                        </span>
+                      ) : (
+                        <span className={cn(item.missing && "text-error-foreground")}>{scoreText(item)}</span>
+                      )}
+                    </td>
+                    <td className="h-8 pr-4 pl-3 text-right text-muted-foreground text-xs tabular-nums">{weightText(weights.get(key))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t bg-muted/40 font-medium">
+                <td className="h-8 pl-4 text-xs" colSpan={2}>
+                  Course total
+                </td>
+                <td className="h-8 pl-3 text-right tabular-nums">
+                  {r.changed && r.projected != null ? <span className="text-primary">{pct(r.projected)}</span> : current != null ? pct(current) : "–"}
+                </td>
+                <td className="h-8 pr-4 pl-3 text-right text-muted-foreground text-xs tabular-nums">100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       )}
-
-      {c.items.length > 0 && (
-        <Section title="Assignments">
-          <div role="region" tabIndex={0} aria-label="Assignments and scores" className="overflow-x-auto rounded-2xl border bg-card outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <table className="w-full min-w-[40rem] text-sm">
-              <thead>
-                <tr className="border-b text-start text-muted-foreground">
-                  <th scope="col" className="px-4 py-2.5 text-start font-medium">Assignment</th>
-                  <th scope="col" className="px-3 py-2.5 text-end font-medium">Score</th>
-                  <th scope="col" className="px-3 py-2.5 text-end font-medium">Percent</th>
-                  <th scope="col" className="px-3 py-2.5 text-start font-medium">Due</th>
-                  <th scope="col" className="px-4 py-2.5 text-start font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byGroup.map(({ name, items }) => (
-                  <Fragment key={name || "other"}>
-                    {byGroup.length > 1 && (
-                      <tr className="bg-muted/50">
-                        <th colSpan={5} scope="colgroup" className="px-4 py-1.5 text-start text-sm font-semibold text-foreground">
-                          {name || "Other"}
-                        </th>
-                      </tr>
-                    )}
-                    {items.map(({ item, n }) => (
-                      <ItemRow key={n} item={item} />
-                    ))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-      )}
-
-      <WhatIfPanel storeKey={`${space}:${c.connection}:${c.courseId}`} input={input} sitePercent={c.current.percent ?? null} />
-    </>
+    </section>
   );
 }
 
-function ItemRow({ item }: { item: GradeItem }) {
-  const p = itemPercent(item);
-  const due = timeOf(item.due);
+function Comments({ comments }: { comments: string[] }) {
   return (
-    <tr className="border-b last:border-b-0">
-      <td className="px-4 py-2.5 align-top">
-        <span className="text-foreground">{item.title}</span>
-        {item.comments.length > 0 && (
-          <details className="group/c mt-1">
-            <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-              <MessageSquareTextIcon aria-hidden className="size-3.5" />
-              {plural(item.comments.length, "comment")} from your teacher
-            </summary>
-            <ul className="mt-1.5 flex flex-col gap-1 border-s-2 ps-3 text-sm text-foreground">
-              {item.comments.map((x, i) => (
-                <li key={i}>{x}</li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </td>
-      <td className="px-3 py-2.5 text-end align-top text-foreground tabular-nums">{scoreText(item)}</td>
-      <td className="px-3 py-2.5 text-end align-top text-foreground tabular-nums">{p == null ? "" : pct(p)}</td>
-      <td className="px-3 py-2.5 align-top whitespace-nowrap text-muted-foreground">{due ? new Date(due).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : ""}</td>
-      <td className="px-4 py-2.5 align-top">
-        <span className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-          {item.excused && <span className="text-muted-foreground">Excused</span>}
-          {item.missing && (
-            <span className="inline-flex items-center gap-1 text-destructive-foreground">
-              <FileWarningIcon aria-hidden className="size-3.5" />
-              Missing
-            </span>
-          )}
-          {item.late && (
-            <span className="inline-flex items-center gap-1 text-warning-foreground">
-              <ClockIcon aria-hidden className="size-3.5" />
-              Late
-            </span>
-          )}
-          {!item.graded && !item.excused && <span className="text-muted-foreground">{item.submitted ? "Submitted, not graded yet" : "Not graded yet"}</span>}
-        </span>
-      </td>
-    </tr>
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex shrink-0 text-muted-foreground" aria-label={`${comments.length} comments`} />}>
+        <MessageSquareTextIcon className="size-3.5" strokeWidth={2} />
+      </TooltipTrigger>
+      <TooltipPopup className="max-w-72">
+        <div className="flex flex-col gap-1">
+          {comments.map((c, i) => (
+            <p key={i} className="[overflow-wrap:anywhere]">
+              {c}
+            </p>
+          ))}
+        </div>
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function GradesSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 motion-safe:animate-skeleton" aria-hidden>
+      {[5, 4].map((n, k) => (
+        <div key={k} className="overflow-hidden rounded-xl border">
+          <div className="flex items-center gap-3 border-b px-4 py-3">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Skeleton className="h-2.5 w-48 animate-none" />
+              <Skeleton className="h-2 w-64 animate-none" />
+            </div>
+            <Skeleton className="h-4 w-14 animate-none" />
+          </div>
+          {Array.from({ length: n }, (_, i) => (
+            <div key={i} className="flex h-8 items-center gap-3 border-t px-4 first:border-t-0">
+              <div className="flex-1">
+                <Skeleton className="h-2.5 animate-none" style={{ width: ["42%", "31%", "50%", "36%", "45%"][i] }} />
+              </div>
+              <Skeleton className="h-2 w-20 animate-none" />
+              <Skeleton className="h-2.5 w-12 animate-none" />
+              <Skeleton className="h-2 w-8 animate-none" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }

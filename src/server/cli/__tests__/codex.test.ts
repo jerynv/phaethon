@@ -135,7 +135,7 @@ describe("Codex conversations", () => {
     const n = log.runs() + 1;
     const events = await send(codex("hello"));
     delete process.env.FAKE_LOGGED_IN;
-    expect(errors(events)).toEqual([{ code: "notLoggedIn", message: "Codex isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Assistant, then send your message again." }]);
+    expect(errors(events)).toEqual([{ code: "notLoggedIn", message: "Codex isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Coding agents, then send your message again." }]);
     expect(log.rpc(n).some((m) => m.method === "turn/start")).toBe(false);
   });
 

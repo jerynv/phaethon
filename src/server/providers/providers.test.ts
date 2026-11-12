@@ -99,12 +99,12 @@ describe("model references and presets", () => {
     expect(baseUrl(s, preset("openai")!)).toBe("https://api.openai.com/v1");
     expect(baseUrl(s, preset("ollama")!)).toBe("http://127.0.0.1:9999/v1");
     updateSettings({ providerUrls: {} });
-    expect(() => baseUrl(readSettings(), preset("custom")!)).toThrow("Add your server’s address in Settings › Assistant first.");
+    expect(() => baseUrl(readSettings(), preset("custom")!)).toThrow("Add your server’s address in Settings › Providers first.");
   });
 
   it("picks the space's model, else the default, else asks for one", () => {
     updateSettings({ provider: "openai", providerModels: {} });
-    expect(() => modelForSpace(undefined)).toThrow("Choose which OpenAI model answers, in Settings › Assistant.");
+    expect(() => modelForSpace(undefined)).toThrow("Choose which OpenAI model answers, in Settings › Providers.");
     updateSettings({ provider: null, model: null });
     expect(modelForSpace(undefined).model).toBe("claude-opus-5-5");
   });

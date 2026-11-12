@@ -39,8 +39,8 @@ export interface Model {
 export type Validate<T> = (v: unknown) => T;
 
 export const NO_MODEL = "No model is set up: add an API key in Settings, or switch to Claude Code.";
-export const MISSING_CLI_MESSAGE = "Claude Code was not found. Install it, then connect it in Settings › Assistant.";
-export const NOT_LOGGED_IN_MESSAGE = "Claude Code isn’t signed in. Sign in to this connection in Settings › Assistant, then retry.";
+export const MISSING_CLI_MESSAGE = "Claude Code was not found. Install it, then connect it in Settings › Coding agents.";
+export const NOT_LOGGED_IN_MESSAGE = "Claude Code isn’t signed in. Sign in to this connection in Settings › Coding agents, then retry.";
 /** Longest a single CLI call may take. */
 export const CLI_TIMEOUT_MS = 600_000;
 /** Most of a CLI's stdout kept. */
@@ -50,8 +50,8 @@ const STDERR_MAX = 64 * 1024;
 const NAMES: Record<Cli, string> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI" };
 const MISSING: Record<Cli, string> = {
   claude: MISSING_CLI_MESSAGE,
-  codex: "Codex was not found. Install Codex, then sign in to it in Settings › Assistant.",
-  gemini: "Gemini CLI was not found. Install Gemini CLI, then sign in to it in Settings › Assistant.",
+  codex: "Codex was not found. Install Codex, then sign in to it in Settings › Coding agents.",
+  gemini: "Gemini CLI was not found. Install Gemini CLI, then sign in to it in Settings › Coding agents.",
 };
 const UNSUPPORTED_REASONING = "That assistant does not support this reasoning level.";
 
@@ -164,8 +164,8 @@ function notLoggedIn(cli: Cli, s: string): boolean {
 
 function notLoggedInMessage(cli: Cli, configDir: string | null): string {
   if (cli === "claude" && !configDir) return NOT_LOGGED_IN_MESSAGE;
-  if (cli !== "claude") return `${NAMES[cli]} isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Assistant, then send your message again.`;
-  return `${NAMES[cli]} isn’t signed in. Sign in to this connection in Settings › Assistant, then retry.`;
+  if (cli !== "claude") return `${NAMES[cli]} isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Coding agents, then send your message again.`;
+  return `${NAMES[cli]} isn’t signed in. Sign in to this connection in Settings › Coding agents, then retry.`;
 }
 
 /** Arguments for a one-shot Claude Code call: print mode, one JSON result, no tools, none of the person's setup, no session. */

@@ -11,10 +11,11 @@ import { runCliTurn } from "../cli/turn.ts";
 import { isFullAccess } from "../fullaccess/fullaccess.ts";
 import { cliDirs } from "../grants/grants.ts";
 import { fullyVisibleCourseDirs } from "../lms/access.ts";
-import { readSettings } from "../settings/settings.ts";
-import { readSpaceMeta, touchSpace } from "../spaces/meta.ts";
+import { touchSpace } from "../spaces/meta.ts";
 import { workingDirFor } from "../workspace/workspace.ts";
-import { forSpace } from "../providers/build.ts";
+import { forSpace, providerFor } from "../providers/build.ts";
+import { parseRef } from "../providers/presets.ts";
+import { effectivePick, parsePick, savePick, type ModelPick } from "../threads/pick.ts";
 import { cleanAnswer, healedCall } from "./lesson.ts";
 import { runOwnTurn, type TurnMode } from "./loop.ts";
 
@@ -37,6 +38,8 @@ type SendArgs = {
   replaceFrom?: number | null;
   keepAttachments?: string[] | null;
   continueFrom?: number | null;
+  /** The model chosen for this conversation in the composer; saved with it (threads/pick.ts). */
+  model?: unknown;
 };
 
 const CLIS = { "claude-cli": "claude", "codex-cli": "codex", "gemini-cli": "gemini" } as const;
@@ -52,15 +55,16 @@ function keptAttachments(space: string, index: number, keep: string[]): Block[] 
   }
 }
 
-async function ownTurn(space: string, events: Channel<AgentEvent>, mode: TurnMode, run: Run): Promise<void> {
+async function ownTurn(space: string, events: Channel<AgentEvent>, mode: TurnMode, run: Run, pick: ModelPick): Promise<void> {
   let provider;
   try {
-    provider = forSpace(space);
+    const ref = pick.model ? parseRef(pick.model) : undefined;
+    provider = ref ? providerFor(ref) : forSpace(space);
   } catch (e) {
     events.send({ kind: "error", code: "noApiKey", message: messageOf(e) });
     return;
   }
-  await runOwnTurn({ space, provider, events, run, mode });
+  await runOwnTurn({ space, provider, events, run, mode, effort: pick.effort });
 }
 
 /** When the window that started a turn goes away, the turn stops (nothing could answer its questions). */
@@ -84,15 +88,34 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     return end();
   }
   touchSpace(space);
-  const settings = readSettings();
+  if (args.model !== undefined && args.model !== null) {
+    const chosen = parsePick(args.model);
+    if (!chosen) {
+      events.send({ kind: "error", code: "badRequest", message: "That isn’t a model Phaethon knows how to use. Pick another one." });
+      return end();
+    }
+    try {
+      savePick(space, chosen);
+    } catch (e) {
+      events.send({ kind: "error", code: "storage", message: `The model choice couldn’t be saved: ${messageOf(e)}` });
+      return end();
+    }
+  }
+  let pick: ModelPick;
+  try {
+    pick = effectivePick(space).pick;
+  } catch (e) {
+    events.send({ kind: "error", code: "storage", message: messageOf(e) });
+    return end();
+  }
   const continueFrom = typeof args.continueFrom === "number" ? args.continueFrom : undefined;
   const replaceFrom = typeof args.replaceFrom === "number" ? args.replaceFrom : undefined;
-  if (continueFrom !== undefined && settings.backend !== "phaethon") {
+  if (continueFrom !== undefined && pick.backend !== "phaethon") {
     events.send({ kind: "error", code: "cli", message: CLI_CONTINUE });
     return end();
   }
   // A coding agent answers with the account chosen for it; a connection without its folder can't start.
-  const cli = settings.backend === "phaethon" ? null : CLIS[settings.backend];
+  const cli = pick.backend === "phaethon" ? null : CLIS[pick.backend];
   let configDir: string | null = null;
   if (cli) {
     try {
@@ -124,12 +147,10 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
   try {
     if (!cli) {
       const mode: TurnMode = continueFrom !== undefined ? { kind: "continue", from: continueFrom } : { kind: "prompt", prompt: String(args.prompt ?? ""), attachments, replaceFrom };
-      await ownTurn(space, events, mode, run);
+      await ownTurn(space, events, mode, run, pick);
     } else {
-      const meta = readSpaceMeta(space);
-      const model = meta.cliModels[cli] ?? null;
-      // The CLI turn reads the space's reasoning level for this model itself.
-      const reasoning = undefined;
+      const model = pick.model;
+      const reasoning = pick.effort;
       // runCliTurn sends its own single `end`.
       return await runCliTurn(
         {
@@ -170,7 +191,8 @@ type AnswerArgs = { space: string; id: string; answer: unknown; onEvent?: Channe
 export async function lessonAnswer(args: AnswerArgs, signal?: AbortSignal): Promise<boolean> {
   const { space, id } = args;
   spaceDir(space);
-  if (readSettings().backend !== "phaethon") throw new Refusal(CLI_ANSWER);
+  const pick = effectivePick(space).pick;
+  if (pick.backend !== "phaethon") throw new Refusal(CLI_ANSWER);
   const run = claim(space);
   if (!run) throw new Refusal(BUSY);
   const unhook = stopWith(signal, run);
@@ -180,7 +202,7 @@ export async function lessonAnswer(args: AnswerArgs, signal?: AbortSignal): Prom
     if (!open || open.block.id !== id) return false;
     const call = healedCall(open.block);
     const answer = cleanAnswer(args.answer, call);
-    await ownTurn(space, events, { kind: "answer", call, answer }, run);
+    await ownTurn(space, events, { kind: "answer", call, answer }, run, pick);
   } finally {
     unhook();
     release(run);

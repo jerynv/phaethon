@@ -18,6 +18,7 @@ export function agentSend(args: {
   replaceFrom?: number;
   keepAttachments?: string[];
   continueFrom?: number;
+  model?: ModelPick;
 }) {
   return invoke<void>("agent_send", args);
 }
@@ -99,3 +100,9 @@ export type CitationCheck = {
 };
 export const studyCitationsCheck = (space: string, citations: { path: string; quote: string }[]) =>
   invoke<CitationCheck[]>("study_citations_check", { space, citations });
+
+/** The model a conversation answers with (core: threads/pick.ts). */
+export type ModelPick = { backend: Backend; model: string | null; effort: string | null };
+export type PickView = { pick: ModelPick; saved: boolean };
+export const threadModelGet = (space: string) => invoke<PickView>("thread_model_get", { space });
+export const threadModelSet = (space: string, pick: ModelPick) => invoke<PickView>("thread_model_set", { space, pick });

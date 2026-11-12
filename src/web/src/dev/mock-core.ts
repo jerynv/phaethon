@@ -24,7 +24,6 @@
  * import.meta.env.DEV is true, which Vite replaces with false in a build.
  */
 import { BYTES_KEY, CHANNEL_KEY, type ClientFrame, type ServerFrame } from "#shared/wire.ts";
-import { useNav } from "@/app/nav";
 
 export type MockContext = {
   channel(ref: unknown): { send(message: unknown): void };
@@ -49,7 +48,7 @@ type MockControl = {
 declare global {
   interface Window {
     __mock?: MockControl;
-    __phaethon?: { nav: typeof useNav };
+    __phaethon?: Record<string, unknown>;
   }
 }
 
@@ -95,7 +94,7 @@ export function installMockCore(): void {
     },
   };
   window.__mock = control;
-  window.__phaethon = { nav: useNav };
+  window.__phaethon = {};
 
   class FakeSocket {
     private readonly channels = new Map<number, { closed: boolean; listeners: Array<() => void> }>();

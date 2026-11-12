@@ -1,4 +1,4 @@
-// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3 Tools Inc. See THIRD_PARTY_NOTICES.md.
+// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import {
   createContext,
@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { cn } from "@/lib/utils";
-import { useNativeTitlebarHeight } from "@/lib/windowControlsOverlay";
+const useNativeTitlebarHeight = () => 0;
 
 // Base UI's default, restated because a padding object zeroes the sides it omits.
 const COLLISION_PADDING = 5;
@@ -32,7 +32,9 @@ function createTooltipHoverTracker() {
     },
     dismissUnfocused() {
       const tooltip = hovered;
-      if (!tooltip || tooltip.trigger.contains(tooltip.trigger.ownerDocument.activeElement)) {
+      if (!tooltip) return;
+      const focused = tooltip.trigger.ownerDocument.activeElement;
+      if (focused && tooltip.trigger.contains(focused) && focused.matches(":focus-visible")) {
         return;
       }
       hovered = null;
@@ -144,7 +146,7 @@ function TooltipPopup({
               ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
               : "border bg-popover not-dark:bg-clip-padding shadow-md/5",
             variant === "code"
-              ? "max-w-120 wrap-anywhere text-left font-mono text-xs leading-relaxed"
+              ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
               : "max-w-80 wrap-anywhere whitespace-normal leading-snug",
             className,
           )}

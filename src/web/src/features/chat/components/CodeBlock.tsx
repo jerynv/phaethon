@@ -1,81 +1,69 @@
+import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 
-import { CopyButton } from "./CopyButton";
-
-const LANGUAGE_NAMES: Record<string, string> = {
-  js: "JavaScript", javascript: "JavaScript", ts: "TypeScript", typescript: "TypeScript", tsx: "TSX", jsx: "JSX",
-  py: "Python", python: "Python", rs: "Rust", rust: "Rust", sh: "Shell", bash: "Shell", zsh: "Shell", shell: "Shell",
-  json: "JSON", yaml: "YAML", yml: "YAML", html: "HTML", css: "CSS", sql: "SQL", java: "Java", c: "C", cpp: "C++",
-  go: "Go", latex: "LaTeX", tex: "LaTeX", tikz: "TikZ", md: "Markdown", markdown: "Markdown", r: "R", text: "Text",
-};
-
-/** Highlights with shiki, loaded on first use; both themes, the page picks one. */
-type Highlighter = (code: string, lang: string) => Promise<string>;
-let highlighter: Promise<Highlighter> | null = null;
-function loadHighlighter(): Promise<Highlighter> {
-  highlighter ??= import("shiki").then(({ codeToHtml }) => async (code: string, lang: string) => {
-    const opts = { themes: { light: "github-light-default", dark: "github-dark-default" }, defaultColor: false } as const;
-    try {
-      return await codeToHtml(code, { ...opts, lang });
-    } catch {
-      return await codeToHtml(code, { ...opts, lang: "text" });
-    }
-  });
-  return highlighter;
-}
-
+/** Shiki, loaded the first time a code block appears; dual themes switch with `.dark`. */
+let shiki: Promise<typeof import("shiki")> | null = null;
 const cache = new Map<string, string>();
 
-/**
- * A fenced code block: its language and a Copy button above, the code in a
- * box that scrolls sideways and takes focus. Colours arrive once the reply
- * is done (highlighting every token while it streams would only flicker).
- */
-export function CodeBlock({ code, lang, streaming }: { code: string; lang: string; streaming: boolean }) {
-  const key = `${lang}\n${code}`;
-  const [html, setHtml] = useState<string | null>(() => cache.get(key) ?? null);
+async function highlight(code: string, lang: string): Promise<string> {
+  const key = `${lang}\u0000${code}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  shiki ??= import("shiki");
+  const { codeToHtml, bundledLanguages } = await shiki;
+  const known = lang in bundledLanguages ? lang : "text";
+  const html = await codeToHtml(code, { lang: known, themes: { light: "github-light", dark: "github-dark-default" }, defaultColor: false });
+  if (cache.size > 200) cache.clear();
+  cache.set(key, html);
+  return html;
+}
+
+export function useCopy(text: string) {
+  const [copied, setCopied] = useState(false);
+  return {
+    copied,
+    copy: () =>
+      void navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1400);
+      }),
+  };
+}
+
+export function CopyButton({ text, className, label = "Copy" }: { text: string; className?: string; label?: string }) {
+  const { copied, copy } = useCopy(text);
+  return (
+    <button
+      type="button"
+      aria-label={copied ? "Copied" : label}
+      onClick={copy}
+      className={cn("inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground", className)}
+    >
+      {copied ? <CheckIcon className="size-3.5 text-success" strokeWidth={2.25} /> : <CopyIcon className="size-3.5" strokeWidth={1.75} />}
+    </button>
+  );
+}
+
+export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+  const [html, setHtml] = useState<string | null>(null);
   useEffect(() => {
-    if (streaming || cache.has(key) || code.length > 200_000) {
-      setHtml(cache.get(key) ?? null);
-      return;
-    }
     let live = true;
-    void loadHighlighter()
-      .then((h) => h(code, lang || "text"))
-      .then((out) => {
-        cache.set(key, out);
-        if (cache.size > 300) cache.delete(cache.keys().next().value!);
-        if (live) setHtml(out);
-      })
-      .catch(() => {});
+    const t = setTimeout(() => {
+      void highlight(code, lang ?? "text").then((h) => live && setHtml(h), () => {});
+    }, 60);
     return () => {
       live = false;
+      clearTimeout(t);
     };
-  }, [key, code, lang, streaming]);
-  const name = LANGUAGE_NAMES[lang.toLowerCase()] ?? (lang ? lang : "Code");
+  }, [code, lang]);
   return (
-    <div className="ph-block ph-code overflow-hidden rounded-lg border bg-muted/40" data-code-block={lang || "text"}>
-      <div className="flex h-8 items-center justify-between gap-2 border-b bg-muted/50 ps-3 pe-1 text-xs text-muted-foreground">
-        <span className="truncate font-medium">{name}</span>
-        <CopyButton text={code} label="Copy code" />
+    <div className="md-code group/code">
+      <div className="flex h-7 items-center justify-between border-b px-3">
+        <span className="font-mono text-2xs text-muted-foreground">{lang ?? "text"}</span>
+        <CopyButton text={code} className="-mr-1.5 size-5" label="Copy code" />
       </div>
-      {html ? (
-        <div
-          tabIndex={0}
-          role="region"
-          aria-label={`${name} code`}
-          className="overflow-x-auto px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <pre
-          tabIndex={0}
-          aria-label={`${name} code`}
-          className="m-0 overflow-x-auto px-3 py-2.5 font-mono text-[0.8125rem] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-        >
-          <code>{code}</code>
-        </pre>
-      )}
+      {html ? <div className="md-code-body" dangerouslySetInnerHTML={{ __html: html }} /> : <pre className="md-code-body"><code>{code}</code></pre>}
     </div>
   );
 }

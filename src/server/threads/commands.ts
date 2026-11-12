@@ -1,7 +1,8 @@
 import { commands, messageOf, Refusal } from "../rpc/registry.ts";
 import { whileIdle } from "../core/runs.ts";
 import { spaceDir } from "../core/vault.ts";
-import { deleteThreadIn, listThreadsIn, loadIn, openThreadIn, startNewIn, toUi } from "./store.ts";
+import { effectivePick, parsePick, savePick } from "./pick.ts";
+import { deleteThreadIn, listThreadsIn, loadIn, openThreadIn, startNewIn, toUi, updateMetaIn } from "./store.ts";
 
 function wrap<T>(prefix: string, f: () => T): T {
   try {
@@ -44,5 +45,37 @@ commands({
       wrap("That conversation couldn’t be deleted", () => deleteThreadIn(dir, String(id)));
       return null;
     });
+  },
+});
+
+commands({
+  /** Gives a conversation its own title; an empty one goes back to the title from its first message. */
+  thread_rename: ({ space, id, title }: { space: string; id: string; title: unknown }) => {
+    const dir = spaceDir(space);
+    if (typeof title !== "string") throw new Refusal("A title has to be text.");
+    return wrap("That conversation couldn’t be renamed", () => updateMetaIn(dir, String(id), { title }));
+  },
+
+  /** Pins a conversation to the top of its space, or unpins it. */
+  thread_pin: ({ space, id, pinned }: { space: string; id: string; pinned: unknown }) => {
+    const dir = spaceDir(space);
+    return wrap("That conversation couldn’t be pinned", () => updateMetaIn(dir, String(id), { pinned: pinned ? Date.now() : null }));
+  },
+});
+
+commands({
+  /** The model the current conversation answers with (see pick.ts). */
+  thread_model_get: ({ space }: { space: string }) => {
+    spaceDir(space);
+    return wrap("This conversation’s model couldn’t be read", () => effectivePick(String(space)));
+  },
+
+  /** Chooses the model for the current conversation (and for new ones). */
+  thread_model_set: ({ space, pick }: { space: string; pick: unknown }) => {
+    spaceDir(space);
+    const parsed = parsePick(pick);
+    if (!parsed) throw new Refusal("That isn’t a model Phaethon knows how to use.");
+    wrap("The model couldn’t be saved", () => savePick(String(space), parsed));
+    return effectivePick(String(space));
   },
 });

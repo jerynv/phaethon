@@ -7,7 +7,7 @@ import type { MockContext, MockHandlers } from "../mock-core";
  */
 
 type Space = { id: string; name: string; description: string; hue: number; educationEnabled: boolean; lastUsed: number | null };
-type Thread = { id: string; title: string; updated: number; messages: number; current: boolean; text: string[] };
+type Thread = { id: string; title: string; updated: number; messages: number; current: boolean; text: string[]; pinned?: number; renamed?: string };
 
 const now = Date.now();
 const min = 60_000;
@@ -55,6 +55,7 @@ const threads: Record<string, Thread[]> = {
       updated: now - 4 * day,
       messages: 4,
       current: false,
+      pinned: now - 2 * day,
       text: ["Help me plan review for C241 Test 1. It covers through homework 6.", "Here's a five-day plan, one topic per day, with a mixed review the night before…"],
     },
     {
@@ -125,7 +126,13 @@ function list(id: string): Thread[] {
 }
 
 function summary(t: Thread) {
-  return { id: t.id, title: t.title, updated: t.updated, messages: t.messages, current: t.current };
+  return { id: t.id, title: t.renamed ?? t.title, updated: t.updated, messages: t.messages, current: t.current, ...(t.pinned ? { pinned: t.pinned } : {}), ...(t.renamed ? { renamed: true } : {}) };
+}
+
+function thread(space: string, id: string): Thread {
+  const t = list(space).find((x) => x.id === id);
+  if (!t) throw "that conversation is no longer there";
+  return t;
 }
 
 function slug(name: string): string {
@@ -219,6 +226,17 @@ export default {
     }
     chosen.current = true;
     chosen.id = "current";
+  },
+  thread_rename: (args: { space: string; id: string; title: string }) => {
+    const t = thread(args.space, args.id);
+    const title = args.title.split(/\s+/).filter(Boolean).join(" ").slice(0, 120);
+    t.renamed = title || undefined;
+    return { title: t.renamed, pinned: t.pinned };
+  },
+  thread_pin: (args: { space: string; id: string; pinned: boolean }) => {
+    const t = thread(args.space, args.id);
+    t.pinned = args.pinned ? Date.now() : undefined;
+    return { title: t.renamed, pinned: t.pinned };
   },
   thread_delete: (args: { space: string; id: string }) => {
     const all = list(args.space);

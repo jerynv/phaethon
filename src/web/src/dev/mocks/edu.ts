@@ -712,10 +712,27 @@ export default {
     return v;
   },
   study_scope_state: (args: Args) => {
-    const v = scopeViews[String(args.course)] as { stated: { exam: string; text: string; at: number }[] } | undefined;
-    if (!v) return;
+    const c = String(args.course);
+    scopeViews[c] ??= { course: c, name: c.replace(/^courses\//, ""), state: "none", stated: [] };
+    const v = scopeViews[c] as { stated: { exam: string; text: string; at: number }[] };
     v.stated = v.stated.filter((s) => s.exam !== args.exam);
     if (String(args.text).trim()) v.stated.push({ exam: String(args.exam), text: String(args.text), at: Date.now() });
+  },
+  study_scope_build: async (args: Args) => {
+    const send = streamTo(args.onEvent);
+    const course = String(args.course);
+    const parts = 4;
+    for (let d = 0; d <= parts; d++) {
+      await sleep(600);
+      send({ type: "progress", step: "mapping", done: d, total: parts });
+    }
+    if (scenario === "nomodel") {
+      send({ type: "error", message: "No model is set up for this space. Add an API key in Settings, or sign in to Claude Code." });
+      return;
+    }
+    const base = scopeViews[C241] as { map: { exams: unknown[] } };
+    scopeViews[course] = { ...base, course, name: course.replace(/^courses\//, ""), map: { ...base.map, course, name: course.replace(/^courses\//, ""), exams: [] }, stated: [] };
+    send({ type: "done" });
   },
   study_make_deck: (args: Args) => make(args, false),
   study_make_quiz: (args: Args) => make(args, true),
@@ -782,6 +799,13 @@ async function make(args: Args, quiz: boolean) {
     ["checking", options.count, options.count, options.count, 2],
     ["saving", 0, 1],
   ];
+  const course = sources.map((x) => /^courses\/[^/]+/.exec(x)?.[0]).find(Boolean);
+  if (options.exam && course && !scopeViews[course]) {
+    await sleep(400);
+    send({ type: "needsScope", course, courseName: course.replace(/^courses\//, ""), exam: options.exam });
+    send({ type: "error", message: `I couldn’t find what ${options.exam} covers in the course materials, and I won’t guess.` });
+    return;
+  }
   for (const [step, done, total, kept, dropped] of steps) {
     await sleep(500);
     send({ type: "progress", step, done, total, ...(kept != null ? { kept, dropped } : {}) });

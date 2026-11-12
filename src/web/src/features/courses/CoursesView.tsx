@@ -1,288 +1,263 @@
-/**
- * Courses: connect a course site and import courses (with live progress), the
- * sites you're connected to, the imported courses, and for each course its
- * content and which spaces see which parts. Courses belong to the vault;
- * each space sees only what it is given.
- */
-import { ChevronRightIcon, GraduationCapIcon, LinkIcon, LogOutIcon, MessageSquareIcon, PlugIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-
-import { useNav } from "@/app/nav";
+import { GraduationCapIcon } from "@phosphor-icons/react";
+import { ChevronRightIcon, DownloadIcon, EllipsisIcon, LogInIcon, PlusIcon, UnplugIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { SpaceView } from "@/app/api";
+import { Header } from "@/app/Header";
+import { SurfaceError } from "@/components/errors";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Truncate } from "@/components/truncate";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { errorText } from "@/lib/core";
-
-import { AccessTable } from "./AccessTable";
-import { courseAccessGet, lmsConnections, lmsCourses, lmsDisconnect, spacesList } from "./api";
-import { ConnectDialog, type ConnectRequest } from "./ConnectDialog";
-import { ContentBrowser } from "./ContentBrowser";
-import { useImportRun } from "./import-store";
-import { ImportProgress } from "./ImportProgress";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useDelayed } from "@/hooks/use-delayed";
+import { CourseDetail } from "./components/CourseDetail";
+import { ConnectDialog } from "./components/ConnectDialog";
+import { DisconnectDialog } from "./components/DisconnectDialog";
+import { ImportDialog } from "./components/ImportDialog";
+import { ImportRun } from "./components/ImportRun";
 import { byCode } from "./lib/selection";
-import { connectionName, isSignedOut, kindLabel, plural, whenText } from "./lib/sites";
-import type { CourseAccessView, CourseInfo, CoursePart, LmsConnection, SpaceSummary } from "./lib/types";
-import { announce } from "./shared/announce";
-import { useComposeRequest } from "./shared/compose-request";
-import { EduPage, EmptyState, ErrorState, LoadingRows, PageHeader, Row, RowList, Section } from "./shared/kit";
-import { sitesChanged, useSitesVersion } from "./shared/signals";
+import { connectionName, hostOf, kindLabel, whenText } from "./lib/sites";
+import { COURSE_PARTS, type CourseInfo, type LmsConnection } from "./lib/types";
+import { partsOf, useCourses } from "./store";
 
-type Data = { connections: LmsConnection[]; view: CourseAccessView; spaces: SpaceSummary[] };
-let connectKey = 1;
+/** The Courses page of a space with study tools: course sites, their courses, and what this space sees. */
+export function CoursesView({ space }: { space: SpaceView }) {
+  const load = useCourses((s) => s.load);
+  const connections = useCourses((s) => s.connections);
+  const access = useCourses((s) => s.access);
+  const run = useCourses((s) => s.run);
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [connect, setConnect] = useState(false);
+  const [again, setAgain] = useState<LmsConnection | null>(null);
+  const [importing, setImporting] = useState<LmsConnection | null>(null);
+  const [disconnecting, setDisconnecting] = useState<LmsConnection | null>(null);
+  const loading = (connections.loading && !connections.data) || (access.loading && !access.data);
+  const showSkeleton = useDelayed(loading);
 
-export function CoursesView({ spaceId }: { spaceId: string }) {
-  const space = spaceId;
-  const nav = useNav();
-  const version = useSitesVersion();
-  const runStatus = useImportRun((s) => s.run?.status);
-  const [data, setData] = useState<Data | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [connect, setConnect] = useState<ConnectRequest | null>(null);
-  const [confirmOut, setConfirmOut] = useState<string | null>(null);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const load = useCallback(() => {
-    setError(null);
-    Promise.all([lmsConnections(), courseAccessGet(), spacesList().catch(() => [] as SpaceSummary[])]).then(
-      ([connections, view, spaces]) => setData({ connections, view, spaces: spaces.length ? spaces : view.spaces.map((id) => ({ id, name: id })) }),
-      (e) => setError(errorText(e)),
-    );
-  }, []);
-  useEffect(load, [load, version, runStatus]);
+  const courses = access.data?.courses ?? [];
+  const open = openKey ? courses.find((c) => c.key === openKey) : undefined;
+  const groups = useMemo(() => {
+    if (!connections.data) return [];
+    const list = connections.data;
+    const known = new Set(list.map((c) => c.id));
+    const out = list.map((c) => ({ connection: c as LmsConnection | null, courses: courses.filter((x) => x.connection === c.id).sort(byCode) }));
+    const orphans = courses.filter((x) => !known.has(x.connection));
+    if (orphans.length) out.push({ connection: null, courses: orphans.sort(byCode) });
+    return out;
+  }, [connections.data, courses]);
 
-  const courseKeyInView = nav.view.kind === "courses" ? nav.view.course : undefined;
-  const course = data?.view.courses.find((c) => c.key === courseKeyInView);
-  const spaceName = (id: string) => data?.spaces.find((s) => s.id === id)?.name ?? id;
-  const open = (r: Omit<ConnectRequest, "key">) => setConnect({ ...r, key: connectKey++ });
-
-  const sync = async (c: LmsConnection) => {
-    try {
-      const list = await lmsCourses(c.id);
-      const picked = list.filter((x) => c.courses.includes(x.id));
-      if (!picked.length) return open({ connection: c, at: "choose" });
-      useImportRun.getState().start(space, [space], c.id, connectionName(c), picked);
-    } catch (e) {
-      if (isSignedOut(e)) open({ connection: c, at: "signin" });
-      else announce(errorText(e));
-    }
+  const signInAgain = (c: LmsConnection) => {
+    setImporting(null);
+    setAgain(c);
   };
+  const runConnection = run ? connections.data?.find((c) => c.id === run.connection) : undefined;
 
-  const dialog = data && <ConnectDialog space={space} spaces={data.spaces} connections={data.connections} request={connect} onClose={() => (setConnect(null), sitesChanged())} />;
-
-  if (course && data)
-    return (
-      <EduPage>
-        <CourseDetail
-          course={course}
-          space={space}
-          data={data}
-          onBack={() => nav.go({ kind: "courses" })}
-          onAccess={(s, parts) => setData({ ...data, view: { ...data.view, access: { ...data.view.access, [s]: { ...data.view.access[s], [course.key]: parts } } } })}
-        />
-        {dialog}
-      </EduPage>
-    );
-
-  return (
-    <EduPage>
-      <PageHeader
-        title="Courses"
-        meta={data && data.view.courses.length ? `${plural(data.view.courses.length, "course")} in this vault` : undefined}
-        actions={
-          data && data.connections.length > 0 ? (
-            <Button onClick={() => open({})} disabled={runStatus === "running"} data-import-open="">
-              <PlugIcon aria-hidden />
-              Import courses
-            </Button>
-          ) : undefined
-        }
-      />
-      <ImportProgress spaceNames={spaceName} />
-      {error ? (
-        <ErrorState title="Your course sites couldn’t be read." message={error} onRetry={load} />
-      ) : !data ? (
-        <LoadingRows rows={3} label="Loading your course sites" />
-      ) : data.connections.length === 0 ? (
-        <EmptyState
-          icon={<GraduationCapIcon />}
-          title="Connect your course site"
-          description="Sign in to Canvas, Brightspace, Moodle or Blackboard and Phaethon imports your courses: syllabus, assignments, files and grades."
-        >
-          <Button onClick={() => open({})} data-import-open="">
-            Connect a course site
-          </Button>
-        </EmptyState>
-      ) : (
-        <>
-          <Section title="Course sites">
-            <RowList>
-              {data.connections.map((c) => (
-                <Row
-                  key={c.id}
-                  data-connection={c.id}
-                  actions={
-                    confirmOut === c.id ? (
-                      <span role="alertdialog" aria-label={`Sign out of ${connectionName(c)}?`} className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="text-muted-foreground">Imported courses stay.</span>
-                        <Button size="sm" variant="outline" autoFocus onClick={() => setConfirmOut(null)}>
-                          Cancel
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={async () => {
-                            try {
-                              await lmsDisconnect(c.id);
-                              announce(`Signed out of ${connectionName(c)}.`);
-                              setConfirmOut(null);
-                              sitesChanged();
-                            } catch (e) {
-                              announce(errorText(e));
-                            }
-                          }}
-                        >
-                          Sign out
-                        </Button>
-                      </span>
-                    ) : c.signedIn ? (
-                      <>
-                        <Button size="sm" variant="outline" disabled={runStatus === "running"} onClick={() => void sync(c)}>
-                          <RefreshCwIcon aria-hidden />
-                          Update courses
-                        </Button>
-                        <Button size="sm" variant="ghost" disabled={runStatus === "running"} onClick={() => open({ connection: c, at: "choose" })}>
-                          Choose courses
-                        </Button>
-                        <Button size="icon-sm" variant="ghost-destructive" aria-label={`Sign out of ${connectionName(c)}`} onClick={() => setConfirmOut(c.id)}>
-                          <LogOutIcon aria-hidden />
-                        </Button>
-                      </>
-                    ) : (
-                      <Button size="sm" onClick={() => open({ connection: c, at: "signin" })}>
-                        Sign in again
-                      </Button>
-                    )
-                  }
-                >
-                  <span className="flex items-center gap-2 text-[0.9375rem] font-medium text-foreground">
-                    <LinkIcon aria-hidden className="size-4 text-muted-foreground" />
-                    {connectionName(c)}
-                  </span>
-                  <span className="ps-6 text-sm text-muted-foreground">
-                    {kindLabel(c.kind)} · {c.signedIn ? "Signed in" : <span className="text-warning-foreground">Signed out</span>}
-                    {c.lastSync ? ` · updated ${whenText(c.lastSync)}` : ""} · {plural(c.courses.length, "course")}
-                  </span>
-                </Row>
-              ))}
-            </RowList>
-          </Section>
-          <Section title="Imported courses" description="Open a course to browse it and choose which spaces see it.">
-            {data.view.courses.length === 0 ? (
-              <p className="rounded-xl border border-dashed px-4 py-3.5 text-sm text-muted-foreground">No courses imported yet.</p>
-            ) : (
-              <RowList>
-                {[...data.view.courses].sort(byCode).map((c) => (
-                  <CourseRow key={c.key} c={c} view={data.view} spaceName={spaceName} onOpen={() => nav.go({ kind: "courses", course: c.key })} />
-                ))}
-              </RowList>
-            )}
-            {data.view.problems.length > 0 && (
-              <details className="text-sm text-muted-foreground">
-                <summary className="cursor-pointer">{plural(data.view.problems.length, "entry", "entries")} in the access file were ignored</summary>
-                <ul className="mt-2 list-disc ps-5">
-                  {data.view.problems.map((p, i) => (
-                    <li key={i}>{p}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </Section>
-        </>
-      )}
-      {dialog}
-    </EduPage>
-  );
-}
-
-function CourseRow({ c, view, spaceName, onOpen }: { c: CourseInfo; view: CourseAccessView; spaceName: (id: string) => string; onOpen: () => void }) {
-  const seers = Object.entries(view.access)
-    .filter(([, m]) => (m[c.key]?.length ?? 0) > 0)
-    .map(([s]) => spaceName(s));
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full items-center gap-3 px-4 py-3 text-start outline-none hover:bg-accent/40 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-        data-course={c.key}
-      >
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-[0.9375rem] font-medium text-foreground">{c.name}</span>
-          <span className="text-sm text-muted-foreground">
-            {[c.code, c.term].filter(Boolean).join(" · ")}
-            {(c.code || c.term) && " · "}
-            {seers.length ? `Seen by ${seers.join(", ")}` : "No space sees it"}
-          </span>
-        </span>
-        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+  const title = open ? (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setOpenKey(null)}>
+        Courses
       </button>
-    </li>
+      <span className="text-subtle-foreground">/</span>
+      <Truncate className="min-w-0">{open.name}</Truncate>
+    </div>
+  ) : (
+    "Courses"
+  );
+
+  const hasAny = (connections.data?.length ?? 0) > 0 || courses.length > 0;
+  const error = connections.error ?? access.error;
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Header
+        title={title}
+        actions={
+          !open && hasAny ? (
+            <Button size="xs" variant="ghost" onClick={() => setConnect(true)}>
+              <PlusIcon />
+              Connect site
+            </Button>
+          ) : null
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {open ? (
+          <CourseDetail key={open.key} space={space.id} course={open} />
+        ) : (
+          <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-6 px-4 py-6">
+            {error && !loading ? <SurfaceError title="Couldn’t load your course sites" message={error} onRetry={() => void load()} /> : null}
+            {run ? <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} /> : null}
+            {loading ? (
+              showSkeleton ? <CoursesSkeleton /> : null
+            ) : !hasAny && !error ? (
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <GraduationCapIcon weight="regular" />
+                  </EmptyMedia>
+                  <EmptyTitle>No course sites</EmptyTitle>
+                  <EmptyDescription>Connect Canvas, Brightspace, Moodle or Blackboard to bring your courses’ files, assignments and grades into Phaethon.</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button size="sm" onClick={() => setConnect(true)}>
+                    Connect a course site
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            ) : !connections.data ? null : (
+              groups.map((g) => (
+                <section key={g.connection?.id ?? "other"} className="space-y-2">
+                  {g.connection ? (
+                    <ConnectionHeader
+                      c={g.connection}
+                      busy={run?.status === "running"}
+                      onImport={() => setImporting(g.connection)}
+                      onSignIn={() => signInAgain(g.connection!)}
+                      onDisconnect={() => setDisconnecting(g.connection)}
+                    />
+                  ) : (
+                    <div className="flex h-7 items-center px-1">
+                      <h2 className="font-medium text-sm">Other courses</h2>
+                    </div>
+                  )}
+                  {g.courses.length ? (
+                    <div className="flex flex-col gap-0.5 rounded-xl border p-1">
+                      {g.courses.map((c) => (
+                        <CourseRow key={c.key} space={space.id} course={c} onOpen={() => setOpenKey(c.key)} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed px-3.5 py-3">
+                      <span className="text-muted-foreground text-sm">No courses imported from this site yet.</span>
+                      {g.connection?.signedIn ? (
+                        <Button size="xs" variant="outline" disabled={run?.status === "running"} onClick={() => setImporting(g.connection)}>
+                          Import courses
+                        </Button>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+      <ConnectDialog open={connect || !!again} again={again} onOpenChange={(o) => (o ? undefined : (setConnect(false), setAgain(null)))} onConnected={(c) => setImporting(c)} />
+      <ImportDialog connection={importing} space={space.id} onOpenChange={(o) => !o && setImporting(null)} onSignInAgain={signInAgain} />
+      <DisconnectDialog connection={disconnecting} onOpenChange={(o) => !o && setDisconnecting(null)} />
+    </div>
   );
 }
 
-function CourseDetail({
-  course,
-  space,
-  data,
-  onBack,
-  onAccess,
-}: {
-  course: CourseInfo;
-  space: string;
-  data: Data;
-  onBack: () => void;
-  onAccess: (space: string, parts: CoursePart[]) => void;
-}) {
-  const go = useNav((s) => s.go);
-  const can = (s: string) => (data.view.access[s]?.[course.key]?.length ?? 0) > 0;
-  const viewer = can(space) ? space : data.spaces.find((s) => can(s.id))?.id;
-  const name = (id: string) => data.spaces.find((s) => s.id === id)?.name ?? id;
+function ConnectionHeader({ c, busy, onImport, onSignIn, onDisconnect }: { c: LmsConnection; busy: boolean; onImport: () => void; onSignIn: () => void; onDisconnect: () => void }) {
+  const meta = [kindLabel(c.kind), c.schoolName ? hostOf(c.address) : null, c.lastSync ? `Imported ${whenText(c.lastSync)}` : "Not imported yet"].filter(Boolean).join(" · ");
   return (
-    <>
-      <PageHeader
-        back={{ label: "Courses", onClick: onBack }}
-        title={course.name}
-        focusKey={course.key}
-        meta={[course.code, course.term].filter(Boolean).join(" · ") || undefined}
-        actions={
-          viewer && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                useComposeRequest.getState().compose(viewer, `What’s coming up in ${course.name}, and what should I read first?`);
-                go({ kind: "chat" }, viewer);
-              }}
-            >
-              <MessageSquareIcon aria-hidden />
-              Ask about this course
-            </Button>
-          )
-        }
-      />
-      {course.material && course.material.lines.length > 0 && (
-        <ul className="-mt-3 flex flex-col gap-1 text-sm text-muted-foreground">
-          {course.material.lines.map((l, i) => (
-            <li key={i}>{l}</li>
-          ))}
-        </ul>
-      )}
-      <Section title="Content">
-        {viewer ? (
-          <ContentBrowser course={course} space={viewer} viewingAs={viewer !== space ? name(viewer) : undefined} />
+    <div className="flex min-h-9 items-center gap-2 px-1">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="min-w-0 font-medium text-sm">
+            <Truncate>{connectionName(c)}</Truncate>
+          </h2>
+          {!c.signedIn ? (
+            <Badge variant="warning" size="sm" className="shrink-0">
+              Signed out
+            </Badge>
+          ) : null}
+        </div>
+        <p className="truncate text-2xs text-muted-foreground tabular-nums">{meta}</p>
+      </div>
+      {c.signedIn ? (
+        busy ? (
+          <Tooltip>
+            <TooltipTrigger render={<span />}>
+              <Button size="xs" variant="outline" disabled>
+                <DownloadIcon />
+                Import
+              </Button>
+            </TooltipTrigger>
+            <TooltipPopup>An import is running</TooltipPopup>
+          </Tooltip>
         ) : (
-          <p className="rounded-xl border border-dashed px-4 py-3.5 text-sm text-muted-foreground">No space sees this course yet. Give one access below to browse it.</p>
-        )}
-      </Section>
-      <Section title="Who can see it" description="A space sees only the parts checked here.">
-        <AccessTable course={course} spaces={data.spaces} access={data.view.access} onChange={onAccess} />
-      </Section>
-    </>
+          <Button size="xs" variant="outline" onClick={onImport}>
+            <DownloadIcon />
+            Import
+          </Button>
+        )
+      ) : (
+        <Button size="xs" variant="outline" onClick={onSignIn}>
+          <LogInIcon />
+          Sign in
+        </Button>
+      )}
+      <Menu>
+        <MenuTrigger render={<Button size="icon-xs" variant="ghost-muted" aria-label={`${connectionName(c)} actions`} />}>
+          <EllipsisIcon />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          <MenuItem onClick={onSignIn}>
+            <LogInIcon />
+            Sign in again
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem variant="destructive" onClick={onDisconnect} disabled={!c.signedIn}>
+            <UnplugIcon />
+            Disconnect
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
+    </div>
+  );
+}
+
+function CourseRow({ space, course, onOpen }: { space: string; course: CourseInfo; onOpen: () => void }) {
+  const parts = useCourses((s) => partsOf(s.access.data, space, course.key));
+  const setParts = useCourses((s) => s.setParts);
+  const on = parts.length > 0;
+  const summary = !on ? "Hidden here" : parts.length === COURSE_PARTS.length ? "All parts" : `${parts.length} of ${COURSE_PARTS.length} parts`;
+  return (
+    <div className="group flex h-9 items-center gap-1 rounded-md pr-2 transition-colors hover:bg-accent/60">
+      <button type="button" onClick={onOpen} className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-2.5 text-left">
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <Truncate className={on ? "text-sm" : "text-muted-foreground text-sm"}>{course.name}</Truncate>
+          {course.code ? <span className="max-w-32 shrink-0 truncate text-muted-foreground text-xs">{course.code}</span> : null}
+        </span>
+        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">{summary}</span>
+        <ChevronRightIcon className="size-3.5 shrink-0 text-subtle-foreground group-hover:text-muted-foreground" strokeWidth={2} />
+      </button>
+      <Tooltip>
+        <TooltipTrigger render={<span className="flex items-center pl-1" />}>
+          <Switch size="sm" checked={on} onCheckedChange={(v) => void setParts(space, course.key, v ? COURSE_PARTS.map((p) => p.part) : [])} aria-label={`${course.name} in this space`} />
+        </TooltipTrigger>
+        <TooltipPopup>{on ? "Hide from this space" : "Show in this space"}</TooltipPopup>
+      </Tooltip>
+    </div>
+  );
+}
+
+function CoursesSkeleton() {
+  return (
+    <div className="space-y-2 motion-safe:animate-skeleton" aria-hidden>
+      <div className="flex h-9 flex-col justify-center gap-1.5 px-1">
+        <Skeleton className="h-2.5 w-48 animate-none" />
+        <Skeleton className="h-2 w-64 animate-none" />
+      </div>
+      <div className="flex flex-col gap-0.5 rounded-xl border p-1">
+        {["58%", "34%", "46%"].map((w) => (
+          <div key={w} className="flex h-9 items-center gap-3 px-2.5">
+            <Skeleton className="h-2.5 animate-none" style={{ width: w }} />
+            <span className="flex-1" />
+            <Skeleton className="h-2 w-14 animate-none" />
+            <Skeleton className="h-4 w-7 animate-none rounded-full" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

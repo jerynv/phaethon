@@ -1,6 +1,7 @@
 name: ci
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -15,7 +16,12 @@ concurrency:
 jobs:
   check:
     # Playwright 1.60 has no browser build for ubuntu-latest (26.04) yet.
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
@@ -23,11 +29,12 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
 
       # The LaTeX sandbox tests use bubblewrap on Linux; they skip themselves if it can't run here.
       - name: Sandbox for the LaTeX tests
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - run: pnpm install --frozen-lockfile
@@ -38,10 +45,13 @@ jobs:
       # End-to-end: the built UI against the real core with a scripted model.
       - name: Browser for the UI tests
         run: pnpm exec playwright install --with-deps chromium-headless-shell
+      - run: xvfb-run --auto-servernum pnpm exec playwright test
+        if: runner.os == 'Linux'
       - run: pnpm exec playwright test
+        if: runner.os != 'Linux'
       - uses: actions/upload-artifact@v5
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.os }}-node${{ matrix.node }}
           path: test-results/
           retention-days: 7

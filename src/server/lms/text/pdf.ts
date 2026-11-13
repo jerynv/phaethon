@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { letters, MAX_TEXT, SPARSE } from "./constants.ts";
 import { contentCounts, drawn, type Drawn } from "./pictures.ts";
 import { encodePng } from "./png.ts";
@@ -38,12 +39,12 @@ const require = createRequire(import.meta.url);
 let pdfjsPromise: Promise<{ getDocument(o: Record<string, unknown>): { promise: Promise<PdfDocument> } }> | undefined;
 
 function pdfjs() {
-  pdfjsPromise ??= import(require.resolve("pdfjs-dist/legacy/build/pdf.mjs")) as never;
+  pdfjsPromise ??= import(pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href) as never;
   return pdfjsPromise!;
 }
 
 function pdfjsDir(sub: string): string {
-  return path.join(path.dirname(require.resolve("pdfjs-dist/package.json")), sub) + path.sep;
+  return path.join(path.dirname(require.resolve("pdfjs-dist/package.json")), sub).replaceAll(path.sep, "/") + "/";
 }
 
 /** Opens a PDF; errors come back in the copy's words. */

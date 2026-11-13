@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { nodeCli } from "../../../../tests/cli.ts";
 import type { AgentEvent } from "../../../shared/agent.ts";
 import { CollectingChannel } from "../../rpc/channel.ts";
 import { ensureVault, spaceDir } from "../../core/vault.ts";
@@ -12,10 +14,8 @@ const FAKES = path.join(import.meta.dirname, "fakes");
 
 /** A shell wrapper that runs one of the fake CLIs with this Node, logging into `dir`. */
 export function fakeBin(dir: string, cli: CliId, name: string = cli): string {
-  fs.mkdirSync(dir, { recursive: true });
-  const bin = path.join(dir, name);
-  fs.writeFileSync(bin, `#!/bin/sh\nexec "${process.execPath}" "${path.join(FAKES, `fake-${cli}.mjs`)}" "$@"\n`, { mode: 0o755 });
-  return bin;
+  const target = path.join(FAKES, `fake-${cli}.mjs`);
+  return nodeCli(dir, name, `import ${JSON.stringify(pathToFileURL(target).href)};\n`);
 }
 
 /** A fresh vault in the test's home, with the fake's log folder. */

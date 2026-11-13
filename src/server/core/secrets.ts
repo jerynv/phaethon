@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { Refusal } from "../rpc/registry.ts";
 import { byteLength } from "./fsx.ts";
 import { vaultName } from "./vault.ts";
+import { ChunkedSecretStore, type SecretStore } from "./chunked-secrets.ts";
 
 /**
  * The OS keychain, under the same service and account names the Rust core used
@@ -14,11 +15,7 @@ import { vaultName } from "./vault.ts";
 export const SERVICE = "phaethon";
 const LEGACY_SERVICE = "steward";
 
-interface Store {
-  get(service: string, account: string): string | null;
-  set(service: string, account: string, value: string): void;
-  delete(service: string, account: string): boolean;
-}
+type Store = SecretStore;
 
 class MemoryStore implements Store {
   readonly entries = new Map<string, string>();
@@ -59,13 +56,17 @@ class KeyringStore implements Store {
 
 let store: Store | undefined;
 function backend(): Store {
-  store ??= process.env.PHAETHON_KEYRING === "memory" ? new MemoryStore() : new KeyringStore();
+  if (!store) {
+    const native = process.env.PHAETHON_KEYRING === "memory" ? new MemoryStore() : new KeyringStore();
+    store = process.platform === "win32" ? new ChunkedSecretStore(native) : native;
+  }
   return store;
 }
 
 /** Tests: start each case with an empty in-memory keychain. */
 export function resetMemoryKeychain(): void {
-  store = new MemoryStore();
+  const memory = new MemoryStore();
+  store = process.platform === "win32" ? new ChunkedSecretStore(memory) : memory;
 }
 
 /** Reads an entry, moving a legacy `steward` entry over to `phaethon` the first time. */

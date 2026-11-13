@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -162,22 +163,22 @@ describe("attachments", () => {
     expect(() => saveUploadsIn(tempSpace(), [up("IMG_1.jpg", "image/jpeg", heic)])).toThrow("HEIC photos can be attached only on a Mac for now.");
   });
 
-  it("never writes through a symlink", () => {
+  it.skipIf(!canSymlinkFiles)("never writes through a symlink", () => {
     const space = tempSpace();
     const outside = tempSpace();
     const day = path.join(space, FOLDER, today());
     fs.mkdirSync(day, { recursive: true });
-    fs.symlinkSync(path.join(outside, "planted.md"), path.join(day, "notes.md"));
+    symlink(path.join(outside, "planted.md"), path.join(day, "notes.md"));
     const refs = saveUploadsIn(space, [up("notes.md", "", "mine")]);
-    expect((refs[0]!.path as string).endsWith("/notes (2).md")).toBe(true);
+    expect(path.basename(refs[0]!.path as string)).toBe("notes (2).md");
     expect(fs.existsSync(path.join(outside, "planted.md"))).toBe(false);
     fs.rmSync(path.join(space, FOLDER), { recursive: true });
-    fs.symlinkSync(outside, path.join(space, FOLDER));
+    symlink(outside, path.join(space, FOLDER));
     expect(() => saveUploadsIn(space, [up("a.md", "", "x")])).toThrow();
     expect(fs.readdirSync(outside)).toEqual([]);
   });
 
-  it("removes only attachments inside the space", () => {
+  it.skipIf(!canSymlinkFiles)("removes only attachments inside the space", () => {
     const space = tempSpace();
     const outside = tempSpace();
     const ps = paths(saveUploadsIn(space, [up("a.md", "", "a"), up("b.md", "", "b")]));
@@ -195,7 +196,7 @@ describe("attachments", () => {
     expect(removeAttachmentsIn(space, ps.slice(0, 1))).toEqual({ removed: 1, failed: 0 });
     const day = path.join(space, FOLDER, "2026-01-01");
     fs.mkdirSync(day, { recursive: true });
-    fs.symlinkSync(path.join(outside, "x.md"), path.join(day, "link.md"));
+    symlink(path.join(outside, "x.md"), path.join(day, "link.md"));
     expect(removeAttachmentsIn(space, ["attachments/2026-01-01/link.md"])).toEqual({ removed: 0, failed: 1 });
     expect(fs.existsSync(path.join(outside, "x.md"))).toBe(true);
   });

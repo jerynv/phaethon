@@ -71,9 +71,15 @@ function sameToken(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+function requestUrl(target: string | undefined): URL | null {
+  try { return new URL(target ?? "/", "http://localhost"); }
+  catch { return null; }
+}
+
 export function serve(options: ServeOptions): Promise<{ port: number; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    const url = requestUrl(req.url);
+    if (!url) { res.writeHead(400).end(); return; }
     if (url.pathname === "/healthz") {
       res.writeHead(200, { "content-type": "text/plain" }).end("ok");
       return;
@@ -83,26 +89,44 @@ export function serve(options: ServeOptions): Promise<{ port: number; close: () 
       return;
     }
     const root = path.resolve(options.webRoot);
-    let file = path.resolve(root, "." + decodeURIComponent(url.pathname));
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+      if (pathname.includes("\0")) throw new Error("Invalid path");
+    } catch { res.writeHead(400).end(); return; }
+    let file = path.resolve(root, "." + pathname);
     if (file !== root && !file.startsWith(root + path.sep)) {
       res.writeHead(403).end();
       return;
     }
-    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, "index.html");
+    try {
+      if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) file = path.join(root, "index.html");
+    } catch { res.writeHead(403).end(); return; }
     const origin = `http://${req.headers.host ?? `${options.host}:${options.port}`}`;
-    res.writeHead(200, {
-      "content-type": MIME[path.extname(file)] ?? "application/octet-stream",
-      "content-security-policy": contentSecurityPolicy(origin),
-      "x-content-type-options": "nosniff",
-      "cache-control": "no-store",
+    const stream = fs.createReadStream(file);
+    stream.once("open", () => {
+      if (res.destroyed) { stream.destroy(); return; }
+      res.writeHead(200, {
+        "content-type": MIME[path.extname(file)] ?? "application/octet-stream",
+        "content-security-policy": contentSecurityPolicy(origin),
+        "x-content-type-options": "nosniff",
+        "cache-control": "no-store",
+      });
+      stream.pipe(res);
     });
-    fs.createReadStream(file).pipe(res);
+    stream.once("error", (error: NodeJS.ErrnoException) => {
+      if (res.destroyed) return;
+      if (res.headersSent) res.destroy();
+      else res.writeHead(error.code === "ENOENT" || error.code === "ENOTDIR" ? 404 : 500).end();
+    });
+    res.once("close", () => stream.destroy());
   });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 * 1024 });
 
   server.on("upgrade", (req, socket, head) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    const url = requestUrl(req.url);
+    if (!url) { socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); return; }
     const origin = req.headers.origin;
     const selfOrigin = `http://${req.headers.host}`;
     const originOk = origin === undefined || (origin !== "null" && (origin === selfOrigin || options.origins.includes(origin)));
@@ -129,6 +153,9 @@ export function serve(options: ServeOptions): Promise<{ port: number; close: () 
             for (const client of wss.clients) client.terminate();
             wss.close();
             server.close(() => done());
+            // Browsers preconnect sockets without sending headers. close()
+            // alone can wait for those forever; shutdown owns these sockets.
+            server.closeAllConnections();
           }),
       });
     });

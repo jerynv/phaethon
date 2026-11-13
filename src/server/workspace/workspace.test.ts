@@ -1,3 +1,5 @@
+import { persistedPath } from "../fullaccess/fullaccess.ts";
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -42,7 +44,7 @@ describe("workspace bindings", () => {
     expect(picked.kind).toBe("folder");
     expect(picked.available).toBe(true);
     expect(getWorkspace("work", f.managed, f.where)).toEqual(picked);
-    expect(resolveWorkspace("work", f.managed, f.where)).toBe(fs.realpathSync.native(f.project));
+    expect(resolveWorkspace("work", f.managed, f.where)).toBe(persistedPath(fs.realpathSync.native(f.project)));
     expect(clearWorkspace("work", f.managed, f.where).kind).toBe("managed");
     expect(fs.readFileSync(path.join(f.project, "keep.txt"), "utf8")).toBe("existing project");
     if (process.platform !== "win32") expect(fs.statSync(f.file).mode & 0o777).toBe(0o600);
@@ -72,7 +74,7 @@ describe("workspace bindings", () => {
       expect(fs.readFileSync(f.file).equals(invalid)).toBe(true);
     }
     // Unknown fields anywhere void the file, as serde's deny_unknown_fields did.
-    const key = `${fs.realpathSync.native(f.vault)}\nwork`;
+    const key = `${persistedPath(fs.realpathSync.native(f.vault))}\nwork`;
     for (const extra of [{ path: f.project, identity: { device: 1, inode: 2 }, x: 1 }, { path: f.project, identity: { device: 1, inode: 2, x: 1 } }, { path: f.project, identity: { device: 1.5, inode: 2 } }]) {
       fs.writeFileSync(f.file, JSON.stringify({ [key]: extra }));
       expect(() => getWorkspace("work", f.managed, f.where)).toThrow("Workspace settings are invalid. Existing bindings were left unchanged.");
@@ -119,31 +121,36 @@ describe("workspace bindings", () => {
     }
   });
 
-  it("rejects symlink picks, symlink replacements and symlinked map files", () => {
+  it("rejects symlink picks and symlink replacements", () => {
     const f = fixture();
     const link = path.join(f.root, "project-alias");
-    fs.symlinkSync(f.project, link);
+    symlink(f.project, link);
     expect(() => bindWorkspace("work", link, f.where)).toThrow("Choose a real folder, not a file or symbolic link.");
     bindWorkspace("work", f.project, f.where);
     const moved = path.join(f.root, "moved-project");
     fs.renameSync(f.project, moved);
-    fs.symlinkSync(moved, f.project);
+    symlink(moved, f.project);
     expect(getWorkspace("work", f.managed, f.where).available).toBe(false);
     expect(() => resolveWorkspace("work", f.managed, f.where)).toThrow();
+  });
+
+  it.skipIf(!canSymlinkFiles)("rejects symlinked map files", () => {
+    const f = fixture();
+    bindWorkspace("work", f.project, f.where);
     const protectedFile = path.join(f.root, "do-not-change.json");
     fs.writeFileSync(protectedFile, "private data");
     fs.rmSync(f.file);
-    fs.symlinkSync(protectedFile, f.file);
+    symlink(protectedFile, f.file);
     expect(() => clearWorkspace("work", f.managed, f.where)).toThrow("Workspace settings must be a regular file.");
     expect(fs.readFileSync(protectedFile, "utf8")).toBe("private data");
   });
 
   it("keeps device and inode numbers above 2^53 exactly (fixed Rust-compat bug)", () => {
     const f = fixture();
-    const key = `${fs.realpathSync.native(f.vault)}\nwork`;
+    const key = `${persistedPath(fs.realpathSync.native(f.vault))}\nwork`;
     const big = "18446744073709551615";
     fs.mkdirSync(path.dirname(f.file), { recursive: true });
-    const other = `${fs.realpathSync.native(f.vault)}\nschool`;
+    const other = `${persistedPath(fs.realpathSync.native(f.vault))}\nschool`;
     fs.writeFileSync(
       f.file,
       `{\n  ${JSON.stringify(other)}: {\n    "path": "/nowhere/else",\n    "identity": {\n      "device": 9007199254740993,\n      "inode": ${big}\n    }\n  }\n}`,
@@ -156,7 +163,7 @@ describe("workspace bindings", () => {
     expect(text).toContain(`"inode": ${big}`);
     expect(text.indexOf(JSON.stringify(other)) < text.indexOf(JSON.stringify(key))).toBe(true);
     expect(text.indexOf(JSON.stringify(other))).toBeGreaterThan(0);
-    const st = fs.statSync(fs.realpathSync.native(f.project), { bigint: true });
+    const st = fs.statSync(persistedPath(fs.realpathSync.native(f.project)), { bigint: true });
     if (process.platform !== "win32") expect(text).toContain(`"inode": ${st.ino}`);
   });
 });
@@ -194,9 +201,9 @@ describe("workspace and full access commands", () => {
     await expect(call("space_workspace_bind", { id: "work", token })).rejects.toThrow("Stop the reply before changing its workspace.");
     release(run);
     const view = await call<{ path: string; kind: string }>("space_workspace_bind", { id: "work", token });
-    expect(view).toEqual({ path: fs.realpathSync.native(project), kind: "folder", available: true });
+    expect(view).toEqual({ path: persistedPath(fs.realpathSync.native(project)), kind: "folder", available: true });
     expect(readSession("work")).toBeNull();
-    expect(workingDirFor("work")).toBe(fs.realpathSync.native(project));
+    expect(workingDirFor("work")).toBe(persistedPath(fs.realpathSync.native(project)));
     expect(workingDirFor("school")).toBeNull();
     await expect(call("space_workspace_bind", { id: "work", token })).rejects.toThrow("Choose the folder again.");
     expect(await call("space_workspace_get", { id: "work" })).toEqual(view);
@@ -214,7 +221,7 @@ describe("workspace and full access commands", () => {
     expect(isFullAccess("school")).toBe(false);
     expect(await call("full_access_list")).toEqual(["work"]);
     const saved = JSON.parse(fs.readFileSync(appFiles.fullAccess(), "utf8"));
-    expect(saved).toEqual([`${fs.realpathSync.native(vaultRoot())}\nwork`]);
+    expect(saved).toEqual([`${persistedPath(fs.realpathSync.native(vaultRoot()))}\nwork`]);
     await expect(call("full_access_set", { id: "nope", on: true })).rejects.toThrow('space "nope" does not exist in this vault');
     // Another vault's entries are never listed here.
     fs.writeFileSync(appFiles.fullAccess(), JSON.stringify([...saved, "/elsewhere/Phaethon/other\nlife"]));

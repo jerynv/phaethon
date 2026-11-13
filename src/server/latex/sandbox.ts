@@ -1,6 +1,11 @@
-import path from "node:path";
-import { isWithin } from "../core/fsx.ts";
+import { posix as path } from "node:path";
 import { CPU_SECONDS, MAX_FILE, type Engine } from "./tex.ts";
+
+// These builders describe POSIX hosts even when inspected by Windows tests.
+function isWithin(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === "" || (rel !== ".." && !rel.startsWith("../") && !path.isAbsolute(rel));
+}
 
 /**
  * The walls TeX runs inside. TeX is written by a model, so it is untrusted:
@@ -148,12 +153,13 @@ export function texEnv(engine: Engine, work: string, home: TexHome): Record<stri
 
 /**
  * `/bin/sh` sets RLIMIT_FSIZE and RLIMIT_CPU (soft = hard) and then execs the
- * sandbox. POSIX `sh` counts `ulimit -f` in 512-byte blocks (dash, and bash
- * started as sh on macOS and Linux); a test checks that on each machine.
+ * sandbox. Linux's /bin/sh counts files in 512-byte blocks; macOS's uses
+ * 1024-byte blocks. The runtime test checks the host's actual shell.
  */
-export const ULIMIT_BLOCK = 512;
-export function limitWrapper(command: string[]): { file: string; args: string[] } {
-  const script = `ulimit -f ${MAX_FILE / ULIMIT_BLOCK} && ulimit -t ${CPU_SECONDS} && exec "$@"`;
+export const ULIMIT_BLOCK = process.platform === "darwin" ? 1024 : 512;
+export function limitWrapper(command: string[], platform: NodeJS.Platform = process.platform): { file: string; args: string[] } {
+  const block = platform === "darwin" ? 1024 : 512;
+  const script = `ulimit -f ${MAX_FILE / block} && ulimit -t ${CPU_SECONDS} && exec "$@"`;
   return { file: "/bin/sh", args: ["-c", script, "sh", ...command] };
 }
 
@@ -176,11 +182,11 @@ export function runPlan(
   if (platform === "darwin") {
     const profile = sandboxProfile(work, engine, home, probe);
     if (!profile) return { refused: NO_WALLS };
-    return { ...limitWrapper(["/usr/bin/sandbox-exec", "-p", profile, ...tex]), env };
+    return { ...limitWrapper(["/usr/bin/sandbox-exec", "-p", profile, ...tex], platform), env };
   }
   if (platform === "linux") {
     if (!bwrap) return { refused: NO_SANDBOX_LINUX };
-    return { ...limitWrapper([bwrap, ...bwrapArgs(work, engine, home, probe), ...tex]), env };
+    return { ...limitWrapper([bwrap, ...bwrapArgs(work, engine, home, probe), ...tex], platform), env };
   }
   return { refused: NO_SANDBOX_WINDOWS };
 }

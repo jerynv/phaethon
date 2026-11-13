@@ -10,7 +10,9 @@ import { Cancelled, LmsError, type Credential, type Site } from "./types.ts";
  */
 
 /** Largest single download (a file from the site or a linked textbook). */
-export const MAX_DOWNLOAD = 300 * 1024 * 1024;
+// Course archives can exceed 300 MiB. Downloads stream to disk; document
+// extraction keeps its own, smaller limits on bytes read into memory.
+export const MAX_DOWNLOAD = 512 * 1024 * 1024;
 
 const testing = { loopback: false };
 

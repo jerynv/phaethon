@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -144,7 +145,7 @@ describe("conversations", () => {
     expect(fs.readFileSync(path.join(archiveDir(dir), files[0]!), "utf8")).toBe("{ half a file");
   });
 
-  it("refuses ids with path tricks", () => {
+  it.skipIf(!canSymlinkFiles)("refuses ids with path tricks", () => {
     for (const bad of ["", "..", "../thread", "../../etc/passwd", "1/2", "1\\2", "12.json", "-1", "1-", "1-2-3", "a1", " 1", "1 ", "current/..", "１２"]) {
       expect(isValidThreadId(bad), bad).toBe(false);
     }
@@ -155,7 +156,7 @@ describe("conversations", () => {
     for (const bad of ["../../secret", "../secret", "..", "/etc/passwd"]) expect(kindOf(errorOf(() => openThreadIn(dir, bad))), bad).toBe("invalid");
     expect(loadIn(dir)).toEqual(chat("keep me", "kept"));
     fs.mkdirSync(archiveDir(dir), { recursive: true });
-    fs.symlinkSync(path.join(dir, "secret.json"), archived(dir, "1700000000000"));
+    symlink(path.join(dir, "secret.json"), archived(dir, "1700000000000"));
     expect(listThreadsIn(dir).length).toBe(1);
     expect(kindOf(errorOf(() => openThreadIn(dir, "1700000000000")))).toBe("notFound");
     expect(loadIn(dir)).toEqual(chat("keep me", "kept"));
@@ -329,7 +330,7 @@ describe("conversations", () => {
     expect(toUi(msgs)).toEqual([]);
   });
 
-  it("delete removes one conversation and refuses bad ids", () => {
+  it.skipIf(!canSymlinkFiles)("delete removes one conversation and refuses bad ids", () => {
     const dir = tempSpace();
     saveIn(dir, chat("old", "one"));
     startNewIn(dir);
@@ -351,7 +352,7 @@ describe("conversations", () => {
       expect(kindOf(errorOf(() => deleteThreadIn(dir, bad))), bad).toBe("invalid");
     }
     expect(fs.existsSync(path.join(dir, "secret.json")) && fs.existsSync(path.join(dir, ".phaethon/grants.json")) && fs.existsSync(currentFile(dir))).toBe(true);
-    fs.symlinkSync(path.join(dir, "secret.json"), archived(dir, "1700000000000"));
+    symlink(path.join(dir, "secret.json"), archived(dir, "1700000000000"));
     expect(kindOf(errorOf(() => deleteThreadIn(dir, "1700000000000")))).toBe("notFound");
     expect(fs.existsSync(path.join(dir, "secret.json"))).toBe(true);
     deleteThreadIn(dir, CURRENT_ID);

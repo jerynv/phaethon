@@ -2,6 +2,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+import { nodeCli } from "../../../../tests/cli.ts";
 import { afterAll, describe, expect, it } from "vitest";
 import { claim, release } from "../../core/runs.ts";
 import { stderrSummary } from "../cli.ts";
@@ -45,7 +48,8 @@ describe("process groups", () => {
     const started = Date.now();
     await stopGroup(gc, run);
     const took = Date.now() - started;
-    expect(took).toBeGreaterThanOrEqual(1400);
+    // Windows ends a job immediately; POSIX escalates after its grace period.
+    if (process.platform !== "win32") expect(took).toBeGreaterThanOrEqual(1400);
     expect(took).toBeLessThan(4000);
     expect(alive(gc.pid)).toBe(false);
     expect(await waitFor(() => !alive(kid))).toBe(true);
@@ -67,17 +71,18 @@ describe("process groups", () => {
   it("end the whole group when the core itself dies without cleaning up", async () => {
     const pidFile = path.join(tmp, "orphan");
     const core = script(
-      "core.ts",
-      `import { spawnInGroup } from ${JSON.stringify(path.resolve(import.meta.dirname, "../process.ts"))};
+      "core.mts",
+      `import { spawnInGroup } from ${JSON.stringify(pathToFileURL(path.resolve(import.meta.dirname, "../process.ts")).href)};
 import fs from "node:fs";
 const gc = await spawnInGroup(process.execPath, ["-e", "setInterval(()=>{},1000)"], { cwd: ${JSON.stringify(tmp)}, env: process.env });
 fs.writeFileSync(${JSON.stringify(pidFile)}, String(gc.pid));
 setInterval(() => {}, 1000);`,
     );
-    const proc = spawn(node, [core], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, PHAETHON_TEST: "1" } });
+    const loader = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
+    const proc = spawn(node, ["--import", loader, core], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, PHAETHON_TEST: "1" } });
     let err = "";
     proc.stderr.on("data", (d) => (err += d));
-    expect(await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, "utf8") !== "", 10000)).toBe(true);
+    expect(await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, "utf8") !== "", 10000), err).toBe(true);
     const orphan = Number(fs.readFileSync(pidFile, "utf8"));
     expect(alive(orphan)).toBe(true);
     proc.kill("SIGKILL");
@@ -89,9 +94,36 @@ setInterval(() => {}, 1000);`,
   it("find binaries on PATH, then in the extra folders, executables only", () => {
     const dir = path.join(tmp, "bins");
     fs.mkdirSync(dir);
-    fs.writeFileSync(path.join(dir, "tool"), "#!/bin/sh\n", { mode: 0o644 });
+    const bin = path.join(dir, process.platform === "win32" ? "tool.cmd" : "tool");
+    fs.writeFileSync(bin, "", { mode: 0o644 });
+    if (process.platform === "win32") {
+      expect(findOnPath("tool", [dir])).toBe(bin);
+      expect(findOnPath("tool.cmd", [dir])).toBe(bin);
+      return;
+    }
     expect(findOnPath("tool", [dir])).toBeNull();
     fs.chmodSync(path.join(dir, "tool"), 0o755);
     expect(findOnPath("tool", [dir])).toBe(path.join(dir, "tool"));
+  });
+
+  it("preserves literal arguments and stdin through npm launchers in folders with spaces", async () => {
+    const bin = nodeCli(path.join(tmp, "a folder & unicode-λ"), "echo-args", `
+let input = '';
+process.stdin.setEncoding('utf8');
+for await (const chunk of process.stdin) input += chunk;
+console.log(JSON.stringify({ args: process.argv.slice(2), input }));
+`);
+    const args = ["a value", 'a"b', "a&b|c", "%PATH%", "!VAR!", "a\nb\rc", "a\\", ""];
+    const gc = await spawnInGroup(bin, args, { cwd: tmp, env: process.env, input: "a multiline\nprompt\n" });
+    let line = "";
+    await readLines(gc.stdout, (s) => line = s);
+    expect(await gc.exited).toMatchObject({ code: 0 });
+    expect(JSON.parse(line)).toEqual({ args, input: "a multiline\nprompt\n" });
+    gc.dispose();
+  });
+
+  it.skipIf(process.platform !== "win32")("refuses multiline arguments to non-npm batch files", async () => {
+    const bin = script("custom.cmd", "@echo off\r\necho should-not-run\r\n");
+    await expect(spawnInGroup(bin, ["first\r\nsecond"], { cwd: tmp, env: process.env })).rejects.toThrow("single-line");
   });
 });

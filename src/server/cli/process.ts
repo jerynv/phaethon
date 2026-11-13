@@ -1,12 +1,15 @@
 // Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3 Tools Inc. See THIRD_PARTY_NOTICES.md.
 // (The process-group watcher script and the kill-the-group-on-exit pattern.)
 import { spawn, type ChildProcess } from "node:child_process";
+import crossSpawn from "cross-spawn";
 import fs from "node:fs";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { homeDir, isTest } from "../env.ts";
 import { killGroup, type Run } from "../core/runs.ts";
+import { prepareWindowsChildren, watchWindowsChild } from "../core/windows-jobs.ts";
 import { CLI, type CliId } from "./cli.ts";
+import { npmShim } from "./windows-command.ts";
 
 /**
  * Finding the CLIs and running them. Every child leads its own process group
@@ -20,7 +23,7 @@ export function isExecutable(p: string): boolean {
   try {
     const st = fs.statSync(p);
     if (!st.isFile()) return false;
-    return process.platform === "win32" || (st.mode & 0o111) !== 0;
+    return process.platform === "win32" ? /\.(exe|com|cmd|bat)$/i.test(p) : (st.mode & 0o111) !== 0;
   } catch {
     return false;
   }
@@ -31,6 +34,12 @@ export function commonBinDirs(): string[] {
   const dirs: string[] = [];
   const home = homeDir();
   if (home) for (const d of [".local/bin", ".bun/bin", ".npm-global/bin", ".volta/bin"]) dirs.push(path.join(home, d));
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA;
+    if (appData) dirs.push(path.join(appData, "npm"));
+    if (process.env.ProgramFiles) dirs.push(path.join(process.env.ProgramFiles, "nodejs"));
+    return dirs;
+  }
   dirs.push("/opt/homebrew/bin", "/usr/local/bin");
   return dirs;
 }
@@ -41,10 +50,14 @@ function pathDirs(): string[] {
 
 /** The first executable `name` on PATH, then in `extra`. No login-shell lookup. */
 export function findOnPath(name: string, extra: string[]): string | null {
-  const exe = process.platform === "win32" ? `${name}.exe` : name;
+  const extensions = process.platform === "win32" && !path.extname(name)
+    ? [...new Set([".exe", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((s) => /^\.(exe|com|bat|cmd)$/i.test(s)).map((s) => s.toLowerCase())])]
+    : [""];
   for (const dir of [...pathDirs(), ...extra]) {
-    const candidate = path.join(dir, exe);
-    if (isExecutable(candidate)) return candidate;
+    for (const ext of extensions) {
+      const candidate = path.join(dir, name + ext);
+      if (isExecutable(candidate)) return candidate;
+    }
   }
   return null;
 }
@@ -62,7 +75,7 @@ export function findBinary(cli: CliId): string | null {
   if (forced) return forced;
   if (cli === "claude") {
     const home = homeDir();
-    return findOnPath("claude", home ? [path.join(home, ".local", "bin")] : []);
+    return findOnPath("claude", process.platform === "win32" ? commonBinDirs() : home ? [path.join(home, ".local", "bin")] : []);
   }
   return findOnPath(cli, commonBinDirs());
 }
@@ -129,6 +142,19 @@ const STDERR_CAP = 64 * 1024;
 /** Starts `bin args` in its own process group, watched and registered on `run`. Rejects if it can't start. */
 export function spawnInGroup(bin: string, args: string[], opts: SpawnOptions): Promise<GroupChild> {
   const unix = process.platform !== "win32";
+  const entry = unix ? null : npmShim(bin);
+  if (entry) {
+    const node = process.versions.electron ? findOnPath("node", [path.dirname(bin), ...commonBinDirs()]) : process.execPath;
+    if (!node) return Promise.reject(new Error("Node.js is needed to run this npm-installed assistant."));
+    bin = node;
+    args = [entry, ...args];
+  }
+  // Batch launchers use cmd.exe. Reject line breaks rather than letting them
+  // become shell syntax; prompts are sent over stdin and may contain any text.
+  if (!unix && /\.(cmd|bat)$/i.test(bin) && [bin, ...args].some((s) => /[\r\n\0]/.test(s))) {
+    return Promise.reject(new Error("Command launcher arguments must be single-line strings."));
+  }
+  prepareWindowsChildren();
   const stdinMode = opts.stdin ?? "pipe";
   const env = opts.cli ? scrubbedEnv(opts.cli, opts.env) : opts.env;
   const child = unix
@@ -138,7 +164,17 @@ export function spawnInGroup(bin: string, args: string[], opts: SpawnOptions): P
         stdio: [stdinMode, "pipe", "pipe", "pipe"],
         detached: true,
       })
-    : spawn(bin, args, { cwd: opts.cwd, env, stdio: [stdinMode, "pipe", "pipe"], windowsHide: true });
+    : crossSpawn(bin, args, { cwd: opts.cwd, env, stdio: [stdinMode, "pipe", "pipe"], windowsHide: true });
+
+  let closeJob = () => {};
+  if (!unix && child.pid) {
+    try {
+      closeJob = watchWindowsChild(child.pid);
+    } catch (e) {
+      child.kill("SIGKILL");
+      return Promise.reject(e);
+    }
+  }
 
   return new Promise<GroupChild>((resolve, reject) => {
     child.once("error", (e) => reject(e));
@@ -156,6 +192,7 @@ export function spawnInGroup(bin: string, args: string[], opts: SpawnOptions): P
           exit = { code, signal };
           // Whatever the CLI started dies with it (and the watcher with them).
           if (unix) killGroup(pid, "SIGKILL");
+          closeJob();
           opts.run?.groups.delete(pid);
           watchPipe?.destroy();
           done(exit);
@@ -231,7 +268,7 @@ export async function stopGroup(gc: GroupChild, run?: Run, graceMs = 1500): Prom
   const unix = process.platform !== "win32";
   if (!gc.hasExited()) {
     if (unix) killGroup(gc.pid, "SIGTERM");
-    else gc.child.kill();
+    else killGroup(gc.pid);
     if (!(await exitWithin(gc, graceMs))) {
       if (unix) killGroup(gc.pid, "SIGKILL");
       try {

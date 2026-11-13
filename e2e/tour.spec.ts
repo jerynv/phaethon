@@ -35,7 +35,7 @@ for (const scheme of ["light", "dark"] as const) {
         await page.waitForTimeout(600);
         await page.screenshot({ path: `test-results/tour-${scheme}-${view.toLowerCase()}.png` });
       }
-      await page.keyboard.press("Control+,");
+      await page.keyboard.press("ControlOrMeta+,");
       for (const section of ["Assistant", "Coding agents", "Spaces", "About"]) {
         await page.getByRole("dialog").getByText(section, { exact: true }).first().click();
         await page.waitForTimeout(500);

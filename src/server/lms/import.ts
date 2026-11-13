@@ -413,6 +413,15 @@ export async function fetchFile(session: Session, root: string, f: RemoteFile, r
     if (!verified) return { kind: "skipped", why: `${f.name}: the course site sent no file` };
     return { kind: "same", rec: withVersion({ ...verified, etag: etag ?? verified.etag, modified: modified ?? verified.modified }) };
   }
+  // An expired session can redirect a binary download to an HTTP-200 login
+  // page. Keep the previous file rather than saving that page as the document.
+  const isHtml = (mime: string | null | undefined) => /^(?:text\/html|application\/xhtml\+xml)$/i.test((mime ?? "").split(";", 1)[0].trim());
+  const binary = /\.(?:pdf|docx?|pptx?|xlsx?|zip|gz|7z|png|jpe?g|gif|bmp|webp|tiff?)$/i.test(f.name)
+    || /^(?:application\/(?:pdf|zip|gzip|msword|vnd\.)|image\/|audio\/|video\/)/i.test(f.mime ?? "");
+  if (isHtml(header(res, "content-type")) && (binary || !!f.mime) && !isHtml(f.mime) && !/\.x?html?$/i.test(f.name)) {
+    res.discard();
+    return { kind: "skipped", why: `${f.name}: the course site sent a webpage instead of the file (sign in again if this keeps happening)` };
+  }
   const listed = f.size ?? res.contentLength();
   if (verified && (etag !== undefined || modified !== undefined) && verified.etag === etag && verified.modified === modified && (listed === null || verified.size === listed)) {
     res.discard();

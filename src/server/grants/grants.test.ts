@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -131,7 +132,7 @@ describe("grants", () => {
     ] as const) {
       expect(() => checkRequest("school", space, p), `${space} ${p}`).toThrow();
     }
-    fs.symlinkSync(os.tmpdir(), v("spaces/work/out"));
+    symlink(os.tmpdir(), v("spaces/work/out"));
     expect(() => checkRequest("school", "work", "out")).toThrow();
     expect(otherSpaces("school")).toEqual(["work"]);
   });
@@ -165,10 +166,10 @@ describe("grants", () => {
     expect(() => restoreGrant("x1")).toThrow();
   });
 
-  it("resolves cross-space reads only inside the granted part", () => {
+  it.skipIf(!canSymlinkFiles)("resolves cross-space reads only inside the granted part", () => {
     writeFile({ grants: [entry("a", "calendar")] });
     fs.writeFileSync(v("spaces/work/secret.md"), "no");
-    fs.symlinkSync(v("spaces/work/secret.md"), v("spaces/work/calendar/leak.md"));
+    symlink(v("spaces/work/secret.md"), v("spaces/work/calendar/leak.md"));
     const { real, root } = resolveOther("school", "@work/calendar/oct.md");
     expect(real).toBe(path.join(fs.realpathSync.native(v("spaces/work")), "calendar/oct.md"));
     expect(root).toBe(fs.realpathSync.native(v("spaces/work")));

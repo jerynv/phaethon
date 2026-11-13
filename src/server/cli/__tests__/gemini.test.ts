@@ -35,7 +35,7 @@ describe("Gemini CLI arguments", () => {
       '# Phaethon: Gemini CLI may only read and search the folders it is given.\n[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 900\n\n[[rule]]\ntoolName = ["read_file", "list_directory", "glob", "grep_search", "read_many_files"]\ndecision = "allow"\npriority = 950\n',
     );
     expect(path.dirname(policy)).toBe(path.join(os.tmpdir(), "phaethon-gemini"));
-    expect(fs.statSync(path.dirname(policy)).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(fs.statSync(path.dirname(policy)).mode & 0o777).toBe(0o700);
     const args = acpArgs(policy, ["/v/work", "/v/a,b"], "flash");
     expect(args).toEqual(["--acp", "--approval-mode", "plan", "--extensions", "none", "--allowed-mcp-server-names", "phaethon-none", "--admin-policy", policy, "--policy", policy, "--model", "flash", "--include-directories", "/v/work"]);
     expect(acpArgsFull("/home/s", null)).toEqual(["--acp", "--approval-mode", "yolo", "--extensions", "none", "--allowed-mcp-server-names", "phaethon-none", "--include-directories", "/home/s"]);

@@ -1,3 +1,4 @@
+import { persistedPath } from "../fullaccess/fullaccess.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -63,15 +64,15 @@ beforeAll(async () => {
     [path.join(vault, ".phaethon/course-access.json"), pretty({ school: { "canvas-iu-instructure-com/2411651": ["overview", "syllabus", "files"] } })],
   ];
   fs.mkdirSync(path.join(env.home, "Project"), { recursive: true });
-  const project = fs.realpathSync.native(path.join(env.home, "Project"));
+  const project = persistedPath(fs.realpathSync.native(path.join(env.home, "Project")));
   const st = fs.statSync(project, { bigint: true });
   const root = vault; // the canonical root once it exists (tempdir has no links here)
   fs.mkdirSync(vault, { recursive: true });
-  const canonical = fs.realpathSync.native(root);
+  const canonical = persistedPath(fs.realpathSync.native(root));
   files.push([appFiles.fullAccess(), pretty([`${canonical}\nwork`])]);
   files.push([
     appFiles.workspaces(),
-    `{\n  ${JSON.stringify(`${canonical}\nwork`)}: {\n    "path": ${JSON.stringify(project)},\n    "identity": {\n      "device": ${st.dev},\n      "inode": ${st.ino}\n    }\n  }\n}`,
+    `{\n  ${JSON.stringify(`${canonical}\nwork`)}: {\n    "path": ${JSON.stringify(project)},\n    "identity": ${process.platform === "win32" ? "null" : `{\n      "device": ${st.dev},\n      "inode": ${st.ino}\n    }`}\n  }\n}`,
   ]);
   for (const [p, text] of files) put(p, text);
   // Archived conversations sort by their file times.
@@ -79,7 +80,7 @@ beforeAll(async () => {
     const f = path.join(school, `.phaethon/threads/${id === "1758000000000" ? `${id}-1` : id}.json`);
     fs.utimesSync(f, new Date(), new Date(Number(id)));
   }
-  written = new Map(files.map(([p, t]) => [p, t]));
+  written = new Map(files.map(([p, t]) => [fs.realpathSync.native(p), t]));
   await runStart();
 });
 
@@ -147,7 +148,7 @@ describe("files the Rust app wrote", () => {
     expect(grants.grants).toEqual([{ id: "6f1c0000-0000-4000-8000-000000000000", from: "work", path: "calendar", created: "2026-10-10T14:03:00Z", scope: "always" }]);
     expect(await call("full_access_list")).toEqual(["work"]);
     const ws = await call<{ path: string; kind: string; available: boolean }>("space_workspace_get", { id: "work" });
-    expect(ws).toEqual({ path: fs.realpathSync.native(path.join(env.home, "Project")), kind: "folder", available: true });
+    expect(ws).toEqual({ path: persistedPath(fs.realpathSync.native(path.join(env.home, "Project"))), kind: "folder", available: true });
     const hits = await call<{ conversations: { title: string; current: boolean }[] }>("conversations_search", { space: "school", query: "older", allSpaces: true });
     // Reopened and put back above, so it is archived under a new id now.
     expect(hits.conversations.map((c) => [c.title, c.current])).toEqual([["An older chat", false]]);

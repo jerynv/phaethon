@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import { checkApiKey, keychainGet, keychainSet, providerAccount, resetMemoryKeyc
 import { ensureVault, isValidSpaceId, spaceDir, spacesRoot } from "./vault.ts";
 import { claim, release, whileIdle, BUSY } from "./runs.ts";
 import { forProvider, shortTitle, userMessage } from "./thread.ts";
-import { writeFileAtomic } from "./fsx.ts";
+import { isWithin, writeFileAtomic } from "./fsx.ts";
 
 const env = tempHome();
 afterAll(() => env.cleanup());
@@ -21,7 +22,7 @@ describe("vault", () => {
 
   it("turns ids into canonical folders and refuses symlinked spaces", () => {
     expect(spaceDir("school")).toBe(fs.realpathSync.native(path.join(spacesRoot(), "school")));
-    fs.symlinkSync(path.join(spacesRoot(), "school"), path.join(spacesRoot(), "alias"));
+    symlink(path.join(spacesRoot(), "school"), path.join(spacesRoot(), "alias"));
     expect(() => spaceDir("alias")).toThrow('space "alias" is not a folder inside this vault');
     expect(() => spaceDir("missing")).toThrow('space "missing" does not exist in this vault');
     expect(() => spaceDir("../x")).toThrow('"../x" is not a valid space name');
@@ -29,6 +30,16 @@ describe("vault", () => {
 });
 
 describe("resolve", () => {
+  it("accepts dot-prefixed names inside a folder while rejecting siblings", () => {
+    const root = path.join(env.home, "parent");
+    expect(isWithin(path.join(root, "..notes/file.md"), root)).toBe(true);
+    expect(isWithin(path.join(root, "../other/file.md"), root)).toBe(false);
+    expect(isWithin(`${root}-sibling/file.md`, root)).toBe(false);
+    if (process.platform === "win32") {
+      expect(isWithin(root.toUpperCase(), root.toLowerCase())).toBe(true);
+      expect(isWithin("Z:\\other", "C:\\parent")).toBe(false);
+    }
+  });
   it("refuses absolute, parent and state paths", () => {
     expect(() => cleanRel("/etc/passwd")).toThrow('must be a path inside this space');
     expect(() => cleanRel("a/../a")).toThrow('must be a path inside this space');
@@ -40,9 +51,12 @@ describe("resolve", () => {
     const root = spaceDir("work");
     fs.mkdirSync(path.join(root, ".phaethon"), { recursive: true });
     fs.writeFileSync(path.join(root, "a.md"), "x");
-    fs.symlinkSync("/etc", path.join(root, "out"));
-    fs.symlinkSync(path.join(root, ".phaethon"), path.join(root, "state"));
-    fs.symlinkSync(path.join(root, "nowhere"), path.join(root, "dangling"));
+    const outside = path.join(env.home, "outside-links");
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, "passwd"), "private");
+    symlink(outside, path.join(root, "out"));
+    symlink(path.join(root, ".phaethon"), path.join(root, "state"));
+    symlink(path.join(root, "nowhere"), path.join(root, "dangling"), "dir");
     expect(resolveIn(root, "a.md", true)).toBe(path.join(root, "a.md"));
     expect(() => resolveIn(root, "out/passwd", true)).toThrow("leads outside this space");
     expect(() => resolveIn(root, "out/new.md", false)).toThrow("leads outside this space");
@@ -85,13 +99,13 @@ describe("thread", () => {
 });
 
 describe("atomic writes", () => {
-  it("never write through a link planted at a temporary name", () => {
+  it.skipIf(!canSymlinkFiles)("never write through a link planted at a temporary name", () => {
     const root = spaceDir("work");
     const outside = path.join(env.home, "outside.txt");
     fs.writeFileSync(outside, "keep me");
     const target = path.join(root, "notes.md");
-    fs.symlinkSync(outside, `${target}.tmp`);
-    fs.symlinkSync(outside, path.join(root, ".notes.md.phaethon-tmp"));
+    symlink(outside, `${target}.tmp`);
+    symlink(outside, path.join(root, ".notes.md.phaethon-tmp"));
     writeFileAtomic(target, "new");
     writeFileAtomic(target, "newer", { tmp: path.join(root, ".notes.md.phaethon-tmp") });
     expect(fs.readFileSync(outside, "utf8")).toBe("keep me");

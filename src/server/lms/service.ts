@@ -505,6 +505,7 @@ export async function refreshGradesWith(s: Session, id: string, allowed: (cid: s
 export function disconnect(id: string): void {
   if (!getConn(load(vaultRoot()), id)) throw new Refusal("That course site isn’t connected.");
   keychainDelete(lmsVaultAccount(id), "could not remove the sign-in from the keychain");
+  cancelImport(id);
   markSignedIn(id, false);
 }
 

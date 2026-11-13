@@ -2,6 +2,7 @@ import { Refusal } from "../rpc/registry.ts";
 import { log } from "../log.ts";
 import { onStop } from "../lifecycle.ts";
 import { reportGroups } from "../host.ts";
+import { killWindowsChild } from "./windows-jobs.ts";
 
 /**
  * At most one running thing per key: a turn in a space (key = space id), a
@@ -85,7 +86,9 @@ export async function whileIdle<T>(key: string, f: (run: Run) => Promise<T> | T)
 /** SIGKILL to a whole process group; ignores groups that are already gone. */
 export function killGroup(pgid: number, signal: NodeJS.Signals = "SIGKILL"): void {
   try {
-    if (process.platform === "win32") process.kill(pgid, signal);
+    if (process.platform === "win32") {
+      if (!killWindowsChild(pgid)) process.kill(pgid, signal);
+    }
     else process.kill(-pgid, signal);
   } catch {
     // Already exited.

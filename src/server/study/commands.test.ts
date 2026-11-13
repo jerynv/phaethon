@@ -6,7 +6,9 @@ import { call, channel, tempHome } from "../../../tests/harness.ts";
 import { spaceDir, vaultRoot } from "../core/vault.ts";
 import "./commands.ts";
 import { origin } from "./chat.ts";
-import { ALL, fixture, put } from "./testing.ts";
+import { ALL, fixture, put, Scripted } from "./testing.ts";
+import { build, seenCourse } from "./scope.ts";
+import { visibleFor } from "./visible.ts";
 import type { StudyEvent } from "./types.ts";
 
 const env = tempHome();
@@ -108,6 +110,8 @@ describe("study commands", () => {
   });
 
   it("scope views and stated scopes", async () => {
+    const visible = visibleFor("s");
+    await build(visible, seenCourse(visible, "CSCI-C 241"), [], new Scripted([mapReply]), Date.now(), () => {});
     const v = await call<{ course: string; state: string; stated: unknown[] }>("study_scope", { space: "s", course: "CSCI-C 241" });
     expect([v.course, v.state]).toEqual(["courses/CSCI-C 241", "fresh"]);
     expect(await call("study_scope_state", { space: "s", course: "courses/CSCI-C 241", exam: "Test 1", text: "through HW 6" })).toBeNull();

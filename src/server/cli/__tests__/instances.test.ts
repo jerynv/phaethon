@@ -1,3 +1,4 @@
+import { nodeCli } from "../../../../tests/cli.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -115,9 +116,9 @@ describe("instances", () => {
   });
 
   it("report installation from an executable file only, with no path key otherwise", () => {
-    const bin = path.join(env.home, "status-claude");
+    const bin = path.join(env.home, process.platform === "win32" ? "status-claude.exe" : "status-claude");
     fs.writeFileSync(bin, "#!/bin/sh\n", { mode: 0o644 });
-    expect(statusOf(bin)).toEqual({ installed: false });
+    expect(statusOf(bin)).toEqual(process.platform === "win32" ? { installed: true, path: bin } : { installed: false });
     fs.chmodSync(bin, 0o755);
     expect(statusOf(bin)).toEqual({ installed: true, path: bin });
     expect(JSON.parse(JSON.stringify(statusOf(null)))).toEqual({ installed: false });
@@ -153,24 +154,19 @@ describe("usage", () => {
 
 describe("a configured connection", () => {
   it("drives status and usage with its own binary and literal arguments, without inherited credentials", async () => {
-    const bin = path.join(env.home, "custom-claude");
-    fs.writeFileSync(
-      bin,
-      `#!/bin/sh
-[ "$1" = '--connection' ] && [ "$2" = 'work account' ] || exit 9
-shift 2
-if [ "$1" = 'auth' ]; then
-  printf '{"loggedIn":true,"email":"work@example.test","subscriptionType":"max","key":"%s"}\\n' "$ANTHROPIC_API_KEY"
-  exit 0
-fi
-while IFS= read -r line; do
-  case "$line" in
-    *phaethon-usage*) printf '%s\\n' '{"type":"control_response","response":{"subtype":"success","request_id":"phaethon-usage","response":{"rate_limits":{"five_hour":{"utilization":63,"resets_at":null}}}}}' ;;
-  esac
-done
-`,
-      { mode: 0o755 },
-    );
+    const bin = nodeCli(env.home, "custom-claude", `
+import { createInterface } from 'node:readline';
+const args = process.argv.slice(2);
+if (args[0] !== '--connection' || args[1] !== 'work account') process.exit(9);
+const out = value => console.log(JSON.stringify(value));
+if (args[2] === 'auth') {
+  out({ loggedIn: true, email: 'work@example.test', subscriptionType: 'max', key: process.env.ANTHROPIC_API_KEY });
+  process.exit(0);
+}
+for await (const line of createInterface({ input: process.stdin })) {
+  if (line.includes('phaethon-usage')) out({ type: 'control_response', response: { subtype: 'success', request_id: 'phaethon-usage', response: { rate_limits: { five_hour: { utilization: 63, resets_at: null } } } } });
+}
+`);
     const saved = save(instance({ binary: bin, args: ["--connection", "work account"] }));
     const dir = home(saved)!;
     process.env.ANTHROPIC_API_KEY = "sk-parent";
@@ -179,9 +175,9 @@ done
     const u = await usage("claude", dir);
     expect(u).toEqual({ available: true, windows: [{ label: "5 hours", usedPercent: 63, resetsAt: null }], reason: null });
     delete process.env.ANTHROPIC_API_KEY;
-    fs.chmodSync(bin, 0o644);
+    fs.renameSync(bin, `${bin}.unavailable`);
     expect((await usage("claude", dir)).reason).toBe("Assistant executable not found.");
-    fs.chmodSync(bin, 0o755);
+    fs.renameSync(`${bin}.unavailable`, bin);
     expect(await call("agent_instance_usage", { id: "claude-work" })).toMatchObject({ available: true });
     expect(await usage("gemini", null)).toEqual({ available: false, windows: [], reason: "Gemini CLI does not expose account limits." });
   });

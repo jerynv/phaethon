@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -89,9 +90,9 @@ describe("spaces", () => {
     fs.mkdirSync(sp(".hidden"));
     fs.mkdirSync(sp("has space"));
     fs.writeFileSync(sp("notes.md"), "a file, not a space");
-    fs.symlinkSync(path.join(root(), "memory"), sp("sneaky"));
-    fs.symlinkSync(sp("school"), sp("alias"));
-    fs.symlinkSync("/", sp("rootlink"));
+    symlink(path.join(root(), "memory"), sp("sneaky"));
+    symlink(sp("school"), sp("alias"));
+    symlink("/", sp("rootlink"));
     expect(ids(listSpaces())).toEqual(["school", "work"]);
   });
 
@@ -120,16 +121,16 @@ describe("spaces", () => {
     expect(getSpace("school").name).toBe("School");
   });
 
-  it("metadata symlinks are not followed", () => {
+  it.skipIf(!canSymlinkFiles)("metadata symlinks are not followed", () => {
     fs.writeFileSync(path.join(root(), "outside.json"), `{"name":"Leaked"}`);
     const state = sp("school/.phaethon");
     fs.mkdirSync(state, { recursive: true });
-    fs.symlinkSync(path.join(root(), "outside.json"), path.join(state, "space.json"));
+    symlink(path.join(root(), "outside.json"), path.join(state, "space.json"));
     expect(getSpace("school").name).toBe("School");
     expect(() => updateSpace("school", { name: "New" })).toThrow();
     expect(fs.readFileSync(path.join(root(), "outside.json"), "utf8")).toContain("Leaked");
     fs.mkdirSync(path.join(root(), "elsewhere"));
-    fs.symlinkSync(path.join(root(), "elsewhere"), sp("work/.phaethon"));
+    symlink(path.join(root(), "elsewhere"), sp("work/.phaethon"));
     expect(() => updateSpace("work", { name: "New" })).toThrow();
     expect(fs.existsSync(path.join(root(), "elsewhere/space.json"))).toBe(false);
   });
@@ -199,7 +200,7 @@ describe("spaces", () => {
     expect(fs.readFileSync(sp("work/.phaethon/space.json"), "utf8")).toBe("{ broken");
   });
 
-  it("lists the most recently used first", () => {
+  it.skipIf(!canSymlinkFiles)("lists the most recently used first", () => {
     createSpace("Art");
     createSpace("Home");
     expect(ids(listSpaces())).toEqual(["art", "home", "school", "work"]);
@@ -222,7 +223,7 @@ describe("spaces", () => {
     }
     fs.writeFileSync(path.join(root(), "outside"), "9999");
     fs.rmSync(path.join(dir("work"), ".phaethon/last-used"));
-    fs.symlinkSync(path.join(root(), "outside"), path.join(dir("work"), ".phaethon/last-used"));
+    symlink(path.join(root(), "outside"), path.join(dir("work"), ".phaethon/last-used"));
     expect(getSpace("work").lastUsed).toBeNull();
     expect(() => touchSpace("work")).toThrow("This space’s last use couldn’t be saved");
     expect(fs.readFileSync(path.join(root(), "outside"), "utf8")).toBe("9999");

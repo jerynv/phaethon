@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { unzipSync } from "fflate";
@@ -130,10 +131,10 @@ describe("viewer", () => {
     }
   });
 
-  it("binary previews keep space and course walls", () => {
+  it.skipIf(!canSymlinkFiles)("binary previews keep space and course walls", () => {
     fs.writeFileSync(v("spaces/work/private.docx"), "private document");
     fs.writeFileSync(path.join(school, ".phaethon/private.docx"), "private state");
-    fs.symlinkSync(v("spaces/work/private.docx"), path.join(school, "notes/escape.docx"));
+    symlink(v("spaces/work/private.docx"), path.join(school, "notes/escape.docx"));
     for (const p of ["../work/private.docx", ".phaethon/private.docx", "@work/private.docx", "notes/escape.docx"]) {
       expect(() => view(p), p).toThrow();
       expect(() => bytes(p), p).toThrow();
@@ -149,7 +150,7 @@ describe("viewer", () => {
       expect(() => bytes(hidden), hidden).toThrow();
     }
     expect(() => viewFile("work", spaceDir("work"), "courses/Calculus/files/lecture.docx")).toThrow("isn’t among the courses this space can see.");
-    fs.symlinkSync(v("spaces/work/private.docx"), v("courses/Calculus/files/escape.docx"));
+    symlink(v("spaces/work/private.docx"), v("courses/Calculus/files/escape.docx"));
     expect(() => bytes("courses/Calculus/files/escape.docx")).toThrow();
     expect(() => view("courses/Calculus")).toThrow("is a folder; the viewer shows files.");
     expect(() => view("courses")).toThrow("is a folder; the viewer shows files.");
@@ -161,10 +162,10 @@ describe("viewer", () => {
     expect(view("courses/Calculus/README.md").text).not.toContain("91%");
   });
 
-  it("never reads outside the space", () => {
-    fs.symlinkSync(v("spaces/work/secret.md"), path.join(school, "notes/link.md"));
-    fs.symlinkSync(v("spaces/work"), path.join(school, "workdir"));
-    fs.symlinkSync("/etc/hosts", path.join(school, "hosts.txt"));
+  it.skipIf(!canSymlinkFiles)("never reads outside the space", () => {
+    symlink(v("spaces/work/secret.md"), path.join(school, "notes/link.md"));
+    symlink(v("spaces/work"), path.join(school, "workdir"));
+    symlink("/etc/hosts", path.join(school, "hosts.txt"));
     for (const bad of [
       "",
       "/etc/hosts",
@@ -199,7 +200,7 @@ describe("viewer", () => {
 });
 
 describe("open and reveal", () => {
-  it("only files inside the space can be opened", async () => {
+  it.skipIf(!canSymlinkFiles)("only files inside the space can be opened", async () => {
     const real = target("school", school, "notes/plan.md");
     expect(real.endsWith(path.join("notes", "plan.md")) && fs.statSync(real).isFile()).toBe(true);
     expect(target("school", school, " notes/plan.md ")).toBe(real);
@@ -215,7 +216,7 @@ describe("open and reveal", () => {
     expect(() => target("school", school, "missing.md")).toThrow("isn’t in this space");
     expect(() => target("school", school, "@work/secret.md")).toThrow("Only files in this space can be opened from here.");
     expect(() => target("school", school, "")).toThrow("No file was named.");
-    fs.symlinkSync(v("spaces/work/secret.md"), path.join(school, "link.md"));
+    symlink(v("spaces/work/secret.md"), path.join(school, "link.md"));
     expect(() => target("school", school, "link.md")).toThrow("can’t be opened: only files inside this space can be opened from here.");
     await call("file_open", { space: "school", path: "notes/plan.md" });
     await call("file_open", { space: "school", path: "notes/plan.md", reveal: true });
@@ -227,9 +228,9 @@ describe("open and reveal", () => {
 
   it("show_space takes only a space id", async () => {
     fs.writeFileSync(v("spaces/notes.md"), "a file, not a space");
-    fs.symlinkSync(v("memory"), v("spaces/linked"));
-    fs.symlinkSync("/", v("spaces/root"));
-    fs.symlinkSync(v("spaces/school"), v("spaces/alias"));
+    symlink(v("memory"), v("spaces/linked"));
+    symlink("/", v("spaces/root"));
+    symlink(v("spaces/school"), v("spaces/alias"));
     const host = fakeHost(() => null);
     setHost(host);
     for (const bad of ["..", "../..", "", ".", "spaces", "school/..", "school/../work", "/", "/etc", "notes.md", "linked", "root", "alias", "School", "nope", "a.app"]) {
@@ -250,7 +251,7 @@ describe("open and reveal", () => {
     expect(isRunnable(path.join(dir, "Tool.app"))).toBe(true);
     expect(isRunnable(path.join(dir, "notes.md"))).toBe(false);
     fs.chmodSync(path.join(dir, "notes.md"), 0o755);
-    expect(isRunnable(path.join(dir, "notes.md"))).toBe(true);
+    expect(isRunnable(path.join(dir, "notes.md"))).toBe(process.platform !== "win32");
     await expect(openFile("x", dir, "run.command", false)).rejects.toThrow("run a program");
     fs.writeFileSync(path.join(school, "setup.sh"), "x");
     const host = fakeHost(() => null);
@@ -267,7 +268,7 @@ describe("export", () => {
     return Object.entries(files).map(([name, data]) => [name, Buffer.from(data).toString()] as const);
   };
 
-  it("exports the files and conversations and nothing outside", async () => {
+  it.skipIf(!canSymlinkFiles)("exports the files and conversations and nothing outside", async () => {
     fs.rmSync(path.join(school, "notes"), { recursive: true });
     fs.rmSync(path.join(school, ".phaethon"), { recursive: true });
     fs.mkdirSync(path.join(school, "notes/empty"), { recursive: true });
@@ -278,11 +279,11 @@ describe("export", () => {
     fs.writeFileSync(path.join(school, ".phaethon/threads/1.json"), "[old]");
     fs.writeFileSync(path.join(school, "attachments/2026-10-10/a.png"), "png");
     fs.writeFileSync(v("outside.txt"), "outside");
-    fs.symlinkSync(v("spaces/work/secret.md"), path.join(school, "leak.md"));
-    fs.symlinkSync(v("spaces/work"), path.join(school, "work-link"));
-    fs.symlinkSync("/etc", path.join(school, "notes/etc"));
-    fs.symlinkSync(v("outside.txt"), path.join(school, ".phaethon/linked.json"));
-    fs.symlinkSync(path.join(school, "notes/plan.md"), path.join(school, "plan-again.md"));
+    symlink(v("spaces/work/secret.md"), path.join(school, "leak.md"));
+    symlink(v("spaces/work"), path.join(school, "work-link"));
+    symlink("/etc", path.join(school, "notes/etc"));
+    symlink(v("outside.txt"), path.join(school, ".phaethon/linked.json"));
+    symlink(path.join(school, "notes/plan.md"), path.join(school, "plan-again.md"));
     const outDir = path.join(env.home, "export-out");
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, "School 2026-10-10.zip");
@@ -315,7 +316,7 @@ describe("export", () => {
     const out = path.join(dir, "missing/School.zip");
     await expect(exportSpace(dir, "school", out)).rejects.toThrow("couldn’t be saved");
     expect(fs.existsSync(out)).toBe(false);
-    if (process.getuid?.() !== 0) {
+    if (process.platform !== "win32" && process.getuid?.() !== 0) {
       fs.chmodSync(path.join(dir, "a.md"), 0o000);
       const out2 = path.join(env.home, "export-fail-out", "School.zip");
       fs.mkdirSync(path.dirname(out2), { recursive: true });
@@ -359,7 +360,7 @@ describe("add files", () => {
     return { space: spaceDir("work"), docs };
   };
 
-  it("copies a folder whole, without hidden files or links", async () => {
+  it.skipIf(!canSymlinkFiles)("copies a folder whole, without hidden files or links", async () => {
     const { space, docs } = setup();
     const scool = path.join(docs, "Scool");
     fs.mkdirSync(path.join(scool, "2026/empty"), { recursive: true });
@@ -369,7 +370,7 @@ describe("add files", () => {
     fs.writeFileSync(path.join(scool, ".DS_Store"), "x");
     fs.writeFileSync(path.join(scool, ".git/config"), "x");
     fs.writeFileSync(path.join(docs, "secret.txt"), "no");
-    fs.symlinkSync(path.join(docs, "secret.txt"), path.join(scool, "link.txt"));
+    symlink(path.join(docs, "secret.txt"), path.join(scool, "link.txt"));
     const added = await addToSpace(space, vaultRoot(), [scool]);
     expect(added).toEqual({ paths: ["files/Scool"], files: 2, skipped: 3 });
     expect(fs.readFileSync(path.join(space, "files/Scool/2026/Resume.pdf"), "utf8")).toBe("%PDF-1.7");
@@ -395,18 +396,18 @@ describe("add files", () => {
     expect(fs.readFileSync(path.join(space, "files/Resume 2.pdf"), "utf8")).toBe("1");
   });
 
-  it("never writes through a dangling link or a linked files folder (fixed Rust bug)", async () => {
+  it.skipIf(!canSymlinkFiles)("never writes through a dangling link or a linked files folder (fixed Rust bug)", async () => {
     const { space, docs } = setup();
     const outside = path.join(docs, "outside");
     fs.mkdirSync(outside);
     fs.writeFileSync(path.join(docs, "notes.md"), "mine");
     fs.mkdirSync(path.join(space, "files"));
-    fs.symlinkSync(path.join(outside, "planted.md"), path.join(space, "files/notes.md"));
+    symlink(path.join(outside, "planted.md"), path.join(space, "files/notes.md"));
     const added = await addToSpace(space, vaultRoot(), [path.join(docs, "notes.md")]);
     expect(added.paths).toEqual(["files/notes 2.md"]);
     expect(fs.existsSync(path.join(outside, "planted.md"))).toBe(false);
     fs.rmSync(path.join(space, "files"), { recursive: true });
-    fs.symlinkSync(outside, path.join(space, "files"));
+    symlink(outside, path.join(space, "files"));
     await expect(addToSpace(space, vaultRoot(), [path.join(docs, "notes.md")])).rejects.toThrow("The space’s files folder couldn’t be made");
     expect(fs.readdirSync(outside)).toEqual([]);
   });

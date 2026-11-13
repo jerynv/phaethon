@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -94,11 +95,11 @@ describe("memory", () => {
     expect(p.indexOf("number 198")).toBeLessThan(p.indexOf("number 199"));
   });
 
-  it("a linked memory file is never read or written", () => {
+  it.skipIf(!canSymlinkFiles)("a linked memory file is never read or written", () => {
     const space = tempSpace();
     const outside = tempSpace();
     fs.writeFileSync(path.join(outside, "secret.md"), "- the other space's secret\n");
-    fs.symlinkSync(path.join(outside, "secret.md"), path.join(space, FILE));
+    symlink(path.join(outside, "secret.md"), path.join(space, FILE));
     expect(memoryForPromptIn(space)).toBeNull();
     expect(() => appendIn(space, ["x"], "1")).toThrow("MEMORY.md isn’t a regular file");
     expect(fs.readFileSync(path.join(outside, "secret.md"), "utf8")).toBe("- the other space's secret\n");
@@ -107,7 +108,7 @@ describe("memory", () => {
   it("never writes its temp file through a linked .phaethon (fixed Rust bug)", () => {
     const space = tempSpace();
     const outside = tempSpace();
-    fs.symlinkSync(outside, path.join(space, ".phaethon"));
+    symlink(outside, path.join(space, ".phaethon"));
     expect(() => appendIn(space, ["x"], "1")).toThrow(".phaethon in this space is not a folder");
     expect(fs.readdirSync(outside)).toEqual([]);
   });

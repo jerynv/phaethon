@@ -1,3 +1,4 @@
+import { symlink } from "../../../tests/fs.ts";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -152,7 +153,7 @@ describe("save", () => {
     expect(() => save(space, "x".repeat(512 * 1024 + 1), null, "big", false)).toThrow("This document is too long to save from here.");
     const other = tmp("save-out");
     const space2 = tmp("save2");
-    fs.symlinkSync(other, path.join(space2, "documents"));
+    symlink(other, path.join(space2, "documents"));
     expect(() => save(space2, "s", null, "x", false)).toThrow("The space’s documents folder can’t be used: it leads outside the space.");
     expect(fs.readdirSync(other)).toEqual([]);
     for (const d of [space, other, space2]) fs.rmSync(d, { recursive: true });
@@ -218,13 +219,14 @@ describe("walls, as arguments", () => {
     const mac = runPlan("darwin", { kind: "tectonic", path: "/opt/homebrew/bin/tectonic" }, "/w", { vars: [] }, probe, null);
     if ("refused" in mac) throw new Error(mac.refused);
     expect(mac.args[3]).toBe("/usr/bin/sandbox-exec");
+    expect(mac.args[1]).toContain("ulimit -f 65536 &&");
     expect(mac.args.slice(-6)).toEqual(["/opt/homebrew/bin/tectonic", "--untrusted", "--keep-logs", "--outdir", "/w", "doc.tex"]);
     expect(runPlan("linux", engine, "/w", home, probe, null)).toEqual({ refused: NO_SANDBOX_LINUX });
     expect(runPlan("win32", engine, "/w", home, probe, null)).toEqual({ refused: NO_SANDBOX_WINDOWS });
     expect(limitWrapper(["x"]).args.at(-1)).toBe("x");
   });
 
-  it.skipIf(process.platform === "win32")("counts sh's ulimit -f in 512-byte blocks on this machine", () => {
+  it.skipIf(process.platform === "win32")("uses this machine's sh file-size limit units", () => {
     const dir = tmp("ulimit");
     spawnSync("/bin/sh", ["-c", "ulimit -f 4 && head -c 8192 /dev/zero > f"], { cwd: dir, stdio: "ignore" });
     expect(fs.statSync(path.join(dir, "f")).size).toBe(4 * ULIMIT_BLOCK);

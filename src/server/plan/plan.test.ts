@@ -1,3 +1,4 @@
+import { symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -120,7 +121,7 @@ describe("plan", () => {
     const dir = space();
     const outside = space();
     fs.writeFileSync(path.join(outside, "exams.json"), '[{"id":"x","title":"Secret","date":"2026-11-02"}]');
-    fs.symlinkSync(outside, path.join(dir, "study"));
+    symlink(outside, path.join(dir, "study"));
     expect(err(() => examsGet(dir))).toContain("it is a link");
     expect(() => examsSet(dir, [exam("a", "One", "2026-10-15")])).toThrow();
     expect(() => savePlan(dir, "# Plan")).toThrow();

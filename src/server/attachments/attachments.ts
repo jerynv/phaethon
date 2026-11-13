@@ -219,6 +219,9 @@ function createUnique(dir: string, name: string, bytes: Uint8Array): { candidate
   for (let n = 1; n < 10_000; n++) {
     const candidate = n === 1 ? name : `${stem} (${n})${ext}`;
     const full = path.join(dir, candidate);
+    // On Windows CREATE_NEW can follow a dangling file symlink before
+    // checking existence. Reserve every existing directory entry, too.
+    if (lstatOrNull(full)) continue;
     let fd: number;
     try {
       fd = fs.openSync(full, "wx");

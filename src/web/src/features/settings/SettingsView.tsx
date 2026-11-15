@@ -31,7 +31,7 @@ const CourseSettings = lazy(() => import("@/features/courses/CourseSettings").th
 
 export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; group: string }[] = [
   { id: "general", label: "General", icon: icons.mode, group: "Preferences" },
-  { id: "appearance", label: "Appearance", icon: icons.theme, group: "Preferences" },
+  { id: "appearance", label: "Appearance", icon: icons.appearance, group: "Preferences" },
   { id: "providers", label: "Providers", icon: icons.model, group: "Models" },
   { id: "agents", label: "Coding agents", icon: icons.terminal, group: "Models" },
   { id: "spaces", label: "Spaces", icon: icons.deck, group: "Workspace" },
@@ -109,13 +109,13 @@ function MarkerView({ m }: { m: Marker | undefined }) {
   );
 }
 
-function Nav({ section }: { section: SettingsSection }) {
+function Nav({ section, onReset }: { section: SettingsSection; onReset: () => void }) {
   const close = useNav((s) => s.closeSettings);
   const open = useNav((s) => s.openSettings);
   const markers = useMarkers(section);
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
   return (
-    <nav aria-label="Settings" className="flex w-64 shrink-0 flex-col overflow-y-auto border-r px-3 py-3">
+    <nav aria-label="Settings" className="flex w-64 shrink-0 flex-col overflow-y-auto border-r px-3 py-3 max-[1180px]:w-52">
       <button
         type="button"
         onClick={close}
@@ -135,7 +135,7 @@ function Nav({ section }: { section: SettingsSection }) {
                 key={s.id}
                 type="button"
                 aria-current={active ? "page" : undefined}
-                onClick={() => open(s.id)}
+                onClick={() => (active ? onReset() : open(s.id))}
                 className={cn(
                   "relative isolate flex h-7 items-center gap-2 rounded-md px-2 text-sm transition-colors",
                   active ? "text-foreground" : "text-foreground hover:bg-accent",
@@ -181,11 +181,13 @@ export function SettingsView() {
   const section = useNav((s) => s.settings) ?? "general";
   const close = useNav((s) => s.closeSettings);
   const [crumb, setCrumb] = useState<Crumb>(null);
+  // Clicking the section you are in brings back its root view (a space's detail closes).
+  const [reset, setReset] = useState(0);
   useEscToClose(close);
   const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   const title = (
     <span className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
-      <span className="shrink-0 text-muted-foreground">Settings</span>
+      <span className="min-w-0 truncate text-muted-foreground">Settings</span>
       <span className="text-subtle-foreground">/</span>
       {crumb ? (
         <>
@@ -193,21 +195,21 @@ export function SettingsView() {
             {meta.label}
           </button>
           <span className="text-subtle-foreground">/</span>
-          <span className="min-w-0 truncate font-medium">{crumb.label}</span>
+          <span className="max-w-48 shrink-0 truncate font-medium">{crumb.label}</span>
         </>
       ) : (
-        <h1 className="min-w-0 truncate font-medium">{meta.label}</h1>
+        <h1 className="shrink-0 truncate font-medium">{meta.label}</h1>
       )}
     </span>
   );
   return (
     <div className="flex min-h-0 flex-1">
       <Header title={title} />
-      <Nav section={section} />
-      <div className="relative min-h-0 flex-1 overflow-y-auto bg-well">
+      <Nav section={section} onReset={() => setReset((n) => n + 1)} />
+      <div className="relative min-h-0 flex-1 overflow-y-auto bg-well dark:bg-background">
         <DotMatrix seed="settings" />
         <motion.div
-          key={section}
+          key={`${section}-${reset}`}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}

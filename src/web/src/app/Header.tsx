@@ -106,7 +106,7 @@ function ViewTabs() {
           <Tooltip key={v.id}>
             <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} />}>
               <Icon icon={v.icon} />
-              <span className="@max-5xl/header:hidden">{v.label}</span>
+              <span className="@max-5xl/header:hidden [[data-slot=app-header]:has([data-slot=header-title]:not(:empty))_&]:hidden">{v.label}</span>
             </TooltipTrigger>
             <TooltipPopup side="bottom">
               <span className="flex items-center gap-2">

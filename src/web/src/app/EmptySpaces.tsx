@@ -13,10 +13,10 @@ export function EmptySpaces() {
       <EmptyState
         palette="meadow"
         seed="no-spaces"
-        title="No spaces"
-        description="A space keeps one part of your life apart: its own files, conversations and memory."
+        title="No spaces yet"
+        description="A space keeps its own files, conversations and memory."
         action={
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" className="w-full" onClick={() => setOpen(true)}>
             <Icon icon={icons.add} />
             New space
           </Button>

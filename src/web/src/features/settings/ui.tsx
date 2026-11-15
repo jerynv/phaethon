@@ -67,7 +67,7 @@ export function SettingsCard({
 }) {
   return (
     <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card shadow-card", className)}>
-      {media}
+      {media ? <div className="[--art-veil:var(--art-veil-strip)]">{media}</div> : null}
       <header className="flex items-center gap-4 p-5">
         {icon ? <Tile>{icon}</Tile> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

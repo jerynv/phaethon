@@ -90,7 +90,7 @@ export function providerNeed(p: ProviderInfo, settings: Pick<Settings, "model">)
 export const PRESET_GROUPS: { label: string; test: (p: ProviderInfo) => boolean }[] = [
   { label: "Services", test: (p) => !p.local && p.id !== "custom" },
   { label: "On this computer", test: (p) => p.local },
-  { label: "Your own", test: (p) => p.id === "custom" },
+  { label: "Custom", test: (p) => p.id === "custom" },
 ];
 
 /** The result of Check and save. */

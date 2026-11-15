@@ -94,7 +94,7 @@ export function ModelChooser({
     <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
       <PopoverTrigger
         disabled={disabled}
-        className="inline-flex h-7 w-52 min-w-0 items-center gap-2 rounded-lg border bg-card px-2.5 text-left text-sm shadow-card outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 data-popup-open:bg-accent"
+        className="inline-flex h-7 w-auto min-w-0 max-w-56 items-center gap-1.5 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 data-popup-open:bg-accent"
       >
         <ProviderIcon id={provider.id} className="size-3.5" />
         {label ? <Truncate className="flex-1">{label}</Truncate> : <span className="flex-1 truncate text-placeholder">Choose a model</span>}

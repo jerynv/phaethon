@@ -175,7 +175,7 @@ export function EmptyState({
       <div className="flex flex-col items-start gap-1 p-5">
         <p className="font-medium text-base">{title}</p>
         {description ? <p className="text-muted-foreground text-sm">{description}</p> : null}
-        {action ? <div className="mt-3">{action}</div> : null}
+        {action ? <div className="mt-3 flex self-stretch">{action}</div> : null}
       </div>
     </div>
   );

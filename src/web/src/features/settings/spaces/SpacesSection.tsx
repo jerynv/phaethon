@@ -489,6 +489,14 @@ function SpaceDetail({ space, spaces, onBack }: { space: SpaceView; spaces: Spac
   useCrumb({ label: space.name, onBack });
   return (
     <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="-mb-1 flex h-7 items-center gap-1.5 self-start rounded-md px-1 text-muted-foreground text-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Icon icon={icons.arrowLeft} className="size-4" />
+        Spaces
+      </button>
       <IdentityGroup space={space} />
       <AgentsGroup space={space} />
       <GrantsGroup space={space} spaces={spaces} />

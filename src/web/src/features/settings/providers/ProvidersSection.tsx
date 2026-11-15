@@ -100,7 +100,7 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
       <Field label="API key" hint={outcome?.kind === "no-credit" ? <span className="text-warning-foreground">{outcomeText(outcome, p)}</span> : undefined}>
         <Well>
           <Icon icon={icons.key} className="size-4 text-muted-foreground" />
-          <span aria-hidden className="font-mono text-muted-foreground tracking-widest">••••••••••••</span>
+          <span aria-hidden className="text-muted-foreground tracking-tight">••••••••</span>
           <Status tone="ready" className="ml-1">
             Saved
           </Status>
@@ -299,7 +299,7 @@ function ModelRow({ p, settings, onChanged }: { p: ProviderInfo; settings: Setti
       below={error ? <FieldError>{error}</FieldError> : undefined}
     >
       {busy ? <Spinner size="sm" tone="muted" /> : null}
-      <ModelChooser provider={p} current={current} disabled={blocked || busy} onChoose={(m) => void choose(m)} />
+      <ModelChooser provider={p} current={blocked ? null : current} disabled={blocked || busy} onChoose={(m) => void choose(m)} />
     </Row>
   );
 }

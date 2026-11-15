@@ -100,7 +100,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           <span className="font-medium text-lg tracking-title">Phaethon</span>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-center px-6 pt-6 pb-16">
+          <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-start px-6 pt-(--onboarding-top) pb-16">
             <Dots step={step} />
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
@@ -194,7 +194,7 @@ function Welcome({ onNext }: { onNext: () => void }) {
         ))}
       </ul>
       <Footer>
-        <Button autoFocus onClick={onNext}>
+        <Button ref={quietFocus} onClick={onNext}>
           Get started
         </Button>
       </Footer>
@@ -269,6 +269,15 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
   );
 }
 
+/**
+ * Puts focus on a step's main button when it appears, so Enter presses it,
+ * without the keyboard focus ring (e3e4 and c06d show none on load). Tab
+ * still shows the ring as usual.
+ */
+function quietFocus(el: HTMLButtonElement | null) {
+  el?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
+}
+
 function Choice({ icon, title, text, on, onClick, children }: { icon: ReactNode; title: string; text: string; on: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <div className={cn("overflow-hidden rounded-card border bg-card shadow-card transition-[border-color,box-shadow] duration-150", on ? "border-primary ring-1 ring-primary" : "hover:border-border-strong")}>
@@ -276,7 +285,7 @@ function Choice({ icon, title, text, on, onClick, children }: { icon: ReactNode;
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground [&_svg]:size-4.5">{icon}</span>
         <span className="min-w-0 flex-1">
           <span className="block font-medium text-sm">{title}</span>
-          <span className="block truncate text-muted-foreground text-sm">{text}</span>
+          <span className="block text-muted-foreground text-sm">{text}</span>
         </span>
         <span className={cn("flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors", on ? "border-primary bg-primary" : "border-input")}>
           {on ? <span className="size-1.5 rounded-full bg-primary-foreground" /> : null}
@@ -355,14 +364,14 @@ function KeyForm({ settings, provider, onProvider, onSaved }: { settings: Settin
             </a>
           ) : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <Input
             id="ob-key"
             type="password"
             value={key}
             autoComplete="off"
             spellCheck={false}
-            placeholder={hadKey ? "Saved. Paste a new one to replace it" : info.keyPrefix ? `${info.keyPrefix}…` : "Paste your key"}
+            placeholder={hadKey ? "Saved · paste to replace" : info.keyPrefix ? `${info.keyPrefix}…` : "Paste your key"}
             aria-invalid={outcome?.kind === "problem" ? true : undefined}
             onChange={(e) => (setKey(e.target.value), setOutcome(null))}
             onKeyDown={(e) => e.key === "Enter" && !busy && void run()}
@@ -584,7 +593,7 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
       )}
       <Footer onBack={making && spaces?.length ? () => setMaking(false) : onBack}>
         {existing ? (
-          <Button autoFocus onClick={() => onDone(spaces.map((s) => s.name))}>
+          <Button ref={quietFocus} onClick={() => onDone(spaces.map((s) => s.name))}>
             Continue
           </Button>
         ) : (
@@ -639,7 +648,7 @@ function AllSet({ draft, onBack, onDone }: { draft: Draft; onBack: () => void; o
         ))}
       </ul>
       <Footer onBack={onBack}>
-        <Button autoFocus onClick={onDone}>
+        <Button ref={quietFocus} onClick={onDone}>
           Explore
         </Button>
         {draft.answer ? null : (

@@ -9,7 +9,7 @@ import { SettingsCard } from "./ui";
 /** Settings › Appearance: System, Light or Dark as three cards, each with a small wireframe of the app. */
 
 const CHOICES: { id: ThemeChoice; label: string; icon: IconData }[] = [
-  { id: "system", label: "System", icon: icons.mode },
+  { id: "system", label: "System", icon: icons.system },
   { id: "light", label: "Light", icon: icons.light },
   { id: "dark", label: "Dark", icon: icons.dark },
 ];
@@ -57,7 +57,7 @@ export function AppearanceSection() {
     void set(c).catch((e) => setError(`Couldn’t save the theme: ${cleanMessage(e)}`));
   };
   return (
-    <SettingsCard icon={<Icon icon={icons.theme} />} title="Theme" description="Light, dark, or whatever your computer uses.">
+    <SettingsCard icon={<Icon icon={icons.appearance} />} title="Theme" description="Light, dark, or whatever your computer uses.">
       <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
         {CHOICES.map((c) => {
           const on = c.id === choice;

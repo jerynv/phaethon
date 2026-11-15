@@ -1,4 +1,5 @@
-import { ServerIcon } from "lucide-react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import anthropic from "@/assets/providers/anthropic.svg";
 import claude from "@/assets/providers/claude.svg";
 import deepseek from "@/assets/providers/deepseek.svg";
@@ -40,7 +41,13 @@ const MARKS: Record<string, { src: string; mono?: boolean; dark?: string }> = {
 
 export function ProviderIcon({ id, className }: { id: string; className?: string }) {
   const mark = MARKS[id];
-  if (!mark) return <ServerIcon aria-hidden className={cn("size-4 shrink-0 text-muted-foreground", className)} />;
+  // Wrapped, so containers that nudge bare svgs (menu rows) line it up with the image marks.
+  if (!mark)
+    return (
+      <span aria-hidden className={cn("flex size-4 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-full", className)}>
+        <Icon icon={icons.server} />
+      </span>
+    );
   if (mark.dark) {
     return (
       <>

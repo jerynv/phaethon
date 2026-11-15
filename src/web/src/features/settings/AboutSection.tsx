@@ -157,7 +157,7 @@ export function AboutSection() {
   const update = useLoad(() => api.updateState());
   return (
     <SettingsCard
-      media={<ArtCanvas palette="sky" seed="about" weave className="h-28" />}
+      media={<ArtCanvas palette="dawn" seed="about" weave className="h-28" />}
       icon={<BrandMark />}
       title="Phaethon"
       description={

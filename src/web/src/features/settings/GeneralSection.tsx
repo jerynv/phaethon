@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { usePrefs } from "./prefs";
-import { CardBlock, CopyButton, Loader, Row, SettingsCard, useLoad } from "./ui";
+import { CopyButton, Loader, Row, SettingsCard, useLoad } from "./ui";
 
 /** Settings › General: where the vault is, chat display and where models are chosen, and the keyboard shortcuts. */
 
@@ -76,18 +76,16 @@ export function GeneralSection() {
       </SettingsCard>
 
       <SettingsCard icon={<Icon icon={icons.command} />} title="Keyboard shortcuts">
-        <CardBlock>
-          <ul className="flex flex-col">
-            {shortcuts().map((s) => (
-              <li key={s.label} className="flex h-10 items-center justify-between gap-4 text-sm">
-                <span className="min-w-0 truncate">{s.label}</span>
-                <span className="shrink-0">
-                  <Keys keys={s.keys} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </CardBlock>
+        <ul className="-mt-2 flex flex-col">
+          {shortcuts().map((s) => (
+            <li key={s.label} className="flex h-10 items-center justify-between gap-4 text-sm">
+              <span className="min-w-0 truncate">{s.label}</span>
+              <span className="shrink-0">
+                <Keys keys={s.keys} />
+              </span>
+            </li>
+          ))}
+        </ul>
       </SettingsCard>
     </>
   );

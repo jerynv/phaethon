@@ -21,6 +21,11 @@ const captureTo = process.env.PHAETHON_CAPTURE;
 
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }]);
 
+// Chromium keeps its cookie key in a "Phaethon Safe Storage" keychain entry that only the signature
+// that wrote it may read. Builds are signed ad hoc, so every update asked for the login password.
+// Sign-in cookies are copied to the core's own keychain entry, so the browser profile can do without.
+if (process.platform === "darwin") app.commandLine.appendSwitch("use-mock-keychain");
+
 // Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
 if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));

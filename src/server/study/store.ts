@@ -312,8 +312,9 @@ export function loadExams(space: string): Exam[] {
 
 // ---- Views (the IPC contract) -------------------------------------------------------
 
-export type DeckSummary = { path: string; title: string; course?: string; cards: number; due: number; new: number; mastery: number; updated: number };
-export type QuizSummary = { path: string; title: string; course?: string; questions: number; lastScore?: number; lastTaken?: number };
+/** `firstFront` / `firstPrompt`: the first card's front or question, cut to `PREVIEW_MAX` characters, for the sheet on each overview card. */
+export type DeckSummary = { path: string; title: string; course?: string; firstFront?: string; cards: number; due: number; new: number; mastery: number; updated: number };
+export type QuizSummary = { path: string; title: string; course?: string; firstPrompt?: string; questions: number; lastScore?: number; lastTaken?: number };
 export type Overview = { decks: DeckSummary[]; quizzes: QuizSummary[]; due: number; streakDays: number };
 export type Card = {
   id: string;
@@ -346,6 +347,16 @@ function cardsOf(p: string, d: Deck, states: Record<string, CardState> | undefin
   });
 }
 
+const PREVIEW_MAX = 160;
+
+/** A one-line preview of card or question text: whitespace folded, cut at `PREVIEW_MAX` characters. */
+function preview(text: string | undefined): string | undefined {
+  const t = text?.replace(/\s+/g, " ").trim();
+  if (!t) return undefined;
+  const chars = [...t];
+  return chars.length > PREVIEW_MAX ? `${chars.slice(0, PREVIEW_MAX).join("")}…` : t;
+}
+
 export function overview(space: string, now: number): Overview {
   const progress = viewProgress(space);
   const decks: DeckSummary[] = [];
@@ -362,6 +373,8 @@ export function overview(space: string, now: number): Overview {
     const has = (id: string) => states !== undefined && Object.hasOwn(states, id);
     const s: DeckSummary = { path: rel, title: d.title } as DeckSummary;
     if (d.course !== undefined) s.course = d.course;
+    const first = preview(d.notes[0]?.front);
+    if (first !== undefined) s.firstFront = first;
     s.cards = ids.length;
     s.due = ids.filter((id) => has(id) && states![id]!.due <= now).length;
     s.new = ids.filter((id) => !has(id)).length;
@@ -378,11 +391,13 @@ export function overview(space: string, now: number): Overview {
     for (const a of tries) if (a.quiz === rel && (last === undefined || a.taken >= last.taken)) last = a;
     let title: string;
     let course: string | undefined;
+    let firstPrompt: string | undefined;
     let questions: number;
     try {
       const [, q] = loadQuiz(space, rel);
       title = q.title;
       course = q.course;
+      firstPrompt = preview(q.questions[0]?.prompt);
       questions = q.questions.length;
     } catch {
       title = fileTitle(rel);
@@ -390,6 +405,7 @@ export function overview(space: string, now: number): Overview {
     }
     const s: QuizSummary = { path: rel, title } as QuizSummary;
     if (course !== undefined) s.course = course;
+    if (firstPrompt !== undefined) s.firstPrompt = firstPrompt;
     s.questions = questions;
     if (last) {
       s.lastScore = last.score;

@@ -1,21 +1,23 @@
-import { ArrowLeft, ArrowRight, ArrowCounterClockwise, CheckCircle, CircleDashed, Flag, Question as QuestionIcon, Sparkle, XCircle } from "@phosphor-icons/react";
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
+import { CheckboxGroup } from "@base-ui/react/checkbox-group";
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
+import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
-import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { CheckboxGroup } from "@base-ui/react/checkbox-group";
-import { Radio as RadioPrimitive } from "@base-ui/react/radio";
-import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
+import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { CitationChip } from "@/features/chat/components/CitationChip";
@@ -46,11 +48,11 @@ import {
 import { beforeCheck, keyAction, missedIds, reviewList, SURE, type Sure, topicBreakdown, WHY_WORDS } from "../lib/quiz-results";
 import { loadQuizSession, saveQuizSession } from "../lib/quiz-session";
 import type { Attempt, Question, QuestionResult, Quiz, StudyEvent } from "../lib/types";
-import { needsModel, plural, progressWords, type MakeProgress } from "../lib/words";
+import { needsModel, plural, type MakeProgress } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { useLoad } from "../use-load";
 import { EASE, Slide } from "./motion";
-import { Crumbs, JobBar, StudyText } from "./parts";
+import { Crumbs, Disc, JobBar, Page, StudyText } from "./parts";
 
 type Job = { kind: "grading" | "reviewing"; progress: MakeProgress | null; fraction: number };
 type Stage = "take" | "check" | "results";
@@ -232,6 +234,7 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
     return () => window.removeEventListener("keydown", onKey);
   });
 
+
   const total = shown.length;
 
   return (
@@ -239,85 +242,101 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
       <Header
         title={<Crumbs onBack={onBack}>{q?.title ?? "Quiz"}</Crumbs>}
         actions={
-          q && stage === "take" && current ? (
-            <span className="text-muted-foreground text-xs tabular-nums" data-testid="quiz-position">
-              {only ? "Retaking · " : ""}
-              {at + 1} of {total}
-            </span>
+          q && stage === "results" ? (
+            <Button size="sm" variant="outline" onClick={onBack}>
+              Back to study
+            </Button>
           ) : null
         }
       />
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {q && stage !== "results" ? <Rail questions={shown} at={at} answers={answers} flagged={flagged} onGo={(i) => (setStage("take"), goTo(i))} /> : null}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pt-6 pb-8">
-            {quiz.error ? <SurfaceError title="Couldn’t open the quiz" message={cleanMessage(quiz.error)} onRetry={quiz.reload} /> : null}
-            {skeleton ? <QuizSkeleton /> : null}
-            {error ? (
-              <SurfaceError
-                title={error.title}
-                message={error.message}
-                actions={needsModel(error.message) ? [{ label: "Open settings", onClick: () => useNav.getState().openSettings("providers") }] : []}
-                onRetry={() => void (stage === "results" ? reviewMistakes() : submit())}
-              />
-            ) : null}
-            {q && stage === "take" && current ? (
-              <Slide id={current.id} dir={dir}>
-                <QuestionView
-                  space={space.id}
-                  number={q.questions.indexOf(current) + 1}
-                  total={q.questions.length}
-                  question={current}
-                  answer={answers[current.id]}
-                  sure={sure[current.id]}
-                  flagged={flagged.includes(current.id)}
-                  onAnswer={(a) => setAnswer(current.id, a)}
-                  onSure={(s) => setSureOf(current.id, s)}
-                  onFlag={() => toggleFlag(current.id)}
-                />
-              </Slide>
-            ) : null}
-            {q && stage === "check" ? (
-              <CheckSheet questions={shown} answers={answers} flagged={flagged} job={job} onGo={(i) => (setStage("take"), goTo(i))} onSubmit={() => void submit()} />
-            ) : null}
-            {q && stage === "results" && attempt ? (
-              <Results
+        <Page narrow className="gap-8">
+          {quiz.error ? <SurfaceError title="Couldn’t open the quiz" message={cleanMessage(quiz.error)} onRetry={quiz.reload} /> : null}
+          {skeleton ? <QuizSkeleton /> : null}
+          {q && stage !== "results" ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex h-8 items-center gap-3">
+                <span className="text-muted-foreground text-sm">
+                  Question{" "}
+                  <span className="text-foreground tabular-nums" data-testid="quiz-position">
+                    {stage === "take" && current ? `${at + 1} of ${total}` : `${total} of ${total}`}
+                  </span>
+                </span>
+                {only ? <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary text-xs">Retaking misses</span> : null}
+                <span className="ml-auto text-muted-foreground text-sm tabular-nums">{answered} answered</span>
+                <Button size="icon-sm" variant="ghost-muted" aria-label="Close quiz" className="-mr-1.5" onClick={onBack}>
+                  <Icon icon={icons.close} />
+                </Button>
+              </div>
+              <Rail questions={shown} at={at} answers={answers} flagged={flagged} onGo={(i) => (setStage("take"), goTo(i))} />
+            </div>
+          ) : null}
+          {error ? (
+            <SurfaceError
+              title={error.title}
+              message={error.message}
+              actions={needsModel(error.message) ? [{ label: "Open settings", onClick: () => useNav.getState().openSettings("providers") }] : []}
+              onRetry={() => void (stage === "results" ? reviewMistakes() : submit())}
+            />
+          ) : null}
+          {q && stage === "take" && current ? (
+            <Slide id={current.id} dir={dir}>
+              <QuestionView
                 space={space.id}
-                quiz={q}
-                attempt={attempt}
-                sure={sure}
-                job={job}
-                review={review}
-                onRetake={retake}
-                onReview={() => void reviewMistakes()}
-                onStudyCards={(deck) => open({ kind: "review", paths: [deck] })}
+                question={current}
+                answer={answers[current.id]}
+                sure={sure[current.id]}
+                flagged={flagged.includes(current.id)}
+                onAnswer={(a) => setAnswer(current.id, a)}
+                onSure={(s) => setSureOf(current.id, s)}
+                onFlag={() => toggleFlag(current.id)}
               />
-            ) : null}
-          </div>
-        </div>
+            </Slide>
+          ) : null}
+          {q && stage === "check" ? (
+            <CheckSheet questions={shown} answers={answers} flagged={flagged} job={job} onGo={(i) => (setStage("take"), goTo(i))} onSubmit={() => void submit()} />
+          ) : null}
+          {q && stage === "results" && attempt ? (
+            <Results
+              space={space.id}
+              quiz={q}
+              path={path}
+              attempt={attempt}
+              sure={sure}
+              job={job}
+              review={review}
+              onRetake={retake}
+              onReview={() => void reviewMistakes()}
+              onDone={onBack}
+              onStudyCards={(deck) => open({ kind: "review", paths: [deck] })}
+            />
+          ) : null}
+        </Page>
         {q && stage === "take" && current ? (
           <div className="border-t bg-background">
-            <div className="mx-auto flex h-12 w-full max-w-2xl items-center gap-2 px-4">
-              <Button size="sm" variant="ghost" disabled={at === 0} onClick={() => goTo(at - 1)} aria-label="Previous question">
-                <ArrowLeft />
+            <div className="mx-auto flex h-14 w-full max-w-(--chat-max-width) items-center gap-3 px-6">
+              <Button variant="ghost" disabled={at === 0} onClick={() => goTo(at - 1)} aria-label="Previous question">
+                <Icon icon={icons.arrowLeft} />
                 <span className="max-sm:hidden">Back</span>
               </Button>
-              <span className="min-w-0 flex-1 truncate text-center text-muted-foreground text-xs tabular-nums">
-                {answered} of {total} answered
-                <span className="max-md:hidden">
-                  {" · "}
-                  <Kbd>1</Kbd>–<Kbd>{Math.min(9, Math.max(2, choicesOf(current).length))}</Kbd> answer · <Kbd>↵</Kbd> next · <Kbd>F</Kbd> flag
-                </span>
+              <span className="flex min-w-0 flex-1 items-center justify-center gap-1.5 truncate text-muted-foreground text-xs max-md:hidden">
+                <Kbd variant="keycap">1</Kbd>–<Kbd variant="keycap">{Math.min(9, Math.max(2, choicesOf(current).length))}</Kbd>
+                <span className="mr-2">answer</span>
+                <Kbd variant="keycap">Enter</Kbd>
+                <span className="mr-2">next</span>
+                <Kbd variant="keycap">F</Kbd>
+                <span>flag</span>
               </span>
+              <span className="flex-1 md:hidden" />
               {at + 1 < total ? (
-                <Button size="sm" variant={isAnswered(answers[current.id]) ? "default" : "outline"} onClick={next}>
+                <Button variant={isAnswered(answers[current.id]) ? "default" : "outline"} onClick={next}>
                   Next
-                  <ArrowRight />
+                  <Icon icon={icons.arrowRight} />
                 </Button>
               ) : (
-                <Button size="sm" onClick={() => setStage("check")}>
+                <Button onClick={() => setStage("check")}>
                   Finish
-                  <CheckCircle weight="bold" />
+                  <Icon icon={icons.check} />
                 </Button>
               )}
             </div>
@@ -328,10 +347,10 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
   );
 }
 
-/** One segment per question: answered, current, flagged; click to go there. */
+/** A thin ink bar in one segment per question: answered, current, flagged; click to go there. */
 function Rail({ questions, at, answers, flagged, onGo }: { questions: Question[]; at: number; answers: Answers; flagged: string[]; onGo: (i: number) => void }) {
   return (
-    <nav className="flex shrink-0 gap-0.5 px-4 pt-2" aria-label="Questions">
+    <nav className="flex shrink-0 gap-1" aria-label="Questions">
       {questions.map((x, i) => {
         const done = isAnswered(answers[x.id]);
         const flag = flagged.includes(x.id);
@@ -344,18 +363,18 @@ function Rail({ questions, at, answers, flagged, onGo }: { questions: Question[]
                   onClick={() => onGo(i)}
                   aria-label={`Question ${i + 1}${done ? ", answered" : ""}${flag ? ", flagged" : ""}`}
                   aria-current={i === at ? "step" : undefined}
-                  className="group relative flex h-4 min-w-1 flex-1 items-center"
+                  className="group relative flex h-3 min-w-1 flex-1 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               }
             >
               <span
                 className={cn(
-                  "h-1 w-full rounded-full bg-muted transition-colors duration-200 group-hover:bg-muted-foreground/30",
-                  done && "bg-primary/45 group-hover:bg-primary/60",
-                  i === at && "bg-primary group-hover:bg-primary",
+                  "h-1 w-full rounded-full bg-muted transition-colors duration-200 group-hover:bg-foreground/15",
+                  done && "bg-foreground/35 group-hover:bg-foreground/45",
+                  i === at && "bg-ink group-hover:bg-ink",
                 )}
               />
-              {flag ? <span className="-top-0.5 absolute right-0 size-1.5 rounded-full bg-warning" /> : null}
+              {flag ? <span className="absolute -top-0.5 right-0 size-1.5 rounded-full bg-warning ring-2 ring-background" /> : null}
             </TooltipTrigger>
             <TooltipPopup>
               {`Question ${i + 1}`}
@@ -370,8 +389,6 @@ function Rail({ questions, at, answers, flagged, onGo }: { questions: Question[]
 
 function QuestionView({
   space,
-  number,
-  total,
   question,
   answer,
   sure,
@@ -381,8 +398,6 @@ function QuestionView({
   onFlag,
 }: {
   space: string;
-  number: number;
-  total: number;
   question: Question;
   answer: Answer | undefined;
   sure?: Sure;
@@ -396,31 +411,35 @@ function QuestionView({
   const typed = question.kind === "short" || question.kind === "cloze";
   const has = isAnswered(answer);
   return (
-    <article className="flex flex-col gap-5" data-testid="quiz-question">
-      <div className="flex items-center gap-2 text-muted-foreground text-xs">
-        <span className="tabular-nums">
-          Question {number} <span className="text-subtle-foreground">/ {total}</span>
-        </span>
-        <span className="text-subtle-foreground">·</span>
-        <span>{kindLabel(question.kind)}</span>
-        {question.topic ? (
-          <>
-            <span className="text-subtle-foreground">·</span>
-            <Truncate className="min-w-0">{question.topic}</Truncate>
-          </>
-        ) : null}
-        <Button size="xs" variant={flagged ? "outline" : "ghost-muted"} className={cn("ml-auto", flagged && "border-warning/40 text-warning-foreground")} aria-pressed={flagged} onClick={onFlag}>
-          <Flag weight={flagged ? "fill" : "light"} />
-          {flagged ? "Flagged" : "Flag"}
-        </Button>
+    <article className="flex flex-col gap-6" data-testid="quiz-question">
+      <div className="flex flex-col gap-3">
+        <div className="flex h-7 items-center gap-2 text-muted-foreground text-sm">
+          <span>{kindLabel(question.kind)}</span>
+          {question.topic ? (
+            <>
+              <span className="text-subtle-foreground">·</span>
+              <Truncate className="min-w-0">{question.topic}</Truncate>
+            </>
+          ) : null}
+          <Button
+            size="xs"
+            variant={flagged ? "outline" : "ghost-muted"}
+            shape="pill"
+            className={cn("ml-auto", flagged && "border-warning/40 bg-warning/8 text-warning-foreground")}
+            aria-pressed={flagged}
+            onClick={onFlag}
+          >
+            <Icon icon={icons.flag} className={cn(flagged && "text-warning-foreground")} />
+            {flagged ? "Flagged" : "Flag"}
+          </Button>
+        </div>
+        <StudyText text={question.prompt} space={space} id={`q-${question.id}`} className="text-foreground [&_.markdown]:text-xl [&_.markdown]:tracking-title" />
       </div>
 
-      <StudyText text={question.prompt} space={space} id={`q-${question.id}`} className="[&_.markdown]:text-base [&_.markdown]:leading-relaxed" />
-
       {!typed ? (
-        <ChoiceList multi={multi} choices={choices} answer={answer} onAnswer={onAnswer} render={(c, i) => <StudyText text={choiceLabel(question, c)} space={space} id={`q-${question.id}-${i}`} className="flex-1 [&_.markdown]:text-sm" />} />
+        <ChoiceList multi={multi} choices={choices} answer={answer} onAnswer={onAnswer} render={(c, i) => <StudyText text={choiceLabel(question, c)} space={space} id={`q-${question.id}-${i}`} className="flex-1 [&_.markdown]:text-base" />} />
       ) : question.kind === "short" ? (
-        <Textarea rows={4} aria-label="Your answer" placeholder="Your answer (⌘↵ for next)" value={typeof answer === "string" ? answer : ""} onChange={(e) => onAnswer(e.target.value)} />
+        <Textarea rows={4} aria-label="Your answer" placeholder="Your answer (⌘↵ for next)" className="text-base" value={typeof answer === "string" ? answer : ""} onChange={(e) => onAnswer(e.target.value)} />
       ) : (
         <Input aria-label="Your answer" placeholder="The missing word or phrase, then ↵" value={typeof answer === "string" ? answer : ""} onChange={(e) => onAnswer(e.target.value)} />
       )}
@@ -433,11 +452,11 @@ function QuestionView({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.16, ease: EASE }}
-            className="flex items-center gap-2 text-muted-foreground text-xs"
+            className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm"
             role="group"
             aria-label="How sure are you?"
           >
-            <span>How sure?</span>
+            <span className="mr-1">How sure?</span>
             {SURE.map((s) => (
               <button
                 key={s.value}
@@ -445,12 +464,14 @@ function QuestionView({
                 aria-pressed={sure === s.value}
                 onClick={() => onSure(s.value)}
                 className={cn(
-                  "flex h-6 items-center gap-1.5 rounded-full border px-2 transition-colors hover:bg-accent hover:text-foreground",
-                  sure === s.value && "border-primary/40 bg-primary/8 text-foreground",
+                  "flex h-8 items-center gap-2 rounded-full border bg-card pr-1.5 pl-3 text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                  sure === s.value && "border-primary/50 bg-primary/8 hover:bg-primary/10",
                 )}
               >
                 {s.label}
-                <Kbd className="max-md:hidden">{s.key.toUpperCase()}</Kbd>
+                <Kbd variant="keycap" className="h-5 min-w-5 max-md:hidden">
+                  {s.key.toUpperCase()}
+                </Kbd>
               </button>
             ))}
             <span className="text-subtle-foreground max-sm:hidden">Optional</span>
@@ -470,7 +491,7 @@ function CheckSheet({ questions, answers, flagged, job, onGo, onSubmit }: { ques
   );
   const grading = job?.kind === "grading";
   const list = (idx: number[]) => (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5">
       {idx.map((i) => (
         <Button key={i} size="xs" variant="outline" className="min-w-8 tabular-nums" onClick={() => onGo(i)}>
           {i + 1}
@@ -479,74 +500,96 @@ function CheckSheet({ questions, answers, flagged, job, onGo, onSubmit }: { ques
     </div>
   );
   return (
-    <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: EASE }} className="relative overflow-hidden rounded-xl border bg-card" data-testid="quiz-check">
-      {grading ? <JobBar value={job.fraction} /> : null}
-      <div className="flex flex-col gap-4 p-5">
-        <div>
-          <h2 className="font-semibold text-lg tracking-tight">{grading ? "Checking your answers…" : "Ready to check?"}</h2>
-          <p className="mt-0.5 text-muted-foreground text-sm tabular-nums">
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: EASE }}>
+      <Card data-testid="quiz-check">
+        {grading ? <JobBar value={job.fraction} /> : null}
+        <CardHeader className="gap-1 p-6 pb-4">
+          <CardTitle className="text-lg">{grading ? "Checking your answers…" : "Ready to check?"}</CardTitle>
+          <CardDescription className="tabular-nums">
             {grading
-              ? progressWords(job.progress ?? { step: "grading", done: 0, total: 1 }, { quiz: true })
+              ? gradingWords(job.progress, questions.length - c.unanswered.length)
               : `${questions.length - c.unanswered.length} of ${questions.length} answered.${c.unanswered.length ? " Unanswered ones count as wrong." : ""}`}
-          </p>
-        </div>
-        {!grading && c.unanswered.length ? (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-muted-foreground text-xs">Not answered</p>
-            {list(c.unanswered)}
-          </div>
+          </CardDescription>
+        </CardHeader>
+        {!grading && (c.unanswered.length || c.flagged.length) ? (
+          <CardContent className="gap-3 px-6 pb-6">
+            {c.unanswered.length ? (
+              <Card variant="well" className="gap-2 p-4">
+                <p className="text-muted-foreground text-sm">Not answered</p>
+                {list(c.unanswered)}
+              </Card>
+            ) : null}
+            {c.flagged.length ? (
+              <Card variant="well" className="gap-2 p-4">
+                <p className="flex items-center gap-1.5 text-muted-foreground text-sm">
+                  <Icon icon={icons.flag} className="size-3.5 text-warning-foreground" />
+                  Flagged for review
+                </p>
+                {list(c.flagged)}
+              </Card>
+            ) : null}
+          </CardContent>
         ) : null}
-        {!grading && c.flagged.length ? (
-          <div className="flex flex-col gap-1.5">
-            <p className="flex items-center gap-1 text-muted-foreground text-xs">
-              <Flag weight="fill" className="size-3 text-warning" />
-              Flagged for review
-            </p>
-            {list(c.flagged)}
-          </div>
-        ) : null}
-        <div className="flex items-center justify-end gap-2">
-          <Button size="sm" variant="ghost" disabled={grading} onClick={() => onGo(c.unanswered[0] ?? c.flagged[0] ?? 0)}>
+        <CardFooter className="px-6">
+          <Button variant="outline" disabled={grading} onClick={() => onGo(c.unanswered[0] ?? c.flagged[0] ?? 0)}>
             Keep going
           </Button>
-          <Button size="sm" disabled={grading} onClick={onSubmit}>
-            {grading ? <Spinner size="sm" /> : null}
+          <Button disabled={grading} onClick={onSubmit}>
             {grading ? "Checking…" : "Check answers"}
           </Button>
-        </div>
-      </div>
-    </motion.section>
+        </CardFooter>
+      </Card>
+    </motion.div>
   );
+}
+
+/** The line under "Checking your answers…": how far it has got, never the title again. */
+function gradingWords(p: MakeProgress | null, answered: number): string {
+  if (p && p.total > 1) return `${Math.min(p.done, p.total)} of ${p.total} checked`;
+  return `${plural(answered, "answer")}, each checked against your materials`;
 }
 
 // ---- Results ----
 
-const VERDICT: Record<Verdict, { icon: ReactNode; label: string; className: string }> = {
-  correct: { icon: <CheckCircle weight="fill" />, label: "Right", className: "text-success-foreground" },
-  partial: { icon: <CircleDashed weight="bold" />, label: "Partly right", className: "text-warning-foreground" },
-  wrong: { icon: <XCircle weight="fill" />, label: "Not right", className: "text-error-foreground" },
-  ungraded: { icon: <QuestionIcon weight="light" />, label: "Not graded", className: "text-muted-foreground" },
+/** Each verdict as a small tinted chip (7274's "Pending"), so a list of misses stays calm. */
+const VERDICT: Record<Verdict, { label: string; chip: string }> = {
+  correct: { label: "Right", chip: "bg-primary/10 text-primary" },
+  partial: { label: "Partly right", chip: "bg-warning/12 text-warning-foreground" },
+  wrong: { label: "Not right", chip: "bg-destructive/8 text-destructive-foreground" },
+  ungraded: { label: "Not graded", chip: "bg-muted text-muted-foreground" },
 };
+
+/** One calm line for the score, not a grade. */
+function headline(share: number): string {
+  if (share >= 0.9) return "You know this well";
+  if (share >= 0.75) return "Nearly there";
+  if (share >= 0.5) return "Good progress";
+  return "Worth another pass";
+}
 
 function Results({
   space,
   quiz,
+  path,
   attempt,
   sure,
   job,
   review,
   onRetake,
   onReview,
+  onDone,
   onStudyCards,
 }: {
   space: string;
   quiz: Quiz;
+  path: string;
   attempt: Attempt;
   sure: Record<string, Sure>;
   job: Job | null;
   review: { summary: string; deckPath?: string } | null;
   onRetake: (ids: string[] | null) => void;
   onReview: () => void;
+  onDone: () => void;
   onStudyCards: (deck: string) => void;
 }) {
   const { points, total, ungraded } = attemptPoints(attempt.results);
@@ -556,86 +599,127 @@ function Results({
   const items = reviewList(quiz.questions, attempt.results, sure);
   const byId = new Map(attempt.results.map((r) => [r.id, r]));
   const g = quiz.grounding;
+  const counts = attempt.results.reduce<Record<Verdict, number>>((n, r) => ((n[verdictOf(r)] += 1), n), { correct: 0, partial: 0, wrong: 0, ungraded: 0 });
+  const reviewing = job?.kind === "reviewing";
+  // When the explanation lands: a brief tick on the button, then it points down at the card (it never asks again).
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const [justExplained, setJustExplained] = useState(false);
+  useEffect(() => {
+    if (!review) return;
+    setJustExplained(true);
+    reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const t = setTimeout(() => setJustExplained(false), 1200);
+    return () => clearTimeout(t);
+  }, [review]);
   return (
-    <div className="flex flex-col gap-4" data-testid="quiz-results">
-      <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE }} className="rounded-xl border bg-card p-5">
-        <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
-          <div>
-            <CountUp value={Math.round(share * 100)} className={cn("font-semibold text-2xl tabular-nums tracking-tight", share >= 0.8 ? "text-success-foreground" : share < 0.6 ? "text-warning-foreground" : "text-foreground")} />
-            <p className="text-muted-foreground text-sm tabular-nums">
-              {pointsText(points)} of {total} right{ungraded ? ` · ${ungraded} not graded` : ""}
-            </p>
+    <div className="flex flex-col gap-8" data-testid="quiz-results">
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }}>
+        <Card className="rounded-panel">
+          {reviewing ? <JobBar value={job.fraction} className="z-10" /> : null}
+          <CardMedia className="h-28">
+            <ArtCanvas palette="lilac" seed={path} weave className="absolute inset-0" />
+          </CardMedia>
+          <div className="flex flex-col gap-5 p-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="font-medium text-lg tracking-title">{headline(share)}</h2>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <CountUp value={Math.round(share * 100)} className="font-medium text-3xl text-foreground tabular-nums tracking-hero" />
+                <span className="text-base text-muted-foreground tabular-nums">
+                  {pointsText(points)} of {total} right{ungraded ? ` · ${ungraded} not graded` : ""}
+                </span>
+              </div>
+              {g?.exam ? <p className="mt-1 text-muted-foreground text-sm [overflow-wrap:anywhere]">For {g.exam}{g.scope ? `: ${tidyScope(g.scope)}` : ""}</p> : null}
+            </div>
+            <ScoreBar results={attempt.results} />
+            <Card variant="well" className="gap-0 px-4 py-1.5">
+              {counts.correct ? <OutcomeRow tone="done" label={`${counts.correct} right`} /> : null}
+              {counts.partial ? <OutcomeRow tone="partial" label={`${counts.partial} partly right`} /> : null}
+              {counts.wrong ? <OutcomeRow tone="wrong" label={`${counts.wrong} to go over`} /> : null}
+              {counts.ungraded ? <OutcomeRow tone="muted" label={`${counts.ungraded} not graded`} /> : null}
+            </Card>
+            <div className="grid grid-cols-2 gap-2">
+              {missed.length ? (
+                <>
+                  <Button onClick={() => onRetake(missed)}>
+                    Retake {plural(missed.length, "miss", "misses")}
+                  </Button>
+                  {review ? (
+                    <Button variant="outline" success={justExplained} onClick={() => reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}>
+                      Explained
+                      <Icon icon={icons.arrowDown} />
+                    </Button>
+                  ) : (
+                    <Button variant="outline" pending={reviewing} disabled={!!job} onClick={onReview}>
+                      <Icon icon={icons.ai} />
+                      {reviewing ? "Explaining…" : "Explain my mistakes"}
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Button onClick={onDone}>Done</Button>
+                  <Button variant="outline" onClick={() => onRetake(null)}>
+                    Take again
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            {missed.length ? (
-              <>
-                <Button size="sm" variant="outline" disabled={!!job} onClick={onReview}>
-                  {job?.kind === "reviewing" ? <Spinner size="sm" /> : <Sparkle weight="light" />}
-                  {job?.kind === "reviewing" ? "Looking over…" : "Explain my mistakes"}
-                </Button>
-                <Button size="sm" onClick={() => onRetake(missed)}>
-                  <ArrowCounterClockwise weight="bold" />
-                  Retake {plural(missed.length, "miss", "misses")}
-                </Button>
-              </>
-            ) : (
-              <Button size="sm" variant="outline" onClick={() => onRetake(null)}>
-                <ArrowCounterClockwise weight="bold" />
-                Take again
-              </Button>
-            )}
-          </div>
-        </div>
-        <ScoreBar results={attempt.results} />
-        {g?.exam ? <p className="mt-3 text-muted-foreground text-xs [overflow-wrap:anywhere]">For {g.exam}{g.scope ? `: ${tidyScope(g.scope)}` : ""}</p> : null}
-      </motion.section>
+        </Card>
+      </motion.div>
 
       {review ? (
-        <section className="rounded-xl border bg-card">
-          <div className="flex items-center gap-2 border-b px-4 py-2.5">
-            <Sparkle weight="light" className="size-4 text-muted-foreground" />
-            <span className="flex-1 font-medium text-sm">What to work on</span>
-            {review.deckPath ? (
-              <Button size="xs" variant="outline" onClick={() => onStudyCards(review.deckPath!)}>
-                Study these cards
-              </Button>
-            ) : null}
-          </div>
-          <div className="px-4 py-3">
-            <StudyText text={review.summary || "Nothing stood out."} space={space} id={`review-${attempt.path}`} />
-          </div>
-        </section>
+        <motion.div ref={reviewRef} className="scroll-mt-6" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE }}>
+          <Card>
+            <div className="flex items-center gap-2.5 border-b px-5 py-3">
+              <Icon icon={icons.ai} className="size-4.5 text-muted-foreground" />
+              <span className="flex-1 font-medium text-base">What to work on</span>
+              {review.deckPath ? (
+                <Button size="sm" variant="outline" onClick={() => onStudyCards(review.deckPath!)}>
+                  Study these cards
+                </Button>
+              ) : null}
+            </div>
+            <div className="px-5 py-4">
+              <StudyText text={review.summary || "Nothing stood out."} space={space} id={`review-${attempt.path}`} />
+            </div>
+          </Card>
+        </motion.div>
       ) : null}
 
       {topics.length > 1 || (topics.length === 1 && topics[0]!.topic !== "Other") ? (
-        <section className="flex flex-col gap-1.5" data-testid="quiz-topics">
-          <h3 className="px-1 font-medium text-muted-foreground text-xs">By topic</h3>
-          <div className="flex flex-col rounded-xl border bg-card py-1">
-            {topics.map((t, i) => (
-              <div key={t.topic} className="flex h-9 items-center gap-3 px-4">
-                <Truncate className="min-w-0 flex-1 text-sm">{t.topic}</Truncate>
-                <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-                  {pointsText(t.points)}/{t.graded}
-                </span>
-                <span className="relative h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted">
-                  <motion.span
-                    className={cn("absolute inset-y-0 left-0 rounded-full", (t.percent ?? 0) >= 80 ? "bg-success" : (t.percent ?? 0) < 60 ? "bg-warning" : "bg-primary")}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${t.percent ?? 0}%` }}
-                    transition={{ duration: 0.5, delay: 0.05 * i, ease: EASE }}
-                  />
-                </span>
-                <span className="w-10 shrink-0 text-right text-sm tabular-nums">{t.percent == null ? "–" : `${Math.round(t.percent)}%`}</span>
-              </div>
-            ))}
-          </div>
+        <section className="flex flex-col gap-3" data-testid="quiz-topics">
+          <h3 className="font-medium text-lg tracking-title">By topic</h3>
+          <Card className="gap-0 px-5 py-2">
+            {topics.map((t, i) => {
+              const p = t.percent ?? 0;
+              return (
+                <div key={t.topic} className="flex h-10 items-center gap-3 text-sm">
+                  <Disc tone={t.percent == null ? "muted" : p >= 80 ? "done" : p >= 50 ? "partial" : "wrong"} />
+                  <Truncate className="min-w-0 flex-1 text-foreground">{t.topic}</Truncate>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                    {pointsText(t.points)}/{t.graded}
+                  </span>
+                  <span className="relative h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted max-sm:hidden">
+                    <motion.span
+                      className="absolute inset-y-0 left-0 rounded-full bg-foreground/35"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${p}%` }}
+                      transition={{ duration: 0.5, delay: 0.05 * i, ease: EASE }}
+                    />
+                  </span>
+                  <span className="w-12 shrink-0 text-right text-foreground tabular-nums">{t.percent == null ? "–" : `${Math.round(p)}%`}</span>
+                </div>
+              );
+            })}
+          </Card>
         </section>
       ) : null}
 
       {items.length ? (
-        <section className="flex flex-col gap-1.5" data-testid="quiz-review">
-          <h3 className="px-1 font-medium text-muted-foreground text-xs">What to go over</h3>
-          <div className="flex flex-col gap-2">
+        <section className="flex flex-col gap-3" data-testid="quiz-review">
+          <h3 className="font-medium text-lg tracking-title">What to go over</h3>
+          <div className="flex flex-col gap-3">
             {items.map((it) => {
               const question = quiz.questions.find((x) => x.id === it.id)!;
               return <ReviewCard key={it.id} space={space} number={it.index + 1} question={question} result={byId.get(it.id)!} why={WHY_WORDS[it.why]} defaultOpen={it.why === "confident-miss" || it.why === "miss"} />;
@@ -645,9 +729,12 @@ function Results({
       ) : null}
 
       <Collapsible>
-        <CollapsibleTrigger className="px-1 text-muted-foreground text-xs hover:text-foreground">All {plural(quiz.questions.length, "answer")}</CollapsibleTrigger>
+        <CollapsibleTrigger className="group flex items-center gap-1.5 text-muted-foreground text-sm transition-colors hover:text-foreground">
+          <Icon icon={icons.chevronRight} className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
+          All {plural(quiz.questions.length, "answer")}
+        </CollapsibleTrigger>
         <CollapsiblePanel>
-          <div className="flex flex-col gap-2 pt-2">
+          <div className="flex flex-col gap-3 pt-3">
             {quiz.questions.map((x, i) => (byId.get(x.id) ? <ReviewCard key={x.id} space={space} number={i + 1} question={x} result={byId.get(x.id)!} /> : null))}
           </div>
         </CollapsiblePanel>
@@ -656,10 +743,19 @@ function Results({
   );
 }
 
+function OutcomeRow({ tone, label }: { tone: "done" | "partial" | "wrong" | "muted"; label: string }) {
+  return (
+    <div className="flex h-9 items-center gap-3 text-sm">
+      <Disc tone={tone} />
+      <span className="text-foreground tabular-nums">{label}</span>
+    </div>
+  );
+}
+
 /** One segment per question, coloured by how it went. */
 function ScoreBar({ results }: { results: QuestionResult[] }) {
   return (
-    <div className="mt-4 flex gap-0.5" aria-hidden>
+    <div className="flex gap-1" aria-hidden>
       {results.map((r, i) => {
         const v = verdictOf(r);
         return (
@@ -667,8 +763,8 @@ function ScoreBar({ results }: { results: QuestionResult[] }) {
             key={r.id}
             initial={{ opacity: 0, scaleY: 0.4 }}
             animate={{ opacity: 1, scaleY: 1 }}
-            transition={{ duration: 0.2, delay: 0.02 * i, ease: EASE }}
-            className={cn("h-1.5 flex-1 rounded-full", v === "correct" ? "bg-success" : v === "partial" ? "bg-warning" : v === "wrong" ? "bg-error/70" : "bg-muted")}
+            transition={{ duration: 0.2, delay: 0.03 * i, ease: EASE }}
+            className={cn("h-1.5 flex-1 rounded-full", v === "correct" ? "bg-primary" : v === "partial" ? "bg-warning/50" : v === "wrong" ? "bg-destructive/35" : "bg-muted")}
           />
         );
       })}
@@ -703,14 +799,14 @@ function ReviewCard({ space, number, question, result, why, defaultOpen = false 
   const given = answerList(result.given).map((a) => choiceLabel(question, a)).join(", ");
   const expected = answerList(result.expected).map((a) => choiceLabel(question, a)).join(", ");
   return (
-    <Collapsible defaultOpen={defaultOpen} className="rounded-xl border bg-card">
-      <CollapsibleTrigger className="flex w-full items-start gap-3 px-4 py-3 text-left">
-        <span className={cn("mt-0.5 shrink-0 [&_svg]:size-4", v.className)}>{v.icon}</span>
+    <Collapsible defaultOpen={defaultOpen} className="overflow-hidden rounded-card border bg-card shadow-card">
+      <CollapsibleTrigger className="group flex w-full items-start gap-3 px-5 py-4 text-left outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50">
+        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-2xs text-muted-foreground tabular-nums">{number}</span>
         <div className="min-w-0 flex-1">
-          <div className="mb-0.5 flex items-center gap-1.5 text-muted-foreground text-xs">
-            <span className="tabular-nums">{number}</span>
-            <span className="text-subtle-foreground">·</span>
-            <span className={v.className}>{verdict === "partial" && result.partial != null ? `${Math.round(result.partial * 100)}%` : (why ?? v.label)}</span>
+          <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground text-sm">
+            <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-xs tabular-nums", v.chip)}>
+              {verdict === "partial" && result.partial != null ? `${Math.round(result.partial * 100)}% right` : (why ?? v.label)}
+            </span>
             {question.topic ? (
               <>
                 <span className="text-subtle-foreground">·</span>
@@ -718,20 +814,21 @@ function ReviewCard({ space, number, question, result, why, defaultOpen = false 
               </>
             ) : null}
           </div>
-          <StudyText text={question.prompt} space={space} id={`r-${question.id}`} reveal={question.kind === "cloze"} className="[&_.markdown]:text-sm" />
+          <StudyText text={question.prompt} space={space} id={`r-${question.id}`} reveal={question.kind === "cloze"} className="[&_.markdown]:text-base" />
         </div>
+        <Icon icon={icons.chevronDown} className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
       </CollapsibleTrigger>
       <CollapsiblePanel>
-        <div className="flex flex-col gap-2.5 border-t px-4 py-3 pl-11 text-sm">
+        <div className="flex flex-col gap-3 px-5 pb-5 pl-13 text-sm">
           {!result.correct ? (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl border border-border/70 bg-well px-4 py-3 text-sm">
               <dt className="text-muted-foreground">You said</dt>
-              <dd className="min-w-0">{given ? <StudyText text={given} space={space} id={`g-${question.id}`} className="[&_.markdown]:text-xs" /> : <span className="text-muted-foreground">Nothing</span>}</dd>
+              <dd className="min-w-0">{given ? <StudyText text={given} space={space} id={`g-${question.id}`} className="[&_.markdown]:text-sm" /> : <span className="text-muted-foreground">Nothing</span>}</dd>
               {expected ? (
                 <>
                   <dt className="text-muted-foreground">{typed && question.kind === "short" ? "A good answer" : "Answer"}</dt>
                   <dd className="min-w-0">
-                    <StudyText text={expected} space={space} id={`e-${question.id}`} className="[&_.markdown]:text-xs" />
+                    <StudyText text={expected} space={space} id={`e-${question.id}`} className="[&_.markdown]:text-sm" />
                   </dd>
                 </>
               ) : null}
@@ -754,12 +851,15 @@ function ReviewCard({ space, number, question, result, why, defaultOpen = false 
 
 function QuizSkeleton() {
   return (
-    <div className="flex flex-col gap-5 motion-safe:animate-skeleton" aria-hidden>
-      <Skeleton className="h-2.5 w-48 animate-none" />
-      <Skeleton className="h-4 w-4/5 animate-none" />
-      <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-6 motion-safe:animate-skeleton" aria-hidden>
+      <div className="flex flex-col gap-3">
+        <Skeleton className="h-3 w-32 animate-none" />
+        <Skeleton className="h-1 w-full animate-none" />
+      </div>
+      <Skeleton className="h-5 w-4/5 animate-none" />
+      <div className="flex flex-col gap-2">
         {[0, 1, 2, 3].map((k) => (
-          <Skeleton key={k} className="h-11 w-full animate-none rounded-lg" />
+          <Skeleton key={k} className="h-14 w-full animate-none rounded-card" />
         ))}
       </div>
     </div>
@@ -767,16 +867,16 @@ function QuizSkeleton() {
 }
 
 const CHOICE =
-  "group flex min-h-11 items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left outline-none transition-colors duration-150 hover:border-input hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary/60 data-checked:bg-primary/6 data-checked:hover:border-primary/60 data-checked:hover:bg-primary/8";
-const BADGE =
-  "flex size-6 shrink-0 items-center justify-center border font-medium text-muted-foreground text-xs tabular-nums transition-colors group-data-checked:border-primary group-data-checked:bg-primary group-data-checked:text-primary-foreground";
+  "group flex min-h-14 items-center gap-4 rounded-card border bg-card px-4 py-3 text-left shadow-card outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:bg-primary/4 data-checked:ring-1 data-checked:ring-primary";
+const KEYCAP =
+  "flex size-7 shrink-0 items-center justify-center rounded-md border bg-keycap font-medium text-muted-foreground text-xs tabular-nums transition-colors group-data-checked:border-primary group-data-checked:bg-primary group-data-checked:text-primary-foreground";
 
 /** Enter, ← and → move between questions, so Base UI's own handling of those keys stays out of the way (↑ and ↓ still move between choices). */
 const quizKeys = (e: React.KeyboardEvent & { preventBaseUIHandler?: () => void }) => {
   if (e.key === "Enter" || e.key === "ArrowLeft" || e.key === "ArrowRight") e.preventBaseUIHandler?.();
 };
 
-/** A question's choices as Base UI radios (one answer) or checkboxes (several), drawn as numbered cards. */
+/** A question's choices as Base UI radios (one answer) or checkboxes (several), drawn as large cards with their key. */
 function ChoiceList({
   multi,
   choices,
@@ -790,18 +890,20 @@ function ChoiceList({
   onAnswer: (a: string | string[]) => void;
   render: (choice: string, index: number) => ReactNode;
 }) {
-  const badge = (i: number, picked: boolean) => (
-    <span className={cn(BADGE, multi ? "rounded-md" : "rounded-full")}>{multi && picked ? <CheckCircle weight="bold" className="size-3.5" /> : i < 9 ? i + 1 : choiceLetter(i)}</span>
+  const keycap = (i: number, picked: boolean) => (
+    <span className={KEYCAP} aria-hidden>
+      {multi && picked ? <Icon icon={icons.check} className="size-3.5" /> : i < 9 ? i + 1 : choiceLetter(i)}
+    </span>
   );
   if (multi) {
     const list = answerList(answer as never);
     const value = choices.filter((c) => includesAnswer(answer as never, c));
     return (
-      <CheckboxGroup value={value} onValueChange={(v) => onAnswer(list.filter((x) => !choices.includes(x)).concat(v as string[]))} aria-label="Choices" className="flex flex-col gap-1.5">
-        <p className="text-muted-foreground text-xs">Choose all that apply.</p>
+      <CheckboxGroup value={value} onValueChange={(v) => onAnswer(list.filter((x) => !choices.includes(x)).concat(v as string[]))} aria-label="Choices" className="flex flex-col gap-2">
+        <p className="text-muted-foreground text-sm">Choose all that apply.</p>
         {choices.map((c, i) => (
-          <CheckboxPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
-            {badge(i, value.includes(c))}
+          <CheckboxPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} nativeButton render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
+            {keycap(i, value.includes(c))}
             {render(c, i)}
           </CheckboxPrimitive.Root>
         ))}
@@ -810,10 +912,10 @@ function ChoiceList({
   }
   const value = choices.find((c) => includesAnswer(answer as never, c)) ?? null;
   return (
-    <RadioGroupPrimitive value={value} onValueChange={(v) => onAnswer(v as string)} aria-label="Choices" className="flex flex-col gap-1.5">
+    <RadioGroupPrimitive value={value} onValueChange={(v) => onAnswer(v as string)} aria-label="Choices" className="flex flex-col gap-2">
       {choices.map((c, i) => (
-        <RadioPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
-          {badge(i, value === c)}
+        <RadioPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} nativeButton render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
+          {keycap(i, value === c)}
           {render(c, i)}
         </RadioPrimitive.Root>
       ))}

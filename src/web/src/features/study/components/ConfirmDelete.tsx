@@ -3,7 +3,6 @@ import { cleanMessage, FieldError } from "@/components/errors";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogClose, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogPopup, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Spinner } from "@/components/ui/spinner";
 import { studyDelete } from "../api";
 
 /** "Delete “Sets and functions”?": the deck or quiz file goes; nothing else does. */
@@ -49,19 +48,18 @@ export function ConfirmDelete({
         }
       }}
     >
-      <AlertDialogPopup className="max-w-sm">
+      <AlertDialogPopup className="max-w-sm rounded-panel">
         <AlertDialogHeader>
-          <AlertDialogTitle className="text-lg">Delete “{shown?.title}”?</AlertDialogTitle>
+          <AlertDialogTitle className="font-medium text-lg tracking-title">Delete “{shown?.title}”?</AlertDialogTitle>
           <AlertDialogDescription>
             {shown?.kind === "quiz" ? "The quiz is deleted. Past scores go with it." : "The deck and its review history are deleted."} This can’t be undone.
           </AlertDialogDescription>
           <FieldError>{error}</FieldError>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogClose render={<Button size="sm" variant="ghost" />}>Cancel</AlertDialogClose>
-          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
-            {busy ? <Spinner size="sm" /> : null}
-            {busy ? "Deleting…" : "Delete"}
+          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <Button variant="destructive" shape="pill" pending={busy} onClick={() => void remove()}>
+            Delete
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

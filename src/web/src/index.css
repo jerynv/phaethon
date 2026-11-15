@@ -29,6 +29,9 @@
   --viewport-max-width: calc(100vw - 2rem);
   --dialog-max-width: 92vw;
   --dialog-max-height: 92vh;
+  /* A dialog anchored near the top (one whose steps change height) keeps its top edge here. */
+  --dialog-top: 12vh;
+  --dialog-anchored-max-height: calc(100% - var(--dialog-top));
   /* Layers, bottom to top. */
   --z-sheet: 46;
   --z-dialog: 60;

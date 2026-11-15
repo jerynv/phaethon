@@ -55,7 +55,7 @@ No raw values in components: use these tokens and the Tailwind scale. A one-off 
 
 Each status colour has a `-foreground` for text on white and is used as a tint (`bg-success/8 text-success-foreground`) for badges, as in "Synced", "Pending", "Active".
 
-Art palettes are tokens too (`--art-{sky,dawn,meadow,lilac,ember}-{0…4}`): a base and four mesh colours each, soft pastel (L 62–95 %, C ≤ 0.16). They are the same in both themes; `--art-veil` lays a 38 % panel-coloured veil over art in dark mode.
+Art palettes are tokens too (`--art-{sky,dawn,meadow,lilac,ember}-{0…4}`): a base and four mesh colours each, soft pastel (L 62–95 %, C ≤ 0.16). They are the same in both themes; `--art-veil` lays a 22 % panel-coloured veil over art in dark mode.
 
 ### Radius
 

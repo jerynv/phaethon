@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNav } from "@/app/store";
+import { ArtTile } from "@/components/art";
 import { RowError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
 import { studySources } from "@/features/study/api";
 import { MakeDialog } from "@/features/study/components/MakeDialog";
@@ -45,16 +45,18 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   }, [block, space, question]);
 
   const kind = read.state === "ok" ? read.kind : guessKind(code);
-  const glyph = kind === "quiz" ? icons.quiz : icons.study;
+  const glyph = kind === "quiz" ? icons.quiz : icons.deck;
 
   if (read.state === "invalid") return <RowError className="my-2" message={`This study plan couldn’t be read: ${read.why}`} />;
   if (read.state === "writing" || (!plan && !planError)) {
     return (
-      <div className="my-3 flex items-center gap-3 rounded-card border bg-card p-4 shadow-card">
-        <Icon icon={glyph} className="size-5 text-muted-foreground" />
-        <div className="flex flex-1 flex-col gap-1.5">
-          <span className="text-shimmer font-medium text-sm">{kind === "quiz" ? "Planning a quiz…" : "Planning flashcards…"}</span>
-          <Skeleton className="h-2 w-2/3" />
+      <div className="my-3 flex items-center gap-4 rounded-card border bg-card p-3 shadow-card">
+        <span className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-well text-muted-foreground">
+          <Icon icon={glyph} className="size-5" />
+        </span>
+        <div className="flex flex-1 flex-col gap-2">
+          <span className="text-shimmer text-base">{kind === "quiz" ? "Planning a quiz…" : "Planning flashcards…"}</span>
+          <Skeleton className="h-2.5 w-2/3" />
         </div>
       </div>
     );
@@ -70,44 +72,48 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
 
   return (
     <div className="my-3 overflow-hidden rounded-card border bg-card shadow-card" data-testid="study-block">
-      <div className="flex items-start gap-3 p-4">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-well text-foreground">
-          <Icon icon={glyph} className="size-4.5" />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex items-start gap-4 p-3">
+        <ArtTile palette="lilac" seed={planTitle(plan)} className="size-14">
+          <span className="flex size-full items-center justify-center">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-card/90 text-foreground shadow-card">
+              <Icon icon={glyph} className="size-4" />
+            </span>
+          </span>
+        </ArtTile>
+        <div className="flex min-w-0 flex-1 flex-col gap-1 py-0.5">
           <span className="truncate font-medium text-base">{planTitle(plan)}</span>
           <p className="text-muted-foreground text-sm [overflow-wrap:anywhere]">{planSentence(plan)}</p>
           {plan.sources.length ? (
             <div className="mt-1 flex flex-wrap gap-1">
               {plan.sources.slice(0, 6).map((s) => (
-                <span key={s.path} className="inline-flex max-w-48 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground">
+                <span key={s.path} className="inline-flex max-w-48 items-center gap-1 rounded-md border border-border/70 bg-well px-1.5 py-0.5 text-muted-foreground text-xs">
                   <Icon icon={icons.fileText} className="size-3" />
                   <span className="truncate">{s.name}</span>
                 </span>
               ))}
-              {plan.sources.length > 6 ? <span className="px-1 py-0.5 text-2xs text-muted-foreground tabular-nums">+{plan.sources.length - 6}</span> : null}
+              {plan.sources.length > 6 ? <span className="px-1 py-0.5 text-muted-foreground text-xs tabular-nums">+{plan.sources.length - 6}</span> : null}
             </div>
           ) : null}
           {open && sources.error ? <RowError className="mt-1" message={`Couldn’t list your courses: ${errorText(sources.error)}`} onRetry={sources.reload} /> : null}
           {notes.map((n) => (
-            <p key={n} className="flex items-start gap-1.5 text-warning-foreground text-xs">
-              <Icon icon={icons.error} className="mt-0.5 size-3.5" />
+            <p key={n} className="flex items-start gap-1.5 text-sm text-warning-foreground">
+              <Icon icon={icons.warning} className="mt-0.5 size-3.5" />
               <span className="[overflow-wrap:anywhere]">{n}</span>
             </p>
           ))}
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 self-center">
           {path ? (
-            <Button size="xs" onClick={() => openMade(plan.kind === "quiz" ? { kind: "quiz", path } : { kind: "review", paths: [path] })}>
+            <Button size="sm" onClick={() => openMade(plan.kind === "quiz" ? { kind: "quiz", path } : { kind: "review", paths: [path] })}>
               {openLabel(plan)}
             </Button>
           ) : plan.running ? (
-            <Button size="xs" variant="outline" disabled>
-              <Spinner size="xs" /> Making…
+            <Button size="sm" variant="outline" pending>
+              Making…
             </Button>
           ) : (
-            <Button size="xs" disabled={open && !draft && !sources.error} onClick={() => (sources.error ? sources.reload() : undefined, setOpen(true))}>
-              {open && !draft && !sources.error ? <Spinner size="xs" /> : <Icon icon={icons.ai} />}
+            <Button size="sm" pending={open && !draft && !sources.error} onClick={() => (sources.error ? sources.reload() : undefined, setOpen(true))}>
+              <Icon icon={icons.ai} />
               {plan.kind === "quiz" ? "Make this quiz" : "Make these cards"}
             </Button>
           )}

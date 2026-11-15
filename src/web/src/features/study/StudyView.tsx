@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
+import { useNav } from "@/app/store";
 import { DeckEditor } from "./components/DeckEditor";
 import { useStudyFlow } from "./flow-store";
 import { Overview } from "./components/Overview";
@@ -25,6 +26,14 @@ export function StudyView({ space }: { space: SpaceView }) {
     if (next) setScreen(useStudyFlow.getState().take(space.id) ?? next);
   }, [next, space.id]);
   const back = () => setScreen({ kind: "overview" });
+  // Clicking the Study tab while it is already selected goes back to the overview.
+  const retap = useNav((s) => (s.retap.view === "study" ? s.retap.n : 0));
+  const seenRetap = useRef(retap);
+  useEffect(() => {
+    if (!retap || retap === seenRetap.current) return;
+    seenRetap.current = retap;
+    setScreen({ kind: "overview" });
+  }, [retap]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {screen.kind === "overview" ? <Overview space={space} open={setScreen} /> : null}

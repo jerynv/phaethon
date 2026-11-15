@@ -107,15 +107,17 @@ function ViewTabs() {
   const view = useNav((s) => s.view);
   const settings = useNav((s) => s.settings);
   const setView = useNav((s) => s.setView);
+  const retap = useNav((s) => s.retapView);
   if (!space?.educationEnabled) return null;
   return (
     <Tabs value={settings ? null : view} onValueChange={(v) => setView(v as View)} className="app-no-drag shrink-0">
       <TabsList aria-label="Views" variant="pill">
         {VIEWS.map((v, i) => (
           <Tooltip key={v.id}>
-            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} className="h-6 gap-1.5 px-2 font-normal [&_svg]:size-3.5" />}>
+            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} onClick={() => !settings && v.id === view && retap(v.id)} className="h-6 gap-1.5 px-2 font-normal [&_svg]:size-3.5" />}>
               <Icon icon={v.icon} />
-              <span className="@max-header-labels/lead:hidden">{v.label}</span>
+              {/* Narrow bars show icons only; so do the other tabs while a page shows a back crumb, so the crumb always fits. */}
+              <span className="@max-header-labels/lead:hidden group-has-[[data-slot=crumbs]]/header:[[role=tab][aria-selected=false]_&]:hidden">{v.label}</span>
             </TooltipTrigger>
             <TooltipPopup side="bottom">
               <span className="flex items-center gap-2">
@@ -180,7 +182,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
       data-slot="app-header"
       data-sidebar={sidebarOpen ? "open" : "closed"}
       className={cn(
-        "@container/header app-drag grid h-(--titlebar-height) shrink-0 items-center border-b transition-[grid-template-columns] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
+        "group/header @container/header app-drag grid h-(--titlebar-height) shrink-0 items-center border-b transition-[grid-template-columns] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
         // The first track is the sidebar's width, so search centres over the page below it.
         "grid-cols-[var(--sidebar-width)_minmax(0,1fr)_auto_minmax(0,1fr)] data-[sidebar=closed]:grid-cols-[0_minmax(0,1fr)_auto_minmax(0,1fr)]",
       )}

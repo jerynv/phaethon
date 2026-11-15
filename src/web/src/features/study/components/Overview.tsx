@@ -1,30 +1,37 @@
-import { Cards, Exam } from "@phosphor-icons/react";
-import { EllipsisIcon, PencilLineIcon, PlusIcon } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
+import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Card, CardMedia } from "@/components/ui/card";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { useDelayed } from "@/hooks/use-delayed";
 import { compactTime } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { studyOverview, studySources } from "../api";
 import { draftCount } from "../lib/quiz-answers";
-import type { DeckSummary, QuizSummary } from "../lib/types";
+import type { DeckSummary, QuizSummary, StudyOverview } from "../lib/types";
 import { percent, plural, reviewMinutes } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { useLoad } from "../use-load";
 import { ConfirmDelete } from "./ConfirmDelete";
 import { MakeDialog } from "./MakeDialog";
-import { GroupLabel } from "./parts";
+import { EASE } from "./motion";
+import { Page, StudyText } from "./parts";
 
-const WIDTHS = ["58%", "44%", "67%", "51%"];
-
+/**
+ * Study's front page (docs/UI-REBUILD.md › Study › Overview): what's due as a
+ * hero card over lilac art, four numbers, then decks and quizzes as
+ * artifact cards (a grey frame holding a white sheet, the name below).
+ */
 export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScreen) => void }) {
   const overview = useLoad(() => studyOverview(space.id), [space.id]);
   const sources = useLoad(() => studySources(space.id), [space.id]);
@@ -34,6 +41,7 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
   const skeleton = useDelayed(overview.loading && !overview.data);
   const data = overview.data;
   const nothing = data && !data.decks.length && !data.quizzes.length;
+  const noCourses = !!sources.data && !sources.data.length;
 
   const startMake = (kind: "deck" | "quiz") => {
     setLastMake(kind);
@@ -43,103 +51,84 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
   return (
     <>
       <Header
-        title="Study"
         actions={
           <Menu>
-            <MenuTrigger render={<Button size="xs" variant="outline" />}>
-              <PlusIcon />
+            <MenuTrigger render={<Button size="sm" variant="outline" />}>
+              <Icon icon={icons.add} />
               New
             </MenuTrigger>
-            <MenuPopup align="end" className="min-w-52">
+            <MenuPopup align="end" className="min-w-56">
               <MenuItem onClick={() => startMake("deck")}>
-                <Cards />
+                <Icon icon={icons.deck} />
                 Cards from course materials
               </MenuItem>
               <MenuItem onClick={() => startMake("quiz")}>
-                <Exam />
+                <Icon icon={icons.quiz} />
                 Quiz from course materials
               </MenuItem>
               <MenuSeparator />
               <MenuItem onClick={() => open({ kind: "deck", path: null })}>
-                <PencilLineIcon />
+                <Icon icon={icons.rename} />
                 Write cards yourself
               </MenuItem>
             </MenuPopup>
           </Menu>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
-          {overview.error ? <SurfaceError title="Couldn’t load your decks and quizzes" message={cleanMessage(overview.error)} onRetry={overview.reload} /> : null}
-          {skeleton ? <OverviewSkeleton /> : null}
-          {nothing ? (
-            <Empty className="min-h-[60vh]">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Cards />
-                </EmptyMedia>
-                <EmptyTitle>Nothing to study yet</EmptyTitle>
-                <EmptyDescription>
-                  {sources.data && !sources.data.length
-                    ? "Import a course to make flashcards and practice quizzes from its materials."
-                    : "Make flashcards or a practice quiz from your course materials."}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                {sources.data && !sources.data.length ? (
-                  <Button size="sm" onClick={() => useNav.getState().setView("courses")}>
-                    Open courses
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={() => startMake("deck")}>
-                    <Cards />
-                    Make cards
-                  </Button>
-                )}
-              </EmptyContent>
-            </Empty>
-          ) : data ? (
-            <>
-              <DueStrip
-                due={data.due}
-                fresh={data.decks.reduce((n, d) => n + d.new, 0)}
-                streak={data.streakDays}
-                onReview={() => open({ kind: "review", paths: null })}
-              />
-              <section className="flex flex-col gap-1">
-                <ListHead label="Decks" count={data.decks.length} columns={["Due", "Cards", "Mastery"]} />
-                {data.decks.length ? (
-                  data.decks.map((d) => (
-                    <DeckRow
-                      key={d.path}
-                      deck={d}
-                      onOpen={() => open({ kind: "review", paths: [d.path], title: d.title })}
-                      onEdit={() => open({ kind: "deck", path: d.path })}
-                      onDelete={() => setRemove({ path: d.path, title: d.title, kind: "deck" })}
-                    />
-                  ))
-                ) : (
-                  <InlineEmpty action="Make cards" onAction={() => startMake("deck")}>
-                    No decks yet.
-                  </InlineEmpty>
-                )}
-              </section>
-              <section className="flex flex-col gap-1">
-                <ListHead label="Quizzes" count={data.quizzes.length} columns={["Questions", "Last score", "Taken"]} />
-                {data.quizzes.length ? (
-                  data.quizzes.map((q) => (
-                    <QuizRow key={q.path} space={space.id} quiz={q} onOpen={() => open({ kind: "quiz", path: q.path })} onDelete={() => setRemove({ path: q.path, title: q.title, kind: "quiz" })} />
-                  ))
-                ) : (
-                  <InlineEmpty action="Make a quiz" onAction={() => startMake("quiz")}>
-                    No quizzes yet.
-                  </InlineEmpty>
-                )}
-              </section>
-            </>
-          ) : null}
-        </div>
-      </div>
+      <Page>
+        {overview.error ? <SurfaceError title="Couldn’t load your decks and quizzes" message={cleanMessage(overview.error)} onRetry={overview.reload} /> : null}
+        {skeleton ? <OverviewSkeleton /> : null}
+        {nothing ? (
+          <EmptyStudy
+            noCourses={noCourses}
+            onCourses={() => useNav.getState().setView("courses")}
+            onMake={() => startMake("deck")}
+            onWrite={() => open({ kind: "deck", path: null })}
+          />
+        ) : data ? (
+          <>
+            <DueCard data={data} onReview={() => open({ kind: "review", paths: null })} onQuiz={(path) => open({ kind: "quiz", path })} onMake={() => startMake("deck")} />
+            <Stats data={data} />
+            <Section icon={icons.deck} label="Decks" count={data.decks.length} action="Make cards" onAction={() => startMake("deck")}>
+              {data.decks.length ? (
+                data.decks.map((d, i) => (
+                  <DeckCard
+                    key={d.path}
+                    index={i}
+                    space={space.id}
+                    deck={d}
+                    onOpen={() => open({ kind: "review", paths: [d.path], title: d.title })}
+                    onEdit={() => open({ kind: "deck", path: d.path })}
+                    onDelete={() => setRemove({ path: d.path, title: d.title, kind: "deck" })}
+                  />
+                ))
+              ) : (
+                <SectionEmpty action="Make cards" onAction={() => startMake("deck")}>
+                  No decks yet. Make some from a course, or write your own.
+                </SectionEmpty>
+              )}
+            </Section>
+            <Section icon={icons.quiz} label="Quizzes" count={data.quizzes.length} action="Make a quiz" onAction={() => startMake("quiz")}>
+              {data.quizzes.length ? (
+                data.quizzes.map((q, i) => (
+                  <QuizCard
+                    key={q.path}
+                    index={i}
+                    space={space.id}
+                    quiz={q}
+                    onOpen={() => open({ kind: "quiz", path: q.path })}
+                    onDelete={() => setRemove({ path: q.path, title: q.title, kind: "quiz" })}
+                  />
+                ))
+              ) : (
+                <SectionEmpty action="Make a quiz" onAction={() => startMake("quiz")}>
+                  No quizzes yet. Practice for a test with questions from its materials.
+                </SectionEmpty>
+              )}
+            </Section>
+          </>
+        ) : null}
+      </Page>
       <MakeDialog
         space={space.id}
         kind={make ?? lastMake}
@@ -165,172 +154,352 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
   );
 }
 
-function DueStrip({ due, fresh, streak, onReview }: { due: number; fresh: number; streak: number; onReview: () => void }) {
-  const title = due ? plural(due, "card") + " due" : fresh ? `${plural(fresh, "new card")} to learn` : "Nothing due";
+/** "2h ago", "just now", "Nov 5" (b72b's "1h ago" under each card). */
+function ago(ms: number): string {
+  const t = compactTime(ms);
+  return t === "now" ? "just now" : /^\d+[mhd]$/.test(t) ? `${t} ago` : t;
+}
+
+/** Chosen so the lilac mesh has one saturated blob near the middle of the strip (2c35, d1d3), not even bands. */
+const HERO_SEED = "study-2686";
+
+const newCards = (data: StudyOverview) => data.decks.reduce((n, d) => n + d.new, 0);
+
+/** The quiz to suggest when no cards want you: one never taken, else the one taken longest ago. */
+function staleQuiz(data: StudyOverview): QuizSummary | undefined {
+  return [...data.quizzes].filter((q) => q.questions > 0).sort((a, b) => (a.lastTaken ?? 0) - (b.lastTaken ?? 0))[0];
+}
+
+/**
+ * The hero: how much is due, about how long it takes, and the one ink action
+ * (the overview's only ink button). Caught up, the action is still live: take
+ * a quiz, or make more cards.
+ */
+function DueCard({ data, onReview, onQuiz, onMake }: { data: StudyOverview; onReview: () => void; onQuiz: (path: string) => void; onMake: () => void }) {
+  const fresh = newCards(data);
+  const quiz = !data.due && !fresh ? staleQuiz(data) : undefined;
+  const { due, streakDays: streak } = data;
+  const title = due ? plural(due, "card") + " due" : fresh ? `${plural(fresh, "new card")} to learn` : "You’re caught up";
   const meta = [
-    due ? `About ${plural(reviewMinutes(due), "minute")}` : fresh ? null : "Cards come due again as you review them",
+    due ? `About ${plural(reviewMinutes(due), "minute")}` : fresh ? null : quiz ? `${quiz.title} is ready to practise` : "Cards come due again as you review them",
     due && fresh ? `${fresh} new` : null,
     streak > 1 ? `${streak}-day streak` : null,
   ].filter(Boolean);
   return (
-    <div className="flex items-center gap-3 rounded-xl border bg-card px-3.5 py-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Cards className="size-4" />
+    <Card data-testid="study-due" className="rounded-panel">
+      <CardMedia className="h-28">
+        <ArtCanvas palette="lilac" seed={HERO_SEED} weave className="absolute inset-0" />
+      </CardMedia>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-4 p-5">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-medium text-xl tabular-nums tracking-title">{title}</h2>
+          {meta.length ? <p className="mt-1 text-muted-foreground text-sm tabular-nums">{meta.join(" · ")}</p> : null}
+        </div>
+        {due || fresh ? (
+          <Button onClick={onReview}>
+            {due ? "Review due cards" : "Learn new cards"}
+            <Icon icon={icons.arrowRight} />
+          </Button>
+        ) : quiz ? (
+          <Button onClick={() => onQuiz(quiz.path)}>
+            Take a quiz
+            <Icon icon={icons.arrowRight} />
+          </Button>
+        ) : (
+          <Button onClick={onMake}>
+            <Icon icon={icons.add} />
+            Make cards
+          </Button>
+        )}
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="font-medium text-sm tabular-nums">{title}</div>
-        {meta.length ? <div className="truncate text-muted-foreground text-xs tabular-nums">{meta.join(" · ")}</div> : null}
-      </div>
-      <Button size="xs" disabled={!due && !fresh} onClick={onReview}>
-        {due ? "Review due cards" : "Learn new cards"}
-      </Button>
-    </div>
+    </Card>
   );
 }
 
-function ListHead({ label, count, columns }: { label: string; count: number; columns: [string, string, string] }) {
+/** Four numbers, label above. Mastery is weighted by how many cards each deck has. */
+function Stats({ data }: { data: StudyOverview }) {
+  const cards = data.decks.reduce((n, d) => n + d.cards, 0);
+  const known = cards ? data.decks.reduce((n, d) => n + d.mastery * d.cards, 0) / cards : 0;
   return (
-    <div className="flex h-6 items-center gap-2.5 pr-2">
-      <GroupLabel count={count} className="flex-1">
-        {label}
-      </GroupLabel>
-      <span className="w-16 text-right text-2xs text-muted-foreground max-sm:hidden">{columns[0]}</span>
-      <span className="w-16 text-right text-2xs text-muted-foreground">{columns[1]}</span>
-      <span className="w-16 text-right text-2xs text-muted-foreground max-sm:hidden">{columns[2]}</span>
-      <span className="w-6" />
-    </div>
+    <StatGrid>
+      <StatTile label="Due now" value={data.due} />
+      <StatTile label="New cards" value={newCards(data)} />
+      <StatTile label="Known" value={cards ? `${Math.round(known * 100)}%` : "–"} />
+      <StatTile label="Streak" value={data.streakDays} unit={data.streakDays === 1 ? "day" : "days"} />
+    </StatGrid>
   );
 }
 
-function Row({ icon, title, course, onOpen, cells, menu }: { icon: ReactNode; title: string; course?: string; onOpen: () => void; cells: [ReactNode, ReactNode, ReactNode]; menu: ReactNode }) {
+function Section({ icon, label, count, action, onAction, children }: { icon: IconData; label: string; count: number; action: string; onAction: () => void; children: ReactNode }) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label={title}
-      onClick={onOpen}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && (e.preventDefault(), onOpen())}
-      className="group flex h-8 cursor-pointer items-center gap-2.5 rounded-md pr-2 pl-2 text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+    <section className="flex flex-col gap-4" aria-label={label}>
+      <div className="flex h-8 items-center gap-2.5">
+        <Icon icon={icon} className="size-4.5 text-muted-foreground" />
+        <h2 className="font-medium text-lg tracking-title">{label}</h2>
+        {count ? <span className="text-sm text-subtle-foreground tabular-nums">{count}</span> : null}
+        <Button size="xs" variant="ghost-muted" className="ml-auto" onClick={onAction}>
+          <Icon icon={icons.add} />
+          {action}
+        </Button>
+      </div>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-7 @xl/page:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * An artifact card (after b72b): a grey frame holding a white sheet that runs
+ * off its bottom edge, with the item's glyph, a line about it and a thin
+ * meter; the name and a muted line sit under the frame.
+ */
+function ArtifactCard({
+  index,
+  icon,
+  title,
+  line,
+  badge,
+  meter,
+  meta,
+  onOpen,
+  menu,
+}: {
+  index: number;
+  icon: IconData;
+  title: string;
+  line: ReactNode;
+  badge?: ReactNode;
+  /** 0..1, or null when there's nothing to measure yet. */
+  meter: number | null;
+  meta: ReactNode;
+  onOpen: () => void;
+  menu: ReactNode;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, delay: Math.min(index, 6) * 0.03, ease: EASE }}
+      className="group relative flex min-w-0 flex-col gap-3"
     >
-      <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">{icon}</span>
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <Truncate className="min-w-0 shrink">{title}</Truncate>
-        {course ? <Truncate className="min-w-0 max-w-80 flex-1 text-muted-foreground text-xs max-md:hidden">{course}</Truncate> : null}
+      {/* The whole card opens it: one real button stretched over the card, with the menu beside it (not inside). */}
+      <button
+        type="button"
+        aria-label={title}
+        onClick={onOpen}
+        className="absolute inset-0 cursor-pointer rounded-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
+      />
+      <div className="pointer-events-none relative h-36 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
+        <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 shadow-card transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <Icon icon={icon} className="size-4.5 text-muted-foreground" />
+            {badge}
+          </div>
+          <div className="h-5 min-w-0 overflow-hidden text-muted-foreground text-sm">{line}</div>
+          <div className="flex flex-col gap-2" aria-hidden>
+            <span className="relative h-1.5 overflow-hidden rounded-full bg-muted">
+              {meter != null ? (
+                <motion.span
+                  className="absolute inset-y-0 left-0 rounded-full bg-foreground/30"
+                  initial={reduce ? false : { width: 0 }}
+                  animate={{ width: `${Math.max(meter > 0 ? 3 : 0, meter * 100)}%` }}
+                  transition={{ duration: 0.5, delay: 0.1 + Math.min(index, 6) * 0.03, ease: EASE }}
+                />
+              ) : null}
+            </span>
+            <span className="h-1.5 w-2/3 rounded-full bg-muted" />
+          </div>
+        </div>
       </div>
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums max-sm:hidden">{cells[0]}</span>
-      <span className="w-16 shrink-0 text-right text-muted-foreground text-xs tabular-nums">{cells[1]}</span>
-      <span className="w-16 shrink-0 text-right text-muted-foreground text-xs tabular-nums max-sm:hidden">{cells[2]}</span>
-      <div className="flex w-6 shrink-0 justify-end" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-        {menu}
+      <div className="absolute top-2 right-2">{menu}</div>
+      <div className="pointer-events-none relative flex min-w-0 flex-col gap-0.5 px-0.5">
+        <Truncate className="min-w-0 font-medium text-base text-foreground">{title}</Truncate>
+        <span className="truncate text-muted-foreground text-sm tabular-nums">{meta}</span>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-function RowMenu({ children, label }: { children: ReactNode; label: string }) {
+/** A sheet's line: the first card or question, as study text on one line (math and blanks drawn, the rest cut). */
+function SheetLine({ text, fallback, space, id }: { text?: string; fallback: string; space: string; id: string }) {
+  if (!text) return <Truncate className="min-w-0">{fallback}</Truncate>;
+  return <StudyText text={text} space={space} id={id} className="truncate [&_*]:inline [&_.katex-display]:my-0 [&_.markdown]:text-muted-foreground [&_.markdown]:text-sm [&_br]:hidden [&_p]:m-0" />;
+}
+
+function CardMenu({ children, label }: { children: ReactNode; label: string }) {
   return (
     <Menu>
       <MenuTrigger
-        render={<Button size="icon-xs" variant="ghost-muted" aria-label={label} className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-popup-open:opacity-100" />}
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            aria-label={label}
+            className="opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-popup-open:opacity-100"
+          />
+        }
       >
-        <EllipsisIcon />
+        <Icon icon={icons.more} />
       </MenuTrigger>
       <MenuPopup align="end">{children}</MenuPopup>
     </Menu>
   );
 }
 
-function DeckRow({ deck, onOpen, onEdit, onDelete }: { deck: DeckSummary; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
+/** A small status chip on a sheet ("2 due", "60%"): blue for what wants you, muted otherwise. */
+function Chip({ tone = "muted", children }: { tone?: "primary" | "muted" | "warning"; children: ReactNode }) {
   return (
-    <Row
-      icon={<Cards />}
-      title={deck.title}
-      course={deck.course}
-      onOpen={onOpen}
-      cells={[
-        deck.due ? <span className="font-medium text-primary">{deck.due}</span> : deck.new ? <span className="text-muted-foreground">{deck.new} new</span> : <span className="text-subtle-foreground">–</span>,
-        deck.cards,
-        deck.cards ? percent(deck.mastery) : "–",
-      ]}
-      menu={
-        <RowMenu label={`Actions for ${deck.title}`}>
-          <MenuItem onClick={onOpen}>Review</MenuItem>
-          <MenuItem onClick={onEdit}>Edit cards</MenuItem>
-          <MenuSeparator />
-          <MenuItem variant="destructive" onClick={onDelete}>
-            Delete…
-          </MenuItem>
-        </RowMenu>
-      }
-    />
-  );
-}
-
-function QuizRow({ space, quiz, onOpen, onDelete }: { space: string; quiz: QuizSummary; onOpen: () => void; onDelete: () => void }) {
-  const draft = draftCount(space, quiz.path);
-  return (
-    <Row
-      icon={<Exam />}
-      title={quiz.title}
-      course={quiz.course}
-      onOpen={onOpen}
-      cells={[
-        quiz.questions || "–",
-        draft ? <span className="text-primary">{draft} answered</span> : quiz.lastScore != null ? <span className={cn("text-foreground", quiz.lastScore < 0.6 && "text-warning-foreground")}>{percent(quiz.lastScore)}</span> : "–",
-        quiz.lastTaken ? compactTime(quiz.lastTaken) : <span className="text-subtle-foreground">Not yet</span>,
-      ]}
-      menu={
-        <RowMenu label={`Actions for ${quiz.title}`}>
-          <MenuItem onClick={onOpen}>Take quiz</MenuItem>
-          <MenuSeparator />
-          <MenuItem variant="destructive" onClick={onDelete}>
-            Delete…
-          </MenuItem>
-        </RowMenu>
-      }
-    />
-  );
-}
-
-function InlineEmpty({ children, action, onAction }: { children: ReactNode; action: string; onAction: () => void }) {
-  return (
-    <div className="flex h-8 items-center gap-1.5 px-2 text-muted-foreground text-xs">
+    <span
+      className={cn(
+        "shrink-0 rounded-md px-1.5 py-0.5 font-medium text-xs tabular-nums",
+        tone === "primary" ? "bg-primary/10 text-primary" : tone === "warning" ? "bg-warning/12 text-warning-foreground" : "bg-muted text-muted-foreground",
+      )}
+    >
       {children}
-      <button type="button" className="font-medium text-foreground underline-offset-2 hover:underline" onClick={onAction}>
+    </span>
+  );
+}
+
+function DeckCard({ index, space, deck, onOpen, onEdit, onDelete }: { index: number; space: string; deck: DeckSummary; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
+  // What's due is on the sheet's chip; the line under the name says where it's from and how well it's known.
+  const meta = [deck.course ?? "Your own cards", plural(deck.cards, "card"), deck.cards ? `${percent(deck.mastery)} known` : null].filter(Boolean).join(" · ");
+  return (
+    <ArtifactCard
+      index={index}
+      icon={icons.deck}
+      title={deck.title}
+      line={<SheetLine text={deck.firstFront} fallback="No cards yet" space={space} id={`sheet-${deck.path}`} />}
+      badge={deck.due ? <Chip tone="primary">{deck.due} due</Chip> : deck.new ? <Chip>{deck.new} new</Chip> : null}
+      meter={deck.cards ? deck.mastery : null}
+      meta={meta}
+      onOpen={onOpen}
+      menu={
+        <CardMenu label={`Actions for ${deck.title}`}>
+          <MenuItem onClick={onOpen}>
+            <Icon icon={icons.play} />
+            Review
+          </MenuItem>
+          <MenuItem onClick={onEdit}>
+            <Icon icon={icons.edit} />
+            Edit cards
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem variant="destructive" onClick={onDelete}>
+            <Icon icon={icons.delete} />
+            Delete…
+          </MenuItem>
+        </CardMenu>
+      }
+    />
+  );
+}
+
+function QuizCard({ index, space, quiz, onOpen, onDelete }: { index: number; space: string; quiz: QuizSummary; onOpen: () => void; onDelete: () => void }) {
+  const draft = draftCount(space, quiz.path);
+  const meta = [quiz.course, plural(quiz.questions, "question"), quiz.lastTaken ? `taken ${ago(quiz.lastTaken)}` : "not taken yet"].filter(Boolean).join(" · ");
+  return (
+    <ArtifactCard
+      index={index}
+      icon={icons.quiz}
+      title={quiz.title}
+      line={<SheetLine text={quiz.firstPrompt} fallback="Practice quiz" space={space} id={`sheet-${quiz.path}`} />}
+      badge={
+        draft ? (
+          <Chip tone="primary">{draft} answered</Chip>
+        ) : quiz.lastScore != null ? (
+          <Chip tone={quiz.lastScore < 0.6 ? "warning" : "muted"}>{percent(quiz.lastScore)}</Chip>
+        ) : null
+      }
+      meter={quiz.lastScore ?? null}
+      meta={meta}
+      onOpen={onOpen}
+      menu={
+        <CardMenu label={`Actions for ${quiz.title}`}>
+          <MenuItem onClick={onOpen}>
+            <Icon icon={icons.play} />
+            Take quiz
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem variant="destructive" onClick={onDelete}>
+            <Icon icon={icons.delete} />
+            Delete…
+          </MenuItem>
+        </CardMenu>
+      }
+    />
+  );
+}
+
+function SectionEmpty({ children, action, onAction }: { children: ReactNode; action: string; onAction: () => void }) {
+  return (
+    <Card variant="well" className="flex-row items-center gap-4 p-4 @xl/page:col-span-2">
+      <p className="min-w-0 flex-1 text-muted-foreground text-sm">{children}</p>
+      <Button size="sm" variant="outline" onClick={onAction}>
         {action}
-      </button>
-    </div>
+      </Button>
+    </Card>
+  );
+}
+
+/** Nothing at all yet: an art card that says what Study does and how to start. */
+function EmptyStudy({ noCourses, onCourses, onMake, onWrite }: { noCourses: boolean; onCourses: () => void; onMake: () => void; onWrite: () => void }) {
+  return (
+    <Card className="mx-auto mt-6 w-full max-w-md rounded-panel">
+      <CardMedia className="h-32">
+        <ArtCanvas palette="lilac" seed="study-empty" weave className="absolute inset-0" />
+      </CardMedia>
+      <div className="flex flex-col gap-1 px-6 pt-5">
+        <h2 className="font-medium text-lg tracking-title">Nothing to study yet</h2>
+        <p className="text-muted-foreground text-sm">
+          {noCourses ? "Import a course to make flashcards and practice quizzes from its materials." : "Make flashcards or a practice quiz from your course materials. Each one is checked against them."}
+        </p>
+      </div>
+      <div className="flex gap-2 p-6 pt-5">
+        {noCourses ? (
+          <Button className="flex-1" onClick={onCourses}>
+            Open courses
+          </Button>
+        ) : (
+          <Button className="flex-1" onClick={onMake}>
+            <Icon icon={icons.deck} />
+            Make cards
+          </Button>
+        )}
+        <Button variant="outline" className="flex-1" onClick={onWrite}>
+          Write your own
+        </Button>
+      </div>
+    </Card>
   );
 }
 
 function OverviewSkeleton() {
   return (
-    <div className="flex flex-col gap-6 motion-safe:animate-skeleton" aria-hidden>
-      <div className="flex items-center gap-3 rounded-xl border px-3.5 py-3">
-        <Skeleton className="size-8 animate-none rounded-lg" />
-        <div className="flex flex-1 flex-col gap-1.5">
-          <Skeleton className="h-2.5 w-28 animate-none" />
-          <Skeleton className="h-2 w-44 animate-none" />
+    <div className="flex flex-col gap-10 motion-safe:animate-skeleton" aria-hidden>
+      <div className="overflow-hidden rounded-panel border">
+        <Skeleton className="h-28 animate-none rounded-none" />
+        <div className="flex items-center gap-6 p-5">
+          <div className="flex flex-1 flex-col gap-2">
+            <Skeleton className="h-4 w-36 animate-none" />
+            <Skeleton className="h-3 w-56 animate-none" />
+          </div>
+          <Skeleton className="h-8 w-40 animate-none rounded-full" />
         </div>
-        <Skeleton className="h-6 w-28 animate-none rounded-md" />
       </div>
-      {[4, 2].map((n, g) => (
-        <div key={g} className="flex flex-col gap-1">
-          <Skeleton className="mx-2 my-2 h-2 w-14 animate-none" />
-          {Array.from({ length: n }, (_, i) => (
-            <div key={i} className="flex h-8 items-center gap-2.5 px-2">
-              <Skeleton className="size-4 animate-none rounded-sm" />
-              <div className="flex-1">
-                <Skeleton className="h-2.5 animate-none" style={{ width: WIDTHS[(i + g) % WIDTHS.length] }} />
-              </div>
-              <Skeleton className="h-2.5 w-8 animate-none" />
-              <Skeleton className="h-2.5 w-8 animate-none" />
-              <Skeleton className="h-2.5 w-8 animate-none" />
-              <span className="w-6" />
-            </div>
-          ))}
-        </div>
-      ))}
+      <StatGrid>
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-22 animate-none rounded-xl" />
+        ))}
+      </StatGrid>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-7 @xl/page:grid-cols-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex flex-col gap-3">
+            <Skeleton className="h-36 animate-none rounded-card" />
+            <Skeleton className="h-3 w-32 animate-none" />
+            <Skeleton className="h-2.5 w-24 animate-none" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

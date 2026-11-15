@@ -598,6 +598,7 @@ export default {
         path,
         title: d.title,
         course: d.course,
+        firstFront: cards[0]?.front.replace(/\s+/g, " ").trim() || undefined,
         cards: cards.length,
         due: rated.filter((c) => (c.due ?? 0) <= now).length,
         new: cards.length - rated.length,
@@ -607,7 +608,7 @@ export default {
     });
     return {
       decks: out,
-      quizzes: Object.entries(quizzes).map(([path, q]) => ({ path, title: q.title, course: q.course, questions: q.questions.length, lastScore: q.lastScore, lastTaken: q.lastTaken })),
+      quizzes: Object.entries(quizzes).map(([path, q]) => ({ path, title: q.title, course: q.course, firstPrompt: q.questions[0]?.prompt.replace(/\s+/g, " ").trim() || undefined, questions: q.questions.length, lastScore: q.lastScore, lastTaken: q.lastTaken })),
       due: out.reduce((n, d) => n + d.due, 0),
       streakDays: empty ? 0 : 4,
     };

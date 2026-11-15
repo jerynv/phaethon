@@ -8,6 +8,8 @@ export type DeckSummary = {
   path: string;
   title: string;
   course?: string;
+  /** The first card's front, folded to one line (the sheet on its overview card). */
+  firstFront?: string;
   cards: number;
   /** Cards already studied whose next review is due now. */
   due: number;
@@ -22,6 +24,8 @@ export type QuizSummary = {
   path: string;
   title: string;
   course?: string;
+  /** The first question, folded to one line. */
+  firstPrompt?: string;
   /** 0 when the file can't be read. */
   questions: number;
   /** 0..1 */

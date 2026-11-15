@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { Icon } from "@/components/icon";
+import { LmsMark } from "@/components/site-mark";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,6 @@ import { useCourses } from "../store";
 type Step = "kind" | "address" | "waiting";
 
 /** Each kind's tile: a plain monogram, so the four rows tell apart at a glance without borrowing anyone's logo. */
-const MONOGRAM: Record<LmsKind, string> = { canvas: "C", brightspace: "D2L", moodle: "M", blackboard: "Bb" };
-
 /**
  * Connect a course site: pick the kind, find the school or paste its address,
  * then sign in inside the core's own window. `again` signs in to an existing
@@ -134,8 +133,8 @@ export function ConnectDialog({
                       }}
                       className="group flex min-h-14 min-w-0 items-center gap-3 rounded-xl px-1.5 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card font-medium text-foreground text-sm tracking-tight">
-                        {MONOGRAM[k.kind]}
+                      <span aria-hidden className="flex size-8 shrink-0 items-center justify-center">
+                        <LmsMark kind={k.kind} className="size-6 text-sm" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium text-sm">{k.label}</span>
@@ -146,8 +145,8 @@ export function ConnectDialog({
                           <Icon icon={icons.check} className="size-4" />
                         </span>
                       ) : (
-                        <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground transition-colors group-hover:text-foreground">
-                          <Icon icon={icons.add} className="size-3.5" />
+                        <span aria-hidden className="flex size-7 shrink-0 items-center justify-center text-muted-foreground transition-colors group-hover:text-foreground">
+                          <Icon icon={icons.add} className="size-4" />
                         </span>
                       )}
                     </button>

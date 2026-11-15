@@ -4,6 +4,7 @@ import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
+import { SiteMark } from "@/components/site-mark";
 import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
@@ -232,7 +233,8 @@ function SiteRow({ connection: c, folded, onFold, onImport, onSignIn, onDisconne
   return (
     <div className="group flex h-8 items-center gap-1 rounded-md pr-1 transition-colors hover:bg-accent">
       <button type="button" aria-expanded={!folded} onClick={onFold} className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Icon icon={folded ? icons.folder : icons.folderOpen} className="size-4 text-muted-foreground" />
+        <Icon icon={icons.chevronDown} className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", folded && "-rotate-90")} />
+        {c ? <SiteMark connection={c} className="size-4" /> : <Icon icon={icons.folder} className="size-4 text-muted-foreground" />}
         <Truncate className="min-w-0 font-medium">{c ? connectionName(c) : "Other courses"}</Truncate>
         {c ? (
           <Tooltip>

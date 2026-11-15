@@ -201,7 +201,7 @@ function IdentityGroup({ space }: { space: SpaceView }) {
   };
   return (
     <SettingsCard
-      icon={<SpaceAvatar name={space.name} hue={space.hue} className="size-10 rounded-xl text-base" />}
+      icon={<SpaceAvatar hue={space.hue} className="size-3" />}
       title={space.name}
       description={space.description || "No description"}
     >

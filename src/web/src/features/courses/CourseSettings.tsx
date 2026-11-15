@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
+import { SiteMark } from "@/components/site-mark";
 import { icons } from "@/components/icons";
 import { SkeletonCard } from "@/components/skeletons";
 import { SpaceAvatar } from "@/components/space-avatar";
@@ -72,7 +73,7 @@ export function CourseSettings() {
           showConnSkeleton ? <SkeletonCard rows={1} /> : <div className="h-15" />
         ) : list.length === 0 ? (
           <div className="flex min-h-11 items-center gap-3 rounded-card border bg-card px-4 py-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground"><Icon icon={icons.courses} className="size-4" /></span>
+            <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground"><Icon icon={icons.courses} className="size-4" /></span>
             <span className="min-w-0 flex-1 text-muted-foreground text-sm">No course sites connected.</span>
             <Button size="xs" variant="outline" onClick={() => setConnect(true)}>
               Connect site
@@ -82,7 +83,7 @@ export function CourseSettings() {
           <div className="divide-y rounded-card border bg-card">
             {list.map((c) => (
               <div key={c.id} className="flex min-h-12 items-center gap-3 px-4 py-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground"><Icon icon={icons.courses} className="size-4" /></span>
+                <SiteMark connection={c} className="size-6" />
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <Truncate className="min-w-0 font-medium text-sm">{connectionName(c)}</Truncate>

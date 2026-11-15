@@ -19,6 +19,7 @@ export const lmsSchools = (kind: LmsKind, query: string) => invoke<LmsSchool[]>(
 export const lmsConnect = (kind: LmsKind, address: string, schoolName?: string) =>
   invoke<LmsConnection>("lms_connect", schoolName ? { kind, address, schoolName } : { kind, address });
 export const lmsConnections = () => invoke<LmsConnection[]>("lms_connections");
+export const lmsSiteIcon = (connection: string) => invoke<{ dataUrl: string | null }>("lms_site_icon", { connection });
 export const lmsCourses = (connection: string) => invoke<LmsCourse[]>("lms_courses", { connection });
 export const lmsImportCancel = (connection: string) => invoke<boolean>("lms_import_cancel", { connection });
 export const lmsDisconnect = (connection: string) => invoke<void>("lms_disconnect", { connection });

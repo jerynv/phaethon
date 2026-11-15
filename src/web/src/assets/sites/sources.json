@@ -1,0 +1,6 @@
+{
+  "assets": [
+    { "name": "canvas", "url": "https://registry.npmjs.org/simple-icons/-/simple-icons-16.37.0.tgz#package/icons/canvas.svg", "license": "CC0-1.0" },
+    { "name": "moodle", "url": "https://registry.npmjs.org/simple-icons/-/simple-icons-16.37.0.tgz#package/icons/moodle.svg", "license": "CC0-1.0" }
+  ]
+}

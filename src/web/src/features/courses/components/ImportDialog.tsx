@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/icon";
+import { SiteMark } from "@/components/site-mark";
 import { icons } from "@/components/icons";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { SkeletonRows } from "@/components/skeletons";
@@ -96,7 +97,10 @@ export function ImportDialog({
       <DialogPopup className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Import courses</DialogTitle>
-          <DialogDescription className="truncate">{connection ? connectionName(connection) : ""}</DialogDescription>
+          <DialogDescription className="flex min-w-0 items-center gap-1.5">
+            {connection ? <SiteMark connection={connection} className="size-4" /> : null}
+            <span className="truncate">{connection ? connectionName(connection) : ""}</span>
+          </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-5">
           {error ? (

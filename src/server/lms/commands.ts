@@ -7,6 +7,7 @@ import { allCourses, parsePart, set as setAccess, view as accessView, visible, t
 import { courseContent } from "./browse.ts";
 import { partitionFor, signIn } from "./login.ts";
 import { run as migrate } from "./migrate.ts";
+import { siteIcon } from "./icon.ts";
 import { check as probe } from "./probe.ts";
 import {
   cancelImport,
@@ -53,6 +54,8 @@ commands({
   },
 
   lms_connections: () => connections(),
+
+  lms_site_icon: (a: { connection: unknown }) => siteIcon(str(a.connection, "The connection")),
 
   lms_courses: (a: { connection: unknown }) => courses(str(a.connection, "The connection")),
 

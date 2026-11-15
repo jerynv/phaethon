@@ -445,3 +445,12 @@ SOFTWARE.
 
    END OF TERMS AND CONDITIONS
 ```
+
+## Brand marks
+
+`src/web/src/assets/providers/` holds provider and coding-agent marks vendored
+from Lobe Icons (https://github.com/lobehub/lobe-icons, MIT; see the
+`LICENSES.txt` beside them). `src/web/src/assets/sites/` holds the Canvas and
+Moodle marks from Simple Icons (https://github.com/simple-icons/simple-icons,
+CC0 1.0; see the `LICENSES.txt` beside them). Every mark remains the trademark
+of its owner and is shown only to identify that provider or course site.

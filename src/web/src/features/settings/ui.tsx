@@ -33,16 +33,6 @@ import { cn } from "@/lib/utils";
  */
 
 /** The 40 px square that leads a card: a hairline, a soft shadow, the glyph or brand mark inside. */
-export function Tile({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-foreground [&_svg]:size-5 [&_img]:size-5", className)}
-    >
-      {children}
-    </span>
-  );
-}
 
 export function SettingsCard({
   icon,
@@ -69,7 +59,7 @@ export function SettingsCard({
     <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card", className)}>
       {media ? <div className="[--art-veil:var(--art-veil-strip)]">{media}</div> : null}
       <header className="flex items-center gap-4 p-5">
-        {icon ? <Tile>{icon}</Tile> : null}
+        {icon ? <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-foreground [&_svg]:size-5 [&_img]:size-6">{icon}</span> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h2 className="truncate font-medium text-base tracking-title">{title}</h2>
           {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}

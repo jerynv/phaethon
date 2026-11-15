@@ -329,7 +329,7 @@ function Filters({
             transition={{ duration: 0.18 }}
             className={cn("group relative flex min-h-12 items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent", e.date < today && "opacity-60")}
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
+            <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
               <Icon icon={icons.flag} className="size-4" />
             </span>
             <button type="button" onClick={() => onEditExam(e)} className="flex min-w-0 flex-1 flex-col text-left outline-none after:absolute after:inset-0 focus-visible:after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring" aria-label={`Edit ${e.title}`}>
@@ -402,7 +402,7 @@ function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: P
           <button type="button" className="flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent" />
         }
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
+        <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
           <Icon icon={icons.mode} className="size-4" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">

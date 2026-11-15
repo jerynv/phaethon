@@ -2,14 +2,13 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
-import { Card, CardMedia } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { KeyAction, KeyActions } from "@/components/ui/key-actions";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -131,7 +130,7 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
         {load.error ? <SurfaceError title="Couldn’t load the cards" message={cleanMessage(load.error)} onRetry={load.reload} /> : null}
         {skeleton ? <ReviewSkeleton /> : null}
         {queue && !queue.length ? (
-          <EndCard title="You’re caught up" line="Nothing is due. Cards come due again as you review them." seed="review-empty">
+          <EndCard title="You’re caught up" line="Nothing is due. Cards come due again as you review them.">
             <Button variant="outline" className="w-full" onClick={onBack}>
               Back to study
             </Button>
@@ -217,17 +216,14 @@ function FlashCard({ card, space, revealed }: { card: SessionCard; space: string
   );
 }
 
-/** The closing card of a session (c06d): art across the top, a title, a line, then what changed. */
-function EndCard({ title, line, seed, children, list }: { title: string; line: string; seed: string; children: React.ReactNode; list?: React.ReactNode }) {
+/** The closing card of a session: a title, a line, then what changed. */
+function EndCard({ title, line, children, list }: { title: string; line: string; children: React.ReactNode; list?: React.ReactNode }) {
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="mx-auto mt-4 w-full max-w-md">
       <Card>
-        <CardMedia className="h-28">
-          <ArtCanvas palette="lilac" seed={seed} weave className="absolute inset-0" />
-        </CardMedia>
         <div className="flex flex-col gap-5 p-6">
           <div className="text-center">
-            <h2 className="font-medium text-lg tracking-title">{title}</h2>
+            <h2 className="font-medium text-base tracking-title">{title}</h2>
             <p className="mt-1 text-muted-foreground text-sm tabular-nums">{line}</p>
           </div>
           {list}
@@ -243,7 +239,6 @@ function Summary({ rated, ms, before, after, onBack }: { rated: { again: number;
   return (
     <EndCard
       title="Session done"
-      seed="review-done"
       line={`${plural(rated.total, "answer")} in ${durationText(ms)}${rated.again ? ` · ${plural(rated.again, "card")} to see again soon` : ""}`}
       list={
         changes.length ? (

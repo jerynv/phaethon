@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -116,20 +115,6 @@ export function ConnectDialog({
               <DialogDescription>Bring your courses’ files, assignments and grades into Phaethon.</DialogDescription>
             </DialogHeader>
             <DialogPanel className="flex flex-col gap-5">
-              <ArtCanvas palette="lilac" seed="connect-site" className="h-36 rounded-xl">
-                <div className="flex size-full flex-col items-center justify-center gap-2">
-                  {[
-                    { icon: icons.file, text: "Files, readings and lecture notes" },
-                    { icon: icons.quiz, text: "Assignments and due dates" },
-                    { icon: icons.grades, text: "Grades as they’re posted" },
-                  ].map((p, i) => (
-                    <span key={p.text} className={cn("flex h-8 items-center gap-2 rounded-full bg-card/92 px-3.5 text-foreground text-xs", i === 0 ? "-translate-x-6" : i === 2 ? "translate-x-6" : "")}>
-                      <Icon icon={p.icon} className="size-3.5 text-muted-foreground" />
-                      {p.text}
-                    </span>
-                  ))}
-                </div>
-              </ArtCanvas>
               <div className="flex flex-col gap-1">
                 <h3 className="px-1 pb-1 font-medium text-sm">Which one does your school use?</h3>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1">

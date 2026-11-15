@@ -175,7 +175,7 @@ export function FileViewer() {
           </HeaderButton>
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="page-scroll min-h-0 flex-1 overflow-x-hidden">
         {state.error ? (
           <div className="p-3">
             <SurfaceError title="Couldn’t open this file" message={state.error} onRetry={() => setTick((n) => n + 1)} />

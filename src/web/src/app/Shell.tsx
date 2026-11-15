@@ -1,6 +1,5 @@
 import { animate } from "motion/react";
 import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { DotMatrix } from "@/components/art";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { errorText } from "@/lib/core";
@@ -163,7 +162,6 @@ export function Shell() {
               <div className="flex min-h-0 flex-1">
                 <Sidebar />
                 <main className="relative flex min-w-0 flex-1 flex-col bg-background">
-                  <DotMatrix className="z-0" />
                   <Main />
                 </main>
                 {viewer ? (

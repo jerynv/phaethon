@@ -1,7 +1,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNav } from "@/app/store";
-import { ArtCanvas, paletteFor } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -9,7 +8,7 @@ import { SkeletonRows } from "@/components/skeletons";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -154,7 +153,7 @@ export function CourseDetail({
           </TabsList>
         </Tabs>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll min-h-0 flex-1">
         <motion.div
           key={tab}
           initial={reduce ? false : { opacity: 0, y: 4 }}
@@ -179,11 +178,8 @@ function Overview({ space, course, content, error, retry, hidden }: { space: str
   return (
     <>
       <Card>
-        <CardMedia className="h-24">
-          <ArtCanvas palette={paletteFor(course.key)} seed={course.key} weave className="absolute inset-0" />
-        </CardMedia>
         <CardHeader>
-          <CardTitle className="text-xl">
+          <CardTitle className="text-lg">
             <Truncate>{course.name}</Truncate>
           </CardTitle>
           {meta ? <CardDescription className="truncate">{meta}</CardDescription> : null}
@@ -243,7 +239,7 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
-        <h2 className="flex-1 font-medium text-lg tracking-title">
+        <h2 className="flex-1 font-medium text-base tracking-title">
           Content <span className="font-normal text-muted-foreground tabular-nums">{content.entries.length}</span>
         </h2>
         <div className="relative w-56">

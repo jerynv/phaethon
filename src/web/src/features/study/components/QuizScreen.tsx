@@ -7,13 +7,12 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
@@ -300,7 +299,6 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
             <Results
               space={space.id}
               quiz={q}
-              path={path}
               attempt={attempt}
               sure={sure}
               job={job}
@@ -504,7 +502,7 @@ function CheckSheet({ questions, answers, flagged, job, onGo, onSubmit }: { ques
       <Card data-testid="quiz-check">
         {grading ? <JobBar value={job.fraction} /> : null}
         <CardHeader className="gap-1 p-6 pb-4">
-          <CardTitle className="text-lg">{grading ? "Checking your answers…" : "Ready to check?"}</CardTitle>
+          <CardTitle>{grading ? "Checking your answers…" : "Ready to check?"}</CardTitle>
           <CardDescription className="tabular-nums">
             {grading
               ? gradingWords(job.progress, questions.length - c.unanswered.length)
@@ -570,7 +568,6 @@ function headline(share: number): string {
 function Results({
   space,
   quiz,
-  path,
   attempt,
   sure,
   job,
@@ -582,7 +579,6 @@ function Results({
 }: {
   space: string;
   quiz: Quiz;
-  path: string;
   attempt: Attempt;
   sure: Record<string, Sure>;
   job: Job | null;
@@ -614,11 +610,8 @@ function Results({
   return (
     <div className="flex flex-col gap-8" data-testid="quiz-results">
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }}>
-        <Card className="rounded-panel">
+        <Card>
           {reviewing ? <JobBar value={job.fraction} className="z-10" /> : null}
-          <CardMedia className="h-28">
-            <ArtCanvas palette="lilac" seed={path} weave className="absolute inset-0" />
-          </CardMedia>
           <div className="flex flex-col gap-5 p-6">
             <div className="flex flex-col gap-1">
               <h2 className="font-medium text-lg tracking-title">{headline(share)}</h2>
@@ -689,7 +682,7 @@ function Results({
 
       {topics.length > 1 || (topics.length === 1 && topics[0]!.topic !== "Other") ? (
         <section className="flex flex-col gap-3" data-testid="quiz-topics">
-          <h3 className="font-medium text-lg tracking-title">By topic</h3>
+          <h3 className="font-medium text-base tracking-title">By topic</h3>
           <Card className="gap-0 px-5 py-2">
             {topics.map((t, i) => {
               const p = t.percent ?? 0;
@@ -718,7 +711,7 @@ function Results({
 
       {items.length ? (
         <section className="flex flex-col gap-3" data-testid="quiz-review">
-          <h3 className="font-medium text-lg tracking-title">What to go over</h3>
+          <h3 className="font-medium text-base tracking-title">What to go over</h3>
           <div className="flex flex-col gap-3">
             {items.map((it) => {
               const question = quiz.questions.find((x) => x.id === it.id)!;

@@ -3,14 +3,13 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,7 +146,7 @@ export function GradesView({ space }: { space: SpaceView }) {
           ) : null
         }
       />
-      <div className="relative min-h-0 flex-1 overflow-y-auto" data-testid="grades-scroll">
+      <div className="page-scroll relative min-h-0 flex-1" data-testid="grades-scroll">
         <AnimatePresence initial={false}>
           {refresh ? (
             <motion.div
@@ -226,14 +225,6 @@ const jump = (c: CourseGradeView) => document.getElementById(courseId(c))?.scrol
 const rounded = (d: number) => Math.round(d * 10) / 10;
 const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
-/** The one art surface of the page: a meadow strip across the top of the overview card. */
-function OverviewMedia({ seed }: { seed: string }) {
-  return (
-    <CardMedia className="h-20">
-      <ArtCanvas palette="meadow" seed={seed} weave className="absolute inset-0" />
-    </CardMedia>
-  );
-}
 
 // ---- All courses at a glance ----
 
@@ -243,7 +234,6 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
   const open = heads.reduce((n, h) => n + h.open, 0);
   return (
     <Card data-testid="grades-courses">
-      <OverviewMedia seed="grades-term" />
       <CardHeader>
         <CardTitle>This term</CardTitle>
         <CardDescription className="tabular-nums">
@@ -292,7 +282,6 @@ function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; 
   const down = h.trend && h.trend.delta <= -0.05;
   return (
     <Card data-testid="grades-courses">
-      <OverviewMedia seed={courseId(course)} />
       <div className="flex items-start gap-4 px-5 pt-5 pb-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <CardTitle className="flex min-w-0 items-center gap-2">
@@ -566,7 +555,7 @@ function AllTables({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
   return (
     <section className="flex flex-col gap-3" aria-label="All grades">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto font-medium text-lg tracking-title">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
+        <h2 className="mr-auto font-medium text-base tracking-title">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
         <div className="relative w-56 max-sm:w-full">
           <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
           <Input size="sm" value={query} placeholder="Filter assignments" aria-label="Filter assignments" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />

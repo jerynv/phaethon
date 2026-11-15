@@ -190,7 +190,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 {...actions}
               />
             ) : (
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-10">
+              <div className="page-scroll flex min-h-0 flex-1 flex-col px-8 pt-10">
                 {run ? (
                   <div className="mx-auto max-w-(--page-max-width)">
                     <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />

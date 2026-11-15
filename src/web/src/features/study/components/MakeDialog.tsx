@@ -280,7 +280,7 @@ export function MakeDialog({
           <DialogHeader className="gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <DialogTitle className="font-medium text-lg tracking-title">{label}</DialogTitle>
+                <DialogTitle className="font-medium text-base tracking-title">{label}</DialogTitle>
                 <DialogDescription className="text-muted-foreground text-sm">
                   {quiz ? "Practice questions from your course materials, each checked against them." : "Flashcards from your course materials, each tied to its passage."}
                 </DialogDescription>
@@ -1141,7 +1141,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
   return (
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="flex flex-col gap-4 pb-2">
       <div>
-        <p className="font-medium text-lg tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
+        <p className="font-medium text-base tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
         <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{g?.exam ? `For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.` : "Here’s what went into it."}</p>
       </div>
       <Card variant="well" className="gap-0 px-4 py-2">

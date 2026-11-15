@@ -3,7 +3,6 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
-import { ArtCanvas } from "@/components/art";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -11,7 +10,7 @@ import { toast } from "@/components/toast";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardMedia } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -144,7 +143,7 @@ export function PlanView({ space }: { space: SpaceView }) {
           ) : null
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll min-h-0 flex-1">
         <div className="@container/page mx-auto flex min-h-full w-full max-w-(--page-wide-max-width) flex-col px-8 pt-10 pb-16 @max-3xl/page:px-6">
           {data.error ? <SurfaceError title="Couldn’t load your plan" message={cleanMessage(data.error)} onRetry={data.reload} /> : null}
           {skeleton ? <PlanSkeleton /> : null}
@@ -492,9 +491,6 @@ function Today({
   const study = entries.length - due;
   return (
     <Card data-testid="plan-today">
-      <CardMedia className="h-20">
-        <ArtCanvas palette="dawn" seed={`plan-${today}`} weave className="absolute inset-0" />
-      </CardMedia>
       <div className="flex items-start gap-4 px-5 pt-5 pb-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h2 className="font-medium text-base tracking-title">
@@ -678,7 +674,7 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
       }}
     >
       <div className="flex items-center gap-3 border-b px-5 pt-5 pb-4">
-        <h2 className="min-w-0 flex-1 font-medium text-lg tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
+        <h2 className="min-w-0 flex-1 font-medium text-base tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
         <Button size="icon-xs" variant="ghost-muted" aria-label="Close" onClick={onCancel}>
           <Icon icon={icons.close} />
         </Button>

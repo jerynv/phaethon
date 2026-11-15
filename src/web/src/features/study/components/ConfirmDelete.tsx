@@ -50,7 +50,7 @@ export function ConfirmDelete({
     >
       <AlertDialogPopup className="max-w-sm rounded-panel">
         <AlertDialogHeader>
-          <AlertDialogTitle className="font-medium text-lg tracking-title">Delete “{shown?.title}”?</AlertDialogTitle>
+          <AlertDialogTitle className="font-medium text-base tracking-title">Delete “{shown?.title}”?</AlertDialogTitle>
           <AlertDialogDescription>
             {shown?.kind === "quiz" ? "The quiz is deleted. Past scores go with it." : "The deck and its review history are deleted."} This can’t be undone.
           </AlertDialogDescription>

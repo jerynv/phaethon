@@ -14,12 +14,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * The scrolling page under the title bar: a centred column (`--page-max-width`,
- * or `narrow` for one-thing-at-a-time screens), `pt-10` so the dot matrix
- * shows above the first block, and the `page` container for its grids.
+ * or `narrow` for one-thing-at-a-time screens), `pt-10` above the first block, and the `page` container for its grids.
  */
 export function Page({ children, narrow = false, className }: { children: ReactNode; narrow?: boolean; className?: string }) {
   return (
-    <div className="@container/page relative min-h-0 flex-1 overflow-y-auto">
+    <div className="@container/page page-scroll relative min-h-0 flex-1">
       <div className={cn("mx-auto flex w-full flex-col gap-10 px-6 pt-10 pb-16 @3xl/page:px-8", narrow ? "max-w-(--chat-max-width)" : "max-w-(--page-max-width)", className)}>{children}</div>
     </div>
   );

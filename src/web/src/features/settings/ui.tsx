@@ -71,7 +71,7 @@ export function SettingsCard({
       <header className="flex items-center gap-4 p-5">
         {icon ? <Tile>{icon}</Tile> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="truncate font-medium text-lg tracking-title">{title}</h2>
+          <h2 className="truncate font-medium text-base tracking-title">{title}</h2>
           {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}
         </div>
         {action ? <div className="flex shrink-0 items-center gap-1.5">{action}</div> : null}
@@ -299,7 +299,7 @@ export function ConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPopup className="max-w-md">
         <AlertDialogHeader className="gap-2 p-5">
-          <AlertDialogTitle className="text-lg">{title}</AlertDialogTitle>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription render={<div />} className="flex flex-col gap-2">
             {children}
           </AlertDialogDescription>

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type InstallEvent, type UpdateView } from "@/app/api";
-import { ArtCanvas } from "@/components/art";
 import { BrandMark } from "@/components/brand-mark";
 import { ClampedText, FieldError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -157,7 +156,6 @@ export function AboutSection() {
   const update = useLoad(() => api.updateState());
   return (
     <SettingsCard
-      media={<ArtCanvas palette="dawn" seed="about" weave className="h-28" />}
       icon={<BrandMark />}
       title="Phaethon"
       description={

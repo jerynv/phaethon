@@ -3,7 +3,6 @@ import { motion } from "motion/react";
 import { api } from "@/app/api";
 import { Header } from "@/app/Header";
 import { type SettingsSection, useNav } from "@/app/store";
-import { DotMatrix } from "@/components/art";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Kbd } from "@/components/ui/kbd";
@@ -206,8 +205,7 @@ export function SettingsView() {
     <div className="flex min-h-0 flex-1">
       <Header title={title} />
       <Nav section={section} onReset={() => setReset((n) => n + 1)} />
-      <div className="relative min-h-0 flex-1 overflow-y-auto bg-well dark:bg-background">
-        <DotMatrix seed="settings" />
+      <div className="page-scroll relative min-h-0 flex-1">
         <motion.div
           key={`${section}-${reset}`}
           initial={{ opacity: 0, y: 4 }}

@@ -97,9 +97,9 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-24 shrink-0 items-end justify-center gap-2 pb-2">
           <BrandMark className="size-5 text-foreground" />
-          <span className="font-medium text-lg tracking-title">Phaethon</span>
+          <span className="font-medium text-base tracking-title">Phaethon</span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page-scroll min-h-0 flex-1">
           <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-start px-6 pt-(--onboarding-top) pb-16">
             <Dots step={step} />
             <AnimatePresence mode="wait" initial={false}>

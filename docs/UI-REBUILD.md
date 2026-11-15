@@ -166,7 +166,7 @@ All in `components/ui/` unless noted. `#gallery` renders each.
 | Steps | `@/components/ui/step-list` | `ThoughtToggle state label open onOpenChange` (the "Thinking… / Thought 12s" pill: spinner, dark tick disc, or failed mark; chevron right when closed, down when open). `StepList variant="dot"|"icon" open` with `Step state icon? tag? meta? detail?` on a 1 px rail. `ToolSummary summary duration running open` is the "18 tools, edited 5 files, ran 2 commands ⌄ … 6m 12s" line. `formatDuration`. |
 | Spinner | `@/components/ui/spinner` | A faint ring with a turning arc. |
 | Art | `@/components/art` | See Art. |
-| Brand mark | `@/components/brand-mark` | `BrandMark` in `currentColor`. |
+| Brand mark | `@/components/brand-mark` | `BrandMark` in Phaethon blue (`text-primary`). |
 | Icon | `@/components/icon`, `@/components/icons` | See Icons. |
 
 Existing primitives (menu, dialog, alert-dialog, popover, select, combobox, autocomplete, command, tooltip, input, textarea, checkbox, radio-group, badge, alert, empty, skeleton, scroll-area, sidebar, toast) keep their API; they take the new tokens automatically. Menus and popovers are `rounded-xl`, `shadow-popup`, rows `rounded-sm h-7`, icons `size-4 text-muted-foreground` (ref 8386: Settings / Language / Docs / Apps / Logout with a "New" tint badge).
@@ -284,7 +284,7 @@ Each blueprint: what the references fix, then the layout. Pages sit in the panel
 
 ### Chat — welcome (empty conversation)
 
-a163, a6e6, 8386. A centred column at about 38 % of the height: `BrandMark` (24 px, foreground), "Where should we begin?" (`text-2xl`, weight 400, `tracking-heading`, 16 px below the mark), the composer (24 px below, `max-w-(--chat-max-width)`), then three action cards in a 3-column grid (12 px gap, 20 px below): `Card variant="interactive"`, `p-4`, leading icon `size-5 text-muted-foreground`, title `text-sm font-medium`, no subtitle (the title says it). A study space's three: Teach me, Quiz me, Plan my week; any other: Create, Find, Summarize; each fills the composer with a starter. Near the bottom, one quiet ghost row ("Add files to School") brings files into the space. No art behind the hero; the dot field only.
+a163, a6e6, 8386. A centred column at about 38 % of the height: `BrandMark` (24 px, Phaethon blue), "Where should we begin?" (`text-2xl`, weight 400, `tracking-heading`, 16 px below the mark), the composer (24 px below, `max-w-(--chat-max-width)`), then three action cards in a 3-column grid (12 px gap, 20 px below): `Card variant="interactive"`, `p-4`, leading icon `size-5 text-muted-foreground`, title `text-sm font-medium`, no subtitle (the title says it). A study space's three: Teach me, Quiz me, Plan my week; any other: Create, Find, Summarize; each fills the composer with a starter. Near the bottom, one quiet ghost row ("Add files to School") brings files into the space. No art behind the hero; the dot field only.
 
 ### Chat — timeline
 

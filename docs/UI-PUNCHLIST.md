@@ -122,3 +122,4 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 79 | No containing boxes around card and row icons anywhere | done — settings, plan, course sites, connect dialog, viewer placeholder |
 | 80 | Use school and course-site logos | done — the site's own icon (fetched once a week by the core), else the Canvas or Moodle mark, else a D2L / Bb monogram |
 | 81 | About › Licenses: just "MIT" and a link to the GitHub licence page | done |
+| 82 | The P mark should be Phaethon blue | done — `BrandMark` is `text-primary` everywhere |

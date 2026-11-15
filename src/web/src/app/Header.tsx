@@ -224,7 +224,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
       className={cn("group/header @container/header app-drag grid h-(--titlebar-height) shrink-0 grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}
     >
       <div className="flex shrink-0 items-center gap-1">
-        <BrandMark className="size-4 shrink-0 text-foreground" label="Phaethon" />
+        <BrandMark className="size-4 shrink-0" label="Phaethon" />
         <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
           <Icon icon={icons.sidebar} />
         </HeaderIconButton>

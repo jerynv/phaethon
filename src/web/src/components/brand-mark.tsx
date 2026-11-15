@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Phaethon's mark (build/brand/mark.png) as a single-colour path, so it takes
- * `currentColor` and sizes with `size-*`. The welcome screen, onboarding and
+ * Phaethon's mark (build/brand/mark.png) as a single-colour path in Phaethon's
+ * blue (`text-primary`), sized with `size-*`. The welcome screen, onboarding and
  * the sidebar's top row use it; the app icon stays the raster in build/.
  */
 export function BrandMark({ className, label }: { className?: string; label?: string }) {
   return (
     <svg
       viewBox="200 150 624 724"
-      className={cn("size-5 shrink-0", className)}
+      className={cn("size-5 shrink-0 text-primary", className)}
       aria-hidden={label ? undefined : true}
       aria-label={label}
       role={label ? "img" : undefined}

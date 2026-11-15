@@ -1,53 +1,120 @@
 import { Path } from "@phosphor-icons/react";
 import { CircleHelpIcon, FilePenIcon, KeyRoundIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccessAnswer, LessonAnswer, UiRecord } from "#shared/agent.ts";
 import { useNav } from "@/app/store";
 import { toast } from "@/components/toast";
 import { StartTruncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
+import type { Remember } from "../api";
 import { diffCounts, diffLines, foldDiff } from "../lib/diff";
+import { useChats } from "../store";
 import { Markdown } from "./Markdown";
 import type { PendingAccess, PendingApproval, PendingQuestion } from "../lib/timeline";
 
 /** The frame every "needs you" card shares: an icon, a title line, a body, actions at the bottom right. */
-function Card({ icon, title, meta, children, actions, tone = "default" }: { icon: React.ReactNode; title: React.ReactNode; meta?: React.ReactNode; children?: React.ReactNode; actions?: React.ReactNode; tone?: "default" | "attention" }) {
+function Card({ icon, title, meta, children, actions, tone = "default", cardRef }: { icon: React.ReactNode; title: React.ReactNode; meta?: React.ReactNode; children?: React.ReactNode; actions?: React.ReactNode; tone?: "default" | "attention"; cardRef?: React.Ref<HTMLDivElement> }) {
   return (
-    <div className={cn("my-3 overflow-hidden rounded-xl border bg-card", tone === "attention" && "border-primary/30")}>
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">{icon}</span>
+    <motion.div
+      ref={cardRef}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
+      className={cn("my-3 overflow-hidden rounded-xl border bg-card", tone === "attention" && "border-warning/40")}
+      data-slot="pending-card"
+    >
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span className={cn("flex size-4 shrink-0 items-center justify-center [&_svg]:size-4", tone === "attention" ? "text-warning-foreground" : "text-muted-foreground")}>{icon}</span>
         <div className="min-w-0 flex-1 truncate font-medium text-sm">{title}</div>
         {meta ? <div className="shrink-0 text-2xs text-muted-foreground tabular-nums">{meta}</div> : null}
       </div>
-      {children ? <div className="px-3 py-2.5">{children}</div> : null}
-      {actions ? <div className="flex items-center justify-end gap-1.5 border-t bg-muted/40 px-3 py-2">{actions}</div> : null}
-    </div>
+      {children ? <div className="px-3 pb-2.5">{children}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center justify-end gap-1.5 border-t bg-muted/40 px-3 py-2">{actions}</div> : null}
+    </motion.div>
   );
 }
 
 function useBusy() {
   const [busy, setBusy] = useState<string | null>(null);
   const run = (which: string, f: () => Promise<unknown>, failed: string) => {
+    if (busy) return;
     setBusy(which);
     f().catch((e) => toast.error(failed, errorText(e))).finally(() => setBusy(null));
   };
   return [busy, run] as const;
 }
 
+const typing = (el: Element | null) => !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable);
+
+/**
+ * Single keys answer the card on screen (Y, N, …) unless the person is typing
+ * somewhere. The newest card owns the keys; the card takes focus when nothing
+ * else has it, so Enter and Escape work too.
+ */
+function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HTMLDivElement | null>) {
+  const latest = useRef(keys);
+  latest.current = keys;
+  useEffect(() => {
+    if (!typing(document.activeElement) && (document.activeElement === document.body || !document.activeElement)) {
+      box.current?.querySelector<HTMLButtonElement>("[data-primary]")?.focus({ preventScroll: true });
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || typing(document.activeElement)) return;
+      if (document.querySelector("[role=dialog], [role=menu]")) return;
+      const key = e.key.toLowerCase();
+      const f = latest.current[key];
+      if (!f) return;
+      // Enter and Escape mean something to whatever has focus; they answer only when the card has it (or nothing does).
+      const focus = document.activeElement;
+      if ((key === "enter" || key === "escape") && focus && focus !== document.body && !box.current?.contains(focus)) return;
+      e.preventDefault();
+      f();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [box]);
+}
+
+function Key({ k }: { k: string }) {
+  return <Kbd className="ml-0.5 h-4 min-w-4 bg-current/10 text-current">{k}</Kbd>;
+}
+
+const DIFF_FOLDED = 8;
+
 export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval; onAnswer: (allow: boolean) => Promise<void> }) {
   const [busy, run] = useBusy();
+  const [showAll, setShowAll] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const spaceName = useNav((s) => s.spaces.data?.find((x) => x.id === approval.space)?.name ?? "this space");
   const lines = useMemo(() => diffLines(approval.before ?? "", approval.detail), [approval.before, approval.detail]);
   const rows = useMemo(() => foldDiff(lines), [lines]);
   const counts = diffCounts(lines);
+  const failed = "Couldn’t send your answer";
+  const verb = approval.action === "create" ? "Create" : "Change";
+  const allow = () => run("allow", () => onAnswer(true), failed);
+  const deny = () => run("deny", () => onAnswer(false), failed);
+  // Remembering is answered through the store, which saves it with the answer (core: agent_approve `remember`).
+  const remember = (scope: Remember) => run(scope, () => useChats.getState().approve(approval.space, approval.id, true, scope), failed);
+  useAnswerKeys({ y: allow, enter: allow, n: deny, escape: deny, c: () => remember("conversation"), s: () => remember("space") }, box);
+  const long = rows.length > DIFF_FOLDED;
+  const visible = long && !showAll ? rows.slice(0, DIFF_FOLDED) : rows;
   return (
     <Card
+      cardRef={box}
       tone="attention"
       icon={<FilePenIcon strokeWidth={1.75} />}
-      title={<span className="flex min-w-0 items-center gap-1.5">{approval.action === "create" ? "Create" : "Change"} <StartTruncate value={approval.path} className="font-mono text-xs font-normal text-muted-foreground" /></span>}
+      title={
+        <span className="flex min-w-0 items-center gap-1.5">
+          {verb} <StartTruncate value={approval.path} className="font-mono text-xs font-normal text-muted-foreground" />
+        </span>
+      }
       meta={
         <span>
           <span className="text-success-foreground">+{counts.added}</span> <span className="text-error-foreground">−{counts.removed}</span>
@@ -55,20 +122,38 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
       }
       actions={
         <>
-          <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => run("deny", () => onAnswer(false), "Couldn’t send your answer")}>
+          <Button size="xs" variant="ghost" className="mr-auto" disabled={!!busy} onClick={deny}>
             {busy === "deny" ? <Spinner size="xs" /> : null}
             Don’t allow
+            <Key k="N" />
           </Button>
-          <Button size="xs" disabled={!!busy} onClick={() => run("allow", () => onAnswer(true), "Couldn’t send your answer")}>
+          <Tooltip>
+            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} onClick={() => remember("conversation")} />}>
+              {busy === "conversation" ? <Spinner size="xs" /> : null}
+              Allow in this chat
+              <Key k="C" />
+            </TooltipTrigger>
+            <TooltipPopup>This conversation writes files in {spaceName} without asking again</TooltipPopup>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} onClick={() => remember("space")} />}>
+              {busy === "space" ? <Spinner size="xs" /> : null}
+              Always in {spaceName}
+              <Key k="S" />
+            </TooltipTrigger>
+            <TooltipPopup>Every conversation writes files in {spaceName} without asking. Never outside it. Take it back in Settings › Spaces</TooltipPopup>
+          </Tooltip>
+          <Button size="xs" data-primary="" disabled={!!busy} onClick={allow}>
             {busy === "allow" ? <Spinner size="xs" /> : null}
             {approval.action === "create" ? "Create file" : "Apply change"}
+            <Key k="Y" />
           </Button>
         </>
       }
     >
-      <p className="mb-2 text-muted-foreground text-xs [overflow-wrap:anywhere]">{approval.summary}</p>
+      {approval.summary ? <p className="mb-2 text-muted-foreground text-xs [overflow-wrap:anywhere]">{approval.summary}</p> : null}
       <div className="max-h-64 overflow-auto rounded-md border bg-code font-mono text-2xs leading-[1.1rem]">
-        {rows.map((r, i) =>
+        {visible.map((r, i) =>
           r.kind === "fold" ? (
             <div key={i} className="bg-muted/60 px-2 text-muted-foreground">
               ⋯ {r.count} unchanged {r.count === 1 ? "line" : "lines"}
@@ -80,7 +165,12 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
             </div>
           ),
         )}
-        {approval.truncated ? <div className="px-2 py-1 text-muted-foreground">The file is long; only the start is shown.</div> : null}
+        {long ? (
+          <button type="button" onClick={() => setShowAll((v) => !v)} className="w-full px-2 py-1 text-left font-sans text-muted-foreground hover:bg-accent hover:text-foreground">
+            {showAll ? "Show less" : `Show all ${rows.length} lines`}
+          </button>
+        ) : null}
+        {approval.truncated ? <div className="px-2 py-1 font-sans text-muted-foreground">The file is long; only the start is shown.</div> : null}
       </div>
     </Card>
   );
@@ -88,29 +178,43 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
 
 export function AccessCard({ access, spaceName, onAnswer }: { access: PendingAccess; spaceName: (id: string) => string; onAnswer: (a: AccessAnswer) => Promise<void> }) {
   const [busy, run] = useBusy();
+  const box = useRef<HTMLDivElement>(null);
   const where = access.path.replace(/\/+$/, "") ? `${spaceName(access.space)} / ${access.path}` : `all of ${spaceName(access.space)}`;
+  const failed = "Couldn’t send your answer";
+  const answer = (a: AccessAnswer) => run(a, () => onAnswer(a), failed);
+  useAnswerKeys({ y: () => answer("once"), enter: () => answer("once"), a: () => answer("always"), n: () => answer("deny"), escape: () => answer("deny") }, box);
   return (
     <Card
+      cardRef={box}
       tone="attention"
       icon={<KeyRoundIcon strokeWidth={1.75} />}
-      title={<span className="flex min-w-0 items-center gap-1">Read from <StartTruncate value={where} className="font-normal" /></span>}
+      title={
+        <span className="flex min-w-0 items-center gap-1">
+          Read from <StartTruncate value={where} className="font-normal" />
+        </span>
+      }
+      meta="Read only"
       actions={
         <>
-          <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => run("deny", () => onAnswer("deny"), "Couldn’t send your answer")}>
+          <Button size="xs" variant="ghost" className="mr-auto" disabled={!!busy} onClick={() => answer("deny")}>
+            {busy === "deny" ? <Spinner size="xs" /> : null}
             Don’t allow
+            <Key k="N" />
           </Button>
-          <Button size="xs" variant="outline" disabled={!!busy} onClick={() => run("once", () => onAnswer("once"), "Couldn’t send your answer")}>
-            {busy === "once" ? <Spinner size="xs" /> : null}
-            Allow once
-          </Button>
-          <Button size="xs" disabled={!!busy} onClick={() => run("always", () => onAnswer("always"), "Couldn’t send your answer")}>
+          <Button size="xs" variant="outline" disabled={!!busy} onClick={() => answer("always")}>
             {busy === "always" ? <Spinner size="xs" /> : null}
             Always allow
+            <Key k="A" />
+          </Button>
+          <Button size="xs" data-primary="" disabled={!!busy} onClick={() => answer("once")}>
+            {busy === "once" ? <Spinner size="xs" /> : null}
+            Allow once
+            <Key k="Y" />
           </Button>
         </>
       }
     >
-      <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">{access.reason}</p>
+      {access.reason ? <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">{access.reason}</p> : null}
     </Card>
   );
 }
@@ -222,6 +326,14 @@ export function RecordLine({ record, spaceName }: { record: Exclude<UiRecord, { 
           <FilePenIcon className="size-3.5 shrink-0" strokeWidth={1.75} />
           <span className="shrink-0">{record.allowed ? (record.action === "create" ? "Created" : "Changed") : "Not allowed:"}</span>
           <StartTruncate value={record.path} className="font-mono text-2xs" />
+          {record.auto ? (
+            <>
+              <span className="shrink-0 text-subtle-foreground">· {record.auto === "space" ? "allowed in this space" : "allowed in this chat"}</span>
+              <button type="button" onClick={() => openSettings("spaces")} className="shrink-0 hover:text-foreground hover:underline">
+                Manage
+              </button>
+            </>
+          ) : null}
         </div>
       );
     case "access":

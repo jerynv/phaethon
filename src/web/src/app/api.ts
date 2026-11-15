@@ -16,11 +16,21 @@ export type ThreadSummary = {
   title: string;
   updated: number;
   messages: number;
-  current: boolean;
   /** When it was pinned (ms); absent when it isn't. */
   pinned?: number;
   /** The title was given by hand. */
   renamed?: boolean;
+  /** When its writes were allowed without asking (ms). */
+  allowWrites?: number;
+};
+
+/** A listed conversation, with whether it is replying right now (in this window or another). */
+export type ThreadListed = ThreadSummary & { running?: boolean };
+
+/** Where Phaethon writes files without asking (Settings lists these and can take them back). */
+export type WritePermissions = {
+  spaces: { space: string; since: number }[];
+  conversations: { thread: string; title: string; since: number }[];
 };
 
 export type SearchSnippet = {
@@ -36,7 +46,6 @@ export type SearchConversation = {
   threadId: string;
   title: string;
   updated: number;
-  current: boolean;
   matches: number;
   snippets: SearchSnippet[];
 };
@@ -83,12 +92,14 @@ export const api = {
   addToSpace: (id: string, folder: boolean) => invoke<{ paths: string[]; files: number; skipped: number } | null>("space_add", { id, folder }),
   exportSpace: (id: string) => invoke<{ fileName: string; files: number } | null>("space_export", { id }),
   showExport: () => invoke<void>("export_show"),
-  threads: (space: string) => invoke<ThreadSummary[]>("threads_list", { space }),
-  newThread: (space: string) => invoke<void>("thread_new", { space }),
-  openThread: (space: string, id: string) => invoke<void>("thread_open", { space, id }),
-  deleteThread: (space: string, id: string) => invoke<void>("thread_delete", { space, id }),
-  renameThread: (space: string, id: string, title: string) => invoke<unknown>("thread_rename", { space, id, title }),
-  pinThread: (space: string, id: string, pinned: boolean) => invoke<unknown>("thread_pin", { space, id, pinned }),
+  threads: (space: string) => invoke<ThreadListed[]>("threads_list", { space }),
+  createThread: (space: string) => invoke<string>("thread_create", { space }),
+  deleteThread: (space: string, thread: string) => invoke<void>("thread_delete", { space, thread }),
+  renameThread: (space: string, thread: string, title: string) => invoke<unknown>("thread_rename", { space, thread, title }),
+  pinThread: (space: string, thread: string, pinned: boolean) => invoke<unknown>("thread_pin", { space, thread, pinned }),
+  writePermissions: (space: string) => invoke<WritePermissions>("write_permissions_list", { space }),
+  /** Lets Phaethon write without asking in one conversation (`thread`) or the whole space, or takes that back. */
+  setWritePermission: (a: { space: string; thread?: string; scope: "conversation" | "space"; allow: boolean }) => invoke<WritePermissions>("write_permission_set", a),
   search: (space: string, query: string, allSpaces: boolean) =>
     invoke<SearchResults>("conversations_search", { space, query, allSpaces }),
   updateState: () => invoke<UpdateView>("update_state"),

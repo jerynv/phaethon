@@ -23,6 +23,9 @@ type Pending = { id: string; file: File; previewUrl?: string };
 export type EditTarget = { index: number; text: string; attachments: Attachment[] };
 
 const drafts = new Map<string, string>();
+/** Files picked but not sent yet, per conversation (`draftKey`), kept while another conversation is shown. */
+const stashes = new Map<string, { files: File[]; kept: Attachment[] }>();
+const pending = (file: File): Pending => ({ id: `${file.name}-${file.size}-${Math.random()}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined });
 
 const TUTOR: { id: TutorMode; label: string; hint: string }[] = [
   { id: "normal", label: "Normal", hint: "Answers and explains" },
@@ -93,26 +96,35 @@ function PendingChip({ p, onRemove }: { p: Pending; onRemove: () => void }) {
   );
 }
 
-export function Composer({ space, edit, onEditDone, hero = false }: { space: SpaceView; edit: EditTarget | null; onEditDone: () => void; hero?: boolean }) {
+export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = false }: { space: SpaceView; draftKey?: string; edit: EditTarget | null; onEditDone: () => void; hero?: boolean }) {
   const chat = useSpaceChat(space.id);
   const chats = useChats.getState;
   const status = useCoreStatus();
   const groups = useCatalog((s) => s.groups);
   const openSettings = useNav((s) => s.openSettings);
-  const [text, setText] = useState(() => drafts.get(space.id) ?? "");
-  const [files, setFiles] = useState<Pending[]>([]);
-  const [kept, setKept] = useState<Attachment[]>([]);
+  const [text, setText] = useState(() => drafts.get(draftKey) ?? "");
+  const [files, setFiles] = useState<Pending[]>(() => stashes.get(draftKey)?.files.map(pending) ?? []);
+  const [kept, setKept] = useState<Attachment[]>(() => stashes.get(draftKey)?.kept ?? []);
+  // Coming back to a conversation with an edit under way keeps what was typed rather than starting the edit over.
+  const restored = useRef(drafts.has(draftKey) || stashes.has(draftKey));
   const [problem, setProblem] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    drafts.set(space.id, text);
-  }, [space.id, text]);
+    drafts.set(draftKey, text);
+  }, [draftKey, text]);
 
   useEffect(() => {
-    if (!edit) return;
+    if (files.length || kept.length) stashes.set(draftKey, { files: files.map((f) => f.file), kept });
+    else stashes.delete(draftKey);
+  }, [draftKey, files, kept]);
+
+  useEffect(() => {
+    const skip = restored.current;
+    restored.current = false;
+    if (!edit || skip) return;
     setText(edit.text);
     setKept(edit.attachments);
     setFiles([]);
@@ -138,7 +150,7 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
     (list: File[]) => {
       const { ok, problems } = admit(list, MAX_FILES - files.length - kept.length);
       setProblem(problems[0] ?? null);
-      setFiles((cur) => [...cur, ...ok.map((file) => ({ id: `${file.name}-${file.size}-${Math.random()}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined }))]);
+      setFiles((cur) => [...cur, ...ok.map(pending)]);
     },
     [files.length, kept.length],
   );
@@ -166,7 +178,8 @@ export function Composer({ space, edit, onEditDone, hero = false }: { space: Spa
     const shown: Attachment[] = [...kept, ...files.map((f) => ({ name: f.file.name, mediaType: mediaTypeOf(f.file), previewUrl: f.previewUrl, size: f.file.size }))];
     const prompt = text;
     // The hero composer unmounts as the timeline appears, so clear the draft now, not in an effect.
-    drafts.set(space.id, "");
+    drafts.set(draftKey, "");
+    stashes.delete(draftKey);
     setText("");
     setFiles([]);
     setKept([]);

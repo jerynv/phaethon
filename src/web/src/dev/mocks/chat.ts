@@ -18,6 +18,7 @@ import { zipSync, strToU8 } from "fflate";
 
 import type { AccessAnswer, AgentEvent, LessonAnswer, UiMessage } from "#shared/agent.ts";
 import { sleep, type MockChannel } from "../mock-core";
+import { mockThreadText, mockTurn, writeSpaces, writeThreads } from "./shell";
 
 const hash = new URLSearchParams(location.hash.slice(1));
 const CS101 = "courses/CS 101 Fall 2026";
@@ -163,10 +164,21 @@ function longThread(): UiMessage[] {
   return out;
 }
 
+/** Saved conversations by `space/thread`; the shell mock's newest school conversation has the full script. */
 const threads: Record<string, UiMessage[]> = {
-  school: hash.get("thread") === "pending" ? PENDING : hash.get("thread") === "empty" ? [] : hash.get("thread") === "long" ? longThread() : SAVED,
-  work: [],
+  "school/1762800000000": hash.get("thread") === "pending" ? PENDING : hash.get("thread") === "empty" ? [] : hash.get("thread") === "long" ? longThread() : SAVED,
 };
+
+/** A conversation the shell mock lists but this file has no script for: its two listed lines. */
+function savedOf(key: string): UiMessage[] {
+  if (threads[key]) return threads[key];
+  const [space, id] = key.split("/") as [string, string];
+  const text = mockThreadText(space, id) ?? [];
+  threads[key] = text.map((t, i) => ({ role: i % 2 ? "assistant" : "user", text: t, attachments: [], index: i, records: [], at: now - 3_600_000 + i * 20_000 }));
+  return threads[key];
+}
+
+const conv = (args: Record<string, unknown>) => `${String(args.space)}/${String(args.thread)}`;
 
 // ---- A running turn ----
 
@@ -209,11 +221,13 @@ function end(ch: MockChannel, space: string, turn: Turn, saved?: UiMessage[]) {
   if (saved) threads[space] = saved;
   ch.send({ kind: "end", sessionId: null });
   turns.delete(space);
+  const [realSpace, id] = space.split("/") as [string, string];
+  mockTurn(realSpace, id, "", false);
 }
 
 /** What the core would save: the prompt and the reply's text, at the next positions. */
 function saveTurn(space: string, prompt: string, reply: string, records: UiMessage["records"] = [], replaceFrom?: number, pending?: UiMessage["pending"]) {
-  const base = replaceFrom !== undefined ? threads[space].filter((m) => m.index < replaceFrom) : threads[space];
+  const base = replaceFrom !== undefined ? savedOf(space).filter((m) => m.index < replaceFrom) : savedOf(space);
   const next = base.length ? Math.max(...base.map((m) => m.index)) + 1 : 0;
   const out = [...base];
   if (prompt) out.push({ role: "user", text: prompt, attachments: [], index: next, records: [], at: Date.now() });
@@ -222,12 +236,14 @@ function saveTurn(space: string, prompt: string, reply: string, records: UiMessa
 }
 
 async function run(args: Record<string, unknown>) {
-  const space = String(args.space);
+  const realSpace = String(args.space);
+  const space = conv(args);
   const prompt = String(args.prompt ?? "");
   const ch = args.onEvent as MockChannel;
   const replaceFrom = typeof args.replaceFrom === "number" ? args.replaceFrom : undefined;
   const turn: Turn = { cancelled: false };
   turns.set(space, turn);
+  mockTurn(realSpace, String(args.thread), prompt, true);
   const p = prompt.toLowerCase();
   await sleep(500);
 
@@ -258,11 +274,12 @@ async function run(args: Record<string, unknown>) {
       detail: NOTES_AFTER,
       action: "replace",
       path: "notes/week6.md",
-      space,
+      space: realSpace,
       before: NOTES_BEFORE,
       truncated: false,
     });
-    const allowed = await waitFor<boolean>(space, "w1", turn);
+    const standing = writeSpaces.has(realSpace) ? "space" : writeThreads.has(String(args.thread)) ? "conversation" : null;
+    const allowed = standing ? true : await waitFor<boolean>(space, "w1", turn);
     const ok = allowed === true;
     ch.send({ kind: "approvalDone", id: "w1", allowed: ok });
     if (allowed === "cancelled") return end(ch, space, turn);
@@ -371,7 +388,7 @@ async function run(args: Record<string, unknown>) {
 }
 
 async function lesson(args: Record<string, unknown>) {
-  const space = String(args.space);
+  const space = conv(args);
   const ch = args.onEvent as MockChannel;
   const a = args.answer as LessonAnswer;
   const turn: Turn = { cancelled: false };
@@ -391,7 +408,7 @@ async function lesson(args: Record<string, unknown>) {
         ? `Yes. You start from **$f(a) = f(b)$** and work toward $a = b$:\n\n$$3a - 7 = 3b - 7 \\;\\Rightarrow\\; 3a = 3b \\;\\Rightarrow\\; a = b.$$\n\n${a.confidence !== undefined && a.confidence < 50 ? "You were unsure, but your instinct was right." : "And you were sure, rightly."}`
         : "Not quite: that line starts a **surjectivity** proof. For injectivity, start from two inputs with the same output: **suppose $f(a) = f(b)$**, then show $a = b$.";
   await say(ch, turn, reply);
-  const t = threads[space];
+  const t = savedOf(space);
   const last = t[t.length - 1];
   const rec = { kind: "check" as const, id: String(args.id), question, answered: true, correct: a.dontKnow ? false : a.text ? undefined : right, confidence: a.confidence };
   end(ch, space, turn, [...t.slice(0, -1), { ...last, pending: undefined, text: `${last.text}\n\n${reply}`, records: [...last.records, rec] }]);
@@ -528,13 +545,13 @@ let lastPick: { backend: string; model: string | null; effort: string | null } =
 
 export default {
   thread_model_get: (args: Record<string, unknown>) => {
-    const own = picks[String(args.space)];
+    const own = args.thread ? picks[conv(args)] : undefined;
     return own ? { pick: own, saved: true } : { pick: lastPick, saved: false };
   },
   thread_model_set: async (args: Record<string, unknown>) => {
     await sleep(60);
     const pick = args.pick as { backend: string; model: string | null; effort: string | null };
-    picks[String(args.space)] = pick;
+    if (args.thread) picks[conv(args)] = pick;
     lastPick = pick;
     return { pick, saved: true };
   },
@@ -581,27 +598,32 @@ export default {
   space_model_set: () => null,
   space_tutor_modes_list: () => ({}),
   space_tutor_mode_set: () => null,
-  thread_load: (args: Record<string, unknown>) => threads[String(args.space)] ?? [],
+  thread_load: async (args: Record<string, unknown>) => {
+    await sleep(120);
+    return savedOf(conv(args));
+  },
   agent_send: (args: Record<string, unknown>) => {
     void run(args);
     return null;
   },
   agent_cancel: (args: Record<string, unknown>) => {
-    const t = turns.get(String(args.space));
+    const t = turns.get(conv(args));
     if (!t) return false;
     t.cancelled = true;
     t.wake?.();
     return true;
   },
   agent_approve: (args: Record<string, unknown>) => {
-    const k = `${args.space}\n${args.id}`;
+    if (args.allow && args.remember === "space") writeSpaces.set(String(args.space), Date.now());
+    if (args.allow && args.remember === "conversation") writeThreads.set(String(args.thread), Date.now());
+    const k = `${conv(args)}\n${args.id}`;
     const w = waiting.get(k);
     waiting.delete(k);
     w?.(Boolean(args.allow));
     return !!w;
   },
   agent_access_answer: (args: Record<string, unknown>) => {
-    const k = `${args.space}\n${args.id}`;
+    const k = `${conv(args)}\n${args.id}`;
     const w = waiting.get(k);
     waiting.delete(k);
     w?.(args.answer);

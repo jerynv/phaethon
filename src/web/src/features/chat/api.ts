@@ -8,10 +8,13 @@ import type { StudyPlan } from "./lib/study-chat";
 
 export type Upload = { name: string; mediaType: string; data: string };
 
-export const threadLoad = (space: string) => invoke<UiMessage[]>("thread_load", { space });
+export const threadLoad = (space: string, thread: string) => invoke<UiMessage[]>("thread_load", { space, thread });
+/** A new conversation's id; nothing is saved until its first message. */
+export const threadCreate = (space: string) => invoke<string>("thread_create", { space });
 
 export function agentSend(args: {
   space: string;
+  thread: string;
   prompt: string;
   attachments: Upload[];
   onEvent: Channel<AgentEvent>;
@@ -23,17 +26,20 @@ export function agentSend(args: {
   return invoke<void>("agent_send", args);
 }
 
-export const agentCancel = (space: string) => invoke<boolean>("agent_cancel", { space });
-export const agentApprove = (space: string, id: string, allow: boolean) => invoke<boolean>("agent_approve", { space, id, allow });
-export const agentAccessAnswer = (space: string, id: string, answer: AccessAnswer) =>
-  invoke<boolean>("agent_access_answer", { space, id, answer });
+export const agentCancel = (space: string, thread: string) => invoke<boolean>("agent_cancel", { space, thread });
+/** "conversation" or "space" with `allow` also lets later writes there go ahead without asking. */
+export type Remember = "conversation" | "space";
+export const agentApprove = (space: string, thread: string, id: string, allow: boolean, remember?: Remember) =>
+  invoke<boolean>("agent_approve", { space, thread, id, allow, ...(remember ? { remember } : {}) });
+export const agentAccessAnswer = (space: string, thread: string, id: string, answer: AccessAnswer) =>
+  invoke<boolean>("agent_access_answer", { space, thread, id, answer });
 
 /**
  * The student's answer to a lesson question. The core continues the lesson
  * with it and streams the rest of the turn on `onEvent`, ending with `end`.
  */
-export const lessonAnswer = (space: string, id: string, answer: LessonAnswer, onEvent: Channel<AgentEvent>) =>
-  invoke<boolean>("lesson_answer", { space, id, answer, onEvent });
+export const lessonAnswer = (space: string, thread: string, id: string, answer: LessonAnswer, onEvent: Channel<AgentEvent>) =>
+  invoke<boolean>("lesson_answer", { space, thread, id, answer, onEvent });
 
 export type Backend = "phaethon" | "claude-cli" | "codex-cli" | "gemini-cli";
 
@@ -104,5 +110,6 @@ export const studyCitationsCheck = (space: string, citations: { path: string; qu
 /** The model a conversation answers with (core: threads/pick.ts). */
 export type ModelPick = { backend: Backend; model: string | null; effort: string | null };
 export type PickView = { pick: ModelPick; saved: boolean };
-export const threadModelGet = (space: string) => invoke<PickView>("thread_model_get", { space });
-export const threadModelSet = (space: string, pick: ModelPick) => invoke<PickView>("thread_model_set", { space, pick });
+/** `thread` null: a new chat (the pick it starts with). */
+export const threadModelGet = (space: string, thread: string | null) => invoke<PickView>("thread_model_get", { space, thread });
+export const threadModelSet = (space: string, thread: string | null, pick: ModelPick) => invoke<PickView>("thread_model_set", { space, thread, pick });

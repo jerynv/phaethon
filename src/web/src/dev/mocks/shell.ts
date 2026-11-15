@@ -7,9 +7,13 @@ import type { MockContext, MockHandlers } from "../mock-core";
  */
 
 type Space = { id: string; name: string; description: string; hue: number; educationEnabled: boolean; lastUsed: number | null };
-type Thread = { id: string; title: string; updated: number; messages: number; current: boolean; text: string[]; pinned?: number; renamed?: string };
+type Thread = { id: string; title: string; updated: number; messages: number; text: string[]; pinned?: number; renamed?: string };
 
 const now = Date.now();
+const hash = new URLSearchParams(location.hash.slice(1));
+/** Where writes were allowed without asking (shared with the chat mock). */
+export const writeSpaces = new Map<string, number>();
+export const writeThreads = new Map<string, number>();
 const min = 60_000;
 const hour = 60 * min;
 const day = 24 * hour;
@@ -23,11 +27,10 @@ const spaces: Space[] = [
 const threads: Record<string, Thread[]> = {
   school: [
     {
-      id: "current",
+      id: "1762800000000",
       title: "Strong induction for the Fibonacci bound",
       updated: now - 4 * min,
       messages: 6,
-      current: true,
       text: [
         "Can you walk me through proving F(n) < 2^n with strong induction?",
         "Start with the premises: F(1) = 1 and F(2) = 1, so the bound holds for n = 1 and n = 2. Assume it holds for every k below n…",
@@ -38,7 +41,6 @@ const threads: Record<string, Thread[]> = {
       title: "Series convergence: ratio vs root test",
       updated: now - 3 * hour,
       messages: 12,
-      current: false,
       text: ["When should I prefer the root test over the ratio test?", "Use the root test when the terms have nth powers, like (n/(2n+1))^n…"],
     },
     {
@@ -46,7 +48,6 @@ const threads: Record<string, Thread[]> = {
       title: "CS101 homework 6, problem 4",
       updated: now - day - 2 * hour,
       messages: 8,
-      current: false,
       text: ["Is this relation transitive? R = {(a,b) | a divides b}", "Yes. If a divides b and b divides c, then c = b·m = a·k·m…"],
     },
     {
@@ -54,7 +55,6 @@ const threads: Record<string, Thread[]> = {
       title: "Make a plan for Test 1 (through Problem set 6)",
       updated: now - 4 * day,
       messages: 4,
-      current: false,
       pinned: now - 2 * day,
       text: ["Help me plan review for CS101 Test 1. It covers through homework 6.", "Here's a five-day plan, one topic per day, with a mixed review the night before…"],
     },
@@ -63,17 +63,15 @@ const threads: Record<string, Thread[]> = {
       title: "Psychology reading summary, chapter 3",
       updated: now - 9 * day,
       messages: 2,
-      current: false,
       text: ["Summarize chapter 3 on sensation and perception.", "Chapter 3 separates sensation (detecting energy) from perception (interpreting it)…"],
     },
   ],
   work: [
     {
-      id: "current",
+      id: "1762790000000",
       title: "Email to Dr. Alvarez about the poster deadline",
       updated: now - 2 * hour,
       messages: 4,
-      current: true,
       text: ["Draft a short email asking for one more week on the poster.", "Here's a draft that keeps it brief and offers a new date…"],
     },
     {
@@ -81,7 +79,6 @@ const threads: Record<string, Thread[]> = {
       title: "Clean up the survey CSV",
       updated: now - 2 * day,
       messages: 10,
-      current: false,
       text: ["The survey export has duplicate respondents. How do I dedupe by email?", "Group by the lowercase, trimmed email and keep the latest submission…"],
     },
   ],
@@ -119,15 +116,42 @@ function space(id: string): Space {
   return s;
 }
 
+/** A space's conversations; one another mock lists (and this one doesn't know) simply has none. */
 function list(id: string): Thread[] {
-  space(id);
   threads[id] ??= [];
   return threads[id];
 }
 
 function summary(t: Thread) {
-  return { id: t.id, title: t.renamed ?? t.title, updated: t.updated, messages: t.messages, current: t.current, ...(t.pinned ? { pinned: t.pinned } : {}), ...(t.renamed ? { renamed: true } : {}) };
+  return { id: t.id, title: t.renamed ?? t.title, updated: t.updated, messages: t.messages, ...(running.has(`${t.id}`) ? { running: true } : {}), ...(t.pinned ? { pinned: t.pinned } : {}), ...(t.renamed ? { renamed: true } : {}) };
 }
+
+/** Conversations replying now (the chat mock reports them). */
+const running = new Set<string>();
+
+/** The chat mock's turn started or ended in a conversation: a new chat appears in the list on its first message. */
+export function mockTurn(spaceId: string, id: string, prompt: string, live: boolean) {
+  const all = list(spaceId);
+  let t = all.find((x) => x.id === id);
+  if (!t) {
+    const title = prompt.split(/\s+/).filter(Boolean).join(" ").slice(0, 60) || "New conversation";
+    t = { id, title, updated: Date.now(), messages: 0, text: [prompt] };
+    all.push(t);
+  }
+  t.updated = Date.now();
+  if (live) running.add(id);
+  else {
+    running.delete(id);
+    t.messages += 2;
+  }
+}
+
+/** What a listed conversation says, for the chat mock's `thread_load` of one it has no script for. */
+export function mockThreadText(spaceId: string, id: string): string[] | undefined {
+  return threads[spaceId]?.find((t) => t.id === id)?.text;
+}
+
+let nextId = Date.now();
 
 function thread(space: string, id: string): Thread {
   const t = list(space).find((x) => x.id === id);
@@ -193,57 +217,44 @@ export default {
     space(args.id);
   },
 
-  threads_list: (args: { space: string }) => {
-    const all = list(args.space);
-    const current = all.find((t) => t.current) ?? { id: "current", title: "New conversation", updated: Date.now(), messages: 0, current: true, text: [] };
-    const archived = all.filter((t) => !t.current).sort((a, b) => b.updated - a.updated);
-    return [summary(current), ...archived.map(summary)];
+  threads_list: (args: { space: string }) => [...list(args.space)].sort((a, b) => b.updated - a.updated).map(summary),
+  thread_create: (args: { space: string }) => {
+    list(args.space);
+    return String(++nextId);
   },
-  thread_new: (args: { space: string }) => {
-    const all = list(args.space);
-    const current = all.find((t) => t.current);
-    if (current) {
-      if (current.messages === 0) all.splice(all.indexOf(current), 1);
-      else {
-        current.current = false;
-        current.id = String(Date.now());
-      }
-    }
-    all.unshift({ id: "current", title: "New conversation", updated: Date.now(), messages: 0, current: true, text: [] });
-  },
-  thread_open: (args: { space: string; id: string }) => {
-    if (args.id === "current") return;
-    const all = list(args.space);
-    const chosen = all.find((t) => t.id === args.id);
-    if (!chosen) throw "That conversation couldn’t be opened: that conversation is no longer there";
-    const current = all.find((t) => t.current);
-    if (current) {
-      if (current.messages === 0) all.splice(all.indexOf(current), 1);
-      else {
-        current.current = false;
-        current.id = String(Date.now());
-      }
-    }
-    chosen.current = true;
-    chosen.id = "current";
-  },
-  thread_rename: (args: { space: string; id: string; title: string }) => {
-    const t = thread(args.space, args.id);
+  thread_rename: (args: { space: string; thread: string; title: string }) => {
+    const t = thread(args.space, args.thread);
     const title = args.title.split(/\s+/).filter(Boolean).join(" ").slice(0, 120);
     t.renamed = title || undefined;
     return { title: t.renamed, pinned: t.pinned };
   },
-  thread_pin: (args: { space: string; id: string; pinned: boolean }) => {
-    const t = thread(args.space, args.id);
+  thread_pin: (args: { space: string; thread: string; pinned: boolean }) => {
+    if (hash.has("failpin")) throw "The conversation’s settings file is read-only.";
+    const t = thread(args.space, args.thread);
     t.pinned = args.pinned ? Date.now() : undefined;
     return { title: t.renamed, pinned: t.pinned };
   },
-  thread_delete: (args: { space: string; id: string }) => {
+  thread_delete: (args: { space: string; thread: string }) => {
+    if (running.has(args.thread)) throw "Phaethon is still replying in this conversation. Stop the reply or wait for it to finish, then try again.";
     const all = list(args.space);
-    const i = all.findIndex((t) => t.id === args.id);
-    if (i === -1) return;
-    if (args.id === "current") all[i] = { id: "current", title: "New conversation", updated: Date.now(), messages: 0, current: true, text: [] };
-    else all.splice(i, 1);
+    const i = all.findIndex((t) => t.id === args.thread);
+    if (i !== -1) all.splice(i, 1);
+  },
+  write_permissions_list: (args: { space: string }) => ({
+    spaces: [...writeSpaces].map(([space, since]) => ({ space, since })),
+    conversations: list(args.space)
+      .filter((t) => writeThreads.has(t.id))
+      .map((t) => ({ thread: t.id, title: t.renamed ?? t.title, since: writeThreads.get(t.id)! })),
+  }),
+  write_permission_set: (args: { space: string; thread?: string; scope: "conversation" | "space"; allow: boolean }) => {
+    if (args.scope === "space") {
+      if (args.allow) writeSpaces.set(args.space, Date.now());
+      else writeSpaces.delete(args.space);
+    } else if (args.thread) {
+      if (args.allow) writeThreads.set(args.thread, Date.now());
+      else writeThreads.delete(args.thread);
+    }
+    return { spaces: [...writeSpaces].map(([space, since]) => ({ space, since })), conversations: [] };
   },
 
   conversations_search: (args: { space: string; query: string; allSpaces: boolean }) => {
@@ -270,7 +281,7 @@ export default {
             });
           }
         }
-        if (matches) conversations.push({ space: id, threadId: t.id, title: t.title, updated: t.updated, current: t.current, matches, snippets });
+        if (matches) conversations.push({ space: id, threadId: t.id, title: t.title, updated: t.updated, matches, snippets });
       }
     }
     conversations.sort((a, b) => b.updated - a.updated);

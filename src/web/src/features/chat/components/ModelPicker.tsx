@@ -46,7 +46,7 @@ const TINT: Record<string, string> = {
 function TierMeter({ tier, group }: { tier: number; group: string }) {
   const on = TINT[group] ?? "bg-foreground";
   return (
-    <span className="flex shrink-0 items-center gap-0.5" aria-hidden title="Rough tier, from the model’s family">
+    <span className="flex shrink-0 items-center gap-0.5" aria-hidden title="Estimated from the model family">
       {Array.from({ length: 10 }, (_, i) => (
         <span key={i} className={cn("h-3.5 w-0.75 rounded-full", i < tier ? on : "bg-foreground/8")} />
       ))}
@@ -270,11 +270,6 @@ function GroupRows({
           >
             <ProviderIcon id={group.id} />
             <Truncate className="flex-1">{m.name}</Truncate>
-            {m.efforts.length ? (
-              <span className="shrink-0 text-subtle-foreground" title="Has reasoning levels">
-                <EffortGlyph level={m.defaultEffort ?? "medium"} levels={m.efforts} className="size-3" />
-              </span>
-            ) : null}
             {tier ? <TierMeter tier={tier} group={group.id} /> : null}
             <Icon icon={icons.check} className={cn("size-4 shrink-0 text-primary", selected ? "opacity-100" : "opacity-0")} />
           </div>

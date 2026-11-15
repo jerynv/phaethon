@@ -113,6 +113,7 @@ import {
   ViewIcon,
   WavingHand01Icon,
   WifiDisconnected01Icon,
+  Wrench01Icon,
   Xls01Icon,
 } from "@hugeicons/core-free-icons";
 
@@ -205,7 +206,8 @@ export const icons = {
   write: FileEditIcon,
   terminal: ComputerTerminal01Icon,
   task: Navigation03Icon,
-  step: AiMagicIcon,
+  // A tool line leads with a wrench, not the sparkle: the summary counts tools used, nothing "magic".
+  step: Wrench01Icon,
 
   // Files and places
   file: File01Icon,

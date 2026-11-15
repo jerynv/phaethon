@@ -7,6 +7,7 @@ import { toast } from "@/components/toast";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
+import { cn } from "@/lib/utils";
 import { FILL_EVENT, type FillDetail } from "./ChatActions";
 
 type Starter = { id: string; icon: IconData; title: string; line: string; prompt: string };
@@ -22,6 +23,16 @@ const GENERAL: Starter[] = [
   { id: "find", icon: icons.find, title: "Find", line: "Answers in your files", prompt: "Find where my files mention " },
   { id: "summarize", icon: icons.fileText, title: "Summarize", line: "Long files, made short", prompt: "Summarize " },
 ];
+
+/** A small white file label set on the art tile. */
+function FileTag({ name, className }: { name: string; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-0.5 rounded-md bg-card/90 px-1.5 text-3xs text-foreground shadow-card", className)}>
+      <Icon icon={icons.file} className="size-2.5 text-muted-foreground" />
+      {name}
+    </span>
+  );
+}
 
 function fill(draftKey: string, text: string) {
   window.dispatchEvent(new CustomEvent<FillDetail>(FILL_EVENT, { detail: { draftKey, text } }));
@@ -48,9 +59,9 @@ export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: strin
   };
   return (
     <div className="@container/welcome flex grow-3 flex-col items-center px-8 pb-6">
-      <div className="mt-5 grid w-full max-w-(--chat-max-width) grid-cols-1 gap-3 @md/welcome:grid-cols-3" role="group" aria-label="Starters">
+      <div className="mt-5 grid w-full max-w-(--chat-max-width) grid-cols-1 gap-3 @xl/welcome:grid-cols-3" role="group" aria-label="Starters">
         {starters.map((s) => (
-          <Card key={s.id} variant="interactive" render={<button type="button" onClick={() => fill(draftKey, s.prompt)} />} className="flex-row items-center gap-3 p-3 text-left @md/welcome:flex-col @md/welcome:items-start @md/welcome:gap-5 @md/welcome:p-4">
+          <Card key={s.id} variant="interactive" render={<button type="button" onClick={() => fill(draftKey, s.prompt)} />} className="flex-row items-center gap-3 p-3 text-left @xl/welcome:flex-col @xl/welcome:items-start @xl/welcome:gap-5 @xl/welcome:p-4">
             <Icon icon={s.icon} className="size-5 text-muted-foreground" />
             <span className="flex flex-col gap-0.5">
               <span className="font-medium text-foreground text-sm">{s.title}</span>
@@ -61,10 +72,16 @@ export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: strin
       </div>
       <span className="min-h-6 flex-1" />
       <Card variant="interactive" render={<button type="button" onClick={addFiles} aria-busy={adding || undefined} />} className="hidden w-full max-w-md flex-row items-center gap-4 p-2 pr-5 text-left @md/welcome:flex">
-        <ArtTile palette="sky" seed={`welcome-${space.id}`} className="size-14" />
+        {/* The art carries a hint of what goes in, after a163's app icons on its tile. */}
+        <ArtTile palette="sky" seed={`welcome-${space.id}`} grain className="flex h-14 w-20">
+          <span className="flex size-full flex-col items-start justify-center gap-1 px-1.5" aria-hidden>
+            <FileTag name="notes.md" />
+            <FileTag name="slides.pdf" className="ml-2" />
+          </span>
+        </ArtTile>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="font-medium text-foreground text-sm">Add files to {space.name}</span>
-          <span className="truncate text-muted-foreground text-sm">Notes, slides and PDFs Phaethon can read and cite</span>
+          <span className="truncate text-muted-foreground text-sm">Notes, slides and PDFs to read and cite</span>
         </span>
         {adding ? <Spinner size="md" className="text-muted-foreground" /> : <Icon icon={icons.folderAdd} className="size-4.5 text-muted-foreground" />}
       </Card>

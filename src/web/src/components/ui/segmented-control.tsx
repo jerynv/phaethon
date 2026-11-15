@@ -41,7 +41,7 @@ function SegmentedControl<T extends string>({
           }}
           className={cn(
             "relative inline-flex w-fit items-center",
-            variant === "track" ? "gap-0.5 rounded-lg bg-muted p-0.5" : "divide-x overflow-hidden rounded-lg border bg-card",
+            variant === "track" ? "isolate gap-0.5 rounded-lg bg-muted p-0.5" : "divide-x overflow-hidden rounded-lg border bg-card",
             className,
           )}
           {...props}

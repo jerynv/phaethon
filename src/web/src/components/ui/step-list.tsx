@@ -117,7 +117,7 @@ function StepList({ open = true, variant = "dot", className, children }: { open?
   return (
     <Collapse open={open}>
       <ListCtx value={variant}>
-        <ol data-slot="step-list" data-variant={variant} className={cn("flex flex-col py-1.5", variant === "dot" ? "pl-1" : "", className)}>
+        <ol data-slot="step-list" data-variant={variant} className={cn("flex flex-col py-1.5", variant === "dot" ? "pl-1" : "pt-0", className)}>
           {children}
         </ol>
       </ListCtx>
@@ -188,7 +188,8 @@ function Step({
             state === "pending" && "text-subtle-foreground",
           )}
         >
-          <span className={cn("min-w-0 flex-1", wrap ? "wrap-anywhere" : "truncate", state === "active" && "text-shimmer")}>{children}</span>
+          {/* The shimmer paints plain text only; a step that passes its own elements (a label and a file chip) shimmers its label itself. */}
+          <span className={cn("min-w-0 flex-1", wrap ? "wrap-anywhere" : "truncate", state === "active" && typeof children === "string" && "text-shimmer")}>{children}</span>
           {meta ? <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{meta}</span> : null}
           {tag ? <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-muted-foreground text-xs">{tag}</span> : null}
         </span>
@@ -203,6 +204,7 @@ function ToolSummary({
   summary,
   duration,
   running = false,
+  lead,
   open,
   onOpenChange,
   children,
@@ -211,6 +213,8 @@ function ToolSummary({
   summary: React.ReactNode;
   duration?: React.ReactNode;
   running?: boolean;
+  /** Replaces the leading glyph (a status dot while the work waits on the person). */
+  lead?: React.ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children?: React.ReactNode;
@@ -224,7 +228,9 @@ function ToolSummary({
         onClick={() => onOpenChange(!open)}
         className="group/summary flex h-9 items-center gap-3 rounded-lg text-left text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex w-5 justify-center">{running ? <Spinner size="md" className="text-muted-foreground" /> : <Icon icon={icons.step} className="size-4.5 text-foreground" />}</span>
+        <span className="flex w-5 justify-center">
+          {lead ?? (running ? <Spinner size="md" className="text-muted-foreground" /> : <Icon icon={icons.step} className="size-4.5 text-foreground" />)}
+        </span>
         <span className={cn("min-w-0 truncate text-base", running && "text-shimmer")}>{summary}</span>
         <Icon icon={icons.chevronDown} className={cn("size-4 text-muted-foreground transition-transform duration-200 group-hover/summary:text-foreground", !open && "-rotate-90")} />
         {duration ? <span className="ml-auto shrink-0 text-muted-foreground text-sm tabular-nums">{duration}</span> : null}

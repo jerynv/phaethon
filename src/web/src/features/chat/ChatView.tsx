@@ -174,7 +174,7 @@ export function ChatView({ space }: { space: SpaceView }) {
       ) : (
         <div ref={box} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]">
           {showSkeleton ? <SkeletonTurns /> : null}
-          <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-5 px-4 pt-6 pb-8">
+          <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-4 px-4 pt-6 pb-8">
             {chat.messages.map((m, i) =>
               m.role === "user" ? (
                 <UserMessage
@@ -220,7 +220,10 @@ export function ChatView({ space }: { space: SpaceView }) {
             </div>
           ) : null}
         </AnimatePresence>
-        <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
+        {/* Above the limit card, whose bottom edge tucks under the composer (ref fd96). */}
+        <div className="relative z-10">
+          <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
+        </div>
       </div>
       {empty ? <Welcome space={space} draftKey={key} /> : null}
     </div>

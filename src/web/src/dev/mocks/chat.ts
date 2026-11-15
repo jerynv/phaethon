@@ -204,13 +204,22 @@ async function say(ch: MockChannel, turn: Turn, text: string, speed = 14) {
   }
 }
 
-async function tool(ch: MockChannel, turn: Turn, id: string, category: "read" | "search" | "list" | "write", label: string, target?: string, ms = 350, status: "success" | "failed" = "success", detail?: string) {
-  if (turn.cancelled) return;
+async function tool(ch: MockChannel, turn: Turn, id: string, category: "read" | "search" | "list" | "write", label: string, target?: string, ms = 350, status: "success" | "failed" = "success", detail?: string): Promise<UiMessage["records"][number] | null> {
+  if (turn.cancelled) return null;
   ch.send({ kind: "toolStart", id, category, label, target } satisfies AgentEvent);
   ch.send({ kind: "tool", label: target ? `${label} ${target}` : label } satisfies AgentEvent);
   await sleep(ms);
   ch.send({ kind: "toolEnd", id, status, detail } satisfies AgentEvent);
-  ch.send({ kind: "record", record: { kind: "tool", id, category, label, target, status, detail } } satisfies AgentEvent);
+  const record = { kind: "tool", id, category, label, target, status, detail } as const;
+  ch.send({ kind: "record", record } satisfies AgentEvent);
+  return record;
+}
+
+/** A stopped reply's saved text: cut near `n` but never inside a `[source: …]` citation. */
+function cutText(text: string, n: number): string {
+  const cut = text.slice(0, n);
+  const open = cut.lastIndexOf("[");
+  return (open > cut.lastIndexOf("]") ? cut.slice(0, open) : cut).trimEnd();
 }
 
 function end(ch: MockChannel, space: string, turn: Turn, saved?: UiMessage[]) {
@@ -243,6 +252,8 @@ async function run(args: Record<string, unknown>) {
   const replaceFrom = typeof args.replaceFrom === "number" ? args.replaceFrom : undefined;
   const turn: Turn = { cancelled: false };
   turns.set(space, turn);
+  // A brand-new conversation starts from nothing; the shell's listed text (the prompt) isn't a saved message yet.
+  if (!threads[space] && !mockThreadText(realSpace, String(args.thread))) threads[space] = [];
   mockTurn(realSpace, String(args.thread), prompt, true);
   const p = prompt.toLowerCase();
   await sleep(500);
@@ -375,16 +386,18 @@ async function run(args: Record<string, unknown>) {
   ch.send({ kind: "thinking", delta: "The student mixes up the two definitions. " });
   await sleep(200);
   ch.send({ kind: "thinking", delta: "Start from the course's own wording, then one worked example that is injective but not surjective, then a table." });
-  await tool(ch, turn, "d1", "search", "Searching files for “injective”", undefined, 400);
-  await tool(ch, turn, "d2", "read", "Reading file", `${CS101}/files/Lecture 7 Functions.md`, p.includes("long") ? 14000 : 450);
-  await tool(ch, turn, "d3", "read", "Reading file", `${CS101}/syllabus.md`, 300, "failed", "No such file in this course");
+  const records: UiMessage["records"] = [];
+  const keep = (r: UiMessage["records"][number] | null) => void (r && records.push(r));
+  keep(await tool(ch, turn, "d1", "search", "Searching files for “injective”", undefined, 400));
+  keep(await tool(ch, turn, "d2", "read", "Reading file", `${CS101}/files/Lecture 7 Functions.md`, p.includes("long") ? 14000 : 450));
+  keep(await tool(ch, turn, "d3", "read", "Reading file", `${CS101}/syllabus.md`, 300, "failed", "No such file in this course"));
   ch.send({ kind: "progress", text: "Found the definition in Lecture 7; checking what Test 1 covers." });
-  await tool(ch, turn, "d4", "read", "Reading file", `${CS101}/announcements.md`, 300);
+  keep(await tool(ch, turn, "d4", "read", "Reading file", `${CS101}/announcements.md`, 300));
   await say(ch, turn, DEFAULT_REPLY, p.includes("slow") ? 60 : 6);
   if (turn.cancelled) {
-    return end(ch, space, turn, saveTurn(space, prompt, DEFAULT_REPLY.slice(0, 200), [{ kind: "stopped" }], replaceFrom));
+    return end(ch, space, turn, saveTurn(space, prompt, cutText(DEFAULT_REPLY, 200), [...records, { kind: "stopped" }], replaceFrom));
   }
-  return end(ch, space, turn, saveTurn(space, prompt, DEFAULT_REPLY, [], replaceFrom));
+  return end(ch, space, turn, saveTurn(space, prompt, DEFAULT_REPLY, records, replaceFrom));
 }
 
 async function lesson(args: Record<string, unknown>) {

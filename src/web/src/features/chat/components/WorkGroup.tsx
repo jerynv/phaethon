@@ -87,9 +87,24 @@ function Patience({ hint, className }: { hint: string | null; className?: string
  * doing in plain words with a shimmer, and how long it has taken. The words
  * cross-fade when they change.
  */
-export function ProgressLine({ text, since, category, technical }: { text: string; since?: number; category?: ToolCategory; technical?: string }) {
-  const now = useNow(true);
+/** "Waiting for you": the amber dot that replaces the spinner while a card above the composer needs an answer. */
+function WaitingDot() {
+  return <span className="size-1.5 rounded-full bg-warning" aria-hidden />;
+}
+
+export function ProgressLine({ text, since, category, technical, waiting = false }: { text: string; since?: number; category?: ToolCategory; technical?: string; waiting?: boolean }) {
+  const now = useNow(!waiting);
   const ms = since ? now - since : 0;
+  if (waiting) {
+    return (
+      <div className="my-1 flex h-9 min-w-0 items-center gap-3 text-base text-muted-foreground" role="status" data-slot="progress-line" data-waiting="">
+        <span className="flex w-5 shrink-0 justify-center">
+          <WaitingDot />
+        </span>
+        Waiting for you
+      </div>
+    );
+  }
   return (
     <div className="my-1 flex flex-col" role="status" aria-live="polite" data-slot="progress-line">
       <div className="flex h-9 min-w-0 items-center gap-3 text-base">
@@ -150,7 +165,22 @@ function StepDetail({ text }: { text: string }) {
  * a while a reassuring second line. Tool labels, raw paths and output appear
  * only with Settings › General › Show technical details.
  */
-export function WorkGroup({ tools, live, space, spaceName, spanKey }: { tools: ToolRecord[]; live: boolean; space: string; spaceName?: string; spanKey?: string }) {
+export function WorkGroup({
+  tools,
+  live,
+  space,
+  spaceName,
+  spanKey,
+  waiting = false,
+}: {
+  tools: ToolRecord[];
+  live: boolean;
+  space: string;
+  spaceName?: string;
+  spanKey?: string;
+  /** A card under this reply needs an answer: the line stops spinning and counting and says so. */
+  waiting?: boolean;
+}) {
   const technical = usePrefs((s) => s.technicalDetails);
   const running = live ? tools.find((t) => t.status === "running") : undefined;
   const [open, setOpen] = useState(false);
@@ -159,12 +189,13 @@ export function WorkGroup({ tools, live, space, spaceName, spanKey }: { tools: T
   const stepSpan = running ? trackSpan(`step:${spanKey ?? ""}:${running.id}`, true) : null;
   const failed = tools.filter((t) => t.status === "failed").length;
 
-  const summary = running ? `${friendlyStep(running, spaceName)}…` : workSummary(tools);
+  const held = !!running && waiting;
+  const summary = held ? "Waiting for you" : running ? `${friendlyStep(running, spaceName)}…` : workSummary(tools);
   // Under a second says nothing worth reading; the line shows a time once the work took one.
-  const duration = span && span.ms >= 1000 ? (running ? elapsedText(span.ms) : formatDuration(span.ms)) : undefined;
+  const duration = held ? undefined : span && span.ms >= 1000 ? (running ? elapsedText(span.ms) : formatDuration(span.ms)) : undefined;
 
   return (
-    <div className="my-1" data-slot="work-group" data-live={running ? "" : undefined} role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>
+    <div className={cn("my-1 transition-[margin]", open && "mb-2")} data-slot="work-group" data-live={running ? "" : undefined} role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>
       <ToolSummary
         summary={
           <span className="inline-flex min-w-0 items-center gap-2">
@@ -173,7 +204,8 @@ export function WorkGroup({ tools, live, space, spaceName, spanKey }: { tools: T
           </span>
         }
         duration={duration}
-        running={!!running}
+        running={!!running && !held}
+        lead={held ? <WaitingDot /> : undefined}
         open={open}
         onOpenChange={setOpen}
       >
@@ -195,9 +227,9 @@ export function WorkGroup({ tools, live, space, spaceName, spanKey }: { tools: T
                 }
               >
                 <span className="inline-flex min-w-0 max-w-full items-center gap-2">
-                  <span className="shrink-0">{stepLabel(t, technical, spaceName)}</span>
+                  <span className={cn("shrink-0", t.status === "running" && "text-shimmer")}>{stepLabel(t, technical, spaceName)}</span>
                   {isFile ? (
-                    <FileChip space={space} path={t.target!} className="min-w-0 rounded-full" />
+                    <FileChip space={space} path={t.target!} className="min-w-0 rounded-full text-foreground" />
                   ) : technical && t.target ? (
                     <span className="min-w-0 truncate font-mono text-muted-foreground text-xs">{t.target}</span>
                   ) : null}
@@ -210,7 +242,7 @@ export function WorkGroup({ tools, live, space, spaceName, spanKey }: { tools: T
           })}
         </StepList>
       </ToolSummary>
-      {running ? <Patience hint={patienceHint(stepSpan?.ms ?? 0, running.category)} className="pl-8" /> : null}
+      {running && !held ? <Patience hint={patienceHint(stepSpan?.ms ?? 0, running.category)} className="pl-8" /> : null}
       {running && technical ? <p className="truncate pl-8 font-mono text-subtle-foreground text-xs">{`${running.label}${running.target ? ` · ${running.target}` : ""}`}</p> : null}
     </div>
   );

@@ -123,7 +123,7 @@ function Attachments({ list, space }: { list: Attachment[]; space: string }) {
   const [open, setOpen] = useState(false);
   const many = list.length > 3;
   return (
-    <div className="flex max-w-5/6 flex-col items-end gap-1.5">
+    <div className="flex max-w-full flex-col items-end gap-1.5">
       {many ? (
         <button
           type="button"
@@ -168,26 +168,29 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
       }
     >
       <motion.div
-        className="group/msg flex origin-bottom-right flex-col items-end gap-1.5"
+        className="group/msg flex origin-bottom-right flex-col items-end"
         data-role="user"
         initial={fresh ? { opacity: 0, y: 12, scale: 0.96 } : false}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: "spring", duration: 0.32, bounce: 0.18 }}
       >
-        {m.attachments.length ? <Attachments list={m.attachments} space={space} /> : null}
-        {m.text.trim() ? (
-          <div className="max-w-5/6 rounded-xl bg-message px-4 py-3 text-base text-message-foreground">
-            <ClampedText text={m.text} lines={12} />
-          </div>
-        ) : null}
-        <div className="flex h-7 items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
-          <span className="mr-1 text-subtle-foreground text-xs tabular-nums">{clock(m.at)}</span>
-          {canEdit ? (
-            <MessageAction label="Edit and resend" onClick={onEdit}>
-              <Icon icon={icons.edit} />
-            </MessageAction>
+        <div className="relative flex max-w-5/6 flex-col items-end gap-1.5">
+          {m.attachments.length ? <Attachments list={m.attachments} space={space} /> : null}
+          {m.text.trim() ? (
+            <div className="max-w-full rounded-xl bg-message px-4 py-3 text-base text-message-foreground">
+              <ClampedText text={m.text} lines={12} />
+            </div>
           ) : null}
-          <CopyButton text={m.text} label="Copy message" />
+          {/* Beside the bubble, out of the flow, so a hover row never pushes the reply down (refs b583, fd96). */}
+          <div className="absolute right-full bottom-0 mr-1.5 flex h-7 items-center gap-0.5 whitespace-nowrap opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
+            <span className="mr-1 text-subtle-foreground text-xs tabular-nums">{clock(m.at)}</span>
+            {canEdit ? (
+              <MessageAction label="Edit and resend" onClick={onEdit}>
+                <Icon icon={icons.edit} />
+              </MessageAction>
+            ) : null}
+            <CopyButton text={m.text} label="Copy message" />
+          </div>
         </div>
       </motion.div>
     </MessageMenu>
@@ -263,6 +266,8 @@ export function AssistantMessage({
   const err = m.error ? describeAgentError(m.error.code, m.error.retryAfterSecs) : null;
   const canRetry = last && !running && !streaming;
   const workRunning = lastSeg?.type === "work" && lastSeg.tools.some((t) => t.status === "running");
+  // An approval or access card is open: the work above it is waiting on the person, not running.
+  const waiting = !!m.approval || !!m.access;
   return (
     <MessageMenu
       items={
@@ -287,7 +292,7 @@ export function AssistantMessage({
         </>
       }
     >
-      <div className="group/msg flex flex-col" data-role="assistant" data-status={m.status}>
+      <div className="group/msg relative flex flex-col" data-role="assistant" data-status={m.status}>
         <div ref={body} className="flex flex-col">
           {segs.map((s) => {
             switch (s.type) {
@@ -298,7 +303,17 @@ export function AssistantMessage({
                   <Markdown key={s.key} text={s.text} space={space} messageKey={m.key} />
                 );
               case "work":
-                return <WorkGroup key={s.key} tools={s.tools} live={streaming} space={space} spaceName={spaceName(space)} spanKey={`${m.key}:${s.key}`} />;
+                return (
+                  <WorkGroup
+                    key={s.key}
+                    tools={s.tools}
+                    live={streaming}
+                    waiting={waiting}
+                    space={space}
+                    spaceName={spaceName(space)}
+                    spanKey={`${m.key}:${s.key}`}
+                  />
+                );
               case "thinking":
                 return <Thought key={s.key} text={s.text} live={streaming && s === lastSeg} spanKey={`think:${m.key}:${s.key}`} />;
               case "progress":
@@ -320,7 +335,7 @@ export function AssistantMessage({
             <ThoughtToggle state="thinking" label="Thinking…" open={false} onOpenChange={() => {}} className="pointer-events-none" />
           </div>
         ) : null}
-        {streaming && m.toolStatus && !workRunning ? <ProgressLine text={m.toolStatus} since={startedAt} /> : null}
+        {streaming && m.toolStatus && !workRunning ? <ProgressLine text={m.toolStatus} since={startedAt} waiting={waiting} /> : null}
         {m.approval ? <ApprovalCard approval={m.approval} onAnswer={(allow) => chats().approve(space, m.approval!.id, allow)} /> : null}
         {m.access ? <AccessCard access={m.access} spaceName={spaceName} onAnswer={(a) => chats().answerAccess(space, m.access!.id, a)} /> : null}
         {m.question && last ? <QuestionCard question={m.question} space={space} disabled={running} onAnswer={(a) => chats().answerLesson(space, m.question!.question.id, a)} /> : null}
@@ -340,8 +355,13 @@ export function AssistantMessage({
           />
         ) : null}
         {!streaming ? (
+          // The newest (or a stopped) reply keeps its actions in view; older ones show them on hover, hung
+          // below the reply in the gap before the next turn so they take no room of their own.
           <div
-            className={cn("mt-1 flex h-7 items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100", (last || stopped) && "opacity-100")}
+            className={cn(
+              "flex h-7 items-center gap-1 transition-opacity",
+              last || stopped ? "mt-1" : "absolute top-full left-0 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100",
+            )}
             data-stopped={stopped || undefined}
           >
             {text ? <CopyButton text={text} label="Copy reply" variant="outline" /> : null}

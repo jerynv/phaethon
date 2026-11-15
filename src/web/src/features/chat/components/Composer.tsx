@@ -345,6 +345,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
           value={text}
           rows={hero ? 3 : 2}
           aria-label="Message"
+          data-slot="composer-input"
           placeholder={edit ? "Edit your message" : "Ask anything…"}
           onChange={(e) => {
             setText(e.target.value);
@@ -412,8 +413,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
               {busy ? (
                 <motion.span key="stop" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ type: "spring", duration: 0.25, bounce: 0.3 }} className="inline-flex">
                   <Tooltip>
-                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="relative inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
-                      <span className="absolute inset-0 animate-ping rounded-full bg-ink/20 [animation-duration:2s]" aria-hidden />
+                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
                       <span className="size-2.5 rounded-xs bg-current" />
                     </TooltipTrigger>
                     <TooltipPopup>Stop</TooltipPopup>
@@ -431,7 +431,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                   exit={{ scale: 0.6, opacity: 0, y: -6 }}
                   whileTap={canSend ? { scale: 0.88 } : undefined}
                   transition={{ type: "spring", duration: 0.25, bounce: 0.3 }}
-                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground shadow-card transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none"
+                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground shadow-card transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
                 >
                   <Icon icon={icons.send} className="size-4" />
                 </motion.button>

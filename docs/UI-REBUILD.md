@@ -211,7 +211,8 @@ Where art goes: the welcome hero background is plain (dots only), its secondary 
 | send / arrowUp | ArrowUp02 | Lucide ArrowUp |
 | stop | Stop | Lucide Square |
 | model | AiBrain01 | Lucide Brain |
-| ai / step | AiMagic | Phosphor Sparkle |
+| ai | AiMagic | Phosphor Sparkle |
+| step (tool summary, other tools) | Wrench01 | — |
 | mode | SlidersHorizontal | Phosphor SlidersHorizontal |
 | close | Cancel01 | Lucide X |
 | check | Tick02 | Lucide Check, Phosphor Check |

@@ -32,7 +32,7 @@ import type { PendingAccess, PendingApproval, PendingQuestion } from "../lib/tim
  * status line on top ("Ready to change week6.md"), the body in a grey well,
  * and the keyed choices underneath ("Y Apply change · N Don't allow").
  */
-function Card({ icon, title, meta, children, keys, footer, cardRef }: { icon: IconData; title: React.ReactNode; meta?: React.ReactNode; children?: React.ReactNode; keys?: React.ReactNode; footer?: React.ReactNode; cardRef?: React.Ref<HTMLDivElement> }) {
+function Card({ icon, disc = true, title, meta, children, keys, footer, cardRef }: { icon: IconData; disc?: boolean; title: React.ReactNode; meta?: React.ReactNode; children?: React.ReactNode; keys?: React.ReactNode; footer?: React.ReactNode; cardRef?: React.Ref<HTMLDivElement> }) {
   return (
     <motion.div
       ref={cardRef}
@@ -42,9 +42,16 @@ function Card({ icon, title, meta, children, keys, footer, cardRef }: { icon: Ic
       className="my-3"
       data-slot="pending-card"
     >
-      <Surface className="gap-3 p-3">
-        <div className="flex min-w-0 items-center gap-2.5 px-1 pt-1">
-          <Icon icon={icon} className="size-5 text-primary" />
+      <Surface className="gap-4 p-4">
+        <div className="flex min-w-0 items-center gap-2.5 px-2 pt-0.5">
+          {/* The references' filled blue disc with a white glyph (d706 "Draft is Ready", "Escalated"). */}
+          {disc ? (
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Icon icon={icon} className="size-3" />
+            </span>
+          ) : (
+            <Icon icon={icon} className="size-5 text-primary" />
+          )}
           <div className="min-w-0 flex-1 truncate text-base text-primary">{title}</div>
           {meta ? <div className="shrink-0 text-muted-foreground text-xs tabular-nums">{meta}</div> : null}
         </div>
@@ -71,7 +78,16 @@ function useBusy() {
   return [busy, run] as const;
 }
 
-const typing = (el: Element | null) => !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable);
+/**
+ * Whether a key press belongs to a text field. The chat composer keeps focus
+ * after sending, so while it is empty a card's single keys still answer; once
+ * there is a draft, Y and N go into it.
+ */
+const typing = (el: Element | null) => {
+  if (!el) return false;
+  if (el instanceof HTMLTextAreaElement && el.dataset.slot === "composer-input") return el.value !== "";
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable;
+};
 
 /**
  * Single keys answer the card on screen (Y, N, …) unless the person is typing
@@ -141,11 +157,11 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
   return (
     <Card
       cardRef={box}
-      icon={icons.done}
+      icon={icons.check}
       title={
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="shrink-0">Ready to {verb}</span>
-          <StartTruncate value={approval.path} className="font-mono text-sm" />
+          <StartTruncate value={approval.path} />
         </span>
       }
       meta={
@@ -165,8 +181,7 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
       }
     >
       <Well>
-        {approval.summary ? <p className="text-muted-foreground text-sm wrap-anywhere">{approval.summary}</p> : null}
-        <div className="max-h-64 overflow-auto rounded-lg border bg-card font-mono text-2xs leading-4.5">
+        <div className="-mx-2 max-h-64 overflow-auto font-mono text-2xs leading-4.5">
           {visible.map((r, i) =>
             r.kind === "fold" ? (
               <div key={i} className="bg-muted/60 px-2 text-muted-foreground">
@@ -188,14 +203,14 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <Tooltip>
-            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} pending={busy === "conversation"} onClick={() => remember("conversation")} />}>
+            <TooltipTrigger render={<Button size="xs" shape="rect" variant="outline" disabled={!!busy} pending={busy === "conversation"} onClick={() => remember("conversation")} />}>
               Allow in this chat
               <Key k="C" />
             </TooltipTrigger>
             <TooltipPopup>This conversation writes files in {spaceName} without asking again</TooltipPopup>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} pending={busy === "space"} onClick={() => remember("space")} />}>
+            <TooltipTrigger render={<Button size="xs" shape="rect" variant="outline" disabled={!!busy} pending={busy === "space"} onClick={() => remember("space")} />}>
               Always in {spaceName}
               <Key k="S" />
             </TooltipTrigger>
@@ -271,10 +286,11 @@ export function QuestionCard({ question, space, disabled, onAnswer }: { question
   return (
     <Card
       icon={icons.help}
+      disc={false}
       title={role}
       meta={check?.multiSelect ? "Choose all that apply" : null}
       footer={
-        <div className="flex flex-wrap items-center gap-2 border-t px-1 pt-3">
+        <div className="flex flex-wrap items-center gap-2 border-t px-2 pt-3">
           <span className="text-muted-foreground text-sm">How sure?</span>
           <ToggleGroup variant="segmented" value={confidence === null ? [] : [String(confidence)]} onValueChange={(v) => setConfidence(v.length ? Number(v[v.length - 1]) : null)}>
             {CONFIDENCE.map((c) => (
@@ -284,16 +300,16 @@ export function QuestionCard({ question, space, disabled, onAnswer }: { question
             ))}
           </ToggleGroup>
           <span className="flex-1" />
-          <Button size="sm" variant="ghost" disabled={disabled || !!busy} onClick={() => submit({ dontKnow: true })}>
+          <Button size="xs" shape="rect" variant="ghost" disabled={disabled || !!busy} onClick={() => submit({ dontKnow: true })}>
             I don’t know
           </Button>
-          <Button size="sm" disabled={disabled || !ready} pending={!!busy} onClick={() => submit(check ? { answers: chosen, confidence: confidence ?? undefined } : { text, confidence: confidence ?? undefined })}>
+          <Button size="xs" shape="rect" disabled={disabled || !ready} pending={!!busy} onClick={() => submit(check ? { answers: chosen, confidence: confidence ?? undefined } : { text, confidence: confidence ?? undefined })}>
             Answer
           </Button>
         </div>
       }
     >
-      <div className="flex flex-col gap-3 px-1">
+      <div className="flex flex-col gap-3 px-2">
         <Markdown inline text={q.question} space={space} messageKey={q.id} className="text-base" />
         {check ? (
           check.multiSelect ? (

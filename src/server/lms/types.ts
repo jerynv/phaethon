@@ -174,6 +174,8 @@ export type RemoteFile = {
   aliases: URL[];
   /** The site's listing stamp; the importer skips the request when it equals the last import's. */
   version: string | null;
+  /** Where in the course it was found when that isn't the file list: "Announcement “Exam 1”". */
+  from?: string;
 };
 
 export type CourseContent = {

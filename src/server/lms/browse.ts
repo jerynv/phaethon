@@ -14,8 +14,9 @@ import { COURSES_DIR } from "./store.ts";
  */
 
 export type BrowseKind = "overview" | "page" | "module" | "assignment" | "file";
-export type BrowseEntry = { path: string; title: string; kind: BrowseKind; bytes?: number; anchor?: string; headingIndex?: number; text?: string };
-export type CourseBrowse = { entries: BrowseEntry[]; truncated: boolean; updated?: number };
+export type BrowseEntry = { path: string; title: string; kind: BrowseKind; bytes?: number; anchor?: string; headingIndex?: number; text?: string; from?: string };
+/** `skipped`: what the last import couldn't bring in, and why (locked files, closed parts). */
+export type CourseBrowse = { entries: BrowseEntry[]; truncated: boolean; updated?: number; skipped?: string[] };
 
 const MAX_ENTRIES = 5000;
 const TITLE_BYTES = 4096;
@@ -69,8 +70,12 @@ export function browse(vis: Visible, course: string): CourseBrowse {
     .sort((a, b2) => byteSort(a[0], b2[0]) || byteSort(a[1], b2[1]));
   for (const [rel, title] of pages) b.push(rel, title, "page");
   const docs = [...new Set([...Object.values(seen.state.files).map((r) => r.path), ...Object.values(seen.state.links).flatMap((r) => (r.path !== undefined ? [r.path] : []))])].sort(byteSort);
-  for (const rel of docs) b.push(rel, path.posix.basename(rel) || rel, "file");
+  const fromOf = new Map(Object.values(seen.state.files).flatMap((r) => (r.from ? [[r.path, r.from] as const] : [])));
+  for (const rel of docs) {
+    if (b.push(rel, path.posix.basename(rel) || rel, "file") && fromOf.has(rel)) b.entries[b.entries.length - 1]!.from = fromOf.get(rel);
+  }
   const out: CourseBrowse = { entries: b.entries, truncated: b.truncated };
+  if (seen.state.skipped?.length) out.skipped = seen.state.skipped;
   if (seen.state.lastSync !== undefined) out.updated = seen.state.lastSync;
   return out;
 }

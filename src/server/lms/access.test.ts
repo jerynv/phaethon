@@ -267,6 +267,19 @@ describe("browse.rs", () => {
     expect(b.entries[5]).toEqual({ path: "courses/Calculus II/files/Notes/series.pdf", title: "series.pdf", kind: "file", bytes: 4, text: "courses/Calculus II/files/Notes/series.pdf.md" });
     expect(() => browse(visible("school"), "canvas-x/2")).toThrow("That course isn’t among the courses this space can see.");
   });
+
+  it("says where an attachment came from and what the last import skipped, kept through a save", () => {
+    const st = loadStore(dir);
+    st.connections[0].courses["1"].files = { "https://x/files/2": { path: "files/review.pdf", from: "Announcement “Exam 2”" } };
+    st.connections[0].courses["1"].skipped = ["File “key.pdf”: locked for now"];
+    save(dir, st);
+    fs.writeFileSync(path.join(dir, "courses/Calculus II/files/review.pdf"), "%PDF");
+    set("school", "canvas-x/1", ["files"]);
+    const b = browse(visible("school"), "canvas-x/1");
+    expect(b.entries.find((e) => e.title === "review.pdf")?.from).toBe("Announcement “Exam 2”");
+    expect(b.skipped).toEqual(["File “key.pdf”: locked for now"]);
+    expect(loadStore(dir).connections[0].courses["1"].skipped).toEqual(["File “key.pdf”: locked for now"]);
+  });
 });
 
 describe("store.rs", () => {

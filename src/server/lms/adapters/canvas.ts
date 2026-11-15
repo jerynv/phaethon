@@ -197,14 +197,17 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
   const extraHtml: string[] = [];
   // Files attached to an announcement or discussion without a download address of their own.
   const attachedIds: string[] = [];
+  /** Where each attachment was found, so the course's file list can say ("Announcement “Exam 1”"). */
+  const attachedFrom = new Map<string, string>();
   /** Announcement and discussion attachments are File objects: the same lock gate as any file. */
-  const attach = (topic: unknown) => {
+  const attach = (topic: unknown, kind: "Announcement" | "Discussion") => {
+    const title = asString(field(topic, "title"))?.trim();
+    const from = title ? `${kind} “${title}”` : kind;
     for (const a of asArray(field(topic, "attachments")) ?? []) {
-      if (field(a, "url") !== undefined) files.add(s, cid, a, folders, c.skipped);
-      else {
-        const id = idStr(field(a, "id"));
-        if (id !== undefined) attachedIds.push(id);
-      }
+      const id = idStr(field(a, "id"));
+      if (id !== undefined && !attachedFrom.has(id)) attachedFrom.set(id, from);
+      if (field(a, "url") !== undefined) files.add(s, cid, a, folders, c.skipped, from);
+      else if (id !== undefined) attachedIds.push(id);
     }
   };
   if (tabs.open("files")) {
@@ -251,7 +254,7 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
     const list = await part(s, () => getAll(s, url), "Announcements", c.skipped);
     if (list) {
       c.announcements = list.map(announcementFrom).filter((a): a is Announcement => a !== null);
-      for (const v of list) attach(v);
+      for (const v of list) attach(v, "Announcement");
     }
   } else tabs.note(c.skipped, "announcements", "Announcements");
 
@@ -264,7 +267,7 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
     if (id !== undefined) discussionIds.add(id);
     const h = asString(field(v, "message"));
     if (h) extraHtml.push(h);
-    attach(v);
+    attach(v, "Discussion");
   };
   if (tabs.open("discussions")) {
     const list = await part(s, () => getAll(s, api(s, ["courses", cid, "discussion_topics"], [["per_page", "100"]])), "", []);
@@ -397,7 +400,7 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
     if (!files.request(id)) continue;
     const url = inCourse ? api(s, ["courses", cid, "files", id], []) : api(s, ["files", id], []);
     const v = await part(s, () => getOne(s, url), `A linked file (number ${id})`, c.skipped);
-    if (v !== undefined) files.add(s, cid, v, folders, c.skipped);
+    if (v !== undefined) files.add(s, cid, v, folders, c.skipped, attachedFrom.get(id));
   }
 
   c.modules = modules.map(([name, items]) => ({
@@ -618,7 +621,7 @@ class Files {
     return n === undefined ? undefined : this.list[n].name;
   }
 
-  add(s: Session, cid: string, v: unknown, folders: Map<string, string | null>, skipped: string[]): void {
+  add(s: Session, cid: string, v: unknown, folders: Map<string, string | null>, skipped: string[], from?: string): void {
     const id = idStr(field(v, "id"));
     if (id === undefined) return;
     const nameRaw = asString(field(v, "display_name")) ?? asString(field(v, "filename"));
@@ -630,7 +633,7 @@ class Files {
     // download URL. Only its actual lock decision (or empty URL) bars access.
     if (field(v, "locked_for_user") === true || asString(field(v, "url")) === "") {
       this.locked.add(id);
-      skipped.push(`File “${name}”: locked for now`);
+      skipped.push(`File “${name}”${from ? ` (from ${from.replace(/^(\w)/, (m) => m.toLowerCase())})` : ""}: locked for now`);
       return;
     }
     const url = onSite(s, asString(field(v, "url"))) ?? appendQuery(site(s, ["courses", cid, "files", id, "download"]), [["download_frd", "1"]]);
@@ -659,6 +662,7 @@ class Files {
       mime: asString(field(v, "content-type")) ?? null,
       aliases,
       version: stamp !== undefined && stamp !== "" ? `${stamp}/${size !== null ? String(size) : ""}` : null,
+      ...(from ? { from } : {}),
     });
   }
 }

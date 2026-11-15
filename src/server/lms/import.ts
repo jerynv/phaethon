@@ -630,7 +630,7 @@ export async function importCourse(
     present++;
     if (got.kind === "written") downloaded++;
     else unchanged++;
-    filesState[key] = got.rec;
+    filesState[key] = f.from ? { ...got.rec, from: f.from } : got.rec;
     if (got.kind === "written" || copyIsStale(path.join(root, `${rel}.md`))) {
       try {
         await textCopy(root, rel, signal);

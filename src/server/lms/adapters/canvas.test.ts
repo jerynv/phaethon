@@ -375,7 +375,13 @@ describe("canvas courses and content", () => {
     expect(byName.get("Unit3_Review_Problems.pdf")).toBe(`${base}/files/40/download?download_frd=1&verifier=api40`);
     expect(c.modules[0].items).toContain("Problem set 10.pdf");
     // A locked attachment is skipped once, even though a discussion links it again.
-    expect(c.skipped.filter((x) => x.includes("Unit 3 test answers.pdf"))).toEqual(["File “Unit 3 test answers.pdf”: locked for now"]);
+    const locked = c.skipped.filter((x) => x.includes("Unit 3 test answers.pdf"));
+    expect(locked).toHaveLength(1);
+    expect(locked[0]).toMatch(/^File “Unit 3 test answers\.pdf” \(from (announcement|discussion)[^)]*\): locked for now$/);
+    // Attachments say where they were found, so the course's files can show it.
+    expect(c.files.find((x) => x.name === "Problem set 10.pdf")?.from).toMatch(/^Announcement/);
+    expect(c.files.find((x) => x.name === "Problem set 8.pdf")?.from).toMatch(/^Discussion/);
+    expect(c.files.find((x) => x.name === "z-table.pdf")?.from).toBeUndefined();
     // Discussions and quizzes are read only for their files: a closed one isn't reported.
     expect(c.skipped.some((x) => x.includes("Closed quiz") || x.includes("Quiz"))).toBe(false);
     const hits = (p: string) => f.log.filter((r) => r.target.split("?")[0] === p).length;

@@ -401,7 +401,7 @@ async function importWith(id: string, s: Session, courseIds: string[], spaces: s
     update(root, (store) => {
       const conn = getConn(store, id);
       if (!conn) throw new Refusal("This course site was disconnected while importing.");
-      conn.courses[course.id] = out.state;
+      conn.courses[course.id] = out.skipped.length ? { ...out.state, skipped: out.skipped.slice(0, 500) } : out.state;
       if (out.written) conn.lastSync = nowMs();
     });
     if (!out.written) throw new Error(CANCELLED);

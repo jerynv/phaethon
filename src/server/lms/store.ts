@@ -28,7 +28,7 @@ export const GRADES_FILE = "grades.json";
 export const COURSES_DIR = "courses";
 const MAX_BYTES = 16 * 1024 * 1024;
 
-export type FileRec = { path: string; size?: number; etag?: string; modified?: string; sha256?: string; version?: string };
+export type FileRec = { path: string; size?: number; etag?: string; modified?: string; sha256?: string; version?: string; from?: string };
 export type LinkRec = { path?: string; title?: string; note?: string; via?: string; webPage: boolean };
 export type Due = { title: string; due: string; anchor: string };
 
@@ -47,6 +47,8 @@ export type CourseState = {
   material?: Report;
   /** The first import was stopped before it finished; no space was given it yet. */
   partial?: boolean;
+  /** What the last import couldn't bring in, and why ("File “X”: locked for now"). */
+  skipped?: string[];
 };
 
 export type Conn = {
@@ -115,6 +117,7 @@ function fileRecJson(f: FileRec): Ordered {
     ["modified", f.modified],
     ["sha256", f.sha256],
     ["version", f.version],
+    ["from", f.from],
   ]);
 }
 
@@ -140,6 +143,7 @@ function courseJson(c: CourseState): Ordered {
     ["lastSync", c.lastSync],
     ["material", c.material],
     ["partial", c.partial ? true : undefined],
+    ["skipped", c.skipped?.length ? c.skipped : undefined],
   ]);
 }
 
@@ -245,6 +249,7 @@ function parseFileRec(v: unknown): FileRec {
     modified: opt(v, "modified", isStr, "a string"),
     sha256: opt(v, "sha256", isStr, "a string"),
     version: opt(v, "version", isStr, "a string"),
+    from: opt(v, "from", isStr, "a string"),
   };
 }
 
@@ -280,6 +285,10 @@ function parseCourse(v: unknown): CourseState {
     material: material === null || material === undefined ? undefined : (material as unknown as Report),
   };
   if (opt(v, "partial", isBool, "a boolean")) c.partial = true;
+  if (Array.isArray(v.skipped)) {
+    const notes = v.skipped.filter((x): x is string => typeof x === "string");
+    if (notes.length) c.skipped = notes;
+  }
   return c;
 }
 

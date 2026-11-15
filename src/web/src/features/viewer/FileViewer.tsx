@@ -1,4 +1,4 @@
-import { ExternalLinkIcon, FolderOpenIcon, XIcon } from "lucide-react";
+import { ArrowSquareOut, FolderOpen, X } from "@phosphor-icons/react";
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
@@ -27,7 +27,8 @@ function readWidth(): number {
   }
 }
 
-type State = { view?: FileView; bytes?: ArrayBuffer; error?: string; loading: boolean };
+/** `copy`: the text Phaethon read from a file it can't show in place (an import writes it beside the file as `<name>.md`). */
+type State = { view?: FileView; bytes?: ArrayBuffer; copy?: FileView; error?: string; loading: boolean };
 
 /** Why a file couldn't be opened, in words: a missing file says so instead of the system's message. */
 function openError(e: unknown): string {
@@ -67,6 +68,11 @@ export function FileViewer() {
         setState({ view, loading: true });
         const bytes = await fileBytes(target.space, target.path);
         if (live) setState({ view, bytes, loading: false });
+      } else if (previewOf(view) !== "show" && view.kind !== "markdown") {
+        // Slides, spreadsheets, old Office files: show the text read from them, when there is one.
+        setState({ view, loading: true });
+        const copy = await fileView(target.space, `${target.path}.md`).catch(() => null);
+        if (live) setState({ view, copy: copy?.kind === "markdown" && copy.text?.trim() ? copy : undefined, loading: false });
       } else {
         setState({ view, loading: false });
       }
@@ -139,13 +145,13 @@ export function FileViewer() {
         {size ? <span className="shrink-0 text-muted-foreground text-xs tabular-nums">{size}</span> : null}
         <div className="app-no-drag flex shrink-0 items-center">
           <HeaderButton label="Open in default app" onClick={() => open(false)}>
-            <ExternalLinkIcon strokeWidth={1.75} />
+            <ArrowSquareOut weight="light" />
           </HeaderButton>
           <HeaderButton label="Show in folder" onClick={() => open(true)}>
-            <FolderOpenIcon strokeWidth={1.75} />
+            <FolderOpen weight="light" />
           </HeaderButton>
           <HeaderButton label="Close" onClick={close}>
-            <XIcon strokeWidth={1.75} />
+            <X weight="light" />
           </HeaderButton>
         </div>
       </header>
@@ -157,7 +163,7 @@ export function FileViewer() {
         ) : state.loading || !state.view ? (
           showSkeleton ? <PageSkeleton kind={kind} /> : null
         ) : (
-          <Body key={`${target.space}\n${target.path}\n${tick}`} space={target.space} view={state.view} bytes={state.bytes} preview={previewOf(state.view)} onOpen={() => open(false)} onMeta={setMeta} />
+          <Body key={`${target.space}\n${target.path}\n${tick}`} space={target.space} view={state.view} bytes={state.bytes} copy={state.copy} preview={previewOf(state.view)} onOpen={() => open(false)} onMeta={setMeta} />
         )}
       </div>
     </aside>

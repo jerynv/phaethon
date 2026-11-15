@@ -186,7 +186,7 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
                         className={cn("flex h-9 items-center justify-center gap-2 rounded-lg border bg-card px-2 font-medium text-sm transition-colors", r.tone)}
                       >
                         <span className="truncate">{r.label}</span>
-                        <Kbd className="max-[700px]:hidden">{r.key}</Kbd>
+                        <Kbd className="max-md:hidden">{r.key}</Kbd>
                       </button>
                     ))}
                   </div>

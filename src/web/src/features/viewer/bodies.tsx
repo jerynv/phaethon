@@ -57,6 +57,7 @@ export function Body({
   space,
   view,
   bytes,
+  copy,
   preview,
   onOpen,
   onMeta,
@@ -64,10 +65,25 @@ export function Body({
   space: string;
   view: FileView;
   bytes?: ArrayBuffer;
+  copy?: FileView;
   preview: "show" | "tooBig" | "unsupported";
   onOpen: () => void;
   onMeta: (m: string | null) => void;
 }) {
+  if (copy && preview !== "show")
+    return (
+      <div>
+        <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2 text-muted-foreground text-xs">
+          <span className="min-w-0 flex-1">The text Phaethon read from this {view.kind === "slides" ? "deck" : view.kind === "spreadsheet" ? "spreadsheet" : "file"}. Layout and pictures are in the original.</span>
+          <Button size="xs" variant="outline" onClick={onOpen}>
+            Open original
+          </Button>
+        </div>
+        <div className="px-5 py-4 text-base">
+          <Markdown text={copy.text ?? ""} space={space} messageKey={`viewer:${copy.path}`} />
+        </div>
+      </div>
+    );
   if (preview === "tooBig") return <Placeholder view={view} title="Too big to preview" text={`This file is ${formatBytes(view.size)}.`} onOpen={onOpen} />;
   if (preview === "unsupported") return <Placeholder view={view} title="No preview for this kind of file" onOpen={onOpen} />;
   switch (view.kind) {
@@ -119,7 +135,7 @@ function MediaBody({ bytes, view }: { bytes: ArrayBuffer; view: FileView }) {
   const url = useObjectUrl(bytes, view.mediaType || (view.kind === "audio" ? "audio/mpeg" : "video/mp4"));
   return (
     <div className="p-4">
-      {view.kind === "audio" ? <audio src={url} controls className="w-full" /> : <video src={url} controls className="w-full rounded-sm border bg-black" />}
+      {view.kind === "audio" ? <audio src={url} controls className="w-full" /> : <video src={url} controls className="w-full rounded-sm border bg-zinc-950" />}
     </div>
   );
 }
@@ -177,7 +193,7 @@ function PdfBody({ bytes, onMeta }: { bytes: ArrayBuffer; onMeta: (m: string | n
   return (
     <div ref={ref} className="flex flex-col gap-3 p-4">
       {!doc || !pageWidth ? (
-        <div className="aspect-[1/1.294] w-full rounded-sm border bg-white" />
+        <div className="aspect-[1/1.294] w-full rounded-sm border bg-zinc-50" />
       ) : (
         Array.from({ length: doc.numPages }, (_, i) => <PdfPage key={i} doc={doc} n={i + 1} width={pageWidth} ratio={ratio} />)
       )}
@@ -221,10 +237,10 @@ function PdfPage({ doc, n, width, ratio }: { doc: PDFDocumentProxy; n: number; w
   }, [near, doc, n, width, drawn]);
 
   return (
-    <div ref={box} className="relative overflow-hidden rounded-sm border bg-white shadow-xs/5" style={{ width, minHeight: drawn ? undefined : Math.round(width * ratio) }}>
+    <div ref={box} className="relative overflow-hidden rounded-sm border bg-zinc-50 shadow-xs/5" style={{ width, minHeight: drawn ? undefined : Math.round(width * ratio) }}>
       <canvas ref={canvas} className={cn("block", !drawn && "invisible absolute")} />
       {failed ? <p className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">Page {n} couldn’t be drawn.</p> : null}
-      <span className="pointer-events-none absolute right-1.5 bottom-1 rounded bg-black/55 px-1 text-3xs text-white tabular-nums">{n}</span>
+      <span className="pointer-events-none absolute right-1.5 bottom-1 rounded bg-zinc-950/55 px-1 text-3xs text-zinc-50 tabular-nums">{n}</span>
     </div>
   );
 }
@@ -252,7 +268,7 @@ function DocxBody({ bytes, onOpen }: { bytes: ArrayBuffer; onOpen: () => void })
       {state === "failed" ? (
         <SurfaceError title="Couldn’t read this document" message="Open it in its own app instead." actions={[{ label: "Open in default app", onClick: onOpen }]} />
       ) : null}
-      <div className={cn("overflow-x-auto rounded-sm border bg-white px-6 py-5 text-zinc-900 shadow-xs/5 [&_section.docx]:!p-0 [&_section.docx]:!w-auto [&_section.docx]:!min-h-0", state !== "ok" && "hidden")} ref={host} />
+      <div className={cn("overflow-x-auto rounded-sm border bg-zinc-50 px-6 py-5 text-zinc-900 shadow-xs/5 [&_section.docx]:!p-0 [&_section.docx]:!w-auto [&_section.docx]:!min-h-0", state !== "ok" && "hidden")} ref={host} />
       {state === "loading" ? <PageSkeleton kind="docx" /> : null}
     </div>
   );

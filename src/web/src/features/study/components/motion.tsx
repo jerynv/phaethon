@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -45,8 +45,14 @@ export function Slide({ id, dir = 1, children, className }: { id: string; dir?: 
         exit="out"
         transition={{ duration: reduce ? 0 : 0.16, ease: EASE }}
       >
-        {children}
+        <Leaving>{children}</Leaving>
       </motion.div>
     </AnimatePresence>
   );
+}
+
+/** Content on its way out can't be focused, clicked or read while it fades. */
+function Leaving({ children }: { children: ReactNode }) {
+  const present = useIsPresent();
+  return present ? children : <div inert aria-hidden className="pointer-events-none">{children}</div>;
 }

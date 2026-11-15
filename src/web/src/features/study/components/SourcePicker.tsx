@@ -152,7 +152,7 @@ function FilesPart({ space, folder, courseKey, chosen, onChange }: { space: stri
           <div className="flex flex-col motion-safe:animate-skeleton" aria-hidden>
             {["52%", "38%", "61%"].map((w) => (
               <div key={w} className="flex h-7 items-center gap-2 pl-16">
-                <Skeleton className="size-3.5 animate-none rounded-[3px]" />
+                <Skeleton className="size-3.5 animate-none rounded-xs" />
                 <Skeleton className="h-2.5 animate-none" style={{ width: w }} />
               </div>
             ))}

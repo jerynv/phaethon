@@ -194,9 +194,9 @@ function ListHead({ label, count, columns }: { label: string; count: number; col
       <GroupLabel count={count} className="flex-1">
         {label}
       </GroupLabel>
-      <span className="w-16 text-right text-2xs text-muted-foreground max-[640px]:hidden">{columns[0]}</span>
+      <span className="w-16 text-right text-2xs text-muted-foreground max-sm:hidden">{columns[0]}</span>
       <span className="w-16 text-right text-2xs text-muted-foreground">{columns[1]}</span>
-      <span className="w-16 text-right text-2xs text-muted-foreground max-[640px]:hidden">{columns[2]}</span>
+      <span className="w-16 text-right text-2xs text-muted-foreground max-sm:hidden">{columns[2]}</span>
       <span className="w-6" />
     </div>
   );
@@ -215,11 +215,11 @@ function Row({ icon, title, course, onOpen, cells, menu }: { icon: ReactNode; ti
       <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4">{icon}</span>
       <div className="flex min-w-0 flex-1 items-baseline gap-2">
         <Truncate className="min-w-0 shrink">{title}</Truncate>
-        {course ? <Truncate className="min-w-0 max-w-80 flex-1 text-muted-foreground text-xs max-[760px]:hidden">{course}</Truncate> : null}
+        {course ? <Truncate className="min-w-0 max-w-80 flex-1 text-muted-foreground text-xs max-md:hidden">{course}</Truncate> : null}
       </div>
-      <span className="w-16 shrink-0 text-right text-xs tabular-nums max-[640px]:hidden">{cells[0]}</span>
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums max-sm:hidden">{cells[0]}</span>
       <span className="w-16 shrink-0 text-right text-muted-foreground text-xs tabular-nums">{cells[1]}</span>
-      <span className="w-16 shrink-0 text-right text-muted-foreground text-xs tabular-nums max-[640px]:hidden">{cells[2]}</span>
+      <span className="w-16 shrink-0 text-right text-muted-foreground text-xs tabular-nums max-sm:hidden">{cells[2]}</span>
       <div className="flex w-6 shrink-0 justify-end" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         {menu}
       </div>
@@ -319,7 +319,7 @@ function OverviewSkeleton() {
           <Skeleton className="mx-2 my-2 h-2 w-14 animate-none" />
           {Array.from({ length: n }, (_, i) => (
             <div key={i} className="flex h-8 items-center gap-2.5 px-2">
-              <Skeleton className="size-4 animate-none rounded-[4px]" />
+              <Skeleton className="size-4 animate-none rounded-sm" />
               <div className="flex-1">
                 <Skeleton className="h-2.5 animate-none" style={{ width: WIDTHS[(i + g) % WIDTHS.length] }} />
               </div>

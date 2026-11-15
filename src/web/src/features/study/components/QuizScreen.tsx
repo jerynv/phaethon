@@ -213,7 +213,7 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
       if (typing && (e.key !== "Enter" || (t?.tagName === "TEXTAREA" && !mod))) return;
       if (!typing && mod) return;
       // Buttons and links answer Enter themselves.
-      if (!typing && e.key === "Enter" && t && /^(BUTTON|A)$/.test(t.tagName) && !t.dataset.choice) return;
+      if (!typing && e.key === "Enter" && t && /^(BUTTON|A)$/.test(t.tagName) && !t.hasAttribute("data-choice")) return;
       if (document.querySelector("[data-slot=dialog-popup],[role=menu]")) return;
       const a = keyAction(e.key, current, answers[current.id]);
       if (!a) return;

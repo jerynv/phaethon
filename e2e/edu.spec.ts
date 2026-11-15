@@ -69,7 +69,7 @@ test("make a quiz for a test from the dialog, take it with keys, and read the re
   const dialog = page.getByRole("dialog");
 
   // Step 1: the only course is chosen; the test isn't mapped yet, so its scope is looked up in place.
-  await expect(dialog.getByRole("combobox", { name: "Course" })).toContainText(COURSE);
+  await expect(dialog.getByRole("radiogroup", { name: "Course" }).getByRole("radio", { name: COURSE })).toBeChecked();
   await dialog.getByRole("textbox", { name: "Test name" }).fill("Test 1");
   await dialog.getByRole("button", { name: "Look it up" }).click();
   // Mapped: the scope comes from the course, with its source shown.
@@ -80,8 +80,8 @@ test("make a quiz for a test from the dialog, take it with keys, and read the re
 
   // Step 2: size and kinds, then make it.
   await dialog.getByRole("textbox", { name: "Exact number" }).fill("4");
-  await dialog.getByRole("button", { name: "Fill in the blank" }).click();
-  await expect(dialog.getByRole("button", { name: "Fill in the blank" })).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByRole("switch", { name: /Fill in the blank/ }).click();
+  await expect(dialog.getByRole("switch", { name: /Fill in the blank/ })).toBeChecked();
   await dialog.getByRole("button", { name: "Make 4 questions" }).click();
   const progress = dialog.getByTestId("make-progress");
   await expect(progress).toBeVisible();
@@ -132,7 +132,8 @@ test("make a quiz for a test from the dialog, take it with keys, and read the re
   await expect(review).toContainText("6 subsets");
   await expect(review).toContainText("Test 1 Review.pdf");
   await results.getByRole("button", { name: "Retake 1 miss" }).click();
-  await expect(page.getByTestId("quiz-position")).toHaveText("Retaking · 1 of 1");
+  await expect(page.getByTestId("quiz-position")).toHaveText("1 of 1");
+  await expect(page.getByText("Retaking misses")).toBeVisible();
   await settled();
   await expect(question).toContainText("6 subsets");
 

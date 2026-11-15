@@ -1,31 +1,34 @@
-import { Cards } from "@phosphor-icons/react";
-import { CircleCheckIcon } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
+import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Card, CardMedia } from "@/components/ui/card";
+import { KeyAction, KeyActions } from "@/components/ui/key-actions";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDelayed } from "@/hooks/use-delayed";
 import { CitationChip } from "@/features/chat/components/CitationChip";
-import { cn } from "@/lib/utils";
 import { studyOverview, studyRate, studySession } from "../api";
 import { dueNow, masteryChanges, requeue } from "../lib/review";
 import type { Confidence, DeckSummary, SessionCard } from "../lib/types";
 import { baseName, cardCites, durationText, plural } from "../lib/words";
 import { useLoad } from "../use-load";
-import { Crumbs, StudyText } from "./parts";
+import { EASE } from "./motion";
+import { Crumbs, Disc, Page, StudyText } from "./parts";
 
 /** Four answers, keys 1–4. "Somewhat" (3) is left out: four choices are quicker to pick from, and 4–5 count toward mastery. */
-const RATINGS: { key: string; label: string; confidence: Confidence; tone: string }[] = [
-  { key: "1", label: "Not at all", confidence: 1, tone: "hover:border-error/40 hover:bg-error/6" },
-  { key: "2", label: "Barely", confidence: 2, tone: "hover:border-warning/40 hover:bg-warning/6" },
-  { key: "3", label: "Mostly", confidence: 4, tone: "hover:border-primary/40 hover:bg-primary/6" },
-  { key: "4", label: "Perfectly", confidence: 5, tone: "hover:border-success/40 hover:bg-success/6" },
+const RATINGS: { key: string; label: string; confidence: Confidence }[] = [
+  { key: "1", label: "Not at all", confidence: 1 },
+  { key: "2", label: "Barely", confidence: 2 },
+  { key: "3", label: "Mostly", confidence: 4 },
+  { key: "4", label: "Perfectly", confidence: 5 },
 ];
 
 type Load = { cards: SessionCard[]; before: DeckSummary[] };
@@ -118,143 +121,169 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
         title={<Crumbs onBack={onBack}>{title ?? "Review"}</Crumbs>}
         actions={
           queue?.length && !finished ? (
-            <Button size="xs" variant="ghost-muted" onClick={onBack}>
+            <Button size="sm" variant="outline" onClick={onBack}>
               End session
             </Button>
           ) : null
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-8">
-          {load.error ? <SurfaceError title="Couldn’t load the cards" message={cleanMessage(load.error)} onRetry={load.reload} /> : null}
-          {skeleton ? <ReviewSkeleton /> : null}
-          {queue && !queue.length ? (
-            <Empty className="min-h-[50vh]">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Cards />
-                </EmptyMedia>
-                <EmptyTitle>Nothing due</EmptyTitle>
-                <EmptyDescription>You’re caught up. Cards come due again as you review them.</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button size="sm" variant="outline" onClick={onBack}>
-                  Back to study
-                </Button>
-              </EmptyContent>
-            </Empty>
-          ) : null}
-          {card ? (
-            <>
-              <div className="flex items-center gap-3">
-                <Truncate className="min-w-0 flex-1 text-muted-foreground text-xs">{deckTitle(card.deck)}</Truncate>
-                <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-                  {at + 1}/{total}
+      <Page narrow className="gap-6">
+        {load.error ? <SurfaceError title="Couldn’t load the cards" message={cleanMessage(load.error)} onRetry={load.reload} /> : null}
+        {skeleton ? <ReviewSkeleton /> : null}
+        {queue && !queue.length ? (
+          <EndCard title="You’re caught up" line="Nothing is due. Cards come due again as you review them." seed="review-empty">
+            <Button variant="outline" className="w-full" onClick={onBack}>
+              Back to study
+            </Button>
+          </EndCard>
+        ) : null}
+        {card ? (
+          <>
+            <div className="flex flex-col gap-3">
+              <div className="flex h-8 items-center gap-3 text-sm">
+                <Icon icon={icons.deck} className="size-4 text-muted-foreground" />
+                <Truncate className="min-w-0 flex-1 text-muted-foreground">{deckTitle(card.deck)}</Truncate>
+                <span className="shrink-0 text-muted-foreground tabular-nums">
+                  Card <span className="text-foreground">{at + 1}</span> of {total}
                 </span>
               </div>
-              <div className="h-0.5 overflow-hidden rounded-full bg-muted">
-                <div className="h-full bg-primary transition-[width] duration-300" style={{ width: `${(at / Math.max(1, total)) * 100}%` }} />
+              <div className="h-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Session" aria-valuemin={0} aria-valuemax={total} aria-valuenow={at}>
+                <div className="h-full rounded-full bg-ink transition-[width] duration-300 ease-(--ease-out-soft)" style={{ width: `${(at / Math.max(1, total)) * 100}%` }} />
               </div>
-              <div className="flex min-h-64 flex-col rounded-xl border bg-card">
-                <div className="flex flex-1 flex-col justify-center px-6 py-8">
-                  <StudyText key={`${card.id}-f`} text={card.front} space={space.id} id={`card-${card.id}-front`} reveal={revealed && card.kind === "cloze"} className="text-center [&_.markdown]:text-[0.9375rem]" />
-                </div>
-                {revealed ? (
-                  <div className="flex flex-col gap-3 border-t px-6 py-5">
-                    {card.kind !== "cloze" || card.back.trim() ? (
-                      <StudyText text={card.back} space={space.id} id={`card-${card.id}-back`} className="text-center [&_.markdown]:text-[0.9375rem]" />
-                    ) : null}
-                    {cardCites(card).length ? (
-                      <div className="flex justify-center">
-                        {cardCites(card).map((c) => (
-                          <CitationChip key={c.source} space={space.id} citation={{ path: c.source, quote: c.quote }} />
-                        ))}
-                      </div>
-                    ) : null}
+            </div>
+            <FlashCard key={`${card.id}-${at}`} card={card} space={space.id} revealed={revealed} />
+            {revealed ? (
+              <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: EASE }} className="flex flex-col gap-3">
+                <p className="text-center text-muted-foreground text-sm">How well did you know it?</p>
+                <KeyActions aria-label="How well did you know it?" className="shadow-card max-sm:grid-flow-row max-sm:grid-cols-2 max-sm:divide-x-0">
+                  {RATINGS.map((r) => (
+                    <KeyAction key={r.key} shortcut={r.key} onClick={() => rate(r.confidence)} className="justify-center text-sm">
+                      {r.label}
+                    </KeyAction>
+                  ))}
+                </KeyActions>
+              </motion.div>
+            ) : (
+              <div className="flex justify-center">
+                <Button className="min-w-48 pr-2" onClick={() => setRevealed(true)}>
+                  Show answer
+                  <Kbd className="ml-1 h-5 bg-ink-foreground/15 px-1.5 text-ink-foreground/80">Space</Kbd>
+                </Button>
+              </div>
+            )}
+          </>
+        ) : null}
+        {finished ? <Summary rated={rated} ms={Date.now() - started.current} before={load.data?.before ?? []} after={after} onBack={onBack} /> : null}
+      </Page>
+    </>
+  );
+}
+
+/** The card: its front, and once shown, the back under a hairline with where it comes from. */
+function FlashCard({ card, space, revealed }: { card: SessionCard; space: string; revealed: boolean }) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE }}>
+      <Card className="min-h-72">
+        <div className="flex flex-1 flex-col justify-center px-8 py-10">
+          <StudyText text={card.front} space={space} id={`card-${card.id}-front`} reveal={revealed && card.kind === "cloze"} className="text-center text-foreground [&_.markdown]:text-xl [&_.markdown]:tracking-title" />
+        </div>
+        <AnimatePresence initial={false}>
+          {revealed ? (
+            <motion.div
+              key="back"
+              initial={reduce ? false : { height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              transition={{ type: "spring", stiffness: 420, damping: 40, opacity: { duration: 0.15 } }}
+              className="overflow-hidden"
+            >
+              <div className="flex flex-col gap-3 border-t bg-well px-8 py-6">
+                {card.kind !== "cloze" || card.back.trim() ? (
+                  <StudyText text={card.back} space={space} id={`card-${card.id}-back`} className="text-center [&_.markdown]:text-base" />
+                ) : null}
+                {cardCites(card).length ? (
+                  <div className="flex justify-center">
+                    {cardCites(card).map((c) => (
+                      <CitationChip key={c.source} space={space} citation={{ path: c.source, quote: c.quote }} />
+                    ))}
                   </div>
                 ) : null}
               </div>
-              {revealed ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-center text-muted-foreground text-xs">How well did you know it?</p>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {RATINGS.map((r) => (
-                      <button
-                        key={r.key}
-                        type="button"
-                        onClick={() => rate(r.confidence)}
-                        className={cn("flex h-9 items-center justify-center gap-2 rounded-lg border bg-card px-2 font-medium text-sm transition-colors", r.tone)}
-                      >
-                        <span className="truncate">{r.label}</span>
-                        <Kbd className="max-md:hidden">{r.key}</Kbd>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center">
-                  <Button size="sm" variant="outline" className="min-w-40" onClick={() => setRevealed(true)}>
-                    Show answer
-                    <Kbd>Space</Kbd>
-                  </Button>
-                </div>
-              )}
-            </>
+            </motion.div>
           ) : null}
-          {finished ? <Summary rated={rated} ms={Date.now() - started.current} before={load.data?.before ?? []} after={after} onBack={onBack} /> : null}
+        </AnimatePresence>
+      </Card>
+    </motion.div>
+  );
+}
+
+/** The closing card of a session (c06d): art across the top, a title, a line, then what changed. */
+function EndCard({ title, line, seed, children, list }: { title: string; line: string; seed: string; children: React.ReactNode; list?: React.ReactNode }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="mx-auto mt-4 w-full max-w-md">
+      <Card>
+        <CardMedia className="h-28">
+          <ArtCanvas palette="lilac" seed={seed} weave className="absolute inset-0" />
+        </CardMedia>
+        <div className="flex flex-col gap-5 p-6">
+          <div className="text-center">
+            <h2 className="font-medium text-lg tracking-title">{title}</h2>
+            <p className="mt-1 text-muted-foreground text-sm tabular-nums">{line}</p>
+          </div>
+          {list}
+          {children}
         </div>
-      </div>
-    </>
+      </Card>
+    </motion.div>
   );
 }
 
 function Summary({ rated, ms, before, after, onBack }: { rated: { again: number; total: number }; ms: number; before: DeckSummary[]; after: DeckSummary[] | null; onBack: () => void }) {
   const changes = after ? masteryChanges(before, after) : [];
   return (
-    <div className="flex flex-col items-center gap-5 py-10 text-center">
-      <div className="flex size-10 items-center justify-center rounded-full bg-success/10 text-success">
-        <CircleCheckIcon className="size-5" strokeWidth={1.75} />
-      </div>
-      <div>
-        <h2 className="font-semibold text-xl tracking-[-0.015em]">Session done</h2>
-        <p className="mt-1 text-muted-foreground text-sm tabular-nums">
-          {plural(rated.total, "answer")} in {durationText(ms)}
-          {rated.again ? ` · ${plural(rated.again, "card")} to see again soon` : ""}
-        </p>
-      </div>
-      {changes.length ? (
-        <div className="w-full max-w-sm divide-y rounded-xl border text-left">
-          {changes.map((c) => (
-            <div key={c.path} className="flex h-9 items-center gap-3 px-3 text-sm">
-              <Truncate className="min-w-0 flex-1">{c.title}</Truncate>
-              <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-                {c.was}% → <span className={cn("font-medium", c.now > c.was ? "text-success-foreground" : "text-foreground")}>{c.now}%</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <Button size="sm" onClick={onBack}>
+    <EndCard
+      title="Session done"
+      seed="review-done"
+      line={`${plural(rated.total, "answer")} in ${durationText(ms)}${rated.again ? ` · ${plural(rated.again, "card")} to see again soon` : ""}`}
+      list={
+        changes.length ? (
+          <Card variant="well" className="gap-0 px-4 py-1.5">
+            {changes.map((c) => (
+              <div key={c.path} className="flex h-9 items-center gap-3 text-sm">
+                <Disc tone={c.now > c.was ? "done" : "muted"} />
+                <Truncate className="min-w-0 flex-1 text-foreground">{c.title}</Truncate>
+                <span className="shrink-0 text-muted-foreground tabular-nums">
+                  {c.was}% → <span className="text-foreground">{c.now}%</span>
+                </span>
+              </div>
+            ))}
+          </Card>
+        ) : null
+      }
+    >
+      <Button className="w-full" onClick={onBack}>
         Back to study
       </Button>
-    </div>
+    </EndCard>
   );
 }
 
 function ReviewSkeleton() {
   return (
-    <div className="flex flex-col gap-4 motion-safe:animate-skeleton" aria-hidden>
-      <div className="flex justify-between">
-        <Skeleton className="h-2.5 w-32 animate-none" />
-        <Skeleton className="h-2.5 w-10 animate-none" />
+    <div className="flex flex-col gap-6 motion-safe:animate-skeleton" aria-hidden>
+      <div className="flex flex-col gap-3">
+        <div className="flex h-8 items-center justify-between">
+          <Skeleton className="h-3 w-32 animate-none" />
+          <Skeleton className="h-3 w-16 animate-none" />
+        </div>
+        <Skeleton className="h-1 w-full animate-none" />
       </div>
-      <Skeleton className="h-0.5 w-full animate-none" />
-      <div className="flex min-h-64 flex-col items-center justify-center gap-2.5 rounded-xl border">
-        <Skeleton className="h-3 w-[58%] animate-none" />
-        <Skeleton className="h-3 w-[36%] animate-none" />
+      <div className="flex min-h-72 flex-col items-center justify-center gap-3 rounded-card border">
+        <Skeleton className="h-4 w-3/5 animate-none" />
+        <Skeleton className="h-4 w-2/5 animate-none" />
       </div>
       <div className="flex justify-center">
-        <Skeleton className="h-7 w-40 animate-none rounded-md" />
+        <Skeleton className="h-8 w-48 animate-none rounded-full" />
       </div>
     </div>
   );

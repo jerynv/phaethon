@@ -1,6 +1,7 @@
-import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { cleanMessage, RowError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -32,7 +33,7 @@ export function SourcePicker({ space, sources, chosen, onChange }: { space: stri
   const keyOf = (folder: string) => access.data?.courses.find((c) => c.folder === folder)?.key;
 
   return (
-    <div className="max-h-64 overflow-y-auto rounded-lg border">
+    <div className="max-h-64 overflow-y-auto rounded-xl border bg-card">
       {sources.map((c) => {
         const parts = PARTS.filter((p) => c[p.part]);
         const paths = parts.map((p) => partPath(c.folder, p.part));
@@ -46,21 +47,21 @@ export function SourcePicker({ space, sources, chosen, onChange }: { space: stri
         };
         return (
           <div key={c.folder} className="border-b last:border-b-0">
-            <div className="flex h-8 items-center gap-2 px-2">
+            <div className="flex h-9 items-center gap-2 px-2.5">
               <button
                 type="button"
                 aria-label={expanded ? "Hide parts" : "Show parts"}
                 aria-expanded={expanded}
-                className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={() => setOpen((o) => ({ ...o, [c.folder]: !expanded }))}
               >
-                <ChevronRightIcon className={cn("size-3.5 transition-transform", expanded && "rotate-90")} strokeWidth={2} />
+                <Icon icon={icons.chevronRight} className={cn("size-3.5 transition-transform", expanded && "rotate-90")} />
               </button>
               <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
                 <Checkbox checked={all} indeterminate={some && !all} onCheckedChange={toggleAll} disabled={!paths.length} />
                 <Truncate className="min-w-0 flex-1 text-sm">{c.name}</Truncate>
               </label>
-              {!paths.length ? <span className="shrink-0 text-2xs text-muted-foreground">Nothing to read</span> : null}
+              {!paths.length ? <span className="shrink-0 text-muted-foreground text-xs">Nothing to read</span> : null}
             </div>
             {expanded && paths.length ? (
               <div className="flex flex-col pb-1">
@@ -136,9 +137,9 @@ function FilesPart({ space, folder, courseKey, chosen, onChange }: { space: stri
         onToggle={toggleWhole}
         trailing={
           courseKey ? (
-            <button type="button" className="flex shrink-0 items-center gap-0.5 text-2xs text-muted-foreground tabular-nums hover:text-foreground" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <button type="button" className="flex shrink-0 items-center gap-0.5 text-muted-foreground text-xs tabular-nums hover:text-foreground" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
               {picked && !checked ? `${picked} chosen` : open ? "Hide files" : "Choose files"}
-              <ChevronRightIcon className={cn("size-3 transition-transform", open && "rotate-90")} strokeWidth={2} />
+              <Icon icon={icons.chevronRight} className={cn("size-3 transition-transform", open && "rotate-90")} />
             </button>
           ) : null
         }

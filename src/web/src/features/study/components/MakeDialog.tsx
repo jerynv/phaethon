@@ -1,32 +1,35 @@
-import { ArrowLeft, BookOpenText, Cards, CheckCircle, Exam, MapTrifold, PencilSimpleLine, Sparkle, Target } from "@phosphor-icons/react";
-import { motion, AnimatePresence } from "motion/react";
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
+import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
+import { AnimatePresence, motion } from "motion/react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useNav } from "@/app/store";
+import { useNav, useOpenThread } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ToggleRow } from "@/components/ui/toggle-row";
 import { threadModelGet, type ModelPick } from "@/features/chat/api";
 import { CitationChip } from "@/features/chat/components/CitationChip";
 import { ModelPicker } from "@/features/chat/components/ModelPicker";
 import { useSpaceChat } from "@/features/chat/store";
-import { useOpenThread } from "@/app/store";
 import { planExamsGet } from "@/features/plan/api";
 import { cn } from "@/lib/utils";
 import { studyMakeCancel, studyMakeDeck, studyMakeQuiz, studyScope, studyScopeBuild, studyScopeState } from "../api";
 import { useStudyFlow } from "../flow-store";
 import { examDate, examOptions, OTHER_EXAM, scopeWords, type ExamOption } from "../lib/exam-options";
-import { KINDS } from "../lib/kinds";
+import { KINDS, kindLabel } from "../lib/kinds";
 import {
   advice,
   emptyDraft,
@@ -48,7 +51,7 @@ import { plural, type MakeProgress } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { type Loaded, useLoad } from "../use-load";
 import { AutoHeight, EASE, Slide } from "./motion";
-import { JobBar } from "./parts";
+import { Disc, JobBar } from "./parts";
 import { SourcePicker } from "./SourcePicker";
 
 type Phase = "what" | "how" | "run" | "ask" | "error" | "done";
@@ -260,6 +263,9 @@ export function MakeDialog({
   const step = STEP_OF[phase];
   const scopeTag = draft.target === "topics" ? draft.focus.trim() || "Anything in the course" : examTitle ? `${examTitle}${draft.covers.trim() || knownWords ? `: ${draft.covers.trim() || knownWords}` : ""}` : "";
 
+  const label = quiz ? "Make a quiz" : "Make cards";
+  const makeLabel = `Make ${plural(draft.count || 0, noun)}`;
+
   return (
     <Dialog
       open={open}
@@ -268,29 +274,36 @@ export function MakeDialog({
         onOpenChange(o);
       }}
     >
-      <DialogPopup className="max-w-xl" aria-label={quiz ? "Make a quiz" : "Make cards"}>
+      <DialogPopup className="max-w-xl rounded-panel" showCloseButton={false} aria-label={label}>
         <form onSubmit={onSubmit} className="contents">
-          <DialogHeader className="gap-3">
-            <div className="flex items-center gap-3">
-              <DialogTitle className="flex-1 text-lg">{quiz ? "Make a quiz" : "Make cards"}</DialogTitle>
+          <DialogHeader className="gap-4 p-6 pr-6 pb-4">
+            <div className="flex items-start gap-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <DialogTitle className="font-medium text-lg tracking-title">{label}</DialogTitle>
+                <DialogDescription className="text-muted-foreground text-sm">
+                  {quiz ? "Practice questions from your course materials, each checked against them." : "Flashcards from your course materials, each tied to its passage."}
+                </DialogDescription>
+              </div>
               {phase === "what" || phase === "how" ? (
-                <ToggleGroup aria-label="Kind" value={[draft.kind]} onValueChange={(v: unknown[]) => v[0] && patch({ kind: v[0] as MakeKind, count: emptyDraft(v[0] as MakeKind).count })}>
-                  <ToggleGroupItem value="quiz" className="gap-1.5 text-xs">
-                    <Exam weight="light" className="size-3.5" />
+                <SegmentedControl aria-label="Kind" value={draft.kind} onValueChange={(k: MakeKind) => patch({ kind: k, count: emptyDraft(k).count })}>
+                  <SegmentedControlItem value="quiz">
+                    <Icon icon={icons.quiz} />
                     Quiz
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="deck" className="gap-1.5 text-xs">
-                    <Cards weight="light" className="size-3.5" />
+                  </SegmentedControlItem>
+                  <SegmentedControlItem value="deck">
+                    <Icon icon={icons.deck} />
                     Cards
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                  </SegmentedControlItem>
+                </SegmentedControl>
               ) : null}
+              <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
+                <Icon icon={icons.close} />
+              </DialogClose>
             </div>
-            <Steps step={step} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
-            <DialogDescription className="sr-only">{quiz ? "Practice questions from your course materials, checked against them." : "Flashcards from your course materials, each tied to its passage."}</DialogDescription>
+            <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
           </DialogHeader>
 
-          <DialogPanel className="space-y-0">
+          <DialogPanel className="space-y-0 px-6 pt-1 pb-2">
             <AutoHeight>
               <Slide id={phase} dir={dir}>
                 {phase === "what" ? (
@@ -311,10 +324,20 @@ export function MakeDialog({
                     onClose={close}
                   />
                 ) : null}
-                {phase === "how" ? <HowStep draft={draft} patch={(p) => (patch(p), setErrs({}))} errs={errs} summary={[course?.name ?? "Chosen files", scopeTag].filter(Boolean).join(" · ")} onBack={() => go("what", -1)} /> : null}
+                {phase === "how" ? (
+                  <HowStep
+                    draft={draft}
+                    patch={(p) => (patch(p), setErrs({}))}
+                    errs={errs}
+                    course={course?.name ?? "Chosen files"}
+                    scope={scopeTag}
+                    model={pick.pick ? <ModelPicker pick={pick.pick} onPick={pick.set} /> : <Skeleton className="h-4 w-28" />}
+                    onChange={() => go("what", -1)}
+                  />
+                ) : null}
                 {phase === "ask" && needs ? (
-                  <div className="flex flex-col gap-3 pb-1">
-                    <Note icon={<MapTrifold weight="light" />} title={`What does ${needs.exam} cover?`}>
+                  <div className="flex flex-col gap-3 pb-2">
+                    <Note icon={icons.map} title={`What does ${needs.exam} cover?`}>
                       {needs.courseName}’s materials don’t say, and questions are only written on what’s in scope. Tap topics or say it in a few words.
                     </Note>
                     <AskScope view={scope.data ?? null} value={draft.covers} onChange={(covers) => patch({ covers })} autoFocus />
@@ -322,82 +345,90 @@ export function MakeDialog({
                 ) : null}
                 {phase === "run" ? <RunView progress={progress} fraction={fraction} started={started} quiz={quiz} course={course?.name} exam={examTitle || undefined} stopping={stopping} /> : null}
                 {phase === "error" && failure ? (
-                  <SurfaceError className="mb-1" title={failure.advice.title} message={`${failure.message}\n\n${failure.advice.hint}`} />
+                  <div className="flex flex-col gap-3 pb-2">
+                    <SurfaceError title={failure.advice.title} message={`${failure.message}\n\n${failure.advice.hint}`} />
+                    {failure.advice.action === "model" && pick.pick ? (
+                      <div className="flex items-center gap-2 text-sm" data-testid="study-model">
+                        <span className="text-muted-foreground">Model</span>
+                        <ModelPicker pick={pick.pick} onPick={pick.set} />
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
                 {phase === "done" && done ? <DoneView done={done} quiz={quiz} /> : null}
               </Slide>
             </AutoHeight>
           </DialogPanel>
 
-          <DialogFooter className="items-center">
-            {phase === "what" || phase === "how" || phase === "error" || phase === "ask" ? (
-              <div className="mr-auto flex min-w-0 items-center gap-1.5" data-testid="study-model">
-                <span className="shrink-0 text-muted-foreground text-xs max-sm:hidden">Model</span>
-                {pick.pick ? <ModelPicker pick={pick.pick} onPick={pick.set} /> : <Skeleton className="h-4 w-28" />}
-              </div>
-            ) : null}
+          <DialogFooter variant="bare" className="flex-row gap-2 px-6 pt-4 pb-6 *:flex-1">
             {phase === "what" ? (
               <>
-                <Button type="button" size="sm" variant="ghost" onClick={close}>
+                <Button type="button" variant="outline" onClick={close}>
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" disabled={!sources.data?.length}>
+                <Button type="submit" disabled={!sources.data?.length}>
                   Next
+                  <Icon icon={icons.arrowRight} />
                 </Button>
               </>
             ) : null}
             {phase === "how" ? (
               <>
-                <Button type="button" size="sm" variant="ghost" onClick={() => go("what", -1)}>
-                  <ArrowLeft />
+                <Button type="button" variant="outline" className="flex-none" onClick={() => go("what", -1)}>
+                  <Icon icon={icons.arrowLeft} />
                   Back
                 </Button>
-                <Button type="submit" size="sm">
-                  <Sparkle weight="light" />
-                  {`Make ${plural(draft.count || 0, noun)}`}
+                <Button type="submit">
+                  <Icon icon={icons.ai} />
+                  {makeLabel}
                 </Button>
               </>
             ) : null}
             {phase === "ask" ? (
               <>
-                <Button type="button" size="sm" variant="ghost" onClick={() => go("what", -1)}>
+                <Button type="button" variant="outline" onClick={() => go("what", -1)}>
                   Change test
                 </Button>
-                <Button type="submit" size="sm" disabled={!draft.covers.trim()}>
-                  <Sparkle weight="light" />
+                <Button type="submit" disabled={!draft.covers.trim()}>
+                  <Icon icon={icons.ai} />
                   Make it
                 </Button>
               </>
             ) : null}
             {phase === "run" ? (
-              <Button type="button" size="sm" variant="outline" disabled={stopping} onClick={() => void stop()}>
-                {stopping ? <Spinner size="sm" /> : null}
-                {stopping ? "Stopping…" : "Stop"}
-              </Button>
+              <>
+                <Button type="button" variant="outline" className="flex-none" disabled={stopping} pending={stopping} onClick={() => void stop()}>
+                  Stop
+                </Button>
+                <Button type="button" pending aria-label={quiz ? "Making the quiz" : "Making the cards"}>
+                  {makeLabel}
+                </Button>
+              </>
             ) : null}
             {phase === "error" && failure ? (
               <>
                 {failure.advice.action === "model" ? (
-                  <Button type="button" size="sm" variant="ghost" onClick={() => (close(), useNav.getState().openSettings("providers"))}>
+                  <Button type="button" variant="outline" onClick={() => (close(), useNav.getState().openSettings("providers"))}>
                     Open settings
                   </Button>
                 ) : null}
-                <Button type="button" size="sm" variant="ghost" onClick={() => go(failure.advice.action === "scope" || failure.advice.action === "focus" ? "what" : "how", -1)}>
+                <Button type="button" variant="outline" onClick={() => go(failure.advice.action === "scope" || failure.advice.action === "focus" ? "what" : "how", -1)}>
                   {failure.advice.action === "scope" || failure.advice.action === "focus" ? "Change what" : "Back"}
                 </Button>
-                <Button type="button" size="sm" onClick={() => void generate()}>
+                <Button type="button" onClick={() => void generate()}>
                   Try again
                 </Button>
               </>
             ) : null}
             {phase === "done" && done ? (
               <>
-                <Button type="button" size="sm" variant="ghost" onClick={close}>
+                <Button type="button" variant="outline" onClick={close}>
                   Close
                 </Button>
                 {done.path ? (
-                  <Button type="button" size="sm" onClick={() => (close(), onOpen(quiz ? { kind: "quiz", path: done.path! } : { kind: "review", paths: [done.path!] }))}>
+                  <Button type="button" onClick={() => (close(), onOpen(quiz ? { kind: "quiz", path: done.path! } : { kind: "review", paths: [done.path!] }))}>
                     {quiz ? "Take the quiz" : "Start learning"}
+                    <Icon icon={icons.arrowRight} />
                   </Button>
                 ) : null}
               </>
@@ -430,61 +461,115 @@ function useStudyPick(space: string, open: boolean): { pick: ModelPick | null; s
   return { pick: saved ?? chat ?? fetched, set: setPick };
 }
 
-function Steps({ step, labels, onStep }: { step: number; labels: string[]; onStep: (i: number) => void }) {
+/** What · Questions · Make: a blue disc for each step behind you, the current one in ink. */
+function Steps({ step, done, labels, onStep }: { step: number; done: boolean; labels: string[]; onStep: (i: number) => void }) {
   return (
-    <ol className="flex items-center gap-1.5 text-xs" aria-label="Steps">
-      {labels.map((l, i) => (
-        <li key={l} className="flex items-center gap-1.5">
-          {i > 0 ? <span className={cn("h-px w-5 bg-border transition-colors", i <= step && "bg-primary/50")} aria-hidden /> : null}
-          <button
-            type="button"
-            disabled={i >= step}
-            onClick={() => onStep(i)}
-            aria-current={i === step ? "step" : undefined}
-            className={cn("flex items-center gap-1.5 rounded-md text-muted-foreground transition-colors enabled:hover:text-foreground", i === step && "font-medium text-foreground")}
-          >
-            <span
-              className={cn(
-                "flex size-4 items-center justify-center rounded-full border text-3xs tabular-nums transition-colors",
-                i < step && "border-primary bg-primary text-primary-foreground",
-                i === step && "border-primary text-primary",
-              )}
+    <ol className="flex items-center gap-2 text-sm" aria-label="Steps">
+      {labels.map((l, i) => {
+        const past = i < step || (done && i === step);
+        return (
+          <li key={l} className="flex items-center gap-2">
+            {i > 0 ? <span className={cn("h-px w-6 bg-border transition-colors duration-200", i <= step && "bg-primary/50")} aria-hidden /> : null}
+            <button
+              type="button"
+              disabled={i >= step}
+              onClick={() => onStep(i)}
+              aria-current={i === step ? "step" : undefined}
+              className={cn("flex items-center gap-2 rounded-md text-muted-foreground transition-colors enabled:hover:text-foreground", i === step && !done && "font-medium text-foreground")}
             >
-              {i < step ? <CheckCircle weight="bold" className="size-3" /> : i + 1}
-            </span>
-            {l}
-          </button>
-        </li>
-      ))}
+              <AnimatePresence mode="popLayout" initial={false}>
+                {past ? (
+                  <motion.span key="done" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 520, damping: 32 }}>
+                    <Disc />
+                  </motion.span>
+                ) : (
+                  <span
+                    key="n"
+                    className={cn(
+                      "flex size-4 items-center justify-center rounded-full border text-3xs tabular-nums transition-colors",
+                      i === step ? "border-foreground text-foreground" : "border-input text-subtle-foreground",
+                    )}
+                  >
+                    {i + 1}
+                  </span>
+                )}
+              </AnimatePresence>
+              {l}
+            </button>
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
 function Field({ label, htmlFor, children, hint }: { label: string; htmlFor?: string; children: ReactNode; hint?: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
-        <Label htmlFor={htmlFor}>{label}</Label>
-        {hint ? <span className="text-muted-foreground text-xs">{hint}</span> : null}
+        <Label htmlFor={htmlFor} className="font-normal text-foreground text-sm">
+          {label}
+        </Label>
+        {hint ? <span className="text-subtle-foreground text-xs">{hint}</span> : null}
       </div>
       {children}
     </div>
   );
 }
 
-function Note({ icon, title, children, tone = "muted" }: { icon: ReactNode; title: ReactNode; children?: ReactNode; tone?: "muted" | "primary" }) {
+/** A grey box with a glyph, a line and a muted explanation; `warning` when it wants an answer. */
+function Note({ icon, title, children, tone = "muted", action }: { icon: IconData; title: ReactNode; children?: ReactNode; tone?: "muted" | "warning" | "success"; action?: ReactNode }) {
   return (
-    <div className={cn("flex gap-2.5 rounded-lg border px-3 py-2.5", tone === "primary" ? "border-primary/20 bg-primary/5" : "bg-muted/40")}>
-      <span className={cn("mt-0.5 shrink-0 text-muted-foreground [&_svg]:size-4", tone === "primary" && "text-primary")}>{icon}</span>
+    <div className="flex items-start gap-3">
+      <Icon icon={icon} className={cn("mt-0.5 size-4.5 shrink-0", tone === "warning" ? "text-warning-foreground" : tone === "success" ? "text-success-foreground" : "text-muted-foreground")} />
       <div className="min-w-0 flex-1 text-sm">
-        <p className="font-medium [overflow-wrap:anywhere]">{title}</p>
-        {children ? <div className="mt-0.5 text-muted-foreground text-xs [overflow-wrap:anywhere]">{children}</div> : null}
+        <p className="text-foreground [overflow-wrap:anywhere]">{title}</p>
+        {children ? <div className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{children}</div> : null}
       </div>
+      {action}
     </div>
   );
 }
 
 // ---- Step 1: what ----
+
+/** Courses as cards, three across (after 9091's plan cards): the name, what there is to read, its parts in the footer strip. */
+function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSource[]; value: string | null; onChange: (folder: string) => void; invalid?: boolean }) {
+  return (
+    <RadioGroupPrimitive
+      value={value}
+      onValueChange={(v) => onChange(v as string)}
+      aria-label="Course"
+      aria-invalid={invalid || undefined}
+      className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto p-0.5 @sm/dialog:grid-cols-3"
+    >
+      {sources.map((s) => {
+        const parts = (["syllabus", "assignments", "files", "readings"] as const).filter((p) => s[p]);
+        const names = parts.map((p) => (p === "files" ? "Files" : p === "syllabus" ? "Syllabus" : p === "assignments" ? "Assignments" : "Readings"));
+        return (
+          <RadioPrimitive.Root
+            key={s.folder}
+            value={s.folder}
+            aria-label={s.name}
+            render={<button type="button" />}
+            className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-well text-left outline-none transition-[border-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:ring-1 data-checked:ring-primary"
+          >
+            <span className="flex min-h-20 flex-col gap-1 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
+              <span className="flex items-start gap-2">
+                <span className="line-clamp-2 min-w-0 flex-1 text-foreground text-sm">{s.name}</span>
+                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-input transition-colors group-data-checked:border-primary group-data-checked:bg-primary">
+                  <span className="size-1.5 rounded-full bg-white opacity-0 transition-opacity group-data-checked:opacity-100" />
+                </span>
+              </span>
+              <span className="mt-auto text-muted-foreground text-xs tabular-nums">{parts.length ? plural(parts.length, "part") : "Nothing to read yet"}</span>
+            </span>
+            <Truncate className="px-3 py-1.5 text-muted-foreground text-xs">{names.join(" · ") || "Import it in Courses"}</Truncate>
+          </RadioPrimitive.Root>
+        );
+      })}
+    </RadioGroupPrimitive>
+  );
+}
 
 function WhatStep({
   space,
@@ -525,55 +610,47 @@ function WhatStep({
   if (sources.error) return <SurfaceError title="Couldn’t list your courses" message={cleanMessage(sources.error)} onRetry={sources.reload} />;
   if (!sources.data)
     return (
-      <div className="flex flex-col gap-3 motion-safe:animate-skeleton" aria-hidden>
-        <Skeleton className="h-7 w-full animate-none" />
-        <Skeleton className="h-7 w-2/3 animate-none" />
-        <Skeleton className="h-16 w-full animate-none" />
+      <div className="flex flex-col gap-3 pb-2 motion-safe:animate-skeleton" aria-hidden>
+        <Skeleton className="h-3 w-16 animate-none" />
+        <div className="grid grid-cols-3 gap-2">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-28 animate-none rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-8 w-full animate-none rounded-lg" />
       </div>
     );
   if (!sources.data.length)
     return (
-      <Empty size="compact" className="min-h-0 rounded-lg border p-6 md:p-6">
-        <EmptyHeader>
-          <EmptyTitle className="text-sm">No courses in this space</EmptyTitle>
-          <EmptyDescription className="text-xs">Import a course, or give this space access to one, to make questions from it.</EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent>
-          <Button type="button" size="xs" variant="outline" onClick={() => (onClose(), useNav.getState().setView("courses"))}>
-            Open courses
-          </Button>
-        </EmptyContent>
-      </Empty>
+      <Card variant="well" className="mb-2 items-start gap-3 p-5">
+        <Icon icon={icons.courses} className="size-5 text-muted-foreground" />
+        <div>
+          <p className="font-medium text-base">No courses in this space</p>
+          <p className="mt-0.5 text-muted-foreground text-sm">Import a course, or give this space access to one, to make questions from it.</p>
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={() => (onClose(), useNav.getState().setView("courses"))}>
+          Open courses
+        </Button>
+      </Card>
     );
 
   return (
-    <div className="flex flex-col gap-4 pb-1">
+    <div className="@container/dialog flex flex-col gap-5 pb-2">
       <Field label="Course">
-        <Select value={draft.course ?? ""} onValueChange={(v) => patch({ course: (v as string) || null, files: [], exam: "", covers: "" })}>
-          <SelectTrigger size="sm" aria-label="Course" aria-invalid={errs.course ? true : undefined}>
-            <SelectValue>{(v: string) => sources.data?.find((s) => s.folder === v)?.name ?? "Choose a course"}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            {sources.data.map((s) => (
-              <SelectItem key={s.folder} value={s.folder}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+        <CoursePicker sources={sources.data} value={draft.course} invalid={!!errs.course} onChange={(folder) => patch({ course: folder || null, files: [], exam: "", covers: "" })} />
         <FieldError>{errs.course}</FieldError>
       </Field>
 
       <Field label="For">
-        <ToggleGroup aria-label="For" className="w-full" value={[draft.target]} onValueChange={(v: unknown[]) => v[0] && patch({ target: v[0] as MakeDraft["target"] })}>
-          <ToggleGroupItem value="exam" className="flex-1 gap-1.5 text-xs">
-            <Target weight="light" className="size-3.5" />A test
-          </ToggleGroupItem>
-          <ToggleGroupItem value="topics" className="flex-1 gap-1.5 text-xs">
-            <BookOpenText weight="light" className="size-3.5" />
+        <SegmentedControl aria-label="For" className="w-full" value={draft.target} onValueChange={(t: MakeDraft["target"]) => patch({ target: t })}>
+          <SegmentedControlItem value="exam" className="flex-1">
+            <Icon icon={icons.goal} />A test
+          </SegmentedControlItem>
+          <SegmentedControlItem value="topics" className="flex-1">
+            <Icon icon={icons.read} />
             Topics
-          </ToggleGroupItem>
-        </ToggleGroup>
+          </SegmentedControlItem>
+        </SegmentedControl>
       </Field>
 
       {draft.target === "exam" ? (
@@ -589,7 +666,7 @@ function WhatStep({
                 setEditScope(false);
               }}
             >
-              <SelectTrigger size="sm" aria-label="Test" aria-invalid={errs.exam ? true : undefined}>
+              <SelectTrigger aria-label="Test" aria-invalid={errs.exam ? true : undefined}>
                 <SelectValue>{(v: string) => (v ? v : scope.loading ? "Looking for tests…" : "Choose a test")}</SelectValue>
               </SelectTrigger>
               <SelectPopup>
@@ -605,10 +682,10 @@ function WhatStep({
               </SelectPopup>
             </Select>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <Input size="sm" aria-label="Test name" placeholder="Test name, e.g. Midterm 2" value={draft.exam} aria-invalid={errs.exam ? true : undefined} onChange={(e) => patch({ exam: e.target.value })} />
+            <div className="flex items-center gap-2">
+              <Input aria-label="Test name" placeholder="Test name, e.g. Midterm 2" value={draft.exam} aria-invalid={errs.exam ? true : undefined} onChange={(e) => patch({ exam: e.target.value })} />
               {options.length ? (
-                <Button type="button" size="xs" variant="ghost-muted" onClick={() => (setOther(false), patch({ exam: "" }))}>
+                <Button type="button" size="sm" variant="ghost-muted" onClick={() => (setOther(false), patch({ exam: "" }))}>
                   Pick from list
                 </Button>
               ) : null}
@@ -638,14 +715,15 @@ function WhatStep({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <Input size="sm" aria-label="Topics" placeholder="e.g. induction proofs, power sets (empty for anything)" value={draft.focus} onChange={(e) => patch({ focus: e.target.value })} />
+          <Input aria-label="Topics" placeholder="e.g. induction proofs, power sets (empty for anything)" value={draft.focus} onChange={(e) => patch({ focus: e.target.value })} />
           {suggestions.topics.length ? <Chips items={suggestions.topics} value={draft.focus} onChange={(focus) => patch({ focus })} /> : null}
         </div>
       )}
 
       {course ? (
         <Collapsible defaultOpen={draft.files.length > 0}>
-          <CollapsibleTrigger className="text-muted-foreground text-xs hover:text-foreground">
+          <CollapsibleTrigger className="group flex items-center gap-1.5 text-muted-foreground text-sm transition-colors hover:text-foreground">
+            <Icon icon={icons.chevronRight} className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
             {draft.files.length ? `From ${plural(draft.files.length, "chosen part")} of the course` : "From the whole course · choose parts"}
           </CollapsibleTrigger>
           <CollapsiblePanel>
@@ -716,88 +794,88 @@ function ScopePanel({
   if (state.kind === "known" || state.kind === "stated") {
     const evidence = state.kind === "known" ? (state.option.scope?.evidence ?? []) : [];
     return (
-      <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 px-3 py-2.5" data-testid="scope-known">
-        <div className="flex items-start gap-2.5">
-          <CheckCircle weight="light" className="mt-0.5 size-4 shrink-0 text-success" />
-          <div className="min-w-0 flex-1 text-sm">
-            <p className="[overflow-wrap:anywhere]">
+      <Card variant="well" className="mt-1 gap-2.5 p-4" data-testid="scope-known">
+        <Note
+          icon={icons.done}
+          tone="success"
+          title={
+            <>
               <span className="text-muted-foreground">{state.kind === "stated" ? "You said it covers " : "Covers "}</span>
               {covers.trim() || state.words}
-            </p>
-            {evidence.length ? (
-              <div className="-mx-0.5 mt-1 flex flex-wrap items-center gap-y-1 text-xs">
-                <span className="px-0.5 text-muted-foreground">From</span>
-                {evidence.slice(0, 3).map((e) => (
-                  <CitationChip key={`${e.source}${e.quote}`} space={space} citation={{ path: e.source, quote: e.quote }} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-          {!edit ? (
-            <Button type="button" size="xs" variant="ghost-muted" onClick={() => (onCovers(covers || state.words), setEdit(true))}>
-              <PencilSimpleLine weight="light" />
-              Edit
-            </Button>
+            </>
+          }
+          action={
+            !edit ? (
+              <Button type="button" size="xs" variant="ghost-muted" onClick={() => (onCovers(covers || state.words), setEdit(true))}>
+                <Icon icon={icons.edit} />
+                Edit
+              </Button>
+            ) : null
+          }
+        >
+          {evidence.length ? (
+            <div className="-mx-0.5 mt-1 flex flex-wrap items-center gap-y-1 text-xs">
+              <span className="px-0.5 text-muted-foreground">From</span>
+              {evidence.slice(0, 3).map((e) => (
+                <CitationChip key={`${e.source}${e.quote}`} space={space} citation={{ path: e.source, quote: e.quote }} />
+              ))}
+            </div>
           ) : null}
-        </div>
-        {edit ? <Textarea size="sm" rows={2} aria-label={`What ${exam} covers`} value={covers} onChange={(e) => onCovers(e.target.value)} autoFocus /> : null}
-      </div>
+        </Note>
+        {edit ? <Textarea rows={2} aria-label={`What ${exam} covers`} value={covers} onChange={(e) => onCovers(e.target.value)} autoFocus /> : null}
+      </Card>
     );
   }
 
   if (state.kind === "unchecked") {
     return (
-      <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 px-3 py-2.5">
-        <div className="relative flex items-start gap-2.5 overflow-hidden">
-          <MapTrifold weight="light" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1 text-sm">
-            <p className="font-medium">{mapping ? `Reading ${courseName}…` : `Phaethon finds what ${exam || "it"} covers in ${courseName}`}</p>
-            <p className="mt-0.5 text-muted-foreground text-xs">
-              {mapping ? "Finding what it teaches and what each test covers. The first time takes a few minutes." : "It reads the course once when you make it, or look it up now. You can also say it yourself."}
-            </p>
-            {mapping ? (
-              <div className="relative mt-2 h-0.5 overflow-hidden rounded-full">
-                <JobBar value={mapping.fraction} />
-              </div>
-            ) : null}
-            {mapping?.error ? <FieldError className="mt-1.5">{mapping.error}</FieldError> : null}
-          </div>
+      <Card variant="well" className="mt-1 gap-3 p-4">
+        <Note
+          icon={icons.map}
+          title={mapping ? `Reading ${courseName}…` : `Phaethon finds what ${exam || "it"} covers in ${courseName}`}
+          action={
+            mapping && !mapping.error ? (
+              <Button type="button" size="xs" variant="ghost-muted" onClick={() => void studyMakeCancel(space, mapping.id)}>
+                Stop
+              </Button>
+            ) : (
+              <Button type="button" size="xs" variant="outline" onClick={() => void lookUp()}>
+                {mapping?.error ? null : <Icon icon={icons.find} />}
+                {mapping?.error ? "Try again" : "Look it up"}
+              </Button>
+            )
+          }
+        >
+          {mapping ? "Finding what it teaches and what each test covers. The first time takes a few minutes." : "It reads the course once when you make it, or look it up now. You can also say it yourself."}
           {mapping && !mapping.error ? (
-            <Button type="button" size="xs" variant="ghost-muted" onClick={() => void studyMakeCancel(space, mapping.id)}>
-              Stop
-            </Button>
-          ) : (
-            <Button type="button" size="xs" variant="outline" onClick={() => void lookUp()}>
-              {mapping?.error ? "Try again" : "Look it up"}
-            </Button>
-          )}
-        </div>
-        <Textarea size="sm" rows={2} aria-label={`What ${exam} covers`} placeholder="Or say it: e.g. chapters 1–4, through Problem set 6, no proofs" value={covers} onChange={(e) => onCovers(e.target.value)} />
-      </div>
+            <div className="relative mt-2.5 h-0.5 overflow-hidden rounded-full">
+              <JobBar value={mapping.fraction} />
+            </div>
+          ) : null}
+          {mapping?.error ? <FieldError className="mt-1.5">{mapping.error}</FieldError> : null}
+        </Note>
+        <Textarea rows={2} aria-label={`What ${exam} covers`} placeholder="Or say it: e.g. chapters 1–4, through Problem set 6, no proofs" value={covers} onChange={(e) => onCovers(e.target.value)} />
+      </Card>
     );
   }
 
   // Read, and the course doesn't say: ask, with its topics as suggestions.
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2.5" data-testid="scope-ask">
-      <div className="flex items-start gap-2.5">
-        <MapTrifold weight="light" className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
-        <div className="min-w-0 flex-1 text-sm">
-          <p className="font-medium">What does {exam || "this test"} cover?</p>
-          <p className="mt-0.5 text-muted-foreground text-xs">{courseName}’s materials don’t say. Questions are only written on what you list here.</p>
-        </div>
-      </div>
+    <Card variant="well" className="mt-1 gap-3 border-warning/30 bg-warning/5 p-4" data-testid="scope-ask">
+      <Note icon={icons.map} tone="warning" title={`What does ${exam || "this test"} cover?`}>
+        {courseName}’s materials don’t say. Questions are only written on what you list here.
+      </Note>
       <AskScope view={view} value={covers} onChange={onCovers} />
       <FieldError>{error}</FieldError>
-    </div>
+    </Card>
   );
 }
 
 function AskScope({ view, value, onChange, autoFocus }: { view: ScopeView | null; value: string; onChange: (s: string) => void; autoFocus?: boolean }) {
   const s = scopeSuggestions(view);
   return (
-    <div className="flex flex-col gap-2">
-      <Textarea size="sm" rows={2} aria-label="What it covers" placeholder="e.g. chapters 1–4, through Problem set 6, no proofs" value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} />
+    <div className="flex flex-col gap-2.5">
+      <Textarea rows={2} aria-label="What it covers" placeholder="e.g. chapters 1–4, through Problem set 6, no proofs" value={value} onChange={(e) => onChange(e.target.value)} autoFocus={autoFocus} />
       {s.topics.length || s.through.length ? <Chips items={[...s.through, ...s.topics]} value={value} onChange={onChange} /> : null}
     </div>
   );
@@ -805,18 +883,19 @@ function AskScope({ view, value, onChange, autoFocus }: { view: ScopeView | null
 
 function Chips({ items, value, onChange }: { items: string[]; value: string; onChange: (s: string) => void }) {
   return (
-    <div className="flex flex-wrap gap-1" role="group" aria-label="Suggestions">
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggestions">
       {items.map((t) => {
         const on = hasSuggestion(value, t);
         return (
           <Toggle
             key={t}
-            size="xs"
+            size="sm"
             variant="outline"
             pressed={on}
             onPressedChange={() => onChange(toggleSuggestion(value, t))}
-            className="max-w-full rounded-full px-2 font-normal text-xs data-pressed:border-primary/40 data-pressed:bg-primary/8 data-pressed:text-foreground"
+            className="h-7 max-w-full gap-1 rounded-full bg-card px-2.5 font-normal text-sm data-pressed:border-primary/50 data-pressed:bg-primary/8 data-pressed:text-foreground"
           >
+            {on ? <Icon icon={icons.check} className="size-3.5 text-primary" /> : null}
             <Truncate className="min-w-0">{t}</Truncate>
           </Toggle>
         );
@@ -827,32 +906,50 @@ function Chips({ items, value, onChange }: { items: string[]; value: string; onC
 
 // ---- Step 2: how ----
 
-function HowStep({ draft, patch, errs, summary, onBack }: { draft: MakeDraft; patch: (p: Partial<MakeDraft>) => void; errs: { count?: string; kinds?: string }; summary: string; onBack: () => void }) {
+const KIND_HINT: Record<string, string> = {
+  choice: "One right answer among four.",
+  multi: "Every right answer, from several.",
+  truefalse: "A statement to judge.",
+  short: "A sentence or two, graded against the source.",
+  cloze: "The missing word or phrase.",
+};
+
+function HowStep({
+  draft,
+  patch,
+  errs,
+  course,
+  scope,
+  model,
+  onChange,
+}: {
+  draft: MakeDraft;
+  patch: (p: Partial<MakeDraft>) => void;
+  errs: { count?: string; kinds?: string };
+  course: string;
+  scope: string;
+  model: ReactNode;
+  onChange: () => void;
+}) {
   const quiz = draft.kind === "quiz";
   const sizes = SIZES[draft.kind];
   const preset = sizes.includes(draft.count) ? String(draft.count) : "";
+  const difficulty = { easier: "Easier", exam: "Like the test", harder: "Harder" }[draft.difficulty];
   return (
-    <div className="flex flex-col gap-4 pb-1">
-      <button type="button" onClick={onBack} className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60">
-        <Target weight="light" className="size-4 shrink-0 text-muted-foreground" />
-        <Truncate className="min-w-0 flex-1">{summary}</Truncate>
-        <span className="shrink-0 text-muted-foreground text-xs">Change</span>
-      </button>
-
+    <div className="flex flex-col gap-5 pb-2">
       <Field label="How many" hint={errs.count ? undefined : `Up to ${MAX_COUNT[draft.kind]}`}>
         <div className="flex items-center gap-2">
-          <ToggleGroup aria-label="How many" value={preset ? [preset] : []} onValueChange={(v: unknown[]) => v[0] && patch({ count: Number(v[0]) })}>
+          <SegmentedControl aria-label="How many" value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="flex-1">
             {sizes.map((n) => (
-              <ToggleGroupItem key={n} value={String(n)} className="min-w-10 text-xs tabular-nums">
+              <SegmentedControlItem key={n} value={String(n)} className="flex-1 tabular-nums">
                 {n}
-              </ToggleGroupItem>
+              </SegmentedControlItem>
             ))}
-          </ToggleGroup>
+          </SegmentedControl>
           <Input
-            size="sm"
             aria-label="Exact number"
             inputMode="numeric"
-            className="w-16 tabular-nums"
+            className="w-20 tabular-nums"
             value={draft.count ? String(draft.count) : ""}
             aria-invalid={errs.count ? true : undefined}
             onChange={(e) => patch({ count: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
@@ -864,41 +961,67 @@ function HowStep({ draft, patch, errs, summary, onBack }: { draft: MakeDraft; pa
       {quiz ? (
         <>
           <Field label="Difficulty">
-            <ToggleGroup aria-label="Difficulty" className="w-full" value={[draft.difficulty]} onValueChange={(v: unknown[]) => v[0] && patch({ difficulty: v[0] as MakeDraft["difficulty"] })}>
-              <ToggleGroupItem value="easier" className="flex-1 text-xs">
+            <SegmentedControl aria-label="Difficulty" className="w-full" value={draft.difficulty} onValueChange={(d: MakeDraft["difficulty"]) => patch({ difficulty: d })}>
+              <SegmentedControlItem value="easier" className="flex-1">
                 Easier
-              </ToggleGroupItem>
-              <ToggleGroupItem value="exam" className="flex-1 text-xs">
+              </SegmentedControlItem>
+              <SegmentedControlItem value="exam" className="flex-1">
                 Like the test
-              </ToggleGroupItem>
-              <ToggleGroupItem value="harder" className="flex-1 text-xs">
+              </SegmentedControlItem>
+              <SegmentedControlItem value="harder" className="flex-1">
                 Harder
-              </ToggleGroupItem>
-            </ToggleGroup>
+              </SegmentedControlItem>
+            </SegmentedControl>
           </Field>
           <Field label="Kinds of question">
-            <div className="flex flex-wrap gap-1">
+            <Card className="divide-y px-4 shadow-none" role="group" aria-label="Kinds of question">
               {KINDS.map((k) => (
-                <Toggle
+                <ToggleRow
                   key={k.kind}
-                  size="xs"
-                  variant="outline"
-                  className="px-2 font-normal text-xs data-pressed:border-primary/40 data-pressed:bg-primary/8 data-pressed:text-foreground"
-                  pressed={draft.kinds.includes(k.kind)}
-                  onPressedChange={(p) => patch({ kinds: p ? [...draft.kinds, k.kind] : draft.kinds.filter((x) => x !== k.kind) })}
-                >
-                  {k.label}
-                </Toggle>
+                  className="py-2.5"
+                  title={k.label}
+                  description={KIND_HINT[k.kind]}
+                  checked={draft.kinds.includes(k.kind)}
+                  onCheckedChange={(p) => patch({ kinds: p ? [...draft.kinds, k.kind] : draft.kinds.filter((x) => x !== k.kind) })}
+                />
               ))}
-            </div>
+            </Card>
             <FieldError>{errs.kinds}</FieldError>
           </Field>
         </>
       ) : null}
 
       <Field label="Name" htmlFor="make-title">
-        <Input id="make-title" size="sm" placeholder="Named for you if left empty" value={draft.title} maxLength={120} onChange={(e) => patch({ title: e.target.value })} />
+        <Input id="make-title" placeholder="Named for you if left empty" value={draft.title} maxLength={120} onChange={(e) => patch({ title: e.target.value })} />
       </Field>
+
+      <Card variant="well" className="gap-0 p-4" data-testid="make-summary">
+        <div className="mb-1 flex h-6 items-center justify-between">
+          <span className="font-medium text-sm">Summary</span>
+          <Button type="button" size="xs" variant="ghost-muted" onClick={onChange}>
+            Change
+          </Button>
+        </div>
+        <SummaryRow icon={icons.courses} label="Course" value={course} />
+        {scope ? <SummaryRow icon={icons.goal} label="For" value={scope} /> : null}
+        <SummaryRow icon={quiz ? icons.quiz : icons.deck} label={quiz ? "Questions" : "Cards"} value={[plural(draft.count || 0, quiz ? "question" : "card"), quiz ? difficulty : null].filter(Boolean).join(" · ")} />
+        {quiz ? <SummaryRow icon={icons.list} label="Kinds" value={draft.kinds.length ? draft.kinds.map(kindLabel).join(", ") : "None chosen"} /> : null}
+        <div className="flex h-8 items-center gap-3 text-sm" data-testid="study-model">
+          <Icon icon={icons.model} className="size-4 text-muted-foreground" />
+          <span className="text-muted-foreground">Model</span>
+          <span className="ml-auto flex min-w-0 justify-end">{model}</span>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function SummaryRow({ icon, label, value }: { icon: IconData; label: string; value: string }) {
+  return (
+    <div className="flex h-8 items-center gap-3 text-sm">
+      <Icon icon={icon} className="size-4 text-muted-foreground" />
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <Truncate className="ml-auto min-w-0 text-right text-foreground">{value}</Truncate>
     </div>
   );
 }
@@ -914,28 +1037,38 @@ function RunView({ progress, fraction, started, quiz, course, exam, stopping }: 
   const list = stages(progress, { quiz, course, exam });
   const secs = Math.max(0, Math.round((now - started) / 1000));
   return (
-    <div className="relative overflow-hidden rounded-lg border bg-muted/20 px-3 pt-4 pb-3" aria-live="polite" data-testid="make-progress">
-      <JobBar value={fraction} />
-      <ol className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-4 pb-2" aria-live="polite" data-testid="make-progress">
+      <div className="flex items-center gap-3">
+        <Spinner size="md" className="text-muted-foreground" />
+        <span className={cn("min-w-0 flex-1 truncate text-base", !stopping && "text-shimmer")}>{stopping ? "Stopping…" : quiz ? "Making your quiz…" : "Making your cards…"}</span>
+        <span className="shrink-0 text-muted-foreground text-sm tabular-nums">{`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</span>
+      </div>
+      <div className="relative h-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(fraction * 100)}>
+        <div className="h-full rounded-full bg-ink transition-[width] duration-500 ease-(--ease-out-soft)" style={{ width: `${Math.max(2, fraction * 100)}%` }} />
+      </div>
+      <ol className="flex flex-col">
         {list.map((s) => (
-          <motion.li key={s.id} layout="position" className="flex items-start gap-2.5" data-state={s.state}>
-            <span className="relative mt-0.5 flex size-4 shrink-0 items-center justify-center">
-              <AnimatePresence mode="popLayout" initial={false}>
-                {s.state === "done" ? (
-                  <motion.span key="done" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 520, damping: 28 }}>
-                    <CheckCircle weight="fill" className="size-4 text-success" />
-                  </motion.span>
-                ) : s.state === "active" ? (
-                  <motion.span key="active" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <Spinner size="sm" className="text-primary" />
-                  </motion.span>
-                ) : (
-                  <motion.span key="pending" className="size-1.5 rounded-full bg-border" />
-                )}
-              </AnimatePresence>
+          <motion.li key={s.id} layout="position" className="group/stage relative flex gap-3" data-state={s.state}>
+            <span aria-hidden className="absolute top-0 bottom-0 left-2 w-px -translate-x-1/2 bg-border group-first/stage:top-4 group-last/stage:bottom-auto group-last/stage:h-4" />
+            <span className="relative z-10 flex h-8 w-4 shrink-0 items-center justify-center">
+              <span className="flex bg-popover py-1">
+                <AnimatePresence mode="popLayout" initial={false}>
+                  {s.state === "done" ? (
+                    <motion.span key="done" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 520, damping: 28 }}>
+                      <Disc />
+                    </motion.span>
+                  ) : s.state === "active" ? (
+                    <motion.span key="active" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                      <Spinner size="sm" className="text-foreground" />
+                    </motion.span>
+                  ) : (
+                    <motion.span key="pending" className="m-1 size-2 rounded-full border border-subtle-foreground" />
+                  )}
+                </AnimatePresence>
+              </span>
             </span>
-            <div className="min-w-0 flex-1">
-              <p className={cn("text-sm transition-colors", s.state === "pending" ? "text-muted-foreground" : "text-foreground", s.state === "active" && "font-medium")}>{s.label}</p>
+            <div className="min-w-0 flex-1 py-1.5">
+              <p className={cn("text-sm transition-colors", s.state === "pending" ? "text-subtle-foreground" : s.state === "active" ? "text-foreground" : "text-muted-foreground")}>{s.label}</p>
               <AnimatePresence initial={false}>
                 {s.state === "active" && s.detail ? (
                   <motion.p
@@ -954,43 +1087,43 @@ function RunView({ progress, fraction, started, quiz, course, exam, stopping }: 
           </motion.li>
         ))}
       </ol>
-      <p className="mt-3 border-t pt-2 text-muted-foreground text-xs tabular-nums">
-        {stopping ? "Stopping…" : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")} · You can close this; it keeps going and shows up in Study.`}
-      </p>
+      <p className="text-subtle-foreground text-xs">You can close this; it keeps going and shows up in Study.</p>
     </div>
   );
 }
 
+/** "You're all set" (c06d): what was made, then a grey list of what it covers with blue ticks. */
 function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
   const g = done.grounding;
   const noun = quiz ? "question" : "card";
   const dropped = g ? g.asked - g.kept : 0;
+  const made = quiz ? done.questions ?? 0 : done.cards ?? 0;
+  const topics = g?.coverage.filter((c) => c.count > 0) ?? [];
   return (
-    <div className="flex flex-col gap-3 pb-1">
-      <motion.div initial={{ scale: 0.98, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.2, ease: EASE }} className="flex gap-3 rounded-lg border border-success/25 bg-success/5 px-3 py-3">
-        <CheckCircle weight="fill" className="mt-0.5 size-5 shrink-0 text-success" />
-        <div className="min-w-0 text-sm">
-          <p className="font-medium tabular-nums">{quiz ? `Made a quiz of ${plural(done.questions ?? 0, "question")}` : `Made ${plural(done.cards ?? 0, "card")}`}</p>
-          <p className="mt-0.5 text-muted-foreground text-xs [overflow-wrap:anywhere]">
-            {[g?.exam ? `For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.` : null, `Each ${noun} was checked against your materials${dropped ? `; ${plural(dropped, noun)} that didn’t match ${dropped === 1 ? "was" : "were"} left out` : ""}.`]
-              .filter(Boolean)
-              .join(" ")}
-          </p>
-        </div>
-      </motion.div>
-      {g?.coverage.some((c) => c.count > 0) ? (
-        <div className="flex flex-col gap-1">
-          <p className="text-muted-foreground text-xs">By topic</p>
-          <ul className="flex flex-wrap gap-1">
-            {g.coverage.filter((c) => c.count > 0).map((c) => (
-              <li key={c.topic} className="flex items-center gap-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs">
-                <span className="max-w-48 truncate">{c.topic}</span>
-                <span className="text-muted-foreground tabular-nums">{c.count}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="flex flex-col gap-4 pb-2">
+      <div>
+        <p className="font-medium text-lg tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
+        <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{g?.exam ? `For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.` : "Here’s what went into it."}</p>
+      </div>
+      <Card variant="well" className="gap-0 px-4 py-2">
+        <DoneRow tone="done">{`Each ${noun} checked against your materials`}</DoneRow>
+        {dropped ? <DoneRow tone="muted">{`${plural(dropped, noun)} that didn’t match ${dropped === 1 ? "was" : "were"} left out`}</DoneRow> : null}
+        {topics.map((c) => (
+          <DoneRow key={c.topic} tone="done" meta={String(c.count)}>
+            {c.topic}
+          </DoneRow>
+        ))}
+      </Card>
+    </motion.div>
+  );
+}
+
+function DoneRow({ tone, meta, children }: { tone: "done" | "muted"; meta?: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-9 items-center gap-3 text-sm">
+      <Disc tone={tone} />
+      <span className="min-w-0 flex-1 text-foreground [overflow-wrap:anywhere]">{children}</span>
+      {meta ? <span className="shrink-0 text-muted-foreground tabular-nums">{meta}</span> : null}
     </div>
   );
 }

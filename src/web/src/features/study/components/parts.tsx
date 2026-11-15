@@ -1,24 +1,59 @@
 import type { ReactNode } from "react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/features/chat/components/Markdown";
 import { cn } from "@/lib/utils";
 
 /**
- * Pieces every study screen shares: the header breadcrumb, the 2 px job bar
- * with its step line, and card/question text drawn through the chat's
- * Markdown (KaTeX, citations).
+ * Pieces every study screen shares: the page column, the header breadcrumb,
+ * the 2 px job bar with its step line, the tick discs of a summary list, and
+ * card/question text drawn through the chat's Markdown (KaTeX, citations).
  */
 
-/** "Study / Sets and functions": the first part goes back. */
+/**
+ * The scrolling page under the title bar: a centred column (`--page-max-width`,
+ * or `narrow` for one-thing-at-a-time screens), `pt-10` so the dot matrix
+ * shows above the first block, and the `page` container for its grids.
+ */
+export function Page({ children, narrow = false, className }: { children: ReactNode; narrow?: boolean; className?: string }) {
+  return (
+    <div className="@container/page relative min-h-0 flex-1 overflow-y-auto">
+      <div className={cn("mx-auto flex w-full flex-col gap-10 px-6 pt-10 pb-16 @3xl/page:px-8", narrow ? "max-w-(--chat-max-width)" : "max-w-(--page-max-width)", className)}>{children}</div>
+    </div>
+  );
+}
+
+/** The filled disc in front of a summary row (c06d's blue ticks): done, partly, missed, or nothing to say. */
+export function Disc({ tone = "done", className }: { tone?: "done" | "partial" | "wrong" | "muted"; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-full text-white",
+        tone === "done" ? "bg-primary" : tone === "partial" ? "bg-warning" : tone === "wrong" ? "bg-destructive" : "bg-subtle-foreground/60",
+        className,
+      )}
+    >
+      <Icon icon={tone === "wrong" ? icons.close : tone === "partial" ? icons.remove : icons.check} className="size-2.5 [--icon-stroke-small:2.25]" />
+    </span>
+  );
+}
+
+/** "← Sets and functions" in the title bar: Study is already the selected tab, so the arrow goes back to it and the name truncates. */
 export function Crumbs({ onBack, children }: { onBack: () => void; children: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <button type="button" className="app-no-drag shrink-0 text-muted-foreground transition-colors hover:text-foreground" onClick={onBack}>
-        Study
+    <span className="flex min-w-0 items-center gap-1 overflow-hidden text-sm">
+      <button
+        type="button"
+        aria-label="Back to study"
+        className="app-no-drag flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        onClick={onBack}
+      >
+        <Icon icon={icons.arrowLeft} className="size-4" />
       </button>
-      <span className="shrink-0 font-normal text-subtle-foreground">/</span>
-      <Truncate className="min-w-0">{children}</Truncate>
+      <Truncate className="min-w-0 font-medium text-foreground">{children}</Truncate>
     </span>
   );
 }
@@ -39,7 +74,7 @@ export function JobLine({ label, count, onCancel, cancelLabel = "Cancel" }: { la
       <p className="min-w-0 flex-1 text-muted-foreground text-xs [overflow-wrap:anywhere]">{label}</p>
       {count ? <span className="shrink-0 text-2xs text-muted-foreground tabular-nums">{count}</span> : null}
       {onCancel ? (
-        <Button size="xs" variant="ghost-muted" onClick={onCancel}>
+        <Button size="xs" variant="ghost-muted" shape="pill" onClick={onCancel}>
           {cancelLabel}
         </Button>
       ) : null}
@@ -69,7 +104,7 @@ export function StudyText({ text, space, id, reveal = false, className }: { text
 /** A small group heading with an optional trailing count. */
 export function GroupLabel({ children, count, className }: { children: ReactNode; count?: number; className?: string }) {
   return (
-    <div className={cn("flex items-center gap-1.5 px-2 font-medium text-2xs text-muted-foreground", className)}>
+    <div className={cn("flex items-center gap-1.5 text-muted-foreground text-xs", className)}>
       <span>{children}</span>
       {count != null ? <span className="text-subtle-foreground tabular-nums">{count}</span> : null}
     </div>

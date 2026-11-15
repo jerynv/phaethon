@@ -1,15 +1,15 @@
-import { PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
@@ -20,7 +20,7 @@ import { isCloze, plural } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { useLoad } from "../use-load";
 import { ConfirmDelete } from "./ConfirmDelete";
-import { Crumbs } from "./parts";
+import { Crumbs, Page } from "./parts";
 
 type Row = { key: number; front: string; back: string; source?: string };
 
@@ -97,26 +97,25 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
           <>
             {savedPath ? (
               <Tooltip>
-                <TooltipTrigger render={<Button size="icon-xs" variant="ghost-destructive" aria-label="Delete deck" onClick={() => setRemove(true)} />}>
-                  <Trash2Icon />
+                <TooltipTrigger render={<Button size="icon-sm" variant="ghost-destructive" aria-label="Delete deck" onClick={() => setRemove(true)} />}>
+                  <Icon icon={icons.delete} />
                 </TooltipTrigger>
                 <TooltipPopup side="bottom">Delete deck</TooltipPopup>
               </Tooltip>
             ) : null}
             {savedPath && !dirty ? (
-              <Button size="xs" variant="outline" onClick={() => open({ kind: "review", paths: [savedPath], title: title.trim() })}>
+              <Button size="sm" variant="outline" onClick={() => open({ kind: "review", paths: [savedPath], title: title.trim() })}>
+                <Icon icon={icons.play} />
                 Review
               </Button>
             ) : null}
-            <Button size="xs" disabled={saving || (!dirty && !!savedPath)} onClick={() => void save()}>
-              {saving ? <Spinner size="xs" /> : null}
-              {saving ? "Saving…" : dirty || !savedPath ? "Save" : "Saved"}
+            <Button size="sm" pending={saving} disabled={!dirty && !!savedPath} onClick={() => void save()}>
+              {dirty || !savedPath ? "Save" : "Saved"}
             </Button>
           </>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6">
+      <Page className="gap-6">
           {deck.error ? <SurfaceError title="Couldn’t open the deck" message={cleanMessage(deck.error)} onRetry={deck.reload} /> : null}
           {errors.save ? <SurfaceError title="Couldn’t save the deck" message={errors.save} onRetry={() => void save()} /> : null}
           {skeleton ? <EditorSkeleton /> : null}
@@ -126,7 +125,8 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
                 <Input
                   aria-label="Deck name"
                   placeholder="Deck name"
-                  className="font-medium text-lg"
+                  size="lg"
+                  className="font-medium text-lg tracking-title"
                   value={title}
                   maxLength={120}
                   autoFocus={!path}
@@ -141,16 +141,16 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
                 {deck.data?.course || deck.data?.sources.length ? <SourceLine course={deck.data.course} sources={deck.data.sources} space={space.id} /> : null}
               </div>
               <div className="flex flex-col gap-2">
-                <div className="grid grid-cols-[1.5rem_1fr_1fr_1.75rem] gap-2 px-0.5 text-2xs text-muted-foreground">
-                  <span />
+                <div className="grid grid-cols-[auto_1fr_1fr_auto] gap-2 px-0.5 text-muted-foreground text-sm">
+                  <span className="w-6" />
                   <span>Front</span>
                   <span>Back</span>
-                  <span />
+                  <span className="w-7" />
                 </div>
                 {rows.map((r, i) => (
                   <div key={r.key} className="flex flex-col gap-1">
-                    <div className="group grid grid-cols-[1.5rem_1fr_1fr_1.75rem] items-start gap-2">
-                      <span className="pt-2 text-right text-muted-foreground text-xs tabular-nums">{i + 1}</span>
+                    <div className="group grid grid-cols-[auto_1fr_1fr_auto] items-start gap-2">
+                      <span className="w-6 pt-2 text-right text-subtle-foreground text-sm tabular-nums">{i + 1}</span>
                       <Textarea
                         id={`card-front-${r.key}`}
                         rows={2}
@@ -179,25 +179,24 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
                           setDirty(true);
                         }}
                       >
-                        <XIcon />
+                        <Icon icon={icons.close} />
                       </Button>
                     </div>
                     {errors.rows?.[r.key] ? <FieldError className="pl-8">{errors.rows[r.key]}</FieldError> : null}
                   </div>
                 ))}
                 <div className="flex items-center gap-3 pl-8">
-                  <Button size="xs" variant="outline" onClick={add}>
-                    <PlusIcon />
+                  <Button size="sm" variant="outline" onClick={add}>
+                    <Icon icon={icons.add} />
                     Add card
                   </Button>
-                  <span className="text-muted-foreground text-xs tabular-nums">{plural(filled, "card")}</span>
+                  <span className="text-muted-foreground text-sm tabular-nums">{plural(filled, "card")}</span>
                   <span className="ml-auto hidden text-subtle-foreground text-xs sm:block">Math as $x^2$; a blank as {"{{answer}}"}</span>
                 </div>
               </div>
             </>
           ) : null}
-        </div>
-      </div>
+      </Page>
       <ConfirmDelete
         space={space.id}
         item={remove && savedPath ? { path: savedPath, title: title.trim() || "this deck", kind: "deck" } : null}
@@ -218,7 +217,8 @@ function SourceLine({ course, sources, space }: { course?: string; sources: stri
           {course ? <span className="text-subtle-foreground">·</span> : null}
           <span>From</span>
           {sources.slice(0, 4).map((s) => (
-            <button key={s} type="button" className="inline-flex max-w-52 items-center rounded-md border bg-muted/60 px-1.5 leading-5 hover:text-foreground" onClick={() => openFile(space, s)}>
+            <button key={s} type="button" className="inline-flex max-w-52 items-center gap-1 rounded-md border bg-well px-1.5 leading-5 hover:text-foreground" onClick={() => openFile(space, s)}>
+              <Icon icon={icons.file} className="size-3" />
               <MiddleTruncate value={s.split("/").pop() || s} />
             </button>
           ))}
@@ -234,11 +234,11 @@ function EditorSkeleton() {
     <div className="flex flex-col gap-5 motion-safe:animate-skeleton" aria-hidden>
       <Skeleton className="h-8 w-full animate-none rounded-lg" />
       {[0, 1, 2].map((i) => (
-        <div key={i} className="grid grid-cols-[1.5rem_1fr_1fr_1.75rem] gap-2">
-          <span />
+        <div key={i} className="grid grid-cols-[auto_1fr_1fr_auto] gap-2">
+          <span className="w-6" />
           <Skeleton className="h-14 animate-none rounded-lg" />
           <Skeleton className="h-14 animate-none rounded-lg" />
-          <span />
+          <span className="w-7" />
         </div>
       ))}
     </div>

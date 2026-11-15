@@ -188,7 +188,12 @@ export function AboutSection() {
         ) : (
           <UpdateSkeleton />
         )}
-        <Row label="Licenses" description="MIT. Interface components adapted from T3 Code (MIT); the rest is in THIRD_PARTY_NOTICES.md." />
+        <Row label="License" description="MIT">
+          <a href="https://github.com/jerynv/phaethon/blob/main/LICENSE" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-primary text-sm hover:underline">
+            View on GitHub
+            <Icon icon={icons.external} className="size-3.5" />
+          </a>
+        </Row>
       </CardBlock>
     </SettingsCard>
   );

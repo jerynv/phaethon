@@ -121,3 +121,4 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 78 | Provider logos shouldn't sit in boxes | done — settings cards lead with the bare mark |
 | 79 | No containing boxes around card and row icons anywhere | done — settings, plan, course sites, connect dialog, viewer placeholder |
 | 80 | Use school and course-site logos | done — the site's own icon (fetched once a week by the core), else the Canvas or Moodle mark, else a D2L / Bb monogram |
+| 81 | About › Licenses: just "MIT" and a link to the GitHub licence page | done |

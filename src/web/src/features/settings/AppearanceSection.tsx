@@ -12,21 +12,21 @@ const CHOICES: { id: ThemeChoice; label: string }[] = [
   { id: "dark", label: "Dark" },
 ];
 
-/** A tiny app: sidebar with rows, a header line, a few prose lines and a composer. */
+/** A tiny app drawn with the real tokens (`.light` / `.dark` scope them): sidebar rows, a message, prose lines, a composer. */
 function Wire({ dark }: { dark: boolean }) {
   return (
-    <div className={cn("flex h-full w-full", dark ? "bg-[#0c0c0d]" : "bg-white")}>
-      <div className={cn("flex w-[30%] flex-col gap-1 border-r p-1.5 pt-3", dark ? "border-white/8 bg-[#111112]" : "border-zinc-200 bg-zinc-50")}>
-        {[70, 55, 80, 45].map((w, i) => (
-          <span key={w} className={cn("h-1 rounded-full", i === 0 ? (dark ? "bg-white/30" : "bg-zinc-400") : dark ? "bg-white/12" : "bg-zinc-200")} style={{ width: `${w}%` }} />
+    <div className={cn("flex h-full w-full bg-background", dark ? "dark" : "light")}>
+      <div className="flex w-1/3 flex-col gap-1 border-r bg-sidebar p-1.5 pt-3">
+        {["w-3/4", "w-1/2", "w-4/5", "w-2/5"].map((w, i) => (
+          <span key={w} className={cn("h-1 rounded-full", w, i === 0 ? "bg-subtle-foreground" : "bg-row-selected")} />
         ))}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-1.5 pt-3">
-        <span className={cn("ml-auto h-2 w-[40%] rounded-[3px]", dark ? "bg-[#1c1c1f]" : "bg-zinc-100")} />
-        {[90, 75, 60].map((w) => (
-          <span key={w} className={cn("h-1 rounded-full", dark ? "bg-white/16" : "bg-zinc-200")} style={{ width: `${w}%` }} />
+        <span className="ml-auto h-2 w-2/5 rounded-xs bg-message" />
+        {["w-11/12", "w-3/4", "w-3/5"].map((w) => (
+          <span key={w} className={cn("h-1 rounded-full bg-row-selected", w)} />
         ))}
-        <span className={cn("mt-auto h-2.5 rounded-[3px] border", dark ? "border-white/11 bg-[#161618]" : "border-zinc-300 bg-white")} />
+        <span className="mt-auto h-2.5 rounded-xs border border-input bg-card" />
       </div>
     </div>
   );

@@ -8,52 +8,63 @@
 
 @custom-variant dark (&:is(.dark, .dark *));
 
-:root {
-  --radius: 0.5rem;
-  --control-radius: 0.4375rem;
+:root,
+.light {
+  /* Geometry. Radius steps are derived from --radius in @theme inline below. */
+  --radius: 0.625rem;
+  --control-radius: 0.5625rem;
   --sidebar-width: 15.5rem;
   --titlebar-height: 2.5rem;
+  /* Room for macOS's traffic lights when content starts at the window's left edge. */
+  --traffic-light-inset: 4.75rem;
   --chat-max-width: 46rem;
+  --settings-max-width: 42rem;
   --command-shell-inset: 0.5rem;
   --command-content-inset: 0.75rem;
   --z-sheet: 46;
-  --app-scrollbar-thumb: rgb(0 0 0 / 14%);
-  --app-scrollbar-thumb-hover: rgb(0 0 0 / 24%);
+  /* Lucide strokes (components/icon.tsx): thin at 16 px, a touch heavier at 12 px. */
+  --icon-stroke: 1.5;
+  --icon-stroke-small: 1.85;
 
-  --background: #ffffff;
-  --foreground: var(--color-zinc-900);
-  --sidebar: var(--color-zinc-50);
-  --sidebar-foreground: var(--color-zinc-800);
-  --card: #ffffff;
+  /* Colours are oklch only: zinc neutrals, one cobalt accent, status hues (docs/UI-REBUILD.md › Colour). */
+  --app-scrollbar-thumb: oklch(0% 0 0 / 14%);
+  --app-scrollbar-thumb-hover: oklch(0% 0 0 / 24%);
+  --backdrop: oklch(0% 0 0 / 28%);
+
+  --background: oklch(100% 0 0);
+  --foreground: oklch(21% 0.006 285.885);
+  --sidebar: oklch(98.5% 0 0);
+  --sidebar-foreground: oklch(27.4% 0.006 286.033);
+  --card: oklch(100% 0 0);
   --card-foreground: var(--foreground);
-  --popover: #ffffff;
+  --popover: oklch(100% 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.52 0.19 262);
-  --primary-foreground: #ffffff;
-  --secondary: var(--color-zinc-100);
-  --secondary-foreground: var(--color-zinc-800);
-  --muted: var(--color-zinc-100);
-  --muted-foreground: var(--color-zinc-500);
-  --subtle-foreground: var(--color-zinc-400);
-  --accent: color-mix(in srgb, var(--color-zinc-100) 80%, var(--color-zinc-200));
-  --accent-foreground: var(--color-zinc-900);
-  --row-selected: color-mix(in srgb, var(--color-zinc-200) 60%, var(--color-zinc-100));
-  --message: var(--color-zinc-100);
-  --border: var(--color-zinc-200);
-  --input: var(--color-zinc-300);
+  --primary: oklch(52% 0.19 262);
+  --primary-foreground: oklch(100% 0 0);
+  --secondary: oklch(96.7% 0.001 286.375);
+  --secondary-foreground: oklch(27.4% 0.006 286.033);
+  --muted: oklch(96.7% 0.001 286.375);
+  --muted-foreground: oklch(55.2% 0.016 285.938);
+  --subtle-foreground: oklch(70.5% 0.015 286.067);
+  --accent: oklch(95.8% 0.0016 286.4);
+  --accent-foreground: oklch(21% 0.006 285.885);
+  --row-selected: oklch(93.9% 0.0028 286.3);
+  --message: oklch(96.7% 0.001 286.375);
+  --border: oklch(92% 0.004 286.32);
+  --input: oklch(87.1% 0.006 286.286);
   --ring: var(--primary);
-  --code: color-mix(in srgb, var(--color-zinc-50) 70%, var(--color-zinc-100));
+  --code: oklch(98% 0.0003 286.4);
 
-  --destructive: var(--color-red-600);
-  --destructive-foreground: var(--color-red-700);
-  --error: var(--color-red-600);
-  --error-foreground: var(--color-red-700);
-  --warning: var(--color-amber-500);
-  --warning-foreground: var(--color-amber-700);
-  --success: var(--color-emerald-600);
-  --success-foreground: var(--color-emerald-700);
-  --info: var(--color-blue-600);
-  --info-foreground: var(--color-blue-700);
+  --destructive: oklch(57.7% 0.245 27.325);
+  --destructive-foreground: oklch(50.5% 0.213 27.518);
+  --error: oklch(57.7% 0.245 27.325);
+  --error-foreground: oklch(50.5% 0.213 27.518);
+  --warning: oklch(76.9% 0.188 70.08);
+  --warning-foreground: oklch(55.5% 0.163 48.998);
+  --success: oklch(59.6% 0.145 163.225);
+  --success-foreground: oklch(50.8% 0.118 165.612);
+  --info: oklch(54.6% 0.245 262.881);
+  --info-foreground: oklch(48.8% 0.243 264.376);
 
   /* T3 Code's components read these "contrast" aliases; we have one contrast level. */
   --contrast-foreground: var(--foreground);
@@ -62,43 +73,48 @@
 
 .dark {
   color-scheme: dark;
-  --app-scrollbar-thumb: rgb(255 255 255 / 10%);
-  --app-scrollbar-thumb-hover: rgb(255 255 255 / 18%);
+  --app-scrollbar-thumb: oklch(100% 0 0 / 10%);
+  --app-scrollbar-thumb-hover: oklch(100% 0 0 / 18%);
+  --backdrop: oklch(0% 0 0 / 60%);
 
-  --background: #0c0c0d;
-  --foreground: var(--color-zinc-100);
-  --sidebar: #111112;
-  --sidebar-foreground: var(--color-zinc-200);
-  --card: #161618;
-  --popover: #18181a;
-  --primary: oklch(0.64 0.17 262);
-  --primary-foreground: #ffffff;
-  --secondary: rgb(255 255 255 / 6%);
-  --secondary-foreground: var(--color-zinc-100);
-  --muted: rgb(255 255 255 / 5%);
-  --muted-foreground: var(--color-zinc-400);
-  --subtle-foreground: var(--color-zinc-500);
-  --accent: rgb(255 255 255 / 6%);
-  --accent-foreground: var(--color-zinc-100);
-  --row-selected: rgb(255 255 255 / 8%);
-  --message: #1c1c1f;
-  --border: rgb(255 255 255 / 8%);
-  --input: rgb(255 255 255 / 11%);
-  --code: #131315;
+  --background: oklch(15.5% 0.0021 286.2);
+  --foreground: oklch(96.7% 0.001 286.375);
+  --sidebar: oklch(17.8% 0.002 286.2);
+  --sidebar-foreground: oklch(92% 0.004 286.32);
+  --card: oklch(20.1% 0.0039 286);
+  --popover: oklch(21% 0.0039 286.1);
+  --primary: oklch(64% 0.17 262);
+  --primary-foreground: oklch(100% 0 0);
+  --secondary: oklch(100% 0 0 / 6%);
+  --secondary-foreground: oklch(96.7% 0.001 286.375);
+  --muted: oklch(100% 0 0 / 5%);
+  --muted-foreground: oklch(70.5% 0.015 286.067);
+  --subtle-foreground: oklch(55.2% 0.016 285.938);
+  --accent: oklch(100% 0 0 / 6%);
+  --accent-foreground: oklch(96.7% 0.001 286.375);
+  --row-selected: oklch(100% 0 0 / 8%);
+  --message: oklch(22.8% 0.0057 285.9);
+  --border: oklch(100% 0 0 / 8%);
+  --input: oklch(100% 0 0 / 11%);
+  --code: oklch(18.8% 0.004 286);
 
-  --destructive: var(--color-red-500);
-  --destructive-foreground: var(--color-red-400);
-  --error: var(--color-red-500);
-  --error-foreground: var(--color-red-400);
-  --warning: var(--color-amber-400);
-  --warning-foreground: var(--color-amber-400);
-  --success: var(--color-emerald-400);
-  --success-foreground: var(--color-emerald-400);
-  --info: var(--color-blue-400);
-  --info-foreground: var(--color-blue-400);
+  --destructive: oklch(63.7% 0.237 25.331);
+  --destructive-foreground: oklch(70.4% 0.191 22.216);
+  --error: oklch(63.7% 0.237 25.331);
+  --error-foreground: oklch(70.4% 0.191 22.216);
+  --warning: oklch(82.8% 0.189 84.429);
+  --warning-foreground: oklch(82.8% 0.189 84.429);
+  --success: oklch(76.5% 0.177 163.223);
+  --success-foreground: oklch(76.5% 0.177 163.223);
+  --info: oklch(70.7% 0.165 254.624);
+  --info-foreground: oklch(70.7% 0.165 254.624);
 }
 
 @theme {
+  /* Tailwind's white and black are hex; every colour here is oklch. */
+  --color-white: oklch(100% 0 0);
+  --color-black: oklch(0% 0 0);
+
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
@@ -149,10 +165,10 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-error: var(--error);
   --color-error-foreground: var(--error-foreground);
-  --color-error-surface: color-mix(in srgb, var(--error) 7%, transparent);
+  --color-error-surface: color-mix(in oklab, var(--error) 7%, transparent);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
-  --color-warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
+  --color-warning-surface: color-mix(in oklab, var(--warning) 8%, transparent);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-info: var(--info);
@@ -162,6 +178,7 @@
   --color-icon-muted: var(--subtle-foreground);
   --color-secondary-label: var(--muted-foreground);
 
+  --radius-xs: calc(var(--radius) - 6px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -235,10 +252,7 @@
 }
 
 @utility dialog-backdrop {
-  background: rgb(0 0 0 / 28%);
-  .dark & {
-    background: rgb(0 0 0 / 60%);
-  }
+  background: var(--backdrop);
 }
 
 @utility surface-glass {
@@ -301,7 +315,7 @@
     overscroll-behavior: none;
   }
   ::selection {
-    background: color-mix(in srgb, var(--primary) 22%, transparent);
+    background: color-mix(in oklab, var(--primary) 22%, transparent);
   }
   code,
   kbd,
@@ -313,6 +327,17 @@
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+  /* One stroke for every Lucide icon (components/icon.tsx); small glyphs a little heavier. */
+  svg.lucide {
+    stroke-width: var(--icon-stroke);
+  }
+  svg.lucide:is(.size-3, .size-2\.5, .size-3\.5) {
+    stroke-width: var(--icon-stroke-small);
+  }
+  /* The title bar drags the window; its controls don't. */
+  [data-slot="app-header"] :is(button, a, input, [role="tab"]) {
+    -webkit-app-region: no-drag;
   }
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus-visible {
@@ -424,7 +449,7 @@
   .markdown .md-link {
     color: var(--primary);
     text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--primary) 35%, transparent);
+    text-decoration-color: color-mix(in oklab, var(--primary) 35%, transparent);
     text-underline-offset: 2px;
   }
   .markdown .md-link:hover {
@@ -433,7 +458,7 @@
   .markdown .md-inline-code {
     font-size: 0.86em;
     padding: 0.1em 0.35em;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--muted);
     border: 1px solid var(--border);
     overflow-wrap: anywhere;
@@ -442,7 +467,7 @@
     margin: 0.75em 0;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: var(--code);
   }
   .md-code-body {
@@ -470,7 +495,7 @@
     margin: 0.75em 0;
     overflow-x: auto;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
   }
   .md-table-wrap table {
     width: 100%;
@@ -522,7 +547,7 @@
     font-size: 0.84em;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    text-decoration: underline wavy color-mix(in srgb, var(--error-foreground) 45%, transparent);
+    text-decoration: underline wavy color-mix(in oklab, var(--error-foreground) 45%, transparent);
     text-underline-offset: 3px;
     cursor: help;
   }
@@ -531,8 +556,8 @@
     display: block;
     margin: 0.6em 0;
     padding: 0.55rem 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--error-foreground) 22%, transparent);
-    border-radius: 8px;
+    border: 1px solid color-mix(in oklab, var(--error-foreground) 22%, transparent);
+    border-radius: var(--radius-lg);
     background: var(--color-error-surface);
     text-decoration: none;
   }

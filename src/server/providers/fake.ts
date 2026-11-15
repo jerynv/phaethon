@@ -26,7 +26,8 @@ import { ProviderError, type Delta, type ErrorKind, type ModelRequest, type Mode
  *         ],
  *         "stop": "end_turn",                          // optional; defaults to "tool_use" when tools are given
  *         "error": {"kind": "rateLimit", "message": "…", "retryAfter": 5},  // optional: fail this call instead
- *         "delayMs": 0                                  // optional: wait before streaming
+ *         "delayMs": 0,                                 // optional: wait before streaming
+ *         "wordDelayMs": 0                              // optional: wait between streamed words
  *       }
  *     ]
  *   }
@@ -42,6 +43,7 @@ type Step = {
   stop?: string;
   error?: { kind: ErrorKind; message: string; retryAfter?: number };
   delayMs?: number;
+  wordDelayMs?: number;
 };
 type Script = { model?: string; claude?: boolean; sees?: Sees; repeatLast?: boolean; steps: Step[] };
 
@@ -108,7 +110,7 @@ export class FakeProvider implements Provider {
       for (const piece of step.text.match(/\S+\s*|\s+/g) ?? []) {
         if (signal.aborted) throw signal.reason ?? new Error("aborted");
         onDelta({ type: "text", text: piece });
-        await sleep(0, signal);
+        await sleep(step.wordDelayMs ?? 0, signal);
       }
       content.push({ type: "text", text: step.text });
     }

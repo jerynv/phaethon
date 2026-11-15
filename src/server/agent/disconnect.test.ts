@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../shared/agent.ts";
 import { channel, tempHome } from "../../../tests/harness.ts";
 import { ensureVault } from "../core/vault.ts";
-import { isRunning } from "../core/runs.ts";
+import { isSpaceBusy } from "../core/runs.ts";
 import { agentSend } from "./turn.ts";
 import "../commands.ts";
 
@@ -26,11 +26,11 @@ describe("disconnecting during an approval", () => {
     const events = channel<AgentEvent>((e) => {
       if (e.kind === "approval") connection.abort();
     });
-    await agentSend({ space: "school", prompt: "save it", attachments: [], onEvent: events } as never, connection.signal);
+    await agentSend({ space: "school", thread: "1000", prompt: "save it", attachments: [], onEvent: events } as never, connection.signal);
     expect(events.messages.some((e) => e.kind === "approval")).toBe(true);
     expect(events.messages.some((e) => e.kind === "cancelled")).toBe(true);
     expect(events.messages.at(-1)).toEqual({ kind: "end", sessionId: null });
-    expect(isRunning("school")).toBe(false);
+    expect(isSpaceBusy("school")).toBe(false);
     expect(fs.existsSync(path.join(env.home, "Phaethon/default/spaces/school/a.md"))).toBe(false);
   });
 });

@@ -1,9 +1,9 @@
 import path from "node:path";
 import { commands, Refusal } from "../rpc/registry.ts";
 import { host } from "../host.ts";
-import { isRunning } from "../core/runs.ts";
+import { isSpaceBusy } from "../core/runs.ts";
 import { spaceDir } from "../core/vault.ts";
-import { clearSession } from "../threads/store.ts";
+import { clearSessions } from "../threads/store.ts";
 import { bindWorkspace, clearWorkspace, getWorkspace } from "./workspace.ts";
 
 /**
@@ -36,21 +36,21 @@ commands({
 
   space_workspace_bind: ({ id, token }: { id: string; token: string }) => {
     spaceDir(id);
-    if (isRunning(id)) throw new Refusal("Stop the reply before changing its workspace.");
+    if (isSpaceBusy(id)) throw new Refusal("Stop the replies in this space before changing its workspace.");
     const at = choices.findIndex((c) => c.token === token);
     if (at < 0) throw new Refusal("Choose the folder again.");
     const view = bindWorkspace(id, choices[at]!.path);
     // A failed bind stays retryable; a successful one uses the choice up.
     choices.splice(at, 1);
-    clearSession(id);
+    clearSessions(id);
     return view;
   },
 
   space_workspace_clear: ({ id }: { id: string }) => {
     const dir = spaceDir(id);
-    if (isRunning(id)) throw new Refusal("Stop the reply before changing its workspace.");
+    if (isSpaceBusy(id)) throw new Refusal("Stop the replies in this space before changing its workspace.");
     const view = clearWorkspace(id, dir);
-    clearSession(id);
+    clearSessions(id);
     return view;
   },
 });

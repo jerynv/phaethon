@@ -5,7 +5,7 @@ import type { AgentEvent } from "../../shared/agent.ts";
 import { call, channel, tempHome } from "../../../tests/harness.ts";
 import { ensureVault, spaceDir, spacesRoot, vaultRoot } from "../core/vault.ts";
 import { keychainSet, providerAccount, resetMemoryKeychain } from "../core/secrets.ts";
-import { claim, release } from "../core/runs.ts";
+import { claim, release, turnKey } from "../core/runs.ts";
 import { load, recordBlock, save, type Message } from "../core/thread.ts";
 import { toUi } from "../threads/store.ts";
 import { grantsFor } from "../grants/grants.ts";
@@ -21,6 +21,8 @@ import { PAGE_GATE_BLIND } from "./tools/files.ts";
 import "./commands.ts";
 
 const env = tempHome();
+/** The conversation these turns talk in. */
+const T = "1000";
 afterAll(() => env.cleanup());
 beforeAll(() => {
   ensureVault();
@@ -32,7 +34,7 @@ beforeEach(() => {
   resetMemoryKeychain();
   keychainSet(providerAccount("anthropic"), "sk-ant-test-key-0000");
   updateSettings({ provider: null, model: null, backend: "phaethon", providerModels: {}, providerUrls: {} });
-  save("school", []);
+  save("school", T, []);
   updateSpaceMeta("school", { tutorMode: undefined, model: undefined });
 });
 afterEach(async () => {
@@ -49,7 +51,7 @@ async function anthropic(replies: Parameters<typeof fakeServer>[0]) {
 
 async function send(args: Record<string, unknown>, onEvent?: (e: AgentEvent) => void) {
   const ch = channel<AgentEvent>(onEvent);
-  await call("agent_send", { space: "school", prompt: "", attachments: [], ...args, onEvent: ch });
+  await call("agent_send", { space: "school", thread: T, prompt: "", attachments: [], ...args, onEvent: ch });
   return ch.messages;
 }
 
@@ -72,7 +74,7 @@ describe("a turn over HTTP", () => {
     const events = await send({ prompt: "plan my week" }, (e) => {
       if (e.kind === "approval") {
         expect(fs.existsSync(path.join(space, "plans/week.md"))).toBe(false);
-        void call("agent_approve", { space: "school", id: e.id, allow: true }).then((ok) => expect(ok).toBe(true));
+        void call("agent_approve", { space: "school", thread: T, id: e.id, allow: true }).then((ok) => expect(ok).toBe(true));
       }
     });
     expect(fs.readFileSync(path.join(space, "plans/week.md"), "utf8")).toBe("Mon: study CS101\n");
@@ -105,7 +107,7 @@ describe("a turn over HTTP", () => {
     // The system prompt's cached part is identical between the two calls.
     expect(srv.seen[1].json.system[0]).toEqual(first.system[0]);
 
-    const saved = load("school");
+    const saved = load("school", T);
     expect(saved.length).toBe(4);
     expect(JSON.stringify(saved[1])).toContain("phaethon_record");
     const ui = toUi(saved);
@@ -125,7 +127,7 @@ describe("a turn over HTTP", () => {
     const events = await send({ prompt: "plan my study week" }, (e) => {
       if (e.kind === "accessRequest") {
         expect([e.space, e.path]).toEqual(["work", "calendar"]);
-        void call("agent_access_answer", { space: "school", id: e.id, answer: "always" });
+        void call("agent_access_answer", { space: "school", thread: T, id: e.id, answer: "always" });
       }
     });
     expect(events).toContainEqual({ kind: "accessRequestDone", id: "toolu_1", answer: "always" });
@@ -147,7 +149,7 @@ describe("a turn over HTTP", () => {
       anthropicReply([{ type: "text", text: "ok" }]),
     ]);
     const events = await send({ prompt: "x" }, (e) => {
-      if (e.kind === "accessRequest") void call("agent_access_answer", { space: "school", id: e.id, answer: "deny" });
+      if (e.kind === "accessRequest") void call("agent_access_answer", { space: "school", thread: T, id: e.id, answer: "deny" });
     });
     expect(srv.seen[1].json.messages[2].content[0]).toMatchObject({ is_error: true, content: '"@work/calendar/oct.md" is in the work space; ask for access with request_access first' });
     expect(srv.seen[3].json.messages[6].content[0].content).toMatch(/^Not asked: the user already declined access to @work\/calendar\/oct.md/);
@@ -172,11 +174,11 @@ describe("a turn over HTTP", () => {
     const events = await send({ prompt: "x" }, (e) => {
       if (e.kind === "text" && !cancelled) {
         cancelled = true;
-        void call("agent_cancel", { space: "school" });
+        void call("agent_cancel", { space: "school", thread: T });
       }
     });
     expect(events.slice(-3)).toEqual([{ kind: "record", record: { kind: "stopped" } }, { kind: "cancelled" }, { kind: "end", sessionId: null }]);
-    const saved = load("school");
+    const saved = load("school", T);
     expect(saved[1].content[saved[1].content.length - 1]).toEqual({ type: "phaethon_record", kind: "stopped" });
     expect(String(saved[1].content[0].text)).toMatch(/^Partial/);
   });
@@ -184,24 +186,32 @@ describe("a turn over HTTP", () => {
   it("cancelling while an approval waits is not a decline", async () => {
     await anthropic([anthropicReply([{ type: "tool_use", id: "w1", name: "write_file", input: { path: "a.md", contents: "x" } }], "tool_use")]);
     const events = await send({ prompt: "x" }, (e) => {
-      if (e.kind === "approval") void call("agent_cancel", { space: "school" });
+      if (e.kind === "approval") void call("agent_cancel", { space: "school", thread: T });
     });
     expect(events).toContainEqual({ kind: "approvalDone", id: "w1", allowed: false });
     expect(events.some((e) => e.kind === "record" && e.record.kind === "approval")).toBe(false);
     expect(events.slice(-2)).toEqual([{ kind: "cancelled" }, { kind: "end", sessionId: null }]);
     expect(fs.existsSync(path.join(spaceDir("school"), "a.md"))).toBe(false);
-    const results = load("school")[2].content[0];
+    const results = load("school", T)[2].content[0];
     expect(results).toMatchObject({ tool_use_id: "w1", content: "Not run: the user stopped the reply.", is_error: true });
   });
 
-  it("refuses a second turn in the same space", async () => {
-    const run = claim("school")!;
+  it("refuses a second turn in the same conversation", async () => {
+    const run = claim(turnKey("school", T))!;
     const events = await send({ prompt: "x" });
     release(run);
     expect(events).toEqual([
-      { kind: "error", code: "busy", message: "This space is still answering the previous message. Stop it or wait for it to finish." },
+      { kind: "error", code: "busy", message: "This conversation is still answering the previous message. Stop it or wait for it to finish." },
       { kind: "end", sessionId: null },
     ]);
+  });
+
+  it("refuses a send that names no conversation, writing nothing", async () => {
+    for (const thread of [undefined, "../x", "current"]) {
+      const events = await send({ thread, prompt: "x", attachments: [{ name: "a.txt", mediaType: "text/plain", data: Buffer.from("hi").toString("base64") }] });
+      expect(events[0]).toMatchObject({ kind: "error", code: "badRequest" });
+    }
+    expect(fs.existsSync(path.join(spaceDir("school"), ".phaethon", "threads", "..x.json"))).toBe(false);
   });
 
   it("reports a missing key and an invalid space", async () => {
@@ -235,7 +245,7 @@ describe("model sight", () => {
       { role: "user", content: [{ type: "text", text: "explain page 2" }], at: 1 },
       { role: "assistant", content: [{ type: "text", text: "Page 2 shows" }, recordBlock({ kind: "stopped" })], at: 2 },
     ];
-    save("school", stopped);
+    save("school", T, stopped);
     const srv = await anthropic([
       anthropicReply([{ type: "tool_use", id: "p1", name: "read_page", input: { path: "notes.pdf", page: 2 } }], "tool_use"),
       anthropicReply([{ type: "text", text: "a proof." }]),
@@ -246,7 +256,7 @@ describe("model sight", () => {
     expect(result.content).not.toBe(PAGE_GATE_BLIND);
     expect(texts(events)).toBe("a proof.");
     // Settled: the stopped mark is gone so the two parts read as one reply.
-    const ui = toUi(load("school"));
+    const ui = toUi(load("school", T));
     expect(ui.length).toBe(2);
     expect(ui[1].text).toBe("Page 2 shows\n\na proof.");
     expect(ui[1].records.some((r) => r.kind === "stopped")).toBe(false);
@@ -255,11 +265,11 @@ describe("model sight", () => {
     const compat = await fakeServer([openaiReply("", [{ id: "c1", name: "read_page", args: '{"path":"notes.pdf","page":1}' }]), openaiReply("ok")]);
     servers.push(compat);
     updateSettings({ provider: "custom", providerModels: { custom: "gpt-3.5-turbo" }, providerUrls: { custom: `${compat.url}/v1` } });
-    save("school", []);
+    save("school", T, []);
     await send({ prompt: "look" });
     expect(compat.seen[1].json.messages[3]).toEqual({ role: "tool", tool_call_id: "c1", content: `Error: ${PAGE_GATE_BLIND}` });
     // The thread stays in Messages shape.
-    expect(load("school")[1].content[0]).toMatchObject({ type: "tool_use", id: "c1", name: "read_page", input: { path: "notes.pdf", page: 1 } });
+    expect(load("school", T)[1].content[0]).toMatchObject({ type: "tool_use", id: "c1", name: "read_page", input: { path: "notes.pdf", page: 1 } });
   });
 });
 
@@ -299,7 +309,7 @@ describe("lessons", () => {
       record: { kind: "lessonPlan", id: "pl2", goal: "Differentiate powers.", map: "graph TD\nlimits[Limits] --> power-rule[Power rule]", nodes: [{ id: "limits", label: "Limits" }, { id: "power-rule", label: "Power rule" }] },
     });
     expect(srv.seen.length).toBe(2);
-    expect(load("school").slice(-1)[0].content[0]).toMatchObject({ type: "tool_result", tool_use_id: "pl2" });
+    expect(load("school", T).slice(-1)[0].content[0]).toMatchObject({ type: "tool_result", tool_use_id: "pl2" });
 
     const srv2 = await anthropic([
       anthropicReply([{ type: "tool_use", id: "q0", name: "check", input: { ...goodCheck, correctAnswer: "6", nodeId: "power-rule" } }], "tool_use"),
@@ -321,28 +331,28 @@ describe("lessons", () => {
     expect(srv2.seen.length).toBe(2);
 
     // A reload shows the open question and the delivered text.
-    const ui = toUi(load("school"));
+    const ui = toUi(load("school", T));
     const last = ui[ui.length - 1];
     expect(last.pending).toEqual({ kind: "check", question: asked && asked.kind === "check" ? asked.question : undefined });
     expect(last.text).toContain("The power rule: bring the exponent down.");
 
-    expect(await call("lesson_answer", { space: "school", id: "nope", answer: { answers: ["a"] } })).toBe(false);
+    expect(await call("lesson_answer", { space: "school", thread: T, id: "nope", answer: { answers: ["a"] } })).toBe(false);
     const srv3 = await anthropic([anthropicReply([{ type: "text", text: "Right: 2·3 = 6." }])]);
     const ch = channel<AgentEvent>();
-    expect(await call("lesson_answer", { space: "school", id: "q1", answer: { answers: ["a"], confidence: 70, thinking: "power rule" }, onEvent: ch })).toBe(true);
+    expect(await call("lesson_answer", { space: "school", thread: T, id: "q1", answer: { answers: ["a"], confidence: 70, thinking: "power rule" }, onEvent: ch })).toBe(true);
     const lastMsg = srv3.seen[0].json.messages.slice(-1)[0];
     expect(lastMsg.content).toContainEqual({ type: "tool_result", tool_use_id: "s1", content: "Shown to the user." });
     expect(lastMsg.content).toContainEqual({ type: "tool_result", tool_use_id: "q1", content: JSON.stringify({ answers: [{ value: "a", label: "6" }], correct: true, confidence: 70, thinking: "power rule" }) });
     expect(texts(ch.messages)).toBe("Right: 2·3 = 6.");
     expect(ch.messages[ch.messages.length - 1]).toEqual({ kind: "end", sessionId: null });
-    const after = toUi(load("school"));
+    const after = toUi(load("school", T));
     expect(after[after.length - 1].pending).toBeUndefined();
     expect(after.flatMap((m) => m.records).find((r) => r.kind === "check")).toEqual({ kind: "check", id: "q1", question: goodCheck.question, answered: true, correct: true, confidence: 70 });
   });
 
   it("closes an open question when the user moves on", async () => {
     await call("space_tutor_mode_set", { space: "school", mode: "quiz" });
-    save("school", [
+    save("school", T, [
       { role: "user", content: [{ type: "text", text: "quiz" }] },
       { role: "assistant", content: [{ type: "tool_use", id: "q9", name: "explain_back", input: { question: "Why?", modelAnswer: "Because." } }] },
     ]);
@@ -357,7 +367,7 @@ describe("lessons", () => {
 describe("compaction", () => {
   it("summarises a long conversation and starts the next request from the summary", async () => {
     process.env.PHAETHON_COMPACT_AT = "200";
-    save("school", [
+    save("school", T, [
       { role: "user", content: [{ type: "text", text: "Explain limits. " + "detail ".repeat(200) }], at: 1 },
       { role: "assistant", content: [{ type: "thinking", thinking: "", signature: "s" }, { type: "text", text: "A limit is…" }], at: 2 },
     ]);
@@ -376,7 +386,7 @@ describe("compaction", () => {
     expect(next[0].content[0].text).toContain("Limits: shaky.");
     expect(next[1].content[0].text).toBe("what next?");
     expect(JSON.stringify(next)).not.toContain('"thinking"');
-    const saved = load("school");
+    const saved = load("school", T);
     expect(saved[2].content[0].type).toBe(COMPACT_TYPE);
     expect(toUi(saved).map((m) => m.text)).toEqual([expect.stringMatching(/^Explain limits/), "A limit is…", "what next?", "Next: continuity."]);
   });
@@ -400,7 +410,7 @@ describe("the scripted fake provider", () => {
     resetFake();
     resetMemoryKeychain(); // no key needed
     const events = await send({ prompt: "go" }, (e) => {
-      if (e.kind === "approval") void call("agent_approve", { space: "school", id: e.id, allow: true });
+      if (e.kind === "approval") void call("agent_approve", { space: "school", thread: T, id: e.id, allow: true });
     });
     delete process.env.PHAETHON_FAKE_PROVIDER;
     expect(events).toContainEqual({ kind: "progress", text: "Checking your notes." });
@@ -408,6 +418,6 @@ describe("the scripted fake provider", () => {
     expect(fs.readFileSync(path.join(spaceDir("school"), "f.md"), "utf8")).toBe("hi\n");
     const log = fs.readFileSync(`${script}.requests.jsonl`, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     expect(log[0].tools).toContain("send_to_user");
-    expect(toUi(load("school"))[1].records[0]).toEqual({ kind: "progress", text: "Checking your notes." });
+    expect(toUi(load("school", T))[1].records[0]).toEqual({ kind: "progress", text: "Checking your notes." });
   });
 });

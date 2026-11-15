@@ -1,9 +1,10 @@
 import { keychainGet, providerAccount } from "../core/secrets.ts";
-import { stringMap, readSettings, type VaultSettings } from "../settings/settings.ts";
+import { stringMap, readSettings, type Backend, type VaultSettings } from "../settings/settings.ts";
+import { effectivePick } from "../threads/pick.ts";
 import { Anthropic } from "./anthropic.ts";
 import { FakeProvider, fakeScriptPath } from "./fake.ts";
 import { OpenAiCompatible } from "./openai.ts";
-import { baseUrl, chosen, chosenModel, keyFor, keyedIds, modelForSpace, PRESETS, type ModelRef, type Preset } from "./presets.ts";
+import { baseUrl, chosen, chosenModel, keyFor, keyedIds, modelForSpace, parseRef, PRESETS, type ModelRef, type Preset } from "./presets.ts";
 import type { Provider, Sees } from "./types.ts";
 import { sees as modelSight } from "./vision.ts";
 
@@ -28,12 +29,31 @@ export function forSpace(space: string | undefined): Provider {
   return providerFor(modelForSpace(space, settings), settings);
 }
 
+/**
+ * The backend and Phaethon model conversation `thread` of `space` answers
+ * with (threads/pick.ts); with no conversation, the ones a new chat starts
+ * with (the last picked). `ref` is undefined for a coding agent or when no
+ * model is chosen.
+ */
+export function conversationModel(space: string, thread?: string | null): { backend: Backend; ref: ModelRef | undefined } {
+  const pick = effectivePick(space, thread ?? null).pick;
+  const ref = pick.backend === "phaethon" && pick.model ? parseRef(pick.model) : undefined;
+  return { backend: pick.backend, ref };
+}
+
 export type Sight = { sees: Sees; model: string; shown: boolean };
 
-/** Can the model that answers in this space look at pictures? (Study uses this for its material alerts.) */
-export function sightForSpace(space: string): Sight {
+/** Can the model that answers this conversation (or a new chat in this space) look at pictures? (Study uses this for its material alerts.) */
+export function sightFor(space: string, thread?: string | null): Sight {
   const settings = readSettings();
-  switch (settings.backend) {
+  let backend: Backend = settings.backend;
+  let ref: ModelRef | undefined;
+  try {
+    ({ backend, ref } = conversationModel(space, thread));
+  } catch {
+    // An unreadable choice: the vault's backend and the space's model.
+  }
+  switch (backend) {
     case "claude-cli":
       return { sees: "yes", model: "Claude Code", shown: true };
     case "codex-cli":
@@ -44,7 +64,7 @@ export function sightForSpace(space: string): Sight {
       break;
   }
   try {
-    const ref = modelForSpace(space, settings);
+    ref ??= modelForSpace(space, settings);
     if (fakeScriptPath()) {
       const p = new FakeProvider(fakeScriptPath()!);
       return { sees: p.imageInput(), model: p.model, shown: p.imageInput() === "yes" };
@@ -54,6 +74,11 @@ export function sightForSpace(space: string): Sight {
   } catch {
     return { sees: "unknown", model: chosen(settings).name, shown: false };
   }
+}
+
+/** `sightFor` a new chat in `space`. */
+export function sightForSpace(space: string): Sight {
+  return sightFor(space, null);
 }
 
 export type ProviderView = {

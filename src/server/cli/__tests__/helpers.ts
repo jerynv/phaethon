@@ -57,8 +57,11 @@ export class FakeLog {
   }
 }
 
+/** The conversation the CLI tests talk in, unless one names another. */
+export const THREAD = "1000";
+
 export function request(cli: CliId, space: string, prompt: string, extra: Partial<CliTurnRequest> = {}): CliTurnRequest {
-  return { cli, space, spaceDir: spaceDir(space), workingDir: null, prompt, attachments: [], configDir: null, addDirs: [], model: null, fullAccess: false, ...extra };
+  return { cli, space, thread: THREAD, spaceDir: spaceDir(space), workingDir: null, prompt, attachments: [], configDir: null, addDirs: [], model: null, fullAccess: false, ...extra };
 }
 
 export async function send(req: CliTurnRequest, onEvent?: (e: AgentEvent) => void): Promise<AgentEvent[]> {
@@ -67,8 +70,8 @@ export async function send(req: CliTurnRequest, onEvent?: (e: AgentEvent) => voi
   return ch.messages;
 }
 
-export function shown(space: string): [string, string][] {
-  return toUi(load(space)).map((m) => [m.role, m.text]);
+export function shown(space: string, thread = THREAD): [string, string][] {
+  return toUi(load(space, thread)).map((m) => [m.role, m.text]);
 }
 
 export function errors(events: AgentEvent[]): { code: string; message: string }[] {

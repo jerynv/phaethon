@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { homeDir } from "../env.ts";
 import { isWithin, prettyJson, writeFileAtomic } from "../core/fsx.ts";
-import { load, parseThread, recordBlock, records, shortTitle, type Block, type Message } from "../core/thread.ts";
+import { parseThread, recordBlock, records, shortTitle, type Block, type Message } from "../core/thread.ts";
 import { spaceDir } from "../core/vault.ts";
-import { addArchived, toUi } from "../threads/store.ts";
+import { addArchived, migrateIn, toUi } from "../threads/store.ts";
 import { isUuid } from "./cli.ts";
 import { HISTORY_INTRO } from "./prompt.ts";
 import { sessionUuid } from "./session.ts";
@@ -368,14 +368,20 @@ function importedSessions(msgs: Message[]): string[] {
 }
 
 /**
- * Every session the space already has: the ledger's, the current and archived
- * conversations' session files (tagged lines included, so conversations a
+ * Every session the space already has: the ledger's, the conversations'
+ * session files (tagged lines included, so conversations a
  * named Claude Code connection recorded aren't brought in again), and the
  * sessions named by import records.
  */
 export function knownSessions(space: string): Set<string> {
   const dir = spaceDir(space);
   const state = path.join(dir, ".phaethon");
+  // A pre-0.3 current conversation moves into threads/ first, so its session counts.
+  try {
+    migrateIn(dir);
+  } catch {
+    // Its legacy session is still read below.
+  }
   const known = new Set(loadLedger(dir).sessions);
   const current = readRegular(path.join(state, "session"));
   const currentId = current === null ? null : sessionUuid(current);
@@ -401,11 +407,6 @@ export function knownSessions(space: string): Set<string> {
         // an unreadable archive names nothing
       }
     }
-  }
-  try {
-    for (const s of importedSessions(load(space))) known.add(s);
-  } catch {
-    // unreadable current conversation
   }
   return known;
 }

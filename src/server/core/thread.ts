@@ -1,20 +1,24 @@
 import fs from "node:fs";
 import path from "node:path";
-import { isNotFound, writeJsonAtomic } from "./fsx.ts";
+import { isNotFound, prettyJson, writeFileAtomic } from "./fsx.ts";
 import { spaceDir } from "./vault.ts";
 import type { QuestionRole } from "../../shared/agent.ts";
 
 /**
- * The current conversation of a space, `<space>/.phaethon/thread.json`: an
+ * One conversation of a space, `<space>/.phaethon/threads/<id>.json`: an
  * append-only list of messages in Anthropic's Messages shape, plus
  * Phaethon-only blocks (`phaethon_record`, `phaethon_attachment`,
  * `phaethon_continue`) that are stripped before any provider sees them.
  * Assistant blocks are kept exactly as returned (thinking signatures
  * included) and sent back unchanged.
  *
+ * Every conversation is addressed by its id, so several can be written at
+ * once (a reply in each). Before 0.3 a space had one "current" conversation in
+ * `.phaethon/thread.json`; `threads/store.ts` moves that file into
+ * `threads/` the first time the space is listed.
+ *
  * This module holds the shapes and the read/write basics every backend
- * needs; conversation listing, archive, edit and search live in
- * `src/server/threads/`.
+ * needs; conversation listing, edit and search live in `src/server/threads/`.
  */
 
 export type Role = "user" | "assistant";
@@ -32,7 +36,7 @@ export type ToolStatus = "success" | "failed" | "cancelled" | "incomplete";
 /** What the UI shows in a conversation besides text. Saved as `{type:"phaethon_record", kind, ...}`. */
 export type Record_ =
   | { kind: "tool"; id: string; category: ToolCategory; label: string; status: ToolStatus; target?: string; detail?: string }
-  | { kind: "approval"; path: string; action: "create" | "replace"; allowed: boolean }
+  | { kind: "approval"; path: string; action: "create" | "replace"; allowed: boolean; auto?: "conversation" | "space" }
   | { kind: "access"; space: string; path: string; answer: "once" | "always" | "deny" }
   | { kind: "read"; space: string; path: string; tool: "read" | "list" | "search"; query?: string }
   | { kind: "stopped" }
@@ -47,8 +51,35 @@ export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stop
 /** Records kept on disk but never shown. */
 export const HIDDEN_RECORDS = new Set(["deniedEarlier", "imported"]);
 
-export function threadFile(space: string): string {
-  return path.join(spaceDir(space), ".phaethon", "thread.json");
+/** `digits` or `digits-digits`, each 1 to 20 ASCII digits; anything else never becomes a path. */
+export function isValidThreadId(id: unknown): id is string {
+  return typeof id === "string" && /^[0-9]{1,20}(?:-[0-9]{1,20})?$/.test(id);
+}
+
+/** The folder holding a space's conversations and their sidecars. */
+export function threadsDirIn(dir: string): string {
+  return path.join(dir, ".phaethon", "threads");
+}
+
+/** Conversation `id`'s file in the space folder `dir`; an id that isn't one is refused before it becomes a path. */
+export function threadFileIn(dir: string, id: string): string {
+  if (!isValidThreadId(id)) throw new Error("not a conversation id");
+  return path.join(threadsDirIn(dir), `${id}.json`);
+}
+
+export function threadFile(space: string, id: string): string {
+  return threadFileIn(spaceDir(space), id);
+}
+
+/** Writes a new file, never through a symlink or a file someone left at that name. */
+export function writeFresh(p: string, data: string): void {
+  fs.rmSync(p, { force: true });
+  fs.writeFileSync(p, data, { flag: "wx" });
+}
+
+/** Writes `data` to `file` through a fresh, exclusively created temporary file and a rename: never through a link, never half a file. */
+export function replaceFresh(file: string, data: string): void {
+  writeFileAtomic(file, data);
 }
 
 function check(value: unknown): Message[] {
@@ -80,12 +111,17 @@ export function loadFile(file: string): Message[] {
   return parseThread(text);
 }
 
-export function load(space: string): Message[] {
-  return loadFile(threadFile(space));
+/** Conversation `id` of `space`; one not saved yet (a new chat before its first message) is empty. */
+export function load(space: string, id: string): Message[] {
+  return loadFile(threadFile(space, id));
 }
 
-export function save(space: string, messages: Message[]): void {
-  writeJsonAtomic(threadFile(space), messages);
+export function saveIn(dir: string, id: string, messages: Message[]): void {
+  replaceFresh(threadFileIn(dir, id), prettyJson(messages));
+}
+
+export function save(space: string, id: string, messages: Message[]): void {
+  saveIn(spaceDir(space), id, messages);
 }
 
 export function stamped(message: Message): Message {

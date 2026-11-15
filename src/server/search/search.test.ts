@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { call, tempHome } from "../../../tests/harness.ts";
 import { userMessage, type Message } from "../core/thread.ts";
 import { ensureVault, spaceDir } from "../core/vault.ts";
-import { isValidThreadId, saveIn, startNewIn } from "../threads/store.ts";
+import { isValidThreadId, saveIn } from "../threads/store.ts";
 import { MAX_CONVERSATIONS, MAX_QUERY_CHARS, MAX_SNIPPETS, findAll, fold, foldQuery, search, snippet } from "./search.ts";
 import "./commands.ts";
 
@@ -22,9 +22,9 @@ const chat = (pairs: [string, string][]): Message[] =>
   pairs.flatMap(([q, a]) => [userMessage(q), { role: "assistant" as const, content: [{ type: "text", text: a }] }]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+let nextId = 1_000;
 async function saveArchived(space: string, msgs: Message[]) {
-  saveIn(space, msgs);
-  startNewIn(space);
+  saveIn(space, String(nextId++), msgs);
   await sleep(15);
 }
 
@@ -59,19 +59,19 @@ describe("conversation search", () => {
     expect([...ls.after].length).toBeLessThanOrEqual(97);
   });
 
-  it("finds in current and past conversations, newest first", async () => {
+  it("finds in every conversation, newest first", async () => {
     const school = temp();
     await saveArchived(school, chat([["When is the midterm?", "The Midterm is on Thursday."]]));
     await saveArchived(school, chat([["Plan my week", "Nothing about exams here."]]));
-    saveIn(school, chat([["Remind me about the midterm", "Okay."]]));
+    saveIn(school, String(nextId++), chat([["Remind me about the midterm", "Okay."]]));
     const r = search([["school", school]], "MIDTERM");
     expect(r.truncated).toBe(false);
     expect(r.conversations.length).toBe(2);
     const c = r.conversations[0]!;
-    expect(c.current && c.threadId === "current" && c.space === "school" && c.matches === 1).toBe(true);
+    expect(isValidThreadId(c.threadId) && c.space === "school" && c.matches === 1).toBe(true);
     expect(c.snippets[0]!.message).toBe(0);
     const old = r.conversations[1]!;
-    expect(!old.current && isValidThreadId(old.threadId)).toBe(true);
+    expect(isValidThreadId(old.threadId) && old.threadId !== c.threadId).toBe(true);
     expect(old.title).toBe("When is the midterm?");
     expect(old.matches).toBe(2);
     expect(old.snippets.map((s) => [s.message, s.role])).toEqual([
@@ -86,8 +86,8 @@ describe("conversation search", () => {
   it("searches only the spaces given", () => {
     const school = temp();
     const work = temp();
-    saveIn(school, chat([["budget for books", "ok"]]));
-    saveIn(work, chat([["quarterly budget", "ok"]]));
+    saveIn(school, String(nextId++), chat([["budget for books", "ok"]]));
+    saveIn(work, String(nextId++), chat([["quarterly budget", "ok"]]));
     expect(search([["school", school]], "budget").conversations.map((c) => c.space)).toEqual(["school"]);
     const both = search(
       [
@@ -101,11 +101,12 @@ describe("conversation search", () => {
 
   it("caps snippets and conversations and skips unreadable files", () => {
     const dir = temp();
-    saveIn(dir, chat(Array.from({ length: 5 }, () => ["cap cap", "cap"] as [string, string])));
+    saveIn(dir, String(nextId++), chat(Array.from({ length: 5 }, () => ["cap cap", "cap"] as [string, string])));
     const r = search([["s", dir]], "cap");
     expect(r.conversations[0]!.matches).toBe(15);
     expect(r.conversations[0]!.snippets.length).toBe(MAX_SNIPPETS);
-    fs.writeFileSync(path.join(dir, ".phaethon/thread.json"), "{ half");
+    const only = fs.readdirSync(path.join(dir, ".phaethon/threads")).find((f) => f.endsWith(".json"))!;
+    fs.writeFileSync(path.join(dir, ".phaethon/threads", only), "{ half");
     expect(search([["s", dir]], "cap").conversations).toEqual([]);
     const archive = path.join(dir, ".phaethon/threads");
     fs.mkdirSync(archive, { recursive: true });
@@ -119,7 +120,7 @@ describe("conversation search", () => {
 
   it("searches only the text the conversation shows", () => {
     const dir = temp();
-    saveIn(dir, [
+    saveIn(dir, String(nextId++), [
       userMessage("what's in notes?"),
       {
         role: "assistant",
@@ -137,8 +138,8 @@ describe("conversation search", () => {
 
   it("conversations_search covers one space or every space", async () => {
     ensureVault();
-    saveIn(spaceDir("school"), chat([["algebra homework", "ok"]]));
-    saveIn(spaceDir("work"), chat([["algebra of shifts", "ok"]]));
+    saveIn(spaceDir("school"), String(nextId++), chat([["algebra homework", "ok"]]));
+    saveIn(spaceDir("work"), String(nextId++), chat([["algebra of shifts", "ok"]]));
     const one = await call<{ conversations: { space: string }[] }>("conversations_search", { space: "school", query: "algebra", allSpaces: false });
     expect(one.conversations.map((c) => c.space)).toEqual(["school"]);
     const all = await call<{ conversations: { space: string }[] }>("conversations_search", { space: "school", query: "algebra", allSpaces: true });

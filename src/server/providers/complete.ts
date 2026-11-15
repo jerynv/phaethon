@@ -1,13 +1,15 @@
 import { Refusal } from "../rpc/registry.ts";
 import { readSettings } from "../settings/settings.ts";
-import { providerFor } from "./build.ts";
-import { modelForSpace, parseRef } from "./presets.ts";
+import { conversationModel, providerFor } from "./build.ts";
+import { modelForSpace, parseRef, type ModelRef } from "./presets.ts";
 import type { Block } from "../core/thread.ts";
 import type { Effort } from "./types.ts";
 
 export type CompleteRequest = {
   space?: string;
-  /** A `provider:model` reference; else the space's model, else the vault default. */
+  /** The conversation the work is for: its own model answers (else a new chat's, the last one picked). */
+  thread?: string;
+  /** A `provider:model` reference; else the conversation's model, else the space's, else the vault default. */
   model?: string;
   system: string;
   /** Text, or content blocks (pictures as Messages-API image blocks) for a model that sees them. */
@@ -23,9 +25,17 @@ export type CompleteRequest = {
  * user-facing message when the provider can't be used (no key, no model) and a
  * ProviderError (also user-facing) when the call fails.
  */
-function providerOf(req: { space?: string; model?: string }) {
+function providerOf(req: { space?: string; thread?: string; model?: string }) {
   const settings = readSettings();
-  let ref = modelForSpace(req.space, settings);
+  let ref: ModelRef | undefined;
+  if (req.space) {
+    try {
+      ref = conversationModel(req.space, req.thread).ref;
+    } catch {
+      // An unreadable choice falls back to the space's model.
+    }
+  }
+  ref ??= modelForSpace(req.space, settings);
   if (req.model) {
     const parsed = parseRef(req.model);
     if (!parsed) throw new Refusal("That isn’t a model Phaethon knows how to use.");
@@ -35,7 +45,7 @@ function providerOf(req: { space?: string; model?: string }) {
 }
 
 /** Whether the model `completeText` would use takes pictures (false when it can't be used at all). */
-export function completeSeesPictures(req: { space?: string; model?: string }): boolean {
+export function completeSeesPictures(req: { space?: string; thread?: string; model?: string }): boolean {
   try {
     const provider = providerOf(req);
     return provider.id === "anthropic" || provider.imageInput() === "yes";

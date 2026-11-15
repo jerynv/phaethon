@@ -9,7 +9,7 @@ import "../commands.ts";
 import { account, cliCommand, configDirFor, home, launch, list, parseUsage, remove, requireHome, save, select, selected, sessionTag, usage, validate, type Instance } from "../instances.ts";
 import { statusOf } from "../commands.ts";
 import { wallBreakingArg } from "../walls.ts";
-import { errors, FakeLog, fakeBin, request, send } from "./helpers.ts";
+import { errors, FakeLog, fakeBin, request, send, THREAD } from "./helpers.ts";
 
 const env = tempHome("phaethon-cli-instances-");
 afterAll(() => env.cleanup());
@@ -211,6 +211,6 @@ for await (const line of createInterface({ input: process.stdin })) {
     expect(log.args(1)[0]).toBe("--dangerously-skip-permissions");
     expect(log.env(1).CLAUDE_CONFIG_DIR).toBe(dir);
     // A named connection's session is tagged with it.
-    expect(fs.readFileSync(path.join(env.home, "Phaethon", "default", "spaces", "school", ".phaethon", "session"), "utf8")).toBe("claude-claude-risky:00000000-0000-0000-0000-000000000001\n");
+    expect(fs.readFileSync(path.join(env.home, "Phaethon", "default", "spaces", "school", ".phaethon", "threads", `${THREAD}.session`), "utf8")).toBe("claude-claude-risky:00000000-0000-0000-0000-000000000001\n");
   });
 });

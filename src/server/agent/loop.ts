@@ -1,7 +1,7 @@
 import type { AccessAnswer, AgentEvent, ErrorCode, LessonAnswer, ToolCategory, UiRecord } from "../../shared/agent.ts";
 import type { Channel } from "../rpc/channel.ts";
 import { messageOf, Refusal } from "../rpc/registry.ts";
-import type { Run } from "../core/runs.ts";
+import { turnKey, type Run } from "../core/runs.ts";
 import { ask } from "../core/pending.ts";
 import { spaceDir } from "../core/vault.ts";
 import { log } from "../log.ts";
@@ -21,6 +21,7 @@ import {
 } from "../core/thread.ts";
 import { expandForProvider, preparePdfTexts } from "../attachments/attachments.ts";
 import { addAlways, checkRequest, covers } from "../grants/grants.ts";
+import { writesAllowed } from "../grants/writes.ts";
 import { readSettings } from "../settings/settings.ts";
 import { cutAt } from "../threads/store.ts";
 import { ProviderError, type Delta, type ModelTurn, type Provider, type WireMessage } from "../providers/types.ts";
@@ -62,9 +63,9 @@ import { tutorMode } from "./tutor.ts";
 
 /**
  * Phaethon's own agent turn: the user's message, then up to MAX_STEPS model
- * calls with tool calls run between them, everything saved to thread.json as
- * it happens. The caller (turn.ts) claims the space and sends the single
- * `end` event.
+ * calls with tool calls run between them, everything saved to the
+ * conversation's file as it happens. The caller (turn.ts) claims the
+ * conversation and sends the single `end` event.
  */
 
 export const MAX_STEPS = 30;
@@ -77,6 +78,8 @@ export type TurnMode =
 
 export type OwnTurn = {
   space: string;
+  /** The conversation this turn writes to (`threads/<id>.json`). */
+  thread: string;
   provider: Provider;
   events: Channel<AgentEvent>;
   run: Run;
@@ -143,16 +146,16 @@ function denied(msgs: Message[], space: string, p: string): boolean {
 const LESSON_CARDS = new Set(["check", "explain_back", "plan_lesson"]);
 
 export async function runOwnTurn(t: OwnTurn): Promise<void> {
-  const { space, provider, events, run } = t;
+  const { space, thread, provider, events, run } = t;
   const signal = run.abort.signal;
   const emit = (e: AgentEvent) => events.send(e);
   const storage = (message: string) => emit({ kind: "error", code: "storage", message });
 
   let msgs: Message[];
   try {
-    msgs = load(space);
+    msgs = load(space, thread);
   } catch (e) {
-    return storage(`This space’s conversation file couldn’t be read, so nothing was sent: ${messageOf(e)}`);
+    return storage(`This conversation’s file couldn’t be read, so nothing was sent: ${messageOf(e)}`);
   }
   const root = spaceDir(space);
   const ctx: ToolCtx = { space, root, once: [] };
@@ -164,7 +167,7 @@ export async function runOwnTurn(t: OwnTurn): Promise<void> {
   if (t.mode.kind === "prompt") {
     if (t.mode.replaceFrom !== undefined) {
       try {
-        msgs = cutAt(space, msgs, t.mode.replaceFrom);
+        msgs = cutAt(space, thread, msgs, t.mode.replaceFrom);
       } catch (e) {
         return storage(messageOf(e));
       }
@@ -200,7 +203,7 @@ export async function runOwnTurn(t: OwnTurn): Promise<void> {
     }
   }
   try {
-    save(space, msgs);
+    save(space, thread, msgs);
     if (t.mode.kind === "answer") {
       // The question's record now says how it went; the open reply shows that at once.
       const callId = t.mode.call.id;
@@ -216,8 +219,8 @@ export async function runOwnTurn(t: OwnTurn): Promise<void> {
   } finally {
     if (settleAt) {
       try {
-        const now = load(space);
-        if (settle(now, settleAt.start, settleAt.stoppedAt)) save(space, now);
+        const now = load(space, thread);
+        if (settle(now, settleAt.start, settleAt.stoppedAt)) save(space, thread, now);
       } catch (e) {
         log.warn("couldn't tidy a continued reply", { error: messageOf(e) });
       }
@@ -226,7 +229,8 @@ export async function runOwnTurn(t: OwnTurn): Promise<void> {
 }
 
 async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType<typeof tutorMode>): Promise<void> {
-  const { space, provider, events, run } = t;
+  const { space, thread, provider, events, run } = t;
+  const persist = () => save(space, thread, msgs);
   const signal = run.abort.signal;
   const emit = (e: AgentEvent) => events.send(e);
   const storage = (message: string) => emit({ kind: "error", code: "storage", message });
@@ -291,7 +295,7 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
         msgs.push(stamped({ role: "assistant", content }));
         emit({ kind: "record", record: { kind: "stopped" } });
         try {
-          save(space, msgs);
+          persist();
         } catch (err) {
           storage(`The stopped reply could not be saved: ${messageOf(err)}`);
         }
@@ -301,7 +305,7 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
       if (partialBlocks.length) {
         msgs.push(stamped({ role: "assistant", content: partialBlocks }));
         try {
-          save(space, msgs);
+          persist();
         } catch {
           // the error below is what matters
         }
@@ -325,7 +329,7 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
     const reply = msgs.length;
     msgs.push(stamped({ role: "assistant", content: [...turn.content, ...progress.map((text) => recordBlock({ kind: "progress", text }))] }));
     try {
-      save(space, msgs);
+      persist();
     } catch (e) {
       return storage(`The reply could not be saved: ${messageOf(e)}`);
     }
@@ -407,7 +411,7 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
     if (signal.aborted) addRecord({ kind: "stopped" });
     if (results.length) msgs.push(stamped({ role: "user", content: results }));
     try {
-      save(space, msgs);
+      persist();
     } catch (e) {
       return storage(`The conversation could not be saved: ${messageOf(e)}`);
     }
@@ -556,8 +560,19 @@ async function writeFlow(o: One, call: Call): Promise<Outcome> {
   } catch (e) {
     return { block: result(`Not run: ${messageOf(e)}.`, true), status: "failed" };
   }
+  // Allowed for this conversation or its whole space: no question; the walls above still apply.
+  const standing = writesAllowed(t.space, t.thread);
+  if (standing) {
+    o.addRecord({ kind: "approval", path: plan.rel, action: plan.action, allowed: true, auto: standing });
+    emit({ kind: "tool", label: label(ctx.space, call) });
+    try {
+      return { block: result(runWrite(ctx, plan, contents), false), status: "success" };
+    } catch (e) {
+      return { block: result(messageOf(e), true), status: "failed" };
+    }
+  }
   emit({ kind: "tool", label: `Waiting for you to allow: ${label(ctx.space, call)}` });
-  const waiting = ask<boolean>(t.space, `write:${id}`, signal);
+  const waiting = ask<boolean>(turnKey(t.space, t.thread), `write:${id}`, signal);
   emit({ kind: "approval", id, summary: plan.summary, detail: plan.detail, action: plan.action, path: plan.rel, space: t.space, before: plan.before, truncated: plan.truncated });
   let allowed = false;
   try {
@@ -602,7 +617,7 @@ async function accessFlow(o: One, call: Call): Promise<Outcome> {
     };
   }
   emit({ kind: "tool", label: `Waiting for you to answer: ${label(ctx.space, call)}` });
-  const waiting = ask<AccessAnswer>(t.space, `access:${id}`, signal);
+  const waiting = ask<AccessAnswer>(turnKey(t.space, t.thread), `access:${id}`, signal);
   emit({ kind: "accessRequest", id, space: other, path: p, reason: String(call.input.reason) });
   let answer: AccessAnswer = "deny";
   try {

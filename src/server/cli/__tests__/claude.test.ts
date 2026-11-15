@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempHome } from "../../../../tests/harness.ts";
-import { cancel } from "../../core/runs.ts";
+import { cancel, turnKey } from "../../core/runs.ts";
 import { load, save, userMessage } from "../../core/thread.ts";
 import { ALLOWED_TOOLS, ClaudeParser, cliArgs, cliArgsFull } from "../claude.ts";
 import { MISSING_CLI_MESSAGE, NOT_LOGGED_IN_MESSAGE } from "../cli.ts";
 import { HISTORY_INTRO } from "../prompt.ts";
 import { readCliSession, writeCliSession } from "../session.ts";
-import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor } from "./helpers.ts";
+import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor, THREAD } from "./helpers.ts";
 
 const env = tempHome("phaethon-cli-claude-");
 afterAll(() => env.cleanup());
@@ -111,7 +111,7 @@ describe("Claude Code stream", () => {
 
 describe("Claude Code conversations", () => {
   it("resume a legacy bare session, get the prompt on stdin only, and lose the parent's variables", async () => {
-    writeCliSession(school, null, OLD);
+    writeCliSession(school, THREAD, null, OLD);
     const events = await send(request("claude", "school", "When is Test 1?"));
     expect(errors(events)).toEqual([]);
     expect(events.at(-1)).toEqual({ kind: "end", sessionId: OLD });
@@ -154,7 +154,7 @@ describe("Claude Code conversations", () => {
     expect(stdin.startsWith(`${HISTORY_INTRO}\n\n<conversation>\nUser: When is Test 1?\n\nPhaethon: Reply 1.`)).toBe(true);
     expect(stdin.endsWith("The user's new message:\n\nNext?")).toBe(true);
     const fresh = `00000000-0000-0000-0000-${String(before + 2).padStart(12, "0")}`;
-    expect(readCliSession(school, null)).toBe(fresh);
+    expect(readCliSession(school, THREAD, null)).toBe(fresh);
     expect(events.at(-1)).toEqual({ kind: "end", sessionId: fresh });
   });
 
@@ -163,7 +163,7 @@ describe("Claude Code conversations", () => {
     const events = await send(request("claude", "school", "tool please"));
     const kinds = events.map((e) => e.kind);
     expect(kinds).toEqual(["text", "tool", "toolStart", "toolEnd", "record", "text", "text", "end"]);
-    const saved = JSON.stringify(load("school").at(-1));
+    const saved = JSON.stringify(load("school", THREAD).at(-1));
     expect(saved).toContain('"kind":"tool"');
     expect(saved).toContain('"target":"notes.md"');
     expect(saved).not.toContain("secret notes");
@@ -176,14 +176,14 @@ describe("Claude Code conversations", () => {
   });
 
   it("stops: partial text and the stopped record are kept, the old session too, and the group is gone", async () => {
-    const before = readCliSession(school, null);
+    const before = readCliSession(school, THREAD, null);
     const n = log.runs() + 1;
     const pending = send(request("claude", "school", "slow please"), (e) => {
-      if (e.kind === "text") setTimeout(() => cancel("school"), 10);
+      if (e.kind === "text") setTimeout(() => cancel(turnKey("school", THREAD)), 10);
     });
     const events = await pending;
     expect(events.slice(-3)).toEqual([{ kind: "record", record: { kind: "stopped" } }, { kind: "cancelled" }, { kind: "end", sessionId: before }]);
-    const last = load("school").at(-1)!;
+    const last = load("school", THREAD).at(-1)!;
     expect(last.content).toEqual([{ type: "text", text: "Partial" }, { type: "phaethon_record", kind: "stopped" }]);
     expect(await waitFor(() => !alive(Number(log.text(`pid-${n}`))))).toBe(true);
   });
@@ -192,7 +192,7 @@ describe("Claude Code conversations", () => {
     const n = log.runs() + 1;
     const started = Date.now();
     const events = await send(request("claude", "school", "stubborn please"), (e) => {
-      if (e.kind === "text") setTimeout(() => cancel("school"), 50);
+      if (e.kind === "text") setTimeout(() => cancel(turnKey("school", THREAD)), 50);
     });
     expect(events.at(-2)).toEqual({ kind: "cancelled" });
     expect(Date.now() - started).toBeLessThan(8000);
@@ -209,7 +209,7 @@ describe("Claude Code conversations", () => {
             { kind: "error", code: "busy", message: "This space is still answering the previous message. Stop it or wait for it to finish." },
             { kind: "end", sessionId: null },
           ]);
-          cancel("school");
+          cancel(turnKey("school", THREAD));
         });
       }
     });
@@ -217,9 +217,9 @@ describe("Claude Code conversations", () => {
   });
 
   it("edits start a fresh session and the old version keeps its own", async () => {
-    save("work", [userMessage("first"), { role: "assistant", content: [{ type: "text", text: "one" }] }]);
+    save("work", THREAD, [userMessage("first"), { role: "assistant", content: [{ type: "text", text: "one" }] }]);
     const work = path.dirname(school) + "/work";
-    writeCliSession(work, null, OLD);
+    writeCliSession(work, THREAD, null, OLD);
     fs.rmSync(path.join(log.dir, "stale"));
     const n = log.runs() + 1;
     await send(request("claude", "work", "first, edited", { replaceFrom: 0 }));
@@ -235,13 +235,13 @@ describe("Claude Code conversations", () => {
   it("reports a missing binary before anything is recorded", async () => {
     const saved = process.env.PHAETHON_CLAUDE_BIN;
     process.env.PHAETHON_CLAUDE_BIN = path.join(env.home, "nowhere", "claude");
-    const before = load("school").length;
+    const before = load("school", THREAD).length;
     const events = await send(request("claude", "school", "hello"));
     expect(events).toEqual([
       { kind: "error", code: "missingCli", message: MISSING_CLI_MESSAGE },
       { kind: "end", sessionId: null },
     ]);
-    expect(load("school").length).toBe(before);
+    expect(load("school", THREAD).length).toBe(before);
     process.env.PHAETHON_CLAUDE_BIN = saved;
   });
 });

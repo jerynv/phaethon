@@ -30,7 +30,7 @@ export type ErrorCode =
 /** A conversation record as the UI sees it (the saved block without `type`). */
 export type UiRecord =
   | { kind: "tool"; id: string; category: ToolCategory; label: string; status: ToolStatus | "running"; target?: string; detail?: string }
-  | { kind: "approval"; path: string; action: "create" | "replace"; allowed: boolean }
+  | { kind: "approval"; path: string; action: "create" | "replace"; allowed: boolean; /** Written without asking: allowed for this conversation or its space. */ auto?: "conversation" | "space" }
   | { kind: "access"; space: string; path: string; answer: AccessAnswer }
   | { kind: "read"; space: string; path: string; tool: "read" | "list" | "search"; query?: string }
   | { kind: "stopped" }

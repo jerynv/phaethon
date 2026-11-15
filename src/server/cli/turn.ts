@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { AgentEvent, ErrorCode } from "../../shared/agent.ts";
 import type { Channel } from "../rpc/channel.ts";
-import { claim, release, type Run } from "../core/runs.ts";
+import { claim, release, turnKey, type Run } from "../core/runs.ts";
 import { load, recordBlock, save, stamped, userMessage, type Block, type Message } from "../core/thread.ts";
 import { realpath } from "../core/fsx.ts";
 import { cutAt } from "../threads/store.ts";
@@ -22,6 +22,8 @@ import { wallBreakingArg, wallBreakingMessage } from "./walls.ts";
 export type CliTurnRequest = {
   cli: CliId;
   space: string;
+  /** The conversation the turn is recorded in, and whose CLI session it resumes. */
+  thread: string;
   spaceDir: string;
   /** Device-local, picker-approved project root; null runs the CLI in the space folder. */
   workingDir: string | null;
@@ -74,11 +76,11 @@ function workingDirectory(req: CliTurnRequest): string {
 }
 
 /**
- * Runs one turn, claiming the space itself: a busy space gets the busy error.
+ * Runs one turn, claiming the conversation itself: a busy one gets the busy error.
  * Always ends with exactly one `end`.
  */
 export async function runCliTurnClaimed(req: CliTurnRequest, events: Channel<AgentEvent>): Promise<void> {
-  const run = claim(req.space);
+  const run = claim(turnKey(req.space, req.thread));
   if (!run) {
     events.send(error("busy", BUSY_MESSAGE));
     events.send({ kind: "end", sessionId: null });
@@ -92,9 +94,9 @@ export async function runCliTurnClaimed(req: CliTurnRequest, events: Channel<Age
 }
 
 /**
- * One turn of a CLI in a space the caller has claimed (`run`): run the CLI
- * (once more, afresh, if the session it was to resume is gone), record the
- * turn in thread.json the way Phaethon's own loop does, release the run, and
+ * One turn of a CLI in a conversation the caller has claimed (`run`): run the
+ * CLI (once more, afresh, if the session it was to resume is gone), record the
+ * turn in the conversation the way Phaethon's own loop does, release the run, and
  * end the channel with exactly one `end` carrying the session the
  * conversation resumes next.
  */
@@ -106,7 +108,7 @@ export async function runCliTurn(req: CliTurnRequest, events: Channel<AgentEvent
     events.send(error("cli", e instanceof Error ? e.message : String(e)));
     session = null;
   } finally {
-    // Released before `end`, so the next message never finds the space busy.
+    // Released before `end`, so the next message never finds the conversation busy.
     release(run);
     events.send({ kind: "end", sessionId: session });
   }
@@ -137,21 +139,21 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
 
   let msgs: Message[];
   try {
-    msgs = load(req.space);
+    msgs = load(req.space, req.thread);
   } catch (e) {
-    emit(error("storage", `This space’s conversation file couldn’t be read, so nothing was sent: ${(e as Error).message}`));
+    emit(error("storage", `This conversation’s file couldn’t be read, so nothing was sent: ${(e as Error).message}`));
     return null;
   }
   if (req.replaceFrom !== undefined) {
     try {
-      const kept = cutAt(req.space, msgs, req.replaceFrom) as Message[] | void;
+      const kept = cutAt(req.space, req.thread, msgs, req.replaceFrom) as Message[] | void;
       if (Array.isArray(kept)) msgs = kept;
     } catch (e) {
       emit(error("storage", (e as Error).message));
       return null;
     }
     try {
-      save(req.space, msgs);
+      save(req.space, req.thread, msgs);
     } catch (e) {
       emit(error("storage", `The conversation could not be saved, so nothing was sent: ${(e as Error).message}`));
       return null;
@@ -162,7 +164,7 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
   const external = workingDir !== req.spaceDir;
   const ask = req.prompt + attachmentNote(req.attachments, req.spaceDir, external);
   const tag = sessionTag(cli, req.configDir);
-  let resume = readCliSession(req.spaceDir, tag);
+  let resume = readCliSession(req.spaceDir, req.thread, tag);
   const mode = systemText({ space: req.space, spaceDir: req.spaceDir, workingDir, fullAccess: req.fullAccess });
   const dirs = req.addDirs.map((d) => d.path);
   if (external && !req.fullAccess && !dirs.includes(req.spaceDir)) dirs.push(req.spaceDir);
@@ -184,7 +186,7 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
     const attempt = await drive(req, ctx, emit, send, state);
     if (attempt.kind === "stale") {
       // The session is gone (deleted, or made elsewhere): start afresh, with the conversation so far.
-      clearSession(req.spaceDir);
+      clearSession(req.spaceDir, req.thread);
       resume = null;
       continue;
     }
@@ -207,9 +209,9 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
   content.push(...log.records.map((r) => recordBlock(r)));
   if (content.length) msgs.push(stamped({ role: "assistant", content }));
   try {
-    save(req.space, msgs);
+    save(req.space, req.thread, msgs);
   } catch (e) {
-    emit(error("storage", `The reply couldn’t be saved in this space’s conversation: ${(e as Error).message}`));
+    emit(error("storage", `The reply couldn’t be saved in this conversation: ${(e as Error).message}`));
   }
   if (stopped) {
     emit({ kind: "record", record: { kind: "stopped" } });
@@ -292,7 +294,7 @@ async function drive(
   if (outcome.kind === "success") {
     if (outcome.sessionId) {
       try {
-        writeCliSession(req.spaceDir, sessionTag(cli, configDir), outcome.sessionId);
+        writeCliSession(req.spaceDir, req.thread, sessionTag(cli, configDir), outcome.sessionId);
       } catch (e) {
         emit(error("cli", `Reply received, but the conversation could not be saved: ${(e as Error).message}`));
       }
@@ -313,7 +315,7 @@ async function drive(
   if (partial.resume !== null && (stale || meta.isStale(detail) || meta.isStale(stderr))) {
     if (!state.text) return { kind: "stale" };
     // Gone after it had begun answering (unlikely): start afresh next time.
-    clearSession(req.spaceDir);
+    clearSession(req.spaceDir, req.thread);
     emit(error("cli", `${name} lost this conversation’s earlier session. Send your message again to carry on in a new one.`));
   } else if (meta.notLoggedIn(detail) || meta.notLoggedIn(stderr)) {
     loggedOut();

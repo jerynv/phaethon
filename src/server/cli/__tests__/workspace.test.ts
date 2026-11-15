@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempHome } from "../../../../tests/harness.ts";
 import type { CliId } from "../cli.ts";
-import { errors, FakeLog, fakeBin, request, send, setup } from "./helpers.ts";
+import { errors, FakeLog, fakeBin, request, send, setup, THREAD } from "./helpers.ts";
 
 const env = tempHome("phaethon-cli-workspace-");
 afterAll(() => env.cleanup());
@@ -52,7 +52,7 @@ describe("a bound project folder", () => {
       expect(said).toContain(`# Workspace\n\nProject working folder: ${JSON.stringify(project)}\nPhaethon space context: ${JSON.stringify(school)}\n`);
       expect(said).toContain(path.join(school, "attachments/a.pdf"));
       expect(fs.existsSync(path.join(project, ".phaethon"))).toBe(false);
-      expect(fs.existsSync(path.join(school, ".phaethon", "thread.json"))).toBe(true);
+      expect(fs.existsSync(path.join(school, ".phaethon", "threads", `${THREAD}.json`))).toBe(true);
     });
   }
 

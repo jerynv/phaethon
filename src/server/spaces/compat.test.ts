@@ -101,8 +101,26 @@ describe("files the Rust app wrote", () => {
     expect(m.cliReasoning).toEqual({ claude: { "claude-opus-5-5": "max", $default: "medium" } });
   });
 
-  it("conversations, sessions and records read back", async () => {
-    const ui = await call<{ role: string; text: string; index: number; attachments: unknown[]; records: unknown[]; at?: number }[]>("thread_load", { space: "school" });
+  it("conversations, sessions and records read back; the old current conversation moves in with its session", async () => {
+    const school = spaceDir("school");
+    const oldFile = path.join(school, ".phaethon/thread.json");
+    const oldText = written.get(oldFile)!;
+    const list = await call<{ id: string; title: string; messages: number }[]>("threads_list", { space: "school" });
+    expect(list.map((t) => [t.title, t.messages])).toEqual([
+      ["question", 2],
+      ["An older chat", 2],
+      ["Imported from Claude Code", 1],
+    ]);
+    expect(list.slice(1).map((t) => t.id)).toEqual(["1759000000000", "1758000000000-1"]);
+    expect(list[1]).toMatchObject({ updated: 1759000000000 });
+    const moved = list[0]!.id;
+    expect(moved).toMatch(/^[0-9]+(-[0-9]+)?$/);
+    // Moved by rename: the bytes are the Rust app's, and nothing is left at the old names.
+    expect(fs.readFileSync(path.join(school, `.phaethon/threads/${moved}.json`), "utf8")).toBe(oldText);
+    expect(fs.existsSync(oldFile)).toBe(false);
+    expect(fs.existsSync(path.join(school, ".phaethon/session"))).toBe(false);
+
+    const ui = await call<{ role: string; text: string; index: number; attachments: unknown[]; records: unknown[]; at?: number }[]>("thread_load", { space: "school", thread: moved });
     expect(ui).toEqual([
       { role: "user", text: "question", attachments: [{ name: "pic.png", path: "attachments/2026-10-09/pic (2).png", mediaType: "image/png" }], index: 0, records: [], at: 1760000000000 },
       {
@@ -117,41 +135,29 @@ describe("files the Rust app wrote", () => {
         at: 1760000000300,
       },
     ]);
-    const list = await call<{ id: string; title: string; messages: number; current: boolean }[]>("threads_list", { space: "school" });
-    expect(list.map((t) => [t.id, t.title, t.messages, t.current])).toEqual([
-      ["current", "question", 2, true],
-      ["1759000000000", "An older chat", 2, false],
-      ["1758000000000-1", "Imported from Claude Code", 1, false],
-    ]);
-    expect(list[1]).toMatchObject({ updated: 1759000000000 });
     const { readSession } = await import("../threads/store.ts");
-    expect(readSession("school")).toBe(S1);
-    expect(readSession("school", "codex")).toBeNull();
-    await call("thread_open", { space: "school", id: "1759000000000" });
-    expect(readSession("school", "codex")).toBe(S2);
-    expect(readSession("school")).toBeNull();
-    const back = list.find((t) => t.id !== "current" && t.title === "question");
-    expect(back).toBeUndefined();
-    const reopened = await call<{ id: string; title: string }[]>("threads_list", { space: "school" });
-    const prev = reopened.find((t) => t.title === "question")!;
-    await call("thread_open", { space: "school", id: prev.id });
-    expect(readSession("school")).toBe(S1);
-    expect(fs.readFileSync(path.join(spaceDir("school"), ".phaethon/thread.json"), "utf8")).toBe(written.get(path.join(spaceDir("school"), ".phaethon/thread.json")));
+    expect(readSession("school", moved)).toBe(S1);
+    expect(readSession("school", moved, "codex")).toBeNull();
+    expect(readSession("school", "1759000000000", "codex")).toBe(S2);
+    expect(readSession("school", "1759000000000")).toBeNull();
+    // Listing again moves nothing.
+    expect((await call<{ id: string }[]>("threads_list", { space: "school" })).map((t) => t.id)).toEqual(list.map((t) => t.id));
   });
 
   it("memory, grants, full access and the workspace binding read back", async () => {
     const { memoryForPrompt } = await import("../memory/memory.ts");
     expect(memoryForPrompt("school")).toContain("- CS101 Test 1 is Oct 22.\n- My own note");
-    expect(await call("thread_forget_preview", { space: "school", id: "current" })).toEqual({ files: 1, sharedFiles: 0, facts: 1 });
+    const question = (await call<{ id: string; title: string }[]>("threads_list", { space: "school" })).find((t) => t.title === "question")!;
+    expect(await call("thread_forget_preview", { space: "school", thread: question.id })).toEqual({ files: 1, sharedFiles: 0, facts: 1 });
     const grants = await call<{ grants: { id: string; from: string; path: string; created: string }[]; problems: string[] }>("grants_list", { space: "school" });
     expect(grants.problems).toEqual([]);
     expect(grants.grants).toEqual([{ id: "6f1c0000-0000-4000-8000-000000000000", from: "work", path: "calendar", created: "2026-10-10T14:03:00Z", scope: "always" }]);
     expect(await call("full_access_list")).toEqual(["work"]);
     const ws = await call<{ path: string; kind: string; available: boolean }>("space_workspace_get", { id: "work" });
     expect(ws).toEqual({ path: persistedPath(fs.realpathSync.native(path.join(env.home, "Project"))), kind: "folder", available: true });
-    const hits = await call<{ conversations: { title: string; current: boolean }[] }>("conversations_search", { space: "school", query: "older", allSpaces: true });
+    const hits = await call<{ conversations: { title: string; threadId: string }[] }>("conversations_search", { space: "school", query: "older", allSpaces: true });
     // Reopened and put back above, so it is archived under a new id now.
-    expect(hits.conversations.map((c) => [c.title, c.current])).toEqual([["An older chat", false]]);
+    expect(hits.conversations.map((c) => [c.title, c.threadId])).toEqual([["An older chat", "1759000000000"]]);
     expect(vaultRoot()).toBe(path.join(env.home, "Phaethon", "default"));
   });
 });

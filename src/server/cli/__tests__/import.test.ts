@@ -1,4 +1,5 @@
 import { canSymlinkFiles, symlink } from "../../../../tests/fs.ts";
+import { THREAD } from "./helpers.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -42,7 +43,7 @@ function archived(): { id: string; msgs: Message[]; mtime: number }[] {
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
+    .filter((f) => f.endsWith(".json") && f !== `${THREAD}.json`)
     .map((f) => ({ id: f.slice(0, -5), msgs: JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")), mtime: fs.statSync(path.join(dir, f)).mtimeMs }));
 }
 
@@ -123,15 +124,15 @@ describe("reading Claude Code transcripts", () => {
 describe("bringing them in", () => {
   it("brings each unknown conversation in once, resumable, dated, oldest first, the current one untouched", () => {
     setup(ALL);
-    save("school", [userMessage("hi"), { role: "assistant", content: [{ type: "text", text: "Hi! What do you need?" }] }]);
-    writeCliSession(space, null, KNOWN);
-    const before = fs.readFileSync(path.join(space, ".phaethon", "thread.json"));
+    save("school", THREAD, [userMessage("hi"), { role: "assistant", content: [{ type: "text", text: "Hi! What do you need?" }] }]);
+    writeCliSession(space, THREAD, null, KNOWN);
+    const before = fs.readFileSync(path.join(space, ".phaethon", "threads", `${THREAD}.json`));
     fs.mkdirSync(path.join(space, ".phaethon", "threads"), { recursive: true });
     fs.writeFileSync(path.join(space, ".phaethon", "threads", "1.session"), "codex:01a12cac-8974-7110-be05-b08f8161e7fa\n");
 
     expect(importConversations("school", claudeHome)).toEqual(["Move the essay to Friday", "CS101 Test 1 date and scope"]);
-    expect(fs.readFileSync(path.join(space, ".phaethon", "thread.json"))).toEqual(before);
-    expect(readCliSession(space, null)).toBe(KNOWN);
+    expect(fs.readFileSync(path.join(space, ".phaethon", "threads", `${THREAD}.json`))).toEqual(before);
+    expect(readCliSession(space, THREAD, null)).toBe(KNOWN);
     const list = archived();
     expect(list).toHaveLength(2);
     const full = list.find((t) => JSON.stringify(t.msgs).includes(FULL))!;
@@ -162,7 +163,7 @@ describe("bringing them in", () => {
   it("know conversations a named Claude Code connection recorded, and remember their tagged sessions", () => {
     setup([FULL, KNOWN, WRAPPED]);
     // The current conversation was had through a named connection: its session line is tagged.
-    writeCliSession(space, "claude-claude-work", KNOWN);
+    writeCliSession(space, THREAD, "claude-claude-work", KNOWN);
     fs.mkdirSync(path.join(space, ".phaethon", "threads"), { recursive: true });
     fs.writeFileSync(path.join(space, ".phaethon", "threads", "1.session"), `claude-claude-work:${WRAPPED}\n`);
     expect(knownSessions("school").has(KNOWN)).toBe(true);
@@ -201,6 +202,6 @@ describe("bringing them in", () => {
     expect(await call("cli_import_run", { space: "school" })).toEqual([]);
     await expect(call("cli_import_run", { space: "../x" })).rejects.toThrow('"../x" is not a valid space name');
     delete process.env.CLAUDE_CONFIG_DIR;
-    expect(load("school")).toEqual([]);
+    expect(load("school", THREAD)).toEqual([]);
   });
 });

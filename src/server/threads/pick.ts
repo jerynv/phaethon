@@ -4,15 +4,15 @@ import { spaceDir } from "../core/vault.ts";
 import { defaultRef, parseRef, savedRef } from "../providers/presets.ts";
 import { parseBackend, readSettings, setSettings, type Backend, type VaultSettings } from "../settings/settings.ts";
 import { readSpaceMeta } from "../spaces/meta.ts";
-import { loadIn, readPickRawIn, writePickRawIn } from "./store.ts";
+import { isValidThreadId, loadIn, readPickRawIn, writePickRawIn } from "./store.ts";
 
 /**
  * The model a conversation answers with, chosen per conversation in the
  * composer: which backend (Phaethon's own loop or a coding agent), which model
  * (`provider:model` for Phaethon, the CLI's own id for a coding agent; null
  * for that backend's default) and the reasoning effort (null for the
- * default). Saved beside the conversation (store.ts moves it with the
- * conversation) and as the vault's `lastModel`, which a new conversation
+ * default). Saved beside the conversation (`threads/<id>.model`) and as the
+ * vault's `lastModel`, which a new conversation
  * starts with. A conversation from before per-conversation choice has none
  * saved and keeps answering as it did: the vault's backend with the space's
  * model.
@@ -73,28 +73,31 @@ export type PickView = {
 };
 
 /**
- * The current conversation's model: its own choice; else, for a conversation
- * that hasn't started, the last one picked anywhere; else the space's legacy
- * model.
+ * Conversation `thread`'s model: its own choice; else, for a conversation that
+ * hasn't started (or none named: a new chat), the last one picked anywhere;
+ * else the space's legacy model.
  */
-export function effectivePick(space: string): PickView {
+export function effectivePick(space: string, thread?: string | null): PickView {
   const dir = spaceDir(space);
-  const own = parsePick(readPickRawIn(dir));
+  const id = isValidThreadId(thread) ? thread : null;
+  const own = id ? parsePick(readPickRawIn(dir, id)) : null;
   if (own) return { pick: own, saved: true };
   const settings = readSettings();
-  let started = true;
-  try {
-    started = loadIn(dir).length > 0;
-  } catch {
-    started = true;
+  let started = false;
+  if (id) {
+    try {
+      started = loadIn(dir, id).length > 0;
+    } catch {
+      started = true;
+    }
   }
   const last = started ? null : parsePick(settings.lastModel);
   return { pick: last ?? legacyPick(space, settings), saved: false };
 }
 
-/** Saves the choice for the current conversation and as the one new conversations start with. */
-export function savePick(space: string, pick: ModelPick): void {
-  writePickRawIn(spaceDir(space), pick);
+/** Saves the choice for conversation `thread` (none: only as the default) and as the one new conversations start with. */
+export function savePick(space: string, thread: string | null, pick: ModelPick): void {
+  if (thread !== null) writePickRawIn(spaceDir(space), thread, pick);
   try {
     setSettings({ lastModel: pick });
   } catch {

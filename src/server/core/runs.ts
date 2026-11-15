@@ -5,12 +5,33 @@ import { reportGroups } from "../host.ts";
 import { killWindowsChild } from "./windows-jobs.ts";
 
 /**
- * At most one running thing per key: a turn in a space (key = space id), a
- * sign-in (`"\0sign-in:<cli>"`), a conversation clear. A run can be cancelled,
- * and every child process group it started is killed when the core stops.
+ * At most one running thing per key: a reply in a conversation
+ * (`turnKey(space, thread)`), a sign-in (`"\0sign-in:<cli>"`), a
+ * conversation clear (its turn key too). Different conversations, even in the
+ * same space, run at the same time. A run can be cancelled, and every child
+ * process group it started is killed when the core stops.
  */
 
-export const BUSY = "Phaethon is still replying in this space. Stop the reply or wait for it to finish, then try again.";
+export const BUSY = "Phaethon is still replying in this conversation. Stop the reply or wait for it to finish, then try again.";
+export const SPACE_BUSY = "Phaethon is still replying in this space. Stop the replies or wait for them to finish, then try again.";
+
+/** The run key of a reply in conversation `thread` of `space`. */
+export function turnKey(space: string, thread: string): string {
+  return `${space}\0${thread}`;
+}
+
+/** The conversations of `space` replying right now. */
+export function runningIn(space: string): string[] {
+  const prefix = `${space}\0`;
+  const out: string[] = [];
+  for (const key of runs.keys()) if (key.startsWith(prefix)) out.push(key.slice(prefix.length));
+  return out;
+}
+
+/** Whether anything replies in `space` (any of its conversations). */
+export function isSpaceBusy(space: string): boolean {
+  return runs.has(space) || runningIn(space).length > 0;
+}
 
 export type Run = {
   key: string;

@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempHome } from "../../../../tests/harness.ts";
-import { cancel } from "../../core/runs.ts";
+import { cancel, turnKey } from "../../core/runs.ts";
 import { load } from "../../core/thread.ts";
 import { CODEX_MISSING_MESSAGE } from "../cli.ts";
 import { answerServerRequest, appServerArgs, appServerArgsFull, CodexItems, commandLabel, DISABLED_FEATURES } from "../codex.ts";
 import { HISTORY_INTRO } from "../prompt.ts";
 import { readCliSession, writeCliSession } from "../session.ts";
-import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor } from "./helpers.ts";
+import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor, THREAD } from "./helpers.ts";
 
 const env = tempHome("phaethon-cli-codex-");
 afterAll(() => env.cleanup());
@@ -89,19 +89,19 @@ describe("Codex conversations", () => {
     expect(turn).toMatchObject({ threadId: thread, effort: "ultra", input: [{ type: "text", text: "tools please", text_elements: [] }] });
     // The approval Codex asked for was declined.
     expect(rpc.find((m) => m.id === 1000)?.result).toEqual({ decision: "decline" });
-    expect(readCliSession(school, "codex")).toBe(thread);
-    expect(fs.readFileSync(path.join(school, ".phaethon", "session"), "utf8")).toBe(`codex:${thread}\n`);
+    expect(readCliSession(school, THREAD, "codex")).toBe(thread);
+    expect(fs.readFileSync(path.join(school, ".phaethon", "threads", `${THREAD}.session`), "utf8")).toBe(`codex:${thread}\n`);
     // Text streamed in order, a second message after a blank line; the failed command and the search recorded without output.
     expect(shown("school")).toEqual([
       ["user", "tools please"],
       ["assistant", "Reply 1.\n\nSecond part."],
     ]);
-    const saved = load("school").at(-1)!.content.filter((b) => b.type === "phaethon_record");
+    const saved = load("school", THREAD).at(-1)!.content.filter((b) => b.type === "phaethon_record");
     expect(saved).toEqual([
       { type: "phaethon_record", kind: "tool", id: "codex:call_1", category: "command", label: "Running command", status: "failed", detail: "Exit code 1" },
       { type: "phaethon_record", kind: "tool", id: "codex:ws_1", category: "search", label: "Searching", status: "success" },
     ]);
-    expect(JSON.stringify(load("school"))).not.toContain("private output");
+    expect(JSON.stringify(load("school", THREAD))).not.toContain("private output");
     expect(await waitFor(() => !alive(Number(log.text("pid-1"))))).toBe(true);
 
     const again = await send(codex("And then?"));
@@ -111,7 +111,7 @@ describe("Codex conversations", () => {
   });
 
   it("start afresh with the conversation as text when the thread is gone", async () => {
-    const thread = readCliSession(school, "codex")!;
+    const thread = readCliSession(school, THREAD, "codex")!;
     fs.writeFileSync(path.join(log.dir, "stale"), `${thread}\n`);
     const n = log.runs();
     const events = await send(codex("Still there?"));
@@ -124,7 +124,7 @@ describe("Codex conversations", () => {
   });
 
   it("never resume another CLI's session", async () => {
-    writeCliSession(school, null, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    writeCliSession(school, THREAD, null, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     const n = log.runs() + 1;
     await send(codex("Fresh?"));
     expect(log.rpc(n).some((m) => m.method === "thread/resume")).toBe(false);
@@ -146,13 +146,13 @@ describe("Codex conversations", () => {
 
   it("interrupt the turn on stop, keep the partial reply, and end the server", async () => {
     const n = log.runs() + 1;
-    const before = readCliSession(school, "codex");
+    const before = readCliSession(school, THREAD, "codex");
     const events = await send(codex("slow please"), (e) => {
-      if (e.kind === "text") setTimeout(() => cancel("school"), 10);
+      if (e.kind === "text") setTimeout(() => cancel(turnKey("school", THREAD)), 10);
     });
     expect(events.slice(-3)).toEqual([{ kind: "record", record: { kind: "stopped" } }, { kind: "cancelled" }, { kind: "end", sessionId: before }]);
     expect(log.rpc(n).find((m) => m.method === "turn/interrupt")?.params).toMatchObject({ turnId: "01a1c78b-0000-7000-8000-" + String(n).padStart(12, "0") });
-    expect(load("school").at(-1)!.content[0]).toEqual({ type: "text", text: "Partial" });
+    expect(load("school", THREAD).at(-1)!.content[0]).toEqual({ type: "text", text: "Partial" });
     expect(await waitFor(() => !alive(Number(log.text(`pid-${n}`))))).toBe(true);
   });
 
@@ -161,7 +161,7 @@ describe("Codex conversations", () => {
     const n = log.runs() + 1;
     const started = Date.now();
     const events = await send(codex("slow ignore"), (e) => {
-      if (e.kind === "text") setTimeout(() => cancel("school"), 10);
+      if (e.kind === "text") setTimeout(() => cancel(turnKey("school", THREAD)), 10);
     });
     delete process.env.FAKE_IGNORE_INTERRUPT;
     expect(events.at(-2)).toEqual({ kind: "cancelled" });

@@ -20,7 +20,6 @@ export type Conversation = {
   threadId: string;
   title: string;
   updated: number;
-  current: boolean;
   matches: number;
   snippets: Snippet[];
 };
@@ -168,7 +167,7 @@ function searchMessages(msgs: UiMessage[], needle: string[]): { matches: number;
   return matches ? { matches, snippets } : null;
 }
 
-/** Searches the current and archived conversations of each `(space id, folder)`. */
+/** Searches the conversations of each `(space id, folder)`. */
 export function search(spaces: [string, string][], query: string): Results {
   const needle = foldQuery(query);
   const found: Conversation[] = [];
@@ -188,7 +187,7 @@ export function search(spaces: [string, string][], query: string): Results {
         continue;
       }
       const hit = searchMessages(toUi(msgs), needle);
-      if (hit) found.push({ space, threadId: t.id, title: t.title, updated: t.updated, current: t.current, ...hit });
+      if (hit) found.push({ space, threadId: t.id, title: t.title, updated: t.updated, ...hit });
     }
   }
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

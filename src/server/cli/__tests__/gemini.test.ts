@@ -3,13 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempHome } from "../../../../tests/harness.ts";
-import { cancel } from "../../core/runs.ts";
+import { cancel, turnKey } from "../../core/runs.ts";
 import { load } from "../../core/thread.ts";
 import { INELIGIBLE_MESSAGE, OWN_SETTINGS_MESSAGE } from "../cli.ts";
 import { acpArgs, acpArgsFull, geminiPrompt, permissionDecision, policyFile } from "../gemini.ts";
 import { HISTORY_INTRO } from "../prompt.ts";
 import { readCliSession, writeCliSession } from "../session.ts";
-import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor } from "./helpers.ts";
+import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor, THREAD } from "./helpers.ts";
 
 const env = tempHome("phaethon-cli-gemini-");
 afterAll(() => env.cleanup());
@@ -79,17 +79,17 @@ describe("Gemini CLI conversations", () => {
       readOutside: { outcome: { outcome: "selected", optionId: "no" } },
     });
     expect(log.rpc(1).find((m) => m.method === "initialize")?.params).toMatchObject({ protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } });
-    expect(fs.readFileSync(path.join(school, ".phaethon", "session"), "utf8")).toBe(`gemini:${session}\n`);
+    expect(fs.readFileSync(path.join(school, ".phaethon", "threads", `${THREAD}.session`), "utf8")).toBe(`gemini:${session}\n`);
     expect(shown("school")).toEqual([
       ["user", "tools please"],
       ["assistant", "Reply 1."],
     ]);
-    const records = load("school").at(-1)!.content.filter((b) => b.type === "phaethon_record");
+    const records = load("school", THREAD).at(-1)!.content.filter((b) => b.type === "phaethon_record");
     expect(records).toEqual([
       { type: "phaethon_record", kind: "tool", id: "gemini:read-1", category: "read", label: "Reading file", target: "notes.md", status: "success" },
       { type: "phaethon_record", kind: "tool", id: "gemini:grep-1", category: "search", label: "Searching", status: "failed", detail: "Tool reported an error" },
     ]);
-    expect(JSON.stringify(load("school"))).not.toContain("secret notes");
+    expect(JSON.stringify(load("school", THREAD))).not.toContain("secret notes");
 
     const again = await send(gemini("And then?"));
     expect(errors(again)).toEqual([]);
@@ -99,14 +99,14 @@ describe("Gemini CLI conversations", () => {
   });
 
   it("start afresh with the conversation when the session can't be loaded; never resume Claude's", async () => {
-    fs.writeFileSync(path.join(log.dir, "stale"), `${readCliSession(school, "gemini")}\n`);
+    fs.writeFileSync(path.join(log.dir, "stale"), `${readCliSession(school, THREAD, "gemini")}\n`);
     const n = log.runs();
     expect(errors(await send(gemini("Still there?")))).toEqual([]);
     expect(log.runs()).toBe(n + 2);
     expect(log.rpc(n + 2).some((m) => m.method === "session/new")).toBe(true);
     expect(log.text(`prompt-${n + 2}`)).toContain(HISTORY_INTRO);
     fs.rmSync(path.join(log.dir, "stale"));
-    writeCliSession(school, null, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    writeCliSession(school, THREAD, null, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     const m = log.runs() + 1;
     await send(gemini("Fresh?"));
     expect(log.rpc(m).some((x) => x.method === "session/load")).toBe(false);
@@ -116,9 +116,9 @@ describe("Gemini CLI conversations", () => {
     process.env.FAKE_LOGGED_IN = "0";
     const signedOut = [{ code: "notLoggedIn", message: "Gemini CLI isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Coding agents, then send your message again." }];
     // Resuming (session/load) and starting afresh (session/new) both say so.
-    expect(readCliSession(school, "gemini")).not.toBeNull();
+    expect(readCliSession(school, THREAD, "gemini")).not.toBeNull();
     expect(errors(await send(gemini("hello")))).toEqual(signedOut);
-    fs.rmSync(path.join(school, ".phaethon", "session"));
+    fs.rmSync(path.join(school, ".phaethon", "threads", `${THREAD}.session`));
     expect(errors(await send(gemini("hello")))).toEqual(signedOut);
     delete process.env.FAKE_LOGGED_IN;
     expect(errors(await send(gemini("ineligible")))).toEqual([{ code: "cli", message: INELIGIBLE_MESSAGE }]);
@@ -127,24 +127,24 @@ describe("Gemini CLI conversations", () => {
   it("cancel the prompt on stop, keep the partial reply, and end the agent", async () => {
     const n = log.runs() + 1;
     const events = await send(gemini("slow please"), (e) => {
-      if (e.kind === "text") setTimeout(() => cancel("school"), 10);
+      if (e.kind === "text") setTimeout(() => cancel(turnKey("school", THREAD)), 10);
     });
-    expect(events.slice(-2)).toEqual([{ kind: "cancelled" }, { kind: "end", sessionId: readCliSession(school, "gemini") }]);
+    expect(events.slice(-2)).toEqual([{ kind: "cancelled" }, { kind: "end", sessionId: readCliSession(school, THREAD, "gemini") }]);
     expect(log.rpc(n).some((m) => m.method === "session/cancel")).toBe(true);
-    expect(load("school").at(-1)!.content).toEqual([{ type: "text", text: "Partial" }, { type: "phaethon_record", kind: "stopped" }]);
+    expect(load("school", THREAD).at(-1)!.content).toEqual([{ type: "text", text: "Partial" }, { type: "phaethon_record", kind: "stopped" }]);
     expect(await waitFor(() => !alive(Number(log.text(`pid-${n}`))))).toBe(true);
   });
 
   it("refuse a working folder with its own .gemini, recording nothing", async () => {
     fs.mkdirSync(path.join(school, ".gemini"));
-    const before = load("school").length;
+    const before = load("school", THREAD).length;
     const n = log.runs();
     const events = await send(gemini("hi"));
     expect(events).toEqual([
       { kind: "error", code: "cli", message: OWN_SETTINGS_MESSAGE },
       { kind: "end", sessionId: null },
     ]);
-    expect(load("school").length).toBe(before);
+    expect(load("school", THREAD).length).toBe(before);
     expect(log.runs()).toBe(n);
     fs.rmdirSync(path.join(school, ".gemini"));
   });

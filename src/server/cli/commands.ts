@@ -14,6 +14,9 @@ import { listModels } from "./models.ts";
 import { commonBinDirs, findBinary, findOnPath, isExecutable } from "./process.ts";
 import { claudeSignIn, instanceRunKey, runKey, signIn } from "./signin.ts";
 
+/** Bringing in conversations adds new ones only, so it runs beside replies; only one import per space at a time. */
+const importKey = (space: string) => `\0import:${space}`;
+
 /**
  * The CLI backends' commands (cli.md §5): status, sign-in and sign-out,
  * connections, model catalogs and bringing in earlier Claude Code
@@ -130,7 +133,7 @@ commands({
     spaceDir(space);
     const home = importHome();
     if (!home) return [];
-    return whileIdle(space as string, () => {
+    return whileIdle(importKey(space as string), () => {
       try {
         return importConversations(space as string, home);
       } catch (e) {
@@ -156,7 +159,7 @@ function importAtLaunch(): void {
     } catch {
       continue;
     }
-    whileIdle(id, () => importOnce(id, home))
+    whileIdle(importKey(id), () => importOnce(id, home))
       .then((titles) => {
         if (titles?.length) log.info("brought in earlier Claude Code conversations", { space: id, count: titles.length });
       })

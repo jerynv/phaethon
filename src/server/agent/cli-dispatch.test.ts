@@ -21,7 +21,7 @@ beforeAll(() => {
 describe("agent_send with Codex answering", () => {
   it("runs Codex in the vault's Codex home and ends once", async () => {
     const events = channel<AgentEvent>();
-    await call("agent_send", { space: "school", prompt: "tools please", attachments: [], onEvent: events });
+    await call("agent_send", { space: "school", thread: "1000", prompt: "tools please", attachments: [], onEvent: events });
     expect(errors(events.messages)).toEqual([]);
     expect(events.messages.filter((e) => e.kind === "end")).toHaveLength(1);
     expect(log.env(1).CODEX_HOME).toBe(path.join(env.appData, "claude-config", "default-codex"));

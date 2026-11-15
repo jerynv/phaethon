@@ -1,46 +1,27 @@
-import fs from "node:fs";
-import path from "node:path";
+import { readSessionIn, writeSessionIn } from "../threads/store.ts";
 import { isUuid } from "./cli.ts";
 
 /**
- * `<space>/.phaethon/session`: the CLI session of the space's current
- * conversation, one line. Built-in Claude Code writes a bare UUID; Codex and
+ * `<space>/.phaethon/threads/<id>.session`: the CLI session conversation `id`
+ * resumes, one line. Built-in Claude Code writes a bare UUID; Codex and
  * Gemini CLI write `codex:<uuid>` / `gemini:<uuid>`; named and system
  * instances write `<cli>-<instanceId>:<uuid>`. A session another CLI or
  * instance made is never resumed: that turn starts afresh with the
  * conversation so far as text.
  */
 
-export function sessionFile(spaceDir: string): string {
-  return path.join(spaceDir, ".phaethon", "session");
+export function readCliSession(spaceDir: string, thread: string, tag: string | null): string | null {
+  return readSessionIn(spaceDir, thread, tag);
 }
 
-export function readCliSession(spaceDir: string, tag: string | null): string | null {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(sessionFile(spaceDir), "utf8");
-  } catch {
-    return null;
-  }
-  const saved = raw.trim();
-  let id = saved;
-  if (tag !== null) {
-    if (!saved.startsWith(`${tag}:`)) return null;
-    id = saved.slice(tag.length + 1);
-  }
-  return isUuid(id) ? id : null;
-}
-
-export function writeCliSession(spaceDir: string, tag: string | null, id: string): void {
+export function writeCliSession(spaceDir: string, thread: string, tag: string | null, id: string): void {
   if (!isUuid(id)) throw new Error("refusing to save a malformed session id");
-  const file = sessionFile(spaceDir);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${tag === null ? id : `${tag}:${id}`}\n`);
+  writeSessionIn(spaceDir, thread, id, tag);
 }
 
-export function clearSession(spaceDir: string): void {
+export function clearSession(spaceDir: string, thread: string): void {
   try {
-    fs.rmSync(sessionFile(spaceDir));
+    writeSessionIn(spaceDir, thread, null);
   } catch {
     // already gone
   }

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { THREAD } from "./helpers.ts";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -72,16 +73,16 @@ describe("plain helpers", () => {
   it("keep sessions per CLI and instance, refusing malformed ids", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-session-"));
     const id = "11111111-2222-3333-4444-555555555555";
-    expect(readCliSession(dir, null)).toBeNull();
-    writeCliSession(dir, "codex", id);
-    expect(fs.readFileSync(path.join(dir, ".phaethon", "session"), "utf8")).toBe(`codex:${id}\n`);
-    expect(readCliSession(dir, "codex")).toBe(id);
-    expect(readCliSession(dir, null)).toBeNull();
-    expect(readCliSession(dir, "gemini")).toBeNull();
+    expect(readCliSession(dir, THREAD, null)).toBeNull();
+    writeCliSession(dir, THREAD, "codex", id);
+    expect(fs.readFileSync(path.join(dir, ".phaethon", "threads", `${THREAD}.session`), "utf8")).toBe(`codex:${id}\n`);
+    expect(readCliSession(dir, THREAD, "codex")).toBe(id);
+    expect(readCliSession(dir, THREAD, null)).toBeNull();
+    expect(readCliSession(dir, THREAD, "gemini")).toBeNull();
     expect(sessionUuid(`claude-claude-work:${id}`)).toBe(id);
-    expect(() => writeCliSession(dir, null, "--resume")).toThrow("refusing to save a malformed session id");
-    clearSession(dir);
-    expect(readCliSession(dir, "codex")).toBeNull();
+    expect(() => writeCliSession(dir, THREAD, null, "--resume")).toThrow("refusing to save a malformed session id");
+    clearSession(dir, THREAD);
+    expect(readCliSession(dir, THREAD, "codex")).toBeNull();
     fs.rmSync(dir, { recursive: true });
   });
 

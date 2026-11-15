@@ -3,15 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { call, tempHome } from "../../../tests/harness.ts";
-import { claim, release, whileIdle, BUSY } from "../core/runs.ts";
+import { claim, release, turnKey, whileIdle, BUSY } from "../core/runs.ts";
 import { forProvider, recordBlock, stamped, threadKey, userMessage, type Block, type Message, type Record_ } from "../core/thread.ts";
 import { ensureVault, spaceDir } from "../core/vault.ts";
 import { reference } from "../attachments/attachments.ts";
 import {
-  CURRENT_ID,
   STALE_EDIT,
   StoreError,
   addArchivedIn,
+  createIn,
   cutAtIn,
   deleteThreadIn,
   denied,
@@ -19,18 +19,22 @@ import {
   isValidThreadId,
   keptAttachments,
   listThreadsIn,
+  loadConversationIn,
   loadIn,
-  openThreadIn,
+  migrateIn,
   planForgetIn,
+  readMetaIn,
+  readPickRawIn,
   readSessionIn,
   saveIn,
-  startNewIn,
   toUi,
   writeSessionIn,
 } from "./store.ts";
 import "./commands.ts";
 
 const env = tempHome();
+const S2 = "22222222-2222-2222-2222-222222222222";
+const S1 = "11111111-1111-1111-1111-111111111111";
 afterAll(() => env.cleanup());
 
 let n = 0;
@@ -46,7 +50,7 @@ const reply = (t: string): Message => ({ role: "assistant", content: [text(t)] }
 const chat = (q: string, a: string): Message[] => [userText(q), reply(a)];
 const archiveDir = (d: string) => path.join(d, ".phaethon/threads");
 const archiveFiles = (d: string) => (fs.existsSync(archiveDir(d)) ? fs.readdirSync(archiveDir(d)).sort() : []);
-const currentFile = (d: string) => path.join(d, ".phaethon/thread.json");
+const legacyFile = (d: string) => path.join(d, ".phaethon/thread.json");
 const archived = (d: string, id: string) => path.join(archiveDir(d), `${id}.json`);
 const archivedSession = (d: string, id: string) => path.join(archiveDir(d), `${id}.session`);
 const readJson = (p: string) => JSON.parse(fs.readFileSync(p, "utf8"));
@@ -62,148 +66,133 @@ function errorOf(f: () => unknown): unknown {
 }
 
 describe("conversations", () => {
-  it("new archives a conversation with messages and starts empty", () => {
+  it("are each their own file, created only by their first save", () => {
     const dir = tempSpace();
-    startNewIn(dir);
+    const a = createIn(dir);
+    const b = createIn(dir);
+    expect(isValidThreadId(a) && isValidThreadId(b) && a !== b).toBe(true);
+    // A new chat writes nothing until its first message.
     expect(archiveFiles(dir)).toEqual([]);
+    expect(loadIn(dir, a)).toEqual([]);
+    expect(listThreadsIn(dir)).toEqual([]);
     const first = chat("When is Test 1?", "Thursday.");
-    saveIn(dir, first);
-    startNewIn(dir);
-    expect(loadIn(dir)).toEqual([]);
-    const files = archiveFiles(dir);
-    expect(files.length).toBe(1);
-    const id = files[0]!.replace(/\.json$/, "");
-    expect(isValidThreadId(id)).toBe(true);
-    expect(readJson(archived(dir, id))).toEqual(first);
-    saveIn(dir, []);
-    startNewIn(dir);
-    expect(archiveFiles(dir).length).toBe(1);
-    expect(fs.existsSync(currentFile(dir))).toBe(false);
+    saveIn(dir, a, first);
+    saveIn(dir, b, chat("Other", "Yes."));
+    expect(readJson(archived(dir, a))).toEqual(first);
+    expect(loadIn(dir, a)).toEqual(first);
+    expect(archiveFiles(dir)).toEqual([`${a}.json`, `${b}.json`].sort());
+    // An id handed out is never handed out again, even before it is saved.
+    const c = createIn(dir);
+    expect([a, b]).not.toContain(c);
   });
 
-  it("lists the current one first, then the newest, with titles", async () => {
+  it("lists the newest first, with titles", async () => {
     const dir = tempSpace();
-    const l0 = listThreadsIn(dir);
-    expect(l0).toEqual([{ id: "current", title: "New conversation", updated: l0[0]!.updated, messages: 0, current: true }]);
+    expect(listThreadsIn(dir)).toEqual([]);
     const long = "Plan my week around Test 1 and the problem set, and leave Friday evening free please";
-    saveIn(dir, chat(long, "Here is a plan."));
-    startNewIn(dir);
+    saveIn(dir, "1000", chat(long, "Here is a plan."));
     await sleep(20);
-    saveIn(dir, chat("  What is   due\nthis week? ", "Problem set 4."));
-    startNewIn(dir);
-    saveIn(dir, chat("Third", "Yes."));
+    saveIn(dir, "2000", chat("  What is   due\nthis week? ", "Problem set 4."));
+    await sleep(20);
+    saveIn(dir, "3000", chat("Third", "Yes."));
     const l = listThreadsIn(dir);
-    expect(l.length).toBe(3);
-    expect(l[0]).toMatchObject({ id: "current", current: true, title: "Third", messages: 2 });
+    expect(l.map((t) => t.id)).toEqual(["3000", "2000", "1000"]);
+    expect(l[0]).toEqual({ id: "3000", title: "Third", messages: 2, updated: l[0]!.updated });
     expect(l[1]!.title).toBe("What is due this week?");
-    expect(l[1]!.current).toBe(false);
     expect(l[2]!.title.endsWith("…") && [...l[2]!.title].length <= 60).toBe(true);
     expect(l[1]!.updated).toBeGreaterThanOrEqual(l[2]!.updated);
     fs.writeFileSync(path.join(archiveDir(dir), "notes.txt"), "x");
     fs.writeFileSync(path.join(archiveDir(dir), "..json"), "[]");
     fs.writeFileSync(path.join(archiveDir(dir), "12.json.tmp"), "[]");
+    fs.writeFileSync(path.join(archiveDir(dir), "3000.session"), S1);
     expect(listThreadsIn(dir).length).toBe(3);
   });
 
-  it("open round-trips without losing anything", () => {
+  it("an unreadable conversation is listed, not deleted", () => {
     const dir = tempSpace();
-    const a = chat("first", "one");
-    const b = chat("second", "two");
-    saveIn(dir, a);
-    startNewIn(dir);
-    saveIn(dir, b);
-    const aId = listThreadsIn(dir)[1]!.id;
-    openThreadIn(dir, aId);
-    expect(loadIn(dir)).toEqual(a);
-    const l = listThreadsIn(dir);
-    expect(l.length).toBe(2);
-    expect(l[1]!.title).toBe("second");
-    expect(fs.existsSync(archived(dir, aId))).toBe(false);
-    openThreadIn(dir, l[1]!.id);
-    expect(loadIn(dir)).toEqual(b);
-    expect(listThreadsIn(dir)[1]!.title).toBe("first");
-    openThreadIn(dir, "current");
-    expect(() => openThreadIn(dir, "1234567890123")).toThrow();
-    expect(loadIn(dir)).toEqual(b);
-    expect(archiveFiles(dir).length).toBe(1);
-    startNewIn(dir);
-    const ids = listThreadsIn(dir).slice(1).map((t) => t.id);
-    openThreadIn(dir, ids[0]!);
-    expect(archiveFiles(dir).length).toBe(1);
-  });
-
-  it("an unreadable current conversation is moved aside, not deleted", () => {
-    const dir = tempSpace();
-    fs.mkdirSync(path.join(dir, ".phaethon"));
-    fs.writeFileSync(currentFile(dir), "{ half a file");
-    expect(() => loadIn(dir)).toThrow();
-    expect(listThreadsIn(dir)[0]!.title).toBe("A conversation that couldn’t be read");
-    startNewIn(dir);
-    expect(loadIn(dir)).toEqual([]);
-    const files = archiveFiles(dir);
-    expect(files.length).toBe(1);
-    expect(fs.readFileSync(path.join(archiveDir(dir), files[0]!), "utf8")).toBe("{ half a file");
+    fs.mkdirSync(archiveDir(dir), { recursive: true });
+    fs.writeFileSync(archived(dir, "1000"), "{ half a file");
+    expect(() => loadIn(dir, "1000")).toThrow();
+    expect(listThreadsIn(dir)[0]).toMatchObject({ id: "1000", title: "A conversation that couldn’t be read" });
+    expect(fs.readFileSync(archived(dir, "1000"), "utf8")).toBe("{ half a file");
   });
 
   it.skipIf(!canSymlinkFiles)("refuses ids with path tricks", () => {
-    for (const bad of ["", "..", "../thread", "../../etc/passwd", "1/2", "1\\2", "12.json", "-1", "1-", "1-2-3", "a1", " 1", "1 ", "current/..", "１２"]) {
+    for (const bad of ["", "..", "../thread", "../../etc/passwd", "1/2", "1\\2", "12.json", "-1", "1-", "1-2-3", "a1", " 1", "1 ", "current", "current/..", "１２"]) {
       expect(isValidThreadId(bad), bad).toBe(false);
     }
     for (const good of ["1760000000000", "1760000000000-2"]) expect(isValidThreadId(good)).toBe(true);
     const dir = tempSpace();
-    saveIn(dir, chat("keep me", "kept"));
+    saveIn(dir, "1000", chat("keep me", "kept"));
     fs.writeFileSync(path.join(dir, "secret.json"), JSON.stringify(chat("secret", "s")));
-    for (const bad of ["../../secret", "../secret", "..", "/etc/passwd"]) expect(kindOf(errorOf(() => openThreadIn(dir, bad))), bad).toBe("invalid");
-    expect(loadIn(dir)).toEqual(chat("keep me", "kept"));
-    fs.mkdirSync(archiveDir(dir), { recursive: true });
+    for (const bad of ["../../secret", "../secret", "..", "/etc/passwd"]) {
+      expect(kindOf(errorOf(() => loadIn(dir, bad))), bad).toBe("invalid");
+      expect(kindOf(errorOf(() => saveIn(dir, bad, []))), bad).toBe("invalid");
+      expect(kindOf(errorOf(() => loadConversationIn(dir, bad))), bad).toBe("invalid");
+    }
+    expect(fs.readFileSync(path.join(dir, "secret.json"), "utf8")).toBe(JSON.stringify(chat("secret", "s")));
     symlink(path.join(dir, "secret.json"), archived(dir, "1700000000000"));
     expect(listThreadsIn(dir).length).toBe(1);
-    expect(kindOf(errorOf(() => openThreadIn(dir, "1700000000000")))).toBe("notFound");
-    expect(loadIn(dir)).toEqual(chat("keep me", "kept"));
+    expect(kindOf(errorOf(() => loadConversationIn(dir, "1700000000000")))).toBe("notFound");
   });
 
-  it("a busy space refuses and an idle one is released", async () => {
-    const turn = claim("school")!;
-    await expect(whileIdle("school", () => 1)).rejects.toThrow(BUSY);
-    expect(await whileIdle("work", () => 2)).toBe(2);
+  it.skipIf(!canSymlinkFiles)("saves through a fresh file, never through a link left at the name", () => {
+    const dir = tempSpace();
+    const outside = path.join(dir, "outside.json");
+    fs.writeFileSync(outside, "untouched");
+    fs.mkdirSync(archiveDir(dir), { recursive: true });
+    symlink(outside, archived(dir, "1000"));
+    saveIn(dir, "1000", chat("q", "a"));
+    expect(fs.readFileSync(outside, "utf8")).toBe("untouched");
+    expect(fs.lstatSync(archived(dir, "1000")).isSymbolicLink()).toBe(false);
+    symlink(outside, path.join(archiveDir(dir), "1000.session"));
+    writeSessionIn(dir, "1000", S1);
+    expect(fs.readFileSync(outside, "utf8")).toBe("untouched");
+    expect(readSessionIn(dir, "1000")).toBe(S1);
+  });
+
+  it("a busy conversation refuses and others in the same space don't", async () => {
+    const turn = claim(turnKey("school", "1"))!;
+    await expect(whileIdle(turnKey("school", "1"), () => 1)).rejects.toThrow(BUSY);
+    expect(await whileIdle(turnKey("school", "2"), () => 2)).toBe(2);
     await expect(whileIdle("work", () => Promise.reject(new Error("no")))).rejects.toThrow("no");
-    const w = claim("work");
+    const w = claim(turnKey("school", "3"));
     expect(w).toBeDefined();
     release(w!);
     release(turn);
-    expect(await whileIdle("school", () => 3)).toBe(3);
+    expect(await whileIdle(turnKey("school", "1"), () => 3)).toBe(3);
   });
 
   it("round-trips and gives the UI view", () => {
     const dir = tempSpace();
-    expect(loadIn(dir)).toEqual([]);
+    expect(loadIn(dir, "1000")).toEqual([]);
     const msgs: Message[] = [
       userText("what's in notes?"),
       { role: "assistant", content: [{ type: "thinking", thinking: "", signature: "sig" }, text("Let me look."), { type: "tool_use", id: "t1", name: "list_files", input: {} }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "a.md" }] },
       reply("There is a.md."),
     ];
-    saveIn(dir, msgs);
-    expect(loadIn(dir)).toEqual(msgs);
+    saveIn(dir, "1000", msgs);
+    expect(loadIn(dir, "1000")).toEqual(msgs);
     expect(toUi(msgs)).toEqual([
       { role: "user", text: "what's in notes?", attachments: [], index: 0, records: [] },
       { role: "assistant", text: "Let me look.\n\nThere is a.md.", attachments: [], index: 1, records: [] },
     ]);
-    fs.writeFileSync(currentFile(dir), `{"not": "a list"}`);
-    expect(() => loadIn(dir)).toThrow();
+    fs.writeFileSync(archived(dir, "1000"), `{"not": "a list"}`);
+    expect(() => loadIn(dir, "1000")).toThrow();
   });
 
   it("times round-trip, old files load, and the provider never sees them", () => {
     const dir = tempSpace();
-    fs.mkdirSync(path.join(dir, ".phaethon"));
-    fs.writeFileSync(currentFile(dir), `[{"role":"user","content":[{"type":"text","text":"old"}]},{"role":"assistant","content":[{"type":"text","text":"reply"}]}]`);
-    const old = loadIn(dir);
+    fs.mkdirSync(archiveDir(dir), { recursive: true });
+    fs.writeFileSync(archived(dir, "1000"), `[{"role":"user","content":[{"type":"text","text":"old"}]},{"role":"assistant","content":[{"type":"text","text":"reply"}]}]`);
+    const old = loadIn(dir, "1000");
     expect(toUi(old).every((m) => m.at === undefined)).toBe(true);
     expect(threadKey(old)).toBeUndefined();
     expect("at" in toUi(old)[0]!).toBe(false);
     const msgs = [...old, stamped(userText("new"))];
-    saveIn(dir, msgs);
-    const back = loadIn(dir);
+    saveIn(dir, "1000", msgs);
+    const back = loadIn(dir, "1000");
     expect(back).toEqual(msgs);
     const at = back[2]!.at!;
     expect(at).toBeGreaterThan(1_700_000_000_000);
@@ -216,14 +205,14 @@ describe("conversations", () => {
     const dir = tempSpace();
     const f = (p: string) => reference(p, "text/plain", "x.md");
     const a: Message[] = [{ ...userMessage("a", [f("attachments/d/one.md"), f("attachments/d/two.md")]), at: 5 }];
-    saveIn(dir, a);
-    startNewIn(dir);
-    saveIn(dir, [userMessage("b", [f("attachments/d/two.md")])]);
-    const aId = listThreadsIn(dir)[1]!.id;
+    const aId = "1000";
+    saveIn(dir, aId, a);
+    saveIn(dir, "2000", [userMessage("b", [f("attachments/d/two.md")])]);
     expect(planForgetIn(dir, aId)).toEqual({ onlyHere: ["attachments/d/one.md"], shared: 1, key: "5" });
-    fs.writeFileSync(currentFile(dir), `{ broken "attachments/d/one.md"`);
+    fs.writeFileSync(archived(dir, "2000"), `{ broken "attachments/d/one.md"`);
     expect(planForgetIn(dir, aId).onlyHere).toEqual(["attachments/d/two.md"]);
-    expect(planForgetIn(dir, CURRENT_ID)).toEqual({ onlyHere: [], shared: 0, key: undefined });
+    expect(planForgetIn(dir, "2000")).toEqual({ onlyHere: [], shared: 0, key: undefined });
+    expect(kindOf(errorOf(() => planForgetIn(dir, "3000")))).toBe("notFound");
     expect(kindOf(errorOf(() => planForgetIn(dir, "../x")))).toBe("invalid");
   });
 
@@ -271,17 +260,17 @@ describe("conversations", () => {
     const msgs = chat("first", "one");
     msgs.push({ role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "x" }] });
     msgs.push(...chat("second", "two"));
-    saveIn(dir, msgs);
+    saveIn(dir, "1000", msgs);
     const original = structuredClone(msgs);
-    for (const bad of [1, 2, 5, 99]) expect(() => cutAtIn(dir, msgs, bad)).toThrow(STALE_EDIT);
+    for (const bad of [1, 2, 5, 99]) expect(() => cutAtIn(dir, "1000", msgs, bad)).toThrow(STALE_EDIT);
     expect(msgs).toEqual(original);
-    expect(archiveFiles(dir)).toEqual([]);
-    cutAtIn(dir, msgs, 3);
+    expect(archiveFiles(dir)).toEqual(["1000.json"]);
+    cutAtIn(dir, "1000", msgs, 3);
     expect(msgs).toEqual(original.slice(0, 3));
-    const files = archiveFiles(dir);
+    const files = archiveFiles(dir).filter((f) => f !== "1000.json");
     expect(files.length).toBe(1);
     expect(readJson(path.join(archiveDir(dir), files[0]!))).toEqual(original);
-    expect(loadIn(dir)).toEqual(original);
+    expect(loadIn(dir, "1000")).toEqual(original);
   });
 
   it("a deny outlives the cut that drops it", () => {
@@ -301,7 +290,7 @@ describe("conversations", () => {
       rec("work", "tasks", "once"),
     ];
     const beforeUi = toUi(msgs.slice(0, 2));
-    cutAtIn(dir, msgs, 2);
+    cutAtIn(dir, "1000", msgs, 2);
     expect(msgs.length).toBe(3);
     const carried = msgs[2]!.content.map((b) => ({ ...b }));
     expect(carried).toEqual([
@@ -318,12 +307,12 @@ describe("conversations", () => {
     expect([ui.length, ui[2]!.role, ui[2]!.index]).toEqual([3, "user", 3]);
     expect(isUserBoundary(msgs, 3)).toBe(true);
     msgs.push(reply("ok"));
-    cutAtIn(dir, msgs, 3);
+    cutAtIn(dir, "1000", msgs, 3);
     expect(msgs.length).toBe(3);
     const countDenied = (m: Message[]) => m.flatMap((x) => x.content).filter((b) => b.kind === "deniedEarlier").length;
     expect(countDenied(msgs)).toBe(2);
     msgs.push(userText("x"));
-    cutAtIn(dir, msgs, 0);
+    cutAtIn(dir, "1000", msgs, 0);
     expect(msgs.length).toBe(1);
     expect(msgs[0]!.content.length).toBe(3);
     expect(forProvider(msgs)).toEqual([]);
@@ -332,94 +321,63 @@ describe("conversations", () => {
 
   it.skipIf(!canSymlinkFiles)("delete removes one conversation and refuses bad ids", () => {
     const dir = tempSpace();
-    saveIn(dir, chat("old", "one"));
-    startNewIn(dir);
-    saveIn(dir, chat("keep", "two"));
-    startNewIn(dir);
-    saveIn(dir, chat("now", "three"));
-    let l = listThreadsIn(dir);
-    const [keepId, oldId] = [l[1]!.id, l[2]!.id];
-    expect(l[2]!.title).toBe("old");
-    deleteThreadIn(dir, oldId);
-    l = listThreadsIn(dir);
-    expect(l.map((t) => t.title)).toEqual(["now", "keep"]);
-    expect(fs.existsSync(archived(dir, oldId))).toBe(false);
-    expect(kindOf(errorOf(() => deleteThreadIn(dir, oldId)))).toBe("notFound");
-    expect(kindOf(errorOf(() => openThreadIn(dir, oldId)))).toBe("notFound");
+    saveIn(dir, "1000", chat("old", "one"));
+    saveIn(dir, "2000", chat("keep", "two"));
+    writeSessionIn(dir, "1000", S1);
+    deleteThreadIn(dir, "1000");
+    expect(listThreadsIn(dir).map((t) => t.title)).toEqual(["keep"]);
+    expect(fs.existsSync(archived(dir, "1000")) || fs.existsSync(path.join(archiveDir(dir), "1000.session"))).toBe(false);
+    expect(kindOf(errorOf(() => deleteThreadIn(dir, "1000")))).toBe("notFound");
     fs.writeFileSync(path.join(dir, "secret.json"), "[]");
     fs.writeFileSync(path.join(dir, ".phaethon/grants.json"), "{}");
-    for (const bad of ["", "..", "../thread", "../../secret", "/etc/passwd", "1/2", "12.json", "Current", "current/..", "thread"]) {
+    for (const bad of ["", "..", "../thread", "../../secret", "/etc/passwd", "1/2", "12.json", "Current", "current", "current/..", "thread"]) {
       expect(kindOf(errorOf(() => deleteThreadIn(dir, bad))), bad).toBe("invalid");
     }
-    expect(fs.existsSync(path.join(dir, "secret.json")) && fs.existsSync(path.join(dir, ".phaethon/grants.json")) && fs.existsSync(currentFile(dir))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "secret.json")) && fs.existsSync(path.join(dir, ".phaethon/grants.json"))).toBe(true);
     symlink(path.join(dir, "secret.json"), archived(dir, "1700000000000"));
     expect(kindOf(errorOf(() => deleteThreadIn(dir, "1700000000000")))).toBe("notFound");
     expect(fs.existsSync(path.join(dir, "secret.json"))).toBe(true);
-    deleteThreadIn(dir, CURRENT_ID);
-    expect(fs.existsSync(currentFile(dir))).toBe(false);
-    expect(loadIn(dir)).toEqual([]);
-    expect(fs.existsSync(archived(dir, keepId))).toBe(true);
-    deleteThreadIn(dir, CURRENT_ID);
+    expect(fs.existsSync(archived(dir, "2000"))).toBe(true);
   });
 
-  const S1 = "11111111-1111-1111-1111-111111111111";
-  const S2 = "22222222-2222-2222-2222-222222222222";
 
-  it("each conversation keeps its own CLI session", () => {
+
+  it("each conversation keeps its own CLI session, and an edit's copy takes the cut one", () => {
     const dir = tempSpace();
-    const session = () => readSessionIn(dir);
-    writeSessionIn(dir, S1);
-    saveIn(dir, chat("first", "one"));
-    startNewIn(dir);
-    expect(session()).toBeNull();
-    let first = listThreadsIn(dir)[1]!.id;
-    expect(fs.readFileSync(archivedSession(dir, first), "utf8").trim()).toBe(S1);
-    writeSessionIn(dir, S2);
-    saveIn(dir, chat("second", "two"));
-    openThreadIn(dir, first);
-    expect(session()).toBe(S1);
-    let second = listThreadsIn(dir)[1]!.id;
-    expect(fs.readFileSync(archivedSession(dir, second), "utf8").trim()).toBe(S2);
-    expect(fs.existsSync(archivedSession(dir, first))).toBe(false);
-    expect(listThreadsIn(dir).length).toBe(2);
-    openThreadIn(dir, second);
-    expect(session()).toBe(S2);
-    first = listThreadsIn(dir).find((t) => t.title === "first")!.id;
-    fs.rmSync(archivedSession(dir, first));
-    openThreadIn(dir, first);
-    expect(session()).toBeNull();
-    second = listThreadsIn(dir)[1]!.id;
-    expect(fs.existsSync(archivedSession(dir, second))).toBe(true);
-    deleteThreadIn(dir, second);
-    expect(fs.existsSync(archivedSession(dir, second))).toBe(false);
-    writeSessionIn(dir, S1);
-    deleteThreadIn(dir, CURRENT_ID);
-    expect(session()).toBeNull();
-    const msgs = chat("q", "a");
-    saveIn(dir, msgs);
-    writeSessionIn(dir, S2);
-    cutAtIn(dir, msgs, 0);
-    expect(session()).toBeNull();
-    const copy = listThreadsIn(dir)[1]!.id;
-    expect(fs.readFileSync(archivedSession(dir, copy), "utf8").trim()).toBe(S2);
+    saveIn(dir, "1000", chat("first", "one"));
+    saveIn(dir, "2000", chat("second", "two"));
+    writeSessionIn(dir, "1000", S1);
+    writeSessionIn(dir, "2000", S2);
+    expect(readSessionIn(dir, "1000")).toBe(S1);
+    expect(readSessionIn(dir, "2000")).toBe(S2);
+    expect(readSessionIn(dir, "3000")).toBeNull();
+    writeSessionIn(dir, "2000", null);
+    expect(readSessionIn(dir, "2000")).toBeNull();
+    expect(readSessionIn(dir, "1000")).toBe(S1);
+    const msgs = loadIn(dir, "1000");
+    cutAtIn(dir, "1000", msgs, 0);
+    expect(readSessionIn(dir, "1000")).toBeNull();
+    const copy = listThreadsIn(dir).find((t) => !["1000", "2000"].includes(t.id))!.id;
+    expect(fs.readFileSync(archivedSession(dir, copy), "utf8").trim()).toBe(S1);
   });
 
   it("each CLI reads only its own session, and malformed ids are refused", () => {
     const dir = tempSpace();
     const id = "e06355fe-8387-4cb5-9fda-517b0d2b996a";
-    writeSessionIn(dir, id, "codex");
-    expect(readSessionIn(dir, "codex")).toBe(id);
-    expect(readSessionIn(dir)).toBeNull();
-    expect(readSessionIn(dir, "gemini")).toBeNull();
-    writeSessionIn(dir, id);
-    expect(readSessionIn(dir)).toBe(id);
-    expect(fs.readFileSync(path.join(dir, ".phaethon/session"), "utf8")).toBe(`${id}\n`);
-    expect(readSessionIn(dir, "codex")).toBeNull();
-    expect(() => writeSessionIn(dir, "--last", "codex")).toThrow("refusing to save a malformed session id");
-    fs.writeFileSync(path.join(dir, ".phaethon/session"), "codex:--dangerously-bypass-approvals-and-sandbox\n");
-    expect(readSessionIn(dir, "codex")).toBeNull();
-    fs.writeFileSync(path.join(dir, ".phaethon/session"), `${id}\n--x`);
-    expect(readSessionIn(dir)).toBeNull();
+    const file = archivedSession(dir, "1000");
+    writeSessionIn(dir, "1000", id, "codex");
+    expect(readSessionIn(dir, "1000", "codex")).toBe(id);
+    expect(readSessionIn(dir, "1000")).toBeNull();
+    expect(readSessionIn(dir, "1000", "gemini")).toBeNull();
+    writeSessionIn(dir, "1000", id);
+    expect(readSessionIn(dir, "1000")).toBe(id);
+    expect(fs.readFileSync(file, "utf8")).toBe(`${id}\n`);
+    expect(readSessionIn(dir, "1000", "codex")).toBeNull();
+    expect(() => writeSessionIn(dir, "1000", "--last", "codex")).toThrow("refusing to save a malformed session id");
+    fs.writeFileSync(file, "codex:--dangerously-bypass-approvals-and-sandbox\n");
+    expect(readSessionIn(dir, "1000", "codex")).toBeNull();
+    fs.writeFileSync(file, `${id}\n--x`);
+    expect(readSessionIn(dir, "1000")).toBeNull();
   });
 
   it("kept attachments come only from the replaced message", () => {
@@ -445,26 +403,107 @@ describe("conversations", () => {
     const id = addArchivedIn(dir, chat("imported", "yes"), S1, 1_700_000_000_000);
     expect(isValidThreadId(id)).toBe(true);
     expect(fs.readFileSync(archivedSession(dir, id), "utf8")).toBe(`${S1}\n`);
-    expect(listThreadsIn(dir)[1]).toMatchObject({ id, title: "imported", updated: 1_700_000_000_000, messages: 2 });
+    expect(listThreadsIn(dir)[0]).toMatchObject({ id, title: "imported", updated: 1_700_000_000_000, messages: 2 });
+  });
+});
+
+describe("a space from before 0.3", () => {
+  const oldThread = [{ ...userText("old question"), at: 1_760_000_000_000 }, reply("old answer")];
+
+  function oldSpace(): string {
+    const dir = tempSpace();
+    fs.mkdirSync(path.join(dir, ".phaethon/threads"), { recursive: true });
+    fs.writeFileSync(legacyFile(dir), JSON.stringify(oldThread, null, 2));
+    fs.writeFileSync(path.join(dir, ".phaethon/session"), `codex:${S1}\n`);
+    fs.writeFileSync(path.join(dir, ".phaethon/model"), `${JSON.stringify({ backend: "phaethon", model: "openai:gpt-5.5", effort: null })}\n`);
+    fs.writeFileSync(path.join(dir, ".phaethon/meta"), `${JSON.stringify({ title: "Kept title", pinned: 5 })}\n`);
+    fs.writeFileSync(archived(dir, "1700000000000"), JSON.stringify(chat("archived", "yes")));
+    fs.writeFileSync(archivedSession(dir, "1700000000000"), `${S2}\n`);
+    return dir;
+  }
+
+  it("moves its current conversation into threads/ with every sidecar, once", () => {
+    const dir = oldSpace();
+    const before = fs.readFileSync(legacyFile(dir), "utf8");
+    const listed = listThreadsIn(dir);
+    expect(listed.map((t) => t.title).sort()).toEqual(["Kept title", "archived"]);
+    const moved = listed.find((t) => t.title === "Kept title")!;
+    expect(moved).toMatchObject({ renamed: true, pinned: 5, messages: 2 });
+    expect(isValidThreadId(moved.id) && moved.id !== "1700000000000").toBe(true);
+    // By rename: the same bytes, and nothing left at the old names.
+    expect(fs.readFileSync(archived(dir, moved.id), "utf8")).toBe(before);
+    for (const old of ["thread.json", "session", "model", "meta"]) expect(fs.existsSync(path.join(dir, ".phaethon", old)), old).toBe(false);
+    expect(readSessionIn(dir, moved.id, "codex")).toBe(S1);
+    expect(readPickRawIn(dir, moved.id)).toEqual({ backend: "phaethon", model: "openai:gpt-5.5", effort: null });
+    expect(readMetaIn(dir, moved.id)).toEqual({ title: "Kept title", pinned: 5 });
+    // The archived one is untouched.
+    expect(readSessionIn(dir, "1700000000000")).toBe(S2);
+    // Nothing more to move.
+    expect(migrateIn(dir)).toBeNull();
+    expect(listThreadsIn(dir).map((t) => t.id).sort()).toEqual(listed.map((t) => t.id).sort());
+  });
+
+  it("moves on any read, not only the listing", () => {
+    const dir = oldSpace();
+    const moved = migrateIn(dir)!;
+    expect(loadConversationIn(dir, moved)).toEqual(oldThread);
+    const again = oldSpace();
+    const planned = planForgetIn(again, "1700000000000");
+    expect(planned.key).toBeUndefined();
+    expect(fs.existsSync(legacyFile(again))).toBe(false);
+  });
+
+  it("removes an empty current conversation and its sidecars instead of keeping it", () => {
+    const dir = tempSpace();
+    fs.mkdirSync(path.join(dir, ".phaethon"), { recursive: true });
+    fs.writeFileSync(legacyFile(dir), "[]");
+    fs.writeFileSync(path.join(dir, ".phaethon/session"), `${S1}\n`);
+    fs.writeFileSync(path.join(dir, ".phaethon/model"), "{}");
+    expect(migrateIn(dir)).toBeNull();
+    expect(listThreadsIn(dir)).toEqual([]);
+    for (const old of ["thread.json", "session", "model"]) expect(fs.existsSync(path.join(dir, ".phaethon", old)), old).toBe(false);
+  });
+
+  it("keeps a damaged one, listed as unreadable", () => {
+    const dir = tempSpace();
+    fs.mkdirSync(path.join(dir, ".phaethon"), { recursive: true });
+    fs.writeFileSync(legacyFile(dir), "{ half");
+    const [t] = listThreadsIn(dir);
+    expect(t).toMatchObject({ title: "A conversation that couldn’t be read" });
+    expect(fs.readFileSync(archived(dir, t!.id), "utf8")).toBe("{ half");
+  });
+
+  it.skipIf(!canSymlinkFiles)("leaves a link at thread.json alone", () => {
+    const dir = tempSpace();
+    fs.mkdirSync(path.join(dir, ".phaethon"), { recursive: true });
+    const outside = path.join(dir, "outside.json");
+    fs.writeFileSync(outside, JSON.stringify(chat("secret", "s")));
+    symlink(outside, legacyFile(dir));
+    expect(migrateIn(dir)).toBeNull();
+    expect(listThreadsIn(dir)).toEqual([]);
+    expect(fs.existsSync(outside)).toBe(true);
   });
 });
 
 describe("thread commands", () => {
-  it("load, list, new, open and delete through the command layer", async () => {
+  it("create, load, list and delete through the command layer", async () => {
     ensureVault();
-    saveIn(spaceDir("school"), chat("hello", "hi"));
-    expect(await call("thread_load", { space: "school" })).toEqual(toUi(chat("hello", "hi")));
-    expect(await call("thread_new", { space: "school" })).toBeNull();
+    const id = await call<string>("thread_create", { space: "school" });
+    expect(isValidThreadId(id)).toBe(true);
+    expect(await call("thread_load", { space: "school", thread: id })).toEqual([]);
+    saveIn(spaceDir("school"), id, chat("hello", "hi"));
+    expect(await call("thread_load", { space: "school", thread: id })).toEqual(toUi(chat("hello", "hi")));
     const list = await call<{ id: string }[]>("threads_list", { space: "school" });
-    expect(list.length).toBe(2);
-    await call("thread_open", { space: "school", id: list[1]!.id });
-    expect(loadIn(spaceDir("school"))).toEqual(chat("hello", "hi"));
-    await expect(call("thread_delete", { space: "school", id: "../x" })).rejects.toThrow("That conversation couldn’t be deleted: not a conversation id");
-    const run = claim("school")!;
-    await expect(call("thread_new", { space: "school" })).rejects.toThrow(BUSY);
+    expect(list.map((t) => t.id)).toContain(id);
+    await expect(call("thread_load", { space: "school", thread: "../x" })).rejects.toThrow("That isn’t a conversation Phaethon knows.");
+    await expect(call("thread_load", { space: "school" })).rejects.toThrow("That isn’t a conversation Phaethon knows.");
+    await expect(call("thread_delete", { space: "school", id: "../x" })).rejects.toThrow("That isn’t a conversation Phaethon knows.");
+    const run = claim(turnKey("school", id))!;
+    await expect(call("thread_delete", { space: "school", thread: id })).rejects.toThrow(BUSY);
     release(run);
-    fs.writeFileSync(path.join(spaceDir("school"), ".phaethon/thread.json"), "{ bad");
-    await expect(call("thread_load", { space: "school" })).rejects.toThrow("This space’s conversation couldn’t be read: thread.json is not valid JSON");
-    await expect(call("thread_load", { space: "nope" })).rejects.toThrow('space "nope" does not exist in this vault');
+    fs.writeFileSync(archived(spaceDir("school"), id), "{ bad");
+    await expect(call("thread_load", { space: "school", thread: id })).rejects.toThrow("This conversation couldn’t be read: thread.json is not valid JSON");
+    await call("thread_delete", { space: "school", thread: id });
+    await expect(call("thread_load", { space: "nope", thread: id })).rejects.toThrow('space "nope" does not exist in this vault');
   });
 });

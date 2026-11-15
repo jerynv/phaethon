@@ -5,9 +5,9 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { call, tempHome } from "../../../tests/harness.ts";
 import { userMessage, type Message } from "../core/thread.ts";
 import { ensureVault, spaceDir } from "../core/vault.ts";
-import { claim, release, BUSY } from "../core/runs.ts";
+import { claim, release, turnKey, BUSY } from "../core/runs.ts";
 import { saveUploadsIn } from "../attachments/attachments.ts";
-import { loadIn, saveIn, startNewIn } from "../threads/store.ts";
+import { loadIn, saveIn } from "../threads/store.ts";
 import {
   FILE,
   appendIn,
@@ -123,11 +123,11 @@ describe("memory", () => {
 
   it("clear keeps facts, then removes the messages", async () => {
     const space = tempSpace();
-    saveIn(space, convo(1_760_000_000_000, "My MATH301 exam is Oct 28. I'm studying chapter 4.", "Good luck!"));
+    saveIn(space, "1000", convo(1_760_000_000_000, "My MATH301 exam is Oct 28. I'm studying chapter 4.", "Good luck!"));
     const p = picker("- MATH301 exam is on Oct 28.\n- Studying chapter 4.");
-    const out = await clearIn(space, "current", p);
+    const out = await clearIn(space, "1000", p);
     expect(out).toEqual({ status: "cleared", kept: ["MATH301 exam is on Oct 28.", "Studying chapter 4."] });
-    expect(loadIn(space)).toEqual([]);
+    expect(loadIn(space, "1000")).toEqual([]);
     expect(countFromIn(space, "1760000000000")).toBe(2);
     expect(p.asked.length).toBe(1);
     expect(p.asked[0]![1]).toContain("User: My MATH301 exam is Oct 28.");
@@ -137,13 +137,13 @@ describe("memory", () => {
   it("a failed pick changes nothing", async () => {
     const space = tempSpace();
     const msgs = convo(1_760_000_000_000, "Remember my shifts are Tuesdays.", "Noted.");
-    saveIn(space, msgs);
-    expect(await clearIn(space, "current", picker(new Error("Phaethon couldn’t reach Anthropic.")))).toEqual({ status: "notKept", reason: "Phaethon couldn’t reach Anthropic." });
-    expect(loadIn(space)).toEqual(msgs);
+    saveIn(space, "1000", msgs);
+    expect(await clearIn(space, "1000", picker(new Error("Phaethon couldn’t reach Anthropic.")))).toEqual({ status: "notKept", reason: "Phaethon couldn’t reach Anthropic." });
+    expect(loadIn(space, "1000")).toEqual(msgs);
     expect(fs.existsSync(path.join(space, FILE))).toBe(false);
     await expect(clearIn(space, "../x", picker("- a"))).rejects.toThrow("That conversation couldn’t be read, so nothing was cleared");
-    expect(await clearIn(space, "current", picker("NONE"))).toEqual({ status: "cleared", kept: [] });
-    expect(loadIn(space)).toEqual([]);
+    expect(await clearIn(space, "1000", picker("NONE"))).toEqual({ status: "cleared", kept: [] });
+    expect(loadIn(space, "1000")).toEqual([]);
     expect(fs.existsSync(path.join(space, FILE))).toBe(false);
   });
 
@@ -155,16 +155,16 @@ describe("memory", () => {
     ]);
     const a: Message[] = [{ ...userMessage("Plan with these", refs), at: 1_760_000_000_000 }, { role: "assistant", content: [{ type: "text", text: "ok" }] }];
     const b: Message[] = [{ ...userMessage("Another", [refs[1]!]), at: 1_760_000_100_000 }, { role: "assistant", content: [{ type: "text", text: "sure" }] }];
-    saveIn(space, b);
-    startNewIn(space);
-    saveIn(space, a);
+    saveIn(space, "1000", b);
+    saveIn(space, "2000", a);
     appendIn(space, ["From a."], "1760000000000");
     appendIn(space, ["From b."], "1760000100000");
-    expect(forgetPreviewIn(space, "current")).toEqual({ files: 1, sharedFiles: 1, facts: 1 });
-    expect(forgetIn(space, "current")).toEqual({ files: 1, filesLeft: 0, facts: 1 });
+    expect(forgetPreviewIn(space, "2000")).toEqual({ files: 1, sharedFiles: 1, facts: 1 });
+    expect(forgetIn(space, "2000")).toEqual({ files: 1, filesLeft: 0, facts: 1 });
     expect(fs.existsSync(path.join(space, refs[0]!.path as string))).toBe(false);
     expect(fs.existsSync(path.join(space, refs[1]!.path as string))).toBe(true);
-    expect(loadIn(space)).toEqual([]);
+    expect(loadIn(space, "2000")).toEqual([]);
+    expect(loadIn(space, "1000")).toEqual(b);
     expect(factsIn(space).map((f) => f.text)).toEqual(["From b."]);
     expect(() => forgetIn(space, "../..")).toThrow();
     expect(() => forgetPreviewIn(space, "nope")).toThrow();
@@ -172,23 +172,23 @@ describe("memory", () => {
 });
 
 describe("memory commands", () => {
-  it("thread_clear asks the vault's model once, under the space's run", async () => {
+  it("thread_clear asks the conversation's model once, under the conversation's run", async () => {
     ensureVault();
     const dir = spaceDir("school");
-    saveIn(dir, convo(1_760_000_000_000, "My shift is Tuesday.", "Noted."));
-    const run = claim("school")!;
-    await expect(call("thread_clear", { space: "school", id: "current" })).rejects.toThrow(BUSY);
+    saveIn(dir, "1000", convo(1_760_000_000_000, "My shift is Tuesday.", "Noted."));
+    const run = claim(turnKey("school", "1000"))!;
+    await expect(call("thread_clear", { space: "school", thread: "1000" })).rejects.toThrow(BUSY);
     release(run);
-    expect(await call("thread_clear", { space: "school", id: "current" })).toEqual({ status: "cleared", kept: ["From the command."] });
+    expect(await call("thread_clear", { space: "school", thread: "1000" })).toEqual({ status: "cleared", kept: ["From the command."] });
     expect(reply.asked.length).toBe(1);
-    expect(reply.asked[0]).toMatchObject({ space: "school", messages: [{ role: "user" }] });
+    expect(reply.asked[0]).toMatchObject({ space: "school", thread: "1000", messages: [{ role: "user" }] });
     expect(memoryForPrompt("school")).toContain("- From the command.");
-    saveIn(dir, convo(1_760_000_000_001, "Another", "ok"));
+    saveIn(dir, "1000", convo(1_760_000_000_001, "Another", "ok"));
     reply.text = new Error("Phaethon has no model set up to do that yet.");
-    expect(await call("thread_clear", { space: "school", id: "current" })).toEqual({ status: "notKept", reason: "Phaethon has no model set up to do that yet." });
-    expect(await call("thread_forget_preview", { space: "school", id: "current" })).toEqual({ files: 0, sharedFiles: 0, facts: 0 });
-    await expect(call("thread_forget_preview", { space: "school", id: "nope" })).rejects.toThrow("That conversation couldn’t be read: not a conversation id");
-    expect(await call("thread_forget", { space: "school", id: "current" })).toEqual({ files: 0, filesLeft: 0, facts: 0 });
-    expect(loadIn(dir)).toEqual([]);
+    expect(await call("thread_clear", { space: "school", thread: "1000" })).toEqual({ status: "notKept", reason: "Phaethon has no model set up to do that yet." });
+    expect(await call("thread_forget_preview", { space: "school", thread: "1000" })).toEqual({ files: 0, sharedFiles: 0, facts: 0 });
+    await expect(call("thread_forget_preview", { space: "school", id: "nope" })).rejects.toThrow("That isn’t a conversation Phaethon knows.");
+    expect(await call("thread_forget", { space: "school", thread: "1000" })).toEqual({ files: 0, filesLeft: 0, facts: 0 });
+    expect(loadIn(dir, "1000")).toEqual([]);
   });
 });

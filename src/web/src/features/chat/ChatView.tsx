@@ -110,12 +110,13 @@ export function ChatView({ space }: { space: SpaceView }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Header title={empty || chat.status === "loading" ? "New chat" : (title ?? "Conversation")} actions={<HeaderActions space={space} empty={empty} />} />
+      {/* One composer in one place in the tree, so focus, draft and files survive the empty → conversation switch. */}
       {chat.status === "error" && chat.messages.length === 0 ? (
-        <div className="mx-auto w-full max-w-(--chat-max-width) px-4 pt-8">
+        <div className="mx-auto w-full max-w-(--chat-max-width) flex-1 px-4 pt-8">
           <SurfaceError title="Couldn’t open this conversation" message={chat.error} onRetry={() => void load(space.id)} />
         </div>
       ) : empty ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-[12vh]">
+        <div className="flex flex-1 flex-col items-center justify-end px-4">
           <div className="mb-5 flex flex-col items-center gap-3 text-center">
             <SpaceAvatar name={space.name} hue={space.hue} className="size-8 rounded-lg text-sm" />
             <h1 className="font-semibold text-xl tracking-[-0.015em]">What are we working on?</h1>
@@ -123,47 +124,45 @@ export function ChatView({ space }: { space: SpaceView }) {
               {space.educationEnabled ? "Ask about your courses, get a concept taught step by step, or make a practice quiz." : `Phaethon works inside ${space.name}: its files, its memory, nothing else.`}
             </p>
           </div>
-          <div className="w-full max-w-(--chat-max-width)">
-            <Composer space={space} edit={edit} onEditDone={() => setEdit(null)} hero />
-          </div>
         </div>
       ) : (
-        <>
-          <div ref={box} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]">
-            {showSkeleton ? <SkeletonTurns /> : null}
-            <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-5 px-4 pt-6 pb-8">
-              {chat.messages.map((m, i) =>
-                m.role === "user" ? (
-                  <UserMessage
-                    key={m.key}
-                    m={m}
-                    space={space.id}
-                    canEdit={!chat.running && m.index !== undefined && m.index === lastUserIndex}
-                    onEdit={() => m.index !== undefined && setEdit({ index: m.index, text: m.text, attachments: m.attachments.filter((a) => a.path) })}
-                  />
-                ) : (
-                  <AssistantMessage key={m.key} m={m} space={space.id} last={i === chat.messages.length - 1} running={chat.running} startedAt={chat.startedAt} spaceName={spaceName} onRetry={retry} />
-                ),
-              )}
-            </div>
+        <div ref={box} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto [overflow-anchor:none]">
+          {showSkeleton ? <SkeletonTurns /> : null}
+          <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-5 px-4 pt-6 pb-8">
+            {chat.messages.map((m, i) =>
+              m.role === "user" ? (
+                <UserMessage
+                  key={m.key}
+                  m={m}
+                  space={space.id}
+                  canEdit={!chat.running && m.index !== undefined && m.index === lastUserIndex}
+                  onEdit={() => m.index !== undefined && setEdit({ index: m.index, text: m.text, attachments: m.attachments.filter((a) => a.path) })}
+                />
+              ) : (
+                <AssistantMessage key={m.key} m={m} space={space.id} last={i === chat.messages.length - 1} running={chat.running} startedAt={chat.startedAt} spaceName={spaceName} onRetry={retry} />
+              ),
+            )}
           </div>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={toBottom}
-              aria-label="Jump to latest"
-              className={cn(
-                "absolute -top-10 left-1/2 z-10 inline-flex h-7 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-2.5 text-muted-foreground text-xs shadow-sm/5 transition-[opacity,transform] hover:text-foreground",
-                away ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0",
-              )}
-            >
-              <ArrowDownIcon className="size-3" strokeWidth={2.25} />
-              {chat.running ? "Following reply" : "Latest"}
-            </button>
-            <Composer space={space} edit={edit} onEditDone={() => setEdit(null)} />
-          </div>
-        </>
+        </div>
       )}
+      <div className={cn("relative", empty && "px-4")}>
+        {empty ? null : (
+          <button
+            type="button"
+            onClick={toBottom}
+            aria-label="Jump to latest"
+            className={cn(
+              "absolute -top-10 left-1/2 z-10 inline-flex h-7 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-2.5 text-muted-foreground text-xs shadow-sm/5 transition-[opacity,transform] hover:text-foreground",
+              away ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0",
+            )}
+          >
+            <ArrowDownIcon className="size-3" strokeWidth={2.25} />
+            {chat.running ? "Following reply" : "Latest"}
+          </button>
+        )}
+        <Composer space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
+      </div>
+      {empty ? <div className="flex-1 pb-[12vh]" /> : null}
     </div>
   );
 }

@@ -72,7 +72,9 @@ test("conversations can be renamed, pinned to the top and deleted after a confir
   const nav = page.getByRole("navigation", { name: "Spaces and conversations" });
   const send = async (text: string) => {
     await page.getByRole("textbox", { name: "Message" }).fill(text);
+    // Straight from the keyboard: the composer keeps focus when the empty chat turns into a conversation.
     await page.keyboard.press("Enter");
+    await expect(nav.getByRole("button", { name: text })).toBeVisible();
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   };
   await send("older question");

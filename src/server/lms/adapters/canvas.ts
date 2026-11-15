@@ -168,6 +168,8 @@ type Item =
   | { kind: "file"; id: string; title: string }
   | { kind: "page"; slug: string; title: string }
   | { kind: "assignment"; id: string; title: string }
+  | { kind: "discussion"; id: string; title: string }
+  | { kind: "quiz"; id: string; title: string }
   | { kind: "other"; title: string };
 
 async function content(s: Session, courseId: string): Promise<CourseContent> {
@@ -191,6 +193,20 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
     if (isLmsError(e, "incomplete") || !(e instanceof LmsError)) throw e;
   }
   const files = new Files();
+  // Bodies of discussions and quizzes, scanned for links like the rest of the course text.
+  const extraHtml: string[] = [];
+  // Files attached to an announcement or discussion without a download address of their own.
+  const attachedIds: string[] = [];
+  /** Announcement and discussion attachments are File objects: the same lock gate as any file. */
+  const attach = (topic: unknown) => {
+    for (const a of asArray(field(topic, "attachments")) ?? []) {
+      if (field(a, "url") !== undefined) files.add(s, cid, a, folders, c.skipped);
+      else {
+        const id = idStr(field(a, "id"));
+        if (id !== undefined) attachedIds.push(id);
+      }
+    }
+  };
   if (tabs.open("files")) {
     const list = await part(s, () => getAll(s, api(s, ["courses", cid, "files"], [["per_page", "100"]])), "Files", c.skipped);
     if (list) for (const v of list) files.add(s, cid, v, folders, c.skipped);
@@ -233,8 +249,38 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
       ["per_page", "100"],
     ]);
     const list = await part(s, () => getAll(s, url), "Announcements", c.skipped);
-    if (list) c.announcements = list.map(announcementFrom).filter((a): a is Announcement => a !== null);
+    if (list) {
+      c.announcements = list.map(announcementFrom).filter((a): a is Announcement => a !== null);
+      for (const v of list) attach(v);
+    }
   } else tabs.note(c.skipped, "announcements", "Announcements");
+
+  // Discussions and quizzes aren't imported as text of their own, but their
+  // bodies and attachments are where some courses put files (an exam review
+  // sheet attached to a discussion, a formula sheet linked from a quiz).
+  const discussionIds = new Set<string>();
+  const discussion = (v: unknown) => {
+    const id = idStr(field(v, "id"));
+    if (id !== undefined) discussionIds.add(id);
+    const h = asString(field(v, "message"));
+    if (h) extraHtml.push(h);
+    attach(v);
+  };
+  if (tabs.open("discussions")) {
+    const list = await part(s, () => getAll(s, api(s, ["courses", cid, "discussion_topics"], [["per_page", "100"]])), "", []);
+    if (list) for (const v of list) discussion(v);
+  }
+  const quizIds = new Set<string>();
+  const quiz = (v: unknown) => {
+    const id = idStr(field(v, "id"));
+    if (id !== undefined) quizIds.add(id);
+    const h = asString(field(v, "description"));
+    if (h) extraHtml.push(h);
+  };
+  if (tabs.open("quizzes")) {
+    const list = await part(s, () => getAll(s, api(s, ["courses", cid, "quizzes"], [["per_page", "100"]])), "", []);
+    if (list) for (const v of list) quiz(v);
+  }
 
   // Modules, in order. Their items name files, pages and assignments that the
   // lists above may not have (a tab hidden from students still lets a module link its pages).
@@ -291,6 +337,17 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
           const a = assignmentFrom(s, v);
           if (a) assignments.push(a);
         }
+      } else if (item.kind === "discussion") {
+        // Read only for the files it carries, so a closed one isn't a loss to report.
+        if (discussionIds.has(item.id)) continue;
+        discussionIds.add(item.id);
+        const v = await part(s, () => getOne(s, api(s, ["courses", cid, "discussion_topics", item.id], [])), "", []);
+        if (v !== undefined) discussion(v);
+      } else if (item.kind === "quiz") {
+        if (quizIds.has(item.id)) continue;
+        quizIds.add(item.id);
+        const v = await part(s, () => getOne(s, api(s, ["courses", cid, "quizzes", item.id], [])), "", []);
+        if (v !== undefined) quiz(v);
       }
     }
   }
@@ -309,6 +366,7 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
   if (c.syllabus !== null) queuePages(c.syllabus, site(s, ["courses", cid, "assignments", "syllabus"]));
   for (const [, a] of assignments) queuePages(a.html, a.url ?? s.site.base);
   for (const a of c.announcements) queuePages(a.html, s.site.base);
+  for (const h of extraHtml) queuePages(h, s.site.base);
   let scannedPages = 0;
   for (let i = 0; ; i++) {
     while (scannedPages < pages.length) {
@@ -328,8 +386,9 @@ async function content(s: Session, courseId: string): Promise<CourseContent> {
   // fetched one by one when the file list didn't have them or wasn't open.
   const html: string[] = [];
   if (c.syllabus !== null) html.push(c.syllabus);
-  html.push(...pages.map(([, p]) => p.html), ...assignments.map(([, a]) => a.html), ...c.announcements.map((a) => a.html));
+  html.push(...pages.map(([, p]) => p.html), ...assignments.map(([, a]) => a.html), ...c.announcements.map((a) => a.html), ...extraHtml);
   const wanted = new Map<string, [boolean, string]>();
+  for (const id of attachedIds) if (!files.has(id) && !wanted.has(id)) wanted.set(id, [true, id]);
   for (const u of [...links.map((l) => l.url), ...html.flatMap((h) => resourceUrls(h, s.site.base))]) {
     const r = fileRef(s, cid, u);
     if (r && !files.has(r[1]) && !wanted.has(r[1])) wanted.set(r[1], r);
@@ -472,6 +531,14 @@ function itemFrom(v: unknown, links: Link[]): Item | null {
       const id = idStr(field(v, "content_id"));
       return id === undefined ? null : { kind: "assignment", id, title };
     }
+    case "Discussion": {
+      const id = idStr(field(v, "content_id"));
+      return id === undefined ? { kind: "other", title } : { kind: "discussion", id, title };
+    }
+    case "Quiz": {
+      const id = idStr(field(v, "content_id"));
+      return id === undefined ? { kind: "other", title } : { kind: "quiz", id, title };
+    }
     case "ExternalUrl":
     case "ExternalTool": {
       const u = parseAbsolute(asString(field(v, "external_url")));
@@ -529,10 +596,12 @@ class Files {
   readonly list: RemoteFile[] = [];
   readonly ids = new Map<string, number>();
   readonly requested = new Set<string>();
+  /** Files Canvas already said are locked, so a second reference neither refetches nor repeats the note. */
+  readonly locked = new Set<string>();
 
   /** Whether `id` still needs fetching by itself; past the budget, the list is incomplete. */
   request(id: string): boolean {
-    if (this.has(id) || this.requested.has(id)) return false;
+    if (this.has(id) || this.locked.has(id) || this.requested.has(id)) return false;
     if (this.requested.size >= MAX_REFERENCED) {
       throw LmsError.incomplete(`Canvas references more than ${MAX_REFERENCED} distinct files. The file list is incomplete; the import was not marked complete.`);
     }
@@ -555,11 +624,12 @@ class Files {
     const nameRaw = asString(field(v, "display_name")) ?? asString(field(v, "filename"));
     const name = nameRaw !== undefined ? rustTrim(nameRaw) : "";
     if (!name) return;
-    if (this.has(id)) return;
+    if (this.has(id) || this.locked.has(id)) return;
     // `hidden_for_user` means "only available with a link", not locked.
     // Canvas returns these files from published pages/modules with a usable
     // download URL. Only its actual lock decision (or empty URL) bars access.
     if (field(v, "locked_for_user") === true || asString(field(v, "url")) === "") {
+      this.locked.add(id);
       skipped.push(`File “${name}”: locked for now`);
       return;
     }

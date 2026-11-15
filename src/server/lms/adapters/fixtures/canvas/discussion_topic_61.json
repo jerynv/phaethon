@@ -1,0 +1,9 @@
+{
+  "id": 61, "title": "Study group", "is_announcement": false, "html_url": "{BASE}/courses/1001/discussion_topics/61", "message": "<p>Bring the sheet.</p>",
+  "attachments": [
+    {
+      "id": 53, "display_name": "Unit3_formula_sheet.pdf", "filename": "formulas.pdf", "content-type": "application/pdf",
+      "url": "{BASE}/files/53/download?download_frd=1&verifier=att53", "hidden": true, "hidden_for_user": true, "locked_for_user": false
+    }
+  ]
+}

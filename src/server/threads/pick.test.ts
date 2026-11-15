@@ -9,6 +9,7 @@ import { resetFake } from "../providers/fake.ts";
 import { readSettings, updateSettings } from "../settings/settings.ts";
 import { updateSpaceMeta } from "../spaces/meta.ts";
 import { userMessage } from "../core/thread.ts";
+import { claim, release } from "../core/runs.ts";
 import { effectivePick, parsePick, type ModelPick } from "./pick.ts";
 import { listThreadsIn, saveIn } from "./store.ts";
 import "./commands.ts";
@@ -122,6 +123,21 @@ describe("agent_send with a model", () => {
     } finally {
       delete process.env.PHAETHON_FAKE_PROVIDER;
     }
+  });
+
+  it("leaves a running conversation's model alone when a second send is refused as busy", async () => {
+    const before = effectivePick("school");
+    const run = claim("school")!;
+    try {
+      const ch = channel<AgentEvent>();
+      await call("agent_send", { space: "school", prompt: "x", attachments: [], model: { backend: "phaethon", model: "openai:gpt-5.5", effort: null }, onEvent: ch });
+      expect(ch.messages.map((e) => e.kind)).toEqual(["error", "end"]);
+      expect((ch.messages[0] as { code: string }).code).toBe("busy");
+    } finally {
+      release(run);
+    }
+    expect(effectivePick("school")).toEqual(before);
+    expect(readSettings().lastModel).not.toEqual({ backend: "phaethon", model: "openai:gpt-5.5", effort: null });
   });
 
   it("refuses a bad pick with one error and an end", async () => {

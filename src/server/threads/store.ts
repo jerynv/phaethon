@@ -85,6 +85,12 @@ function isRegularFile(p: string): boolean {
   }
 }
 
+/** Writes a new file, never through a symlink or file someone left at that name. */
+function writeFresh(p: string, data: string): void {
+  fs.rmSync(p, { force: true });
+  fs.writeFileSync(p, data, { flag: "wx" });
+}
+
 function removeIfThere(p: string): void {
   try {
     fs.rmSync(p);
@@ -200,7 +206,7 @@ export function writePickRawIn(dir: string, value: unknown): void {
   }
   fs.mkdirSync(stateDir(dir), { recursive: true });
   const file = pickFile(dir);
-  fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(value)}\n`);
+  writeFresh(`${file}.tmp`, `${JSON.stringify(value)}\n`);
   fs.renameSync(`${file}.tmp`, file);
 }
 
@@ -289,7 +295,7 @@ export function updateMetaIn(dir: string, id: string, change: { title?: string |
     return next;
   }
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(`${p}.tmp`, `${JSON.stringify(next)}\n`);
+  writeFresh(`${p}.tmp`, `${JSON.stringify(next)}\n`);
   fs.renameSync(`${p}.tmp`, p);
   return next;
 }

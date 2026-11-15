@@ -88,22 +88,17 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     return end();
   }
   touchSpace(space);
+  let chosen: ModelPick | undefined;
   if (args.model !== undefined && args.model !== null) {
-    const chosen = parsePick(args.model);
+    chosen = parsePick(args.model) ?? undefined;
     if (!chosen) {
       events.send({ kind: "error", code: "badRequest", message: "That isn’t a model Phaethon knows how to use. Pick another one." });
-      return end();
-    }
-    try {
-      savePick(space, chosen);
-    } catch (e) {
-      events.send({ kind: "error", code: "storage", message: `The model choice couldn’t be saved: ${messageOf(e)}` });
       return end();
     }
   }
   let pick: ModelPick;
   try {
-    pick = effectivePick(space).pick;
+    pick = chosen ?? effectivePick(space).pick;
   } catch (e) {
     events.send({ kind: "error", code: "storage", message: messageOf(e) });
     return end();
@@ -129,6 +124,16 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
   if (!run) {
     events.send({ kind: "error", code: "busy", message: BUSY_TURN });
     return end();
+  }
+  // Saved only once the space is ours, so a send refused as busy can't change a running conversation's model.
+  if (chosen) {
+    try {
+      savePick(space, chosen);
+    } catch (e) {
+      release(run);
+      events.send({ kind: "error", code: "storage", message: `The model choice couldn’t be saved: ${messageOf(e)}` });
+      return end();
+    }
   }
   const unhook = stopWith(signal, run);
   // Saved only once the space is ours, so a refused send leaves no files behind.

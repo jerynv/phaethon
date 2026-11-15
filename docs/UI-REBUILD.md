@@ -63,7 +63,7 @@ Art palettes are tokens too (`--art-{sky,dawn,meadow,lilac,ember}-{0…4}`): a b
 
 ### Spacing
 
-The 4 px grid (Tailwind's scale). Card padding is `p-5` (20), compact cards `p-4`; card-to-card gaps `gap-3` (12) in a grid, `gap-4` in a stack; page sections `gap-8` to `gap-10`; page side padding `px-8` (`px-6` under `@3xl`). Rows are 28 px (`h-7`); legend and step rows 28–32; toggle rows `py-3`. The app panel is inset `--frame-inset` (8 px) from the window.
+The 4 px grid (Tailwind's scale). Card padding is `p-5` (20), compact cards `p-4`; card-to-card gaps `gap-3` (12) in a grid, `gap-4` in a stack; page sections `gap-8` to `gap-10`; page side padding `px-8` (`px-6` under `@3xl`). Rows are 28 px (`h-7`); legend and step rows 28–32; toggle rows `py-3`.
 
 ### Type
 
@@ -103,28 +103,27 @@ Tracking: `tracking-title` (-0.01em) on 15–18 px, `tracking-heading` (-0.015em
 
 ## App frame
 
-After a163, 9334, b72b, dca9, 3940 (Alpaca) and 7274, 8bdf, 02a1 (Conduit Agent Space).
+The app fills the window edge to edge: no inset panel, no outer canvas, no rounded border or shadow around it. One window, one surface.
 
 ```
-┌ canvas (--canvas), padding --frame-inset ──────────────────────────────────────────────┐
-│ ┌ panel: rounded-panel, border, bg-background, shadow-card ──────────────────────────┐ │
-│ │ ● ● ●  ✳ ▯  [💬 Chat][Study][Grades][Plan][Courses] | title   [ 🔍 Search  ⌘K ]   actions │
-│ │──────────────────────────┬─────────────────────────────────────────────────────────│ │
-│ │ + New chat               │ main: page, faint dot matrix fading from the top        │ │
-│ │ Spaces                   │                                                         │ │
-│ │ ⬛ School                 │                                                         │ │
-│ │ ○  conversation      4m  │                                                         │ │
-│ │──────────────────────────│                                                         │ │
-│ │ ⚙ Settings               │                                                         │ │
-│ └──────────────────────────┴─────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌ window, bg-background ─────────────────────────────────────────────────────────────────┐
+│ ● ● ●  ✳ ▯  [💬 Chat][Study][Grades][Plan][Courses] | title   [ 🔍 Search  ⌘K ]   actions │
+│──────────────────────────┬─────────────────────────────────────────────────────────────│
+│ + New chat               │ main: page, faint dot matrix fading from the top            │
+│ Spaces                   │                                                             │
+│ ⬛ School                 │                                                             │
+│ ○  conversation      4m  │                                                             │
+│──────────────────────────│                                                             │
+│ ⚙ Settings               │                                                             │
+└──────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-- The whole app is one white panel on the grey canvas. The title bar runs across the top of the panel (48 px, bottom hairline), as in the Alpaca screens; below it the sidebar and the main column sit side by side, split by the sidebar's hairline, which starts under the title bar.
-- macOS traffic lights sit in the panel's top-left (`trafficLightPosition` 22, 26 in `src/desktop/main.ts`), at the title bar's left end, which takes `pl-(--traffic-light-inset)` on macOS and `pl-4` elsewhere (so the mark lines up with the sidebar's icon column).
-- The native window background is the canvas colour so the first frame matches.
+- The title bar runs across the top (48 px, bottom hairline); below it the sidebar and the main column sit side by side, split by the sidebar's hairline.
+- macOS traffic lights sit at the title bar's left end (`trafficLightPosition` 14, 18 in `src/desktop/main.ts`), which takes `pl-(--traffic-light-inset)` on macOS and `pl-4` elsewhere.
+- The native window background is the `--background` colour so the first frame matches.
 - `DotMatrix` sits behind the top of every page (absolute, `--dot-matrix`, fading by 96 px). Pages keep a transparent background so it shows.
 - Pages fade and lift 4 px in when they become visible; hidden pages stay mounted (keep-alive views) and out of the title bar.
+- Never draw a window inside the window: no inset frames, padded canvases or card-wrapped app shells.
 
 ### Title bar (`app/Header.tsx`)
 
@@ -334,7 +333,7 @@ e0fb, dc3a, 9e25, 8bdf. Left column (`w-64`) of section rows with icons and grou
 
 ### Onboarding
 
-3940, e3e4, 2c35, d1d3, c06d, d922. Full window, no app frame chrome: left half on `--background` with the mark at the top, a centred form column (`max-w-sm`): title `text-2xl` weight 500, one line muted, the step's controls, a full-width ink button; step dots at the top (blue active bar, grey dots). Right half: an inset `ArtCanvas` panel (`rounded-panel`, `--frame-inset` margin, `animate`) holding a live, scaled preview of what the step sets up (a sidebar with spaces, a provider card). The finish step is c06d's "You're all set" card: a `well` list of what was set up with blue tick discs, Explore (ink) and Close (outline). Each step's art palette differs (`sky → dawn → meadow`).
+3940, e3e4, 2c35, d1d3, c06d, d922. Full window, no app frame chrome: left half on `--background` with the mark at the top, a centred form column (`max-w-sm`): title `text-2xl` weight 500, one line muted, the step's controls, a full-width ink button; step dots at the top (blue active bar, grey dots). Right half: an `ArtCanvas` filling the half edge to edge (hairline on its left, `animate`) holding a live, scaled preview of what the step sets up (a sidebar with spaces, a provider card). The finish step is c06d's "You're all set" card: a `well` list of what was set up with blue tick discs, Explore (ink) and Close (outline). Each step's art palette differs (`sky → dawn → meadow`).
 
 ### Viewer
 

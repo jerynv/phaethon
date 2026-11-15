@@ -154,8 +154,8 @@ export function Shell() {
   const toggleSidebar = useNav((s) => s.toggleSidebar);
   const viewer = useNav((s) => s.viewer);
   return (
-    <div data-slot="app-canvas" className="h-full bg-canvas p-(--frame-inset)">
-      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} data-frame="panel" className="flex-col overflow-hidden rounded-panel border bg-background shadow-card">
+    <div className="h-full bg-background">
+      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} className="flex-col overflow-hidden bg-background">
         <HeaderSlots>
           {(bind) => (
             <>

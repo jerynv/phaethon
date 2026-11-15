@@ -16,7 +16,6 @@
   --sidebar-width: 15.5rem;
   --titlebar-height: 3rem;
   /* The gap between the window edge and the app panel (docs/UI-REBUILD.md › App frame). */
-  --frame-inset: 0.5rem;
   /* Room for macOS's traffic lights when content starts at the window's left edge. */
   --traffic-light-inset: 4.75rem;
   --chat-max-width: 46rem;
@@ -511,7 +510,7 @@
     overflow: hidden;
   }
   body {
-    @apply bg-canvas text-foreground text-sm;
+    @apply bg-background text-foreground text-sm;
     overscroll-behavior: none;
   }
   ::selection {

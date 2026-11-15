@@ -306,8 +306,8 @@ function ArtRow() {
 export function Gallery() {
   return (
     <IconProvider>
-      <div className="h-full overflow-auto bg-canvas p-(--frame-inset)">
-        <div className="relative flex flex-col gap-10 rounded-panel border bg-background p-10">
+      <div className="h-full overflow-auto bg-background">
+        <div className="relative flex flex-col gap-10 bg-background p-10">
           <DotMatrix />
           <Welcome />
           <Panel />

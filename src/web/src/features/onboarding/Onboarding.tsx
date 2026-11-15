@@ -119,8 +119,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           </div>
         </div>
       </div>
-      <aside aria-hidden className="hidden w-1/2 shrink-0 p-(--frame-inset) @4xl/onboarding:block">
-        <div className="relative size-full overflow-hidden rounded-panel border">
+      <aside aria-hidden className="hidden w-1/2 shrink-0 border-l @4xl/onboarding:block">
+        <div className="relative size-full overflow-hidden">
           <AnimatePresence initial={false}>
             <motion.div key={step} className="absolute inset-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
               <ArtCanvas palette={PALETTES[step]} seed={`onboarding-${step}`} animate className="size-full">

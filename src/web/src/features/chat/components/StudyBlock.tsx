@@ -8,20 +8,24 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { errorText } from "@/lib/core";
 import { studySources } from "@/features/study/api";
-import { MakeDialog } from "@/features/study/components/MakeDialog";
+import { MakeDialog, useStudyPick } from "@/features/study/components/MakeDialog";
+import { MakingRow } from "@/features/study/components/MakingRow";
+import { jobForOrigin, useMakeJobs } from "@/features/study/jobs";
 import { useStudyFlow } from "@/features/study/flow-store";
 import { draftFromPlan } from "@/features/study/lib/make-flow";
 import type { StudyScreen } from "@/features/study/StudyView";
 import type { CourseSource } from "@/features/study/lib/types";
-import { type Loaded, useLoad } from "@/features/study/use-load";
+import { useLoad } from "@/features/study/use-load";
 import { studyChatPlan } from "../api";
 import { guessKind, openLabel, planSentence, planTitle, questionBefore, readBlock, type StudyPlan } from "../lib/study-chat";
 import { useSpaceChat } from "../store";
 
 /**
  * A quiz or deck the assistant proposed (a `phaethon-study` block): what it
- * will be, and a button that opens the make dialog with the plan filled in
- * (course, test or topics, size, kinds), the same flow as Study's.
+ * will be, and one button. When the plan says enough (a course, and a test the
+ * course has described or topics) the button makes it right here, with the
+ * run's progress under the card; only a plan missing something opens the
+ * make dialog, at the step that needs an answer.
  */
 export function StudyBlock({ code, space, streaming, messageKey }: { code: string; space: string; streaming: boolean; messageKey: string }) {
   const read = readBlock(code, !streaming);
@@ -33,16 +37,29 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   const question = questionBefore(chat.messages.map((m) => ({ key: m.key, role: m.role, text: m.role === "user" ? m.text : undefined })), messageKey);
   const block = read.state === "ok" ? read.block : null;
   const asked = useRef<string | null>(null);
-  // Asked for only once the dialog is wanted; an empty list until then.
-  const sources = useLoad<CourseSource[] | undefined>(() => (open ? studySources(space) : Promise.resolve(undefined)), [open, space]);
+  const sources = useLoad<CourseSource[]>(() => studySources(space), [space]);
   const courses = useMemo(() => (sources.data ?? []).map((s) => s.folder), [sources.data]);
   const draft = useMemo(() => (plan && sources.data ? draftFromPlan(plan, courses, question) : undefined), [plan, sources.data, courses, question]);
+  const pick = useStudyPick(space, true);
+  const jobs = useMakeJobs((s) => s.jobs);
+  const job = useMemo(() => jobForOrigin(jobs, space, plan?.origin), [jobs, space, plan?.origin]);
+  const replan = () => block && studyChatPlan(space, block, question).then(setPlan, () => {});
 
   useEffect(() => {
     if (!block || asked.current === block) return;
     asked.current = block;
     studyChatPlan(space, block, question).then(setPlan, (e) => setPlanError(errorText(e)));
   }, [block, space, question]);
+
+  // When its run ends: the result opens from here, and the plan is asked for again so it remembers what was made.
+  const ended = useRef<string | null>(null);
+  useEffect(() => {
+    if (!job || job.status === "running" || job.status === "stopping" || ended.current === `${job.id}:${job.status}`) return;
+    ended.current = `${job.id}:${job.status}`;
+    if (job.status === "done" && job.done?.path) setMade(job.done.path);
+    if (job.status === "needsScope") setOpen(true);
+    void replan();
+  });
 
   const kind = read.state === "ok" ? read.kind : guessKind(code);
   const glyph = kind === "quiz" ? icons.quiz : icons.deck;
@@ -69,6 +86,16 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
     useNav.getState().setView("study");
   };
   const notes = [...plan.notes, ...(plan.unknown.length ? [`Not in this space: ${plan.unknown.join(", ")}`] : []), ...(plan.material ? [plan.material.text] : [])];
+  // The plan says enough to start straight away: a course, and a test the course (or the person) has described, or topics.
+  const examTitle = draft?.target === "exam" ? draft.exam.trim() : "";
+  const knownWords = plan.scope?.state === "known" ? (plan.scope.words ?? "") : "";
+  const ready = !!draft?.course && (draft.target === "topics" || (!!examTitle && (plan.scope?.state === "known" || !!draft.covers.trim())));
+  const running = !!job && (job.status === "running" || job.status === "stopping");
+  const make = () => {
+    if (!draft) return;
+    if (!ready) return setOpen(true);
+    useMakeJobs.getState().start({ space, draft, examTitle, knownWords, pick: pick.pick, courseName: sources.data?.find((s) => s.folder === draft.course)?.name });
+  };
 
   return (
     <div className="my-3 overflow-hidden rounded-card border bg-card" data-testid="study-block">
@@ -94,40 +121,43 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
               {plan.sources.length > 6 ? <span className="px-1 py-0.5 text-muted-foreground text-xs tabular-nums">+{plan.sources.length - 6}</span> : null}
             </div>
           ) : null}
-          {open && sources.error ? <RowError className="mt-1" message={`Couldn’t list your courses: ${errorText(sources.error)}`} onRetry={sources.reload} /> : null}
+          {sources.error ? <RowError className="mt-1" message={`Couldn’t list your courses: ${errorText(sources.error)}`} onRetry={sources.reload} /> : null}
           {notes.map((n) => (
             <p key={n} className="flex items-start gap-1.5 text-sm text-warning-foreground">
               <Icon icon={icons.warning} className="mt-0.5 size-3.5" />
               <span className="[overflow-wrap:anywhere]">{n}</span>
             </p>
           ))}
+          {job?.status === "error" && !path ? <RowError className="mt-1" message={job.failure ?? "Couldn’t make it"} onRetry={make} /> : null}
         </div>
         <div className="shrink-0 self-center">
           {path ? (
             <Button size="sm" onClick={() => openMade(plan.kind === "quiz" ? { kind: "quiz", path } : { kind: "review", paths: [path] })}>
               {openLabel(plan)}
             </Button>
-          ) : plan.running ? (
+          ) : running ? null : plan.running && !job ? (
             <Button size="sm" variant="outline" pending>
               Making…
             </Button>
           ) : (
-            <Button size="sm" pending={open && !draft && !sources.error} onClick={() => (sources.error ? sources.reload() : undefined, setOpen(true))}>
+            <Button size="sm" pending={!draft && !sources.error} onClick={make}>
               <Icon icon={icons.ai} />
               {plan.kind === "quiz" ? "Make this quiz" : "Make these cards"}
             </Button>
           )}
         </div>
       </div>
-      {open ? (
+      {running && job ? <MakingRow job={job} showTitle={false} className="border-t px-3 py-2.5" /> : null}
+      {open && draft ? (
         <MakeDialog
           space={space}
           kind={plan.kind}
-          open={open && !!draft}
+          open={open}
           onOpenChange={setOpen}
-          sources={sources as Loaded<CourseSource[]>}
+          sources={sources}
           draft={draft}
-          onChanged={() => void studyChatPlan(space, block!, question).then(setPlan, () => {})}
+          job={job?.status === "needsScope" ? job.id : undefined}
+          onChanged={() => void replan()}
           onOpen={(screen) => {
             if (screen.kind === "quiz") setMade(screen.path);
             else if (screen.kind === "review" && screen.paths?.[0]) setMade(screen.paths[0]);

@@ -26,8 +26,10 @@ import { ModelPicker } from "@/features/chat/components/ModelPicker";
 import { useSpaceChat } from "@/features/chat/store";
 import { planExamsGet } from "@/features/plan/api";
 import { cn } from "@/lib/utils";
-import { studyMakeCancel, studyMakeDeck, studyMakeQuiz, studyScope, studyScopeBuild, studyScopeState } from "../api";
+import { studyMakeCancel, studyScope, studyScopeBuild } from "../api";
 import { useStudyFlow } from "../flow-store";
+import { type MakeStatus, useMakeJobs } from "../jobs";
+import { jobFraction } from "../lib/progress";
 import { examDate, examOptions, OTHER_EXAM, scopeWords, type ExamOption } from "../lib/exam-options";
 import { KINDS, kindLabel } from "../lib/kinds";
 import {
@@ -45,8 +47,7 @@ import {
   type MakeKind,
   type ScopeState,
 } from "../lib/make-flow";
-import { jobFraction } from "../lib/progress";
-import type { CourseSource, Grounding, ScopeView, StudyEvent, UnknownScope } from "../lib/types";
+import type { CourseSource, Grounding, ScopeView, UnknownScope } from "../lib/types";
 import { plural, type MakeProgress } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { type Loaded, useLoad } from "../use-load";
@@ -69,7 +70,9 @@ const STEP_OF: Record<Phase, number> = { what: 0, how: 1, ask: 0, run: 2, error:
  * 3. The run, stage by stage (reading, mapping topics, writing, checking each
  *    against the source), stoppable; failures say what to do.
  * Opened from Study's overview, or from a chat card with the card's plan
- * filled in (`draft`), at the second step when its course is known.
+ * filled in (`draft`), at the second step when its course is known. The run
+ * itself lives in `jobs.ts`: closing the dialog leaves it going, Study and
+ * the chat card show it, and `job` reopens the dialog on a run under way.
  */
 export function MakeDialog({
   space,
@@ -80,6 +83,7 @@ export function MakeDialog({
   onChanged,
   onOpen,
   draft: given,
+  job: givenJob,
 }: {
   space: string;
   kind: MakeKind;
@@ -90,39 +94,66 @@ export function MakeDialog({
   onOpen: (s: StudyScreen) => void;
   /** Filled in from a chat card; the dialog opens at its second step. */
   draft?: MakeDraft;
+  /** A run already started (by a chat card): the dialog shows where it stands. */
+  job?: string;
 }) {
   const [draft, setDraft] = useState<MakeDraft>(() => given ?? emptyDraft(kind));
   const [phase, setPhase] = useState<Phase>("what");
   const [dir, setDir] = useState<1 | -1>(1);
   const [errs, setErrs] = useState<{ exam?: string; covers?: string; count?: string; kinds?: string; course?: string }>({});
   const [editScope, setEditScope] = useState(false);
-  const [progress, setProgress] = useState<MakeProgress | null>(null);
-  const [fraction, setFraction] = useState(0);
-  const [started, setStarted] = useState(0);
-  const [stopping, setStopping] = useState(false);
   const [failure, setFailure] = useState<{ message: string; advice: Advice } | null>(null);
   const [needs, setNeeds] = useState<UnknownScope | null>(null);
   const [done, setDone] = useState<Done | null>(null);
-  const run = useRef<{ n: number; id: string | null }>({ n: 0, id: null });
+  const [jobId, setJobId] = useState<string | null>(null);
+  const job = useMakeJobs((s) => (jobId ? s.jobs[jobId] : undefined));
+  const seen = useRef<MakeStatus | null>(null);
   const pick = useStudyPick(space, open);
   const quiz = draft.kind === "quiz";
   const noun = quiz ? "question" : "card";
   const patch = (p: Partial<MakeDraft>) => setDraft((d) => ({ ...d, ...p }));
 
-  // A fresh flow each time it opens; a draft from chat starts at its second step.
+  // A fresh flow each time it opens; a draft from chat starts at its second step; a run under way shows where it is.
   useEffect(() => {
     if (!open) return;
     setDraft(given ?? emptyDraft(kind));
-    // A plan from chat with its course known starts at the second step; without one, at the first.
-    setPhase(given?.course ? "how" : "what");
+    setPhase(givenJob ? "run" : given?.course ? "how" : "what");
     setDir(1);
     setErrs({});
     setEditScope(false);
     setFailure(null);
     setNeeds(null);
     setDone(null);
-    setStopping(false);
-  }, [open, kind, given]);
+    seen.current = null;
+    setJobId(givenJob ?? null);
+  }, [open, kind, given, givenJob]);
+  // While it is open on a run, the run's end shows here instead of as a toast.
+  useEffect(() => {
+    if (!open || !jobId) return;
+    const jobs = useMakeJobs.getState();
+    jobs.watch(jobId, true);
+    return () => jobs.watch(jobId, false);
+  }, [open, jobId]);
+  // The run's end moves the dialog on: done, a question about the scope, a failure, or back to the options when stopped.
+  useEffect(() => {
+    if (!job || seen.current === job.status) return;
+    seen.current = job.status;
+    if (job.status === "running" || job.status === "stopping") return;
+    if (job.status === "cancelled") return go("how", -1);
+    if (job.status === "needsScope" && job.needs) {
+      setNeeds(job.needs);
+      scope.reload();
+      return go("ask", -1);
+    }
+    if (job.status === "error") {
+      const message = job.failure ?? "Something went wrong.";
+      setFailure({ message, advice: advice(message, quiz) });
+      return go("error");
+    }
+    setDone(job.done ?? {});
+    go("done");
+    onChanged?.();
+  });
   // One course: chosen for you.
   useEffect(() => {
     if (open && !draft.course && sources.data?.length === 1) patch({ course: sources.data[0]!.folder });
@@ -165,101 +196,32 @@ export function MakeDialog({
 
   // ---- The run ----
 
-  const generate = async () => {
+  const generate = () => {
     if (!checkHow()) return;
-    const id = crypto.randomUUID();
-    const n = ++run.current.n;
-    run.current.id = id;
-    const live = () => run.current.n === n;
-    go("run");
-    setProgress(null);
-    setFraction(0);
-    setStarted(Date.now());
-    setStopping(false);
     setFailure(null);
     setNeeds(null);
-    const target = draft.course ?? "";
-    const said = draft.covers.trim();
-    if (examTitle && target && said && said !== knownWords) {
-      try {
-        await studyScopeState(space, target, examTitle, said);
-      } catch (e) {
-        if (!live()) return;
-        const message = `Couldn’t keep what ${examTitle} covers: ${cleanMessage(e)}`;
-        setFailure({ message, advice: advice(message, quiz) });
-        return go("error");
-      }
-    }
-    let asked: UnknownScope | null = null;
-    let failed: string | null = null;
-    let finished: Done | null = null;
-    let cancelled = false;
-    const base = {
-      count: draft.count,
-      ...(draft.target === "topics" && draft.focus.trim() ? { focus: draft.focus.trim() } : {}),
-      ...(draft.title.trim() ? { title: draft.title.trim() } : {}),
-      ...(examTitle ? { exam: examTitle } : {}),
-      ...(draft.chat?.context ? { context: draft.chat.context } : {}),
-    };
-    const onEvent = (e: StudyEvent) => {
-      if (!live()) {
-        if (e.type === "done") onChanged?.();
-        return;
-      }
-      if (e.type === "progress") {
-        setProgress(e);
-        setFraction((f) => jobFraction(e, "make", f));
-      } else if (e.type === "needsScope") asked = e;
-      else if (e.type === "error") failed = e.message;
-      else if (e.type === "cancelled") cancelled = true;
-      else if (e.type === "done") finished = e;
-    };
-    const inputs = draft.files.length ? draft.files : [target];
-    const opts = { model: pick.pick, runId: id, origin: draft.chat?.origin };
-    const end = quiz
-      ? await studyMakeQuiz(space, inputs, { ...base, kinds: draft.kinds, difficulty: draft.difficulty }, onEvent, opts)
-      : await studyMakeDeck(space, inputs, base, onEvent, opts);
-    if (!live()) return;
-    run.current.id = null;
-    setStopping(false);
-    if (end.kind === "rejected") failed = cleanMessage(end.error);
-    if (end.kind === "timedOut" && !finished && !failed && !cancelled) failed = "Phaethon’s core stopped answering before it finished.";
-    if (cancelled) return go("how", -1);
-    if (asked) {
-      setNeeds(asked);
-      scope.reload();
-      return go("ask", -1);
-    }
-    if (failed) {
-      setFailure({ message: failed, advice: advice(failed, quiz) });
-      return go("error");
-    }
-    setDone(finished ?? {});
-    go("done");
-    onChanged?.();
+    seen.current = null;
+    const id = useMakeJobs.getState().start({ space, draft, examTitle, knownWords, pick: pick.pick, courseName: course?.name });
+    setJobId(id);
+    go("run");
   };
 
   const stop = async () => {
-    const id = run.current.id;
-    setStopping(true);
-    const stopped = id ? await studyMakeCancel(space, id).catch(() => false) : false;
-    // Nothing was running in the core (it had just finished or failed): let go of it here.
-    if (!stopped) {
-      run.current.n++;
-      setStopping(false);
-      go("how", -1);
-    }
+    if (!jobId) return go("how", -1);
+    const stopped = await useMakeJobs.getState().stop(jobId);
+    // Nothing was running in the core (it had just finished or failed): its own end moves the dialog on.
+    if (!stopped && useMakeJobs.getState().jobs[jobId]?.status === "running") go("how", -1);
   };
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (phase === "what" && checkWhat()) go("how");
-    else if (phase === "how") void generate();
-    else if (phase === "ask" && draft.covers.trim()) void generate();
+    else if (phase === "how") generate();
+    else if (phase === "ask" && draft.covers.trim()) generate();
   };
 
   const close = () => onOpenChange(false);
-  const busy = phase === "run";
+  const stopping = job?.status === "stopping";
   const step = STEP_OF[phase];
   const scopeTag = draft.target === "topics" ? draft.focus.trim() || "Anything in the course" : examTitle ? `${examTitle}${draft.covers.trim() || knownWords ? `: ${draft.covers.trim() || knownWords}` : ""}` : "";
 
@@ -267,13 +229,7 @@ export function MakeDialog({
   const makeLabel = `Make ${plural(draft.count || 0, noun)}`;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (!o && busy) void stop();
-        onOpenChange(o);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Anchored near the top (not centred) so its top edge stays put as the steps change height. */}
       <DialogPopup className="row-span-3 row-start-1 mt-(--dialog-top) max-h-(--dialog-anchored-max-height) max-w-xl self-start rounded-panel" showCloseButton={false} aria-label={label}>
         <form onSubmit={onSubmit} className="contents">
@@ -344,7 +300,7 @@ export function MakeDialog({
                     <AskScope view={scope.data ?? null} value={draft.covers} onChange={(covers) => patch({ covers })} autoFocus />
                   </div>
                 ) : null}
-                {phase === "run" ? <RunView progress={progress} fraction={fraction} started={started} quiz={quiz} course={course?.name} exam={examTitle || undefined} stopping={stopping} /> : null}
+                {phase === "run" ? <RunView progress={job?.progress ?? null} fraction={job?.fraction ?? 0} started={job?.started ?? Date.now()} quiz={quiz} course={course?.name} exam={examTitle || undefined} stopping={stopping} /> : null}
                 {phase === "error" && failure ? (
                   <div className="flex flex-col gap-3 pb-2">
                     <SurfaceError title={failure.advice.title} message={`${failure.message}\n\n${failure.advice.hint}`} />
@@ -398,9 +354,14 @@ export function MakeDialog({
             ) : null}
             {/* While it runs, the stage list shows the one spinner; the only action is Stop. */}
             {phase === "run" ? (
-              <Button type="button" variant="outline" className="flex-1" disabled={stopping} pending={stopping} onClick={() => void stop()}>
-                {stopping ? "Stopping…" : "Stop"}
-              </Button>
+              <>
+                <Button type="button" variant="outline" disabled={stopping} pending={stopping} onClick={() => void stop()}>
+                  {stopping ? "Stopping…" : "Stop"}
+                </Button>
+                <Button type="button" variant="ghost" className="flex-1" onClick={close}>
+                  Close, keep making it
+                </Button>
+              </>
             ) : null}
             {phase === "error" && failure ? (
               <>
@@ -412,7 +373,7 @@ export function MakeDialog({
                 <Button type="button" variant="outline" onClick={() => go(failure.advice.action === "scope" || failure.advice.action === "focus" ? "what" : "how", -1)}>
                   {failure.advice.action === "scope" || failure.advice.action === "focus" ? "Change what" : "Back"}
                 </Button>
-                <Button type="button" className="flex-1" onClick={() => void generate()}>
+                <Button type="button" className="flex-1" onClick={generate}>
                   Try again
                 </Button>
               </>
@@ -438,7 +399,7 @@ export function MakeDialog({
 }
 
 /** The model the dialog asks with: the last one picked for study, else the conversation's. */
-function useStudyPick(space: string, open: boolean): { pick: ModelPick | null; set: (p: ModelPick) => void } {
+export function useStudyPick(space: string, open: boolean): { pick: ModelPick | null; set: (p: ModelPick) => void } {
   const saved = useStudyFlow((s) => s.pick);
   const setPick = useStudyFlow((s) => s.setPick);
   const chat = useSpaceChat(space).pick?.pick ?? null;
@@ -1121,7 +1082,6 @@ function RunView({ progress, fraction, started, quiz, course, exam, stopping }: 
           </motion.li>
         ))}
       </ol>
-      <p className="text-subtle-foreground text-xs">You can close this; it keeps going and shows up in Study.</p>
     </div>
   );
 }

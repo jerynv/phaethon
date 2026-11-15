@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
@@ -23,7 +23,9 @@ import { percent, plural, reviewMinutes } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { useLoad } from "../use-load";
 import { ConfirmDelete } from "./ConfirmDelete";
+import { runningIn, useMakeJobs } from "../jobs";
 import { MakeDialog } from "./MakeDialog";
+import { MakingRow } from "./MakingRow";
 import { EASE } from "./motion";
 import { Page, StudyText } from "./parts";
 
@@ -42,6 +44,13 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
   const data = overview.data;
   const nothing = data && !data.decks.length && !data.quizzes.length;
   const noCourses = !!sources.data && !sources.data.length;
+  // Runs under way here, and a reload when one ends so what it made appears.
+  const jobs = useMakeJobs((s) => s.jobs);
+  const making = useMemo(() => runningIn(jobs, space.id), [jobs, space.id]);
+  const finished = useMakeJobs((s) => s.finished);
+  useEffect(() => {
+    if (finished) overview.reload();
+  }, [finished]);
 
   const startMake = (kind: "deck" | "quiz") => {
     setLastMake(kind);
@@ -77,6 +86,19 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
       />
       <Page>
         {overview.error ? <SurfaceError title="Couldn’t load your decks and quizzes" message={cleanMessage(overview.error)} onRetry={overview.reload} /> : null}
+        {making.length ? (
+          <section className="flex flex-col gap-3" aria-label="Making now" data-testid="making-now">
+            <div className="flex h-8 items-center gap-2.5">
+              <h2 className="font-medium text-base tracking-title">Making now</h2>
+              <span className="text-sm text-subtle-foreground tabular-nums">{making.length > 1 ? making.length : ""}</span>
+            </div>
+            <Card className="divide-y">
+              {making.map((j) => (
+                <MakingRow key={j.id} job={j} className="px-4 py-3" />
+              ))}
+            </Card>
+          </section>
+        ) : null}
         {skeleton ? <OverviewSkeleton /> : null}
         {nothing ? (
           <EmptyStudy

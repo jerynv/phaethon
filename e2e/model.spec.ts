@@ -43,7 +43,7 @@ test("each conversation keeps its own model and effort", async ({ page }) => {
   await expect.poll(() => modelFiles().length).toBeGreaterThan(0);
   const [first] = modelFiles();
   expect(JSON.parse(fs.readFileSync(path.join(threads, first!), "utf8"))).toEqual({ backend: "phaethon", model: "claude-haiku-5-5", effort: "low" });
-  expect(core.requests().at(-1)?.effort).toBe("low");
+  await expect.poll(() => core.requests().at(-1)?.effort).toBe("low");
 
   // A new conversation starts with the last pick; changing it there doesn't touch the first one.
   await page.getByRole("button", { name: "New chat", exact: true }).first().click();

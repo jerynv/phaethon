@@ -70,9 +70,9 @@
   --muted: oklch(96.4% 0 0);
   --muted-foreground: oklch(51% 0 0);
   --subtle-foreground: oklch(66% 0 0);
-  --accent: oklch(96.2% 0 0);
+  --accent: oklch(97.2% 0 0);
   --accent-foreground: oklch(23% 0 0);
-  --row-selected: oklch(95.2% 0 0);
+  --row-selected: oklch(97.2% 0 0);
   --message: var(--ink);
   --message-foreground: var(--ink-foreground);
   --border: oklch(92.6% 0 0);
@@ -81,6 +81,11 @@
   --ring: var(--primary);
   --code: oklch(98.2% 0 0);
   --keycap: oklch(96% 0 0);
+  --tooltip: var(--ink);
+  --tooltip-foreground: var(--ink-foreground);
+  /* Space avatars: a pale tint of the space's hue with a deeper letter (components/space-avatar.tsx). */
+  --avatar-tint: 95% 0.03;
+  --avatar-letter: 45% 0.1;
   --dot-matrix: oklch(23% 0 0 / 9%);
   /* Art sits a little dimmer in dark mode (components/art.tsx). */
   --art-veil: oklch(100% 0 0 / 0%);
@@ -148,16 +153,16 @@
   --popup-shadow-color: oklch(0% 0 0 / 75%);
   --card-shadow-color: oklch(0% 0 0 / 30%);
 
-  --canvas: oklch(12.8% 0 0);
-  --background: oklch(17.2% 0 0);
+  --canvas: oklch(19% 0 0);
+  --background: oklch(21.8% 0 0);
   --foreground: oklch(95.5% 0 0);
   --sidebar: var(--background);
   --sidebar-foreground: oklch(88% 0 0);
-  --card: oklch(19.6% 0 0);
+  --card: oklch(24.6% 0 0);
   --well: oklch(100% 0 0 / 3%);
-  --popover: oklch(21% 0 0);
+  --popover: oklch(25.4% 0 0);
   --ink: oklch(94% 0 0);
-  --ink-foreground: oklch(18% 0 0);
+  --ink-foreground: oklch(21.8% 0 0);
   --primary: oklch(66.5% 0.19 254);
   --primary-foreground: oklch(100% 0 0);
   --secondary: oklch(100% 0 0 / 6%);
@@ -165,18 +170,22 @@
   --muted: oklch(100% 0 0 / 5%);
   --muted-foreground: oklch(70% 0 0);
   --subtle-foreground: oklch(54% 0 0);
-  --accent: oklch(100% 0 0 / 6%);
+  --accent: oklch(100% 0 0 / 5%);
   --accent-foreground: oklch(95.5% 0 0);
-  --row-selected: oklch(100% 0 0 / 8%);
-  --message: oklch(26% 0 0);
+  --row-selected: oklch(100% 0 0 / 5%);
+  --message: oklch(29% 0 0);
   --message-foreground: oklch(95.5% 0 0);
-  --border: oklch(100% 0 0 / 8%);
-  --border-strong: oklch(100% 0 0 / 14%);
+  --border: oklch(100% 0 0 / 6.5%);
+  --border-strong: oklch(100% 0 0 / 12%);
   --input: oklch(100% 0 0 / 11%);
   --code: oklch(100% 0 0 / 3%);
   --keycap: oklch(100% 0 0 / 8%);
+  --tooltip: oklch(32% 0 0);
+  --tooltip-foreground: oklch(95.5% 0 0);
+  --avatar-tint: 32% 0.04;
+  --avatar-letter: 85% 0.06;
   --dot-matrix: oklch(100% 0 0 / 7%);
-  --art-veil: oklch(17.2% 0 0 / 38%);
+  --art-veil: oklch(21.8% 0 0 / 38%);
 
   --destructive: oklch(65% 0.21 24);
   --destructive-foreground: oklch(72% 0.17 22);
@@ -201,6 +210,14 @@
 
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /*
+   * The title bar (app/Header.tsx): below header-labels the view tabs show
+   * icons only, leaving the page title room; below header-title the title is
+   * dropped rather than shown as "Str…".
+   */
+  --container-header-labels: 40rem;
+  --container-header-title: 7rem;
 
   /* The type scale (docs/UI-REBUILD.md › Typeface and type scale). */
   --text-3xs: 0.625rem;
@@ -235,6 +252,8 @@
   --color-message-foreground: var(--message-foreground);
   --color-border-strong: var(--border-strong);
   --color-keycap: var(--keycap);
+  --color-tooltip: var(--tooltip);
+  --color-tooltip-foreground: var(--tooltip-foreground);
   --color-dot-matrix: var(--dot-matrix);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -404,6 +423,11 @@
 
 @utility dialog-glass {
   background: var(--popover);
+}
+
+@utility space-avatar {
+  background: oklch(var(--avatar-tint) var(--hue));
+  color: oklch(var(--avatar-letter) var(--hue));
 }
 
 @utility dialog-backdrop {

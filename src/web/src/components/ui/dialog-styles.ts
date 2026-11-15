@@ -2,7 +2,8 @@
 const DIALOG_BACKDROP_BASE_CLASS =
   "fixed inset-0 z-50 transition-all duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0";
 
-const DIALOG_BACKDROP_CLASS = `dialog-backdrop ${DIALOG_BACKDROP_BASE_CLASS}`;
+// Dims and softly blurs what is behind (reference d922).
+const DIALOG_BACKDROP_CLASS = `dialog-backdrop backdrop-blur-xs ${DIALOG_BACKDROP_BASE_CLASS}`;
 const DIALOG_MEDIA_BACKDROP_CLASS = `${DIALOG_BACKDROP_BASE_CLASS} bg-black/75 backdrop-blur-none`;
 
 const DIALOG_POPUP_BASE_CLASS =

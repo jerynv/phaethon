@@ -16,7 +16,6 @@ import {
   CommandPanel,
 } from "@/components/ui/command";
 import { AutocompleteEmpty } from "@/components/ui/autocomplete";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
 import { compactTime } from "@/lib/platform";
@@ -126,6 +125,13 @@ export function CommandPalette() {
         <Command items={groups} filter={null} value={query} onValueChange={setQuery} itemToStringValue={(i: unknown) => (i as Item).label}>
           <CommandInput placeholder="Search conversations, spaces and actions" />
           <CommandPanel>
+            {/* Above the list: the list's scroll area fills the panel, so anything after it is clipped away. */}
+            <AutocompleteEmpty>
+              <span className="flex items-center justify-center gap-2">
+                {searching ? <Spinner size="sm" tone="muted" /> : error ? <Icon icon={icons.error} className="size-4 text-error-foreground" /> : null}
+                {searching ? "Searching…" : error ? `Search failed: ${error}` : q.length >= 2 ? "Nothing matches that." : "Type to search."}
+              </span>
+            </AutocompleteEmpty>
             <CommandList>
               {(group: { label: string; items: Item[] }) => (
                 <CommandGroup key={group.label} items={group.items}>
@@ -153,11 +159,7 @@ export function CommandPalette() {
                         ) : null}
                       </span>
                       {item.keys ? (
-                        <KbdGroup className="shrink-0">
-                          {item.keys.map((k) => (
-                            <Kbd key={k}>{k}</Kbd>
-                          ))}
-                        </KbdGroup>
+                        <span className="shrink-0 text-2xs text-subtle-foreground tabular-nums">{item.keys.join(" ")}</span>
                       ) : item.detail ? (
                         <span className="max-w-40 shrink-0 truncate text-subtle-foreground text-xs tabular-nums">{item.detail}</span>
                       ) : null}
@@ -166,29 +168,11 @@ export function CommandPalette() {
                 </CommandGroup>
               )}
             </CommandList>
-            <AutocompleteEmpty>
-              <span className="flex items-center justify-center gap-2">
-                {searching ? <Spinner size="sm" tone="muted" /> : error ? <Icon icon={icons.error} className="size-4 text-error-foreground" /> : null}
-                {searching ? "Searching…" : error ? `Search failed: ${error}` : q.length >= 2 ? "Nothing matches that." : "Type to search."}
-              </span>
-            </AutocompleteEmpty>
           </CommandPanel>
           <CommandFooter>
             <span className="flex items-center gap-1.5">
               {searching ? <Spinner size="xs" tone="muted" /> : null}
               {searching ? "Searching every space" : "Searches every space"}
-            </span>
-            <span className="flex items-center gap-3">
-              <span className="flex items-center gap-1.5">
-                <Kbd>↑</Kbd>
-                <Kbd>↓</Kbd> move
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>↵</Kbd> open
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Kbd>esc</Kbd> close
-              </span>
             </span>
           </CommandFooter>
         </Command>

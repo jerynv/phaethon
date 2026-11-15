@@ -32,7 +32,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { convState, useChats, useConvState, type ConvState } from "@/features/chat/store";
 import { errorText } from "@/lib/core";
-import { compactTime, isMac } from "@/lib/platform";
+import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { api, type SpaceView } from "./api";
 import { keysFor } from "./shortcuts";
@@ -46,7 +46,9 @@ import { chatKey, DRAFT, useNav, type ThreadRow } from "./store";
  * 28 px rows on a 16 px icon column, and a quiet footer. Every conversation says what it is
  * doing, and several can be busy at once: a status gutter on the left
  * (replying, needs you, new reply, failed, pinned) and a trailing label that
- * names the live state, else the time, giving way to actions on hover.
+ * names the live state (no timestamps: a163's recents are titles only),
+ * giving way to actions on hover. A new chat not yet sent selects the New
+ * chat row itself.
  * Right-click a conversation or a space for its menu; arrow keys move between
  * rows, F2 renames, Delete asks to delete. Rows slide in and out and move
  * when pinned or reordered. A collapsed space still shows how many of its
@@ -187,7 +189,7 @@ function RenameField({ initial, onDone }: { initial: string; onDone: (title: str
         if (e.key === "Escape") finish(null);
       }}
       onBlur={(e) => finish(e.currentTarget.value)}
-      className="h-7 w-full min-w-0 rounded-md bg-background pr-2 pl-7 text-sm outline-none ring-1 ring-ring"
+      className="h-7 w-full min-w-0 rounded-md bg-background pr-2 pl-8 text-sm text-foreground outline-none ring-1 ring-ring ring-inset"
     />
   );
 }
@@ -276,7 +278,12 @@ function ThreadRowItem({ space, thread, active, onDelete }: { space: string; thr
   return (
     <motion.li {...rowMotion} className="group/menu-item relative overflow-hidden" data-slot="sidebar-menu-item" data-keep={menu || undefined}>
       {renaming ? (
-        <RenameField initial={thread.title} onDone={rename} />
+        <div className="relative">
+          <RenameField initial={thread.title} onDone={rename} />
+          <span className="pointer-events-none absolute inset-y-0 left-2 flex w-4 items-center justify-center">
+            <StatusMark state={state ?? "idle"} />
+          </span>
+        </div>
       ) : (
         <ContextMenu>
           <ContextMenuTrigger className="relative block">
@@ -293,11 +300,7 @@ function ThreadRowItem({ space, thread, active, onDelete }: { space: string; thr
               <Truncate side="right" className="flex-1">
                 {thread.title}
               </Truncate>
-              {label ? (
-                <SidebarMenuBadge className={cn("font-medium", label.className)}>{label.text}</SidebarMenuBadge>
-              ) : thread.messages ? (
-                <SidebarMenuBadge>{compactTime(thread.updated)}</SidebarMenuBadge>
-              ) : null}
+              {label ? <SidebarMenuBadge className={cn("font-medium", label.className)}>{label.text}</SidebarMenuBadge> : null}
             </SidebarMenuButton>
             <span className="pointer-events-none absolute inset-y-0 left-2 flex w-4 items-center justify-center">
               <StatusMark state={state ?? "idle"} />
@@ -318,22 +321,6 @@ function ThreadRowItem({ space, thread, active, onDelete }: { space: string; thr
           </ContextMenuPopup>
         </ContextMenu>
       )}
-    </motion.li>
-  );
-}
-
-/** The space's new chat while it is open: a row so a click on New chat visibly lands somewhere. */
-function DraftRow({ space, active }: { space: string; active: boolean }) {
-  const newChat = useNav((s) => s.newChat);
-  const rowMotion = useRowMotion();
-  return (
-    <motion.li {...rowMotion} className="group/menu-item relative overflow-hidden" data-slot="sidebar-menu-item">
-      <SidebarMenuButton isActive={active} aria-current={active ? "page" : undefined} data-nav-row="" onClick={() => void newChat(space)} className="relative pl-8 text-muted-foreground">
-        <span className="pointer-events-none absolute inset-y-0 left-2 flex w-4 items-center justify-center">
-          <Icon icon={icons.newChat} className="size-3.5" />
-        </span>
-        <span className="flex-1 truncate">New chat</span>
-      </SidebarMenuButton>
     </motion.li>
   );
 }
@@ -402,7 +389,8 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
   // A busy or selected conversation stays in view even past the fold.
   const shown = all ? rest : rest.filter((t, i) => i < SHOWN || t.id === open || t.running);
   const chatOn = active && !settingsOpen && view === "chat";
-  const draftOpen = open === DRAFT && active;
+  // Folded away, the space row stands in for the conversation open inside it.
+  const standIn = collapsed && chatOn && !!open && open !== DRAFT;
   const hideOnHover = "group-hover/menu-item:hidden group-has-focus-visible/menu-item:hidden group-data-[keep=true]/menu-item:hidden";
 
   return (
@@ -411,6 +399,7 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
         <ContextMenuTrigger className="group/menu-item relative block" data-keep={menu || undefined}>
           <SidebarMenuButton
             aria-label={`Go to ${space.name}`}
+            isActive={standIn}
             data-nav-row=""
             onClick={() => selectSpace(space.id)}
             onKeyDown={(e) => {
@@ -476,12 +465,11 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
               ) : (
                 <LayoutGroup id={`threads-${space.id}`}>
                   <AnimatePresence initial={false}>
-                    {draftOpen ? <DraftRow key={DRAFT} space={space.id} active={chatOn} /> : null}
                     {[...pinned, ...shown].map((t) => (
                       <ThreadRowItem key={t.id} space={space.id} thread={t} active={chatOn && open === t.id} onDelete={(x) => onDelete(space.id, x)} />
                     ))}
                   </AnimatePresence>
-                  {count === 0 && !draftOpen ? <li className="flex h-7 items-center pl-8 text-subtle-foreground text-xs">No conversations yet</li> : null}
+                  {count === 0 ? <li className="flex h-7 items-center pl-8 text-subtle-foreground text-xs">No conversations yet</li> : null}
                   {rest.length > SHOWN ? (
                     <li>
                       <SidebarMenuButton size="sm" tone="muted" className="pl-8" data-nav-row="" onClick={() => setAll((v) => !v)}>
@@ -561,11 +549,16 @@ function moveFocus(e: KeyboardEvent<HTMLElement>) {
 function FixedRows() {
   const space = useNav((s) => s.activeSpace);
   const newChat = useNav((s) => s.newChat);
+  // A new chat that hasn't been sent yet lives here, not as a row under its space.
+  const drafting = useNav((s) => !!s.activeSpace && s.open[s.activeSpace] === DRAFT && s.view === "chat" && s.settings === null);
   return (
     <SidebarMenu>
       <li className="group/menu-item relative">
         <SidebarMenuButton
           data-nav-row=""
+          isActive={drafting}
+          aria-current={drafting ? "page" : undefined}
+          aria-label="New chat"
           disabled={!space}
           aria-keyshortcuts={keysFor("newChat").aria}
           onClick={() => space && void newChat(space).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)))}
@@ -607,7 +600,7 @@ function ConnectModel() {
       onClick={() => openSettings("providers")}
       className="flex flex-col items-start gap-1 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <span className="font-medium text-foreground text-sm">Connect a model</span>
+      <span className="text-foreground text-sm">Connect a model</span>
       <span className="text-muted-foreground text-xs">Claude, ChatGPT, Gemini, or one that runs on this computer.</span>
       <span className="mt-1.5 flex items-center gap-2" aria-hidden>
         {CONNECT_MARKS.map((id) => (

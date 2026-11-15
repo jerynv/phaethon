@@ -123,7 +123,7 @@ function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
 function TooltipPopup({
   className,
   align = "center",
-  sideOffset = 4,
+  sideOffset = 6,
   side = "top",
   variant = "default",
   anchor,
@@ -141,10 +141,11 @@ function TooltipPopup({
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) text-balance rounded-md text-popover-foreground text-xs transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex origin-(--transform-origin) text-balance text-xs transition-[scale,opacity] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0",
+            // The references' tooltip (7cad "Copy", 95ba "Codex"): a near-black pill, white text, keys in a lighter tint.
             variant === "glass"
-              ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
-              : "border bg-popover not-dark:bg-clip-padding shadow-md/5",
+              ? "dropdown-glass rounded-md text-popover-foreground shadow-xl shadow-black/25"
+              : "rounded-lg bg-tooltip text-tooltip-foreground shadow-md/10 [&_[data-slot=kbd]]:bg-tooltip-foreground/15 [&_[data-slot=kbd]]:text-tooltip-foreground/80",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-2xs leading-relaxed"
               : "max-w-80 wrap-anywhere whitespace-normal leading-snug",
@@ -153,7 +154,7 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <div className="min-w-0 px-2 py-1" data-slot="tooltip-viewport">
+          <div className={cn("min-w-0", variant === "default" ? "px-2.5 py-1.5" : "px-2 py-1")} data-slot="tooltip-viewport">
             {children}
           </div>
         </TooltipPrimitive.Popup>

@@ -50,7 +50,11 @@ export function useViewActive(): boolean {
 export function Header({ title, actions }: { title?: ReactNode; actions?: ReactNode }) {
   const slots = useContext(SlotContext);
   const active = useContext(ActiveContext);
+  const view = useNav((s) => s.view);
+  const settings = useNav((s) => s.settings !== null);
   if (!active) return null;
+  // The tab already names the page: "Grades | Grades" says it twice. (Chat's title is a conversation's.)
+  if (!settings && view !== "chat" && typeof title === "string" && title === VIEWS.find((v) => v.id === view)?.label) title = undefined;
   return (
     <>
       {title && slots.title ? createPortal(typeof title === "string" ? <Truncate className="font-medium">{title}</Truncate> : title, slots.title) : null}
@@ -97,6 +101,7 @@ export function HeaderIconButton({ label, keys, onClick, children }: { label: st
   );
 }
 
+/** The view tabs. Their labels give way to icons when the bar is too short for them and a page title; never per page, so the tabs never move. */
 function ViewTabs() {
   const space = useActiveSpace();
   const view = useNav((s) => s.view);
@@ -108,9 +113,9 @@ function ViewTabs() {
       <TabsList aria-label="Views" variant="pill">
         {VIEWS.map((v, i) => (
           <Tooltip key={v.id}>
-            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} className="font-normal" />}>
+            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} className="h-6 gap-1.5 px-2 font-normal [&_svg]:size-3.5" />}>
               <Icon icon={v.icon} />
-              <span className="@max-xl/lead:hidden">{v.label}</span>
+              <span className="@max-header-labels/lead:hidden">{v.label}</span>
             </TooltipTrigger>
             <TooltipPopup side="bottom">
               <span className="flex items-center gap-2">
@@ -144,11 +149,11 @@ function SearchField() {
       aria-keyshortcuts={aria}
       aria-expanded={open}
       onClick={() => setPalette(true)}
-      className="app-no-drag group/search flex h-7 w-(--search-width) items-center gap-2 rounded-lg border bg-well pr-2 pl-2.5 text-sm text-subtle-foreground outline-none transition-colors hover:border-border-strong hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:border-border-strong @max-3xl/header:w-auto @max-3xl/header:border-transparent @max-3xl/header:bg-transparent @max-3xl/header:px-1.5"
+      className="app-no-drag group/search flex h-6.5 w-(--search-width) items-center gap-2 rounded-md border bg-background pr-2 pl-2.5 text-sm text-subtle-foreground outline-none transition-colors hover:border-border-strong hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:border-border-strong @max-5xl/header:w-auto @max-5xl/header:border-transparent @max-5xl/header:px-1.5"
     >
       <Icon icon={icons.search} className="size-4" />
-      <span className="flex-1 text-left @max-3xl/header:hidden">Search</span>
-      <span aria-hidden className="flex items-center gap-0.5 text-xs tabular-nums @max-3xl/header:hidden">
+      <span className="flex-1 text-left @max-5xl/header:hidden">Search</span>
+      <span aria-hidden className="flex items-center gap-0.5 text-xs tabular-nums @max-5xl/header:hidden">
         {keys.map((k) => (
           <span key={k}>{k}</span>
         ))}
@@ -199,11 +204,13 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
           </span>
         ) : null}
         <ViewTabs />
-        <div
-          ref={bind.title}
-          data-slot="header-title"
-          className="ml-2 flex min-w-0 flex-1 items-center gap-1.5 border-l pl-3 text-sm text-muted-foreground empty:hidden [&_.font-medium]:text-foreground"
-        />
+        <div className="@container/title mr-4 ml-2 flex min-w-0 flex-1">
+          <div
+            ref={bind.title}
+            data-slot="header-title"
+            className="flex min-w-0 flex-1 items-center gap-1.5 border-l pl-3 text-sm text-muted-foreground empty:hidden @max-header-title/title:hidden [&_.font-medium]:text-foreground"
+          />
+        </div>
       </div>
       <SearchField />
       <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 items-center justify-end gap-1 pr-3 pl-3" />

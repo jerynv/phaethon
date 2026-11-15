@@ -325,6 +325,90 @@ describe("canvas courses and content", () => {
     expect(f.log.some((r) => r.target.includes("private"))).toBe(false);
   });
 
+  it("imports files attached to announcements and discussions, and linked from quizzes and module items", async () => {
+    const fileApi = (id: number, name: string, extra: Record<string, unknown> = {}) => (b: string) =>
+      json({ id, display_name: name, "content-type": "application/pdf", url: `${b}/files/${id}/download?download_frd=1&verifier=api${id}`, ...extra });
+    const fileRoutes: Record<string, (b: string) => Reply> = {
+      "/api/v1/courses/1001/files/40": fileApi(40, "Unit3_Review_Problems.pdf", { hidden: true, hidden_for_user: true, locked_for_user: false }),
+      "/api/v1/courses/1001/files/43": fileApi(43, "seating chart.pdf"),
+      "/api/v1/courses/1001/files/50": fileApi(50, "Problem_set_9.pdf", { hidden_for_user: true, locked_for_user: false }),
+      "/api/v1/files/52": fileApi(52, "z-table.pdf"),
+    };
+    const f = await fake((u, b) => {
+      if (fileRoutes[u.pathname]) return fileRoutes[u.pathname](b);
+      switch (u.pathname) {
+        case "/api/v1/users/self": return json({ id: 42 });
+        case "/api/v1/courses/1001": return json({});
+        case "/api/v1/courses/1001/tabs": return json([{ id: "announcements" }, { id: "discussions" }, { id: "quizzes" }, { id: "modules" }, { id: "files", hidden: true }, { id: "pages", hidden: true }, { id: "assignments", hidden: true }]);
+        case "/api/v1/courses/1001/folders": return json([]);
+        case "/api/v1/courses/1001/discussion_topics":
+          return json(fixture(q(u, "only_announcements")[0] === "true" ? "announcements_attachments" : "discussion_topics", b));
+        case "/api/v1/courses/1001/discussion_topics/61": return json(fixture("discussion_topic_61", b));
+        case "/api/v1/courses/1001/quizzes": return json(fixture("quizzes", b));
+        case "/api/v1/courses/1001/quizzes/10": return reply(403, UNAUTHORIZED);
+        case "/api/v1/courses/1001/modules": return json([{ name: "Unit 3 test", items: [
+          { type: "Discussion", content_id: 61, title: "Study group" },
+          { type: "Discussion", content_id: 60, title: "Unit 3 test questions" },
+          { type: "Quiz", content_id: 9, title: "Unit 3 test practice" },
+          { type: "Quiz", content_id: 10, title: "Closed quiz" },
+          { type: "File", content_id: 41, title: "Problem set 10" },
+        ] }]);
+        default: return status(404);
+      }
+    });
+    const base = f.base;
+    const c = await canvas.content(session(base), "1001");
+    const byName = new Map(c.files.map((x) => [x.name, x.url.href]));
+    expect([...byName.keys()].sort()).toEqual([
+      "Unit3_Review_Problems.pdf", // announcement body link
+      "Unit3_formula_sheet.pdf", // attachment on a discussion reached through a module item
+      "Problem set 10.pdf", // announcement attachment, hidden_for_user but downloadable
+      "Problem set 8.pdf", // discussion attachment
+      "Problem_set_9.pdf", // discussion body link
+      "seating chart.pdf", // attachment without its own url, fetched by id
+      "z-table.pdf", // quiz description link
+    ]);
+    // Attachment urls are used exactly as Canvas gave them, verifier included.
+    expect(byName.get("Problem set 10.pdf")).toBe(`${base}/files/41/download?download_frd=1&verifier=att41`);
+    expect(byName.get("Problem set 8.pdf")).toBe(`${base}/files/51/download?download_frd=1&verifier=att51`);
+    expect(byName.get("Unit3_formula_sheet.pdf")).toBe(`${base}/files/53/download?download_frd=1&verifier=att53`);
+    expect(byName.get("Unit3_Review_Problems.pdf")).toBe(`${base}/files/40/download?download_frd=1&verifier=api40`);
+    expect(c.modules[0].items).toContain("Problem set 10.pdf");
+    // A locked attachment is skipped once, even though a discussion links it again.
+    expect(c.skipped.filter((x) => x.includes("Unit 3 test answers.pdf"))).toEqual(["File “Unit 3 test answers.pdf”: locked for now"]);
+    // Discussions and quizzes are read only for their files: a closed one isn't reported.
+    expect(c.skipped.some((x) => x.includes("Closed quiz") || x.includes("Quiz"))).toBe(false);
+    const hits = (p: string) => f.log.filter((r) => r.target.split("?")[0] === p).length;
+    for (const known of ["/api/v1/courses/1001/files/41", "/api/v1/courses/1001/files/42", "/api/v1/courses/1001/files/51", "/api/v1/courses/1001/files/53"]) expect(hits(known)).toBe(0);
+    expect(hits("/api/v1/courses/1001/discussion_topics/60")).toBe(0);
+    expect(hits("/api/v1/courses/1001/quizzes/9")).toBe(0);
+    expect(hits("/api/v1/courses/1001/quizzes/10")).toBe(1);
+    expect(hits("/api/v1/courses/1001/files/43")).toBe(1);
+    expect(f.log.every((r) => r.method === "GET")).toBe(true);
+  });
+
+  it("reads discussions and quizzes linked from modules even when their tabs are hidden", async () => {
+    const f = await fake((u, b) => {
+      switch (u.pathname) {
+        case "/api/v1/courses/1001": return json({});
+        case "/api/v1/courses/1001/tabs": return json([{ id: "modules" }, { id: "discussions", hidden: true }]);
+        case "/api/v1/courses/1001/folders": return json([]);
+        case "/api/v1/courses/1001/modules": return json([{ name: "Week 1", items: [
+          { type: "Discussion", content_id: 61, title: "Study group" },
+          { type: "Quiz", content_id: 9, title: "Practice" },
+        ] }]);
+        case "/api/v1/courses/1001/discussion_topics/61": return json(fixture("discussion_topic_61", b));
+        case "/api/v1/courses/1001/quizzes/9": return json(JSON.parse(fixture("quizzes", b))[0]);
+        case "/api/v1/files/52": return json({ id: 52, display_name: "z-table.pdf", url: `${b}/files/52/download?verifier=z` });
+        default: return status(404);
+      }
+    });
+    const c = await canvas.content(session(f.base), "1001");
+    expect(c.files.map((x) => x.name).sort()).toEqual(["Unit3_formula_sheet.pdf", "z-table.pdf"]);
+    expect(f.log.some((r) => /^\/api\/v1\/courses\/1001\/(discussion_topics|quizzes)(\?|$)/.test(r.target))).toBe(false);
+    expect(c.modules[0].items).toEqual(["Study group", "Practice"]);
+  });
+
   it("link headers, times and folders", () => {
     const { nextLink, unix, folderPaths } = canvasInternals;
     expect(nextLink('<https://x/a?page=1>; rel="current", <https://x/a?page=2&per_page=100>; rel="next", <https://x/a?page=9>; rel="last"')).toBe("https://x/a?page=2&per_page=100");

@@ -1,0 +1,17 @@
+[
+  {
+    "id": 60, "title": "Unit 3 test questions", "is_announcement": false, "html_url": "{BASE}/courses/1001/discussion_topics/60",
+    "message": "<p>Ask about <a href=\"/courses/1001/files/50\">Problem_set_9.pdf</a> here. The answers (<a href=\"/courses/1001/files/42\">locked</a>) open after the exam.</p>",
+    "attachments": [
+      {
+        "id": 41, "display_name": "Problem set 10.pdf", "filename": "Problem set 10.pdf", "content-type": "application/pdf",
+        "url": "{BASE}/files/41/download?download_frd=1&verifier=att41", "hidden_for_user": true, "locked_for_user": false
+      },
+      {
+        "id": 51, "uuid": "u51", "folder_id": 11, "display_name": "Problem set 8.pdf", "filename": "Problem set 8.pdf", "content-type": "application/pdf",
+        "url": "{BASE}/files/51/download?download_frd=1&verifier=att51", "size": 70011, "updated_at": "2026-10-30T12:00:00Z",
+        "hidden": true, "hidden_for_user": true, "locked_for_user": false
+      }
+    ]
+  }
+]

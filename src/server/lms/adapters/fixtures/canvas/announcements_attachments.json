@@ -1,0 +1,21 @@
+[
+  {
+    "id": 811, "title": "Unit 3 test", "is_announcement": true, "posted_at": "2026-11-10T15:00:00Z",
+    "html_url": "{BASE}/courses/1001/discussion_topics/811",
+    "message": "<p>Unit 3 test covers Problem set 8–Problem set 10. Practice with <a class=\"instructure_file_link\" href=\"{BASE}/courses/1001/files/40/download?verifier=v40&amp;wrap=1\" data-api-endpoint=\"{BASE}/api/v1/courses/1001/files/40\" data-api-returntype=\"File\">Unit3_Review_Problems.pdf</a>.</p>",
+    "attachments": [
+      {
+        "id": 41, "uuid": "u41", "folder_id": 11, "display_name": "Problem set 10.pdf", "filename": "Problem set 10.pdf",
+        "content-type": "application/pdf", "url": "{BASE}/files/41/download?download_frd=1&verifier=att41", "size": 81234,
+        "updated_at": "2026-11-09T12:00:00Z", "locked": false, "hidden": true, "hidden_for_user": true, "locked_for_user": false,
+        "mime_class": "pdf"
+      },
+      {
+        "id": 42, "uuid": "u42", "folder_id": 11, "display_name": "Unit 3 test answers.pdf", "filename": "answers.pdf",
+        "content-type": "application/pdf", "url": "", "size": 5120, "locked": true, "hidden": false, "hidden_for_user": false,
+        "locked_for_user": true, "lock_explanation": "This file is locked until Nov 20 at 12am.", "mime_class": "pdf"
+      },
+      { "id": 43, "display_name": "seating chart.pdf", "filename": "seating.pdf", "content-type": "application/pdf" }
+    ]
+  }
+]

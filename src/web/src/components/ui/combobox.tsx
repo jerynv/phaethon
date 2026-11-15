@@ -168,7 +168,7 @@ function ComboboxPopup({
       >
         <span
           className={cn(
-            "dropdown-glass relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-lg shadow-popup transition-[scale,opacity] dark:shadow-[0_18px_44px_-18px_oklch(0%_0_0/80%)]",
+            "dropdown-glass relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-lg shadow-popup transition-[scale,opacity]",
             className,
           )}
         >

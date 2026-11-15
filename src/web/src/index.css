@@ -208,6 +208,8 @@
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-shimmer: shimmer 2.2s linear infinite;
   --animate-indeterminate: indeterminate 1.4s var(--ease-drawer) infinite;
+  --animate-shake: shake 0.32s ease-out;
+  --animate-toast-countdown: toast-countdown linear forwards;
 
   /* One stepped breath for every skeleton (after T3 Code): a few frames per cycle, not one per vsync. */
   @keyframes skeleton {
@@ -246,6 +248,29 @@
     }
     to {
       background-position: -100% 0;
+    }
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-3px);
+    }
+    50% {
+      transform: translateX(3px);
+    }
+    75% {
+      transform: translateX(-2px);
+    }
+  }
+  @keyframes toast-countdown {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
     }
   }
   @keyframes indeterminate {

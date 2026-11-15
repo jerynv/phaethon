@@ -8,6 +8,7 @@ import { SkeletonCard, SkeletonRows } from "@/components/skeletons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { toast } from "@/components/toast";
 import { StartTruncate, Truncate } from "@/components/truncate";
+import { AsyncButton } from "@/components/async-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -427,9 +428,9 @@ function ExportGroup({ space }: { space: SpaceView }) {
           </Button>
         </Row>
         <Row label="Space folder" description="Open it in your file manager.">
-          <Button size="xs" variant="outline" onClick={() => void api.showSpace(space.id).catch((e) => toast.error("Couldn’t show the folder", cleanMessage(e)))}>
+          <AsyncButton size="xs" variant="outline" action={() => api.showSpace(space.id)} failure="Couldn’t show the folder">
             Show
-          </Button>
+          </AsyncButton>
         </Row>
       </Card>
     </Group>

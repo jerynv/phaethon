@@ -61,6 +61,7 @@ function MenuPopup({
             // hoverable.
             "[-webkit-app-region:no-drag]",
             "max-w-(--viewport-max-width)",
+            "transition-[opacity,scale,translate] duration-150 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:-translate-y-0.5 data-starting-style:opacity-0 data-ending-style:duration-100",
             width === "content" ? "w-max min-w-0" : "min-w-[min(--spacing(40),var(--viewport-max-width))]",
             className,
           )}

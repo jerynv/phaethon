@@ -20,6 +20,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtEmpty } from "@/features/courses/components/ArtEmpty";
 import { AutoHeight, EASE } from "@/features/study/components/motion";
 import { JobBar } from "@/features/study/components/parts";
+import { usePrefs } from "@/features/settings/prefs";
 import { useLoad } from "@/features/study/use-load";
 import { useDelayed } from "@/hooks/use-delayed";
 import { relativeTime } from "@/lib/platform";
@@ -45,6 +46,7 @@ import {
 import { newlyGraded, scoreText } from "./lib/newly";
 import { calcItems, loadSeen, saveSeen, weightText } from "./lib/table";
 import type { CourseGradeView, GradeItem } from "./lib/types";
+import { gpaText, scaleMax, termGpa } from "./lib/gpa";
 import { calculate, FINAL, letterFor, pct, whatIf } from "./lib/what-if";
 
 type Refresh = { done: number; total: number; course?: string };
@@ -67,6 +69,7 @@ export function GradesView({ space }: { space: SpaceView }) {
   const [refreshed, setRefreshed] = useState<number | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [focus, setFocus] = useState<string>(ALL);
+  const [tab, setTab] = useState<"overview" | "all">("overview");
   const latest = useRef<CourseGradeView[] | undefined>(undefined);
   latest.current = grades.data;
   const [now] = useState(() => Date.now());
@@ -83,6 +86,11 @@ export function GradesView({ space }: { space: SpaceView }) {
 
   const data = grades.data;
   const updated = data?.length ? Math.max(...data.map((c) => c.updated)) : null;
+  const jumpTo = (c: CourseGradeView) => {
+    if (tab === "all" || focused) return jump(c);
+    setTab("all");
+    requestAnimationFrame(() => requestAnimationFrame(() => jump(c)));
+  };
   // With one course there is nothing to choose: it is the focus.
   const one = data?.length === 1 ? data[0]! : null;
   const focused = one ?? data?.find((c) => courseId(c) === focus) ?? null;
@@ -181,12 +189,27 @@ export function GradesView({ space }: { space: SpaceView }) {
               </Button>
             </ArtEmpty>
           ) : null}
-          {data?.length ? (
+          {data?.length && focused ? (
             <>
-              {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} onBack={one ? undefined : () => setFocus(ALL)} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
-              {withItems.length ? <Attention courses={withItems} fresh={fresh} now={now} /> : null}
-              {focused && focused.items.length ? <CourseCharts course={focused} now={now} /> : null}
-              {focused && !focused.items.length ? null : <AllTables courses={scope} fresh={fresh} now={now} />}
+              {one ? null : (
+                <div>
+                  <Button size="sm" variant="ghost-muted" className="-ml-2" onClick={() => setFocus(ALL)}>
+                    <Icon icon={icons.arrowLeft} />
+                    All courses
+                  </Button>
+                </div>
+              )}
+              <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} />
+              {focused.items.length ? <CourseCharts course={focused} now={now} /> : null}
+              {withItems.length ? <Attention courses={withItems} fresh={fresh} now={now} onJump={jumpTo} /> : null}
+              {focused.items.length ? <AllTables courses={scope} fresh={fresh} now={now} /> : null}
+            </>
+          ) : null}
+          {data?.length && !focused ? (
+            <>
+              <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} tab={tab} onTab={setTab} />
+              {tab === "overview" && withItems.length ? <Attention courses={withItems} fresh={fresh} now={now} onJump={jumpTo} /> : null}
+              {tab === "all" ? <AllTables courses={scope} fresh={fresh} now={now} /> : null}
             </>
           ) : null}
         </div>
@@ -214,18 +237,41 @@ const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 
 // ---- All courses at a glance ----
 
-function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeView[]; refreshing?: string; onPick: (c: CourseGradeView) => void }) {
+function TermOverview({ courses, refreshing, onPick, tab, onTab }: { courses: CourseGradeView[]; refreshing?: string; onPick: (c: CourseGradeView) => void; tab: "overview" | "all"; onTab: (t: "overview" | "all") => void }) {
   const heads = courses.map(courseHead);
   const graded = heads.reduce((n, h) => n + h.graded, 0);
   const open = heads.reduce((n, h) => n + h.open, 0);
+  const scale = usePrefs((s) => s.gradeScale);
+  const gpa = termGpa(heads.map((h) => h.letter), scale);
   return (
     <section data-testid="grades-courses" className="flex flex-col gap-4">
-      <div className="flex flex-col gap-0.5">
-        <h1 className="font-medium text-lg tracking-title">Grades</h1>
-        <p className="text-muted-foreground text-sm tabular-nums">
-          This term · {plural(courses.length, "course")} · {graded} graded · {open} still open
-        </p>
+      <div className="flex items-end justify-between gap-6">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h1 className="font-medium text-lg tracking-title">Grades</h1>
+          <p className="text-muted-foreground text-sm tabular-nums">
+            This term · {plural(courses.length, "course")} · {graded} graded · {open} still open
+          </p>
+        </div>
+        {gpa ? (
+          <Tooltip>
+            <TooltipTrigger render={<div className="flex shrink-0 flex-col items-end tabular-nums" data-testid="grades-gpa" />}>
+              <span className="flex items-baseline gap-1">
+                <span className="font-medium text-3xl tracking-hero">{gpaText(gpa.gpa)}</span>
+                <span className="text-muted-foreground text-sm">/ {gpaText(scaleMax(scale))}</span>
+              </span>
+              <span className="text-muted-foreground text-xs">GPA · {gpa.counted === courses.length ? "this term" : `${gpa.counted} of ${courses.length} courses`}</span>
+            </TooltipTrigger>
+            <TooltipPopup>Unweighted, from each course’s letter{scale.kind === "custom" ? ", on your scale" : ""}. Change the scale in Settings › General.</TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
+      <Tabs value={tab} onValueChange={(v) => onTab(v as "overview" | "all")}>
+        <TabsList aria-label="Grades view">
+          <TabsTab value="overview">Overview</TabsTab>
+          <TabsTab value="all">All grades</TabsTab>
+        </TabsList>
+      </Tabs>
+      {tab === "all" ? null : (
       <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
           {heads.map((h) => {
             const c = h.course;
@@ -253,13 +299,14 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
             );
           })}
         </div>
+      )}
     </section>
   );
 }
 
 // ---- One course at a glance ----
 
-function CourseOverview({ course, now, refreshing, onBack }: { course: CourseGradeView; now: number; refreshing: boolean; onBack?: () => void }) {
+function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; now: number; refreshing: boolean }) {
   const h = courseHead(course);
   const s = courseStats(course, now);
   const up = h.trend && h.trend.delta >= 0.05;
@@ -269,11 +316,6 @@ function CourseOverview({ course, now, refreshing, onBack }: { course: CourseGra
       <div className="flex items-start gap-4 px-5 pt-5 pb-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <h1 className="flex min-w-0 items-center gap-1.5 font-medium text-lg tracking-title">
-            {onBack ? (
-              <Button size="icon-xs" variant="ghost-muted" aria-label="All courses" className="-ml-1" onClick={onBack}>
-                <Icon icon={icons.arrowLeft} />
-              </Button>
-            ) : null}
             <Truncate className="min-w-0">{course.course}</Truncate>
           </h1>
           <CardDescription className="flex items-center gap-2 tabular-nums">
@@ -441,7 +483,7 @@ function TrendChart({ points, current }: { points: SeriesPoint[]; current: numbe
 
 // ---- What needs attention ----
 
-function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh: Set<GradeItem>; now: number }) {
+function Attention({ courses, fresh, now, onJump }: { courses: CourseGradeView[]; fresh: Set<GradeItem>; now: number; onJump: (c: CourseGradeView) => void }) {
   const due = dueSoon(courses, now);
   const missing = missingOrLate(courses);
   const recent = recentlyGraded(courses, fresh, now);
@@ -451,7 +493,7 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
     <section className="grid gap-3 @3xl/page:grid-cols-2" aria-label="Needs attention" data-testid="grades-attention">
       <Panel icon={icons.time} title="Due soon" count={due.length} empty="Nothing due in the next week." testId="grades-due">
         {due.slice(0, 5).map((r) => (
-          <Line key={`${courseId(r.course)}${r.key}`} r={r} many={many} right={<span className={cn("tabular-nums", r.due! - now < DAY * 1.5 && "font-medium text-warning-foreground")}>{dueWords(r.due, now)}</span>} />
+          <Line key={`${courseId(r.course)}${r.key}`} r={r} many={many} onJump={onJump} right={<span className={cn("tabular-nums", r.due! - now < DAY * 1.5 && "font-medium text-warning-foreground")}>{dueWords(r.due, now)}</span>} />
         ))}
       </Panel>
       <Panel icon={icons.warning} title="Missing or late" count={missing.length} empty="Nothing missing or late." tone={missing.length ? "warning" : undefined} testId="grades-missing">
@@ -460,6 +502,7 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
             key={`${courseId(r.course)}${r.key}`}
             r={r}
             many={many}
+            onJump={onJump}
             right={
               <Badge variant={r.item.missing ? "error" : "warning"} size="lg">
                 {r.item.missing ? "Missing" : "Late"}
@@ -474,6 +517,7 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
             key={`${courseId(r.course)}${r.key}`}
             r={r}
             many={many}
+            onJump={onJump}
             badge={
               fresh.has(r.item) ? (
                 <Badge variant="info" size="default">
@@ -487,7 +531,7 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
       </Panel>
       <Panel icon={icons.goal} title="Worth the most" count={lever.length} empty="Everything is graded." testId="grades-levers">
         {lever.map((l) => (
-          <Line key={`${courseId(l.course)}${l.key}`} r={l} many={many} sub={l.next ? `needs ${pct(l.next.percent)} for ${/^[AEFIO]/.test(l.next.letter) ? "an" : "a"} ${l.next.letter}` : undefined} right={<span className="text-foreground tabular-nums">{weightText(l.weight)}</span>} />
+          <Line key={`${courseId(l.course)}${l.key}`} r={l} many={many} onJump={onJump} sub={l.next ? `needs ${pct(l.next.percent)} for ${/^[AEFIO]/.test(l.next.letter) ? "an" : "a"} ${l.next.letter}` : undefined} right={<span className="text-foreground tabular-nums">{weightText(l.weight)}</span>} />
         ))}
       </Panel>
     </section>
@@ -508,9 +552,9 @@ function Panel({ icon, title, hint, count, empty, tone, children, testId }: { ic
   );
 }
 
-function Line({ r, many, right, badge, sub }: { r: Ref; many: boolean; right: ReactNode; badge?: ReactNode; sub?: string }) {
+function Line({ r, many, right, badge, sub, onJump }: { r: Ref; many: boolean; right: ReactNode; badge?: ReactNode; sub?: string; onJump: (c: CourseGradeView) => void }) {
   return (
-    <button type="button" onClick={() => jump(r.course)} className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-3.5 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <button type="button" onClick={() => onJump(r.course)} className="flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-3.5 py-1.5 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="flex min-w-0 items-center gap-1.5">
           <Truncate className="min-w-0 text-sm">{r.item.title}</Truncate>
@@ -678,7 +722,6 @@ function CourseTable({
                   <thead className="sticky top-13 z-5 bg-card/95 backdrop-blur-sm">
                     <tr className="text-muted-foreground text-xs [&>th]:border-b">
                       <Th label="Assignment" k="title" sort={sort} onSort={onSort} className="pl-5 text-left" />
-                      <th className="h-9 w-36 pl-3 text-left font-normal">Category</th>
                       <Th label="Due" k="due" sort={sort} onSort={onSort} className="w-24 pl-3 text-left" />
                       <Th label="Score" k="score" sort={sort} onSort={onSort} className="w-28 pl-3 text-right" />
                       <Th label="Weight" k="weight" sort={sort} onSort={onSort} className="w-20 pr-5 pl-3 text-right" />
@@ -692,37 +735,37 @@ function CourseTable({
                         const bad = r.bad.includes(key);
                         return (
                           <tr key={key} className={cn("transition-colors hover:bg-accent/50 [&:not(:first-child)>td]:border-t", item.excused && "text-muted-foreground")}>
-                            <td className="h-10 max-w-0 pl-5">
+                            <td className="h-9 max-w-0 pl-5">
                               <div className="flex min-w-0 items-center gap-1.5">
-                                <Truncate className="min-w-0">{item.title}</Truncate>
+                                <Truncate className="min-w-0">
+                                  {item.title}
+                                  {item.group ? <span className="text-muted-foreground text-xs"> · {item.group}</span> : null}
+                                </Truncate>
                                 {item.missing ? (
-                                  <Badge variant="error" size="default">
+                                  <Badge variant="error" size="sm">
                                     Missing
                                   </Badge>
                                 ) : null}
                                 {item.late ? (
-                                  <Badge variant="warning" size="default">
+                                  <Badge variant="warning" size="sm">
                                     Late
                                   </Badge>
                                 ) : null}
                                 {item.excused ? (
-                                  <Badge variant="secondary" size="default">
+                                  <Badge variant="secondary" size="sm">
                                     Excused
                                   </Badge>
                                 ) : null}
                                 {fresh.has(item) ? (
-                                  <Badge variant="info" size="default">
+                                  <Badge variant="info" size="sm">
                                     New
                                   </Badge>
                                 ) : null}
                                 {item.comments.length ? <Comments comments={item.comments} /> : null}
                               </div>
                             </td>
-                            <td className="h-10 max-w-0 pl-3">
-                              <Truncate className="text-muted-foreground text-xs">{item.group ?? "–"}</Truncate>
-                            </td>
-                            <td className="h-10 pl-3 text-muted-foreground text-xs tabular-nums">{dueWords(item.due ? Date.parse(item.due) : null, now) || "–"}</td>
-                            <td className="h-10 pl-3 text-right tabular-nums">
+                            <td className="h-9 pl-3 text-muted-foreground text-xs tabular-nums">{dueWords(item.due ? Date.parse(item.due) : null, now) || "–"}</td>
+                            <td className="h-9 pl-3 text-right tabular-nums">
                               {editable ? (
                                 <span className="inline-flex items-center justify-end gap-1">
                                   <Input
@@ -741,13 +784,13 @@ function CourseTable({
                                 <span className={cn(item.missing && "text-destructive-foreground")}>{scoreText(item)}</span>
                               )}
                             </td>
-                            <td className="h-10 pr-5 pl-3 text-right text-muted-foreground text-xs tabular-nums">{weightText(weight)}</td>
+                            <td className="h-9 pr-5 pl-3 text-right text-muted-foreground text-xs tabular-nums">{weightText(weight)}</td>
                           </tr>
                         );
                       })
                     ) : (
                       <tr>
-                        <td colSpan={5} className="h-11 px-5 text-muted-foreground text-sm">
+                        <td colSpan={4} className="h-11 px-5 text-muted-foreground text-sm">
                           Nothing here matches.
                         </td>
                       </tr>
@@ -755,7 +798,7 @@ function CourseTable({
                   </tbody>
                   <tfoot>
                     <tr className="bg-well font-medium [&>td]:border-t">
-                      <td className="h-10 rounded-bl-card pl-5 text-sm" colSpan={3}>
+                      <td className="h-10 rounded-bl-card pl-5 text-sm" colSpan={2}>
                         Course total
                       </td>
                       <td className="h-10 pl-3 text-right tabular-nums">

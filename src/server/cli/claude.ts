@@ -81,6 +81,17 @@ function toolLabel(block: Record<string, unknown>, base: string, granted: Grante
 }
 
 /** Turns stream-json lines into AgentEvents. Unknown lines are ignored, so new event types don't break anything. */
+
+/** A tool_result's text: a string, or the text blocks of a list. */
+function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b) => (b && typeof b === "object" && (b as { type?: unknown }).type === "text" && typeof (b as { text?: unknown }).text === "string" ? (b as { text: string }).text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
 export class ClaudeParser {
   #session: string | null = null;
   #emittedText = false;
@@ -123,7 +134,8 @@ export class ClaudeParser {
           .filter((b) => b.type === "tool_result")
           .flatMap((b) => {
             const failed = b.is_error === true;
-            return this.#tools.end(typeof b.tool_use_id === "string" ? b.tool_use_id : "", failed ? "failed" : "success", failed ? "Tool reported an error" : undefined);
+            const printed = resultText(b.content).trim();
+            return this.#tools.end(typeof b.tool_use_id === "string" ? b.tool_use_id : "", failed ? "failed" : "success", printed ? printed : failed ? "Tool reported an error" : undefined);
           });
       case "result": {
         const text = typeof v.result === "string" ? v.result : "";

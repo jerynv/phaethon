@@ -6,8 +6,12 @@ import { SkeletonCard } from "@/components/skeletons";
 import { StartTruncate } from "@/components/truncate";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { ToggleRow } from "@/components/ui/toggle-row";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { LETTER_ORDER, pointsOf } from "@/features/grades/lib/gpa";
 import { usePrefs } from "./prefs";
-import { CopyButton, Loader, SettingsCard, useLoad } from "./ui";
+import { CopyButton, Loader, Row, SettingsCard, useLoad } from "./ui";
 
 /** Settings › General: where the vault is, how replies read, and the keyboard shortcuts. */
 
@@ -66,6 +70,10 @@ export function GeneralSection() {
         </div>
       </SettingsCard>
 
+      <SettingsCard icon={<Icon icon={icons.grades} />} title="Grades">
+        <GradeScaleRows />
+      </SettingsCard>
+
       <SettingsCard icon={<Icon icon={icons.command} />} title="Keyboard shortcuts">
         <ul className="-mt-2 flex flex-col">
           {shortcuts().map((s) => (
@@ -79,5 +87,51 @@ export function GeneralSection() {
         </ul>
       </SettingsCard>
     </>
+  );
+}
+
+/** How letters count towards the GPA on the Grades page: the standard 4.0 scale, or points per letter. */
+function GradeScaleRows() {
+  const scale = usePrefs((s) => s.gradeScale);
+  const setScale = usePrefs((s) => s.setGradeScale);
+  const points = pointsOf(scale);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const commit = (letter: string, text: string) => {
+    const n = Number.parseFloat(text);
+    const next = { ...(scale.kind === "custom" ? scale.points : {}) };
+    if (Number.isFinite(n) && n >= 0 && n <= 20) next[letter] = Math.round(n * 100) / 100;
+    setScale({ kind: "custom", points: next });
+    setDrafts((d) => ({ ...d, [letter]: "" }));
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <Row label="Grade points" description={scale.kind === "custom" ? "Your own points per letter." : "A = 4.0, A− = 3.7, B+ = 3.3…"}>
+        <Tabs value={scale.kind} onValueChange={(v) => setScale(v === "custom" ? { kind: "custom", points: {} } : { kind: "standard" })}>
+          <TabsList size="sm" aria-label="Grade scale">
+            <TabsTab value="standard">4.0</TabsTab>
+            <TabsTab value="custom">Custom</TabsTab>
+          </TabsList>
+        </Tabs>
+      </Row>
+      {scale.kind === "custom" ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2" aria-label="Points per letter">
+          {LETTER_ORDER.map((letter) => (
+            <label key={letter} className="flex items-center gap-2 text-sm">
+              <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{letter}</span>
+              <Input
+                size="sm"
+                inputMode="decimal"
+                aria-label={`Points for ${letter}`}
+                value={drafts[letter] || String(points[letter] ?? "")}
+                onChange={(e) => setDrafts((d) => ({ ...d, [letter]: e.target.value }))}
+                onBlur={(e) => commit(letter, e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && commit(letter, (e.target as HTMLInputElement).value)}
+                className="[&_input]:tabular-nums"
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

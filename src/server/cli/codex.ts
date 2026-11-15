@@ -192,7 +192,9 @@ export class CodexItems {
     let status: ToolStatus = "success";
     if (failed) status = "failed";
     else if (item.type === "commandExecution" && (exit === null || exit === undefined)) status = "incomplete";
-    const detail = typeof exit === "number" && Number.isInteger(exit) ? `Exit code ${exit}` : failed ? "Tool reported an error" : undefined;
+    // What the command printed, for "Show output"; a failure with nothing printed says so. Exit codes stay out of the chat.
+    const printed = typeof item.aggregatedOutput === "string" ? item.aggregatedOutput.trim() : "";
+    const detail = printed ? printed : failed ? "Tool reported an error" : undefined;
     return [...out, ...this.#tools.end(str(item.id), status, detail)];
   }
 }

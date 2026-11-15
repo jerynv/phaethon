@@ -4,6 +4,7 @@ import { Refusal, messageOf } from "../rpc/registry.ts";
 import { host } from "../host.ts";
 import { cleanRel, resolveIn } from "../core/resolve.ts";
 import { resolveCoursePath } from "../lms/access.ts";
+import { resolveLoosely } from "./find.ts";
 
 /**
  * Opening a file in its default app, or showing it in the file manager. Only
@@ -72,7 +73,7 @@ export function isRunnable(p: string): boolean {
 }
 
 export async function openFile(spaceId: string, spaceRoot: string, p: string, reveal: boolean): Promise<void> {
-  const full = target(spaceId, spaceRoot, p);
+  const full = resolveLoosely(spaceId, spaceRoot, p, (q) => target(spaceId, spaceRoot, q));
   if (!reveal && isRunnable(full)) {
     throw new Refusal("This file can run a program, so Phaethon won’t open it. Use Show in Finder to see where it is instead.");
   }

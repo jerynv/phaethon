@@ -122,12 +122,11 @@ def font(size: int, weight: int) -> ImageFont.FreeTypeFont:
 
 
 def banner(dark: bool) -> Image.Image:
-    """The word alone, centred; the mark is already the P, so it never sits beside the word."""
+    """The wordmark: the mark stands as the P of "Phaethon", so the P is never doubled."""
     W, H = 2560, 640
     bg_top, bg_bottom = ((13, 17, 33), (9, 12, 24)) if dark else ((248, 250, 255), (238, 242, 253))
     im = vertical_gradient((W, H), bg_top, bg_bottom)
 
-    # A soft cobalt glow behind the word.
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(glow).ellipse((W / 2 - 520, H / 2 - 380, W / 2 + 520, H / 2 + 380), fill=COBALT + ((70 if dark else 40),))
     im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(160)))
@@ -138,7 +137,23 @@ def banner(dark: bool) -> Image.Image:
     d = ImageDraw.Draw(im)
     fg = (244, 246, 252) if dark else (14, 20, 40)
     sub = (170, 180, 205) if dark else (72, 82, 108)
-    d.text((W / 2, 168), "Phaethon", font=title, fill=fg, anchor="mt")
+
+    # The mark at the cap height of the word, then "haethon" right after it, the pair centred.
+    word = "haethon"
+    cap_top, cap_bottom = d.textbbox((0, 0), "H", font=title, anchor="ls")[1], 0
+    cap = -cap_top  # cap height in px (textbbox above the baseline is negative)
+    g = glyph()
+    mark_h = round(cap * 1.08)
+    mark_w = round(g.width * mark_h / g.height)
+    gap = round(cap * 0.10)
+    word_w = d.textlength(word, font=title)
+    total = mark_w + gap + word_w
+    left = round((W - total) / 2)
+    baseline = 168 + cap
+    mark = recolor(g, COBALT_LIGHT if dark else COBALT).resize((mark_w, mark_h), Image.LANCZOS)
+    im.alpha_composite(mark, (left, round(baseline - mark_h)))
+    d = ImageDraw.Draw(im)
+    d.text((left + mark_w + gap, baseline), word, font=title, fill=fg, anchor="ls")
     d.text((W / 2, 400), lines[0], font=tag, fill=sub, anchor="mt")
     d.text((W / 2, 470), lines[1], font=tag, fill=sub, anchor="mt")
     return im

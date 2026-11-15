@@ -448,3 +448,18 @@ describe("add files", () => {
     expect(host.ops[1]).toMatchObject({ op: "pickFolder", title: "Add a folder to Work" });
   });
 });
+
+describe("a file named another way", () => {
+  it("opens by its real path, from the vault root, with a space prefix, or by its name alone when that is unique", () => {
+    const plan = view("notes/plan.md");
+    expect(view(path.join(school, "notes", "plan.md")).path).toBe("notes/plan.md");
+    expect(view("spaces/school/notes/plan.md")).toEqual(plan);
+    expect(view("school/notes/plan.md")).toEqual(plan);
+    expect(view("./notes/plan.md")).toEqual(plan);
+    expect(view("plan.md")).toEqual(plan);
+    expect(view("old/plan.md")).toEqual(plan);
+    // Another space's file never resolves, nor does a name that matches nothing.
+    expect(() => view(v("spaces/work/secret.md"))).toThrow();
+    expect(() => view("nothing-here.md")).toThrow("isn’t in this space any more");
+  });
+});

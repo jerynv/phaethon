@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
-import { CardBlock, ConfirmDialog, CopyButton, Field, Intro, Loader, Row, SettingsCard, Status, useLoad, Well } from "../ui";
+import { CardBlock, ConfirmDialog, CopyButton, Field, Loader, Row, SettingsCard, Status, useLoad, Well } from "../ui";
 import {
   CLI_IDS,
   CLI_INFO,
@@ -62,9 +62,9 @@ function UsageBar({ w }: { w: UsageWindow }) {
   const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)));
   const reset = resetsIn(w.resetsAt);
   return (
-    <div className="grid grid-cols-[4.5rem_1fr_2.25rem_5.5rem] items-center gap-3 text-xs">
+    <div className="grid grid-cols-[4rem_1fr_4rem_5.5rem] items-center gap-3 text-xs">
       <span className="truncate text-muted-foreground">{w.label}</span>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
@@ -72,7 +72,7 @@ function UsageBar({ w }: { w: UsageWindow }) {
           className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")}
         />
       </div>
-      <span className="text-right tabular-nums">{pct}%</span>
+      <span className="text-right tabular-nums">{pct}% used</span>
       <span className="truncate text-right text-subtle-foreground tabular-nums">{reset ? (reset === "now" ? "resets now" : `resets in ${reset}`) : ""}</span>
     </div>
   );
@@ -93,7 +93,7 @@ function Usage({ id }: { id: string }) {
   const u = usage.data;
   if (!u.available || u.windows.length === 0) return <p className="truncate text-subtle-foreground text-xs">{u.reason ?? "No usage limits to show."}</p>;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       {u.windows.map((w) => (
         <UsageBar key={w.label} w={w} />
       ))}
@@ -153,7 +153,7 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
 
   return (
     <Row
-      className="py-3"
+      className="min-h-10 py-1.5"
       label={
         <span className="flex min-w-0 items-center gap-2">
           <Truncate className="min-w-0">{i.config.name}</Truncate>
@@ -163,9 +163,11 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
             </Badge>
           ) : null}
           {i.readOnly && !/system/i.test(i.config.name) ? <span className="shrink-0 font-normal text-subtle-foreground text-xs">System</span> : null}
+          <Status tone={status.tone} className="min-w-0 text-xs">
+            <Truncate className="min-w-0">{status.text}</Truncate>
+          </Status>
         </span>
       }
-      description={<Status tone={status.tone}><Truncate className="min-w-0">{status.text}</Truncate></Status>}
       below={
         <>
           {error ? <FieldError>{error}</FieldError> : null}
@@ -321,7 +323,7 @@ function CliCard({ cli, status, instances, onChanged, onRecheck, rechecking }: {
           </Well>
         </Field>
       ) : (
-        <CardBlock title={mine.length > 1 ? "Accounts" : "Account"}>
+        <CardBlock title={mine.length > 1 ? "Accounts" : undefined} className={cn("gap-1", mine.length > 1 ? "pt-3" : "pt-2")}>
           <div className="flex flex-col divide-y">
             <AnimatePresence initial={false}>
               {mine.map((i) => (
@@ -363,7 +365,6 @@ export function AgentsSection() {
         const others = clis.filter((c) => !c.supported || !(CLI_IDS as readonly string[]).includes(c.id));
         return (
           <>
-            <Intro>Chats can hand work to these command-line agents. Each signs in with its own login; Phaethon never sees it.</Intro>
             {CLI_IDS.map((cli) => (
               <CliCard
                 key={cli}

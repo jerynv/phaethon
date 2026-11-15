@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Refusal, messageOf } from "../rpc/registry.ts";
+import { resolveLoosely } from "./find.ts";
 import * as courseAccess from "../lms/access.ts";
 import { coursesParts, extOf, target } from "./open.ts";
 
@@ -146,8 +147,10 @@ function statFile(real: string, shown: string): fs.Stats {
 }
 
 export function viewFile(spaceId: string, spaceRoot: string, p: string): FileView {
-  const shown = p.trim();
-  const { real, course } = locate(spaceId, spaceRoot, p);
+  // A path a reply wrote differently from how the space knows it still opens, and the viewer shows the space's path.
+  const hit = resolveLoosely(spaceId, spaceRoot, p, (q) => ({ q: q.trim().replace(/^(\.\/)+/, ""), ...locate(spaceId, spaceRoot, q) }));
+  const shown = hit.q;
+  const { real, course } = hit;
   const st = statFile(real, shown);
   let [kind, media] = kindOf(real);
   const view: FileView = { path: shown, name: path.basename(real), kind, size: st.size, mediaType: media, text: null, language: null, tooBig: false };
@@ -193,7 +196,7 @@ export function viewFile(spaceId: string, spaceRoot: string, p: string): FileVie
 /** An allowlisted binary input's bytes, after the same walls. */
 export function fileBytes(spaceId: string, spaceRoot: string, p: string): Buffer {
   const shown = p.trim();
-  const { real } = locate(spaceId, spaceRoot, p);
+  const { real } = resolveLoosely(spaceId, spaceRoot, p, (q) => locate(spaceId, spaceRoot, q));
   const [kind] = kindOf(real);
   if (!BINARY.has(kind)) throw new Refusal("This file type is not a binary preview input.");
   const st = statFile(real, shown);

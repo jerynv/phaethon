@@ -9,6 +9,8 @@ import { spacePathOf } from "../../viewer/kinds.ts";
 export type LinkTarget = { kind: "external"; url: string } | { kind: "file"; path: string } | { kind: "anchor" } | { kind: "none" };
 
 const EXTERNAL = /^(https?:|mailto:)/i;
+/** An absolute path on this computer (a rooted link like /notes/x.md means the space's root instead). */
+const REAL_PATH = /^(file:\/\/|~\/|\/(Users|home|private|var|tmp|mnt|Volumes|opt|srv)\/|[a-zA-Z]:[\\/])/i;
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 export function linkTarget(href: string | undefined | null): LinkTarget {
@@ -16,6 +18,8 @@ export function linkTarget(href: string | undefined | null): LinkTarget {
   if (!raw) return { kind: "none" };
   if (raw.startsWith("#")) return { kind: "anchor" };
   if (EXTERNAL.test(raw)) return { kind: "external", url: raw };
+  // A real path (a coding agent writes what it sees) goes to the core as written; it places it in the space.
+  if (REAL_PATH.test(raw)) return { kind: "file", path: raw.replace(/^file:\/\//i, "") };
   // app://phaethon/notes/x.md (a relative link the page already resolved) keeps only its path.
   const app = /^app:\/\/[^/]*\/(.*)$/i.exec(raw);
   const rel = app ? app[1]! : raw.replace(/^\/+/, "");
@@ -31,8 +35,8 @@ const FILE_EXT = /\.(md|markdown|txt|pdf|docx?|pptx?|xlsx?|csv|tsv|json|ya?ml|te
 /** True for inline code that is a plain relative path to a file (no spaces, no scheme, a known extension). */
 export function looksLikeFilePath(text: string): boolean {
   const t = text.trim();
-  if (t.length < 3 || t.length > 240 || /\s/.test(t) || SCHEME.test(t) || t.startsWith("/") || t.startsWith("~")) return false;
-  if (t.split("/").some((p) => p === ".." || p === "")) return false;
+  if (t.length < 3 || t.length > 240 || /\s/.test(t) || SCHEME.test(t)) return false;
+  if (t.split("/").some((p, i) => p === ".." || (p === "" && i > 0))) return false;
   return FILE_EXT.test(t);
 }
 

@@ -55,13 +55,13 @@ describe("Codex app-server arguments", () => {
     expect(() => answerServerRequest("account/chatgptAuthTokens/refresh", false)).toThrow();
   });
 
-  it("map item statuses truthfully, with no command output", () => {
+  it("map item statuses truthfully, with the command's output as the detail and no exit codes", () => {
     const items = new CodexItems("/s", []);
     const cmd = { type: "commandExecution", id: "c1", command: "ls", status: "inProgress", exitCode: null };
     expect(items.started(cmd).map((e) => e.kind)).toEqual(["tool", "toolStart"]);
-    expect(items.completed({ ...cmd, status: "completed", exitCode: null, aggregatedOutput: "secret" })).toEqual([{ kind: "toolEnd", id: "codex:c1", status: "incomplete" }]);
+    expect(items.completed({ ...cmd, status: "completed", exitCode: null, aggregatedOutput: "two files\n" })).toEqual([{ kind: "toolEnd", id: "codex:c1", status: "incomplete", detail: "two files" }]);
     const fast = items.completed({ type: "commandExecution", id: "c2", command: "false", status: "failed", exitCode: 1 });
-    expect(fast.at(-1)).toEqual({ kind: "toolEnd", id: "codex:c2", status: "failed", detail: "Exit code 1" });
+    expect(fast.at(-1)).toEqual({ kind: "toolEnd", id: "codex:c2", status: "failed", detail: "Tool reported an error" });
     expect(items.completed({ type: "reasoning", id: "r" })).toEqual([]);
   });
 });
@@ -91,17 +91,16 @@ describe("Codex conversations", () => {
     expect(rpc.find((m) => m.id === 1000)?.result).toEqual({ decision: "decline" });
     expect(readCliSession(school, THREAD, "codex")).toBe(thread);
     expect(fs.readFileSync(path.join(school, ".phaethon", "threads", `${THREAD}.session`), "utf8")).toBe(`codex:${thread}\n`);
-    // Text streamed in order, a second message after a blank line; the failed command and the search recorded without output.
+    // Text streamed in order, a second message after a blank line; the failed command keeps what it printed, the search records no output.
     expect(shown("school")).toEqual([
       ["user", "tools please"],
       ["assistant", "Reply 1.\n\nSecond part."],
     ]);
     const saved = load("school", THREAD).at(-1)!.content.filter((b) => b.type === "phaethon_record");
     expect(saved).toEqual([
-      { type: "phaethon_record", kind: "tool", id: "codex:call_1", category: "command", label: "Running command", status: "failed", detail: "Exit code 1" },
+      { type: "phaethon_record", kind: "tool", id: "codex:call_1", category: "command", label: "Running command", status: "failed", detail: "private output" },
       { type: "phaethon_record", kind: "tool", id: "codex:ws_1", category: "search", label: "Searching", status: "success" },
     ]);
-    expect(JSON.stringify(load("school", THREAD))).not.toContain("private output");
     expect(await waitFor(() => !alive(Number(log.text("pid-1"))))).toBe(true);
 
     const again = await send(codex("And then?"));

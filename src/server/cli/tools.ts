@@ -5,9 +5,9 @@ import type { Record_ } from "../core/thread.ts";
 
 /**
  * What a CLI's tool use becomes in Phaethon: a status line, a start/end pair
- * and, once finished, a record in the conversation. Only the tool's category,
- * a generic label, a shown path and its status are ever kept; never command
- * arguments or tool output.
+ * and, once finished, a record in the conversation. The tool's category, a
+ * generic label, a shown path, its status and, for a command, the first part
+ * of its output (behind "Show output") are kept; never raw tool arguments.
  */
 
 export type Granted = { label: string; path: string }[];
@@ -23,6 +23,23 @@ export function shortText(text: string): string {
   }
   return out;
 }
+
+/** Up to 4000 characters of a tool's output, line breaks kept, other control characters dropped. */
+export function outputText(text: string): string {
+  let out = "";
+  let n = 0;
+  for (const ch of text) {
+    if (ch !== "\n" && ch !== "\t" && /\p{Cc}/u.test(ch)) continue;
+    if (n++ >= 4000) {
+      out += "…";
+      break;
+    }
+    out += ch;
+  }
+  return out.trim();
+}
+
+export const ERROR_NOTE = "Tool reported an error";
 
 const CATEGORY_OF: Record<string, ToolCategory> = {
   Read: "read",
@@ -102,6 +119,7 @@ export function toolStartEvent(id: string, category: ToolCategory, input: unknow
 export class ToolEvents {
   #seen = new Set<string>();
   #finished = new Set<string>();
+  #category = new Map<string, ToolCategory>();
   #next = 0;
 
   constructor(
@@ -115,6 +133,7 @@ export class ToolEvents {
     const id = `${this.cli}:${short}`;
     if (this.#seen.has(id)) return [];
     this.#seen.add(id);
+    this.#category.set(id, category);
     return [{ kind: "tool", label }, toolStartEvent(id, category, input, this.base, this.granted)];
   }
 
@@ -123,7 +142,10 @@ export class ToolEvents {
     if (!this.#seen.has(id) || this.#finished.has(id)) return [];
     this.#finished.add(id);
     const event: AgentEvent = { kind: "toolEnd", id, status };
-    if (detail !== undefined) event.detail = shortText(detail);
+    // Only a command's output is shown; what a tool read (a file's contents) never enters the conversation.
+    const keep = detail !== undefined && (this.#category.get(id) === "command" || detail === ERROR_NOTE);
+    if (keep) event.detail = outputText(detail!);
+    else if (detail !== undefined && status === "failed") event.detail = ERROR_NOTE;
     return [event];
   }
 }
@@ -149,7 +171,7 @@ export class ToolLog {
         this.#active.delete(event.id);
         record = { kind: "tool", id: event.id, category: active.category, label: active.label, status: event.status };
         if (active.target !== undefined) record.target = active.target;
-        if (event.detail !== undefined) record.detail = shortText(event.detail);
+        if (event.detail !== undefined) record.detail = outputText(event.detail);
       }
     }
     send(event);

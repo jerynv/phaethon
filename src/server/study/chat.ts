@@ -77,13 +77,17 @@ export type Plan = {
 
 type Obj = Record<string, unknown>;
 
-function textField(v: Obj, keys: string[], max: number, what: string): string | null {
+function textField(v: Obj, keys: string[], max: number, what: string, clamp = false): string | null {
   for (const k of keys) {
     const x = v[k];
     if (x === undefined || x === null) continue;
     if (typeof x !== "string") throw `its ${what} isn’t text`;
-    const s = squeeze(x);
-    if (charLen(s) > max) throw `its ${what} is too long (over ${max} characters)`;
+    let s = squeeze(x);
+    if (charLen(s) > max) {
+      if (!clamp) throw `its ${what} is too long (over ${max} characters)`;
+      // A model that writes a paragraph where a phrase was asked for still gets its set: keep the first words.
+      s = takeChars(s, max - 1).replace(/\s+\S*$/, "").trimEnd() + "…";
+    }
     return s === "" ? null : s;
   }
   return null;
@@ -159,8 +163,8 @@ export function parse(block: string): Action {
       count = max;
     }
   }
-  const title = textField(o, ["title"], TITLE_MAX, "title");
-  const focus = textField(o, ["focus", "topic", "topics"], FOCUS_MAX, "focus");
+  const title = textField(o, ["title"], TITLE_MAX, "title", true);
+  const focus = textField(o, ["focus", "topic", "topics"], FOCUS_MAX, "focus", true);
   const srcs = listField(o, ["sources", "source"], SOURCES_MAX, "sources");
   let kinds: string[] = [];
   let difficulty = "exam";

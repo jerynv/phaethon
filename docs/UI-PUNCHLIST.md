@@ -105,3 +105,16 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 67 | The teacher icon is horrible | done — lightbulb |
 | 68 | Paperclip still too big | done — `icon-xs` |
 | 69 | No text for the thinking strength | done — the bars alone, name in the tooltip |
+
+## Round 7 — the second walkthrough
+
+| # | Ask | Status |
+|---|-----|--------|
+| 70 | A quiz plan failed with "its focus is too long (over 300 characters)" | done — a long title or focus is kept to its first words, never refused; the prompt asks for one line |
+| 71 | Commands show nothing useful; replies end with "No files were changed or created; no state-changing commands ran." | done — a command's output shows behind "Show output" for the coding agents too; the prompt forbids the closing note and names files by space path |
+| 72 | The P logo isn't in the README | done — the mark stands as the P of "Phaethon" in the banner |
+| 73 | Referenced files often say "Couldn't open this file. It isn't there any more." | done — a path written another way (absolute, from the vault root, with the space's name, wrong folder) resolves to the one file of that name; the chat passes real paths through |
+| 74 | All grades shouldn't sit at the bottom of the grades home; show a GPA on a 4.0 or custom scale; an easier "view all grades" | done — GPA in the header, Overview / All grades tabs, scale in Settings › General › Grades |
+| 75 | The back button inside the course card is hard to find → above the card | done |
+| 76 | Polish the assignments table | done — category after the title, four columns, shorter rows, small badges |
+| 77 | Coding agents: cards waste vertical space; unclear if usage is left or used; drop the disclaimer at the top | done — one line per account, "38% used", no intro |

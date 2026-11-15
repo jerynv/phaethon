@@ -62,7 +62,10 @@ describe("blocks", () => {
     ]) {
       expect(() => parse(bad), bad).toThrow();
     }
-    expect(() => parse(`{"kind":"quiz","title":"${"x".repeat(200)}"}`)).toThrow("too long");
+    // A long title or focus is kept to its first words, not refused: the user still gets the button.
+    expect(parse(`{"kind":"quiz","title":"${"word ".repeat(40).trim()}"}`).title!.length).toBeLessThanOrEqual(120);
+    expect(parse(`{"kind":"quiz","focus":"${"topic ".repeat(80).trim()}"}`).focus).toMatch(/^topic( topic)*…$/);
+    expect(() => parse(`{"kind":"quiz","difficulty":"${"x".repeat(30)}"}`)).toThrow("too long");
     const many = `{"kind":"quiz","sources":[${Array.from({ length: 30 }, (_, i) => `"s${i}"`).join(",")}]}`;
     expect(() => parse(many)).toThrow("too many");
     expect(() => parse("x".repeat(8193))).toThrow();

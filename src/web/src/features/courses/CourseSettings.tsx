@@ -1,6 +1,7 @@
-import { GraduationCapIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { SkeletonCard } from "@/components/skeletons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { Truncate } from "@/components/truncate";
@@ -20,7 +21,7 @@ function Group({ label, action, children }: { label: string; action?: React.Reac
   return (
     <section className="space-y-2">
       <div className="flex h-6 items-center justify-between gap-2 px-1">
-        <h3 className="font-medium text-2xs text-muted-foreground">{label}</h3>
+        <h3 className="text-subtle-foreground text-xs">{label}</h3>
         {action}
       </div>
       {children}
@@ -59,6 +60,7 @@ export function CourseSettings() {
         action={
           list.length ? (
             <Button size="xs" variant="ghost" onClick={() => setConnect(true)}>
+              <Icon icon={icons.add} />
               Connect site
             </Button>
           ) : null
@@ -69,22 +71,22 @@ export function CourseSettings() {
         ) : !connections.data ? (
           showConnSkeleton ? <SkeletonCard rows={1} /> : <div className="h-15" />
         ) : list.length === 0 ? (
-          <div className="flex min-h-11 items-center gap-3 rounded-xl border px-3.5 py-3">
-            <GraduationCapIcon className="size-4 shrink-0 text-muted-foreground" weight="regular" />
+          <div className="flex min-h-11 items-center gap-3 rounded-card border bg-card px-4 py-3 shadow-card">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card"><Icon icon={icons.courses} className="size-4" /></span>
             <span className="min-w-0 flex-1 text-muted-foreground text-sm">No course sites connected.</span>
             <Button size="xs" variant="outline" onClick={() => setConnect(true)}>
               Connect site
             </Button>
           </div>
         ) : (
-          <div className="divide-y rounded-xl border">
+          <div className="divide-y rounded-card border bg-card shadow-card">
             {list.map((c) => (
-              <div key={c.id} className="flex min-h-11 items-center gap-3 px-3.5 py-3">
-                <GraduationCapIcon className="size-4 shrink-0 text-muted-foreground" weight="regular" />
+              <div key={c.id} className="flex min-h-14 items-center gap-3 px-4 py-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card"><Icon icon={icons.courses} className="size-4" /></span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <Truncate className="min-w-0 font-medium text-sm">{connectionName(c)}</Truncate>
-                    <Badge variant={c.signedIn ? "success" : "warning"} size="sm" className="shrink-0">
+                    <Badge variant={c.signedIn ? "success" : "warning"} size="lg" className="shrink-0">
                       {c.signedIn ? "Signed in" : "Signed out"}
                     </Badge>
                   </div>
@@ -113,17 +115,17 @@ export function CourseSettings() {
         ) : !access.data ? (
           showAccessSkeleton ? <SkeletonCard rows={3} /> : <div className="h-36" />
         ) : courses.length === 0 ? (
-          <div className="flex min-h-11 items-center rounded-xl border px-3.5 py-3 text-muted-foreground text-sm">Imported courses show here.</div>
+          <div className="flex min-h-11 items-center rounded-card border bg-card px-4 py-3 text-muted-foreground text-sm shadow-card">Imported courses show here.</div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border">
+          <div className="overflow-x-auto rounded-card border bg-card shadow-card">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="sticky left-0 z-10 min-w-48 bg-background px-3.5 py-2 text-left font-medium text-2xs text-muted-foreground">Course</th>
+                  <th className="sticky left-0 z-10 min-w-48 bg-card px-4 py-2.5 text-left font-normal text-muted-foreground text-xs">Course</th>
                   {columns.map((id) => {
                     const s = spaceOf(id);
                     return (
-                      <th key={id} className="w-24 min-w-24 max-w-28 px-2 py-2 font-medium text-2xs text-muted-foreground">
+                      <th key={id} className="w-24 min-w-24 max-w-28 px-2 py-2.5 font-normal text-muted-foreground text-xs">
                         <span className="flex min-w-0 items-center justify-center gap-1.5">
                           <SpaceAvatar name={s?.name ?? id} hue={s?.hue ?? 200} />
                           <Truncate className="min-w-0">{s?.name ?? id}</Truncate>
@@ -136,7 +138,7 @@ export function CourseSettings() {
               <tbody className="divide-y">
                 {courses.map((c) => (
                   <tr key={c.key} className="h-11">
-                    <td className="sticky left-0 z-10 max-w-64 bg-background px-3.5 py-1.5">
+                    <td className="sticky left-0 z-10 max-w-64 bg-card px-4 py-1.5">
                       <Truncate className="text-sm">{c.name}</Truncate>
                       <p className="truncate text-muted-foreground text-xs">{[c.code, siteOf(c.connection) ? connectionName(siteOf(c.connection)!) : null].filter(Boolean).join(" · ")}</p>
                     </td>

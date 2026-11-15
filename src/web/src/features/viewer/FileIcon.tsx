@@ -1,5 +1,5 @@
-import { FilePdfIcon } from "@phosphor-icons/react";
-import { FileCodeIcon, FileIcon as FileBlankIcon, FileImageIcon, FileSpreadsheetIcon, FileTextIcon, FileVideoIcon, FileAudioIcon, PresentationIcon } from "lucide-react";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import type { ViewKind } from "./kinds";
 
@@ -24,28 +24,26 @@ export function kindOfName(name: string): ViewKind {
 /** The glyph for a file kind (docs/UI-REBUILD.md › Icons › File kinds). */
 export function FileIcon({ kind, name, className }: { kind?: ViewKind; name?: string; className?: string }) {
   const k = kind ?? kindOfName(name ?? "");
-  const cls = cn("size-4 shrink-0 text-muted-foreground", className);
   const code = k === "tex" || (k === "text" && !!name && CODE.test(name));
-  switch (k) {
-    case "pdf":
-      return <FilePdfIcon className={cls} weight="regular" aria-hidden />;
-    case "image":
-      return <FileImageIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    case "spreadsheet":
-      return <FileSpreadsheetIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    case "slides":
-      return <PresentationIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    case "audio":
-      return <FileAudioIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    case "video":
-      return <FileVideoIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    case "markdown":
-    case "docx":
-      return <FileTextIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    case "text":
-    case "tex":
-      return code ? <FileCodeIcon className={cls} strokeWidth={1.75} aria-hidden /> : <FileTextIcon className={cls} strokeWidth={1.75} aria-hidden />;
-    default:
-      return <FileBlankIcon className={cls} strokeWidth={1.75} aria-hidden />;
-  }
+  const glyph: IconData =
+    k === "pdf"
+      ? icons.filePdf
+      : k === "image"
+        ? icons.fileImage
+        : k === "spreadsheet"
+          ? icons.fileSheet
+          : k === "slides"
+            ? icons.lecture
+            : k === "audio"
+              ? icons.fileAudio
+              : k === "video"
+                ? icons.fileVideo
+                : k === "markdown" || k === "docx"
+                  ? icons.fileText
+                  : k === "text" || k === "tex"
+                    ? code
+                      ? icons.fileCode
+                      : icons.fileText
+                    : icons.file;
+  return <Icon icon={glyph} className={cn("size-4 text-muted-foreground", className)} />;
 }

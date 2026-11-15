@@ -1,7 +1,8 @@
-import { CheckCircle, CircleDashed, WarningCircle, X } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -29,14 +30,14 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
   const overall = run.courses.reduce((n, c) => n + fraction(c), 0) / Math.max(run.courses.length, 1);
 
   return (
-    <div className="relative overflow-hidden rounded-xl border bg-card">
+    <div className="relative overflow-hidden rounded-card border bg-card shadow-card" data-testid="import-run">
       <div className="absolute inset-x-0 top-0 h-0.5 bg-muted">
         <div
           className={cn("h-full transition-[width] duration-300 ease-out", run.status === "failed" ? "bg-error" : run.status === "running" ? "bg-primary" : "bg-success")}
           style={{ width: `${(running ? overall : 1) * 100}%` }}
         />
       </div>
-      <div className="flex h-11 items-center gap-2 px-3.5 pt-0.5">
+      <div className="flex h-12 items-center gap-2 px-5 pt-0.5">
         <div className="min-w-0 flex-1 text-sm">
           {running ? (
             <Truncate className="font-medium">{run.cancelling ? "Stopping the import…" : `Importing from ${run.school}`}</Truncate>
@@ -49,20 +50,20 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
             <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
               {finished}/{run.courses.length}
             </span>
-            <Button size="xs" variant="outline" onClick={() => void cancel()} disabled={run.cancelling} className="min-w-16">
-              {run.cancelling ? <Spinner size="xs" /> : null}
+            <Button size="sm" variant="outline" onClick={() => void cancel()} disabled={run.cancelling} className="min-w-16">
+              {run.cancelling ? <Spinner size="sm" /> : <Icon icon={icons.stop} />}
               {run.cancelling ? "Stopping…" : "Stop"}
             </Button>
           </>
         ) : (
           <Button size="icon-xs" variant="ghost-muted" aria-label="Dismiss" onClick={dismiss}>
-            <X weight="light" />
+            <Icon icon={icons.close} />
           </Button>
         )}
       </div>
-      {run.cancelError ? <p className="px-3.5 pb-2 text-destructive-foreground text-xs">Couldn’t stop the import: {run.cancelError}</p> : null}
+      {run.cancelError ? <p className="px-5 pb-2 text-destructive-foreground text-xs">Couldn’t stop the import: {run.cancelError}</p> : null}
       {run.status === "failed" && run.error ? (
-        <div className="px-3 pb-3">
+        <div className="px-4 pb-4">
           {run.error === SIGNED_OUT_DURING_IMPORT ? (
             <SurfaceError tone="warning" title="Sign in again to finish" message="What’s already here stays; only what changed is downloaded." actions={[{ label: "Sign in again", primary: true, onClick: onSignInAgain }]} />
           ) : (
@@ -70,13 +71,13 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
           )}
         </div>
       ) : null}
-      <ul className="border-t py-1">
+      <ul className="border-t py-1.5">
         {run.courses.map((c) => (
           <CourseRow key={c.id} c={c} />
         ))}
       </ul>
       {run.notes?.length ? (
-        <div className="space-y-0.5 border-t px-3.5 py-2">
+        <div className="space-y-0.5 border-t px-5 py-2.5">
           {run.notes.map((n, i) => (
             <p key={i} className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
               {n}
@@ -93,18 +94,18 @@ function CourseRow({ c }: { c: CourseRun }) {
   const active = !c.result && !c.failed && !!c.step;
   const counts = c.result ? [plural(c.result.files, "file"), c.result.readings ? plural(c.result.readings, "reading") : null, c.result.links ? plural(c.result.links, "link") : null].filter(Boolean).join(" · ") : null;
   return (
-    <motion.li layout="position" className="flex min-h-8 flex-wrap items-center gap-x-2.5 px-3.5 py-1.5">
+    <motion.li layout="position" className="flex min-h-9 flex-wrap items-center gap-x-3 px-5 py-1.5">
       <span className="flex size-4 shrink-0 items-center justify-center">
         {c.result ? (
           <motion.span initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 520, damping: 28 }}>
-            <CheckCircle weight="fill" className="size-4 text-success" />
+            <Icon icon={icons.done} className="size-4 text-success" />
           </motion.span>
         ) : c.failed ? (
-          <WarningCircle weight="fill" className={cn("size-4", c.failed === "Stopped" ? "text-muted-foreground" : "text-error")} />
+          <Icon icon={icons.error} className={cn("size-4", c.failed === "Stopped" ? "text-muted-foreground" : "text-destructive")} />
         ) : active ? (
           <Spinner size="xs" tone="muted" />
         ) : (
-          <CircleDashed weight="light" className="size-4 text-subtle-foreground" />
+          <Icon icon={icons.pending} className="size-4 text-subtle-foreground" />
         )}
       </span>
       <div className="min-w-0 flex-1">

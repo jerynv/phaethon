@@ -131,3 +131,62 @@ export function dueWords(due: number | null, now: number): string {
   if (days > 1 && days < 7) return new Date(due).toLocaleDateString(undefined, { weekday: "short" });
   return new Date(due).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+// ---- One course in numbers ----
+
+export type SeriesPoint = { at: number; percent: number; title: string };
+
+/**
+ * The course grade over time: after each graded item (by due date), the grade
+ * counting only what was graded up to then. Items without a due date can't be
+ * placed and are left out of the steps (they still count in the last one only
+ * if they're dated). Fewer than two points means there is no line to draw.
+ */
+export function gradeSeries(course: CourseGradeView): SeriesPoint[] {
+  const items = calcItems(course);
+  const dated = items.filter((i) => i.graded && !i.excused && i.due != null).sort((a, b) => a.due! - b.due!);
+  const out: SeriesPoint[] = [];
+  const counted = new Set<string>();
+  for (const step of dated) {
+    counted.add(step.key);
+    const percent = calculate({ groups: course.groups, items: items.map((i) => (counted.has(i.key) || !i.graded || i.due == null ? i : { ...i, graded: false })) }).percent;
+    if (percent == null) continue;
+    // Several items due the same moment make one step.
+    if (out.length && out[out.length - 1]!.at === step.due) out[out.length - 1] = { at: step.due!, percent, title: step.title };
+    else out.push({ at: step.due!, percent, title: step.title });
+  }
+  return out;
+}
+
+export type Category = { name: string; weight: number; percent: number | null; counted: number };
+
+/**
+ * How the course grade is made up: each category's share (its weight, or its
+ * points when the course has no weights) and where it stands now. Categories
+ * with neither are left out.
+ */
+export function categories(course: CourseGradeView): Category[] {
+  const result = calculate({ groups: course.groups, items: calcItems(course) });
+  const possible = new Map<string, number>();
+  for (const i of course.items) if (!i.excused && (i.possible ?? 0) > 0) possible.set(i.group ?? "Other", (possible.get(i.group ?? "Other") ?? 0) + i.possible!);
+  return result.groups
+    .map((g) => ({ name: g.name, weight: result.usesWeights ? (g.weight ?? 0) : (possible.get(g.name) ?? 0), percent: g.percent, counted: g.counted }))
+    .filter((g) => g.weight > 0);
+}
+
+export type CourseStats = { graded: number; total: number; open: number; dueThisWeek: number; best: Category | null; worst: Category | null };
+
+/** The numbers under a course's grade: how much is graded, what's left, its strongest and weakest category. */
+export function courseStats(course: CourseGradeView, now: number): CourseStats {
+  const counted = course.items.filter((i) => !i.excused);
+  const scored = categories(course).filter((c) => c.percent != null && c.counted > 0);
+  const byScore = [...scored].sort((a, b) => b.percent! - a.percent!);
+  return {
+    graded: counted.filter((i) => i.graded).length,
+    total: counted.length,
+    open: counted.filter((i) => !i.graded).length,
+    dueThisWeek: dueSoon([course], now).length,
+    best: byScore[0] ?? null,
+    worst: byScore.length > 1 ? byScore[byScore.length - 1]! : null,
+  };
+}

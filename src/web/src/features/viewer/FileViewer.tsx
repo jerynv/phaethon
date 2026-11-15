@@ -1,7 +1,8 @@
-import { ArrowSquareOut, FolderOpen, X } from "@phosphor-icons/react";
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -111,6 +112,21 @@ export function FileViewer() {
     [target],
   );
 
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const copyPath = () => {
+    if (!target) return;
+    navigator.clipboard.writeText(target.path).then(
+      () => setCopied(true),
+      // The browser's own reason ("Failed to execute 'writeText'…") means nothing to a person.
+      () => toast.error("Couldn’t copy the path", "The clipboard isn’t available right now. Try again."),
+    );
+  };
+
   if (!target) return null;
   const name = state.view?.name ?? target.path.split("/").pop() ?? target.path;
   const kind = state.view?.kind ?? kindOfName(name);
@@ -139,19 +155,23 @@ export function FileViewer() {
           }
         }}
       />
-      <header className="app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b pr-1.5 pl-3">
+      <header className="app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2.5 border-b pr-2 pl-4">
         <FileIcon kind={kind} name={name} />
         <MiddleTruncate value={name} className="min-w-0 flex-1 font-medium text-sm [&>span]:whitespace-pre" />
         {size ? <span className="shrink-0 text-muted-foreground text-xs tabular-nums">{size}</span> : null}
         <div className="app-no-drag flex shrink-0 items-center">
           <HeaderButton label="Open in default app" onClick={() => open(false)}>
-            <ArrowSquareOut weight="light" />
+            <Icon icon={icons.external} />
           </HeaderButton>
           <HeaderButton label="Show in folder" onClick={() => open(true)}>
-            <FolderOpen weight="light" />
+            <Icon icon={icons.folderOpen} />
           </HeaderButton>
+          <HeaderButton label={copied ? "Copied" : "Copy path"} onClick={copyPath}>
+            <Icon icon={copied ? icons.check : icons.copy} className={copied ? "text-success-foreground" : undefined} />
+          </HeaderButton>
+          <span aria-hidden className="mx-1 h-4 w-px bg-border" />
           <HeaderButton label="Close" onClick={close}>
-            <X weight="light" />
+            <Icon icon={icons.close} />
           </HeaderButton>
         </div>
       </header>
@@ -173,7 +193,7 @@ export function FileViewer() {
 function HeaderButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<Button size="icon-xs" variant="ghost-muted" aria-label={label} onClick={onClick} />}>{children}</TooltipTrigger>
+      <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label={label} onClick={onClick} />}>{children}</TooltipTrigger>
       <TooltipPopup side="bottom">{label}</TooltipPopup>
     </Tooltip>
   );

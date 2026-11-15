@@ -1,7 +1,8 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { ExternalLinkIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cleanMessage, SurfaceError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes } from "@/features/courses/lib/sites";
@@ -40,13 +41,13 @@ export function PageSkeleton({ kind }: { kind: ViewKind }) {
 function Placeholder({ view, title, text, onOpen }: { view: FileView; title: string; text?: string; onOpen: () => void }) {
   return (
     <div className="flex flex-col items-center px-6 pt-16 pb-8 text-center">
-      <div className="mb-4 flex size-10 items-center justify-center rounded-lg border bg-card shadow-xs/5">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-xl border bg-card shadow-card">
         <FileIcon kind={view.kind} name={view.name} className="size-5" />
       </div>
       <p className="font-medium text-sm">{title}</p>
       {text ? <p className="mt-1 max-w-64 text-balance text-muted-foreground text-xs tabular-nums">{text}</p> : null}
       <Button size="sm" variant="outline" className="mt-4" onClick={onOpen}>
-        <ExternalLinkIcon />
+        <Icon icon={icons.external} />
         Open in default app
       </Button>
     </div>

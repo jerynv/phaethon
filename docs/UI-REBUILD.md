@@ -325,7 +325,7 @@ a6e6, 95ba, a163, 8386.
 
 ### Courses
 
-7274, 02a1, 8bdf, dca9. A list/detail layout inside the page: left a 280 px pane (back arrow + "Courses" title, a segmented `Tabs` "Overview · Files · Settings", search field, a tree of courses with folder glyphs and indentation); right the detail with a breadcrumb row (`folder` glyph, chevrons) and actions (`…`, collapse). Connect/import flows use dca9's marketplace layout: centred title, search field, an `ArtCanvas` banner with prompt pills, then "Featured" two-column rows (logo tile, name, one line, a `+` outline icon button or a check). Sync status uses tint badges ("Synced" info, "Pending" warning) as in 7274.
+7274, 02a1, 8bdf, dca9. A list/detail layout inside the page: left a 280 px pane ("Courses" title with the ink `+`, search field, a list of course sites as folders holding their courses with indentation, a count footer); right the detail with a breadcrumb row (pane toggle, `folder` glyph, chevrons; the site crumb gives way before the course's name) and actions (Import, `…`), then underline `Tabs` "Overview · Files · Settings" for the course (7274's "Crawl Links | Individual", dc42's "Editor · Runs · Scheduled"). Left-pane tabs only belong there when they switch the left list itself. Connect/import flows use dca9's marketplace layout: centred title, search field, an `ArtCanvas` banner with prompt pills, then "Featured" two-column rows (logo tile, name, one line, a `+` outline icon button or a check). Sync status uses tint badges ("Synced" info, "Pending" warning) as in 7274.
 
 ### Settings
 

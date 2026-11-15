@@ -1,6 +1,8 @@
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ArtCanvas } from "@/components/art";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +16,9 @@ import type { LmsConnection, LmsKind, LmsSchool } from "../lib/types";
 import { useCourses } from "../store";
 
 type Step = "kind" | "address" | "waiting";
+
+/** Each kind's tile: a plain monogram, so the four rows tell apart at a glance without borrowing anyone's logo. */
+const MONOGRAM: Record<LmsKind, string> = { canvas: "C", brightspace: "D2L", moodle: "M", blackboard: "Bb" };
 
 /**
  * Connect a course site: pick the kind, find the school or paste its address,
@@ -40,6 +45,7 @@ export function ConnectDialog({
   const [note, setNote] = useState<string | null>(null);
   const attempt = useRef(0);
   const loadConnections = useCourses((s) => s.loadConnections);
+  const connections = useCourses((s) => s.connections.data);
 
   useEffect(() => {
     if (!open) return;
@@ -102,37 +108,68 @@ export function ConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => (step === "waiting" && !o ? cancelWaiting() : onOpenChange(o))}>
-      <DialogPopup className="max-w-md" showCloseButton={step !== "waiting"}>
+      <DialogPopup className={step === "kind" ? "max-w-xl" : "max-w-md"} showCloseButton={step !== "waiting"}>
         {step === "kind" ? (
           <>
             <DialogHeader>
               <DialogTitle>Connect a course site</DialogTitle>
-              <DialogDescription>Which one does your school use?</DialogDescription>
+              <DialogDescription>Bring your courses’ files, assignments and grades into Phaethon.</DialogDescription>
             </DialogHeader>
-            <DialogPanel>
-              <div className="grid grid-cols-2 gap-2">
-                {KINDS.map((k) => (
-                  <button
-                    key={k.kind}
-                    type="button"
-                    onClick={() => {
-                      setKind(k.kind);
-                      setSchool(null);
-                      setAddress("");
-                      setQuery("");
-                      setError(null);
-                      setNote(null);
-                      setStep("address");
-                    }}
-                    className="group flex h-14 items-center justify-between gap-2 rounded-lg border bg-card px-3 text-left transition-colors hover:bg-accent/60"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-sm">{k.label}</span>
-                      <span className="block truncate text-2xs text-muted-foreground">{k.example}</span>
+            <DialogPanel className="flex flex-col gap-5">
+              <ArtCanvas palette="lilac" seed="connect-site" className="h-36 rounded-xl">
+                <div className="flex size-full flex-col items-center justify-center gap-2">
+                  {[
+                    { icon: icons.file, text: "Files, readings and lecture notes" },
+                    { icon: icons.quiz, text: "Assignments and due dates" },
+                    { icon: icons.grades, text: "Grades as they’re posted" },
+                  ].map((p, i) => (
+                    <span key={p.text} className={cn("flex h-8 items-center gap-2 rounded-full bg-card/92 px-3.5 text-foreground text-xs shadow-card", i === 0 ? "-translate-x-6" : i === 2 ? "translate-x-6" : "")}>
+                      <Icon icon={p.icon} className="size-3.5 text-muted-foreground" />
+                      {p.text}
                     </span>
-                    <ChevronRightIcon className="size-3.5 shrink-0 text-subtle-foreground group-hover:text-muted-foreground" strokeWidth={2} />
-                  </button>
-                ))}
+                  ))}
+                </div>
+              </ArtCanvas>
+              <div className="flex flex-col gap-1">
+                <h3 className="px-1 pb-1 font-medium text-sm">Which one does your school use?</h3>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  {KINDS.map((k) => {
+                    const connected = connections?.some((c) => c.kind === k.kind);
+                    return (
+                    <button
+                      key={k.kind}
+                      type="button"
+                      onClick={() => {
+                        setKind(k.kind);
+                        setSchool(null);
+                        setAddress("");
+                        setQuery("");
+                        setError(null);
+                        setNote(null);
+                        setStep("address");
+                      }}
+                      className="group flex min-h-14 min-w-0 items-center gap-3 rounded-xl px-1.5 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card font-medium text-foreground text-sm tracking-tight shadow-card">
+                        {MONOGRAM[k.kind]}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-sm">{k.label}</span>
+                        <span className="block truncate text-muted-foreground text-xs">{connected ? "Connected" : k.example}</span>
+                      </span>
+                      {connected ? (
+                        <span className="flex size-7 shrink-0 items-center justify-center text-primary">
+                          <Icon icon={icons.check} className="size-4" />
+                        </span>
+                      ) : (
+                        <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card transition-colors group-hover:text-foreground">
+                          <Icon icon={icons.add} className="size-3.5" />
+                        </span>
+                      )}
+                    </button>
+                    );
+                  })}
+                </div>
               </div>
             </DialogPanel>
           </>
@@ -175,7 +212,7 @@ export function ConnectDialog({
               )}
               <Button size="sm" onClick={submit} disabled={!target.trim()}>
                 Sign in
-                <ExternalLinkIcon />
+                <Icon icon={icons.external} />
               </Button>
             </DialogFooter>
           </>
@@ -244,7 +281,7 @@ function SchoolSearch({ query, onQuery, picked, onPick }: { query: string; onQue
     <div className="space-y-1.5">
       <Label htmlFor="lms-school">School</Label>
       <div className="relative">
-        <SearchIcon className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 size-3.5 text-muted-foreground" strokeWidth={2} />
+        <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 size-3.5 text-muted-foreground" />
         <Input id="lms-school" autoFocus value={query} placeholder="Search by name" className="*:data-[slot=input]:ps-8" autoComplete="off" onChange={(e) => onQuery(e.target.value)} />
         {loading ? <Spinner size="sm" tone="muted" className="-translate-y-1/2 absolute top-1/2 right-2.5" /> : null}
       </div>
@@ -265,7 +302,7 @@ function SchoolSearch({ query, onQuery, picked, onPick }: { query: string; onQue
               >
                 <span className="min-w-0 flex-1 truncate">{s.name}</span>
                 <span className="max-w-[45%] shrink-0 truncate text-muted-foreground text-xs">{hostOf(s.address)}</span>
-                {on ? <CheckIcon className="size-3.5 shrink-0 text-primary" strokeWidth={2.25} /> : <span className="size-3.5 shrink-0" />}
+                {on ? <Icon icon={icons.check} className="size-3.5 text-primary" /> : <span className="size-3.5 shrink-0" />}
               </button>
             );
           })}

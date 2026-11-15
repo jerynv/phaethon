@@ -82,6 +82,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
     busy,
   };
 
+  const isHidden = (c: CourseInfo) => partsOf(access.data, space.id, c.key).length === 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Header />
@@ -139,9 +140,17 @@ export function CoursesView({ space }: { space: SpaceView }) {
                       {!isFolded ? (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden">
                           <div className="ml-4 flex flex-col border-l pl-2">
-                            {list.map((c) => (
+                            {list.filter((c) => !isHidden(c)).map((c) => (
                               <CourseRow key={c.key} space={space.id} course={c} selected={open?.key === c.key} onOpen={() => setOpenKey(c.key)} />
                             ))}
+                            {list.some(isHidden) ? (
+                              <>
+                                <p className="mt-2 flex h-6 items-center px-2 text-2xs text-subtle-foreground">Hidden from this space</p>
+                                {list.filter(isHidden).map((c) => (
+                                  <CourseRow key={c.key} space={space.id} course={c} selected={open?.key === c.key} onOpen={() => setOpenKey(c.key)} />
+                                ))}
+                              </>
+                            ) : null}
                             {!g.courses.length && g.connection?.signedIn ? (
                               <button
                                 type="button"

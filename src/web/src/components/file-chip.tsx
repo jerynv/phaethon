@@ -93,8 +93,8 @@ export function FileChip({
               onClick={open}
               className={cn(
                 variant === "chip"
-                  ? "inline-flex h-7 max-w-56 items-center gap-1.5 rounded-lg border bg-background px-2 text-xs transition-colors hover:border-input hover:bg-accent"
-                  : "md-file mx-0.5 inline-flex max-w-64 -translate-y-px items-baseline gap-1 rounded-sm px-0.5 align-baseline text-primary decoration-primary/35 underline-offset-2 transition-colors hover:bg-primary/8 hover:underline",
+                  ? "inline-flex h-7 max-w-56 items-center gap-1.5 rounded-lg border bg-background px-2 text-xs transition-colors hover:bg-accent"
+                  : "md-file -mx-px inline-flex max-w-64 -translate-y-px items-baseline gap-1 rounded-md bg-primary/6 px-1 align-baseline text-primary transition-colors hover:bg-primary/12",
                 className,
               )}
             />

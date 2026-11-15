@@ -183,18 +183,14 @@ export function GradesView({ space }: { space: SpaceView }) {
           ) : null}
           {data?.length ? (
             <>
-              {!one ? (
-                <div className="-mb-3 flex min-w-0 items-center gap-3 overflow-x-auto">
-                  <Tabs value={focused ? courseId(focused) : ALL} onValueChange={setFocus}>
-<TabsList aria-label="Course">
-                    <TabsTab value={ALL}>All courses</TabsTab>
-                    {data.map((c) => (
-                      <TabsTab key={courseId(c)} value={courseId(c)} className="max-w-48">
-                        <span className="truncate">{c.course}</span>
-                      </TabsTab>
-                    ))}
-                  </TabsList>
-</Tabs>
+              {focused ? (
+                <div className="-mb-4 flex min-w-0 items-center gap-1">
+                  {!one ? (
+                    <Button size="icon-sm" variant="ghost-muted" aria-label="All courses" onClick={() => setFocus(ALL)}>
+                      <Icon icon={icons.arrowLeft} />
+                    </Button>
+                  ) : null}
+                  <h1 className="min-w-0 truncate font-medium text-lg tracking-title">{focused.course}</h1>
                 </div>
               ) : null}
               {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
@@ -233,15 +229,14 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
   const graded = heads.reduce((n, h) => n + h.graded, 0);
   const open = heads.reduce((n, h) => n + h.open, 0);
   return (
-    <Card data-testid="grades-courses">
-      <CardHeader>
-        <CardTitle>This term</CardTitle>
-        <CardDescription className="tabular-nums">
-          {plural(courses.length, "course")} · {graded} graded · {open} still open
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
+    <section data-testid="grades-courses" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-0.5">
+        <h1 className="font-medium text-lg tracking-title">Grades</h1>
+        <p className="text-muted-foreground text-sm tabular-nums">
+          This term · {plural(courses.length, "course")} · {graded} graded · {open} still open
+        </p>
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
           {heads.map((h) => {
             const c = h.course;
             const moved = h.trend && Math.abs(h.trend.delta) >= 0.05 ? rounded(h.trend.delta) : undefined;
@@ -268,8 +263,7 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
             );
           })}
         </div>
-      </CardContent>
-    </Card>
+    </section>
   );
 }
 
@@ -284,12 +278,9 @@ function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; 
     <Card data-testid="grades-courses">
       <div className="flex items-start gap-4 px-5 pt-5 pb-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <CardTitle className="flex min-w-0 items-center gap-2">
-            <Truncate className="min-w-0">{course.course}</Truncate>
-            {refreshing ? <Spinner size="sm" tone="muted" /> : null}
-          </CardTitle>
-          <CardDescription className="tabular-nums">
+          <CardDescription className="flex items-center gap-2 tabular-nums">
             {s.graded} of {s.total} graded · updated {relativeTime(course.updated).toLowerCase()}
+            {refreshing ? <Spinner size="xs" tone="muted" /> : null}
           </CardDescription>
         </div>
         {h.percent != null ? (

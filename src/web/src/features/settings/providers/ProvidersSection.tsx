@@ -1,4 +1,3 @@
-import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState, FieldError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -11,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, Field, Intro, Loader, Row, SettingsCard, Status, useLoad, Well } from "../ui";
+import { ConfirmDialog, Field, Intro, Loader, Row, Status, useLoad, Well } from "../ui";
 import {
   checkApiKey,
   clearApiKey,
@@ -27,11 +26,11 @@ import {
   setProviderUrl,
 } from "./api";
 import { ModelChooser } from "./ModelChooser";
-import { addedProviders, canSaveUnchecked, checkAndSave, isAdded, type KeyOutcome, outcomeText, PRESET_GROUPS, providerModel, providerNeed } from "./logic";
+import { addedProviders, canSaveUnchecked, checkAndSave, isAdded, type KeyOutcome, outcomeText, PRESET_GROUPS, providerModel, providerNeed, readableModel } from "./logic";
 
 /**
  * Settings › Providers: the services and local servers Phaethon's own agent
- * can answer with. Each one gets a card with its key (checked, then saved;
+ * can answer with, as one list. A row opens to its key (checked, then saved;
  * a saved key is never shown again), its address where that's editable, a
  * local server's status, and its model. The model for a conversation is
  * picked in the composer; this is where providers become pickable.
@@ -304,15 +303,20 @@ function ModelRow({ p, settings, onChanged }: { p: ProviderInfo; settings: Setti
   );
 }
 
-function ProviderCard({
+/** One provider in the list: its glyph, name, model and state on one row; its key, address, server and model open under it. */
+function ProviderRow({
   p,
   settings,
+  open,
+  onToggle,
   isNew,
   onChanged,
   onCancel,
 }: {
   p: ProviderInfo;
   settings: Settings;
+  open: boolean;
+  onToggle: () => void;
   isNew: boolean;
   onChanged: () => Promise<void>;
   onCancel?: () => void;
@@ -338,6 +342,7 @@ function ProviderCard({
   const st = statusOf(p, settings, server);
   const added = isAdded(p);
   const removable = added && p.id !== settings.provider;
+  const model = providerModel(p, settings);
   const remove = async () => {
     try {
       if (p.hasKey) await clearApiKey(p.id);
@@ -351,47 +356,46 @@ function ProviderCard({
   };
 
   return (
-    <motion.div ref={ref} layout="position" initial={isNew ? { opacity: 0, y: 6 } : false} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 460, damping: 38 }}>
-      <SettingsCard
-        className={cn(isNew && "border-primary/40")}
-        icon={<ProviderIcon id={p.id} />}
-        title={p.name}
-        description={
-          <span className="flex min-w-0 items-center gap-2">
-            <Status tone={st.tone}>{st.text}</Status>
-            {p.id === settings.provider ? <span className="text-subtle-foreground">· Default</span> : null}
-          </span>
-        }
-        action={
-          removable || onCancel ? (
-            <Menu>
-              <MenuTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label={`${p.name} actions`} />}>
-                <Icon icon={icons.more} />
-              </MenuTrigger>
-              <MenuPopup align="end">
-                {onCancel && !added ? <MenuItem onClick={onCancel}>Cancel adding</MenuItem> : null}
-                {removable ? (
-                  <MenuItem variant="destructive" onClick={() => setConfirm(true)}>
-                    <Icon icon={icons.delete} />
-                    Remove {p.name}
-                  </MenuItem>
-                ) : null}
-              </MenuPopup>
-            </Menu>
-          ) : null
-        }
+    <div ref={ref} data-provider={p.id} className={cn(isNew && "bg-primary/4")}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex h-12 w-full min-w-0 items-center gap-3 px-4 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        {p.editableBase ? <UrlRow p={p} onChanged={onChanged} /> : null}
-        {p.key !== "none" ? <KeyRow p={p} autoFocus={isNew && !p.editableBase} onChanged={onChanged} /> : null}
-        <div className="flex flex-col">
-          {p.local ? <ServerRow p={p} server={server} onCheck={() => void check()} /> : null}
-          <ModelRow p={p} settings={settings} onChanged={onChanged} />
+        <ProviderIcon id={p.id} className="size-4.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+        {model && !open ? <span className="hidden max-w-48 truncate text-muted-foreground text-xs sm:block">{readableModel(model)}</span> : null}
+        {p.id === settings.provider ? <span className="shrink-0 text-subtle-foreground text-xs">Default</span> : null}
+        <Status tone={st.tone} className="shrink-0 text-xs">
+          {st.text}
+        </Status>
+        <Icon icon={icons.chevronDown} className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", !open && "-rotate-90")} />
+      </button>
+      {open ? (
+        <div className="flex flex-col gap-4 border-t px-4 pt-4 pb-4">
+          {p.editableBase ? <UrlRow p={p} onChanged={onChanged} /> : null}
+          {p.key !== "none" ? <KeyRow p={p} autoFocus={isNew && !p.editableBase} onChanged={onChanged} /> : null}
+          <div className="flex flex-col">
+            {p.local ? <ServerRow p={p} server={server} onCheck={() => void check()} /> : null}
+            <ModelRow p={p} settings={settings} onChanged={onChanged} />
+          </div>
+          {onCancel && !added ? (
+            <Button size="xs" variant="ghost-muted" className="self-end" onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : removable ? (
+            <Button size="xs" variant="ghost-destructive" className="self-end" onClick={() => setConfirm(true)}>
+              <Icon icon={icons.delete} />
+              Remove {p.name}
+            </Button>
+          ) : null}
         </div>
-      </SettingsCard>
+      ) : null}
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Remove ${p.name}?`} confirm="Remove" destructive onConfirm={() => void remove()}>
         <p>{p.hasKey ? "Its key is deleted from this computer’s keychain, and its" : "Its"} model and address go back to the defaults. Chats that use it stop answering until you add it again.</p>
       </ConfirmDialog>
-    </motion.div>
+    </div>
   );
 }
 
@@ -428,12 +432,17 @@ function AddProvider({ settings, shown, onAdd }: { settings: Settings; shown: Se
 export function ProvidersSection() {
   const state = useLoad(getSettings);
   const [pending, setPending] = useState<ProviderId[]>([]);
+  const [open, setOpen] = useState<ProviderId | null>(null);
   const reload = async () => {
     try {
       state.setData(await getSettings());
     } catch (e) {
       toast.error("Couldn’t refresh providers", cleanMessage(e));
     }
+  };
+  const add = (id: ProviderId) => {
+    setPending((xs) => [...xs, id]);
+    setOpen(id);
   };
   return (
     <Loader state={state} errorTitle="Couldn’t read your providers" skeleton={<SkeletonCard rows={4} />}>
@@ -445,22 +454,24 @@ export function ProvidersSection() {
         const list = [...added, ...extra];
         return (
           <>
-            <Intro action={<AddProvider settings={settings} shown={shownIds} onAdd={(id) => setPending((xs) => [...xs, id])} />}>
-              Phaethon’s own agent answers with these.
-            </Intro>
+            <Intro action={<AddProvider settings={settings} shown={shownIds} onAdd={add} />}>Phaethon’s own agent answers with these.</Intro>
             {list.length === 0 ? (
               <EmptyState palette="dawn" seed="providers" title="No providers yet" description="Add one to chat with Phaethon’s own agent." className="max-w-none" />
             ) : (
-              list.map((p) => (
-                <ProviderCard
-                  key={p.id}
-                  p={p}
-                  settings={settings}
-                  isNew={pending.includes(p.id) && !isAdded(p)}
-                  onChanged={reload}
-                  onCancel={pending.includes(p.id) ? () => setPending((xs) => xs.filter((x) => x !== p.id)) : undefined}
-                />
-              ))
+              <div className="divide-y overflow-hidden rounded-card border bg-card" data-testid="providers-list">
+                {list.map((p) => (
+                  <ProviderRow
+                    key={p.id}
+                    p={p}
+                    settings={settings}
+                    open={open === p.id}
+                    onToggle={() => setOpen((o) => (o === p.id ? null : p.id))}
+                    isNew={pending.includes(p.id) && !isAdded(p)}
+                    onChanged={reload}
+                    onCancel={pending.includes(p.id) ? () => setPending((xs) => xs.filter((x) => x !== p.id)) : undefined}
+                  />
+                ))}
+              </div>
             )}
           </>
         );

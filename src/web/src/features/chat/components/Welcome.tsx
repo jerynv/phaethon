@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { api, type SpaceView } from "@/app/api";
-import { ArtTile } from "@/components/art";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
-import { cn } from "@/lib/utils";
 import { FILL_EVENT, type FillDetail } from "./ChatActions";
 
 type Starter = { id: string; icon: IconData; title: string; prompt: string };
@@ -24,25 +22,12 @@ const GENERAL: Starter[] = [
   { id: "summarize", icon: icons.fileText, title: "Summarize", prompt: "Summarize " },
 ];
 
-/** A small white file label set on the art tile. */
-function FileTag({ name, className }: { name: string; className?: string }) {
-  return (
-    <span className={cn("inline-flex items-center gap-0.5 rounded-md bg-card/90 px-1.5 text-3xs text-foreground", className)}>
-      <Icon icon={icons.file} className="size-2.5 text-muted-foreground" />
-      {name}
-    </span>
-  );
-}
 
 function fill(draftKey: string, text: string) {
   window.dispatchEvent(new CustomEvent<FillDetail>(FILL_EVENT, { detail: { draftKey, text } }));
 }
 
-/**
- * Under the welcome composer (refs a163, a6e6): three starter cards in a row
- * and, at the bottom, one quiet card with a small art tile that brings files
- * into the space (a163's "Connect your channel").
- */
+/** Under the welcome composer: three starter cards in a row and, at the bottom, one quiet row that brings files into the space. */
 export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: string }) {
   const starters = space.educationEnabled ? STUDY : GENERAL;
   const [adding, setAdding] = useState(false);
@@ -68,17 +53,15 @@ export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: strin
         ))}
       </div>
       <span className="min-h-6 flex-1" />
-      <Card variant="interactive" render={<button type="button" onClick={addFiles} aria-busy={adding || undefined} />} className="hidden w-full max-w-md flex-row items-center gap-4 p-2 pr-5 text-left @md/welcome:flex">
-        {/* The art carries a hint of what goes in, after a163's app icons on its tile. */}
-        <ArtTile palette="sky" seed={`welcome-${space.id}`} grain className="flex h-14 w-20">
-          <span className="flex size-full flex-col items-start justify-center gap-1 px-1.5" aria-hidden>
-            <FileTag name="notes.md" />
-            <FileTag name="slides.pdf" className="ml-2" />
-          </span>
-        </ArtTile>
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground text-sm">Add files to {space.name}</span>
-        {adding ? <Spinner size="md" className="text-muted-foreground" /> : <Icon icon={icons.folderAdd} className="size-4.5 text-muted-foreground" />}
-      </Card>
+      <button
+        type="button"
+        onClick={addFiles}
+        aria-busy={adding || undefined}
+        className="flex h-8 items-center gap-2 rounded-lg px-3 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        {adding ? <Spinner size="sm" /> : <Icon icon={icons.folderAdd} className="size-4" />}
+        Add files to {space.name}
+      </button>
     </div>
   );
 }

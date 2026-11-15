@@ -50,7 +50,7 @@ function MessageMenu({ children, items }: { children: ReactNode; items: ReactNod
   );
 }
 
-/** A small square action under a message (copy, edit, retry), after ref fd96's outlined buttons. */
+/** A small action under a message (copy, edit, retry). */
 function MessageAction({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <Tooltip>
@@ -81,7 +81,7 @@ function AttachmentChip({ a, space }: { a: Attachment; space: string }) {
         </button>
       );
     }
-    return <FileChip space={space} path={a.path} label={a.name} className="h-8 rounded-full px-3 text-sm" />;
+    return <FileChip space={space} path={a.path} label={a.name} className="h-7 rounded-lg px-2.5 text-sm" />;
   }
   if (a.previewUrl && a.mediaType.startsWith("image/")) {
     return (
@@ -115,7 +115,7 @@ function AttachmentChip({ a, space }: { a: Attachment; space: string }) {
       setBusy(false);
     }
   };
-  return <FileChip space={space} path={a.name} label={a.name} onOpen={() => void resolve()} className={cn("h-8 rounded-full px-3 text-sm", busy && "animate-skeleton")} />;
+  return <FileChip space={space} path={a.name} label={a.name} onOpen={() => void resolve()} className={cn("h-7 rounded-lg px-2.5 text-sm", busy && "animate-skeleton")} />;
 }
 
 /** A message's files: shown as chips, or folded into one "5 attachments" pill when there are many (ref fd96). */
@@ -129,7 +129,7 @@ function Attachments({ list, space }: { list: Attachment[]; space: string }) {
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-3 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+          className="inline-flex h-7 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
         >
           <Icon icon={icons.attach} className="size-3.5" />
           {list.length} attachments
@@ -168,21 +168,22 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
       }
     >
       <motion.div
-        className="group/msg flex origin-bottom-right flex-col items-end"
+        className="group/msg flex origin-bottom-right flex-col items-end pb-5"
         data-role="user"
+        data-turn={m.key}
         initial={fresh ? { opacity: 0, y: 12, scale: 0.96 } : false}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ type: "spring", duration: 0.32, bounce: 0.18 }}
       >
-        <div className="relative flex max-w-5/6 flex-col items-end gap-1.5">
+        <div className="relative flex max-w-3/4 flex-col items-end gap-1.5">
           {m.attachments.length ? <Attachments list={m.attachments} space={space} /> : null}
           {m.text.trim() ? (
-            <div className="max-w-full rounded-xl bg-message px-4 py-3 text-base text-message-foreground">
+            <div className="max-w-full rounded-2xl bg-message px-3.5 py-2 text-message-foreground text-sm">
               <ClampedText text={m.text} lines={12} />
             </div>
           ) : null}
-          {/* Beside the bubble, out of the flow, so a hover row never pushes the reply down (refs b583, fd96). */}
-          <div className="absolute right-full bottom-0 mr-1.5 flex h-7 items-center gap-0.5 whitespace-nowrap opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
+          {/* Under the bubble, out of the flow, so a hover row never pushes the reply down. */}
+          <div className="absolute top-full right-0 mt-0.5 flex h-6 items-center gap-0.5 whitespace-nowrap opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
             <span className="mr-1 text-subtle-foreground text-xs tabular-nums">{clock(m.at)}</span>
             {canEdit ? (
               <MessageAction label="Edit and resend" onClick={onEdit}>
@@ -364,10 +365,10 @@ export function AssistantMessage({
             )}
             data-stopped={stopped || undefined}
           >
-            {text ? <CopyButton text={text} label="Copy reply" variant="outline" /> : null}
+            {text ? <CopyButton text={text} label="Copy reply" /> : null}
             {canRetry && text ? (
               <Tooltip>
-                <TooltipTrigger render={<Button variant="outline" size="icon-xs" aria-label="Retry" onClick={onRetry} />}>
+                <TooltipTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label="Retry" onClick={onRetry} />}>
                   <Icon icon={icons.retry} />
                 </TooltipTrigger>
                 <TooltipPopup>Retry</TooltipPopup>

@@ -392,7 +392,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         />
         <div className="flex items-center gap-1.5 px-3 pb-3">
           <Tooltip>
-            <TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} className="size-8 sm:size-8" />}>
+            <TooltipTrigger render={<Button variant="ghost-muted" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} />}>
               <Icon icon={icons.attach} className="size-4" />
             </TooltipTrigger>
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
@@ -413,7 +413,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
               {busy ? (
                 <motion.span key="stop" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ type: "spring", duration: 0.25, bounce: 0.3 }} className="inline-flex">
                   <Tooltip>
-                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
+                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-7 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
                       <span className="size-2.5 rounded-xs bg-current" />
                     </TooltipTrigger>
                     <TooltipPopup>Stop</TooltipPopup>
@@ -431,7 +431,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                   exit={{ scale: 0.6, opacity: 0, y: -6 }}
                   whileTap={canSend ? { scale: 0.88 } : undefined}
                   transition={{ type: "spring", duration: 0.25, bounce: 0.3 }}
-                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
+                  className="inline-flex size-7 items-center justify-center rounded-full bg-ink text-ink-foreground transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
                 >
                   <Icon icon={icons.send} className="size-4" />
                 </motion.button>

@@ -10,7 +10,6 @@ import { usePrefs } from "@/features/settings/prefs";
 import { cn } from "@/lib/utils";
 import { elapsedText, friendlyStep, patienceHint } from "../lib/progress";
 import { workSummary, type ToolRecord } from "../lib/timeline";
-import { CopyButton } from "./CodeBlock";
 
 /** One glyph per kind of step, readable without knowing what a tool is (docs/UI-REBUILD.md › Icons). */
 const ICON: Record<ToolCategory, IconData> = {
@@ -147,12 +146,30 @@ function stepLabel(t: ToolRecord, technical: boolean, spaceName?: string): strin
   return t.status === "running" ? "Writing" : "Wrote";
 }
 
-/** A tool's output, with Show technical details: a code-like block with a copy button (ref 7cad). */
-function StepDetail({ text }: { text: string }) {
+/** A tool's output: a quiet code-like block. */
+function StepDetail({ text, className }: { text: string; className?: string }) {
   return (
-    <div className="group/detail relative mt-1 mb-1 rounded-xl border bg-code px-4 py-3">
-      <p className="line-clamp-3 pr-8 font-mono text-muted-foreground text-xs wrap-anywhere">{text}</p>
-      <CopyButton text={text} label="Copy output" className="absolute top-2 right-2" />
+    <div className={cn("mt-1 mb-1 rounded-lg bg-code px-3 py-2", className)}>
+      <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-muted-foreground text-xs wrap-anywhere">{text}</pre>
+    </div>
+  );
+}
+
+/** Under a command step: the command that ran, and its output behind one more click. Nothing else. */
+function CommandDetail({ t }: { t: ToolRecord }) {
+  const [output, setOutput] = useState(false);
+  const command = t.target ?? t.label.replace(/^(Ran|Running)\s+/i, "");
+  return (
+    <div className="flex flex-col gap-1">
+      <code className="block rounded-lg bg-code px-3 py-2 font-mono text-foreground text-xs wrap-anywhere">{command}</code>
+      {t.detail ? (
+        <>
+          <button type="button" onClick={() => setOutput((o) => !o)} className="self-start px-1 text-muted-foreground text-xs hover:text-foreground">
+            {output ? "Hide output" : "Show output"}
+          </button>
+          {output ? <StepDetail text={t.detail} className="mt-0" /> : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -184,6 +201,7 @@ export function WorkGroup({
   const technical = usePrefs((s) => s.technicalDetails);
   const running = live ? tools.find((t) => t.status === "running") : undefined;
   const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState<Record<string, boolean>>({});
   const span = trackSpan(`work:${spanKey ?? tools[0]?.id ?? ""}`, !!running);
   useNow(!!running);
   const stepSpan = running ? trackSpan(`step:${spanKey ?? ""}:${running.id}`, true) : null;
@@ -212,6 +230,7 @@ export function WorkGroup({
         <StepList variant="icon">
           {tools.map((t) => {
             const isFile = !!t.target && (t.category === "read" || t.category === "write");
+            const isCommand = t.category === "command";
             return (
               <Step
                 key={t.id}
@@ -219,7 +238,9 @@ export function WorkGroup({
                 icon={ICON[t.category] ?? icons.step}
                 tag={TAG[t.category] ?? undefined}
                 detail={
-                  technical && t.detail ? (
+                  isCommand && shown[t.id] ? (
+                    <CommandDetail t={t} />
+                  ) : technical && t.detail && !isCommand ? (
                     <StepDetail text={t.detail} />
                   ) : !technical && t.status === "failed" ? (
                     <p className="pb-1 text-destructive-foreground text-sm">This step didn’t work; Phaethon carried on without it.</p>
@@ -227,10 +248,22 @@ export function WorkGroup({
                 }
               >
                 <span className="inline-flex min-w-0 max-w-full items-center gap-2">
-                  <span className={cn("shrink-0", t.status === "running" && "text-shimmer")}>{stepLabel(t, technical, spaceName)}</span>
+                  {isCommand ? (
+                    <button
+                      type="button"
+                      aria-expanded={!!shown[t.id]}
+                      onClick={() => setShown((s) => ({ ...s, [t.id]: !s[t.id] }))}
+                      className={cn("inline-flex shrink-0 items-center gap-1 rounded-sm text-left hover:text-foreground", t.status === "running" && "text-shimmer")}
+                    >
+                      {t.status === "running" ? "Running a command" : "Ran a command"}
+                      <Icon icon={icons.chevronDown} className={cn("size-3.5 text-muted-foreground transition-transform", !shown[t.id] && "-rotate-90")} />
+                    </button>
+                  ) : (
+                    <span className={cn("shrink-0", t.status === "running" && "text-shimmer")}>{stepLabel(t, technical, spaceName)}</span>
+                  )}
                   {isFile ? (
                     <FileChip space={space} path={t.target!} className="min-w-0 rounded-full text-foreground" />
-                  ) : technical && t.target ? (
+                  ) : technical && t.target && !isCommand ? (
                     <span className="min-w-0 truncate font-mono text-muted-foreground text-xs">{t.target}</span>
                   ) : null}
                   {t.status === "cancelled" || t.status === "incomplete" ? (

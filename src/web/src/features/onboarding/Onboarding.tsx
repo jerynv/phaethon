@@ -4,7 +4,6 @@ import { api, type SpaceView } from "@/app/api";
 import { HUES } from "@/app/NewSpaceDialog";
 import { useNav } from "@/app/store";
 import { ArtCanvas, type ArtPalette } from "@/components/art";
-import { BrandMark } from "@/components/brand-mark";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -95,8 +94,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <main className="@container/onboarding relative flex h-full bg-background">
       <div aria-hidden className="app-drag absolute inset-x-0 top-0 h-(--titlebar-height)" />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-24 shrink-0 items-end justify-center gap-2 pb-2">
-          <BrandMark className="size-5 text-foreground" />
+        <div className="flex h-24 shrink-0 items-end justify-center pb-2">
           <span className="font-medium text-base tracking-title">Phaethon</span>
         </div>
         <div className="page-scroll min-h-0 flex-1">

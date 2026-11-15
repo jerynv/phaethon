@@ -1,5 +1,5 @@
 import { AnimatePresence } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, type SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { chatKey, DRAFT, NO_SPACES, useNav, useOpenThread } from "@/app/store";
@@ -16,9 +16,11 @@ import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
 import { useCatalog } from "./catalog";
 import { Composer, type EditTarget } from "./components/Composer";
+import { HistoryRail, type RailItem } from "./components/HistoryRail";
 import { AssistantMessage, UserMessage } from "./components/Messages";
 import { Welcome } from "./components/Welcome";
 import { isLimit, LimitCard } from "./components/LimitCard";
+import { replyText } from "./lib/timeline";
 import { useChats, useConv } from "./store";
 
 type Scroll = { top: number; pinned: boolean };
@@ -146,6 +148,21 @@ export function ChatView({ space }: { space: SpaceView }) {
   }
 
   const limit = last?.role === "assistant" && last.error && isLimit(last.error.code) && !chat.running && closedLimit !== last.key ? last : null;
+  // One rail item per message you sent, with the reply's words for its preview.
+  const rail = useMemo<RailItem[]>(() => {
+    const out: RailItem[] = [];
+    chat.messages.forEach((m, i) => {
+      if (m.role !== "user") return;
+      let assistantText: string | null = null;
+      for (let j = i + 1; j < chat.messages.length; j++) {
+        const r = chat.messages[j]!;
+        if (r.role === "user") break;
+        assistantText = replyText(r) || assistantText;
+      }
+      out.push({ id: m.key, userText: m.text, assistantText });
+    });
+    return out;
+  }, [chat.messages]);
 
   const retry = () => {
     const u = [...chat.messages].reverse().find((m) => m.role === "user");
@@ -172,7 +189,8 @@ export function ChatView({ space }: { space: SpaceView }) {
           </div>
         </div>
       ) : (
-        <div ref={box} onScroll={onScroll} className="scroll-quiet relative min-h-0 flex-1 overflow-x-hidden [overflow-anchor:none]">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={box} onScroll={onScroll} className="scroll-quiet relative min-h-0 flex-1 overflow-x-hidden [overflow-anchor:none]">
           {showSkeleton ? <SkeletonTurns /> : null}
           <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-4 px-4 pt-6 pb-8">
             {chat.messages.map((m, i) =>
@@ -189,6 +207,8 @@ export function ChatView({ space }: { space: SpaceView }) {
               ),
             )}
           </div>
+          </div>
+          <HistoryRail box={box} items={rail} />
         </div>
       )}
       <div className={cn("relative", empty && "px-8")}>

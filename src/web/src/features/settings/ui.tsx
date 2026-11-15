@@ -197,15 +197,30 @@ export function Status({ tone, children, className }: { tone: "ready" | "warning
 
 export type Loaded<T> = { data: T | undefined; error: string | null; loading: boolean; reload: () => Promise<void>; setData: (d: T) => void };
 
-/** Runs `fn` on mount (and when deps change); keeps the last data while reloading. */
+/** What each loader last returned, so a section comes back as it was and only refreshes quietly. */
+const remembered = new Map<string, unknown>();
+
+/**
+ * Runs `fn` on mount (and when deps change); keeps the last data while
+ * reloading, and across visits: the same loader shows its last answer at once
+ * and refreshes it in the background.
+ */
 export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList = []): Loaded<T> {
-  const [data, setData] = useState<T | undefined>(undefined);
+  const key = `${fn.toString()}|${JSON.stringify(deps)}`;
+  const [data, setDataState] = useState<T | undefined>(() => remembered.get(key) as T | undefined);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!remembered.has(key));
   const seq = useRef(0);
+  const setData = useCallback(
+    (d: T) => {
+      remembered.set(key, d);
+      setDataState(d);
+    },
+    [key],
+  );
   const reload = useCallback(async () => {
     const n = ++seq.current;
-    setLoading(true);
+    if (!remembered.has(key)) setLoading(true);
     setError(null);
     try {
       const d = await fn();

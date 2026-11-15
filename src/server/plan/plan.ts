@@ -4,6 +4,8 @@ import { upcoming as dueAhead } from "../study/lms.ts";
 import { writeIn } from "../study/files.ts";
 import { charLen, cmpBytes, isControl, isWs } from "../study/text.ts";
 import { can, seesDue, type Visible } from "../study/visible.ts";
+import { cached } from "../study/scope.ts";
+import type { ScopeMap } from "../study/types.ts";
 
 /**
  * The study planner's files in a space (port of `plan.rs`): what's coming up
@@ -26,7 +28,7 @@ const MAX_COURSE = 200;
 const MAX_DONE = 2000;
 
 export type Upcoming = { course: string; folder: string; title: string; due: number; link: string };
-export type Exam = { id: string; course?: string; title: string; date: string };
+export type Exam = { id: string; course?: string; title: string; date: string; detected?: boolean };
 export type PlanState = { studyDays: number[]; sessionsPerDay: number; sessionMinutes: number; done: string[] };
 export type CourseRef = { name: string; folder: string };
 export type UpcomingView = { courses: CourseRef[]; items: Upcoming[] };
@@ -74,6 +76,30 @@ const byDate = (a: Exam, b: Exam) => cmpBytes(a.date, b.date) || cmpBytes(a.titl
  * that isn't an exam is left out. Both the array form and `{"exams": [...]}`
  * (which the card scheduler also reads) are accepted.
  */
+/**
+ * Exams the course materials name with a date (found while a quiz was scoped),
+ * minus ones already saved under the same title. They are listed, never
+ * written to `study/exams.json`.
+ */
+export function detectedExams(visible: Visible, saved: Exam[]): Exam[] {
+  const out: Exam[] = [];
+  for (const seen of visible.courses) {
+    let map: ScopeMap | null;
+    try {
+      map = cached(visible, seen, null)?.[0] ?? null;
+    } catch {
+      continue; // A damaged scope store costs nothing here; the quiz flow reports it.
+    }
+    const course = seen.state.name;
+    for (const e of map?.exams ?? []) {
+      if (!e.date || !/^\d{4}-\d{2}-\d{2}$/.test(e.date)) continue;
+      if (saved.some((x) => x.title.trim().toLowerCase() === e.title.trim().toLowerCase() && (x.course ?? course) === course)) continue;
+      out.push({ id: `found:${seen.state.folder}:${e.title}`, course, title: e.title, date: e.date, detected: true });
+    }
+  }
+  return out.sort(byDate);
+}
+
 export function examsGet(spaceDir: string): Exam[] {
   let text: string | null;
   try {

@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
-import { ProviderIcon } from "@/components/provider-icon";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { toast } from "@/components/toast";
 import { AlertDialog, AlertDialogClose, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogPopup, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -20,7 +19,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { errorText } from "@/lib/core";
-import { api, type SpaceView } from "./api";
+import type { SpaceView } from "./api";
 import { keysFor, viewKeys } from "./shortcuts";
 import { NewSpaceDialog } from "./NewSpaceDialog";
 import { UpdatePill } from "./UpdatePill";
@@ -164,45 +163,6 @@ function NewChatRow({ onDown }: { onDown: () => void }) {
   );
 }
 
-const CONNECT_MARKS = ["claude", "openai", "gemini", "mistral", "ollama"];
-
-/**
- * The footer's invitation while no model is set up (a163's "Connect apps"):
- * a short title, one line, the providers' marks. It opens Settings › Providers
- * and goes away once a model answers.
- */
-function ConnectModel() {
-  const openSettings = useNav((s) => s.openSettings);
-  const settingsOpen = useNav((s) => s.settings !== null);
-  const [ready, setReady] = useState(true);
-  useEffect(() => {
-    if (settingsOpen) return;
-    let live = true;
-    void api.settings().then((s) => live && setReady(s.providerReady !== false), () => {});
-    return () => {
-      live = false;
-    };
-  }, [settingsOpen]);
-  if (ready) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => openSettings("providers")}
-      className="flex flex-col items-start gap-1 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-    >
-      <span className="text-foreground text-sm">Connect a model</span>
-      <span className="text-muted-foreground text-xs">Claude, ChatGPT, Gemini, or one that runs on this computer.</span>
-      <span className="mt-1.5 flex items-center gap-2" aria-hidden>
-        {CONNECT_MARKS.map((id) => (
-          <ProviderIcon key={id} id={id} className="size-3.5" />
-        ))}
-        <span className="flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Icon icon={icons.add} className="size-2.5" />
-        </span>
-      </span>
-    </button>
-  );
-}
 
 const NO_SPACE_LIST: SpaceView[] = [];
 
@@ -293,7 +253,6 @@ export function Sidebar() {
         <SpacesList ref={listRef} spaces={list} query={query} filter={filter} onDelete={onDelete} onExitTop={() => filterRef.current?.focus()} />
       )}
       <SidebarFooter className="gap-0.5">
-        <ConnectModel />
         <UpdatePill />
         <SidebarMenuButton isActive={settingsOpen} aria-keyshortcuts={keysFor("settings").aria} onClick={() => openSettings()} className="group/settings">
           <Icon icon={icons.settings} />

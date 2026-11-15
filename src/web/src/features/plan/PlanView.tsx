@@ -88,8 +88,10 @@ export function PlanView({ space }: { space: SpaceView }) {
     }
   };
   const setExams = async (exams: PlanExam[]) => {
-    const saved = await planExamsSet(space.id, exams);
-    data.setData((x) => x && { ...x, exams: saved });
+    // Detected exams are the course's, not ours to save; the core lists them again with the saved ones.
+    const saved = await planExamsSet(space.id, exams.filter((e) => !e.detected));
+    const detected = (await planExamsGet(space.id)).filter((e) => e.detected);
+    data.setData((x) => x && { ...x, exams: [...saved, ...detected] });
   };
   const removeExam = async (e: PlanExam) => {
     if (!d) return;
@@ -103,7 +105,8 @@ export function PlanView({ space }: { space: SpaceView }) {
   };
   const saveExam = async (x: PlanExam) => {
     if (!d) return;
-    await setExams(x.id ? d.exams.map((y) => (y.id === x.id ? x : y)) : [...d.exams, { ...x, id: `e${Date.now().toString(36)}` }]);
+    const own = x.id && !x.id.startsWith("found:");
+    await setExams(own ? d.exams.map((y) => (y.id === x.id ? x : y)) : [...d.exams, { ...x, id: `e${Date.now().toString(36)}`, detected: undefined }]);
     toast.success(x.id ? `Saved ${x.title}` : `Added ${x.title}`);
     setEditing(null);
   };
@@ -291,7 +294,7 @@ function Filters({
   const c = counts(all);
   const sorted = [...exams].sort((a, b) => (a.date < b.date ? -1 : 1));
   return (
-    <nav aria-label="Filter the plan" className="flex min-w-0 flex-col @3xl/page:sticky @3xl/page:top-6 @3xl/page:self-start">
+    <nav aria-label="Filter the plan" className="scroll-quiet flex min-w-0 flex-col @3xl/page:sticky @3xl/page:top-0 @3xl/page:max-h-[calc(100dvh-var(--titlebar-height)-2.5rem)] @3xl/page:self-start @3xl/page:overflow-y-auto">
       {/* Narrow pages filter from the bar above the agenda instead. */}
       <div className="flex flex-col @max-3xl/page:hidden">
         <SideLabel>Show</SideLabel>
@@ -333,12 +336,15 @@ function Filters({
               <Truncate className="text-sm">{e.title}</Truncate>
               <span className="truncate text-muted-foreground text-xs tabular-nums">
                 {shortDay(e.date)} · {relDay(e.date, today).toLowerCase()}
+                {e.detected ? " · from the course" : ""}
               </span>
             </button>
-            <span className="size-1.5 shrink-0 rounded-full group-focus-within:hidden group-hover:hidden" style={{ backgroundColor: e.course ? colors.get(e.course) : "var(--primary)" }} />
-            <Button size="icon-xs" variant="ghost-destructive" aria-label={`Remove ${e.title}`} className="relative z-10 hidden group-focus-within:inline-flex group-hover:inline-flex" onClick={() => onRemoveExam(e)}>
-              <Icon icon={icons.delete} />
-            </Button>
+            <span className={cn("size-1.5 shrink-0 rounded-full", !e.detected && "group-focus-within:hidden group-hover:hidden")} style={{ backgroundColor: e.course ? colors.get(e.course) : "var(--primary)" }} />
+            {e.detected ? null : (
+              <Button size="icon-xs" variant="ghost-destructive" aria-label={`Remove ${e.title}`} className="relative z-10 hidden group-focus-within:inline-flex group-hover:inline-flex" onClick={() => onRemoveExam(e)}>
+                <Icon icon={icons.delete} />
+              </Button>
+            )}
           </motion.div>
         ))}
       </AnimatePresence>

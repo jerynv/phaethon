@@ -1,7 +1,7 @@
 import { spaceDir } from "../core/vault.ts";
 import { commands } from "../rpc/registry.ts";
 import { visibleFor } from "../study/visible.ts";
-import { asPlanState, examsGet, examsSet, savePlan, stateGet, stateSet, upcoming, type Exam } from "./plan.ts";
+import { asPlanState, detectedExams, examsGet, examsSet, savePlan, stateGet, stateSet, upcoming, type Exam } from "./plan.ts";
 
 /** The study planner's commands (`plan_*`), as the Tauri ones were. */
 
@@ -23,7 +23,10 @@ commands({
     spaceDir(space);
     return upcoming(visibleFor(space as string), Math.floor(Date.now() / 1000));
   },
-  plan_exams_get: ({ space }: { space: unknown }) => examsGet(spaceDir(space)),
+  plan_exams_get: ({ space }: { space: unknown }) => {
+    const saved = examsGet(spaceDir(space));
+    return [...saved, ...detectedExams(visibleFor(space as string), saved)];
+  },
   plan_exams_set: ({ space, exams }: { space: unknown; exams: unknown }) => {
     const dir = spaceDir(space);
     return examsSet(dir, examsArg(exams));

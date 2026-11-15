@@ -4,7 +4,8 @@ import { invoke } from "@/lib/core";
 /** `folder` is the name under courses/, without the prefix; `link` is space-relative and may carry #anchor. */
 export type Upcoming = { course: string; folder: string; title: string; due: number; link: string };
 export type CourseRef = { name: string; folder: string };
-export type Exam = { id: string; course?: string; title: string; date: string };
+/** `detected`: named with a date by the course materials; listed, not saved. Editing one saves a copy. */
+export type Exam = { id: string; course?: string; title: string; date: string; detected?: boolean };
 export type PlanState = { studyDays: number[]; sessionsPerDay: number; sessionMinutes: number; done: string[] };
 
 export const DEFAULT_STATE: PlanState = { studyDays: [0, 1, 2, 3, 4, 5], sessionsPerDay: 3, sessionMinutes: 25, done: [] };

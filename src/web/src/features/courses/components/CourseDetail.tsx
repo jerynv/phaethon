@@ -225,6 +225,7 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
   const openFile = useNav((s) => s.openFile);
   const viewing = useNav((s) => s.viewer);
   const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("all");
   const showSkeleton = useDelayed(!content && !error && !hidden);
   const entries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -242,7 +243,18 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
         <h2 className="flex-1 font-medium text-base tracking-title">
           Content <span className="font-normal text-muted-foreground tabular-nums">{content.entries.length}</span>
         </h2>
-        <div className="relative w-56">
+        <Tabs value={kind} onValueChange={(v: string) => setKind(v)}>
+          <TabsList aria-label="Kind" size="sm">
+            <TabsTab value="all">All</TabsTab>
+            <TabsTab value="files">Files</TabsTab>
+            {SECTIONS.map((s) => (
+              <TabsTab key={s.label} value={s.label}>
+                {s.label}
+              </TabsTab>
+            ))}
+          </TabsList>
+        </Tabs>
+        <div className="relative w-48">
           <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
           <Input size="sm" value={query} placeholder="Filter" aria-label="Filter content" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
         </div>
@@ -251,7 +263,7 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
         <p className="px-1 text-muted-foreground text-sm">Nothing matches “{query.trim()}”.</p>
       ) : (
         <>
-          {fileGroups(entries).map((g) => (
+          {(kind === "all" || kind === "files" ? fileGroups(entries) : []).map((g) => (
             <EntryGroup key={g.id} label={g.label} icon={g.id === "attached" ? icons.announcement : undefined} count={g.entries.length} testId={g.id === "attached" ? "course-attached" : undefined}>
               {g.entries.map((e, i) => (
                 <EntryRow key={`${e.path}#${i}`} entry={e} selected={viewing?.space === space && viewing.path === e.path} onOpen={() => openFile(space, e.path)} />
@@ -259,7 +271,7 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
             </EntryGroup>
           ))}
           {SECTIONS.map((s) => {
-            const list = entries.filter((e) => s.kind.includes(e.kind));
+            const list = kind === "all" || kind === s.label ? entries.filter((e) => s.kind.includes(e.kind)) : [];
             if (!list.length) return null;
             return (
               <EntryGroup key={s.label} label={s.label} count={list.length}>
@@ -335,8 +347,8 @@ function EntryRow({ entry: e, icon, selected, onOpen }: { entry: CourseContentEn
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-sm outline-none transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-ring",
-        selected && "bg-row-selected hover:bg-row-selected hover:shadow-none",
+        "flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "bg-row-selected hover:bg-row-selected",
       )}
     >
       {e.kind === "file" ? <FileIcon name={e.title} /> : <Icon icon={icon ?? icons.fileText} className="size-4 text-muted-foreground" />}

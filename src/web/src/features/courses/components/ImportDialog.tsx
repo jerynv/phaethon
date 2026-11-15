@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { SkeletonRows } from "@/components/skeletons";
 import { SpaceAvatar } from "@/components/space-avatar";
@@ -17,7 +19,8 @@ import { useCourses } from "../store";
 
 /**
  * Choose courses to import from one site, and which spaces see the new ones.
- * Current-term courses not yet imported start selected.
+ * The current term's courses start selected (imported ones too, so an import
+ * refreshes them); older terms are folded behind one line.
  */
 export function ImportDialog({
   connection,
@@ -36,6 +39,7 @@ export function ImportDialog({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [spaces, setSpaces] = useState<Set<string>>(new Set([space]));
   const [tick, setTick] = useState(0);
+  const [older, setOlder] = useState(false);
   const allSpaces = useCourses((s) => s.spaces);
   const startImport = useCourses((s) => s.startImport);
   const busy = useCourses((s) => s.run?.status === "running");
@@ -51,7 +55,7 @@ export function ImportDialog({
       (list) => {
         if (!live) return;
         setCourses(list);
-        setPicked(new Set(list.filter((c) => c.current && !c.imported).map((c) => c.id)));
+        setPicked(new Set(list.filter((c) => c.current || c.imported).map((c) => c.id)));
       },
       (e) => live && setError(cleanMessage(e)),
     );
@@ -106,8 +110,18 @@ export function ImportDialog({
           ) : courses.length === 0 ? (
             <p className="py-6 text-center text-muted-foreground text-sm">This site lists no courses for you.</p>
           ) : (
-            groups.map(([label, list]) => {
+            groups.map(([label, list], gi) => {
               const all = list.every((c) => picked.has(c.id));
+              const isCurrent = (l: string) => l.startsWith("Current") || groups.length === 1;
+              if (!isCurrent(label) && !older) {
+                const olderCount = groups.filter(([l]) => !isCurrent(l)).reduce((n, [, l]) => n + l.length, 0);
+                return groups.findIndex(([l]) => !isCurrent(l)) === gi ? (
+                  <button key="older" type="button" onClick={() => setOlder(true)} className="flex h-8 items-center gap-2 px-1 text-muted-foreground text-sm hover:text-foreground">
+                    <Icon icon={icons.chevronRight} className="size-3.5" />
+                    Show {olderCount} older {olderCount === 1 ? "course" : "courses"}
+                  </button>
+                ) : null;
+              }
               return (
                 <section key={label} className="space-y-1">
                   <div className="flex h-6 items-center justify-between">

@@ -73,7 +73,7 @@ export function isAdded(p: ProviderInfo): boolean {
 
 /** The added providers, the default first, then in preset order. */
 export function addedProviders(settings: Settings): ProviderInfo[] {
-  const added = settings.providers.filter((p) => isAdded(p) || p.id === settings.provider);
+  const added = settings.providers.filter((p) => isAdded(p));
   return added.sort((a, b) => Number(b.id === settings.provider) - Number(a.id === settings.provider));
 }
 

@@ -147,7 +147,7 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
               }}
               className="font-mono"
             />
-            <Button type="submit" size="sm" disabled={busy !== null} className="min-w-[7.5rem]">
+            <Button type="submit" size="sm" disabled={busy !== null} className="min-w-30">
               {busy === "check" ? <Spinner /> : null}
               {busy === "check" ? "Checking…" : "Check and save"}
             </Button>

@@ -46,7 +46,7 @@ export function GeneralSection() {
             <Card>
               <Row
                 label="Vault"
-                description={s.vaultPath ? <StartTruncate value={s.vaultPath} className="font-mono text-[11px]" /> : "Not chosen yet"}
+                description={s.vaultPath ? <StartTruncate value={s.vaultPath} className="font-mono text-2xs" /> : "Not chosen yet"}
               >
                 {s.vaultPath ? <CopyButton text={s.vaultPath} label="Copy path" /> : null}
               </Row>

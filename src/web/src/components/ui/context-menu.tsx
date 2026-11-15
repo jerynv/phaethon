@@ -27,10 +27,10 @@ function ContextMenuTrigger({ className, ...props }: ContextMenuPrimitive.Trigge
 function ContextMenuPopup({ className, children, ...props }: ContextMenuPrimitive.Popup.Props) {
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.Positioner className="z-[130]" data-slot="context-menu-positioner">
+      <ContextMenuPrimitive.Positioner className="z-(--z-popup)" data-slot="context-menu-positioner">
         <ContextMenuPrimitive.Popup
           className={cn(
-            "dropdown-glass relative flex min-w-[min(10rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] origin-(--transform-origin) rounded-lg shadow-lg/5 outline-none focus:outline-none dark:shadow-none",
+            "dropdown-glass relative flex min-w-[min(--spacing(40),var(--viewport-max-width))] max-w-(--viewport-max-width) origin-(--transform-origin) rounded-lg shadow-lg/5 outline-none focus:outline-none dark:shadow-none",
             "[-webkit-app-region:no-drag]",
             "transition-[opacity,scale] duration-100 data-[ending-style]:scale-95 data-[starting-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
             className,

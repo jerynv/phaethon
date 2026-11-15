@@ -107,7 +107,7 @@ function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
   return (
     <TooltipPrimitive.Positioner
-      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
+      className="pointer-events-none z-(--z-tooltip) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
       collisionPadding={{
         top: COLLISION_PADDING + titlebarHeight,
         right: COLLISION_PADDING,
@@ -146,7 +146,7 @@ function TooltipPopup({
               ? "dropdown-glass shadow-xl shadow-black/25 before:hidden"
               : "border bg-popover not-dark:bg-clip-padding shadow-md/5",
             variant === "code"
-              ? "max-w-120 wrap-anywhere text-left font-mono text-[11px] leading-relaxed"
+              ? "max-w-120 wrap-anywhere text-left font-mono text-2xs leading-relaxed"
               : "max-w-80 wrap-anywhere whitespace-normal leading-snug",
             className,
           )}

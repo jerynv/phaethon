@@ -68,7 +68,7 @@ function PopoverPopup({
       {touchBackdrop ? (
         // On touch, the backdrop consumes outside taps so closing cannot also activate the control beneath.
         <PopoverPrimitive.Backdrop
-          className="fixed inset-0 z-[130] hidden pointer-coarse:block"
+          className="fixed inset-0 z-(--z-popup) hidden pointer-coarse:block"
           data-slot="popover-backdrop"
         />
       ) : null}
@@ -84,7 +84,7 @@ function PopoverPopup({
           !keepMounted && "transition-transform data-instant:transition-none",
           variant === "panel"
             ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+--spacing(4)),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-150 ease-out data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
-            : "z-[130]",
+            : "z-(--z-popup)",
         )}
         data-slot="popover-positioner"
         render={renderClosingPositioner}
@@ -101,8 +101,8 @@ function PopoverPopup({
               "w-fit text-balance rounded-md text-xs shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]",
             !tooltipStyle &&
               variant !== "panel" &&
-              "shadow-[0_16px_40px_-18px_oklch(0%_0_0/55%)] dark:shadow-[0_18px_44px_-18px_oklch(0%_0_0/80%)]",
-            width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
+              "shadow-popup",
+            width !== "auto" && ["max-w-(--viewport-max-width)", popoverPopupWidthClassName[width]],
             variant === "panel" &&
               "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
             className,

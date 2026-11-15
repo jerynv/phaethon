@@ -104,7 +104,7 @@ export function CommandPalette() {
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandDialogPopup className="max-w-[36rem]">
+      <CommandDialogPopup className="max-w-xl">
         <Command items={groups} filter={null} value={query} onValueChange={setQuery} itemToStringValue={(i: unknown) => (i as Item).label}>
           <CommandInput placeholder="Search conversations, spaces and actions" />
           <CommandPanel>
@@ -129,7 +129,7 @@ export function CommandPalette() {
                         {item.snippet ? (
                           <span className="truncate text-muted-foreground text-xs">
                             {item.snippet.before}
-                            <mark className="rounded-[2px] bg-primary/15 px-px text-foreground">{item.snippet.matched}</mark>
+                            <mark className="rounded-xs bg-primary/15 px-px text-foreground">{item.snippet.matched}</mark>
                             {item.snippet.after}
                           </span>
                         ) : null}

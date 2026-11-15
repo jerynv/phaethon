@@ -70,7 +70,7 @@ export function AppearanceSection() {
                   on ? "bg-background text-foreground shadow-xs/10 dark:bg-input/72" : "text-muted-foreground hover:bg-background/55 hover:text-foreground dark:hover:bg-input/32",
                 )}
               >
-                <span className={cn("block aspect-[16/10] w-full overflow-hidden rounded-[5px] border", on ? "border-primary/60 ring-1 ring-primary/40" : "border-border")}>
+                <span className={cn("block aspect-[16/10] w-full overflow-hidden rounded-sm border", on ? "border-primary/60 ring-1 ring-primary/40" : "border-border")}>
                   <Preview choice={c.id} />
                 </span>
                 <span className="font-medium">{c.label}</span>

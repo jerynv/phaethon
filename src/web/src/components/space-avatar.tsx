@@ -6,7 +6,7 @@ export function SpaceAvatar({ name, hue, className }: { name: string; hue: numbe
   return (
     <span
       aria-hidden
-      className={cn("inline-flex size-4 shrink-0 select-none items-center justify-center rounded-[4px] font-semibold text-[9px] text-white leading-none", className)}
+      className={cn("inline-flex size-4 shrink-0 select-none items-center justify-center rounded-sm font-semibold text-3xs text-white leading-none", className)}
       style={{ background: `oklch(0.62 0.14 ${hue})` }}
     >
       {initial}

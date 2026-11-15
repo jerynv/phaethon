@@ -92,13 +92,13 @@ export function ModelChooser({
     <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
       <PopoverTrigger
         disabled={disabled}
-        className="inline-flex h-7 w-52 min-w-0 items-center gap-2 rounded-[var(--control-radius)] border border-input bg-popover px-2 text-left text-sm shadow-xs/5 transition-colors hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-64 data-popup-open:bg-accent/50 dark:bg-input/32"
+        className="inline-flex h-7 w-52 min-w-0 items-center gap-2 rounded-control border border-input bg-popover px-2 text-left text-sm shadow-xs/5 transition-colors hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-64 data-popup-open:bg-accent/50 dark:bg-input/32"
       >
         <ProviderIcon id={provider.id} className="size-3.5" />
         {label ? <Truncate className="flex-1">{label}</Truncate> : <span className="flex-1 truncate text-placeholder">Choose a model</span>}
         <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.25} />
       </PopoverTrigger>
-      <PopoverPopup side="bottom" align="end" padding="none" className="w-80 max-w-[calc(100vw-2rem)]" initialFocus={() => document.getElementById(`model-search-${provider.id}`) as HTMLElement}>
+      <PopoverPopup side="bottom" align="end" padding="none" className="w-80 max-w-(--viewport-max-width)" initialFocus={() => document.getElementById(`model-search-${provider.id}`) as HTMLElement}>
         <div className="flex max-h-[min(22rem,var(--available-height))] min-h-0 flex-col">
           <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
             <SearchIcon className="size-3.5 shrink-0 text-subtle-foreground" strokeWidth={2} />
@@ -140,7 +140,7 @@ export function ModelChooser({
                 >
                   <span className="flex min-w-0 flex-1 items-baseline gap-2">
                     <Truncate className="shrink">{m.name}</Truncate>
-                    {m.name !== m.id ? <Truncate className="min-w-0 flex-1 font-mono text-[11px] text-subtle-foreground">{m.id}</Truncate> : null}
+                    {m.name !== m.id ? <Truncate className="min-w-0 flex-1 font-mono text-2xs text-subtle-foreground">{m.id}</Truncate> : null}
                   </span>
                   <CheckIcon className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} strokeWidth={2.25} />
                 </div>

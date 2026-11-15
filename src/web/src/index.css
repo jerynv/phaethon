@@ -21,7 +21,15 @@
   --settings-max-width: 42rem;
   --command-shell-inset: 0.5rem;
   --command-content-inset: 0.75rem;
+  --viewport-max-width: calc(100vw - 2rem);
+  --dialog-max-width: 92vw;
+  --dialog-max-height: 92vh;
+  /* Layers, bottom to top. */
   --z-sheet: 46;
+  --z-dialog: 60;
+  --z-popup: 130;
+  --z-tooltip: 140;
+  --z-toast: 150;
   /* Lucide strokes (components/icon.tsx): thin at 16 px, a touch heavier at 12 px. */
   --icon-stroke: 1.5;
   --icon-stroke-small: 1.85;
@@ -30,6 +38,7 @@
   --app-scrollbar-thumb: oklch(0% 0 0 / 14%);
   --app-scrollbar-thumb-hover: oklch(0% 0 0 / 24%);
   --backdrop: oklch(0% 0 0 / 28%);
+  --popup-shadow-color: oklch(0% 0 0 / 55%);
 
   --background: oklch(100% 0 0);
   --foreground: oklch(21% 0.006 285.885);
@@ -76,6 +85,7 @@
   --app-scrollbar-thumb: oklch(100% 0 0 / 10%);
   --app-scrollbar-thumb-hover: oklch(100% 0 0 / 18%);
   --backdrop: oklch(0% 0 0 / 60%);
+  --popup-shadow-color: oklch(0% 0 0 / 80%);
 
   --background: oklch(15.5% 0.0021 286.2);
   --foreground: oklch(96.7% 0.001 286.375);
@@ -135,6 +145,10 @@
   --text-xl--line-height: 1.625rem;
   --text-2xl: 1.5rem;
   --text-2xl--line-height: 1.875rem;
+
+  --tracking-title: -0.01em;
+  --tracking-heading: -0.015em;
+  --tracking-hero: -0.02em;
 }
 
 @theme inline {
@@ -178,6 +192,7 @@
   --color-icon-muted: var(--subtle-foreground);
   --color-secondary-label: var(--muted-foreground);
 
+  --radius-control: var(--control-radius);
   --radius-xs: calc(var(--radius) - 6px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -185,6 +200,8 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 6px);
   --radius-3xl: calc(var(--radius) + 10px);
+
+  --shadow-popup: 0 16px 40px -18px var(--popup-shadow-color);
 
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --animate-skeleton: skeleton 2.4s infinite;

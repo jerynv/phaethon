@@ -46,7 +46,7 @@ function TutorPicker({ space, disabled }: { space: string; disabled: boolean }) 
     <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
       <PopoverTrigger disabled={disabled} className={cn("inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent", mode === "normal" ? "text-foreground/70" : "text-primary")}>
         <ChalkboardTeacher className="size-3.5" />
-        <span className="max-[700px]:hidden">{current.label}</span>
+        <span className="@max-lg/composer:hidden">{current.label}</span>
       </PopoverTrigger>
       <PopoverPopup side="top" align="start" padding="none" className="w-60">
         <div className="p-1">
@@ -280,7 +280,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
             {busy ? (
               <Tooltip>
                 <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85" />}>
-                  <span className="size-2.5 rounded-[2px] bg-current" />
+                  <span className="size-2.5 rounded-xs bg-current" />
                 </TooltipTrigger>
                 <TooltipPopup>Stop</TooltipPopup>
               </Tooltip>

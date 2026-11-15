@@ -34,14 +34,14 @@ function Toasts() {
   const { toasts } = Toast.useToastManager<ToastData>();
   return (
     <Toast.Portal>
-      <Toast.Viewport className="fixed right-4 bottom-4 z-[150] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col-reverse gap-2 outline-none" data-slot="toast-viewport">
+      <Toast.Viewport className="fixed right-4 bottom-4 z-(--z-toast) flex w-88 max-w-(--viewport-max-width) flex-col-reverse gap-2 outline-none" data-slot="toast-viewport">
         {toasts.slice(-3).map((t) => (
           <Toast.Root
             key={t.id}
             toast={t}
             swipeDirection={["right", "down"]}
             className={cn(
-              "group relative flex w-full items-start gap-2.5 rounded-[10px] border bg-popover py-2.5 pr-8 pl-3 text-popover-foreground shadow-lg/5 transition-[transform,opacity] duration-200 ease-drawer dark:shadow-none",
+              "group relative flex w-full items-start gap-2.5 rounded-xl border bg-popover py-2.5 pr-8 pl-3 text-popover-foreground shadow-lg/5 transition-[transform,opacity] duration-200 ease-drawer dark:shadow-none",
               "data-starting-style:translate-y-2 data-starting-style:opacity-0 data-ending-style:opacity-0 data-ending-style:translate-x-4",
             )}
           >

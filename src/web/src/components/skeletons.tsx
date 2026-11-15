@@ -10,7 +10,7 @@ export function SkeletonRows({ count = 4, className, withIcon = false }: { count
     <div className={cn("flex flex-col gap-0.5 motion-safe:animate-skeleton", className)} aria-hidden>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="flex h-7 items-center gap-2 px-2">
-          {withIcon ? <Skeleton className="size-4 shrink-0 animate-none rounded-[4px]" /> : null}
+          {withIcon ? <Skeleton className="size-4 shrink-0 animate-none rounded-sm" /> : null}
           <Skeleton className="h-2.5 animate-none" style={{ width: WIDTHS[i % WIDTHS.length] }} />
         </div>
       ))}
@@ -24,11 +24,11 @@ export function SkeletonTurns() {
     <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-8 px-4 pt-10 motion-safe:animate-skeleton" aria-hidden>
       {[0, 1].map((i) => (
         <div key={i} className="flex flex-col gap-6">
-          <Skeleton className="ml-auto h-9 w-[42%] animate-none rounded-xl" />
+          <Skeleton className="ml-auto h-9 w-2/5 animate-none rounded-xl" />
           <div className="flex flex-col gap-2.5">
-            <Skeleton className="h-2.5 w-[92%] animate-none" />
-            <Skeleton className="h-2.5 w-[84%] animate-none" />
-            <Skeleton className="h-2.5 w-[58%] animate-none" />
+            <Skeleton className="h-2.5 w-11/12 animate-none" />
+            <Skeleton className="h-2.5 w-5/6 animate-none" />
+            <Skeleton className="h-2.5 w-3/5 animate-none" />
           </div>
         </div>
       ))}

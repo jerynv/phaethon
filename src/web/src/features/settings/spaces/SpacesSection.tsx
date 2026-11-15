@@ -282,7 +282,7 @@ function AgentsGroup({ space }: { space: SpaceView }) {
           description={
             w ? (
               <span className="flex min-w-0 flex-col gap-0.5">
-                <StartTruncate value={w.path} className="font-mono text-[11px]" />
+                <StartTruncate value={w.path} className="font-mono text-2xs" />
                 {!w.available ? (
                   <span className="flex items-center gap-1 text-warning-foreground">
                     <TriangleAlertIcon className="size-3 shrink-0" />
@@ -306,7 +306,7 @@ function AgentsGroup({ space }: { space: SpaceView }) {
               Use Phaethon’s folder
             </Button>
           ) : null}
-          <Button size="xs" variant="outline" onClick={() => void choose()} disabled={busy !== null || !w} className="min-w-[5.5rem]">
+          <Button size="xs" variant="outline" onClick={() => void choose()} disabled={busy !== null || !w} className="min-w-22">
             {busy === "choose" ? <Spinner /> : null}
             {busy === "choose" ? "Choosing…" : "Choose…"}
           </Button>
@@ -372,7 +372,7 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
                     <SpaceAvatar name={nameOf(r.other)} hue={hueOf(r.other)} />
                     <div className="flex min-w-0 flex-1 flex-col">
                       <Truncate className="text-sm">{r.text}</Truncate>
-                      <StartTruncate value={r.path} className="font-mono text-[11px] text-muted-foreground" />
+                      <StartTruncate value={r.path} className="font-mono text-2xs text-muted-foreground" />
                     </div>
                     <Button size="xs" variant="ghost-destructive" onClick={() => void revoke(r.id, `${r.text}: ${r.path}`)}>
                       Remove

@@ -82,8 +82,8 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
         {current?.need ? <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-label={current.need} /> : null}
         <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.25} />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="end" padding="none" className="w-[30rem] max-w-[calc(100vw-2rem)]" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
-        <div className="flex h-[21rem] max-h-(--available-height) min-h-0">
+      <PopoverPopup side="top" align="end" padding="none" className="w-120 max-w-(--viewport-max-width)" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
+        <div className="flex h-84 max-h-(--available-height) min-h-0">
           <div className="flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r bg-muted/40 py-1.5" role="tablist" aria-label="Providers">
             <RailButton active={rail === "all"} label="All models" onClick={() => setRail("all")}>
               <LayoutGridIcon className="size-4 text-muted-foreground" strokeWidth={1.75} />
@@ -246,7 +246,7 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
         className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-foreground/70 text-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent"
       >
         <EffortGlyph level={level} levels={model.efforts} className="size-3.5" />
-        <span className="max-[620px]:hidden">{EFFORT_LABEL[level] ?? level}</span>
+        <span className="@max-md/composer:hidden">{EFFORT_LABEL[level] ?? level}</span>
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" padding="none" className="w-44">
         <div className="p-1">

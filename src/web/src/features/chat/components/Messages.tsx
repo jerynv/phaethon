@@ -35,14 +35,14 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
   return (
     <div className="group/msg flex flex-col items-end gap-1.5" data-role="user">
       {m.attachments.length ? (
-        <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+        <div className="flex max-w-5/6 flex-wrap justify-end gap-1.5">
           {m.attachments.map((a, i) => (
             <AttachmentChip key={`${a.name}-${i}`} a={a} onOpen={a.path ? () => openFile(space, a.path!) : undefined} />
           ))}
         </div>
       ) : null}
       {m.text.trim() ? (
-        <div className="max-w-[85%] rounded-xl bg-message px-3 py-2 text-base text-foreground">
+        <div className="max-w-5/6 rounded-xl bg-message px-3 py-2 text-base text-foreground">
           <ClampedText text={m.text} lines={12} />
         </div>
       ) : null}

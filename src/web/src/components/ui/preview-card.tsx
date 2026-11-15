@@ -24,7 +24,7 @@ function PreviewCardPopup({
     <PreviewCardPrimitive.Portal>
       <PreviewCardPrimitive.Positioner
         align={align}
-        className="z-[140] max-w-(--available-width)"
+        className="z-(--z-tooltip) max-w-(--available-width)"
         data-slot="preview-card-positioner"
         side={side}
         sideOffset={sideOffset}

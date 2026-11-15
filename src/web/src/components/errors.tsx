@@ -35,7 +35,7 @@ export function ClampedText({ text, lines = 2, className }: { text: string; line
     const el = ref.current;
     if (el && !open) setCut(el.scrollHeight > el.clientHeight + 1);
   }, [text, open]);
-  const clamp = lines === 2 ? "line-clamp-2" : lines === 3 ? "line-clamp-3" : "line-clamp-[12]";
+  const clamp = lines === 2 ? "line-clamp-2" : lines === 3 ? "line-clamp-3" : "line-clamp-12";
   return (
     <div className={className}>
       <div ref={ref} className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", !open && clamp)}>

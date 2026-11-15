@@ -72,7 +72,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <main className="flex h-full flex-col bg-background">
       <div className="app-drag h-(--titlebar-height) shrink-0" />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col px-4 pt-[8vh] pb-10">
+        <div className="mx-auto flex min-h-full w-full max-w-sm flex-col px-4 pt-16 pb-10">
           <Dots step={draft.step} />
           {draft.step === 0 ? <Welcome onNext={() => patch({ step: 1 })} /> : null}
           {draft.step === 1 ? <Answers draft={draft} patch={patch} onBack={() => patch({ step: 0 })} onNext={() => patch({ step: 2 })} /> : null}
@@ -110,7 +110,7 @@ function Footer({ onBack, children }: { onBack?: () => void; children: ReactNode
 function Welcome({ onNext }: { onNext: () => void }) {
   return (
     <section>
-      <h1 className="font-semibold text-2xl tracking-[-0.02em]">Welcome to Phaethon</h1>
+      <h1 className="font-semibold text-2xl tracking-hero">Welcome to Phaethon</h1>
       <p className="mt-2 text-base text-muted-foreground">An assistant that keeps each part of your life in its own space, with its own files, conversations and memory.</p>
       <Footer>
         <Button size="sm" autoFocus onClick={onNext}>
@@ -147,7 +147,7 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
 
   return (
     <section>
-      <h1 className="font-semibold text-xl tracking-[-0.015em]">How should Phaethon answer?</h1>
+      <h1 className="font-semibold text-xl tracking-heading">How should Phaethon answer?</h1>
       <p className="mt-1.5 text-muted-foreground text-sm">Use a key from a model provider, or a coding agent you already have. You can change this in Settings.</p>
       {readyName ? (
         <p className="mt-4 flex items-center gap-1.5 text-sm text-success-foreground">
@@ -435,7 +435,7 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
 
   return (
     <section>
-      <h1 className="font-semibold text-xl tracking-[-0.015em]">{existing ? "Your spaces" : "Make your first space"}</h1>
+      <h1 className="font-semibold text-xl tracking-heading">{existing ? "Your spaces" : "Make your first space"}</h1>
       <p className="mt-1.5 text-muted-foreground text-sm">
         {existing ? "This Phaethon folder already has spaces. Pick up where you left off, or add another." : "A space holds one part of your life, like school or work. You can add more later."}
       </p>

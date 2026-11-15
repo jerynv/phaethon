@@ -48,7 +48,7 @@ function MenuPopup({
         alignOffset={alignOffset}
         anchor={anchor}
         collisionAvoidance={collisionAvoidance}
-        className="z-[130]"
+        className="z-(--z-popup)"
         data-slot="menu-positioner"
         render={renderClosingPositioner}
         side={side}
@@ -60,8 +60,8 @@ function MenuPopup({
             // Electron drag hit-testing ignores z-index; opt portaled menus out to keep overlapping rows
             // hoverable.
             "[-webkit-app-region:no-drag]",
-            "max-w-[calc(100vw-2rem)]",
-            width === "content" ? "w-max min-w-0" : "min-w-[min(10rem,calc(100vw-2rem))]",
+            "max-w-(--viewport-max-width)",
+            width === "content" ? "w-max min-w-0" : "min-w-[min(--spacing(40),var(--viewport-max-width))]",
             className,
           )}
           data-slot="menu-popup"

@@ -155,9 +155,9 @@ export function AboutSection() {
   return (
     <Card>
       <div className="flex items-center gap-3 px-3.5 py-4">
-        <span className="inline-flex size-10 shrink-0 select-none items-center justify-center rounded-[10px] bg-primary font-semibold text-lg text-primary-foreground tracking-[-0.02em]">P</span>
+        <span className="inline-flex size-10 shrink-0 select-none items-center justify-center rounded-xl bg-primary font-semibold text-lg text-primary-foreground tracking-hero">P</span>
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="font-semibold text-lg tracking-[-0.01em]">Phaethon</span>
+          <span className="font-semibold text-lg tracking-title">Phaethon</span>
           <span className="text-muted-foreground text-xs tabular-nums">
             {info.data ? (
               `Version ${info.data.version}`
@@ -194,7 +194,7 @@ export function AboutSection() {
 function UpdateSkeleton() {
   const show = useDelayed(true);
   return (
-    <div className="flex min-h-[4.25rem] items-center gap-4 px-3.5 py-3 motion-safe:animate-skeleton" aria-hidden>
+    <div className="flex min-h-17 items-center gap-4 px-3.5 py-3 motion-safe:animate-skeleton" aria-hidden>
       {show ? (
         <>
           <div className="flex flex-1 flex-col gap-1.5">

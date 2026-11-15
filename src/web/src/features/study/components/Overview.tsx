@@ -178,7 +178,7 @@ function DueCard({ data, onReview, onQuiz, onMake }: { data: StudyOverview; onRe
   const { due, streakDays: streak } = data;
   const title = due ? plural(due, "card") + " due" : fresh ? `${plural(fresh, "new card")} to learn` : "You’re caught up";
   const meta = [
-    due ? `About ${plural(reviewMinutes(due), "minute")}` : fresh ? null : quiz ? `${quiz.title} is ready to practise` : "Cards come due again as you review them",
+    due ? `About ${plural(reviewMinutes(due), "minute")}` : fresh ? null : quiz ? `${quiz.title} is ready to practise` : null,
     due && fresh ? `${fresh} new` : null,
     streak > 1 ? `${streak}-day streak` : null,
   ].filter(Boolean);
@@ -427,7 +427,7 @@ function EmptyStudy({ noCourses, onCourses, onMake, onWrite }: { noCourses: bool
       <div className="flex flex-col gap-1 px-6 pt-5">
         <h2 className="font-medium text-base tracking-title">Nothing to study yet</h2>
         <p className="text-muted-foreground text-sm">
-          {noCourses ? "Import a course to make flashcards and practice quizzes from its materials." : "Make flashcards or a practice quiz from your course materials. Each one is checked against them."}
+          {noCourses ? "Import a course to make flashcards and practice quizzes from its materials." : "Make flashcards or a practice quiz from your course materials."}
         </p>
       </div>
       <div className="flex gap-2 p-6 pt-5">

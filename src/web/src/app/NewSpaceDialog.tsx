@@ -5,7 +5,7 @@ import { icons } from "@/components/icons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleRow } from "@/components/ui/toggle-row";
@@ -50,7 +50,6 @@ export function NewSpaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       <DialogPopup className="max-w-sm">
         <DialogHeader>
           <DialogTitle>New space</DialogTitle>
-          <DialogDescription>A separate compartment with its own files, conversations and memory.</DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">
           <div className="space-y-1.5">

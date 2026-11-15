@@ -155,7 +155,7 @@ export function PlanView({ space }: { space: SpaceView }) {
               palette="dawn"
               seed="plan-empty"
               title="Nothing coming up"
-              description={d.courses.length ? "No deadlines from your courses yet. Add an exam to plan review sessions before it." : "Add an exam to plan review sessions before it. Imported courses add their deadlines here."}
+              description="Add an exam to plan review sessions before it."
             >
               <Button size="sm" onClick={addExam}>
                 <Icon icon={icons.add} />

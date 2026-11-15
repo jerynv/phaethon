@@ -99,7 +99,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
               <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
             </div>
           ) : null}
-          <ArtEmpty palette="sky" seed="courses-empty" title="No course sites" description="Connect Canvas, Brightspace, Moodle or Blackboard to bring your courses’ files, assignments and grades into Phaethon.">
+          <ArtEmpty palette="sky" seed="courses-empty" title="No course sites" description="Connect Canvas, Brightspace, Moodle or Blackboard to import your courses.">
             <Button size="sm" onClick={() => setConnect(true)}>
               Connect a course site
             </Button>
@@ -205,7 +205,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
                     <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
                   </div>
                 ) : null}
-                <ArtEmpty palette="sky" seed="courses-none" title="No courses yet" description="Import courses from a connected site to browse their files and choose what this space sees.">
+                <ArtEmpty palette="sky" seed="courses-none" title="No courses yet" description="Import courses from a connected site to browse their files here.">
                   {connections.data?.find((c) => c.signedIn) ? (
                     <Button size="sm" disabled={busy} onClick={() => setImporting(connections.data!.find((c) => c.signedIn)!)}>
                       <Icon icon={icons.download} />

@@ -23,7 +23,7 @@ describe("friendly progress", () => {
     expect(elapsedText(4200)).toBe("4s");
     expect(elapsedText(65000)).toBe("1m 05s");
     expect(patienceHint(3000)).toBeNull();
-    expect(patienceHint(9000, "read")).toBe("Big files take a moment");
-    expect(patienceHint(45000)).toMatch(/still working/);
+    expect(patienceHint(9000, "read")).toBe("Still reading");
+    expect(patienceHint(45000)).toMatch(/still working/i);
   });
 });

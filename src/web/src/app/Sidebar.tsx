@@ -115,7 +115,7 @@ function ConfirmDeleteThread({
       >
         <AlertDialogHeader>
           <AlertDialogTitle className="[overflow-wrap:anywhere]">Delete “{shown?.thread.title}”?</AlertDialogTitle>
-          <AlertDialogDescription>Its messages are deleted from this space. Files it attached stay. This can’t be undone.</AlertDialogDescription>
+          <AlertDialogDescription>Files it attached stay. This can’t be undone.</AlertDialogDescription>
           <FieldError>{error}</FieldError>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -147,11 +147,11 @@ function Dots({ step }: { step: number }) {
   );
 }
 
-function Title({ children, sub }: { children: ReactNode; sub: ReactNode }) {
+function Title({ children, sub }: { children: ReactNode; sub?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-col gap-2">
       <h1 className="font-medium text-2xl tracking-heading">{children}</h1>
-      <p className="text-muted-foreground text-sm">{sub}</p>
+      {sub ? <p className="text-muted-foreground text-sm">{sub}</p> : null}
     </div>
   );
 }
@@ -229,7 +229,7 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
 
   return (
     <section>
-      <Title sub="Use a key from a model provider, or a coding agent you already have. You can change this in Settings.">How should Phaethon answer?</Title>
+      <Title>How should Phaethon answer?</Title>
       <AnimatePresence initial={false}>
         {readyName ? (
           <motion.p
@@ -539,7 +539,7 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
   return (
     <section>
       <Title
-        sub={existing ? "This Phaethon folder already has spaces. Pick up where you left off, or add another." : "A space holds one part of your life, like school or work. You can add more later."}
+        sub={existing ? "This Phaethon folder already has spaces. Pick up where you left off, or add another." : "A space holds one part of your life, like school or work."}
       >
         {existing ? "Your spaces" : "Make your first space"}
       </Title>
@@ -624,7 +624,7 @@ function AllSet({ draft, onBack, onDone }: { draft: Draft; onBack: () => void; o
   ];
   return (
     <section>
-      <Title sub="Here’s what you just set up.">You’re all set</Title>
+      <Title>You’re all set</Title>
       <ul className="flex flex-col gap-3.5 rounded-xl border bg-well px-4 py-4">
         {items.map((it, i) => (
           <motion.li

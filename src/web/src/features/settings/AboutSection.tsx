@@ -188,7 +188,7 @@ export function AboutSection() {
         ) : (
           <UpdateSkeleton />
         )}
-        <Row label="Licenses" description="Phaethon is MIT licensed. Its interface components come from T3 Code (MIT); the other libraries it uses are listed in THIRD_PARTY_NOTICES.md." />
+        <Row label="Licenses" description="MIT. Interface components adapted from T3 Code (MIT); the rest is in THIRD_PARTY_NOTICES.md." />
       </CardBlock>
     </SettingsCard>
   );

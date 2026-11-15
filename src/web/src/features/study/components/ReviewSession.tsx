@@ -130,7 +130,7 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
         {load.error ? <SurfaceError title="Couldn’t load the cards" message={cleanMessage(load.error)} onRetry={load.reload} /> : null}
         {skeleton ? <ReviewSkeleton /> : null}
         {queue && !queue.length ? (
-          <EndCard title="You’re caught up" line="Nothing is due. Cards come due again as you review them.">
+          <EndCard title="You’re caught up" line="Nothing is due.">
             <Button variant="outline" className="w-full" onClick={onBack}>
               Back to study
             </Button>

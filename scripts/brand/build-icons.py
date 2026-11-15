@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Builds Phaethon's app icons and README banners from build/brand/mark.png.
 
-    python3 -I scripts/brand/build-icons.py
+    python3 -I scripts/brand/build-icons.py            # icons and banners
+    python3 -I scripts/brand/build-icons.py --banners  # banners only
 
 Writes:
   build/icon.icon/          Icon Composer bundle (macOS 26+; electron-builder compiles it with actool)
@@ -11,13 +12,14 @@ Needs Pillow 10+.
 """
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 MARK = ROOT / "build/brand/mark.png"
-FONT = ROOT / "node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2"
+FONT = ROOT / "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
 COBALT = (54, 88, 212)
 COBALT_LIGHT = (122, 146, 255)  # the mark on dark backgrounds
 
@@ -120,49 +122,42 @@ def font(size: int, weight: int) -> ImageFont.FreeTypeFont:
 
 
 def banner(dark: bool) -> Image.Image:
+    """The word alone, centred; the mark is already the P, so it never sits beside the word."""
     W, H = 2560, 640
     bg_top, bg_bottom = ((13, 17, 33), (9, 12, 24)) if dark else ((248, 250, 255), (238, 242, 253))
     im = vertical_gradient((W, H), bg_top, bg_bottom)
+
+    # A soft cobalt glow behind the word.
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse((W / 2 - 520, H / 2 - 380, W / 2 + 520, H / 2 + 380), fill=COBALT + ((70 if dark else 40),))
+    im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(160)))
 
     title = font(176, 700)
     tag = font(56, 400)
     lines = ["A minimal, desktop-first AI workspace", "that teaches you why, not just what."]
     d = ImageDraw.Draw(im)
-    text_w = max(d.textlength("Phaethon", font=title), *(d.textlength(l, font=tag) for l in lines))
-    icon_size, gap = 440, 100
-    left = round((W - (icon_size + gap + text_w)) / 2)
-    icon_top = (H - icon_size) // 2
-
-    # A soft cobalt glow behind the icon.
-    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    cx, cy = left + icon_size / 2, H / 2
-    ImageDraw.Draw(glow).ellipse((cx - 420, cy - 420, cx + 420, cy + 420), fill=COBALT + ((80 if dark else 45),))
-    im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(150)))
-
-    icon = tile(1024).resize((icon_size, icon_size), Image.LANCZOS)
-    im.alpha_composite(icon, (left, icon_top))
-
-    d = ImageDraw.Draw(im)
-    x = left + icon_size + gap
     fg = (244, 246, 252) if dark else (14, 20, 40)
     sub = (170, 180, 205) if dark else (72, 82, 108)
-    d.text((x, 196), "Phaethon", font=title, fill=fg)
-    d.text((x, 420), lines[0], font=tag, fill=sub)
-    d.text((x, 490), lines[1], font=tag, fill=sub)
+    d.text((W / 2, 168), "Phaethon", font=title, fill=fg, anchor="mt")
+    d.text((W / 2, 400), lines[0], font=tag, fill=sub, anchor="mt")
+    d.text((W / 2, 470), lines[1], font=tag, fill=sub, anchor="mt")
     return im
 
 
 def main() -> None:
     build = ROOT / "build"
+    docs = ROOT / "docs/brand"
+    docs.mkdir(parents=True, exist_ok=True)
+    banner(False).convert("RGB").save(docs / "banner-light.png", optimize=True)
+    banner(True).convert("RGB").save(docs / "banner-dark.png", optimize=True)
+    if "--banners" in sys.argv:
+        print("banners written")
+        return
     icon_composer(build / "icon.icon")
     t = tile(1024)
     t.save(build / "icon.png")
     t.save(build / "icon.icns", sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)])
     t.save(build / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    docs = ROOT / "docs/brand"
-    docs.mkdir(parents=True, exist_ok=True)
-    banner(False).convert("RGB").save(docs / "banner-light.png", optimize=True)
-    banner(True).convert("RGB").save(docs / "banner-dark.png", optimize=True)
     print("icons and banners written")
 
 

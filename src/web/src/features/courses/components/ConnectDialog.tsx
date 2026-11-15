@@ -163,7 +163,7 @@ export function ConnectDialog({
           <>
             <DialogHeader>
               <DialogTitle>Connect {kindLabel(kind)}</DialogTitle>
-              <DialogDescription>You’ll sign in on your school’s own page. Phaethon never sees your password.</DialogDescription>
+              <DialogDescription>You’ll sign in on your school’s own page.</DialogDescription>
             </DialogHeader>
             <DialogPanel className="space-y-4">
               {kind === "canvas" ? <SchoolSearch query={query} onQuery={setQuery} picked={school} onPick={(s) => (setSchool(s), setError(null))} /> : null}

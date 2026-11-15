@@ -43,7 +43,7 @@ export function DisconnectDialog({ connection, onOpenChange }: { connection: Lms
       <AlertDialogPopup className="max-w-sm">
         <AlertDialogHeader>
           <AlertDialogTitle className="[overflow-wrap:anywhere]">Disconnect {name}?</AlertDialogTitle>
-          <AlertDialogDescription>Phaethon signs out of this site. Imported courses stay in your spaces; sign in again to import more.</AlertDialogDescription>
+          <AlertDialogDescription>Imported courses and their files stay.</AlertDialogDescription>
           <FieldError className="pt-1">{error}</FieldError>
         </AlertDialogHeader>
         <AlertDialogFooter>

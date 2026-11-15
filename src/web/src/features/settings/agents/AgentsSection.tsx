@@ -256,7 +256,6 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
     <Row
       label="New account"
       htmlFor={id}
-      description="Signs in separately, so you can switch between accounts."
       below={
         <div className="flex flex-col gap-1.5">
           <form
@@ -314,7 +313,7 @@ function CliCard({ cli, status, instances, onChanged, onRecheck, rechecking }: {
       }
     >
       {!installed ? (
-        <Field label="Install" hint="Run this in a terminal, then check again.">
+        <Field label="Install">
           <Well>
             <Icon icon={icons.terminal} className="size-4 text-muted-foreground" />
             <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1 font-mono text-xs">{info.install}</code>

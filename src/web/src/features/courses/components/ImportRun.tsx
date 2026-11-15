@@ -65,7 +65,7 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
       {run.status === "failed" && run.error ? (
         <div className="px-4 pb-4">
           {run.error === SIGNED_OUT_DURING_IMPORT ? (
-            <SurfaceError tone="warning" title="Sign in again to finish" message="What’s already here stays; only what changed is downloaded." actions={[{ label: "Sign in again", primary: true, onClick: onSignInAgain }]} />
+            <SurfaceError tone="warning" title="Sign in again to finish" actions={[{ label: "Sign in again", primary: true, onClick: onSignInAgain }]} />
           ) : (
             <SurfaceError title="The import stopped" message={run.error} />
           )}

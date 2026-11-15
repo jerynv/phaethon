@@ -52,6 +52,6 @@ export function elapsedText(ms: number): string {
 /** A reassuring second line once a single step has run a while, so a long step never looks stuck. */
 export function patienceHint(ms: number, category?: ToolCategory): string | null {
   if (ms < 8000) return null;
-  if (ms < 30000) return category === "read" ? "Big files take a moment" : "Still on it";
-  return "This one’s taking a while, it’s still working";
+  if (ms < 30000) return category === "read" ? "Still reading" : "Still on it";
+  return "Still working";
 }

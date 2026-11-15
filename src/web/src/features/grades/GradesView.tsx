@@ -175,7 +175,7 @@ export function GradesView({ space }: { space: SpaceView }) {
           {refreshError ? <RefreshError message={refreshError} onRetry={() => void runRefresh()} onDismiss={() => setRefreshError(null)} /> : null}
           {skeleton ? <GradesSkeleton /> : null}
           {data && !data.length ? (
-            <ArtEmpty palette="meadow" seed="grades-empty" title="No grades here yet" description="Connect your course site and import your courses to see their grades here.">
+            <ArtEmpty palette="meadow" seed="grades-empty" title="No grades here yet" description="Connect a course site and import courses to see grades.">
               <Button size="sm" onClick={() => useNav.getState().setView("courses")}>
                 Open courses
               </Button>

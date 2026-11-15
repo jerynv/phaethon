@@ -308,7 +308,6 @@ function Settings({ space, course }: { space: string; course: CourseInfo }) {
     <Card>
       <CardHeader>
         <CardTitle>What this space sees</CardTitle>
-        <CardDescription>Chats, study tools and the plan in this space only use the parts that are on.</CardDescription>
       </CardHeader>
       <CardContent className="gap-0">
         <ToggleRow
@@ -374,7 +373,7 @@ function Skipped({ notes }: { notes: string[] }) {
               <Icon icon={icons.locked} className="size-4 text-muted-foreground" />
               {plural(g.locked.length, "item")} locked on the course site
             </p>
-            <p className="text-muted-foreground text-sm">Teachers lock files and pages until a date or until earlier work is done. They come in with the next import once they open.</p>
+            <p className="text-muted-foreground text-sm">They’re imported once the course opens them.</p>
             <ul className="flex flex-col gap-0.5 pt-1">
               {g.locked.map((n, i) => (
                 <li key={i} className="truncate text-muted-foreground text-xs">

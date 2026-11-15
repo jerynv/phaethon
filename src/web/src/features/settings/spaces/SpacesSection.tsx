@@ -11,7 +11,7 @@ import { toast } from "@/components/toast";
 import { StartTruncate, Truncate } from "@/components/truncate";
 import { AsyncButton } from "@/components/async-button";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -91,7 +91,6 @@ function NewSpace({ open, onOpenChange, onCreated }: { open: boolean; onOpenChan
       <DialogPopup className="max-w-sm">
         <DialogHeader>
           <DialogTitle>New space</DialogTitle>
-          <DialogDescription>A separate compartment with its own files, conversations and memory.</DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">
           <div className="space-y-1.5">
@@ -209,7 +208,7 @@ function IdentityGroup({ space }: { space: SpaceView }) {
       <Field label="Name" htmlFor={`name-${space.id}`}>
         <SavedField id={`name-${space.id}`} value={space.name} maxLength={60} onSave={(name) => update({ name })} />
       </Field>
-      <Field label="Description" htmlFor={`desc-${space.id}`} hint="Phaethon reads it to know what the space is for.">
+      <Field label="Description" htmlFor={`desc-${space.id}`}>
         <SavedField id={`desc-${space.id}`} value={space.description} placeholder="What this space is for" maxLength={200} onSave={(description) => update({ description })} />
       </Field>
       <Field label="Colour" aside={busy === "hue" ? <Spinner size="sm" tone="muted" /> : undefined}>
@@ -277,7 +276,7 @@ function AgentsGroup({ space }: { space: SpaceView }) {
 
   const w = ws.data;
   return (
-    <SettingsCard icon={<Icon icon={icons.terminal} />} title="Coding agents" description="Where Claude Code, Codex and Gemini CLI work in this space.">
+    <SettingsCard icon={<Icon icon={icons.terminal} />} title="Coding agents">
       <Field
         label="Working folder"
         hint={
@@ -416,7 +415,7 @@ function WritesGroup({ space }: { space: SpaceView }) {
   };
   const since = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return (
-    <SettingsCard icon={<Icon icon={icons.write} />} title="Changing files without asking" description="Where you said yes for good to Phaethon’s edits.">
+    <SettingsCard icon={<Icon icon={icons.write} />} title="Changing files without asking">
       <Loader state={perms} errorTitle="Couldn’t read what may change files" skeleton={<SkeletonCard rows={1} />}>
         {(p) => {
           const rows = [
@@ -475,7 +474,7 @@ function ExportGroup({ space }: { space: SpaceView }) {
             Export…
           </Button>
         </Row>
-        <Row label="Space folder" description="Open it in your file manager.">
+        <Row label="Space folder">
           <AsyncButton size="xs" variant="outline" action={() => api.showSpace(space.id)} failure="Couldn’t show the folder">
             Show
           </AsyncButton>

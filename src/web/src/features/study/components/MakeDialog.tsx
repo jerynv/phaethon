@@ -1137,7 +1137,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="flex flex-col gap-4 pb-2">
       <div>
         <p className="font-medium text-base tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
-        <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{g?.exam ? `For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.` : "Here’s what went into it."}</p>
+        {g?.exam ? <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{`For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.`}</p> : null}
       </div>
       <Card variant="well" className="gap-0 px-4 py-2">
         <DoneRow tone="done">{`Each ${noun} checked against your materials`}</DoneRow>

@@ -81,11 +81,17 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 58 | Plan: left filter column shifts while scrolling → sticky | done |
 | 59 | Plan: exams known from chats and course materials should appear automatically | done — exams the course's scope map dates show in Plan, marked "from the course" |
 | 60 | Empty chat: "Add files to School" card looks ripped off → simpler | done |
-| 61 | Logo: the P mark next to the word "Phaethon" doubles the P (UI and README) | done in the UI (onboarding shows the word only); the README banner is an image and still has both |
+| 61 | Logo: the P mark next to the word "Phaethon" doubles the P (UI and README) | done — the app shows the word only; the README banner regenerated without the mark |
 
 ## Finish
 
 | # | Step | Status |
 |---|------|--------|
 | 62 | `docs/UI-REBUILD.md` updated to match (flat, one tabs, art rule, scrollbars, type scale) | done |
-| 63 | typecheck, `pnpm test`, `pnpm test:ui`, light and dark screenshots of every page, PR, CI, merge, Mac build and install | todo |
+| 63 | typecheck, `pnpm test`, `pnpm test:ui`, light and dark screenshots of every page, PR, CI, merge, Mac build and install | done — PR #2 merged, Mac running it |
+
+## Round 5 — `/clean-copy`
+
+| # | Ask | Status |
+|---|-----|--------|
+| 64 | Walk every user-facing string down the clean-copy ladder: cut captions that restate the label, hedges about worries the user never had, explanations of the system | done — 24 strings cut or shortened; rule added to `docs/UI-REBUILD.md` |

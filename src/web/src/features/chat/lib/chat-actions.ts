@@ -50,10 +50,10 @@ export function actionLabel(id: ChatActionId, fileManager: string): string {
     case "new-space":
       return "New space…";
     case "settings-assistant":
-      return "Settings: Assistant";
+      return "Settings: Providers";
     case "settings-appearance":
     case "settings-accessibility":
-      return "Settings: Appearance & accessibility";
+      return "Settings: Appearance";
     case "settings-spaces":
       return "Settings: Spaces";
     case "settings-courses":

@@ -1,129 +1,108 @@
-import { useId, useState, type FormEvent } from "react";
+import { useState } from "react";
+import { FieldError } from "@/components/errors";
+import { SpaceAvatar } from "@/components/space-avatar";
+import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { errorText } from "@/lib/core";
-import { announce } from "@/lib/announce";
-import { HuePicker } from "./HuePicker";
-import { useShell } from "./shell-store";
-import { HUE_PRESETS, descriptionProblem, nameProblem, switchSpace, useSpaces } from "./spaces";
+import { cn } from "@/lib/utils";
+import { api } from "./api";
+import { useNav } from "./store";
 
-/** New space: a name, an optional description, a colour, and whether it's for school. */
-export function NewSpaceDialog() {
-  const open = useShell((s) => s.newSpaceOpen);
-  const setOpen = useShell((s) => s.setNewSpaceOpen);
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogPopup className="max-w-md">{open ? <NewSpaceForm onDone={() => setOpen(false)} /> : null}</DialogPopup>
-    </Dialog>
-  );
-}
+export const HUES = [262, 200, 155, 95, 50, 20, 330, 290];
 
-function NewSpaceForm({ onDone }: { onDone(): void }) {
-  const create = useSpaces((s) => s.create);
-  const count = useSpaces((s) => s.spaces.length);
+/** Creates a space: a name, a colour, and whether it's for school. */
+export function NewSpaceDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [hue, setHue] = useState<number>(HUE_PRESETS[count % HUE_PRESETS.length].value);
-  const [education, setEducation] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [touched, setTouched] = useState(false);
+  const [hue, setHue] = useState(HUES[0]!);
+  const [edu, setEdu] = useState(false);
   const [busy, setBusy] = useState(false);
-  const ids = { name: useId(), description: useId(), hue: useId(), education: useId(), error: useId() };
-  const nameError = touched ? nameProblem(name) : null;
-  const descriptionError = descriptionProblem(description);
+  const [error, setError] = useState<string | null>(null);
+  const loadSpaces = useNav((s) => s.loadSpaces);
+  const selectSpace = useNav((s) => s.selectSpace);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setTouched(true);
-    if (nameProblem(name) || descriptionError) return;
+  const submit = async () => {
+    if (!name.trim()) return setError("Give the space a name.");
     setBusy(true);
     setError(null);
     try {
-      const space = await create({ name: name.trim(), description: description.trim(), hue, educationEnabled: education });
-      switchSpace(space.id);
-      announce(`${space.name} created`);
-      onDone();
-    } catch (err) {
-      setError(errorText(err));
+      const space = await api.createSpace({ name: name.trim(), hue, educationEnabled: edu });
+      await loadSpaces();
+      selectSpace(space.id, "chat");
+      toast.success(`${space.name} created`);
+      onOpenChange(false);
+      setName("");
+      setEdu(false);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
       setBusy(false);
     }
-  }
+  };
 
   return (
-    <form onSubmit={submit} noValidate className="flex min-h-0 flex-col">
-      <DialogHeader>
-        <DialogTitle>New space</DialogTitle>
-      </DialogHeader>
-      <DialogPanel className="flex flex-col gap-5 space-y-0">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={ids.name} className="font-medium text-sm">
-            Name
-          </label>
-          <Input
-            id={ids.name}
-            value={name}
-            autoFocus
-            maxLength={60}
-            placeholder="Biology, Thesis, Job search…"
-            aria-invalid={nameError ? true : undefined}
-            aria-describedby={nameError ? `${ids.name}-error` : undefined}
-            onValueChange={(v) => setName(String(v))}
-          />
-          {nameError ? (
-            <p id={`${ids.name}-error`} className="text-destructive-foreground text-sm">
-              {nameError}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={ids.description} className="font-medium text-sm">
-            Description <span className="font-normal text-muted-foreground">(optional)</span>
-          </label>
-          <Input
-            id={ids.description}
-            value={description}
-            maxLength={160}
-            aria-invalid={descriptionError ? true : undefined}
-            aria-describedby={descriptionError ? `${ids.description}-error` : undefined}
-            onValueChange={(v) => setDescription(String(v))}
-          />
-          {descriptionError ? (
-            <p id={`${ids.description}-error`} className="text-destructive-foreground text-sm">
-              {descriptionError}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-2">
-          <span id={ids.hue} className="font-medium text-sm">
-            Colour
-          </span>
-          <HuePicker value={hue} onValueChange={setHue} labelId={ids.hue} />
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-0.5">
-            <label htmlFor={ids.education} className="font-medium text-sm">
-              For school
-            </label>
-            <p className="text-muted-foreground text-sm">Adds Study, Grades, Plan and Courses.</p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>New space</DialogTitle>
+          <DialogDescription>A separate compartment with its own files, conversations and memory.</DialogDescription>
+        </DialogHeader>
+        <DialogPanel className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="space-name">Name</Label>
+            <div className="flex items-center gap-2">
+              <SpaceAvatar name={name || "S"} hue={hue} className="size-7 rounded-md text-xs" />
+              <Input
+                id="space-name"
+                autoFocus
+                value={name}
+                maxLength={60}
+                aria-invalid={error ? true : undefined}
+                placeholder="School, Work, Thesis…"
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void submit()}
+              />
+            </div>
+            <FieldError>{error}</FieldError>
           </div>
-          <Switch id={ids.education} checked={education} onCheckedChange={setEducation} />
-        </div>
-        {error ? (
-          <p role="alert" className="rounded-md bg-error-surface px-3 py-2 text-error-foreground text-sm">
-            {error}
-          </p>
-        ) : null}
-      </DialogPanel>
-      <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={busy}>
-          Create space
-        </Button>
-      </DialogFooter>
-    </form>
+          <div className="space-y-1.5">
+            <Label>Colour</Label>
+            <div className="flex gap-1.5">
+              {HUES.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  aria-label={`Hue ${h}`}
+                  aria-pressed={h === hue}
+                  onClick={() => setHue(h)}
+                  className={cn("size-5 rounded-full ring-offset-2 ring-offset-popover transition-shadow", h === hue && "ring-2 ring-foreground/60")}
+                  style={{ background: `oklch(0.62 0.14 ${h})` }}
+                />
+              ))}
+            </div>
+          </div>
+          <label className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
+            <span className="flex flex-col">
+              <span className="font-medium text-sm">Study tools</span>
+              <span className="text-muted-foreground text-xs">Courses, flashcards, quizzes, grades and a study plan.</span>
+            </span>
+            <Switch checked={edu} onCheckedChange={setEdu} />
+          </label>
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={() => void submit()} disabled={busy} className="min-w-24">
+            {busy ? <Spinner size="sm" /> : null}
+            {busy ? "Creating…" : "Create space"}
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }

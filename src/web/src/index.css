@@ -1,119 +1,181 @@
-/*
- * Phaethon's design tokens. Parts of the theme structure (the semantic token
- * set, glass utilities, scroll fades, drag regions) are adapted from T3 Code
- * (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3
- * Tools Inc. See THIRD_PARTY_NOTICES.md.
- *
- * Every colour is oklch. Appearance preferences arrive as attributes and
- * custom properties on <html>, set by src/lib/appearance.ts (and before first
- * paint by public/appearance-boot.js):
- *   .dark                       theme
- *   data-contrast="more"        increased contrast
- *   data-motion="reduce"        reduced motion
- *   data-font="…"               reading font (absent = Atkinson Hyperlegible Next)
- *   data-focus-rings="on|off"   focus rings (off still shows a tinted, non-ring cue)
- *   data-targets="large"        44px minimum targets
- *   --ph-text-scale             text size (root font size, so every rem follows)
- *   --space-hue                 the current space's hue (0–360)
- */
-@layer theme, base, components, utilities;
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "katex/dist/katex.min.css";
+
+/* Tokens and base styles. The values are the design spec in docs/UI-REBUILD.md. */
 
 @custom-variant dark (&:is(.dark, .dark *));
-@custom-variant light (&:not(.dark, .dark *));
-@custom-variant wco (&:is(.wco, .wco *));
-@custom-variant contrast-more (&:is([data-contrast="more"], [data-contrast="more"] *));
-@custom-variant reduce-motion (&:is([data-motion="reduce"], [data-motion="reduce"] *));
 
-/* Reading font and code font. Declared outside the inline theme so the
-   data-font attribute can swap them at runtime. */
+:root {
+  --radius: 0.5rem;
+  --control-radius: 0.4375rem;
+  --sidebar-width: 15.5rem;
+  --titlebar-height: 2.5rem;
+  --chat-max-width: 46rem;
+  --command-shell-inset: 0.5rem;
+  --command-content-inset: 0.75rem;
+  --z-sheet: 46;
+  --app-scrollbar-thumb: rgb(0 0 0 / 14%);
+  --app-scrollbar-thumb-hover: rgb(0 0 0 / 24%);
+
+  --background: #ffffff;
+  --foreground: var(--color-zinc-900);
+  --sidebar: var(--color-zinc-50);
+  --sidebar-foreground: var(--color-zinc-800);
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.52 0.19 262);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-zinc-100);
+  --secondary-foreground: var(--color-zinc-800);
+  --muted: var(--color-zinc-100);
+  --muted-foreground: var(--color-zinc-500);
+  --subtle-foreground: var(--color-zinc-400);
+  --accent: color-mix(in srgb, var(--color-zinc-100) 80%, var(--color-zinc-200));
+  --accent-foreground: var(--color-zinc-900);
+  --row-selected: color-mix(in srgb, var(--color-zinc-200) 60%, var(--color-zinc-100));
+  --message: var(--color-zinc-100);
+  --border: var(--color-zinc-200);
+  --input: var(--color-zinc-300);
+  --ring: var(--primary);
+  --code: color-mix(in srgb, var(--color-zinc-50) 70%, var(--color-zinc-100));
+
+  --destructive: var(--color-red-600);
+  --destructive-foreground: var(--color-red-700);
+  --error: var(--color-red-600);
+  --error-foreground: var(--color-red-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+  --success: var(--color-emerald-600);
+  --success-foreground: var(--color-emerald-700);
+  --info: var(--color-blue-600);
+  --info-foreground: var(--color-blue-700);
+
+  /* T3 Code's components read these "contrast" aliases; we have one contrast level. */
+  --contrast-foreground: var(--foreground);
+  --contrast-muted-foreground: var(--muted-foreground);
+}
+
+.dark {
+  color-scheme: dark;
+  --app-scrollbar-thumb: rgb(255 255 255 / 10%);
+  --app-scrollbar-thumb-hover: rgb(255 255 255 / 18%);
+
+  --background: #0c0c0d;
+  --foreground: var(--color-zinc-100);
+  --sidebar: #111112;
+  --sidebar-foreground: var(--color-zinc-200);
+  --card: #161618;
+  --popover: #18181a;
+  --primary: oklch(0.64 0.17 262);
+  --primary-foreground: #ffffff;
+  --secondary: rgb(255 255 255 / 6%);
+  --secondary-foreground: var(--color-zinc-100);
+  --muted: rgb(255 255 255 / 5%);
+  --muted-foreground: var(--color-zinc-400);
+  --subtle-foreground: var(--color-zinc-500);
+  --accent: rgb(255 255 255 / 6%);
+  --accent-foreground: var(--color-zinc-100);
+  --row-selected: rgb(255 255 255 / 8%);
+  --message: #1c1c1f;
+  --border: rgb(255 255 255 / 8%);
+  --input: rgb(255 255 255 / 11%);
+  --code: #131315;
+
+  --destructive: var(--color-red-500);
+  --destructive-foreground: var(--color-red-400);
+  --error: var(--color-red-500);
+  --error-foreground: var(--color-red-400);
+  --warning: var(--color-amber-400);
+  --warning-foreground: var(--color-amber-400);
+  --success: var(--color-emerald-400);
+  --success-foreground: var(--color-emerald-400);
+  --info: var(--color-blue-400);
+  --info-foreground: var(--color-blue-400);
+}
+
 @theme {
-  --font-sans:
-    "Atkinson Hyperlegible Next Variable", "Atkinson Hyperlegible Next", ui-sans-serif, system-ui,
-    -apple-system, "Segoe UI", sans-serif;
-  --font-mono:
-    "Atkinson Hyperlegible Mono Variable", "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono",
-    Menlo, Consolas, monospace;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* The type scale (docs/UI-REBUILD.md › Typeface and type scale). */
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.375rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.875rem;
 }
 
 @theme inline {
-  /* Nothing renders under 12px: the small steps T3 uses are clamped to text-xs. */
-  --text-2xs: 0.75rem;
-  --text-2xs--line-height: 1.125rem;
-  --text-3xs: 0.75rem;
-  --text-3xs--line-height: 1.125rem;
-  /* Reading text: ~15px at scale 1. */
-  --text-body: 0.9375rem;
-  --text-body--line-height: var(--ph-leading);
-
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --inset-shadow-control-highlight: 0 1px rgb(255 255 255 / 16%);
-  --inset-shadow-control-pressed: 0 1px rgb(0 0 0 / 8%);
-  --animate-skeleton: skeleton 2.4s infinite;
-  --animate-status-pulse: status-pulse 2s infinite;
-
   --color-background: var(--background);
-  --color-foreground: var(--contrast-foreground);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
   --color-card: var(--card);
-  --color-card-foreground: var(--contrast-card-foreground);
+  --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
-  --color-popover-foreground: var(--contrast-popover-foreground);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--contrast-secondary-foreground);
-  --color-secondary-label: var(--contrast-secondary-label);
+  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
-  --color-muted-foreground: var(--contrast-muted-foreground);
-  --color-placeholder: var(--contrast-placeholder);
-  --color-icon-muted: var(--contrast-icon-muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
   --color-accent: var(--accent);
-  --color-accent-foreground: var(--contrast-accent-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-row-selected: var(--row-selected);
+  --color-message: var(--message);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-code: var(--code);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-error: var(--error);
   --color-error-foreground: var(--error-foreground);
-  --color-error-surface: var(--error-surface);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
+  --color-error-surface: color-mix(in srgb, var(--error) 7%, transparent);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
-  --color-warning-surface: var(--warning-surface);
+  --color-warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
-  --color-border: var(--contrast-border);
-  --color-input: var(--contrast-input);
-  --color-ring: var(--ring);
-  --color-code: var(--code-background);
-  --color-message: var(--message-surface);
-  --color-message-foreground: var(--foreground);
-  /* The current space's colour: strong (text, marks) and soft (selection, tints). */
-  --color-space: var(--space);
-  --color-space-foreground: var(--space-foreground);
-  --color-space-soft: var(--space-soft);
-
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--contrast-sidebar-foreground);
-  --color-sidebar-muted-foreground: var(--contrast-sidebar-muted-foreground);
-  --color-sidebar-primary: var(--primary);
-  --color-sidebar-primary-foreground: var(--primary-foreground);
-  --color-sidebar-accent: var(--sidebar-row-hover);
-  --color-sidebar-accent-foreground: var(--contrast-sidebar-foreground);
-  --color-sidebar-border: var(--contrast-sidebar-border);
-  --color-sidebar-ring: var(--ring);
-  --color-sidebar-control-surface: var(--sidebar-control-surface);
-  --color-sidebar-row-hover: var(--sidebar-row-hover);
-  --color-sidebar-row-active: var(--sidebar-row-active);
-  --color-sidebar-row-selected: var(--sidebar-row-selected);
+  --color-sidebar-control-surface: var(--muted);
+  --color-placeholder: var(--subtle-foreground);
+  --color-icon-muted: var(--subtle-foreground);
+  --color-secondary-label: var(--muted-foreground);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-2xl: calc(var(--radius) + 6px);
+  --radius-3xl: calc(var(--radius) + 10px);
 
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-skeleton: skeleton 2.4s infinite;
+  --animate-status-pulse: status-pulse 2s infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-indeterminate: indeterminate 1.4s var(--ease-drawer) infinite;
+
+  /* One stepped breath for every skeleton (after T3 Code): a few frames per cycle, not one per vsync. */
   @keyframes skeleton {
     0%,
     42% {
@@ -137,312 +199,81 @@
     }
     50%,
     90% {
-      opacity: 0.5;
+      opacity: 0.45;
       animation-timing-function: steps(6);
     }
     100% {
       opacity: 1;
     }
   }
-}
-
-/* ---------- Geometry and preferences ---------- */
-:root {
-  --ph-text-scale: 1;
-  --ph-leading: 1.55;
-  --ph-tracking: 0em;
-  --ph-word-spacing: 0em;
-  --ph-target-min: 24px;
-  --space-hue: 250;
-
-  --radius: 0.625rem;
-  --control-radius: 0.5rem;
-  --sidebar-content-inset: 0.5rem;
-  --sidebar-control-gap: 0.5rem;
-  --sidebar-row-content-inset: 0.625rem;
-  --sidebar-icon-color: var(--contrast-sidebar-muted-foreground);
-  --command-shell-inset: 0.5rem;
-  --command-content-inset: 1rem;
-  --floating-content-inset: 0.75rem;
-  --z-sheet: 46;
-  --glass-blur: 12px;
-  --glass-opacity: 86%;
-  --glass-saturation: 1.1;
-  --app-scrollbar-width: 8px;
-  --app-scrollbar-thumb: oklch(0.86 0.004 286);
-  --app-scrollbar-thumb-hover: oklch(0.76 0.006 286);
-  --panel-animation-duration: 180ms;
-  --native-titlebar-height: 0px;
-  /* macOS keeps its traffic lights inset over the top-left corner. */
-  --titlebar-inset-start: 0px;
-  --titlebar-height: 3rem;
-  --chat-content-max-width: 46rem;
-  --thread-details-panel-width: 17.5rem;
-
-  font-size: calc(100% * var(--ph-text-scale));
-  color-scheme: light;
-}
-
-:root[data-platform="darwin"] {
-  --titlebar-inset-start: 76px;
-}
-
-:root[data-targets="large"] {
-  --ph-target-min: 44px;
-}
-
-/* ---------- Colour: light ---------- */
-:root {
-  --background: oklch(0.993 0.001 286);
-  --foreground: oklch(0.21 0.006 286);
-  --card: oklch(1 0 0);
-  --card-foreground: var(--foreground);
-  --popover: oklch(1 0 0);
-  --popover-foreground: var(--foreground);
-  --primary: oklch(0.5 0.135 var(--space-hue));
-  --primary-foreground: oklch(0.99 0.003 var(--space-hue));
-  --secondary: oklch(0.967 0.002 286);
-  --secondary-foreground: oklch(0.274 0.006 286);
-  --muted: oklch(0.967 0.002 286);
-  --muted-foreground: oklch(0.5 0.012 286);
-  --placeholder: oklch(0.56 0.01 286);
-  --secondary-label: var(--muted-foreground);
-  --icon-muted: oklch(0.55 0.01 286);
-  --accent: oklch(0.955 0.006 var(--space-hue));
-  --accent-foreground: var(--foreground);
-  --error: oklch(0.577 0.215 27.3);
-  --error-foreground: oklch(0.49 0.19 27.5);
-  --error-surface: color-mix(in oklab, var(--error) 8%, transparent);
-  --destructive: var(--error);
-  --destructive-foreground: var(--error-foreground);
-  --success: oklch(0.65 0.15 162);
-  --success-foreground: oklch(0.47 0.11 165);
-  --warning: oklch(0.76 0.17 70);
-  --warning-foreground: oklch(0.5 0.14 50);
-  --warning-surface: color-mix(in oklab, var(--warning) 9%, transparent);
-  --info: oklch(0.62 0.19 255);
-  --info-foreground: oklch(0.48 0.2 262);
-  --border: oklch(0.915 0.004 286);
-  --input: oklch(0.86 0.006 286);
-  --ring: var(--primary);
-  --space: oklch(0.52 0.13 var(--space-hue));
-  --space-foreground: oklch(0.42 0.11 var(--space-hue));
-  --space-soft: oklch(0.94 0.03 var(--space-hue));
-  --code-background: oklch(0.975 0.002 286);
-  --message-surface: oklch(0.955 0.004 286);
-  --focus-tint: color-mix(in oklab, var(--primary) 20%, transparent);
-
-  --sidebar: oklch(0.982 0.002 286);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-muted-foreground: var(--muted-foreground);
-  --sidebar-control-surface: oklch(0.955 0.003 286);
-  --sidebar-row-hover: oklch(0.948 0.004 286);
-  --sidebar-row-active: oklch(0.93 0.006 286);
-  --sidebar-row-selected: oklch(0.935 0.022 var(--space-hue));
-  --sidebar-border: var(--border);
-}
-
-/* ---------- Colour: dark ---------- */
-:root.dark {
-  color-scheme: dark;
-  --background: oklch(0.17 0.004 286);
-  --foreground: oklch(0.955 0.003 286);
-  --card: oklch(0.2 0.005 286);
-  --popover: oklch(0.215 0.006 286);
-  --primary: oklch(0.76 0.115 var(--space-hue));
-  --primary-foreground: oklch(0.2 0.03 var(--space-hue));
-  --secondary: oklch(1 0 0 / 5%);
-  --secondary-foreground: oklch(0.92 0.004 286);
-  --muted: oklch(1 0 0 / 4%);
-  --muted-foreground: oklch(0.72 0.01 286);
-  --placeholder: oklch(0.64 0.01 286);
-  --icon-muted: oklch(0.66 0.01 286);
-  --accent: oklch(0.26 0.01 var(--space-hue));
-  --error: oklch(0.65 0.2 25);
-  --error-foreground: oklch(0.74 0.15 22);
-  --error-surface: color-mix(in oklab, var(--error) 15%, transparent);
-  --success: oklch(0.7 0.15 162);
-  --success-foreground: oklch(0.78 0.13 162);
-  --warning: oklch(0.79 0.16 75);
-  --warning-foreground: oklch(0.83 0.14 80);
-  --warning-surface: color-mix(in oklab, var(--warning) 14%, transparent);
-  --info: oklch(0.68 0.16 255);
-  --info-foreground: oklch(0.78 0.12 255);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 15%);
-  --space: oklch(0.74 0.12 var(--space-hue));
-  --space-foreground: oklch(0.82 0.09 var(--space-hue));
-  --space-soft: oklch(0.3 0.045 var(--space-hue));
-  --code-background: oklch(0.21 0.005 286);
-  --message-surface: oklch(0.235 0.006 286);
-  --focus-tint: color-mix(in oklab, var(--primary) 28%, transparent);
-  --app-scrollbar-thumb: oklch(1 0 0 / 10%);
-  --app-scrollbar-thumb-hover: oklch(1 0 0 / 16%);
-  --glass-blur: 16px;
-
-  --sidebar: oklch(0.145 0.004 286);
-  --sidebar-control-surface: oklch(1 0 0 / 5%);
-  --sidebar-row-hover: oklch(1 0 0 / 5%);
-  --sidebar-row-active: oklch(1 0 0 / 8%);
-  --sidebar-row-selected: oklch(0.27 0.035 var(--space-hue));
-}
-
-/* ---------- Increased contrast ---------- */
-:root[data-contrast="more"] {
-  --foreground: oklch(0.13 0.004 286);
-  --muted-foreground: oklch(0.36 0.012 286);
-  --placeholder: oklch(0.42 0.01 286);
-  --icon-muted: oklch(0.38 0.01 286);
-  --secondary-foreground: oklch(0.16 0.006 286);
-  --border: oklch(0.62 0.008 286);
-  --input: oklch(0.5 0.01 286);
-  --primary: oklch(0.42 0.14 var(--space-hue));
-  --space-foreground: oklch(0.36 0.12 var(--space-hue));
-  --sidebar-row-selected: oklch(0.88 0.045 var(--space-hue));
-  --glass-opacity: 100%;
-  --focus-tint: color-mix(in oklab, var(--primary) 24%, transparent);
-}
-:root.dark[data-contrast="more"] {
-  --foreground: oklch(0.99 0 0);
-  --muted-foreground: oklch(0.86 0.008 286);
-  --placeholder: oklch(0.8 0.008 286);
-  --icon-muted: oklch(0.84 0.008 286);
-  --secondary-foreground: oklch(0.98 0 0);
-  --border: oklch(1 0 0 / 34%);
-  --input: oklch(1 0 0 / 45%);
-  --primary: oklch(0.84 0.1 var(--space-hue));
-  --space-foreground: oklch(0.88 0.08 var(--space-hue));
-  --sidebar-row-selected: oklch(0.34 0.06 var(--space-hue));
-}
-
-/* T3's primitives read these names; Phaethon's contrast is a palette swap
-   above, so they are plain aliases. */
-:root {
-  --contrast-foreground: var(--foreground);
-  --contrast-card-foreground: var(--card-foreground);
-  --contrast-popover-foreground: var(--popover-foreground);
-  --contrast-secondary-foreground: var(--secondary-foreground);
-  --contrast-secondary-label: var(--secondary-label);
-  --contrast-muted-foreground: var(--muted-foreground);
-  --contrast-placeholder: var(--placeholder);
-  --contrast-icon-muted: var(--icon-muted);
-  --contrast-accent-foreground: var(--accent-foreground);
-  --contrast-border: var(--border);
-  --contrast-input: var(--input);
-  --contrast-sidebar-foreground: var(--sidebar-foreground);
-  --contrast-sidebar-muted-foreground: var(--sidebar-muted-foreground);
-  --contrast-sidebar-border: var(--sidebar-border);
-}
-
-/* ---------- Reading font ---------- */
-:root[data-font="opendyslexic"] {
-  --font-sans: "OpenDyslexic", ui-sans-serif, system-ui, sans-serif;
-}
-:root[data-font="lexend"] {
-  --font-sans: "Lexend Variable", "Lexend", ui-sans-serif, system-ui, sans-serif;
-}
-:root[data-font="system"] {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-
-/* ---------- Utilities ---------- */
-@utility surface-glass {
-  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-}
-
-@utility alert-glass {
-  --alert-glass-tint: transparent;
-  background:
-    linear-gradient(
-      color-mix(in srgb, var(--alert-glass-tint) 5%, transparent),
-      color-mix(in srgb, var(--alert-glass-tint) 5%, transparent)
-    ),
-    color-mix(in srgb, var(--background) var(--glass-opacity), transparent) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  &[data-variant="error"] {
-    --alert-glass-tint: var(--destructive);
+  @keyframes shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
   }
-  &[data-variant="info"] {
-    --alert-glass-tint: var(--info);
+  @keyframes indeterminate {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
   }
-  &[data-variant="success"] {
-    --alert-glass-tint: var(--success);
-  }
-  &[data-variant="warning"] {
-    --alert-glass-tint: var(--warning);
-  }
+}
+
+/* Popovers and menus: flat, one hairline, a soft drop in light mode only. */
+@utility dropdown-glass {
+  background: var(--popover);
+  border: 1px solid var(--border);
 }
 
 @utility dialog-glass {
-  background: color-mix(in srgb, var(--popover) var(--glass-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
-  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 40%);
-  @variant dark {
-    border-color: oklch(1 0 0 / 9%);
-    box-shadow:
-      inset 0 1px rgb(255 255 255 / 4%),
-      0 24px 72px -20px rgb(0 0 0 / 80%);
-  }
-  @variant contrast-more {
-    border-color: var(--border);
-  }
+  background: var(--popover);
 }
 
 @utility dialog-backdrop {
-  background: color-mix(in srgb, var(--background) 55%, transparent);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  @variant dark {
-    background: color-mix(in srgb, oklch(0 0 0) 50%, transparent);
+  background: rgb(0 0 0 / 28%);
+  .dark & {
+    background: rgb(0 0 0 / 60%);
   }
 }
 
-@utility dropdown-glass {
-  background: color-mix(in srgb, var(--popover) var(--glass-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border: 1px solid color-mix(in srgb, var(--foreground) 11%, transparent);
-  @variant contrast-more {
-    border-color: var(--border);
-  }
+@utility surface-glass {
+  background: var(--background);
 }
 
-@utility virtualized-scroll-fade {
-  -webkit-mask-image: var(--virtualized-scroll-fade-mask), linear-gradient(black, black);
-  mask-image: var(--virtualized-scroll-fade-mask), linear-gradient(black, black);
-  -webkit-mask-position: left, right;
-  mask-position: left, right;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size:
-    calc(100% - var(--app-scrollbar-width)) 100%,
-    var(--app-scrollbar-width) 100%;
-  mask-size:
-    calc(100% - var(--app-scrollbar-width)) 100%,
-    var(--app-scrollbar-width) 100%;
+@utility alert-glass {
+  background: var(--card);
 }
 
-/* Reading text: body size, the line spacing preference, letter and word spacing. */
-@utility reading {
-  font-size: var(--text-body);
-  line-height: var(--ph-leading);
-  letter-spacing: var(--ph-tracking);
-  word-spacing: var(--ph-word-spacing);
+/* "Thinking": the label's own colour with a light sweep through it. */
+@utility text-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 40%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 60%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
 }
 
-@utility drag-region {
+/* Drag regions for the frameless title bar (macOS). */
+@utility app-drag {
   -webkit-app-region: drag;
 }
-@utility no-drag {
+@utility app-no-drag {
   -webkit-app-region: no-drag;
 }
 
-/* ---------- Base ---------- */
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -452,138 +283,272 @@
   ::after {
     outline-offset: -2px;
   }
-  html,
-  body {
-    height: 100%;
-    overscroll-behavior: none;
-  }
-  body {
-    margin: 0;
-    overflow: hidden;
-    background-color: var(--background);
-    color: var(--foreground);
+  html {
     font-family: var(--font-sans);
-    font-size: var(--text-body);
-    line-height: 1.5;
-    letter-spacing: var(--ph-tracking);
-    word-spacing: var(--ph-word-spacing);
+    font-feature-settings: "cv11", "ss01", "calt";
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
+  html,
+  body,
   #root {
     height: 100%;
-    width: 100%;
     overflow: hidden;
   }
-  pre,
+  body {
+    @apply bg-background text-foreground text-sm;
+    overscroll-behavior: none;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
   code,
   kbd,
+  pre,
   samp {
     font-family: var(--font-mono);
+    font-feature-settings: "calt" 0;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus-visible {
     @apply outline-none ring-0;
   }
-  :where(svg.lucide[stroke-width="2"]) {
-    stroke-width: 1.75;
+  /* Thin, quiet scrollbars everywhere. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-scrollbar-thumb) transparent;
   }
-  ::selection {
-    background: color-mix(in oklab, var(--primary) 26%, transparent);
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
   }
-  .drag-region button,
-  .drag-region input,
-  .drag-region textarea,
-  .drag-region select,
-  .drag-region a,
-  .drag-region [role="button"] {
-    -webkit-app-region: no-drag;
+  ::-webkit-scrollbar-thumb {
+    background: var(--app-scrollbar-thumb);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-scrollbar-thumb-hover);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
 
-:where(:not(iframe))::-webkit-scrollbar {
-  width: var(--app-scrollbar-width);
-  height: var(--app-scrollbar-width);
-}
-:where(:not(iframe))::-webkit-scrollbar-track {
-  background: transparent;
-}
-:where(:not(iframe))::-webkit-scrollbar-thumb {
-  background: var(--app-scrollbar-thumb);
-  border-radius: 999px;
-}
-:where(:not(iframe))::-webkit-scrollbar-thumb:hover {
-  background: var(--app-scrollbar-thumb-hover);
-}
-
-/* ---------- Focus ----------
-   With focus rings off (the default), keyboard focus still shows: the focused
-   control takes a tint over its own background and fields keep their accent
-   border, but no ring is drawn around it. */
-:root[data-focus-rings="off"] :focus-visible {
-  --tw-ring-shadow: 0 0 #0000 !important;
-  --tw-ring-offset-shadow: 0 0 #0000 !important;
-  outline: none !important;
-}
-:root[data-focus-rings="off"]
-  :is(button, a[href], [role="button"], [role="tab"], [role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="radio"], [role="switch"], [role="checkbox"], summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-  background-image: linear-gradient(var(--focus-tint), var(--focus-tint));
-}
-/* A switch or checkbox is small: its tint alone is easy to miss, so it also lifts. */
-:root[data-focus-rings="off"] :is([role="switch"], [role="checkbox"], [role="radio"]):focus-visible {
-  box-shadow: 0 0 0 4px var(--focus-tint) !important;
-}
-/* With rings on, controls draw their own ring; plain links and summaries get an outline. */
-:root[data-focus-rings="on"] :where(a[href], summary):focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-
-/* ---------- Larger targets ---------- */
-:root[data-targets="large"]
-  :is([data-slot="button"], [data-slot="toggle"], [data-slot="sidebar-menu-button"], [data-slot="menu-item"], [data-slot="select-trigger"], [data-slot="tab"], [data-target]) {
-  min-height: var(--ph-target-min);
-}
-:root[data-targets="large"] :is([data-slot="button"][data-size^="icon"], [data-slot="toggle"]) {
-  min-width: var(--ph-target-min);
-}
-:root[data-targets="large"] [data-slot="input-control"] [data-slot="input"] {
-  min-height: calc(var(--ph-target-min) - 2px);
-}
-
-/* ---------- Reduced motion ---------- */
-:root[data-motion="reduce"] *,
-:root[data-motion="reduce"] *::before,
-:root[data-motion="reduce"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-  scroll-behavior: auto !important;
-}
-:root[data-motion="reduce"] {
-  --panel-animation-duration: 0ms;
-}
-
-/* ---------- Forced colours (Windows High Contrast and the like) ----------
-   Box shadows vanish there, so focus always uses a system-coloured outline,
-   and selection keeps a visible boundary. */
-@media (forced-colors: active) {
-  /* Tailwind's outline-hidden draws a transparent outline, which forced colours make visible on every row. */
-  :not(:focus-visible) {
-    outline-style: none !important;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-  :focus-visible {
-    outline: 2px solid Highlight !important;
-    outline-offset: 1px !important;
+}
+
+/* ---- Chat prose (docs/UI-REBUILD.md › Typeface; Overflow) ------------------ */
+@layer components {
+  .markdown {
+    font-size: var(--text-base);
+    line-height: 1.6;
+    color: var(--foreground);
+    overflow-wrap: anywhere;
   }
-  :is(button, a, [role="option"], [role="tab"], [role="radio"]):is([aria-current="page"], [data-active="true"], [aria-selected="true"], [data-checked]) {
-    forced-color-adjust: none;
-    background: Highlight;
-    color: HighlightText;
+  .markdown > :first-child {
+    margin-top: 0;
   }
-  [data-slot="sidebar-inner"],
-  [data-slot="dialog-popup"],
-  [data-slot="sheet-popup"] {
-    border: 1px solid CanvasText;
+  .markdown > :last-child {
+    margin-bottom: 0;
+  }
+  .markdown p {
+    margin: 0.55em 0;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3,
+  .markdown h4 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 1.2em 0 0.4em;
+  }
+  .markdown h1 {
+    font-size: 1.0625rem;
+    line-height: 1.625rem;
+  }
+  .markdown h2 {
+    font-size: 0.9375rem;
+    line-height: 1.5rem;
+  }
+  .markdown h3,
+  .markdown h4 {
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+  }
+  .markdown ul,
+  .markdown ol {
+    margin: 0.5em 0;
+    padding-left: 1.35em;
+  }
+  .markdown ul {
+    list-style: disc;
+  }
+  .markdown ol {
+    list-style: decimal;
+  }
+  .markdown li {
+    margin: 0.2em 0;
+  }
+  .markdown li::marker {
+    color: var(--subtle-foreground);
+  }
+  .markdown blockquote {
+    margin: 0.75em 0;
+    padding-left: 0.85em;
+    border-left: 2px solid var(--border);
+    color: var(--muted-foreground);
+  }
+  .markdown hr {
+    margin: 1.25em 0;
+    border-color: var(--border);
+  }
+  .markdown strong {
+    font-weight: 600;
+  }
+  .markdown .md-link {
+    color: var(--primary);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--primary) 35%, transparent);
+    text-underline-offset: 2px;
+  }
+  .markdown .md-link:hover {
+    text-decoration-color: currentColor;
+  }
+  .markdown .md-inline-code {
+    font-size: 0.86em;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    overflow-wrap: anywhere;
+  }
+  .md-code {
+    margin: 0.75em 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--code);
+  }
+  .md-code-body {
+    overflow-x: auto;
+    padding: 0.7rem 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+  .md-code-body pre {
+    background: transparent !important;
+    margin: 0;
+  }
+  .md-code-body .shiki,
+  .md-code-body .shiki span {
+    color: var(--shiki-light);
+  }
+  .dark .md-code-body .shiki,
+  .dark .md-code-body .shiki span {
+    color: var(--shiki-dark);
+  }
+  .md-table-wrap {
+    margin: 0.75em 0;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .md-table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+    line-height: 1.25rem;
+  }
+  .md-table-wrap th {
+    font-weight: 500;
+    text-align: left;
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  .md-table-wrap th,
+  .md-table-wrap td {
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .md-table-wrap tr:last-child td {
+    border-bottom: 0;
+  }
+  /* Side padding holds KaTeX's 2 px spacer beside equation numbers, so a
+     formula that fits never becomes a scroller that jiggles under a trackpad. */
+  .markdown .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.35em 4px;
+    margin: 0.6em 0;
+    overscroll-behavior-x: contain;
+  }
+  .markdown .katex {
+    font-size: 1.06em;
+  }
+  /* An inline formula wider than the message (see useWideMath). */
+  .markdown .katex-wide {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    vertical-align: middle;
+    padding: 0.15em 2px;
+    overscroll-behavior-x: contain;
+  }
+  /* A formula KaTeX couldn't read shows its source, wrapping, with the
+     reason on hover (KaTeX puts it in the title). */
+  .markdown .katex-error {
+    font-family: var(--font-mono);
+    font-size: 0.84em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-decoration: underline wavy color-mix(in srgb, var(--error-foreground) 45%, transparent);
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+  /* Display math that failed sits alone under the message: a small framed block. */
+  .markdown > .katex-error {
+    display: block;
+    margin: 0.6em 0;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--error-foreground) 22%, transparent);
+    border-radius: 8px;
+    background: var(--color-error-surface);
+    text-decoration: none;
+  }
+  .markdown > .katex-error::before {
+    content: "Couldn’t draw this formula";
+    display: block;
+    margin-bottom: 0.25rem;
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+}
+
+@layer components {
+  .markdown-inline {
+    line-height: 1.5;
   }
 }

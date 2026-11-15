@@ -28,7 +28,6 @@ test("the desktop window becomes visible and connects to its core", async () => 
     const page = await app.firstWindow();
     await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible()), { timeout: 20_000 }).toBe(true);
     await expect(page.getByRole("heading", { name: "Welcome to Phaethon" })).toBeVisible();
-    await expect(page.getByRole("listitem")).toHaveText([/School$/, /Work$/]);
     expect(await page.evaluate(async () => (await fetch("app://phaethon/%ZZ")).status)).toBe(400);
     await page.evaluate(() => {
       const link = document.createElement("a");
@@ -39,7 +38,12 @@ test("the desktop window becomes visible and connects to its core", async () => 
     await expect(page).toHaveURL(/\?navigation-check=1$/, { timeout: 3000 });
     await expect(page.getByRole("heading", { name: "Welcome to Phaethon" })).toBeVisible();
     await page.getByRole("button", { name: "Get started" }).click();
-    await expect(page.getByRole("heading", { name: "Choose how Phaethon answers" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "How should Phaethon answer?" })).toBeVisible();
+    // The last step lists the vault's spaces, read from the core over the port.
+    await page.getByRole("button", { name: "Skip for now" }).click();
+    await expect(page.getByRole("heading", { name: "Your spaces" })).toBeVisible();
+    await expect(page.getByText("School", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Work", { exact: true }).first()).toBeVisible();
 
     // Relaunching an already-running hidden app must bring its window back.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide());

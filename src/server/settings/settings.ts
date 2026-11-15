@@ -33,6 +33,8 @@ export type VaultSettings = {
   providerUrls?: unknown;
   /** Raw JSON, validated with `validateAppearance` on the way in and out. */
   appearance?: unknown;
+  /** Raw JSON: the model last picked for a conversation (threads/pick.ts), which new conversations start with. */
+  lastModel?: unknown;
 };
 
 export const DEFAULT_SETTINGS: Readonly<VaultSettings> = Object.freeze({
@@ -58,7 +60,7 @@ function optString(value: unknown): string | null | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance"] as const;
+const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance", "lastModel"] as const;
 
 /** Every setting, with defaults for missing or wrongly typed fields. Never throws. */
 export function readSettings(): VaultSettings {

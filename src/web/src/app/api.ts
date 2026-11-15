@@ -17,6 +17,10 @@ export type ThreadSummary = {
   updated: number;
   messages: number;
   current: boolean;
+  /** When it was pinned (ms); absent when it isn't. */
+  pinned?: number;
+  /** The title was given by hand. */
+  renamed?: boolean;
 };
 
 export type SearchSnippet = {
@@ -83,6 +87,8 @@ export const api = {
   newThread: (space: string) => invoke<void>("thread_new", { space }),
   openThread: (space: string, id: string) => invoke<void>("thread_open", { space, id }),
   deleteThread: (space: string, id: string) => invoke<void>("thread_delete", { space, id }),
+  renameThread: (space: string, id: string, title: string) => invoke<unknown>("thread_rename", { space, id, title }),
+  pinThread: (space: string, id: string, pinned: boolean) => invoke<unknown>("thread_pin", { space, id, pinned }),
   search: (space: string, query: string, allSpaces: boolean) =>
     invoke<SearchResults>("conversations_search", { space, query, allSpaces }),
   updateState: () => invoke<UpdateView>("update_state"),

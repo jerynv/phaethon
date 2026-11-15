@@ -1,7 +1,7 @@
-// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3 Tools Inc. See THIRD_PARTY_NOTICES.md.
+// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { type ComponentProps, useLayoutEffect, useRef } from "react";
 
-import { observeResize } from "@/lib/observeResize";
+import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 
 export function MiddleTruncate({
@@ -43,10 +43,10 @@ export function MiddleTruncate({
       {split ? (
         <>
           {/* The tail carries the ellipsis so it sits flush; a CSS ellipsis leaves a ragged gap. */}
-          <span ref={headRef} className="peer min-w-0 overflow-hidden">
+          <span ref={headRef} className="peer min-w-0 overflow-hidden whitespace-pre">
             {split.head}
           </span>
-          <span className="shrink-0 peer-data-overflow:before:content-['…']">{split.tail}</span>
+          <span className="shrink-0 whitespace-pre peer-data-overflow:before:content-['…']">{split.tail}</span>
         </>
       ) : (
         // Keyed so React does not reuse the head node and its imperative clip.

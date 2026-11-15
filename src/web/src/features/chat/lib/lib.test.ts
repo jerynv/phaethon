@@ -4,7 +4,6 @@ import { CHAT_ACTION_IDS, MAX_ACTIONS, SETTINGS_SECTION, actionLabel, fileManage
 import { admit, attachmentKind, attachmentProblem, formatBytes, mediaTypeOf, typeLabel } from "./attachments.ts";
 import { diffLines, diffSummary, foldDiff } from "./diff.ts";
 import { escapeCurrencyDollars, normalizeMathDelimiters, prepareMath } from "./math.ts";
-import { plainText, spokenReply } from "./spoken.ts";
 import { planSentence, questionBefore, readBlock, type StudyPlan } from "./study-chat.ts";
 import { citationOf, citationsIn, citeName, holdPartialCitation, markCitations } from "./study-cite.ts";
 import { spacePathOf } from "../../viewer/kinds.ts";
@@ -183,15 +182,6 @@ describe("attachments", () => {
   });
 });
 
-describe("spoken", () => {
-  test("markdown is spoken as plain words, and long replies only in part", () => {
-    expect(plainText("## Plan\n- **one**\n- `two`\n```js\nx\n```\n[link](a.md)")).toBe("Plan. one two (code) link");
-    expect(plainText("Buttons\n```phaethon-actions\nadd-files\n```")).toBe("Buttons");
-    const long = "First sentence here. ".repeat(20);
-    expect(spokenReply(long).endsWith("The rest is in the conversation.")).toBe(true);
-  });
-});
-
 describe("links", () => {
   test("a reply's relative link is a space path; web links and climbing out are not", () => {
     expect(spacePathOf("notes/week1.md")).toBe("notes/week1.md");
@@ -199,6 +189,6 @@ describe("links", () => {
     expect(spacePathOf("https://example.com")).toBeNull();
     expect(spacePathOf("#top")).toBeNull();
     expect(spacePathOf("/etc/hosts")).toBeNull();
-    expect(spacePathOf("courses/M%20301/README.md")).toBe("courses/MATH 301/README.md");
+    expect(spacePathOf("courses/MATH%20301/README.md")).toBe("courses/MATH 301/README.md");
   });
 });

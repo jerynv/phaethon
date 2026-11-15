@@ -8,12 +8,41 @@ changes Phaethon's own license.
 
 Files whose first line reads "Adapted from T3 Code (https://github.com/pingdotgg/t3code)"
 contain code copied or adapted from T3 Code (mostly the UI primitives in
-`src/web/src/components/ui/`, which T3 Code in turn based on coss ui, MIT).
+`src/web/src/components/ui/`, which T3 Code distributes under the license below).
 
 ```
 MIT License
 
 Copyright (c) 2026 T3 Tools Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Code adapted from shadcn/ui
+
+`src/web/src/components/ui/sidebar.tsx` follows the parts and structure of the
+shadcn/ui sidebar (https://ui.shadcn.com).
+
+```
+MIT License
+
+Copyright (c) 2023 shadcn
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -82,12 +111,10 @@ SOFTWARE.
 
 ## Fonts (SIL Open Font License 1.1)
 
-Bundled into the UI from the Fontsource packages, for the reading-font setting:
+Bundled into the UI from the Fontsource packages, as the interface and code typefaces:
 
-- **Atkinson Hyperlegible Next**: Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next)
-- **Atkinson Hyperlegible Mono**: Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors (https://github.com/googlefonts/atkinson-hyperlegible-next-mono)
-- **Lexend**: Copyright 2019 The Lexend Project Authors (https://github.com/googlefonts/lexend)
-- **OpenDyslexic**: Copyright (c) 2019-07-29, Abbie Gonzalez (https://abbiecod.es), with Reserved Font Name OpenDyslexic
+- **Inter**: Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+- **JetBrains Mono**: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
 ```
 -----------------------------------------------------------
@@ -185,6 +212,7 @@ holders as listed, under the MIT license text that follows the list.
 
 - **React, React DOM**: Copyright (c) Meta Platforms, Inc. and affiliates.
 - **Base UI (@base-ui/react)**: Copyright (c) 2019 Material-UI SAS
+- **Phosphor Icons (@phosphor-icons/react)**: Copyright (c) 2020 Phosphor Icons
 - **KaTeX**: Copyright (c) 2013-2020 Khan Academy and other contributors
 - **rehype-katex**: Copyright (c) Junyoung Choi
 - **remark-math**: Copyright (c) Junyoung Choi

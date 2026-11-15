@@ -81,6 +81,8 @@ export type OwnTurn = {
   events: Channel<AgentEvent>;
   run: Run;
   mode: TurnMode;
+  /** The conversation's chosen effort; the vault's hand-edited `effort` when absent. */
+  effort?: string | null;
 };
 
 const CODES: Record<ProviderError["kind"], ErrorCode> = {
@@ -233,7 +235,7 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
   const system = systemPrompt(space, { claude: provider.isClaude, mode });
   const tools = toolDefs({ claude: provider.isClaude, lesson: mode !== "normal" });
   const offered = new Set(tools.map((x) => x.name));
-  const effort = effortFor(turnKind(mode, msgs), readSettings().effort);
+  const effort = effortFor(turnKind(mode, msgs), t.effort ?? readSettings().effort);
   let anyText = false;
   let seq = 0;
   let pages = 0;

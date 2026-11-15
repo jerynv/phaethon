@@ -177,7 +177,9 @@ export const useNav = create<Nav>((set, get) => {
   const apply = (tab: Tab) => {
     if (tab.kind === "settings") set({ settings: tab.section, paletteOpen: false });
     else {
-      if (tab.kind === "chat" && get().open[tab.space] !== tab.thread) setOpen(tab.space, tab.thread);
+      // A new-chat tab opened before the space's list arrived doesn't choose for the space: the list's newest conversation does (loadThreads).
+      const undecided = tab.kind === "chat" && tab.thread === DRAFT && !get().threads[tab.space]?.data;
+      if (tab.kind === "chat" && get().open[tab.space] !== tab.thread && !undecided) setOpen(tab.space, tab.thread);
       const prev = get().activeSpace;
       set({ activeSpace: tab.space, view: tab.kind === "chat" ? "chat" : tab.view, settings: null });
       if (prev !== tab.space) {

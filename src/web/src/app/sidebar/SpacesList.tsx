@@ -1,18 +1,17 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
-import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
 import { RowError } from "@/components/errors";
+import { TruncateTips } from "@/components/truncate";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Menu, MenuItem, MenuPopup, MenuSeparator } from "@/components/ui/menu";
 import { SidebarContent, SidebarMenuSkeleton } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import type { SpaceView } from "../api";
-import { DRAFT, useNav, type ThreadList, type ThreadRow } from "../store";
+import { DRAFT, THREAD_PAGE, useNav, type ThreadList, type ThreadRow } from "../store";
 import type { ThreadFilter } from "./filter";
-import { foldTitle, LABEL, layoutSpaces, revealOffset, ROW, threadKey, type Item, type Layout, type SpaceInput } from "./layout";
+import { foldTitle, LABEL, layoutSpaces, revealOffset, ROW, STICKY, threadKey, type Item, type Layout, type SpaceInput } from "./layout";
 import { ListContext, type ListContextValue } from "./list-context";
-import { LoaderRow, RowSlot, ThreadMenuItems } from "./rows";
+import { LoaderRow, RowSlot, ThreadMenuItems, type LoaderMode } from "./rows";
 import { SpaceHeader, SpaceMenuItems } from "./space-header";
 
 /**
@@ -24,12 +23,43 @@ import { SpaceHeader, SpaceMenuItems } from "./space-header";
  * inside them.
  *
  * Paging: the skeleton row at the end of a space's loaded run asks for the
- * next page when it comes near the view. Keyboard: arrows, Home and End move
+ * next page while it is within two screens below the view. A space with more
+ * spaces below it loads a share of pages on its own, then offers "Show older",
+ * so scrolling on reaches the next space. Keyboard: arrows, Home and End move
  * through space rows and conversations, scrolling as they go; the focused
  * row, one being renamed and one with its menu open stay rendered while they
  * scroll away. The open conversation scrolls into view when it changes (from
  * search, or on start), once it is listed.
+ *
+ * Nothing on screen moves when the list changes elsewhere: before each change
+ * the list notes the focused row, else the open one, else the first rows in
+ * view, and after it scrolls so that row stays where it was (a row that itself
+ * moved or went is passed over for the next).
  */
+
+/** Pages a space loads on its own as it scrolls before it offers "Show older" (only when another space follows it). */
+export const AUTO_PAGES = 4;
+
+/** What a row's place depends on: when this changes the row itself moved, so it can't hold the view still. */
+const placeKey = (it: Item) => (it.kind === "row" ? `${it.thread!.pinned ?? ""}:${it.thread!.updated}` : it.kind);
+
+/** The first item whose bottom is below `y` (items are in order, back to back). */
+function firstBelow(items: readonly Item[], y: number): number {
+  let lo = 0;
+  let hi = items.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (items[mid]!.start + items[mid]!.size <= y) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** A row's title tooltip sits beside the whole row, clear of its "…". */
+const tipAnchor = (title: HTMLElement) => title.closest("[data-slot=sidebar-menu-item]");
+
+type Anchor = { top: number; marks: Array<{ key: string; offset: number; place: string }> };
+type Ghost = { item: Item; block: string; y: number };
 
 /** Local midnight today, moving on when the day does (the groups are relative to it). */
 function useToday(): number {
@@ -75,7 +105,12 @@ function ItemMenu({ itemKey, layout, spaces, context }: { itemKey: string; layou
   return space ? <SpaceMenuItems space={space} Item={Item} /> : null;
 }
 
-export type SpacesListHandle = { focusFirst(rowsOnly?: boolean): void; openFirst(): void };
+export type SpacesListHandle = {
+  focusFirst(rowsOnly?: boolean): void;
+  openFirst(): void;
+  /** After a delete: focuses what now sits where the deleted row was. False when there is nothing to focus. */
+  focusDeleted(): boolean;
+};
 
 export function SpacesList({
   spaces,
@@ -107,6 +142,8 @@ export function SpacesList({
   const filtering = !!query;
 
   // ---- What is listed: each space's rows (filtered while the filter has text), then the layout.
+  /** The spaces the last render listed. */
+  const shownRef = useRef(new Set<string>());
   const inputs = useMemo(() => {
     const out: Array<SpaceInput & { count: number }> = [];
     for (const sp of spaces) {
@@ -128,14 +165,20 @@ export function SpacesList({
         continue;
       }
       // Filtering: what is loaded and matches, with the core's matches from further back (the loaded copy of a row wins).
+      const match = (t: ThreadRow) => foldTitle(t.title).includes(query);
+      const local = data.filter(match);
+      if (list?.data && !list.hasMore) {
+        // Every conversation is loaded: the answer is here already (and a space with none drops out at once).
+        if (local.length) out.push({ id: sp.id, collapsed: false, status: "ready", rows: local, hasMore: false, cursor: null, empty: "No matches", count: local.length });
+        continue;
+      }
       const found = filter.results[sp.id];
       const byId = new Map(data.map((t) => [t.id, t]));
-      const match = (t: ThreadRow) => foldTitle(t.title).includes(query);
-      const rows = unique([...data.filter(match), ...(found?.items ?? NO_ROWS).map((t) => byId.get(t.id) ?? t).filter(match)]);
+      const rows = unique([...local, ...(found?.items ?? NO_ROWS).map((t) => byId.get(t.id) ?? t).filter(match)]);
       const loading = !found || found.loading;
       const hasMore = !!found && !found.loading && found.hasMore;
-      // A space with nothing matching drops out of the list.
-      if (!rows.length && !loading && !hasMore) continue;
+      // A space with nothing matching drops out of the list; one already out stays out while the core answers.
+      if (!rows.length && !hasMore && (!loading || !shownRef.current.has(sp.id))) continue;
       out.push({
         id: sp.id,
         collapsed: false,
@@ -144,11 +187,15 @@ export function SpacesList({
         hasMore,
         cursor: found?.cursor ?? null,
         empty: "No matches",
-        count: Math.max(rows.length, found?.total ?? 0),
+        // While the core answers, the rows listed (its last total was for another query).
+        count: loading ? rows.length : Math.max(rows.length, found?.total ?? 0),
       });
     }
     return out;
   }, [spaces, threads, collapsed, filtering, query, filter.results]);
+  useEffect(() => {
+    shownRef.current = new Set(inputs.map((i) => i.id));
+  }, [inputs]);
   const layout = useMemo(() => layoutSpaces(inputs, today), [inputs, today]);
   const { items, sections } = layout;
   const spaceById = useMemo(() => new Map(spaces.map((s, i) => [s.id, { space: s, index: i }])), [spaces]);
@@ -165,6 +212,8 @@ export function SpacesList({
   const [focused, setFocused] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [focusTo, setFocusTo] = useState<string | null>(null);
+  const focusToRef = useRef(focusTo);
+  focusToRef.current = focusTo;
   const keepKeys = useMemo(() => [focused, renaming, focusTo, menuFor, contextFor].filter((k): k is string => !!k), [focused, renaming, focusTo, menuFor, contextFor]);
   const rangeExtractor = useCallback(
     (range: Range) => {
@@ -189,11 +238,14 @@ export function SpacesList({
   });
   const rendered = virtualizer.getVirtualItems();
 
-  // ---- Nothing slides or fades while the filter swaps the list.
+  // ---- Nothing slides or fades while the filter swaps the list, or when a page (or a reload) arrives.
   const [instant, setInstant] = useState(false);
   const [shownQuery, setShownQuery] = useState(query);
-  if (shownQuery !== query) {
+  const pages = inputs.map((i) => `${i.id}:${i.status}:${i.cursor}:${i.hasMore}`).join("|");
+  const [shownPages, setShownPages] = useState(pages);
+  if (shownQuery !== query || shownPages !== pages) {
     setShownQuery(query);
+    setShownPages(pages);
     setInstant(true);
   }
   useEffect(() => {
@@ -221,61 +273,86 @@ export function SpacesList({
   }, [items, placeOf]);
   const isFresh = (it: Item) => !!placed.current && !filtering && !instant && seenSpaces.current.has(it.space) && placed.current.get(it.key) !== placeOf(it);
 
-  // ---- Paging: the loader row near the view asks for the next page.
+  // ---- Paging: a loader within two screens below the view asks for the next page.
   const [moreFailed, setMoreFailed] = useState<Record<string, true>>({});
-  const anchor = useRef<{ key: string; offset: number } | null>(null);
-  /** Where the list was scrolled when a space's last page settled: a loader still in view there waits for the next scroll, so pages never load back to back on their own. */
-  const settledAt = useRef<Record<string, number>>({});
+  /** "Show older" presses per space: each lets it load another share of pages on its own. */
+  const [shares, setShares] = useState<Record<string, number>>({});
+  const loaderMode = (si: number): LoaderMode => {
+    const input = inputs[si]!;
+    if (moreFailed[input.id]) return "failed";
+    const capped = si < inputs.length - 1 && input.rows.length >= THREAD_PAGE * (1 + AUTO_PAGES * (1 + (shares[input.id] ?? 0)));
+    return capped ? "more" : "loading";
+  };
   const inFlight = useRef(new Set<string>());
-  const requestMore = useCallback(
-    (space: string, loaderIndex: number) => {
-      const el = scrollRef.current;
-      if (moreFailed[space] || !el || inFlight.current.has(space) || settledAt.current[space] === el.scrollTop) return;
-      inFlight.current.add(space);
-      // Rows of this space read on their own from further back (one opened from search) sit below the loader; the page goes in above them, so the first one in view stays put.
-      const first = items.findIndex((it, i) => i > loaderIndex && it.kind === "row" && it.space === space && it.start >= el.scrollTop);
-      anchor.current = first !== -1 && items[first]!.start < el.scrollTop + el.clientHeight ? { key: items[first]!.key, offset: items[first]!.start - el.scrollTop } : null;
-      const run = filtering ? filter.loadMore(space) : loadMoreThreads(space);
-      run.then(
-        () =>
-          requestAnimationFrame(() => {
-            settledAt.current[space] = el.scrollTop;
-            anchor.current = null;
-            inFlight.current.delete(space);
-          }),
-        () => {
-          anchor.current = null;
-          inFlight.current.delete(space);
-          setMoreFailed((f) => ({ ...f, [space]: true }));
-        },
-      );
-    },
-    [moreFailed, items, filtering, filter, loadMoreThreads],
-  );
+  const [, setSettled] = useState(0);
+  const canLoad = (space: string) => {
+    if (filtering) {
+      const f = filter.results[space];
+      return !!f && !f.loading && !f.loadingMore && f.hasMore && !!f.cursor;
+    }
+    const l = threads[space];
+    return !!l && !!l.hasMore && !!l.cursor && !l.loading && !l.loadingMore;
+  };
+  const requestMore = (space: string) => {
+    if (inFlight.current.has(space) || moreFailed[space] || !canLoad(space)) return;
+    inFlight.current.add(space);
+    const run = filtering ? filter.loadMore(space) : loadMoreThreads(space);
+    run.then(
+      () => {
+        inFlight.current.delete(space);
+        // Looks again: a loader still within reach (a tall window) loads the next page without waiting for a scroll.
+        setSettled((n) => n + 1);
+      },
+      () => {
+        inFlight.current.delete(space);
+        setMoreFailed((f) => ({ ...f, [space]: true }));
+      },
+    );
+  };
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    for (const v of rendered) {
-      const it = items[v.index];
-      // In view or within a screen below it; one above the view (just pushed up by a page loading below it) waits until it is scrolled back to.
-      if (it?.kind === "loader" && it.start + it.size > el.scrollTop && it.start < el.scrollTop + 2 * el.clientHeight) requestMore(it.space, v.index);
-    }
-  }, [rendered, items, requestMore]);
-  useLayoutEffect(() => {
-    const a = anchor.current;
-    const el = scrollRef.current;
-    if (!a || !el) return;
-    const i = layout.index.get(a.key);
-    if (i === undefined) return;
-    const delta = items[i]!.start - el.scrollTop - a.offset;
-    if (!delta) return;
-    el.scrollTop += delta;
-    anchor.current = null;
-  }, [layout, items]);
+    const top = el.scrollTop;
+    const reach = top + 2 * el.clientHeight;
+    sections.forEach((sec, si) => {
+      const i = layout.index.get(`loader:${sec.space}`);
+      const it = i === undefined ? undefined : items[i];
+      // One above the view (pushed up while a row below it held still) waits until it is scrolled back to.
+      if (it && it.start + it.size > top && it.start < reach && loaderMode(si) === "loading") requestMore(sec.space);
+    });
+  });
   // A reload starts the space's pages over; a failed page gets another go.
   useEffect(() => {
     setMoreFailed((f) => (Object.keys(f).some((s) => threads[s]?.loading) ? Object.fromEntries(Object.entries(f).filter(([s]) => !threads[s]?.loading)) : f));
   }, [threads]);
+
+  // ---- Holding the view still: the rows on screen stay where they are when something above them changes.
+  const anchor = useRef<Anchor | null>(null);
+  const anchoredLayout = useRef(layout);
+  const holdTimer = useRef(0);
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    const el = scrollRef.current;
+    if (anchoredLayout.current === layout || !a || !el) {
+      anchoredLayout.current = layout;
+      return;
+    }
+    anchoredLayout.current = layout;
+    for (const m of a.marks) {
+      const i = layout.index.get(m.key);
+      if (i === undefined || placeKey(items[i]!) !== m.place) continue;
+      const to = Math.max(0, items[i]!.start - m.offset);
+      if (to !== el.scrollTop) {
+        el.scrollTop = to;
+        // What the scroll makes up for doesn't slide as well.
+        const box = el.querySelector<HTMLElement>("[data-slot=sidebar-spaces]");
+        box?.setAttribute("data-hold", "");
+        cancelAnimationFrame(holdTimer.current);
+        holdTimer.current = requestAnimationFrame(() => (holdTimer.current = requestAnimationFrame(() => box?.removeAttribute("data-hold"))));
+      }
+      break;
+    }
+  }, [layout, items]);
 
   // ---- A space folded while scrolled into it keeps its row where it was, at the top, instead of the list jumping to the next space.
   const lastCollapsed = useRef(collapsed);
@@ -294,6 +371,8 @@ export function SpacesList({
   const openId = chatSpace ? open[chatSpace] : undefined;
   const target = chatSpace && openId && openId !== DRAFT ? threadKey(chatSpace, openId) : null;
   const lastTarget = useRef<string | null>(null);
+  const targetRef = useRef(target);
+  targetRef.current = target;
   const pending = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (target !== lastTarget.current) {
@@ -337,12 +416,16 @@ export function SpacesList({
     },
     [items],
   );
+  const focusItemRef = useRef(focusItem);
+  focusItemRef.current = focusItem;
   useLayoutEffect(() => {
     if (!focusTo) return;
     const el = scrollRef.current?.querySelector<HTMLElement>(`[data-item-key="${CSS.escape(focusTo)}"] [data-nav-row]`);
     if (el) el.focus({ preventScroll: true });
     setFocusTo(null);
   }, [focusTo]);
+  /** Space rows, conversations, and a "Show older" row. */
+  const focusable = (it: Item | undefined) => it?.kind === "space" || it?.kind === "row" || (it?.kind === "loader" && loaderMode(it.section) === "more");
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
     if ((e.target as HTMLElement).tagName === "INPUT") return;
@@ -350,7 +433,6 @@ export function SpacesList({
     const at = key ? layout.index.get(key) : undefined;
     if (at === undefined) return;
     e.preventDefault();
-    const focusable = (it: Item | undefined) => it?.kind === "space" || it?.kind === "row";
     let next = -1;
     if (e.key === "Home") next = items.findIndex(focusable);
     else if (e.key === "End") next = items.findLastIndex(focusable);
@@ -372,26 +454,113 @@ export function SpacesList({
       useNav.getState().ensureThread(it.space, it.thread);
       void useNav.getState().openThread(it.space, it.thread.id);
     },
+    focusDeleted() {
+      const at = deletedAt.current;
+      deletedAt.current = null;
+      if (at === null) return false;
+      let i = items.findIndex((it, j) => j >= at && focusable(it));
+      if (i === -1) i = items.findLastIndex(focusable);
+      if (i === -1) return false;
+      focusItem(i);
+      return true;
+    },
   }));
 
   // ---- Shared with rows, stable for the list's life.
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const instantRef = useRef(instant);
-  instantRef.current = instant;
   const onDeleteRef = useRef(onDelete);
   onDeleteRef.current = onDelete;
+  /** Where the row asked to be deleted sat, for `focusDeleted`. */
+  const deletedAt = useRef<number | null>(null);
   const ctx = useMemo<ListContextValue>(
     () => ({
-      onDelete: (space, t) => onDeleteRef.current(space, t),
+      onDelete: (space, t) => {
+        deletedAt.current = layoutRef.current.index.get(threadKey(space, t.id)) ?? null;
+        onDeleteRef.current(space, t);
+      },
       rename: setRenaming,
-      listed: (key) => layoutRef.current.index.has(key),
-      instant: () => instantRef.current,
       retryMore: (space) => setMoreFailed(({ [space]: _, ...rest }) => rest),
+      showOlder: (space) => {
+        // The button turns back into a skeleton: focus steps up to the last row above it, for ↓ to carry on into the new ones.
+        const L = layoutRef.current;
+        const at = L.index.get(`loader:${space}`);
+        const active = document.activeElement;
+        if (at !== undefined && active?.closest(`[data-item-key="loader:${CSS.escape(space)}"]`)) {
+          const prev = L.items.findLastIndex((it, i) => i < at && it.kind === "row");
+          if (prev !== -1) focusItemRef.current(prev);
+        }
+        setShares((s) => ({ ...s, [space]: (s[space] ?? 0) + 1 }));
+      },
       rowMenu,
     }),
     [rowMenu],
   );
+
+  // ---- Deleted rows fade out where they were for a moment; rows scrolling out or swapped by the filter just go.
+  const [ghosts, setGhosts] = useState<Record<string, Ghost>>({});
+  /** The rows the last commit rendered, and the ones this render does. */
+  const lastRows = useRef(new Map<string, Ghost>());
+  const rowsNowRef = useRef(lastRows.current);
+  const ghostLayout = useRef(layout);
+  useLayoutEffect(() => {
+    if (ghostLayout.current === layout) return;
+    ghostLayout.current = layout;
+    if (instant) return;
+    const gone: Record<string, Ghost> = {};
+    for (const [k, g] of lastRows.current) if (!layout.index.has(k)) gone[k] = g;
+    const keys = Object.keys(gone);
+    if (!keys.length) return;
+    setGhosts((cur) => ({ ...cur, ...gone }));
+    // Not cleared by the next change: a ghost always goes after its fade.
+    setTimeout(() => setGhosts((cur) => Object.fromEntries(Object.entries(cur).filter(([k]) => !keys.includes(k)))), 160);
+  }, [layout, instant]);
+  useLayoutEffect(() => {
+    lastRows.current = rowsNowRef.current;
+  });
+
+  // ---- The title tooltip shared by every row: shut while a menu is open, closed when the list scrolls.
+  const hideTip = useRef<(() => void) | null>(null);
+
+  // ---- Noting what holds the view still (on each scroll, and after each change): the focused row, the open one, the first rows in view.
+  const captureAnchor = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const L = layoutRef.current;
+    const top = el.scrollTop;
+    const bottom = top + el.clientHeight;
+    const marks: Anchor["marks"] = [];
+    const mark = (i: number | undefined) => {
+      const it = i === undefined ? undefined : L.items[i];
+      if (it) marks.push({ key: it.key, offset: it.start - top, place: placeKey(it) });
+    };
+    const near = (i: number | undefined) => i !== undefined && L.items[i]!.start + L.items[i]!.size > top && L.items[i]!.start < bottom;
+    const active = document.activeElement;
+    const focusedKey = focusToRef.current ?? (active && el.contains(active) ? active.closest<HTMLElement>("[data-item-key]")?.dataset.itemKey : undefined);
+    const fi = focusedKey ? L.index.get(focusedKey) : undefined;
+    if (near(fi)) mark(fi);
+    // At the very top nothing else holds: what is added above shows.
+    if (top > 0) {
+      const ti = targetRef.current ? L.index.get(targetRef.current) : undefined;
+      if (near(ti)) mark(ti);
+      for (let i = firstBelow(L.items, top + STICKY); i < L.items.length && L.items[i]!.start < bottom && marks.length < 24; i++) {
+        const it = L.items[i]!;
+        if ((it.kind === "row" || it.kind === "space") && it.start >= top + STICKY && it.start + it.size <= bottom) mark(i);
+      }
+    }
+    anchor.current = { top, marks };
+  }, []);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      captureAnchor();
+      hideTip.current?.();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [captureAnchor]);
+  useLayoutEffect(() => captureAnchor());
 
   // ---- Render: each space in view as a section (its sticky row, then its groups in view, each with a sticky label and its rows in view).
   // Sections and groups are placed with `top`, not a transform: a sticky row inside works from layout positions, and a transform would leave it behind.
@@ -408,9 +577,13 @@ export function SpacesList({
     if (it.kind !== "label") list.push(it);
   }
   const chatOn = (space: string) => activeSpace === space && !settingsOpen && view === "chat";
+  // The rows rendered now, as ghosts-to-be should they be deleted before the next render.
+  const rowsNow = new Map<string, Ghost>();
 
+  rowsNowRef.current = rowsNow;
   return (
     <ListContext value={ctx}>
+      <TruncateTips suppressed={menuFor !== null || contextFor !== null} hideRef={hideTip} anchorOf={tipAnchor}>
       <SidebarContent
         scrollRef={scrollRef}
         fade="end"
@@ -425,9 +598,10 @@ export function SpacesList({
         <ContextMenu open={contextFor !== null} onOpenChange={(o) => setContextFor(o ? contextTarget.current : null)}>
           <ContextMenuTrigger
             render={<div />}
-            className={cn("relative w-full", !instant && "[&_[data-slide]]:transition-[transform,top] [&_[data-slide]]:duration-200 [&_[data-slide]]:ease-out-soft")}
+            className="relative w-full"
             style={{ height: layout.size }}
             data-slot="sidebar-spaces"
+            data-instant={instant || undefined}
             onContextMenuCapture={(e) => {
               const t = e.target as HTMLElement;
               // A title being edited gets the system's menu; a label or a gap gets none.
@@ -468,15 +642,17 @@ export function SpacesList({
                             return (
                               <li key={b.key} data-slide="" className="absolute inset-x-0" style={{ top: b.start - bodyTop, height: b.end - b.start, paddingTop: label ? label.size - LABEL : 0 }}>
                                 {label ? (
-                                  <div aria-hidden className="sticky top-7 z-10 flex h-7 items-center bg-sidebar pl-8 text-subtle-foreground text-xs">
+                                  <div aria-hidden data-slot="sidebar-group-sticky" className="sticky top-7 z-10 flex h-7 items-center bg-sidebar pl-8 text-subtle-foreground text-xs">
                                     {b.label}
+                                    {/* Stuck over rows, a short masked edge hides the cut-off text under it. */}
+                                    <span data-slot="sidebar-group-sticky-edge" className="pointer-events-none absolute inset-x-0 top-full h-3 bg-sidebar mask-b-from-40%" />
                                   </div>
                                 ) : null}
                                 <ul aria-label={b.label} className="absolute inset-0">
-                                  <AnimatePresence initial={false}>
                                     {blocks.get(bi)!.map((it) => {
                                       const y = it.start - b.start;
-                                      if (it.kind === "row")
+                                      if (it.kind === "row") {
+                                        rowsNow.set(it.key, { item: it, block: `${sec.space}:${b.key}`, y });
                                         return (
                                           <RowSlot
                                             key={it.key}
@@ -490,7 +666,8 @@ export function SpacesList({
                                             menuOpen={menuFor === it.key}
                                           />
                                         );
-                                      if (it.kind === "loader") return <LoaderRow key={it.key} space={it.space} failed={!!moreFailed[it.space]} y={y} />;
+                                      }
+                                      if (it.kind === "loader") return <LoaderRow key={it.key} itemKey={it.key} space={it.space} mode={loaderMode(it.section)} y={y} />;
                                       return (
                                         <li key={it.key} className="absolute inset-x-0 top-0 flex h-7 items-center" style={{ transform: `translateY(${y}px)` }}>
                                           {it.kind === "skeleton" ? (
@@ -503,7 +680,11 @@ export function SpacesList({
                                         </li>
                                       );
                                     })}
-                                  </AnimatePresence>
+                                    {Object.entries(ghosts).map(([k, g]) =>
+                                      g.block === `${sec.space}:${b.key}` && !layout.index.has(k) ? (
+                                        <RowSlot key={k} itemKey={k} y={g.y} fresh={false} leaving space={g.item.space} thread={g.item.thread!} active={false} renaming={false} menuOpen={false} />
+                                      ) : null,
+                                    )}
                                 </ul>
                               </li>
                             );
@@ -532,6 +713,7 @@ export function SpacesList({
           )}
         </Menu>
       </SidebarContent>
+      </TruncateTips>
     </ListContext>
   );
 }

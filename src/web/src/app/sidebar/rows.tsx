@@ -1,12 +1,11 @@
-import { usePresence } from "motion/react";
-import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useRef, type KeyboardEvent } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { RowError } from "@/components/errors";
 import { toast } from "@/components/toast";
 import { Truncate } from "@/components/truncate";
 import { MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
-import { SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuSkeleton, SidebarMenuTrail } from "@/components/ui/sidebar";
+import { SidebarMenuAction, SidebarMenuButton, SidebarMenuSkeleton, SidebarMenuTrail } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { useChats, useConvState, type ConvState } from "@/features/chat/store";
 import { errorText } from "@/lib/core";
@@ -19,7 +18,7 @@ import { useList, type ListContextValue } from "./list-context";
  * since the windowed list mounts a few on every scroll step: no menu of
  * their own (the "…" trigger opens the list's one shared menu and the list
  * owns the right-click menu), no motion components, and the title measures
- * whether it is cut only when hovered.
+ * whether it is cut only when hovered (the list owns its one tooltip).
  */
 
 type RowState = ConvState | "unread" | "pinned" | null;
@@ -38,10 +37,7 @@ function StatusMark({ state }: { state: RowState }) {
       {state === "working" ? (
         <WorkingMark />
       ) : state === "waiting" ? (
-        <span className="relative flex size-2">
-          <span className="absolute inset-0 animate-ping rounded-full bg-warning opacity-50 [animation-duration:1.8s]" />
-          <span className="relative size-2 rounded-full bg-warning" />
-        </span>
+        <span className="size-1.5 rounded-full bg-warning" />
       ) : state === "failed" ? (
         <Icon icon={icons.error} className="size-3 text-error-foreground" />
       ) : state === "unread" ? (
@@ -54,12 +50,6 @@ function StatusMark({ state }: { state: RowState }) {
     </span>
   );
 }
-
-const STATE_LABEL: Partial<Record<NonNullable<RowState>, { text: string; className: string }>> = {
-  working: { text: "Working", className: "text-shimmer text-info-foreground" },
-  waiting: { text: "Needs you", className: "text-warning-foreground" },
-  failed: { text: "Failed", className: "text-error-foreground" },
-};
 
 /** A row's state: live work first, then something waiting to be read, then the pin. */
 function useRowState(space: string, t: ThreadRow): RowState {
@@ -201,7 +191,6 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
   const list = useList();
   const state = useRowState(space, thread);
   const busy = state === "working" || state === "waiting";
-  const label = STATE_LABEL[state as keyof typeof STATE_LABEL];
   const open = () => {
     useNav.getState().ensureThread(space, thread);
     void useNav.getState().openThread(space, thread.id);
@@ -245,12 +234,12 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
         data-state={state ?? undefined}
         onClick={open}
         onKeyDown={onKeyDown}
-        className={cn("pl-8", state === "unread" && "font-medium text-foreground")}
+        // The hover actions (a 20 px "…" at 4 px from the edge) take the end of the row; the title's ellipsis moves in for them.
+        className={cn("pl-8 group-hover/menu-item:pr-7 group-has-focus-visible/menu-item:pr-7 group-data-[keep=true]/menu-item:pr-7", state === "unread" && "font-medium text-foreground")}
       >
         <Truncate lazy side="right" className="flex-1">
           {thread.title}
         </Truncate>
-        {label ? <SidebarMenuBadge className={cn("font-medium", label.className)}>{label.text}</SidebarMenuBadge> : null}
       </SidebarMenuButton>
       {mark}
       <SidebarMenuTrail keep={menuOpen}>
@@ -264,27 +253,16 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
 
 /**
  * One windowed row at its offset in its group. It slides when rows above it
- * come or go, fades in when it is new to the list (not when it scrolls in),
- * and fades out when it is deleted (not when it scrolls out).
+ * come or go and fades in when it is new to the list (not when it scrolls in
+ * or a page of older ones arrives). A deleted row stays a moment as a ghost
+ * (`leaving`) to fade out; one scrolling out simply goes.
  */
-export const RowSlot = memo(function RowSlot({ y, fresh, ...row }: RowProps & { y: number; fresh: boolean }) {
-  const list = useList();
-  const [present, safeToRemove] = usePresence();
-  const [leaving, setLeaving] = useState(false);
-  useEffect(() => {
-    if (present) return;
-    if (list.instant() || list.listed(row.itemKey)) {
-      safeToRemove();
-      return;
-    }
-    setLeaving(true);
-    const t = setTimeout(safeToRemove, 160);
-    return () => clearTimeout(t);
-  }, [present, safeToRemove, list, row.itemKey]);
+export const RowSlot = memo(function RowSlot({ y, fresh, leaving = false, ...row }: RowProps & { y: number; fresh: boolean; leaving?: boolean }) {
   return (
     <li
       data-slide=""
-      data-item-key={row.itemKey}
+      data-item-key={leaving ? undefined : row.itemKey}
+      aria-hidden={leaving || undefined}
       className={cn("absolute inset-x-0 top-0 h-7", fresh && !leaving && "animate-in fade-in duration-200", leaving && "pointer-events-none opacity-0 transition-opacity duration-150")}
       style={{ transform: `translateY(${y}px)` }}
     >
@@ -293,13 +271,24 @@ export const RowSlot = memo(function RowSlot({ y, fresh, ...row }: RowProps & { 
   );
 });
 
-/** The quiet row at the end of the loaded run: a skeleton while the next page loads, or a retry when it couldn't. */
-export function LoaderRow({ space, failed, y }: { space: string; failed: boolean; y: number }) {
+export type LoaderMode = "loading" | "failed" | "more";
+
+/**
+ * The quiet row at the end of the loaded run: a skeleton while the next page
+ * loads, a retry when it couldn't, or "Show older" once a space with more
+ * spaces below it has loaded its share on its own (so scrolling on reaches the
+ * next space instead of paging through every conversation of this one).
+ */
+export function LoaderRow({ itemKey, space, mode, y }: { itemKey: string; space: string; mode: LoaderMode; y: number }) {
   const list = useList();
   return (
-    <li data-slide="" className="absolute inset-x-0 top-0 h-7" style={{ transform: `translateY(${y}px)` }}>
-      {failed ? (
+    <li data-slide="" data-item-key={itemKey} className="absolute inset-x-0 top-0 h-7" style={{ transform: `translateY(${y}px)` }}>
+      {mode === "failed" ? (
         <RowError className="h-7 pl-8" message="Couldn’t load older conversations" onRetry={() => list.retryMore(space)} />
+      ) : mode === "more" ? (
+        <SidebarMenuButton data-nav-row="" tone="muted" onClick={() => list.showOlder(space)} className="pl-8">
+          <span className="flex-1 truncate">Show older</span>
+        </SidebarMenuButton>
       ) : (
         <SidebarMenuSkeleton index={3} className="pl-8" />
       )}

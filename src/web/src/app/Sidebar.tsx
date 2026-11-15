@@ -43,9 +43,8 @@ import { DRAFT, useNav, type ThreadRow } from "./store";
  * read on its own when it is older than the loaded pages.
  *
  * Every conversation says what it is doing, and several can be busy at once:
- * a status gutter on the left (replying, needs you, new reply, failed,
- * pinned) and a trailing label that names the live state, giving way to
- * actions on hover. Right-click a conversation or a space for its menu; arrow
+ * a status mark in the icon column (replying, needs you, new reply, failed,
+ * pinned), named in the row's accessible name; actions show on hover. Right-click a conversation or a space for its menu; arrow
  * keys move between rows, F2 renames, Delete asks to delete. A folded space
  * still shows its count and how many of its conversations are busy or
  * waiting. Built on components/ui/sidebar.
@@ -62,11 +61,23 @@ function Keys({ keys, className }: { keys: string[]; className?: string }) {
 }
 
 /** "Delete “Week 6 notes”?" The conversation and its CLI session go; files it attached stay. */
-function ConfirmDeleteThread({ target, onClose, onDeleted }: { target: { space: string; thread: ThreadRow } | null; onClose: () => void; onDeleted: (space: string, id: string) => void }) {
+function ConfirmDeleteThread({
+  target,
+  onClose,
+  onDeleted,
+  refocus,
+}: {
+  target: { space: string; thread: ThreadRow } | null;
+  onClose: () => void;
+  onDeleted: (space: string, id: string) => void;
+  /** After a delete, focuses the row now in the deleted one's place (the deleted row can't take focus back); false when there is none. */
+  refocus: () => boolean;
+}) {
   const deleteThread = useNav((s) => s.deleteThread);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState(target);
+  const deleted = useRef(false);
   if (target && target !== shown) setShown(target);
   const remove = async () => {
     if (!target) return;
@@ -74,6 +85,7 @@ function ConfirmDeleteThread({ target, onClose, onDeleted }: { target: { space: 
     setError(null);
     try {
       await deleteThread(target.space, target.thread.id);
+      deleted.current = true;
       onDeleted(target.space, target.thread.id);
       onClose();
     } catch (e) {
@@ -92,7 +104,14 @@ function ConfirmDeleteThread({ target, onClose, onDeleted }: { target: { space: 
         }
       }}
     >
-      <AlertDialogPopup className="max-w-sm">
+      <AlertDialogPopup
+        className="max-w-sm"
+        finalFocus={() => {
+          const done = deleted.current;
+          deleted.current = false;
+          return done && refocus() ? false : true;
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle className="text-lg [overflow-wrap:anywhere]">Delete “{shown?.thread.title}”?</AlertDialogTitle>
           <AlertDialogDescription>Its messages are deleted from this space. Files it attached stay. This can’t be undone.</AlertDialogDescription>
@@ -247,7 +266,7 @@ export function Sidebar() {
         </SidebarMenuButton>
       </SidebarFooter>
       <NewSpaceDialog open={creating} onOpenChange={setCreating} />
-      <ConfirmDeleteThread target={deleting} onClose={() => setDeleting(null)} onDeleted={filter.drop} />
+      <ConfirmDeleteThread target={deleting} onClose={() => setDeleting(null)} onDeleted={filter.drop} refocus={() => listRef.current?.focusDeleted() ?? false} />
     </Panel>
   );
 }

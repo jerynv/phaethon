@@ -9,11 +9,9 @@ import type { ThreadRow } from "../store";
 export type ListContextValue = {
   onDelete(space: string, t: ThreadRow): void;
   rename(key: string | null): void;
-  /** Whether `key` is still listed (a row leaving by scrolling, not deletion, goes without a fade). */
-  listed(key: string): boolean;
-  /** True while the list is being replaced wholesale (a filter), when nothing animates. */
-  instant(): boolean;
   retryMore(space: string): void;
+  /** "Show older": the space loads another share of pages as it scrolls. */
+  showOlder(space: string): void;
   /** The one "…" menu every row's trigger opens, with the row's key as its payload. */
   rowMenu: MenuPrimitive.Handle<string>;
 };

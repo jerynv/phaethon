@@ -5,7 +5,10 @@ import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
 import { api } from "../api";
-import { THREAD_PAGE, type ThreadRow } from "../store";
+import { THREAD_PAGE } from "../store";
+import { nextResults, type FilterList } from "./paging";
+
+export type { FilterList };
 
 /**
  * The sidebar's filter: the row under New chat that narrows the listed
@@ -14,29 +17,36 @@ import { THREAD_PAGE, type ThreadRow } from "../store";
  * page by page. ⌘K stays the full-text search.
  */
 
-/** One space's matches from the core for the filter, page by page. */
-export type FilterList = { items: ThreadRow[]; total?: number; hasMore: boolean; cursor: string | null; loading: boolean; loadingMore: boolean; error?: string };
 
 /**
  * The core's matches for `query` (folded) in each space, asked for once
  * typing pauses; older matches load as the list reaches them. What is
- * already loaded is filtered in the list itself, at once.
+ * already loaded is filtered in the list itself, at once. A query that only
+ * narrows the last one, in a space whose last answer was complete, is answered
+ * here from that answer without asking again.
  */
 export function useThreadFilter(query: string, spaceIds: readonly string[]) {
   const [results, setResults] = useState<Record<string, FilterList>>({});
   const gen = useRef(0);
+  const latest = useRef(results);
+  latest.current = results;
+  const lastQuery = useRef("");
   const ids = spaceIds.join("\u0000");
   useEffect(() => {
     const g = ++gen.current;
+    const prevQuery = lastQuery.current;
+    lastQuery.current = query;
     if (!query) {
       setResults({});
       return;
     }
     const spaces = ids.split("\u0000").filter(Boolean);
-    // The last answer stays (the list re-filters it at once) until this one arrives.
-    setResults((r) => Object.fromEntries(spaces.map((id) => [id, { ...(r[id] ?? { items: [], hasMore: false, cursor: null, loadingMore: false }), loading: true }])));
+    const next = nextResults(latest.current, spaces, prevQuery, query);
+    setResults(next);
+    const ask = spaces.filter((id) => next[id]!.loading);
+    if (!ask.length) return;
     const t = setTimeout(() => {
-      for (const id of spaces) {
+      for (const id of ask) {
         api.threads(id, { query, limit: THREAD_PAGE }).then(
           (page) => {
             if (g !== gen.current) return;
@@ -52,8 +62,6 @@ export function useThreadFilter(query: string, spaceIds: readonly string[]) {
     return () => clearTimeout(t);
   }, [query, ids]);
 
-  const latest = useRef(results);
-  latest.current = results;
   const loadMore = useCallback(
     async (space: string) => {
       const cur = latest.current[space];
@@ -129,7 +137,7 @@ export function FilterField({
             onEnter();
           }
         }}
-        className="h-7 w-full min-w-0 rounded-md bg-transparent pr-7 pl-8 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+        className="h-7 w-full min-w-0 rounded-md bg-transparent pr-7 pl-8 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
       />
       {value ? (
         <span className="absolute right-1 flex items-center">

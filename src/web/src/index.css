@@ -77,7 +77,7 @@
   --subtle-foreground: oklch(66% 0 0);
   --accent: oklch(97.2% 0 0);
   --accent-foreground: oklch(23% 0 0);
-  --row-selected: oklch(97.2% 0 0);
+  --row-selected: oklch(94.5% 0 0);
   --message: var(--ink);
   --message-foreground: var(--ink-foreground);
   --border: oklch(92.6% 0 0);
@@ -179,7 +179,7 @@
   --subtle-foreground: oklch(54% 0 0);
   --accent: oklch(100% 0 0 / 5%);
   --accent-foreground: oklch(95.5% 0 0);
-  --row-selected: oklch(100% 0 0 / 5%);
+  --row-selected: oklch(100% 0 0 / 8%);
   --message: oklch(29% 0 0);
   --message-foreground: oklch(95.5% 0 0);
   --border: oklch(100% 0 0 / 6.5%);
@@ -784,5 +784,32 @@
 @layer components {
   .markdown-inline {
     line-height: 1.5;
+  }
+}
+
+/* ---- The sidebar's windowed list (app/sidebar/SpacesList.tsx) ------------------ */
+@layer components {
+  /* Rows slide when rows above them come or go; not while the list is swapped
+     wholesale (a filter, a page arriving) or the scroll makes up for the move. */
+  [data-slot="sidebar-spaces"]:not([data-instant], [data-hold]) [data-slide] {
+    transition-property: transform, top;
+    transition-duration: 200ms;
+    transition-timing-function: var(--ease-out-soft);
+  }
+  /* Named, not just absent: a slide already started is cancelled (`all` with no duration would let it run). */
+  [data-slot="sidebar-spaces"]:is([data-instant], [data-hold]) [data-slide] {
+    transition-property: none;
+  }
+  /* A group label shows its masked bottom edge only while it is stuck over rows. */
+  [data-slot="sidebar-group-sticky"] {
+    container-type: scroll-state;
+  }
+  [data-slot="sidebar-group-sticky-edge"] {
+    visibility: hidden;
+  }
+  @container scroll-state(stuck: top) {
+    [data-slot="sidebar-group-sticky-edge"] {
+      visibility: visible;
+    }
   }
 }

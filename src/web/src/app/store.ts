@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { errorText } from "@/lib/core";
 import { api, type SpaceView, type ThreadListed } from "./api";
+import { mergeRefresh } from "./sidebar/paging";
 
 /**
  * Where the user is: the active space, the view inside it, the overlays
@@ -200,15 +201,7 @@ export const useNav = create<Nav>((set, get) => {
       try {
         const page = await api.threads(space, { limit: Math.min(REFRESH_MAX, Math.max(THREAD_PAGE, loaded)) });
         if (gen !== generation[space]) return;
-        const listed = new Set(page.items.map((t) => t.id));
-        setList(space, (cur) => ({
-          data: sortRows([...(cur.data ?? []).filter((t) => t.optimistic && !listed.has(t.id)), ...page.items]),
-          loading: false,
-          total: page.total,
-          hasMore: page.hasMore,
-          cursor: page.nextCursor,
-          loadingMore: false,
-        }));
+        setList(space, (cur) => ({ ...mergeRefresh(cur, page), loading: false, total: page.total, loadingMore: false }));
         // The conversation the space shows: the one remembered, else the newest, else a new chat.
         const has = (id: string | undefined) => !!id && (get().threads[space]?.data ?? []).some((t) => t.id === id);
         const shown = get().open[space];

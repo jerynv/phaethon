@@ -42,7 +42,7 @@ const domRows = (page: Page) => nav(page).locator("[data-slot=sidebar-spaces] li
 const row = (page: Page, i: number) => nav(page).getByRole("button", { name: new RegExp(`^Placeholder chat ${i} `) });
 
 async function inView(page: Page, target: Locator) {
-  const box = await target.boundingBox().catch(() => null);
+  const box = (await target.count()) ? await target.boundingBox().catch(() => null) : null;
   const view = await scroller(page).boundingBox();
   if (!box || !view) return false;
   return box.y >= view.y && box.y + box.height <= view.y + view.height + 1;
@@ -155,4 +155,75 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   await expect(page.locator("[data-slot=app-header]")).toContainText("Placeholder chat 7");
   await expect(row(page, 7)).toHaveAttribute("aria-current", "page");
   await expect.poll(() => inView(page, row(page, 7))).toBe(true);
+});
+
+test("1500 conversations: a first click opens a cut title, the next space is reachable, the view holds still, a delete keeps focus", async ({ page }) => {
+  core = await startCore({
+    setup: (home) => {
+      seed(home, "school", "School", SCHOOL, "Placeholder");
+      seed(home, "work", "Work", WORK, "Other");
+    },
+  });
+  await core.open(page);
+  const sidebar = nav(page);
+  await expect(page.locator("[data-slot=app-header]")).toContainText(`Placeholder chat ${SCHOOL - 1}`);
+
+  // A title cut off by the sidebar's width opens on the first click, with no hover first.
+  const cut = row(page, SCHOOL - 3);
+  expect(await cut.locator("span").first().evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  await cut.click();
+  await expect(page.locator("[data-slot=app-header]")).toContainText(`Placeholder chat ${SCHOOL - 3}`);
+
+  // School loads a share of pages on its own, then offers "Show older", so scrolling on reaches Work.
+  const older = sidebar.getByRole("button", { name: "Show older" });
+  const work = sidebar.getByRole("button", { name: "Go to Work" });
+  // About 250 rows of 29 px: some 20 steps of 400 px (paging through all 1500 would take over a hundred).
+  let steps = 0;
+  for (; steps < 40 && !(await inView(page, work)); steps++) {
+    await scroller(page).evaluate((el) => el.scrollBy(0, 400));
+    await page.waitForTimeout(60);
+  }
+  expect(await inView(page, work)).toBe(true);
+  expect(steps).toBeLessThan(30);
+  await expect.poll(() => inView(page, older)).toBe(true);
+  const listed = () => page.evaluate(() => document.querySelectorAll("[data-slot=sidebar-spaces] li[data-item-key^='row:school/']").length);
+  const shareEnd = await sidebar.locator("li[data-item-key^='row:school/']").last().getAttribute("data-item-key");
+  await older.click();
+  await expect(sidebar.locator(`li[data-item-key='${shareEnd}']`)).toBeAttached();
+  // The next page arrives under it (ids count down with age), and the button is gone until School's next share is in.
+  const nextOlder = `row:school/${Number(shareEnd!.split("/")[1]) - 1}`;
+  await expect(sidebar.locator(`li[data-item-key='${nextOlder}']`)).toBeAttached();
+  await expect(older).toHaveCount(0);
+  // A page arriving in view doesn't fade its rows in over the others.
+  expect(await sidebar.locator("li[data-item-key].animate-in").count()).toBe(0);
+  expect(await listed()).toBeLessThan(80);
+
+  // Pinning a conversation below the one being read adds a Pinned group above the view; what is on screen doesn't move.
+  await scroller(page).evaluate((el) => (el.scrollTop = 1500));
+  await page.waitForTimeout(200);
+  const onScreen = await sidebar.locator("li[data-item-key^='row:school/'] [data-nav-row]").evaluateAll((els) => {
+    const v = els[0]!.closest("[data-slot=scroll-area-viewport]")!.getBoundingClientRect();
+    return els
+      .map((b) => ({ name: b.getAttribute("aria-label")!, y: b.getBoundingClientRect().top }))
+      .filter((r) => r.y > v.top + 80 && r.y < v.bottom - 40)
+      .sort((a, b) => a.y - b.y);
+  });
+  const watched = onScreen[1]!;
+  const victim = onScreen[onScreen.length - 1]!;
+  await sidebar.getByRole("button", { name: victim.name, exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Pin to top" }).click();
+  // It moves up into Pinned, above the view (its name now says it is pinned).
+  await expect(sidebar.getByRole("button", { name: victim.name, exact: true })).toHaveCount(0);
+  const y = await sidebar.getByRole("button", { name: watched.name, exact: true }).evaluate((b) => b.getBoundingClientRect().top);
+  expect(Math.abs(y - watched.y)).toBeLessThan(2);
+
+  // Deleting from the keyboard leaves focus on the row that took the deleted one's place.
+  const doomed = sidebar.getByRole("button", { name: watched.name, exact: true });
+  await doomed.focus();
+  await page.keyboard.press("Delete");
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  const focused = page.locator(":focus");
+  await expect(focused).toHaveAttribute("data-nav-row", "");
+  await expect(focused).toHaveAccessibleName(onScreen[2]!.name);
 });

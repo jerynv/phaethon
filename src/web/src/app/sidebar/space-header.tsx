@@ -105,7 +105,7 @@ export const SpaceHeader = memo(function SpaceHeader({ space, index, folded, cou
                 {activity.working > 1 ? activity.working : null}
               </span>
             ) : null}
-            {activity.waiting && !filtering ? <span className="size-2 rounded-full bg-warning" aria-label={`${activity.waiting} need you`} /> : null}
+            {activity.waiting && !filtering ? <span className="size-1.5 rounded-full bg-warning" aria-label={`${activity.waiting} need you`} /> : null}
             {activity.unread && !filtering ? <span className="size-1.5 rounded-full bg-primary" aria-label="New reply" /> : null}
             {count ? (
               <span className="min-w-4 text-right text-2xs text-subtle-foreground tabular-nums" aria-label={filtering ? `${count} matching` : `${count} conversations`}>

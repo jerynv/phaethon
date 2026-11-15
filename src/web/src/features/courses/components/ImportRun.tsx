@@ -1,9 +1,10 @@
-import { CircleAlertIcon, CircleCheckIcon, CircleDashedIcon, XIcon } from "lucide-react";
+import { CheckCircle, CircleDashed, WarningCircle, X } from "@phosphor-icons/react";
+import { motion } from "motion/react";
+import { useState } from "react";
 import { SurfaceError } from "@/components/errors";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { type CourseRun, endText, type Run, SIGNED_OUT_DURING_IMPORT, stepText } from "../lib/import-run";
 import { plural } from "../lib/sites";
@@ -55,7 +56,7 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
           </>
         ) : (
           <Button size="icon-xs" variant="ghost-muted" aria-label="Dismiss" onClick={dismiss}>
-            <XIcon />
+            <X weight="light" />
           </Button>
         )}
       </div>
@@ -88,19 +89,22 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
 }
 
 function CourseRow({ c }: { c: CourseRun }) {
+  const [open, setOpen] = useState(false);
   const active = !c.result && !c.failed && !!c.step;
   const counts = c.result ? [plural(c.result.files, "file"), c.result.readings ? plural(c.result.readings, "reading") : null, c.result.links ? plural(c.result.links, "link") : null].filter(Boolean).join(" · ") : null;
   return (
-    <li className="flex min-h-8 items-center gap-2.5 px-3.5 py-1.5">
+    <motion.li layout="position" className="flex min-h-8 flex-wrap items-center gap-x-2.5 px-3.5 py-1.5">
       <span className="flex size-4 shrink-0 items-center justify-center">
         {c.result ? (
-          <CircleCheckIcon className="size-3.5 text-success" strokeWidth={2} />
+          <motion.span initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 520, damping: 28 }}>
+            <CheckCircle weight="fill" className="size-4 text-success" />
+          </motion.span>
         ) : c.failed ? (
-          <CircleAlertIcon className={cn("size-3.5", c.failed === "Stopped" ? "text-muted-foreground" : "text-error")} strokeWidth={2} />
+          <WarningCircle weight="fill" className={cn("size-4", c.failed === "Stopped" ? "text-muted-foreground" : "text-error")} />
         ) : active ? (
           <Spinner size="xs" tone="muted" />
         ) : (
-          <CircleDashedIcon className="size-3.5 text-subtle-foreground" strokeWidth={2} />
+          <CircleDashed weight="light" className="size-4 text-subtle-foreground" />
         )}
       </span>
       <div className="min-w-0 flex-1">
@@ -118,10 +122,9 @@ function CourseRow({ c }: { c: CourseRun }) {
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground text-xs tabular-nums">
           {counts}
           {c.result?.skipped.length ? (
-            <Tooltip>
-              <TooltipTrigger render={<span className="cursor-default text-warning-foreground" />}>· {plural(c.result.skipped.length, "part")} skipped</TooltipTrigger>
-              <TooltipPopup className="max-w-72">{c.result.skipped.join("\n")}</TooltipPopup>
-            </Tooltip>
+            <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="text-warning-foreground underline-offset-2 hover:underline">
+              · {plural(c.result.skipped.length, "item")} not imported
+            </button>
           ) : null}
         </span>
       ) : c.failed === "Stopped" ? (
@@ -129,6 +132,15 @@ function CourseRow({ c }: { c: CourseRun }) {
       ) : !c.failed ? (
         <span className="shrink-0 text-muted-foreground text-xs">Waiting</span>
       ) : null}
-    </li>
+      {open && c.result?.skipped.length ? (
+        <motion.ul initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="basis-full space-y-0.5 overflow-hidden pt-1 pl-6.5">
+          {c.result.skipped.map((n, i) => (
+            <li key={i} className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
+              {n}
+            </li>
+          ))}
+        </motion.ul>
+      ) : null}
+    </motion.li>
   );
 }

@@ -108,6 +108,8 @@ const contentEntries = (name: string) => [
   { path: `courses/${name}/files/Lecture notes/Week 3 board.pdf`, title: "Week 3 board.pdf", kind: "file", bytes: 1024 * 1024 * 3.2 },
   { path: `courses/${name}/files/Course notes chapter 2.pdf`, title: "Course notes chapter 2.pdf", kind: "file", bytes: 1024 * 1024 * 8.4 },
   { path: `courses/${name}/files/Test 1 review.docx`, title: "Test 1 review.docx", kind: "file", bytes: 1024 * 44 },
+  { path: `courses/${name}/files/Exam 1 study guide.pdf`, title: "Exam 1 study guide.pdf", kind: "file", bytes: 1024 * 212, from: "Announcement “Test 1 next Thursday”" },
+  { path: `courses/${name}/files/Problem set 6 hints.pdf`, title: "Problem set 6 hints.pdf", kind: "file", bytes: 1024 * 96, from: "Discussion “Homework 6 questions”" },
   { path: `courses/${name}/pages/office-hours.md`, title: "Office hours", kind: "page" },
 ];
 
@@ -496,7 +498,7 @@ export default {
         c.courses.push(id);
         for (const s of args.spaces as string[]) (access[s] ??= {})[`${c.id}/${id}`] = [...ALL];
       }
-      const event = { type: "course", course: id, folder: `courses/${name}`, files: 12 + (Number(id) % 7), readings: Number(id) % 4, links: 5, skipped: id === "103" ? ["Announcements: the site didn’t answer."] : [], ...(material[id] ? { material: material[id] } : {}) };
+      const event = { type: "course", course: id, folder: `courses/${name}`, files: 12 + (Number(id) % 7), readings: Number(id) % 4, links: 5, skipped: id === "103" ? ["Announcements: the site didn’t answer.", "File “Quiz 3 key.pdf”: locked for now"] : [], ...(material[id] ? { material: material[id] } : {}) };
       // The last course's event is big; it lands after the command has returned, as Tauri did with 8 KB+ messages.
       if (id === ids[ids.length - 1]) late.push(() => send(event));
       else send(event);
@@ -541,7 +543,12 @@ export default {
     const parts = access[String(args.space)]?.[String(args.course)] ?? [];
     if (!c || !parts.length) throw "This space cannot access that course.";
     const allowed = (kind: string) => (kind === "file" ? parts.includes("files") : kind === "assignment" ? parts.includes("assignments") : parts.includes("overview"));
-    return { entries: contentEntries(c.name).filter((e) => allowed(e.kind)), updated: Date.now() - 3 * DAY, truncated: false };
+    return {
+      entries: contentEntries(c.name).filter((e) => allowed(e.kind)),
+      updated: Date.now() - 3 * DAY,
+      truncated: false,
+      skipped: ["File “Test 1 answer key.pdf” (from announcement “Test 1 next Thursday”): locked for now", "Page “Week 12: Graphs”: locked for now", "Lecture 9 recording.mp4: too big to download (1.2 GB; the limit is 500 MB)"],
+    };
   },
 
   // Grades

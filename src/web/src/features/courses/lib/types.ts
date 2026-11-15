@@ -67,8 +67,11 @@ export type CourseContentEntry = {
   headingIndex?: number;
   text?: string;
   bytes?: number;
+  /** Where it was found when not in the file list: "Announcement “Exam 2”". */
+  from?: string;
 };
-export type CourseContent = { entries: CourseContentEntry[]; updated?: number; truncated?: boolean };
+/** `skipped`: what the last import couldn't bring in, and why. */
+export type CourseContent = { entries: CourseContentEntry[]; updated?: number; truncated?: boolean; skipped?: string[] };
 
 /** A space as the vault lists it (spaces_list). */
 export type SpaceSummary = { id: string; name: string; description?: string; hue?: number; educationEnabled?: boolean; lastUsed?: number | null };

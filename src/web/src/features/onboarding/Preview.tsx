@@ -119,9 +119,9 @@ function Welcome() {
       </div>
       <div className="mt-4 grid w-full max-w-md grid-cols-3 gap-2">
         {[
-          { icon: icons.create, title: "Create" },
-          { icon: icons.find, title: "Find" },
-          { icon: icons.research, title: "Research" },
+          { icon: icons.teacher, title: "Teach me" },
+          { icon: icons.quiz, title: "Quiz me" },
+          { icon: icons.plan, title: "Plan my week" },
         ].map((c) => (
           <div key={c.title} className="flex flex-col gap-4 rounded-card border bg-card p-3 shadow-card">
             <Icon icon={c.icon} className="size-4 text-muted-foreground" />

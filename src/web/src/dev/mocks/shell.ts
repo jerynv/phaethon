@@ -217,7 +217,28 @@ export default {
     space(args.id);
   },
 
-  threads_list: (args: { space: string }) => [...list(args.space)].sort((a, b) => b.updated - a.updated).map(summary),
+  /** As the core pages it (src/server/threads/page.ts): without paging arguments, the plain array. */
+  threads_list: (args: { space: string; limit?: number; before?: string | null; query?: string }) => {
+    const all = [...list(args.space)].sort((a, b) => b.updated - a.updated || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)).map(summary);
+    if (args.limit === undefined && args.before === undefined && args.query === undefined) return all;
+    const q = fold(args.query ?? "").trim();
+    const matching = q ? all.filter((t) => fold(t.title).includes(q)) : all;
+    const pinned = matching.filter((t) => t.pinned).sort((a, b) => a.pinned! - b.pinned!);
+    let rest = matching.filter((t) => !t.pinned);
+    if (args.before) {
+      const [u, id] = [Number(args.before.split(":")[0]), args.before.slice(args.before.indexOf(":") + 1)];
+      rest = rest.filter((t) => t.updated < u || (t.updated === u && t.id < id));
+    }
+    const shown = rest.slice(0, args.limit ?? 50);
+    const hasMore = rest.length > shown.length;
+    const last = shown[shown.length - 1];
+    return { items: args.before ? shown : [...pinned, ...shown], total: matching.length, hasMore, nextCursor: hasMore && last ? `${last.updated}:${last.id}` : null };
+  },
+  thread_summary: (args: { space: string; thread: string }) => {
+    const t = list(args.space).find((x) => x.id === args.thread);
+    return t ? summary(t) : null;
+  },
+  threads_count: (args: { space: string }) => ({ total: list(args.space).length, pinned: list(args.space).filter((t) => t.pinned).length }),
   thread_create: (args: { space: string }) => {
     list(args.space);
     return String(++nextId);

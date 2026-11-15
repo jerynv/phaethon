@@ -471,11 +471,16 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
   const selectSpace = useNav((s) => s.selectSpace);
   const newChat = useNav((s) => s.newChat);
   const loadThreads = useNav((s) => s.loadThreads);
+  const loadMoreThreads = useNav((s) => s.loadMoreThreads);
   const [all, setAll] = useState(false);
   const [menu, setMenu] = useState(false);
   const activity = useSpaceActivity(space.id, threads?.data);
   const { pinned, rest } = orderThreads(threads?.data ?? []);
-  const count = pinned.length + rest.length;
+  // Only the first page is loaded up front: the core's total counts the rest (rows the UI added itself aren't in it yet).
+  const added = (threads?.data ?? []).filter((t) => t.optimistic).length;
+  const count = Math.max(pinned.length + rest.length, (threads?.total ?? 0) + added);
+  const restCount = count - pinned.length;
+  const more = !!threads?.hasMore;
   // A busy or selected conversation stays in view even past the fold.
   const shown = all ? rest : rest.filter((t, i) => i < SHOWN || t.id === open || t.running);
   const chatOn = active && !settingsOpen && view === "chat";
@@ -566,10 +571,21 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
                     ))}
                   </AnimatePresence>
                   {count === 0 && !draftOpen ? <li className="flex h-7 items-center pl-7 text-subtle-foreground text-xs">No conversations yet</li> : null}
-                  {rest.length > SHOWN ? (
+                  {rest.length > SHOWN || more ? (
                     <li>
-                      <SidebarMenuButton size="sm" tone="muted" className="pl-7" data-nav-row="" onClick={() => setAll((v) => !v)}>
-                        {all ? "Show fewer" : `Show ${rest.length - shown.length} more`}
+                      <SidebarMenuButton
+                        size="sm"
+                        tone="muted"
+                        className="pl-7"
+                        data-nav-row=""
+                        disabled={all && threads?.loadingMore}
+                        onClick={() => {
+                          if (!all) setAll(true);
+                          else if (more) void loadMoreThreads(space.id).catch(() => {});
+                          else setAll(false);
+                        }}
+                      >
+                        {all && !more ? "Show fewer" : `Show ${restCount - (all ? rest.length : shown.length)} more`}
                       </SidebarMenuButton>
                     </li>
                   ) : null}

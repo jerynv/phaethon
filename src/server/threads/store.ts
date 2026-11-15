@@ -25,6 +25,8 @@ import {
 } from "../core/thread.ts";
 import { spaceDir } from "../core/vault.ts";
 import { covers } from "../grants/grants.ts";
+import { indexedRows, type Content, type Row, type Sources } from "./listing.ts";
+import { pageOf, type Page } from "./page.ts";
 
 /**
  * A space's conversations, each kept whole in `.phaethon/threads/<id>.json`
@@ -39,7 +41,9 @@ import { covers } from "../grants/grants.ts";
  * files by rename. `migrateIn` moves such a conversation into `threads/`
  * under a fresh id, sidecars included, the first time the space is listed or
  * read; an empty one is removed. No sidecar name ends in `.json`, so the
- * listing and older cores never mistake one for a conversation.
+ * listing and older cores never mistake one for a conversation; neither does
+ * `index`, the summaries a listing keeps so it reads only the conversations
+ * that changed (`listing.ts`), which is derived and rebuilt when it is off.
  *
  * Functions take a space id; the `*In` variants take its folder (already
  * resolved with `spaceDir`).
@@ -512,14 +516,6 @@ export function attachmentPaths(msgs: Message[]): string[] {
 
 // ---- Conversations -------------------------------------------------------------
 
-function mtimeMs(p: string): number {
-  try {
-    return Math.floor(fs.statSync(p).mtimeMs);
-  } catch {
-    return 0;
-  }
-}
-
 function titleOf(msgs: UiMessage[]): string {
   const first = msgs.find((m) => m.role === "user");
   const text = first ? first.text.split(/\p{White_Space}+/u).filter(Boolean).join(" ") : "";
@@ -534,24 +530,31 @@ function importedTitle(msgs: Message[]): string | undefined {
   return undefined;
 }
 
-function summary(p: string, id: string, meta: ThreadMeta): ThreadSummary {
-  let title: string;
-  let messages: number;
+export const UNREADABLE_TITLE = "A conversation that couldn’t be read";
+
+/** What a conversation's file gives its summary. A damaged file is listed, not dropped; a read that failed for another reason isn't cached. */
+function contentOf(p: string): Content {
   try {
     const msgs = readMessages(p);
     const ui = toUi(msgs);
-    title = importedTitle(msgs) ?? titleOf(ui);
-    messages = ui.length;
-  } catch {
-    title = "A conversation that couldn’t be read";
-    messages = 0;
+    return { title: importedTitle(msgs) ?? titleOf(ui), messages: ui.length };
+  } catch (e) {
+    const damaged = e instanceof SyntaxError || (e instanceof StoreError && e.kind === "other");
+    return { title: UNREADABLE_TITLE, messages: 0, keep: damaged };
   }
-  const out: ThreadSummary = { id, title: meta.title ?? title, updated: mtimeMs(p), messages };
-  if (meta.title) out.renamed = true;
-  if (meta.pinned) out.pinned = meta.pinned;
-  if (meta.allowWrites) out.allowWrites = meta.allowWrites;
+}
+
+const SOURCES: Sources = { content: contentOf, meta: readMetaAt };
+
+function summaryOf(r: Row): ThreadSummary {
+  const out: ThreadSummary = { id: r.id, title: r.meta.title ?? r.title, updated: Math.floor(r.mtimeMs), messages: r.messages };
+  if (r.meta.title) out.renamed = true;
+  if (r.meta.pinned) out.pinned = r.meta.pinned;
+  if (r.meta.allowWrites) out.allowWrites = r.meta.allowWrites;
   return out;
 }
+
+const newestFirst = (a: ThreadSummary, b: ThreadSummary) => b.updated - a.updated || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 
 /** The ids of the space's saved conversations, in no particular order. */
 function savedIds(dir: string): string[] {
@@ -568,12 +571,38 @@ function savedIds(dir: string): string[] {
     .filter((id) => isValidThreadId(id) && isRegularFile(threadPath(dir, id)));
 }
 
-/** The space's conversations, most recently changed first. */
+/**
+ * The space's conversations, most recently changed first. Summaries come
+ * from the space's index (`listing.ts`): only conversations changed since
+ * the last listing are read.
+ */
 export function listThreadsIn(dir: string): ThreadSummary[] {
   migrateIn(dir);
-  const out = savedIds(dir).map((id) => summary(threadPath(dir, id), id, readMetaAt(metaPath(dir, id))));
-  out.sort((a, b) => b.updated - a.updated || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+  const out = indexedRows(threadsDir(dir), SOURCES).map(summaryOf);
+  out.sort(newestFirst);
   return out;
+}
+
+/** One page of the space's conversations (see `page.ts`). */
+export function listPageIn(dir: string, opts: { limit: number; before: { updated: number; id: string } | null; query: string }): Page<ThreadSummary> {
+  return pageOf(listThreadsIn(dir), opts);
+}
+
+/** How many conversations the space has, and how many of them are pinned. */
+export function countThreadsIn(dir: string): { total: number; pinned: number } {
+  const list = listThreadsIn(dir);
+  return { total: list.length, pinned: list.filter((t) => t.pinned).length };
+}
+
+/** Conversation `id`'s summary, read from its files alone (the row the UI updates after a reply); null when it isn't saved. */
+export function threadSummaryIn(dir: string, id: string): ThreadSummary | null {
+  if (!isValidThreadId(id)) throw notAnId();
+  migrateIn(dir);
+  const p = threadPath(dir, id);
+  const st = lstatOrNull(p);
+  if (!st?.isFile()) return null;
+  const c = contentOf(p);
+  return summaryOf({ id, title: c.title, messages: c.messages, meta: readMetaAt(metaPath(dir, id)), mtimeMs: st.mtimeMs });
 }
 
 export function listThreads(space: string): ThreadSummary[] {

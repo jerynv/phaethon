@@ -4,7 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { tempHome } from "../../../tests/harness.ts";
 import { spaceDir, vaultRoot } from "../core/vault.ts";
 import { kindOf, validate } from "./deck.ts";
-import { makeDeck, makeQuiz, review, submit, type QuizOptions } from "./generate.ts";
+import { STOPPED, makeDeck, makeQuiz, review, submit, type QuizOptions } from "./generate.ts";
 import { interleave } from "./grounded.ts";
 import { cardFrom, questionFrom, similar, spaceMathBraces } from "./items.ts";
 import { NO_MODEL, type Model } from "./model.ts";
@@ -272,6 +272,19 @@ describe("quizzes", () => {
     expect(md.asked[0]!.user).toContain("Focus on: Conditionals, Power sets.");
     deleteItem(dir, p);
     expect(() => loadAttempt(dir, a.path)).toThrow();
+  });
+
+  it("a run stopped during generation saves nothing, even what already passed the check", async () => {
+    const before = overview(dir, 1).quizzes.length;
+    const ok = oneTf("t1", "If p is false, p → q is true.");
+    const stop = new AbortController();
+    const m = new Scripted([mapReply(), ok, verdicts(["yes"])]);
+    const emit = (e: { type: string; phase?: string }) => {
+      if (e.type === "progress" && e.phase === "saving") return;
+      if (m.calls() >= 3) stop.abort();
+    };
+    await expect(makeQuiz(dir, vis(), ["courses/CS 101"], quizOpts(1), m, emit as never, 11, stop.signal)).rejects.toBe(STOPPED);
+    expect(overview(dir, 1).quizzes.length).toBe(before);
   });
 
   it("short after the rounds is delivered short, with why, never padded", async () => {

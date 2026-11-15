@@ -26,7 +26,7 @@ export type QuizOptions = { count?: number; kinds?: string[]; difficulty?: strin
 const nonBlank = (s: string | null | undefined): string | null => (s && s.trim() !== "" ? s : null);
 
 /** Makes a deck; returns its path, how many cards it has, and how they were grounded. */
-export async function makeDeck(space: string, visible: Visible, inputs0: readonly string[], opts: DeckOptions, model: Model, emit: Emit, now: number): Promise<[string, number, Grounding]> {
+export async function makeDeck(space: string, visible: Visible, inputs0: readonly string[], opts: DeckOptions, model: Model, emit: Emit, now: number, signal?: AbortSignal): Promise<[string, number, Grounding]> {
   const count = !opts.count ? 20 : Math.min(opts.count, GENERATE_MAX_CARDS);
   let inputs = [...inputs0];
   let focus = nonBlank(opts.focus);
@@ -60,13 +60,18 @@ export async function makeDeck(space: string, visible: Visible, inputs0: readonl
   const d: Deck = { title: takeChars(title.trim(), TITLE_MAX), sources: used, extra: [], preamble: "", notes };
   const c = made.material.course ?? course;
   if (c) d.course = c;
+  // A stopped run saves nothing, even if part of it was already checked.
+  if (signal?.aborted) throw STOPPED;
   const path = deckCreate(space, d);
   emit(progress("saving", 1, 1));
   return [path, notes.length, made.grounding];
 }
 
+/** Thrown at the save step of a run that was stopped. */
+export const STOPPED = "Stopped before anything was saved.";
+
 /** Makes a quiz; returns its path, how many questions, and how they were grounded. */
-export async function makeQuiz(space: string, visible: Visible, inputs: readonly string[], opts: QuizOptions, model: Model, emit: Emit, now: number): Promise<[string, number, Grounding]> {
+export async function makeQuiz(space: string, visible: Visible, inputs: readonly string[], opts: QuizOptions, model: Model, emit: Emit, now: number, signal?: AbortSignal): Promise<[string, number, Grounding]> {
   const count = !opts.count ? 10 : Math.min(opts.count, GENERATE_MAX_QUESTIONS);
   let kinds = [...new Set((opts.kinds ?? []).filter((k) => (KINDS as readonly string[]).includes(k)))];
   if (!kinds.length) {
@@ -89,6 +94,7 @@ export async function makeQuiz(space: string, visible: Visible, inputs: readonly
   const course = made.material.course ?? courseOf(space, visible, [...inputs])?.state.folder ?? null;
   const quiz: Quiz = { title, sources, created: now, questions, grounding: made.grounding };
   if (course) quiz.course = course;
+  if (signal?.aborted) throw STOPPED;
   const path = quizCreate(space, quiz);
   emit(progress("saving", 1, 1));
   return [path, questions.length, made.grounding];

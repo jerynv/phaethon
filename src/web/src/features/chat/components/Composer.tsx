@@ -3,7 +3,7 @@ import { ArrowUpIcon, FileIcon, FileImageIcon, FileTextIcon, PaperclipIcon, Penc
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { useNav } from "@/app/store";
+import { useNav, useOpenThread } from "@/app/store";
 import { ConnectionLost, FieldError } from "@/components/errors";
 import { toast } from "@/components/toast";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -115,6 +115,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
   const status = useCoreStatus();
   const groups = useCatalog((s) => s.groups);
   const openSettings = useNav((s) => s.openSettings);
+  const openThread = useOpenThread(space.id);
   const [text, setText] = useState(() => drafts.get(draftKey) ?? "");
   const [files, setFiles] = useState<Pending[]>(() => stashes.get(draftKey)?.files.map(pending) ?? []);
   const [kept, setKept] = useState<Attachment[]>(() => stashes.get(draftKey)?.kept ?? []);
@@ -238,6 +239,8 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
 
   const send = async () => {
     if (!canSend) return;
+    // Which conversation this goes to is decided now: reading the files takes a moment, and another conversation may be opened meanwhile.
+    const thread = openThread;
     let uploads: Upload[];
     try {
       uploads = await Promise.all(files.map(async (f) => ({ name: f.file.name, mediaType: mediaTypeOf(f.file), data: await toBase64(f.file) })));
@@ -257,7 +260,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
     const replaceFrom = edit?.index;
     const keepAttachments = edit ? kept.map((k) => k.path!).filter(Boolean) : undefined;
     onEditDone();
-    await chats().send(space.id, { prompt, uploads, shown, replaceFrom, keepAttachments });
+    await chats().send(space.id, { prompt, uploads, shown, replaceFrom, keepAttachments }, thread);
   };
 
   return (

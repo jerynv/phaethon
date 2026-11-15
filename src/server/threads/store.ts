@@ -10,6 +10,7 @@ import {
   loadFile,
   replaceFresh,
   saveIn as saveThreadIn,
+  readThreadText,
   threadsDirIn,
   writeFresh,
   recordBlock,
@@ -392,7 +393,9 @@ function isMessage(m: unknown): boolean {
 }
 
 function readMessages(p: string): Message[] {
-  const v = JSON.parse(fs.readFileSync(p, "utf8")) as unknown;
+  const text = readThreadText(p);
+  if (text === null) throw gone();
+  const v = JSON.parse(text) as unknown;
   if (!Array.isArray(v) || !v.every(isMessage)) throw new StoreError("other", "not a list of messages");
   return v as Message[];
 }
@@ -692,7 +695,8 @@ export function planForgetIn(dir: string, id: string): ForgetPlan {
   for (const other of savedIds(dir)) {
     if (other === id) continue;
     try {
-      others.push(fs.readFileSync(threadPath(dir, other), "utf8"));
+      const raw = readThreadText(threadPath(dir, other));
+      if (raw !== null) others.push(raw);
     } catch {
       // Unreadable: it can't name anything.
     }

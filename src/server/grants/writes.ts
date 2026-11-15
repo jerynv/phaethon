@@ -20,7 +20,8 @@ export type WriteScope = "conversation" | "space";
 
 function spaceMap(): Record<string, number> {
   const raw = readSettings().allowWrites;
-  const out: Record<string, number> = {};
+  // No prototype: a space named like an Object method ("constructor") must not read as allowed.
+  const out: Record<string, number> = Object.create(null);
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
   for (const [space, at] of Object.entries(raw as Record<string, unknown>)) {
     if (isValidSpaceId(space) && typeof at === "number" && Number.isFinite(at) && at > 0) out[space] = Math.floor(at);
@@ -30,7 +31,8 @@ function spaceMap(): Record<string, number> {
 
 /** When writes were allowed for the whole space, if they are. */
 export function spaceAllowsWrites(space: string): number | undefined {
-  return spaceMap()[space];
+  const map = spaceMap();
+  return Object.hasOwn(map, space) ? map[space] : undefined;
 }
 
 /** Why a write in `space`'s conversation `thread` needs no question, or null when it does. */
@@ -48,9 +50,9 @@ export function writesAllowed(space: string, thread: string): WriteScope | null 
 export function setWritesAllowed(space: string, thread: string | null, scope: WriteScope, allow: boolean): void {
   if (scope === "space") {
     const map = spaceMap();
-    if (allow) map[space] = map[space] ?? Date.now();
+    if (allow) map[space] = Object.hasOwn(map, space) ? map[space]! : Date.now();
     else delete map[space];
-    setSettings({ allowWrites: Object.keys(map).length ? map : undefined });
+    setSettings({ allowWrites: Object.keys(map).length ? { ...map } : undefined });
     return;
   }
   if (thread === null) throw new Error("no conversation named");

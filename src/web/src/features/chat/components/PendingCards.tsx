@@ -3,6 +3,7 @@ import { CircleHelpIcon, FilePenIcon, KeyRoundIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccessAnswer, LessonAnswer, UiRecord } from "#shared/agent.ts";
+import { useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { toast } from "@/components/toast";
 import { StartTruncate } from "@/components/truncate";
@@ -65,7 +66,10 @@ const typing = (el: Element | null) => !!el && (el instanceof HTMLInputElement |
 function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HTMLDivElement | null>) {
   const latest = useRef(keys);
   latest.current = keys;
+  // The chat stays mounted behind other pages; a card there must not answer keys pressed on them.
+  const active = useViewActive();
   useEffect(() => {
+    if (!active) return;
     if (!typing(document.activeElement) && (document.activeElement === document.body || !document.activeElement)) {
       box.current?.querySelector<HTMLButtonElement>("[data-primary]")?.focus({ preventScroll: true });
     }
@@ -83,7 +87,7 @@ function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HT
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [box]);
+  }, [box, active]);
 }
 
 function Key({ k }: { k: string }) {

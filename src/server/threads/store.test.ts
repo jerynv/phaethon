@@ -151,6 +151,23 @@ describe("conversations", () => {
     expect(readSessionIn(dir, "1000")).toBe(S1);
   });
 
+  it.skipIf(!canSymlinkFiles)("never reads a conversation through a link, nor uses a threads folder that is one", () => {
+    const dir = tempSpace();
+    const other = tempSpace();
+    saveIn(other, "2000", chat("the other space's question", "s"));
+    fs.mkdirSync(archiveDir(dir), { recursive: true });
+    symlink(archived(other, "2000"), archived(dir, "2000"));
+    expect(() => loadIn(dir, "2000")).toThrow(/link/);
+    const linked = tempSpace();
+    fs.mkdirSync(path.join(linked, ".phaethon"), { recursive: true });
+    symlink(archiveDir(other), archiveDir(linked), "dir");
+    expect(() => loadIn(linked, "2000")).toThrow(/not a folder/);
+    expect(() => saveIn(linked, "3000", chat("q", "a"))).toThrow(/not a folder/);
+    expect(() => writeSessionIn(linked, "2000", S1)).toThrow(/not a folder/);
+    expect(fs.existsSync(archived(other, "3000"))).toBe(false);
+    expect(readSessionIn(other, "2000")).toBeNull();
+  });
+
   it("a busy conversation refuses and others in the same space don't", async () => {
     const turn = claim(turnKey("school", "1"))!;
     await expect(whileIdle(turnKey("school", "1"), () => 1)).rejects.toThrow(BUSY);

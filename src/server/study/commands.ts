@@ -206,7 +206,7 @@ commands({
       const pick = pickFor(a.space, a.model);
       const out = await stoppable(a.space, a.runId, emit, async (signal, quiet) => {
         const model = modelForSpace(a.space, signal, pick);
-        const [path, cards, grounding] = await makeDeck(dir, visibleFor(a.space), inputs, a.options ?? {}, model, quiet, Date.now());
+        const [path, cards, grounding] = await makeDeck(dir, visibleFor(a.space), inputs, a.options ?? {}, model, quiet, Date.now(), signal);
         noteOrigin(dir, a.origin, path);
         return { path, cards, grounding };
       });
@@ -224,7 +224,7 @@ commands({
       const pick = pickFor(a.space, a.model);
       const out = await stoppable(a.space, a.runId, emit, async (signal, quiet) => {
         const model = modelForSpace(a.space, signal, pick);
-        const [path, questions, grounding] = await makeQuiz(dir, visibleFor(a.space), inputs, a.options ?? {}, model, quiet, Date.now());
+        const [path, questions, grounding] = await makeQuiz(dir, visibleFor(a.space), inputs, a.options ?? {}, model, quiet, Date.now(), signal);
         noteOrigin(dir, a.origin, path);
         return { path, questions, grounding };
       });

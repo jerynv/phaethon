@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { isNotFound, prettyJson, writeFileAtomic } from "./fsx.ts";
+import { isNotFound, lstatOrNull, prettyJson, writeFileAtomic } from "./fsx.ts";
 import { spaceDir } from "./vault.ts";
 import type { QuestionRole } from "../../shared/agent.ts";
 
@@ -56,9 +56,27 @@ export function isValidThreadId(id: unknown): id is string {
   return typeof id === "string" && /^[0-9]{1,20}(?:-[0-9]{1,20})?$/.test(id);
 }
 
-/** The folder holding a space's conversations and their sidecars. */
+/**
+ * The folder holding a space's conversations and their sidecars. `.phaethon`
+ * and `threads` must be plain folders (or not exist yet): a link there would
+ * hand this space another space's conversations and sessions.
+ */
 export function threadsDirIn(dir: string): string {
-  return path.join(dir, ".phaethon", "threads");
+  const state = path.join(dir, ".phaethon");
+  const threads = path.join(state, "threads");
+  for (const p of [state, threads]) {
+    const st = lstatOrNull(p);
+    if (st && !st.isDirectory()) throw new Error(`${path.relative(dir, p)} is a link or a file, not a folder, so this space's conversations aren't read or written there.`);
+  }
+  return threads;
+}
+
+/** A conversation file's text, never through a link; null when it isn't there. */
+export function readThreadText(file: string): string | null {
+  const st = lstatOrNull(file);
+  if (!st) return null;
+  if (!st.isFile()) throw new Error("This conversation's file is a link or a folder, so it isn't read.");
+  return fs.readFileSync(file, "utf8");
 }
 
 /** Conversation `id`'s file in the space folder `dir`; an id that isn't one is refused before it becomes a path. */
@@ -101,13 +119,14 @@ export function parseThread(text: string): Message[] {
 }
 
 export function loadFile(file: string): Message[] {
-  let text: string;
+  let text: string | null;
   try {
-    text = fs.readFileSync(file, "utf8");
+    text = readThreadText(file);
   } catch (e) {
     if (isNotFound(e)) return [];
     throw e;
   }
+  if (text === null) return [];
   return parseThread(text);
 }
 

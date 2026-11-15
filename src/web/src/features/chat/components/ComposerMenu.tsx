@@ -1,3 +1,4 @@
+// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { ChalkboardTeacher, ChatsCircle, ChatText, Exam, Lightning, NotePencil, Paperclip, Sparkle, type Icon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";

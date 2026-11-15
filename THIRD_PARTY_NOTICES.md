@@ -36,8 +36,9 @@ SOFTWARE.
 
 ## Code adapted from shadcn/ui
 
-`src/web/src/components/ui/sidebar.tsx` follows the parts and structure of the
-shadcn/ui sidebar (https://ui.shadcn.com).
+`src/web/src/components/ui/sidebar.tsx` and `src/web/src/components/ui/tabs.tsx`
+follow the parts and structure of the shadcn/ui sidebar and tabs
+(https://ui.shadcn.com).
 
 ```
 MIT License
@@ -213,6 +214,7 @@ holders as listed, under the MIT license text that follows the list.
 - **React, React DOM**: Copyright (c) Meta Platforms, Inc. and affiliates.
 - **Base UI (@base-ui/react)**: Copyright (c) 2019 Material-UI SAS
 - **Phosphor Icons (@phosphor-icons/react)**: Copyright (c) 2020 Phosphor Icons
+- **Motion (motion)**: Copyright (c) 2018 Framer B.V.
 - **KaTeX**: Copyright (c) 2013-2020 Khan Academy and other contributors
 - **rehype-katex**: Copyright (c) Junyoung Choi
 - **remark-math**: Copyright (c) Junyoung Choi

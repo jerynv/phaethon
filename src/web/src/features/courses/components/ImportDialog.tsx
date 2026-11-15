@@ -111,8 +111,8 @@ export function ImportDialog({
               return (
                 <section key={label} className="space-y-1">
                   <div className="flex h-6 items-center justify-between">
-                    <h3 className="font-medium text-2xs text-muted-foreground">{label}</h3>
-                    <button type="button" className="font-medium text-2xs text-muted-foreground hover:text-foreground" onClick={() => list.forEach((c) => toggle(c.id, !all))}>
+                    <h3 className="text-subtle-foreground text-xs">{label}</h3>
+                    <button type="button" className="text-muted-foreground text-xs hover:text-foreground" onClick={() => list.forEach((c) => toggle(c.id, !all))}>
                       {all ? "Clear" : "Select all"}
                     </button>
                   </div>
@@ -137,7 +137,7 @@ export function ImportDialog({
 
           {courses?.length && eduSpaces.length > 1 ? (
             <section className="space-y-1.5">
-              <h3 className="font-medium text-2xs text-muted-foreground">New courses show in</h3>
+              <h3 className="text-subtle-foreground text-xs">New courses show in</h3>
               <div className="flex flex-wrap gap-1.5">
                 {eduSpaces.map((s) => {
                   const on = spaces.has(s.id);

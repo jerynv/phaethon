@@ -3,7 +3,7 @@
  * "In 3 days", "Yesterday"), a short day label ("Thu 15 Oct"), and upcoming
  * deadlines and exams grouped by day. Days are local "YYYY-MM-DD". Pure.
  */
-import { daysBetween, localDay, toMs } from "./schedule";
+import { daysBetween, localDay, type Session, toMs } from "./schedule";
 
 export function relDay(day: string, today: string): string {
   const n = daysBetween(today, day);
@@ -48,4 +48,56 @@ export function agenda(
       day,
       items: list.sort((a, b) => (a.kind !== b.kind ? (a.kind === "exam" ? -1 : 1) : a.kind === "due" && b.kind === "due" ? a.at - b.at : a.title.localeCompare(b.title))),
     }));
+}
+
+// ---- One agenda: deadlines, exams and study sessions by day ----
+
+/** What a row of the agenda is; `session` rows can be checked off. */
+export type Entry =
+  | { key: string; kind: "due"; title: string; course: string; at: number; link: string }
+  | { key: string; kind: "exam"; title: string; course?: string; id: string }
+  | { key: string; kind: "session"; title: string; course?: string; session: Session };
+
+export type Show = "all" | "due" | "exam" | "session";
+export type Filter = { show: Show; course: string | null };
+
+/**
+ * Deadlines and exams (from `agenda`) and the schedule's sessions merged into
+ * one list of days, soonest first; within a day exams, then deadlines by time,
+ * then sessions in the schedule's order. The filter keeps one kind and/or one
+ * course; days left empty by it are dropped.
+ */
+export function timeline(
+  dueDays: readonly { day: string; items: AgendaItem[] }[],
+  sessionDays: readonly { day: string; sessions: readonly Session[] }[],
+  filter: Filter = { show: "all", course: null },
+): { day: string; entries: Entry[] }[] {
+  const byDay = new Map<string, Entry[]>();
+  const add = (day: string, e: Entry) => byDay.set(day, [...(byDay.get(day) ?? []), e]);
+  for (const g of dueDays)
+    for (const i of g.items)
+      add(g.day, i.kind === "exam" ? { key: `e${i.id}`, kind: "exam", title: i.title, course: i.course, id: i.id } : { key: `d${i.link}${i.at}`, kind: "due", title: i.title, course: i.course, at: i.at, link: i.link });
+  for (const g of sessionDays) for (const s of g.sessions) add(g.day, { key: `s${s.id}`, kind: "session", title: s.title, course: s.course, session: s });
+  const rank = { exam: 0, due: 1, session: 2 } as const;
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([day, entries]) => ({
+      day,
+      entries: entries
+        .filter((e) => (filter.show === "all" || e.kind === filter.show) && (!filter.course || e.course === filter.course))
+        .sort((a, b) => rank[a.kind] - rank[b.kind] || (a.kind === "due" && b.kind === "due" ? a.at - b.at : 0)),
+    }))
+    .filter((g) => g.entries.length);
+}
+
+/** How many of each kind, and per course, for the filter list. */
+export function counts(days: readonly { day: string; entries: readonly Entry[] }[]): { all: number; due: number; exam: number; session: number; courses: Map<string, number> } {
+  const out = { all: 0, due: 0, exam: 0, session: 0, courses: new Map<string, number>() };
+  for (const g of days)
+    for (const e of g.entries) {
+      out.all++;
+      out[e.kind]++;
+      if (e.course) out.courses.set(e.course, (out.courses.get(e.course) ?? 0) + 1);
+    }
+  return out;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { courseHead, dueSoon, dueWords, levers, missingOrLate, recentlyGraded, tableRows } from "./focus";
+import { categories, courseHead, courseStats, dueSoon, dueWords, gradeSeries, levers, missingOrLate, recentlyGraded, tableRows } from "./focus";
 import type { CourseGradeView, GradeItem } from "./types";
 
 const DAY = 86_400_000;
@@ -92,5 +92,45 @@ describe("the full tables", () => {
     expect(dueWords(NOW + DAY, NOW)).toBe("Tomorrow");
     expect(dueWords(NOW - DAY, NOW)).toBe("Yesterday");
     expect(dueWords(null, NOW)).toBe("");
+  });
+});
+
+describe("one course in numbers", () => {
+  test("the grade over time steps through each graded item by due date", () => {
+    const s = gradeSeries(algebra);
+    expect(s.map((p) => p.title)).toEqual(["Set 1", "Set 2"]);
+    expect(s[0]!.percent).toBeCloseTo(90);
+    expect(s[1]!.percent).toBeCloseTo(75);
+    expect(s[0]!.at).toBeLessThan(s[1]!.at);
+  });
+
+  test("a course with one graded item has no line", () => {
+    expect(gradeSeries(art)).toHaveLength(1);
+  });
+
+  test("categories carry their weight and standing; empty ones still show their weight", () => {
+    const c = categories(algebra);
+    expect(c.map((x) => [x.name, x.weight])).toEqual([
+      ["Sets", 40],
+      ["Exams", 60],
+    ]);
+    expect(c[0]!.percent).toBeCloseTo(75);
+    expect(c[1]!.percent).toBeNull();
+  });
+
+  test("without weights, a category's share is its points", () => {
+    const c = categories(course("Points", [graded("A", 5, 10, { group: "Labs" }), item("B", { possible: 30, group: "Tests" })], { groups: [{ name: "Labs" }, { name: "Tests" }] }));
+    expect(c.map((x) => [x.name, x.weight])).toEqual([
+      ["Labs", 10],
+      ["Tests", 30],
+    ]);
+  });
+
+  test("stats count graded and open work and name the strongest category", () => {
+    const s = courseStats(algebra, NOW);
+    expect(s).toMatchObject({ graded: 2, total: 7, open: 5 });
+    expect(s.dueThisWeek).toBe(1); // Set 3; the reading check is already handed in
+    expect(s.best?.name).toBe("Sets");
+    expect(s.worst).toBeNull();
   });
 });

@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
  * bar): segments in the categorical `--chart-*` colours, 2 px apart, growing
  * in from the left once; legend rows read "● Label ……… 2,648 (88.03%)".
  */
-export type BarSegment = { id?: string; label: React.ReactNode; value: number; color?: string };
+/** `display` replaces the legend's formatted value (a category's score where `value` is its weight). */
+export type BarSegment = { id?: string; label: React.ReactNode; value: number; color?: string; display?: React.ReactNode };
 
 const CHART = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
 export const chartColor = (i: number) => CHART[i % CHART.length]!;
@@ -52,7 +53,7 @@ function BarLegend({ segments, className, format = (n) => nf.format(n) }: { segm
         <li key={s.id ?? i} className="flex h-7 items-center gap-2.5 text-sm">
           <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: s.color ?? chartColor(i) }} />
           <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>
-          <span className="shrink-0 text-foreground tabular-nums">{format(s.value)}</span>
+          <span className="shrink-0 text-foreground tabular-nums">{s.display ?? format(s.value)}</span>
           <span className="w-16 shrink-0 text-right text-muted-foreground tabular-nums">({percentOf(s.value, total)})</span>
         </li>
       ))}

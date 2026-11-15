@@ -15,18 +15,20 @@ import {
   SidebarMenu,
   SidebarMenuBadge,
   SidebarMenuButton,
+  SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { errorText } from "@/lib/core";
 import { api, type SpaceView } from "./api";
-import { keysFor } from "./shortcuts";
+import { keysFor, viewKeys } from "./shortcuts";
 import { NewSpaceDialog } from "./NewSpaceDialog";
 import { UpdatePill } from "./UpdatePill";
 import { FilterField, useThreadFilter } from "./sidebar/filter";
 import { foldTitle } from "./sidebar/layout";
 import { SpacesList, type SpacesListHandle } from "./sidebar/SpacesList";
-import { DRAFT, useNav, type ThreadRow } from "./store";
+import { DRAFT, useActiveSpace, useNav, type ThreadRow, type View } from "./store";
+import { VIEWS } from "./views";
 
 /**
  * The left panel (references a163, 3940, 9334): New chat and a filter, then
@@ -204,6 +206,39 @@ function ConnectModel() {
 
 const NO_SPACE_LIST: SpaceView[] = [];
 
+/** The active space's pages (Study, Grades, Plan, Courses) as rows under the filter, the same rows as everywhere else. */
+function ViewNav() {
+  const space = useActiveSpace();
+  const view = useNav((s) => s.view);
+  const settings = useNav((s) => s.settings !== null);
+  const setView = useNav((s) => s.setView);
+  const retap = useNav((s) => s.retapView);
+  if (!space?.educationEnabled) return null;
+  return (
+    <SidebarMenu aria-label="Views" className="mt-3">
+      {VIEWS.filter((v) => v.edu).map((v) => {
+        const i = VIEWS.findIndex((x) => x.id === v.id);
+        const active = !settings && view === v.id;
+        return (
+          <SidebarMenuItem key={v.id}>
+            <SidebarMenuButton
+              isActive={active}
+              aria-current={active ? "page" : undefined}
+              aria-keyshortcuts={viewKeys(i).aria}
+              onClick={() => (active ? retap(v.id as View) : setView(v.id as View))}
+              className="group/view"
+            >
+              <Icon icon={v.icon} />
+              <span className="flex-1">{v.label}</span>
+              <Keys keys={viewKeys(i).keys} className="opacity-0 transition-opacity group-hover/view:opacity-100" />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+    </SidebarMenu>
+  );
+}
+
 export function Sidebar() {
   const spaces = useNav((s) => s.spaces);
   const loadSpaces = useNav((s) => s.loadSpaces);
@@ -236,6 +271,7 @@ export function Sidebar() {
             onEnter={() => listRef.current?.openFirst()}
           />
         </div>
+        <ViewNav />
         <SidebarGroupLabel className="mt-4">
           Spaces
           <SidebarGroupAction aria-label="New space" onClick={() => setCreating(true)}>

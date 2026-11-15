@@ -8,22 +8,14 @@ function Kbd({
   variant = "default",
   ...props
 }: React.ComponentProps<"kbd"> & {
-  /**
-   * `outline` draws a physical key, so the hint stays distinct inside
-   * surrounding text; `keycap` is the larger grey key of an approval choice
-   * ("Y Accept", "N Reject").
-   */
+  /** `keycap` is the slightly larger grey key of an approval choice ("Y Accept", "N Reject"); `outline` is the same as the default. */
   variant?: "default" | "outline" | "keycap";
 }) {
   return (
     <kbd
       className={cn(
-        "pointer-events-none inline-flex h-4.5 min-w-4.5 select-none items-center justify-center gap-1 rounded-sm px-1 font-medium font-sans text-muted-foreground text-3xs tabular-nums [&_svg:not([class*='size-'])]:size-3",
-        variant === "outline"
-          ? "border border-b-2 border-foreground/15 px-1.5"
-          : variant === "keycap"
-            ? "h-6 min-w-6 rounded-md border bg-keycap px-1.5 text-xs text-muted-foreground"
-            : "bg-foreground/[0.07]",
+        "pointer-events-none inline-flex h-4 min-w-4 select-none items-center justify-center gap-1 rounded-xs px-1 font-sans text-2xs text-muted-foreground tabular-nums [&_svg:not([class*='size-'])]:size-3",
+        variant === "keycap" ? "h-5 min-w-5 rounded-sm bg-muted px-1.5 text-xs" : "bg-foreground/6",
         className,
       )}
       data-slot="kbd"

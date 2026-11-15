@@ -3,33 +3,30 @@ import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { errorText } from "@/lib/core";
-import { createContext, type ReactNode, useContext, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { SpaceAvatar } from "@/components/space-avatar";
 import { Truncate } from "@/components/truncate";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { keysFor, viewKeys } from "./shortcuts";
-import { useActiveSpace, useNav, type View } from "./store";
+import { keysFor } from "./shortcuts";
+import { DRAFT, type OpenTab, useActiveSpace, useNav } from "./store";
 import { VIEWS } from "./views";
 
 /**
- * The title bar across the top of the app panel (docs/UI-REBUILD.md › App
+ * The title bar across the top of the window (docs/UI-REBUILD.md › App
  * frame). There is exactly one, rendered by the shell, so nothing in it moves
  * when the page changes:
  *
- *   ● ● ●  ✳ ▯  [Chat Study Grades Plan Courses] | title ……[ Search ⌘K ]…… [page actions]
+ *   ● ● ●  ✳ ▯  [tab] [tab] [tab] ……………… [ Search ⌘K ] [page actions]
  *
- * Three columns: the mark, sidebar toggle, view tabs (pill style) and the
- * page's title on the left, search centred on the panel, the page's actions
- * on the right. Pages fill the
- * title and actions by rendering `<Header title actions />` anywhere in their
+ * The mark and the sidebar toggle, then the open tabs (every open page: a
+ * conversation, a study page, settings), search, and the page's actions. A
+ * page fills the actions by rendering `<Header actions />` anywhere in its
  * tree: it portals into the bar, and only while that page is the visible one
- * (a page kept alive in the background stays out of the bar). It is the
- * window's drag region on macOS.
+ * (a page kept alive in the background stays out of the bar). The tab is the
+ * page's title. It is the window's drag region on macOS.
  */
 
 type Slots = { title: HTMLElement | null; actions: HTMLElement | null };
@@ -46,21 +43,12 @@ export function useViewActive(): boolean {
   return useContext(ActiveContext);
 }
 
-/** A page's title and actions, shown in the shell's title bar while the page is visible. */
-export function Header({ title, actions }: { title?: ReactNode; actions?: ReactNode }) {
+/** A page's actions, shown at the right of the title bar while the page is visible. (Its tab is its title.) */
+export function Header({ actions }: { title?: ReactNode; actions?: ReactNode }) {
   const slots = useContext(SlotContext);
   const active = useContext(ActiveContext);
-  const view = useNav((s) => s.view);
-  const settings = useNav((s) => s.settings !== null);
   if (!active) return null;
-  // The tab already names the page: "Grades | Grades" says it twice. (Chat's title is a conversation's.)
-  if (!settings && view !== "chat" && typeof title === "string" && title === VIEWS.find((v) => v.id === view)?.label) title = undefined;
-  return (
-    <>
-      {title && slots.title ? createPortal(typeof title === "string" ? <Truncate className="font-medium">{title}</Truncate> : title, slots.title) : null}
-      {actions && slots.actions ? createPortal(actions, slots.actions) : null}
-    </>
-  );
+  return actions && slots.actions ? createPortal(actions, slots.actions) : null;
 }
 
 /** Provides the slots the title bar's `Header` portals into. */
@@ -101,38 +89,93 @@ export function HeaderIconButton({ label, keys, onClick, children }: { label: st
   );
 }
 
-/** The view tabs. Their labels give way to icons when the bar is too short for them and a page title; never per page, so the tabs never move. */
-function ViewTabs() {
-  const space = useActiveSpace();
-  const view = useNav((s) => s.view);
-  const settings = useNav((s) => s.settings);
-  const setView = useNav((s) => s.setView);
-  const retap = useNav((s) => s.retapView);
-  if (!space?.educationEnabled) return null;
+/** What a tab shows: its glyph and name. A conversation's name is its title once the list has it. */
+function useTabLabel(tab: OpenTab): { icon: (typeof icons)[keyof typeof icons]; label: string; space?: string } {
+  const spaceName = useNav((s) => (tab.kind === "settings" ? undefined : s.spaces.data?.find((x) => x.id === tab.space)?.name));
+  const title = useNav((s) => (tab.kind === "chat" && tab.thread !== DRAFT ? s.threads[tab.space]?.data?.find((t) => t.id === tab.thread)?.title : undefined));
+  if (tab.kind === "settings") return { icon: icons.settings, label: "Settings" };
+  if (tab.kind === "view") return { icon: VIEWS.find((v) => v.id === tab.view)!.icon, label: VIEWS.find((v) => v.id === tab.view)!.label, space: spaceName };
+  return { icon: tab.thread === DRAFT ? icons.newChat : icons.chat, label: tab.thread === DRAFT ? "New chat" : (title ?? "Conversation"), space: spaceName };
+}
+
+function TabButton({ tab, active }: { tab: OpenTab; active: boolean }) {
+  const { icon, label, space } = useTabLabel(tab);
+  const activate = useNav((s) => s.activateTab);
+  const close = useNav((s) => s.closeTab);
+  const keep = useNav((s) => s.keepTab);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
   return (
-    <Tabs value={settings ? null : view} onValueChange={(v) => setView(v as View)} className="app-no-drag shrink-0">
-      <TabsList aria-label="Views" size="sm">
-        {VIEWS.map((v, i) => (
-          <Tooltip key={v.id}>
-            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} onClick={() => !settings && v.id === view && retap(v.id)} className="h-6 gap-1.5 px-2 font-normal [&_svg]:size-3.5" />}>
-              <Icon icon={v.icon} />
-              {/* Narrow bars show icons only; so do the other tabs while a page shows a back crumb, so the crumb always fits. */}
-              <span className="@max-header-labels/lead:hidden group-has-[[data-slot=crumbs]]/header:[[role=tab][aria-selected=false]_&]:hidden">{v.label}</span>
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">
-              <span className="flex items-center gap-2">
-                {v.label}
-                <KbdGroup>
-                  {viewKeys(i).keys.map((k) => (
-                    <Kbd key={k}>{k}</Kbd>
-                  ))}
-                </KbdGroup>
-              </span>
-            </TooltipPopup>
-          </Tooltip>
-        ))}
-      </TabsList>
-    </Tabs>
+    <div
+      ref={ref}
+      role="tab"
+      tabIndex={active ? 0 : -1}
+      aria-selected={active}
+      data-tab={tab.id}
+      data-kept={tab.kept || undefined}
+      onClick={() => activate(tab.id)}
+      onDoubleClick={() => keep(tab.id)}
+      onAuxClick={(e) => {
+        if (e.button === 1) close(tab.id);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          activate(tab.id);
+        } else if (e.key === "Delete" || e.key === "Backspace") close(tab.id);
+      }}
+      className={cn(
+        "group/tab relative flex h-7 max-w-48 min-w-0 shrink-0 cursor-default select-none items-center gap-1.5 rounded-md pr-1 pl-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+        active ? "bg-row-selected text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+    >
+      <Icon icon={icon} className="size-3.5 shrink-0" />
+      <Truncate tooltip={space && space !== label ? `${label} · ${space}` : label} side="bottom" className={cn("min-w-0 flex-1", !tab.kept && "italic")}>
+        {label}
+      </Truncate>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={`Close ${label}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          close(tab.id);
+        }}
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-[opacity,background-color,color] hover:bg-foreground/8 hover:text-foreground",
+          active ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
+        )}
+      >
+        <Icon icon={icons.close} className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+/** Every open page, as a browser-like strip. Ctrl+Tab walks it, ⌘W closes the active one, ⇧⌘T brings the last closed back. */
+function TabStrip() {
+  const tabs = useNav((s) => s.tabs);
+  const active = useNav((s) => s.activeTab);
+  const cycle = useNav((s) => s.cycleTab);
+  return (
+    <div
+      role="tablist"
+      aria-label="Open pages"
+      className="app-no-drag scroll-quiet flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1"
+      onKeyDown={(e) => {
+        if (e.key === "ArrowRight") cycle(1);
+        else if (e.key === "ArrowLeft") cycle(-1);
+        else return;
+        e.preventDefault();
+        requestAnimationFrame(() => (document.querySelector<HTMLElement>('[role="tablist"][aria-label="Open pages"] [aria-selected="true"]'))?.focus());
+      }}
+    >
+      {tabs.map((t) => (
+        <TabButton key={t.id} tab={t} active={t.id === active} />
+      ))}
+    </div>
   );
 }
 
@@ -165,57 +208,36 @@ function SearchField() {
 }
 
 /**
- * The shell's one title bar, across the whole panel (references a163, 9334,
- * 3940): the mark and the sidebar toggle, the view tabs and the page's title
- * on the left, search centred over the page, the page's actions on the right.
- * On macOS the traffic lights sit in its left end.
+ * The shell's one title bar: the mark and the sidebar toggle, the open tabs,
+ * search, and the page's actions. On macOS the traffic lights sit in its left
+ * end.
  */
 export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void } }) {
   const space = useActiveSpace();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
   const toggle = useNav((s) => s.toggleSidebar);
-  const settings = useNav((s) => s.settings);
   const newChat = useNav((s) => s.newChat);
-  const tabs = !!space?.educationEnabled;
   return (
     <header
       data-slot="app-header"
       data-sidebar={sidebarOpen ? "open" : "closed"}
-      className={cn(
-        "group/header @container/header app-drag grid h-(--titlebar-height) shrink-0 items-center border-b transition-[grid-template-columns] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
-        // The first track is the sidebar's width, so search centres over the page below it.
-        "grid-cols-[var(--sidebar-width)_minmax(0,1fr)_auto_minmax(0,1fr)] data-[sidebar=closed]:grid-cols-[0_minmax(0,1fr)_auto_minmax(0,1fr)]",
-      )}
+      className={cn("group/header @container/header app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}
     >
-      <div className={cn("@container/lead col-span-2 flex min-w-0 items-center gap-1 pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}>
-        <BrandMark className="size-4 text-foreground" label="Phaethon" />
-        <div className="mr-1 ml-2 flex items-center">
-          <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
-            <Icon icon={icons.sidebar} />
+      <BrandMark className="size-4 shrink-0 text-foreground" label="Phaethon" />
+      <div className="mr-1 ml-1 flex shrink-0 items-center">
+        <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
+          <Icon icon={icons.sidebar} />
+        </HeaderIconButton>
+        {!sidebarOpen && space ? (
+          <HeaderIconButton label="New chat" keys={keysFor("newChat").keys} onClick={() => void newChat(space.id).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)))}>
+            <Icon icon={icons.newChat} />
           </HeaderIconButton>
-          {!sidebarOpen && space ? (
-            <HeaderIconButton label="New chat" keys={keysFor("newChat").keys} onClick={() => void newChat(space.id).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)))}>
-              <Icon icon={icons.newChat} />
-            </HeaderIconButton>
-          ) : null}
-        </div>
-        {space && !settings && !tabs ? (
-          <span className="flex min-w-0 shrink items-center gap-2 px-1 text-sm">
-            <SpaceAvatar name={space.name} hue={space.hue} />
-            <Truncate className="max-w-40 text-foreground">{space.name}</Truncate>
-          </span>
         ) : null}
-        <ViewTabs />
-        <div className="@container/title mr-4 ml-2 flex min-w-0 flex-1">
-          <div
-            ref={bind.title}
-            data-slot="header-title"
-            className="flex min-w-0 flex-1 items-center gap-1.5 border-l pl-3 text-sm text-muted-foreground empty:hidden @max-header-title/title:hidden [&_.font-medium]:text-foreground"
-          />
-        </div>
       </div>
+      <TabStrip />
+      <div ref={bind.title} hidden />
       <SearchField />
-      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 items-center justify-end gap-1 pr-3 pl-3" />
+      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 shrink-0 items-center justify-end gap-1" />
     </header>
   );
 }

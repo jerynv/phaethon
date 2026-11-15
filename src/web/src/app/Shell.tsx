@@ -1,5 +1,6 @@
 import { animate } from "motion/react";
-import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayoutEffect, useRef } from "react";
+import { DotMatrix } from "@/components/art";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { errorText } from "@/lib/core";
@@ -9,7 +10,7 @@ import { CommandPalette } from "./CommandPalette";
 import { AppHeader, HeaderSlots, ViewActive } from "./Header";
 import { matchShortcut } from "./shortcuts";
 import { Sidebar } from "./Sidebar";
-import { useActiveSpace, useNav, type View } from "./store";
+import { useNav, type View } from "./store";
 import { VIEWS } from "./views";
 import { EmptySpaces } from "./EmptySpaces";
 
@@ -61,6 +62,15 @@ function useShortcuts() {
           if (v) nav.setView(v.id);
           break;
         }
+        case "closeTab":
+          if (nav.activeTab) nav.closeTab(nav.activeTab);
+          break;
+        case "reopenTab":
+          nav.reopenTab();
+          break;
+        case "cycleTab":
+          nav.cycleTab(m.direction);
+          break;
         case "landmark":
           break;
       }
@@ -94,43 +104,41 @@ function Pane({ active, children, name }: { active: boolean; children: ReactNode
   );
 }
 
+/** The open tabs' pages. Every open tab stays mounted (its state, scroll and running replies survive); only the active one is shown. */
 function Main() {
-  const view = useNav((s) => s.view);
-  const settings = useNav((s) => s.settings);
-  const space = useActiveSpace();
+  const tabs = useNav((s) => s.tabs);
+  const active = useNav((s) => s.activeTab);
   const spaces = useNav((s) => s.spaces);
-  const current: View = space?.educationEnabled ? view : "chat";
-  // Views visited in this space; the keep-alive ones stay mounted after.
-  const [visited, setVisited] = useState<{ space?: string; views: Set<View> }>({ views: new Set() });
-  const seen = visited.space === space?.id ? visited.views : new Set<View>();
-  if (space && !settings && !seen.has(current)) setVisited({ space: space.id, views: new Set([...seen, current]) });
-
-  if (spaces.data && spaces.data.length === 0 && !settings) return <EmptySpaces />;
+  if (spaces.data && spaces.data.length === 0 && !tabs.some((t) => t.kind === "settings")) return <EmptySpaces />;
+  const current = tabs.find((t) => t.id === active);
+  // One chat pane per space with a chat tab: it shows whichever of the space's conversations the active tab names.
+  const chatSpaces = [...new Set(tabs.filter((t) => t.kind === "chat").map((t) => (t as { space: string }).space))];
   return (
     <>
-      {space ? (
-        <>
-          {/* Chat is always mounted, so a reply, draft or scroll position survives any page switch. */}
-          <Pane name="chat" active={!settings && current === "chat"}>
-            <ChatView key={space.id} space={space} />
+      {chatSpaces.map((id) => {
+        const space = spaces.data?.find((x) => x.id === id);
+        if (!space) return null;
+        return (
+          <Pane key={`chat:${id}`} name="chat" active={current?.kind === "chat" && current.space === id}>
+            <ChatView space={space} />
           </Pane>
-          {(Object.keys(PAGES) as Exclude<View, "chat">[]).map((id) => {
-            const meta = VIEWS.find((v) => v.id === id)!;
-            const active = !settings && current === id;
-            if (!active && !(meta.keepAlive && seen.has(id) && space.educationEnabled)) return null;
-            const Page = PAGES[id];
-            return (
-              <Pane key={`${space.id}:${id}`} name={id} active={active}>
-                <Suspense fallback={<div className="flex-1" />}>
-                  <Page space={space} />
-                </Suspense>
-              </Pane>
-            );
-          })}
-        </>
-      ) : null}
-      {settings ? (
-        <Pane name="settings" active>
+        );
+      })}
+      {tabs.map((t) => {
+        if (t.kind !== "view") return null;
+        const space = spaces.data?.find((x) => x.id === t.space);
+        if (!space) return null;
+        const Page = PAGES[t.view];
+        return (
+          <Pane key={t.id} name={t.view} active={t.id === active}>
+            <Suspense fallback={<div className="flex-1" />}>
+              <Page space={space} />
+            </Suspense>
+          </Pane>
+        );
+      })}
+      {tabs.some((t) => t.kind === "settings") ? (
+        <Pane name="settings" active={current?.kind === "settings"}>
           <Suspense fallback={<div className="flex-1" />}>
             <SettingsView />
           </Suspense>
@@ -141,11 +149,10 @@ function Main() {
 }
 
 /**
- * The app frame (docs/UI-REBUILD.md › App frame): the window is a soft grey
- * canvas, and the whole app sits in one white panel inset from its edges,
- * with a large radius and a hairline. The title bar runs across the top of
- * the panel; below it the sidebar and the page sit side by side, split by a
- * hairline, and a faint dot matrix fades in at the top of every page.
+ * The app frame (docs/UI-REBUILD.md › App frame): the app fills the window.
+ * The title bar runs across the top; below it the sidebar and the page sit
+ * side by side, split by a hairline, and a faint dot field fades in at the
+ * top of every page.
  */
 export function Shell() {
   useShortcuts();
@@ -162,6 +169,7 @@ export function Shell() {
               <div className="flex min-h-0 flex-1">
                 <Sidebar />
                 <main className="relative flex min-w-0 flex-1 flex-col bg-background">
+                  <DotMatrix className="z-0" />
                   <Main />
                 </main>
                 {viewer ? (

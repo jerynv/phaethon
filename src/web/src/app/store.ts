@@ -15,6 +15,16 @@ import { mergeRefresh } from "./sidebar/paging";
 export type View = "chat" | "study" | "grades" | "plan" | "courses";
 export type SettingsSection = "general" | "providers" | "agents" | "spaces" | "courses" | "appearance" | "about";
 
+/**
+ * What an open tab shows. Several can be open at once, like a browser's; the
+ * active one decides the derived `activeSpace`, `view`, `open` and `settings`
+ * fields below, which the pages read as before.
+ */
+export type Tab = { kind: "chat"; space: string; thread: string } | { kind: "view"; space: string; view: Exclude<View, "chat"> } | { kind: "settings"; section: SettingsSection };
+/** An open tab. A tab opened by a plain click is a preview: the next plain click reuses it. It is kept once it has something worth keeping (a sent message, a double-click, ⌘-click). */
+export type OpenTab = Tab & { id: string; kept: boolean };
+export const tabId = (t: Tab): string => (t.kind === "chat" ? `chat:${t.space}/${t.thread}` : t.kind === "view" ? `view:${t.space}/${t.view}` : "settings");
+
 /** The thread key of a space's unsent new chat. Never sent to the core. */
 export const DRAFT = "new";
 
@@ -62,6 +72,19 @@ type Nav = {
   unread: Record<string, true>;
   /** Bumped when the already-selected view tab is clicked again, so the view can go back to its front page. */
   retap: { view: View; n: number };
+  tabs: OpenTab[];
+  activeTab: string | null;
+  /** Tabs closed most recently, newest first, for "reopen closed tab". */
+  closedTabs: Tab[];
+
+  /** Shows `tab`: in its existing tab, else in the preview tab, else in a new one. `fresh` always opens a new tab; `keep` marks it kept (pages always are). */
+  openTab(tab: Tab, opts?: { fresh?: boolean; keep?: boolean }): void;
+  activateTab(id: string): void;
+  closeTab(id: string): void;
+  keepTab(id: string): void;
+  reopenTab(): void;
+  /** The next (1) or previous (-1) tab, wrapping. */
+  cycleTab(dir: 1 | -1): void;
 
   loadSpaces(): Promise<void>;
   selectSpace(id: string, view?: View): void;
@@ -76,8 +99,8 @@ type Nav = {
   refreshThread(space: string, id: string): Promise<void>;
   /** Shows the space's new chat. Nothing is created until it is sent. */
   newChat(space: string): Promise<void>;
-  /** Opens a conversation; one older than the loaded pages (opened from search) is read on its own so the sidebar can show it. */
-  openThread(space: string, id: string): Promise<void>;
+  /** Opens a conversation; one older than the loaded pages (opened from search) is read on its own so the sidebar can show it. `fresh` opens it in a new tab. */
+  openThread(space: string, id: string, opts?: { fresh?: boolean }): Promise<void>;
   /** Adds a conversation the sidebar found elsewhere (a filter's search) to the space's list, if it isn't there. */
   ensureThread(space: string, row: ThreadListed): void;
   /** A new chat was sent and the core gave it `id`: it takes the draft's place. */
@@ -103,6 +126,8 @@ const LAST_SPACE = "phaethon.lastSpace";
 const COLLAPSED = "phaethon.collapsed";
 const SIDEBAR = "phaethon.sidebar";
 const OPEN = "phaethon.openThreads";
+const TABS = "phaethon.tabs";
+const MAX_CLOSED = 10;
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -147,6 +172,37 @@ export const useNav = create<Nav>((set, get) => {
     writeJson(OPEN, open);
   };
 
+  const saveTabs = () => writeJson(TABS, { tabs: get().tabs, active: get().activeTab });
+  /** The derived fields follow the active tab. */
+  const apply = (tab: Tab) => {
+    if (tab.kind === "settings") set({ settings: tab.section, paletteOpen: false });
+    else {
+      if (tab.kind === "chat" && get().open[tab.space] !== tab.thread) setOpen(tab.space, tab.thread);
+      const prev = get().activeSpace;
+      set({ activeSpace: tab.space, view: tab.kind === "chat" ? "chat" : tab.view, settings: null });
+      if (prev !== tab.space) {
+        writeJson(LAST_SPACE, tab.space);
+        void api.touchSpace(tab.space).catch(() => {});
+      }
+      seen();
+    }
+  };
+  const activeTabOf = () => get().tabs.find((t) => t.id === get().activeTab);
+  /** Replaces the tabs and makes `id` the active one. */
+  const commit = (tabs: OpenTab[], id: string) => {
+    set({ tabs, activeTab: id });
+    const tab = tabs.find((t) => t.id === id);
+    if (tab) apply(tab);
+    saveTabs();
+  };
+  /** A space's chat tab: the conversation it shows (an id, or its new chat). */
+  const chatTab = (space: string): Tab => ({ kind: "chat", space, thread: get().open[space] ?? DRAFT });
+  /** Without any tab, the active space's chat. */
+  const fallbackTab = (): Tab | null => {
+    const space = get().activeSpace ?? get().spaces.data?.[0]?.id;
+    return space ? chatTab(space) : null;
+  };
+
   return {
     spaces: { loading: true },
     activeSpace: null,
@@ -160,6 +216,86 @@ export const useNav = create<Nav>((set, get) => {
     viewer: null,
     unread: {},
     retap: { view: "chat", n: 0 },
+    tabs: [],
+    activeTab: null,
+    closedTabs: [],
+
+    openTab(tab, opts = {}) {
+      const id = tabId(tab);
+      const tabs = get().tabs;
+      const found = tabs.find((t) => t.id === id);
+      if (found) {
+        const next = opts.keep && !found.kept ? tabs.map((t) => (t.id === id ? { ...t, kept: true } : t)) : tabs.map((t) => (t.id === id && t.kind === "settings" && tab.kind === "settings" ? { ...t, section: tab.section } : t));
+        commit(next, id);
+        return;
+      }
+      // Pages and settings are few and fixed, so they open kept; a conversation opened by a plain click is a preview.
+      const open: OpenTab = { ...tab, id, kept: !!opts.keep || !!opts.fresh || tab.kind !== "chat" };
+      const at = tabs.findIndex((t) => t.id === get().activeTab);
+      const active = at >= 0 ? tabs[at]! : undefined;
+      // A plain click lands in the preview tab, if the active one is a preview; otherwise it opens beside the active tab.
+      if (!opts.fresh && active && !active.kept) {
+        const next = [...tabs];
+        next[at] = open;
+        set({ closedTabs: [strip(active), ...get().closedTabs.filter((c) => tabId(c) !== active.id)].slice(0, MAX_CLOSED) });
+        commit(next, id);
+      } else {
+        const next = [...tabs];
+        next.splice(at >= 0 ? at + 1 : tabs.length, 0, open);
+        commit(next, id);
+      }
+    },
+
+    activateTab(id) {
+      const tab = get().tabs.find((t) => t.id === id);
+      if (!tab) return;
+      set({ activeTab: id });
+      apply(tab);
+      saveTabs();
+    },
+
+    closeTab(id) {
+      const tabs = get().tabs;
+      const at = tabs.findIndex((t) => t.id === id);
+      if (at < 0) return;
+      const closing = tabs[at]!;
+      const rest = tabs.filter((t) => t.id !== id);
+      set({ closedTabs: [strip(closing), ...get().closedTabs.filter((c) => tabId(c) !== id)].slice(0, MAX_CLOSED) });
+      if (get().activeTab !== id) {
+        set({ tabs: rest });
+        saveTabs();
+        return;
+      }
+      const neighbour = rest[Math.min(at, rest.length - 1)];
+      if (neighbour) commit(rest, neighbour.id);
+      else {
+        set({ tabs: [] });
+        const fb = fallbackTab();
+        if (fb) get().openTab(fb);
+        else saveTabs();
+      }
+    },
+
+    keepTab(id) {
+      if (!get().tabs.some((t) => t.id === id && !t.kept)) return;
+      set({ tabs: get().tabs.map((t) => (t.id === id ? { ...t, kept: true } : t)) });
+      saveTabs();
+    },
+
+    reopenTab() {
+      const [last, ...rest] = get().closedTabs;
+      if (!last) return;
+      set({ closedTabs: rest });
+      get().openTab(last, { fresh: true });
+    },
+
+    cycleTab(dir) {
+      const tabs = get().tabs;
+      if (tabs.length < 2) return;
+      const at = tabs.findIndex((t) => t.id === get().activeTab);
+      const next = tabs[(at + dir + tabs.length) % tabs.length];
+      if (next) get().activateTab(next.id);
+    },
 
     async loadSpaces() {
       set((s) => ({ spaces: { ...s.spaces, loading: true, error: undefined } }));
@@ -169,6 +305,17 @@ export const useNav = create<Nav>((set, get) => {
         const last = readJson<string | null>(LAST_SPACE, null);
         const pick = [keep, last].find((id) => id && list.some((s) => s.id === id)) ?? [...list].sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0))[0]?.id ?? null;
         set({ spaces: { data: list, loading: false }, activeSpace: pick });
+        if (!get().tabs.length) {
+          const saved = readJson<{ tabs: OpenTab[]; active: string | null }>(TABS, { tabs: [], active: null });
+          const ok = (t: OpenTab) => t.kind === "settings" || list.some((s) => s.id === t.space && (t.kind === "chat" || s.educationEnabled));
+          const tabs = saved.tabs.filter(ok);
+          const active = tabs.find((t) => t.id === saved.active)?.id ?? tabs[0]?.id;
+          if (tabs.length && active) commit(tabs, active);
+          else {
+            const fb = fallbackTab();
+            if (fb) get().openTab(fb);
+          }
+        }
         for (const s of list) void get().loadThreads(s.id);
       } catch (e) {
         set({ spaces: { loading: false, error: errorText(e) } });
@@ -178,15 +325,13 @@ export const useNav = create<Nav>((set, get) => {
     selectSpace(id, view) {
       const space = get().spaces.data?.find((s) => s.id === id);
       const next = view ?? (space?.educationEnabled ? get().view : "chat");
-      set({ activeSpace: id, view: next, settings: null });
-      seen();
-      writeJson(LAST_SPACE, id);
-      void api.touchSpace(id).catch(() => {});
+      get().openTab(next === "chat" ? chatTab(id) : { kind: "view", space: id, view: next });
     },
 
     setView(view) {
-      set({ view, settings: null });
-      seen();
+      const space = get().activeSpace;
+      if (!space) return;
+      get().openTab(view === "chat" ? chatTab(space) : { kind: "view", space, view });
     },
 
     retapView(view) {
@@ -260,12 +405,12 @@ export const useNav = create<Nav>((set, get) => {
 
     async newChat(space) {
       setOpen(space, DRAFT);
-      get().selectSpace(space, "chat");
+      get().openTab({ kind: "chat", space, thread: DRAFT });
     },
 
-    async openThread(space, id) {
+    async openThread(space, id, opts) {
       setOpen(space, id);
-      get().selectSpace(space, "chat");
+      get().openTab({ kind: "chat", space, thread: id }, opts);
       get().markRead(space, id);
       const list = get().threads[space];
       if (list?.data && !list.data.some((t) => t.id === id)) await get().refreshThread(space, id).catch(() => {});
@@ -280,6 +425,12 @@ export const useNav = create<Nav>((set, get) => {
       const now = Date.now();
       setRows(space, (rows) => sortRows([{ id, title, updated: now, messages: 1, running: true, optimistic: true }, ...rows.filter((t) => t.id !== id)]));
       if (get().open[space] === DRAFT) setOpen(space, id);
+      const from = tabId({ kind: "chat", space, thread: DRAFT });
+      const to = tabId({ kind: "chat", space, thread: id });
+      if (get().tabs.some((t) => t.id === from)) {
+        set({ tabs: get().tabs.filter((t) => t.id !== to).map((t) => (t.id === from ? { ...t, id: to, thread: id, kept: true } : t)), activeTab: get().activeTab === from ? to : get().activeTab });
+        saveTabs();
+      }
     },
 
     async deleteThread(space, id) {
@@ -288,9 +439,14 @@ export const useNav = create<Nav>((set, get) => {
       const counted = !!before[at] && !before[at]!.optimistic;
       setList(space, (cur) => ({ data: (cur.data ?? []).filter((t) => t.id !== id), total: counted && cur.total ? cur.total - 1 : cur.total }));
       // The space shows the next conversation down (or a new chat) instead.
-      if (get().open[space] === id) {
-        const rest = before.filter((t) => t.id !== id);
-        setOpen(space, rest[Math.min(Math.max(at, 0), rest.length - 1)]?.id ?? DRAFT);
+      const gone = tabId({ kind: "chat", space, thread: id });
+      const next = before.filter((t) => t.id !== id)[Math.min(Math.max(at, 0), before.length - 2)]?.id ?? DRAFT;
+      if (get().open[space] === id) setOpen(space, next);
+      if (get().tabs.some((t) => t.id === gone)) {
+        const to = tabId({ kind: "chat", space, thread: next });
+        const dup = get().tabs.some((t) => t.id === to);
+        set({ tabs: get().tabs.flatMap((t) => (t.id !== gone ? [t] : dup ? [] : [{ ...t, id: to, thread: next, kept: false }])), activeTab: get().activeTab === gone ? to : get().activeTab });
+        saveTabs();
       }
       try {
         await api.deleteThread(space, id);
@@ -333,6 +489,7 @@ export const useNav = create<Nav>((set, get) => {
 
     bumpThread(space, id) {
       setRows(space, (rows) => sortRows(rows.map((x) => (x.id === id ? { ...x, updated: Date.now() } : x))));
+      get().keepTab(tabId({ kind: "chat", space, thread: id }));
     },
 
     replied(space, thread) {
@@ -360,11 +517,11 @@ export const useNav = create<Nav>((set, get) => {
     },
 
     openSettings(section = "general") {
-      set({ settings: section, paletteOpen: false });
+      get().openTab({ kind: "settings", section });
     },
     closeSettings() {
-      set({ settings: null });
-      seen();
+      const tab = activeTabOf();
+      if (tab?.kind === "settings") get().closeTab(tab.id);
     },
     setPalette(open) {
       set({ paletteOpen: open });
@@ -395,6 +552,12 @@ export function useOpenThread(space: string | null | undefined): string {
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
   window.__phaethon = { ...(window.__phaethon ?? {}), nav: useNav };
+}
+
+/** A tab without its open-state, for the closed list. */
+function strip(t: OpenTab): Tab {
+  const { id: _id, kept: _kept, ...tab } = t;
+  return tab;
 }
 
 /** Whether conversation `thread` of `space` is what the chat shows right now. */

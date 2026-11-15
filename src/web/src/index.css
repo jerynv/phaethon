@@ -86,9 +86,8 @@
   --keycap: oklch(96% 0 0);
   --tooltip: var(--ink);
   --tooltip-foreground: var(--ink-foreground);
-  /* Space avatars: a pale tint of the space's hue with a deeper letter (components/space-avatar.tsx). */
-  --avatar-tint: 95% 0.03;
-  --avatar-letter: 45% 0.1;
+  /* A space's dot (components/space-avatar.tsx). */
+  --space-dot: 62% 0.13;
   --dot-matrix: oklch(23% 0 0 / 9%);
   /* Art sits a little dimmer in dark mode (components/art.tsx). */
   --art-veil: oklch(100% 0 0 / 0%);
@@ -186,8 +185,7 @@
   --keycap: oklch(100% 0 0 / 8%);
   --tooltip: oklch(32% 0 0);
   --tooltip-foreground: oklch(95.5% 0 0);
-  --avatar-tint: 32% 0.04;
-  --avatar-letter: 85% 0.06;
+  --space-dot: 70% 0.12;
   --dot-matrix: oklch(100% 0 0 / 7%);
   --art-veil: oklch(21.8% 0 0 / 38%);
   --art-veil-strip: oklch(21.8% 0 0 / 19%);
@@ -442,9 +440,8 @@
   background: var(--popover);
 }
 
-@utility space-avatar {
-  background: oklch(var(--avatar-tint) var(--hue));
-  color: oklch(var(--avatar-letter) var(--hue));
+@utility space-dot {
+  background: oklch(var(--space-dot) var(--hue));
 }
 
 @utility dialog-backdrop {

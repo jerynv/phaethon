@@ -10,7 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useChats, useConvState, type ConvState } from "@/features/chat/store";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
-import { chatKey, useNav, type ThreadRow } from "../store";
+import { type ThreadRow, chatKey, tabId, useNav } from "../store";
 import { useList, type ListContextValue } from "./list-context";
 
 /**
@@ -191,10 +191,12 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
   const list = useList();
   const state = useRowState(space, thread);
   const busy = state === "working" || state === "waiting";
-  const open = () => {
+  // A plain click shows it in the preview tab; ⌘-click (middle-click) opens a new tab; a double-click keeps the tab.
+  const open = (e?: { metaKey?: boolean; ctrlKey?: boolean }) => {
     useNav.getState().ensureThread(space, thread);
-    void useNav.getState().openThread(space, thread.id);
+    void useNav.getState().openThread(space, thread.id, { fresh: !!(e?.metaKey || e?.ctrlKey) });
   };
+  const keep = () => useNav.getState().keepTab(tabId({ kind: "chat", space, thread: thread.id }));
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "F2") {
       e.preventDefault();
@@ -233,6 +235,8 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
         data-nav-row=""
         data-state={state ?? undefined}
         onClick={open}
+        onDoubleClick={keep}
+        onAuxClick={(e) => e.button === 1 && open({ metaKey: true })}
         onKeyDown={onKeyDown}
         // The hover actions (a 20 px "…" at 4 px from the edge) take the end of the row; the title's ellipsis moves in for them.
         className={cn("pl-8 group-hover/menu-item:pr-7 group-has-focus-visible/menu-item:pr-7 group-data-[keep=true]/menu-item:pr-7", state === "unread" && "font-medium text-foreground")}

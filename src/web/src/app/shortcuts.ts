@@ -4,7 +4,7 @@ import { isMac, modKey } from "../lib/platform";
  * Every app-wide keyboard shortcut, in one place: the shell's key handler
  * matches with these, and buttons show their keys with `keysFor`.
  */
-export type ShortcutId = "newChat" | "search" | "sidebar" | "settings" | "space" | "view" | "landmark";
+export type ShortcutId = "newChat" | "search" | "sidebar" | "settings" | "space" | "view" | "landmark" | "closeTab" | "reopenTab" | "cycleTab";
 
 /** True when the platform's command key (alone, without Alt) is held. */
 function mod(e: KeyboardEvent): boolean {
@@ -22,22 +22,30 @@ export type ShortcutMatch =
   | { id: "newChat" | "search" | "sidebar" | "settings" }
   | { id: "space"; index: number }
   | { id: "view"; index: number }
-  | { id: "landmark"; direction: 1 | -1 };
+  | { id: "landmark"; direction: 1 | -1 }
+  | { id: "closeTab" | "reopenTab" }
+  | { id: "cycleTab"; direction: 1 | -1 };
 
 export function matchShortcut(e: KeyboardEvent): ShortcutMatch | null {
   if (e.key === "F6" && !e.altKey && !e.ctrlKey && !e.metaKey) return { id: "landmark", direction: e.shiftKey ? -1 : 1 };
+  // Ctrl+Tab walks the open tabs on every platform, as in a browser.
+  if (e.key === "Tab" && e.ctrlKey && !e.metaKey && !e.altKey) return { id: "cycleTab", direction: e.shiftKey ? -1 : 1 };
   if (!mod(e) || e.getModifierState?.("AltGraph")) return null;
   const key = e.key.toLowerCase();
   if (e.altKey) {
     if (e.shiftKey) return null;
+    if (e.key === "ArrowRight") return { id: "cycleTab", direction: 1 };
+    if (e.key === "ArrowLeft") return { id: "cycleTab", direction: -1 };
     const n = digit(e, 5);
     return n ? { id: "view", index: n - 1 } : null;
   }
   if (e.shiftKey) {
     if (key === "f") return { id: "search" };
     if (key === "o") return { id: "newChat" };
+    if (key === "t") return { id: "reopenTab" };
     return null;
   }
+  if (key === "w") return { id: "closeTab" };
   if (key === "n") return { id: "newChat" };
   if (key === "k") return { id: "search" };
   if (key === "\\" || e.code === "Backslash" || key === "b") return { id: "sidebar" };
@@ -48,7 +56,7 @@ export function matchShortcut(e: KeyboardEvent): ShortcutMatch | null {
 }
 
 /** Keys to draw (one per key cap) and the aria-keyshortcuts value. */
-export function keysFor(id: "newChat" | "search" | "sidebar" | "settings"): { keys: string[]; aria: string } {
+export function keysFor(id: "newChat" | "search" | "sidebar" | "settings" | "closeTab" | "reopenTab"): { keys: string[]; aria: string } {
   const m = modKey();
   switch (id) {
     case "newChat":
@@ -59,6 +67,10 @@ export function keysFor(id: "newChat" | "search" | "sidebar" | "settings"): { ke
       return { keys: [m.cap, "\\"], aria: `${m.aria}+Backslash` };
     case "settings":
       return { keys: [m.cap, ","], aria: `${m.aria}+Comma` };
+    case "closeTab":
+      return { keys: [m.cap, "W"], aria: `${m.aria}+W` };
+    case "reopenTab":
+      return { keys: [isMac() ? "⇧" : "Shift", m.cap, "T"], aria: `Shift+${m.aria}+T` };
   }
 }
 

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { killWindowsChild, prepareWindowsChildren, watchWindowsChild } from "../../core/windows-jobs.ts";
 
 /**
  * Starting the text child (child.ts). From source (tests, dev) it runs the
@@ -59,7 +60,15 @@ export type ChildLike = {
 export function startChild(spec: ChildSpec): ChildLike {
   if ("worker" in spec) return startWorker(spec.worker, spec.argv);
   const child = spawnGroup(spec.cmd, spec.args, spec.env);
-  return Object.assign(child, { kill: () => killGroup(child) }) as unknown as ChildLike;
+  // Keep ChildProcess.kill intact: killGroup's Windows path calls it.
+  // Replacing it with this adapter's kill would recurse on cancellation.
+  return {
+    stdout: child.stdout!,
+    stderr: child.stderr!,
+    once: child.once.bind(child),
+    on: child.on.bind(child),
+    kill: () => killGroup(child),
+  };
 }
 
 function startWorker(script: string, argv: string[]): ChildLike {
@@ -95,13 +104,24 @@ function startWorker(script: string, argv: string[]): ChildLike {
 
 /** Starts a child in its own process group (so what it starts dies with it). */
 export function spawnGroup(cmd: string, args: string[], env?: NodeJS.ProcessEnv): ChildProcess {
-  return spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], env, detached: process.platform !== "win32", windowsHide: true });
+  prepareWindowsChildren();
+  const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], env, detached: process.platform !== "win32", windowsHide: true });
+  if (process.platform === "win32" && child.pid) {
+    try {
+      const close = watchWindowsChild(child.pid);
+      child.once("exit", close);
+    } catch (e) {
+      child.kill("SIGKILL");
+      throw e;
+    }
+  }
+  return child;
 }
 
 export function killGroup(child: ChildProcess): void {
   try {
     if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
-    else child.kill("SIGKILL");
+    else if (!child.pid || !killWindowsChild(child.pid)) child.kill("SIGKILL");
   } catch {
     try {
       child.kill("SIGKILL");

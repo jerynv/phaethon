@@ -56,7 +56,12 @@ function serveApp(): void {
   protocol.handle(SCHEME, async (request) => {
     const url = new URL(request.url);
     const root = path.resolve(webRoot);
-    let file = path.resolve(root, "." + decodeURIComponent(url.pathname));
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+      if (pathname.includes("\0")) throw new Error("Invalid path");
+    } catch { return new Response("Bad request", { status: 400 }); }
+    let file = path.resolve(root, "." + pathname);
     if (file !== root && !file.startsWith(root + path.sep)) return new Response("Forbidden", { status: 403 });
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, "index.html");
     const response = await net.fetch(pathToFileURL(file).toString());
@@ -77,20 +82,23 @@ function isSafeExternal(url: string): boolean {
 }
 
 function hardenContents(window: BrowserWindow, allowedOrigin: string): void {
+  const allowed = new URL(allowedOrigin);
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternal(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    let origin: string | null = null;
+    let permitted = false;
     try {
-      origin = new URL(url).origin;
+      const target = new URL(url);
+      // Node's URL.origin is "null" for our registered app:// scheme.
+      permitted = target.protocol === allowed.protocol && target.host === allowed.host;
     } catch {
       // Not a URL: never navigate to it.
     }
-    if (origin !== allowedOrigin) {
+    if (!permitted) {
       event.preventDefault();
-      if (origin && isSafeExternal(url)) void shell.openExternal(url);
+      if (isSafeExternal(url)) void shell.openExternal(url);
     }
   });
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());

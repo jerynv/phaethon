@@ -30,6 +30,7 @@ npmRebuild: false
 # disk must sit outside the archive.
 asarUnpack:
   - "**/node_modules/@napi-rs/**"
+  - "**/node_modules/@seydx/**"
   - "**/node_modules/tesseract.js/**"
   - "**/node_modules/tesseract.js-core/**"
   - "**/node_modules/@tesseract.js-data/**"

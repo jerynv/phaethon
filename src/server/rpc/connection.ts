@@ -53,6 +53,7 @@ export function attach(link: Link): void {
     } catch {
       return;
     }
+    if (frame === null || typeof frame !== "object" || Array.isArray(frame)) return;
     if (frame.t === "ping") {
       send({ t: "pong" });
       return;

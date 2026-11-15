@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -70,7 +71,7 @@ describe("names.rs", () => {
     expect(t.claim("files/a.pdf")).toBe("files/a (3).pdf");
   });
 
-  it("writes never follow a symlink", () => {
+  it.skipIf(!canSymlinkFiles)("writes never follow a symlink", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-names-"));
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-names-outside-"));
     try {
@@ -78,10 +79,10 @@ describe("names.rs", () => {
       expect(fs.readFileSync(path.join(root, "a/b.txt"), "utf8")).toBe("one");
       write(root, "a/b.txt", "two");
       expect(fs.readFileSync(path.join(root, "a/b.txt"), "utf8")).toBe("two");
-      fs.symlinkSync(outside, path.join(root, "link"));
+      symlink(outside, path.join(root, "link"));
       expect(() => write(root, "link/x.txt", "no")).toThrow();
       expect(fs.existsSync(path.join(outside, "x.txt"))).toBe(false);
-      fs.symlinkSync(path.join(outside, "target.txt"), path.join(root, "f.txt"));
+      symlink(path.join(outside, "target.txt"), path.join(root, "f.txt"));
       write(root, "f.txt", "safe");
       expect(fs.existsSync(path.join(outside, "target.txt"))).toBe(false);
       expect(fs.lstatSync(path.join(root, "f.txt")).isSymbolicLink()).toBe(false);

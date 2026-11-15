@@ -1,3 +1,4 @@
+import { symlink } from "../../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -68,7 +69,7 @@ describe("a bound project folder", () => {
     const gone = await send(request("claude", "school", "Go", { workingDir: path.join(env.home, "moved") }));
     expect(errors(gone)[0].message).toMatch(/^The workspace folder is unavailable\. Choose it again: /);
     const link = path.join(env.home, "linked");
-    fs.symlinkSync(project, link);
+    symlink(project, link);
     const linked = await send(request("claude", "school", "Go", { workingDir: link }));
     expect(errors(linked)).toEqual([{ code: "cli", message: "The workspace folder changed or is unavailable. Choose it again." }]);
     expect(log.runs()).toBe(n);

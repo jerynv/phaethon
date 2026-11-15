@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -105,7 +106,7 @@ describe("sources", () => {
     expect(() => gather(spaceDir("t"), other, [`${c}/syllabus.md`], null, BUDGET)).toThrow();
   });
 
-  it("paths_outside_the_space_are_refused", () => {
+  it.skipIf(!canSymlinkFiles)("paths_outside_the_space_are_refused", () => {
     fs.mkdirSync(path.join(vaultRoot(), "spaces/esc"), { recursive: true });
     const dir = spaceDir("esc");
     put("notes.md", "fine", dir);
@@ -116,8 +117,8 @@ describe("sources", () => {
     for (const bad of ["../x", "/etc/passwd", ".phaethon/progress.json", "nope.md", "courses/Old/notes.md", "Courses/Old"]) {
       expect(() => gather(dir, vis, [bad], null, BUDGET), bad).toThrow();
     }
-    fs.symlinkSync(outside, path.join(dir, "link"));
-    fs.symlinkSync(path.join(outside, "secret.md"), path.join(dir, "s.md"));
+    symlink(outside, path.join(dir, "link"));
+    symlink(path.join(outside, "secret.md"), path.join(dir, "s.md"));
     expect(() => gather(dir, vis, ["link"], null, BUDGET)).toThrow();
     expect(() => gather(dir, vis, ["s.md"], null, BUDGET)).toThrow();
     const m = gather(dir, vis, ["", "."], null, BUDGET);

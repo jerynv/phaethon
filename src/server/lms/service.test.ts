@@ -445,6 +445,26 @@ function partsLeft(dir: string): string[] {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("imports (ported from service.rs)", () => {
+  it("signing out cancels an in-flight course download and removes its saved sign-in", async () => {
+    const s = await site(twoCourseCanvas({ stall: true }));
+    integrityVault(s.base);
+    const events: ImportEvent[] = [];
+    const run = importCourses("canvas-x", ["1", "2"], ["s"], (e) => events.push(e));
+    try {
+      for (let i = 0; i < 400 && !s.log.some((x) => x.target.startsWith("/files/12/download")); i++) await sleep(25);
+      expect(s.log.some((x) => x.target.startsWith("/files/12/download"))).toBe(true);
+      disconnect("canvas-x");
+      const stopped = await Promise.race([run.then(() => true), sleep(1000).then(() => false)]);
+      expect(stopped).toBe(true);
+      expect(events.slice(-2)).toEqual([{ type: "cancelled" }, { type: "done" }]);
+      expect(keychainGet(lmsVaultAccount("canvas-x"))).toBeNull();
+      expect(connections()[0].signedIn).toBe(false);
+    } finally {
+      cancelImport("canvas-x");
+      await run;
+    }
+  });
+
   it("every chosen course across list pages is imported, and a cancel resumes where it stopped", async () => {
     const state = { stall: true };
     const s = await site(twoCourseCanvas(state));

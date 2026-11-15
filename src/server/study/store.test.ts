@@ -1,3 +1,4 @@
+import { symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -213,7 +214,7 @@ describe("study store", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-outside-"));
     fs.writeFileSync(path.join(outside, "Evil.md"), "Q: a\nA: b\n");
     fs.mkdirSync(path.join(dir, "study"), { recursive: true });
-    fs.symlinkSync(outside, path.join(dir, DECKS));
+    symlink(outside, path.join(dir, DECKS));
     expect(overview(dir, T0).decks).toEqual([]);
     expect(() => deckView(dir, "study/decks/Evil.md")).toThrow();
     expect(() => deckSave(dir, null, "New", cards([["a", "b"]]))).toThrow();

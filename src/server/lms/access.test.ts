@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../tests/fs.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -119,12 +120,12 @@ describe("access.rs", () => {
     expect(fs.readFileSync(path.join(dir, ".phaethon", FILE), "utf8")).toBe('{\n  "school": {\n    "canvas-x/1": [\n      "grades"\n    ]\n  },\n  "work": {\n    "canvas-x/2": [\n      "overview",\n      "files"\n    ]\n  }\n}');
   });
 
-  it("the file is never read or written through a link", () => {
+  it.skipIf(!canSymlinkFiles)("the file is never read or written through a link", () => {
     const outside = path.join(dir, "outside.json");
     const body = JSON.stringify({ school: { "canvas-x/1": ["files"] } });
     fs.writeFileSync(outside, body);
     fs.mkdirSync(path.join(dir, ".phaethon"), { recursive: true });
-    fs.symlinkSync(outside, path.join(dir, ".phaethon", FILE));
+    symlink(outside, path.join(dir, ".phaethon", FILE));
     expect(load().map.size).toBe(0);
     expect(visible("school").isEmpty()).toBe(true);
     expect(() => set("school", "canvas-x/1", ["files"])).toThrow();
@@ -179,12 +180,12 @@ describe("access.rs", () => {
     expect(walked.some((w) => w.includes("grades") || w.includes("syllabus"))).toBe(false);
   });
 
-  it("links cannot reach a part or place not allowed", () => {
+  it.skipIf(!canSymlinkFiles)("links cannot reach a part or place not allowed", () => {
     set("school", "canvas-x/1", ["files"]);
     const calc = path.join(dir, "courses/Calculus II");
-    fs.symlinkSync(path.join(calc, "grades.md"), path.join(calc, "files/g.md"));
-    fs.symlinkSync(path.join(dir, "courses/Linear Algebra"), path.join(calc, "files/la"));
-    fs.symlinkSync(path.join(dir, "spaces/work"), path.join(calc, "files/work"));
+    symlink(path.join(calc, "grades.md"), path.join(calc, "files/g.md"));
+    symlink(path.join(dir, "courses/Linear Algebra"), path.join(calc, "files/la"));
+    symlink(path.join(dir, "spaces/work"), path.join(calc, "files/work"));
     const vis = visible("school");
     for (const bad of ["courses/Calculus II/files/g.md", "courses/Calculus II/files/la/syllabus.md", "courses/Calculus II/files/work"]) {
       expect(() => vis.place(bad, true), bad).toThrow();
@@ -193,7 +194,7 @@ describe("access.rs", () => {
     const real = vis.dirOf(seen)!;
     expect(vis.walk(seen, real, real, 100).every(([r]) => !r.endsWith("g.md"))).toBe(true);
     fs.renameSync(calc, path.join(dir, "calc-real"));
-    fs.symlinkSync(path.join(dir, "calc-real"), calc);
+    symlink(path.join(dir, "calc-real"), calc);
     expect(() => visible("school").place("courses/Calculus II/files", true)).toThrow();
   });
 

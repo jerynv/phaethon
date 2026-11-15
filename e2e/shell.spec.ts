@@ -44,7 +44,7 @@ test("search finds a conversation in any space", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(page.getByText("Sure.")).toBeVisible();
   await page.getByRole("button", { name: "New chat", exact: true }).first().click();
-  await page.keyboard.press("Control+K");
+  await page.keyboard.press("ControlOrMeta+K");
   await page.getByPlaceholder("Search conversations, spaces and actions").fill("derivatives");
   const hit = page.getByRole("option", { name: /tangent lines and derivatives/ });
   await expect(hit).toBeVisible();

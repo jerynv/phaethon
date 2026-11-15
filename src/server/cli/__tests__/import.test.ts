@@ -1,3 +1,4 @@
+import { canSymlinkFiles, symlink } from "../../../../tests/fs.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -23,7 +24,7 @@ const FIXTURES = path.join(import.meta.dirname, "fixtures");
 let space: string;
 let claudeHome: string;
 const project = () => path.join(claudeHome, "projects", projectDirName(space));
-const fixture = (id: string) => fs.readFileSync(path.join(FIXTURES, `${id}.jsonl`), "utf8").replaceAll("@SPACE@", space);
+const fixture = (id: string) => fs.readFileSync(path.join(FIXTURES, `${id}.jsonl`), "utf8").replaceAll("@SPACE@", JSON.stringify(space).slice(1, -1));
 const texts = (m: Message) => m.content.filter((b) => b.type === "text").map((b) => b.text);
 
 function setup(ids: string[]) {
@@ -108,10 +109,10 @@ describe("reading Claude Code transcripts", () => {
     expect(texts(t.messages[1])).toEqual(["Hi! What do you need?"]);
   });
 
-  it("never follow links", () => {
+  it.skipIf(!canSymlinkFiles)("never follow links", () => {
     const outside = path.join(env.home, "outside.jsonl");
     fs.writeFileSync(outside, fixture(KNOWN));
-    fs.symlinkSync(outside, path.join(project(), `${KNOWN}.jsonl`));
+    symlink(outside, path.join(project(), `${KNOWN}.jsonl`));
     expect(transcripts(claudeHome, space)).toEqual([]);
     expect(offered("school", claudeHome, false)).toBe(false);
     expect(offered("school", claudeHome, true)).toBe(true);

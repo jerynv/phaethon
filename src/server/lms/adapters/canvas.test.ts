@@ -192,6 +192,35 @@ describe("canvas courses and content", () => {
     expect(f.log.every((s) => s.method === "GET" && s.cookie?.includes("_normandy_session=sess123"))).toBe(true);
   });
 
+  it("imports link-only files from published module pages without treating hidden as locked", async () => {
+    const f = await fake((u, b) => {
+      switch (u.pathname) {
+        case "/api/v1/courses/1001": return json({ syllabus_body: "" });
+        case "/api/v1/courses/1001/tabs": return json([{ id: "modules" }, { id: "files", hidden: true }, { id: "pages", hidden: true }]);
+        case "/api/v1/courses/1001/folders": return json([]);
+        case "/api/v1/courses/1001/modules": return json([{ name: "Week 1", items: [{ type: "Page", page_url: "readings", title: "Readings" }] }]);
+        case "/api/v1/courses/1001/pages/readings": return json({
+          title: "Readings", body: [1, 2, 3].map((id) => `<a href="/courses/1001/files/${id}">Reading ${id}</a>`).join(""),
+        });
+        default: {
+          const id = Number(u.pathname.match(/^\/api\/v1\/courses\/1001\/files\/(\d+)$/)?.[1]);
+          if (!id) return status(404);
+          return json({
+            id, display_name: `reading${id}.pdf`, hidden: true, hidden_for_user: true,
+            locked_for_user: id === 2, url: id === 3 ? "" : `${b}/files/${id}/download?download_frd=1&verifier=link-access`,
+          });
+        }
+      }
+    });
+    const c = await canvas.content(session(f.base), "1001");
+    expect(c.files.map((x) => x.name)).toEqual(["reading1.pdf"]);
+    expect(c.files[0].url.searchParams.get("verifier")).toBe("link-access");
+    expect(c.skipped).toContain("File “reading2.pdf”: locked for now");
+    expect(c.skipped).toContain("File “reading3.pdf”: locked for now");
+    expect(c.skipped).not.toContain("File “reading1.pdf”: locked for now");
+    expect(f.log.every((r) => r.method === "GET")).toBe(true);
+  });
+
   it("never leaves the site", async () => {
     const other = await fake(() => json("[]"));
     const f = await fake((u) => {
@@ -214,10 +243,77 @@ describe("canvas courses and content", () => {
     expect(other.log.every((h) => h.cookie === undefined)).toBe(true);
   });
 
+  it("discovers files through the home page and nested published pages when Pages is hidden", async () => {
+    const f = await fake((u, b) => {
+      switch (u.pathname) {
+        case "/api/v1/users/self": return json({ id: 42 });
+        case "/api/v1/courses/1001": return json({});
+        case "/api/v1/courses/1001/tabs": return json([{ id: "pages", hidden: true }]);
+        case "/api/v1/courses/1001/folders": return json([]);
+        case "/api/v1/courses/1001/front_page": return json({ url: "home", title: "Home", body: `<A HREF = "/courses/1001/pages/week-1">Week 1</A><a href="${b}/courses/2002/pages/private">Other course</a><a href="https://other.example/courses/1001/pages/private">Other site</a>` });
+        case "/api/v1/courses/1001/pages/week-1": return json({ title: "Week 1", body: '<a href="week-2">Week 2</a><a href="/courses/1001/pages/locked">Locked</a>' });
+        case "/api/v1/courses/1001/pages/week-2": return json({ title: "Week 2", body: '<a href="/courses/1001/pages/home">Home</a><a href="/courses/1001/pages/locked">Locked again</a><a HREF = /courses/1001/files/7/download>Notes</a><img SRC="/files/8/preview">' });
+        case "/api/v1/courses/1001/pages/locked": return reply(403, UNAUTHORIZED);
+        case "/api/v1/courses/1001/files/7": return json({ id: 7, display_name: "notes.pdf", hidden_for_user: true, locked_for_user: false, url: `${b}/files/7/download` });
+        case "/api/v1/files/8": return json({ id: 8, display_name: "diagram.png", url: `${b}/files/8/download` });
+        default: return status(404);
+      }
+    });
+    const c = await canvas.content(session(f.base), "1001");
+    expect(c.pages.map((p) => p.title)).toEqual(["Home", "Week 1", "Week 2"]);
+    expect(c.files.map((x) => x.name)).toEqual(["notes.pdf", "diagram.png"]);
+    expect(c.skipped).toContain("Page “locked”: not open to you in this course");
+    expect(f.log.filter((r) => r.target === "/api/v1/courses/1001/pages/locked")).toHaveLength(1);
+    expect(f.log.some((r) => r.target.includes("/pages/home") || r.target.includes("private"))).toBe(false);
+    expect(f.log.every((r) => r.method === "GET")).toBe(true);
+  });
+
   it("course ids are numbers", async () => {
     const s = session("http://127.0.0.1:9");
     expect(await errKind(canvas.content(s, "../users/self"))).toBe("notFound");
     expect(await errKind(canvas.content(s, ""))).toBe("notFound");
+  });
+
+  it("imports a reachable home page even when the visible Pages list is refused", async () => {
+    const f = await fake((u, b) => {
+      switch (u.pathname) {
+        case "/api/v1/courses/1001": return json({});
+        case "/api/v1/courses/1001/tabs": return json([{ id: "pages" }]);
+        case "/api/v1/courses/1001/folders": return json([]);
+        case "/api/v1/courses/1001/pages": return reply(403, UNAUTHORIZED);
+        case "/api/v1/courses/1001/front_page": return json({ url: "home", title: "Home", body: '<a href="/courses/1001/files/7">Slides</a>' });
+        case "/api/v1/courses/1001/files/7": return json({ id: 7, display_name: "slides.pdf", url: `${b}/files/7/download` });
+        default: return status(404);
+      }
+    });
+    const c = await canvas.content(session(f.base), "1001");
+    expect(c.pages.map((p) => p.title)).toEqual(["Home"]);
+    expect(c.files.map((f) => f.name)).toEqual(["slides.pdf"]);
+  });
+
+  it("discovers same-course files and pages added to modules as URL links", async () => {
+    const f = await fake((u, b) => {
+      switch (u.pathname) {
+        case "/api/v1/courses/1001": return json({});
+        case "/api/v1/courses/1001/tabs": return json([{ id: "modules" }]);
+        case "/api/v1/courses/1001/folders": return json([]);
+        case "/api/v1/courses/1001/modules": return json([{ name: "Week 1", items: [
+          { type: "ExternalUrl", title: "Slides", external_url: `${b}/courses/1001/files/7` },
+          { type: "ExternalUrl", title: "Readings", external_url: `${b}/courses/1001/pages/week-1` },
+          { type: "ExternalUrl", title: "Other course", external_url: `${b}/courses/2002/pages/private` },
+          { type: "ExternalUrl", title: "Publisher", external_url: "https://publisher.example/files/9" },
+        ] }]);
+        case "/api/v1/courses/1001/pages/week-1": return json({ title: "Readings", body: '<a href="/courses/1001/files/8">Notes</a>' });
+        case "/api/v1/courses/1001/files/7": return json({ id: 7, display_name: "slides.pdf", url: `${b}/files/7/download` });
+        case "/api/v1/courses/1001/files/8": return json({ id: 8, display_name: "notes.pdf", url: `${b}/files/8/download` });
+        default: return status(404);
+      }
+    });
+    const c = await canvas.content(session(f.base), "1001");
+    expect(c.pages.map((p) => p.title)).toEqual(["Readings"]);
+    expect(c.files.map((f) => f.name).sort()).toEqual(["notes.pdf", "slides.pdf"]);
+    expect(c.links.some((l) => l.title === "Publisher")).toBe(true);
+    expect(f.log.some((r) => r.target.includes("private"))).toBe(false);
   });
 
   it("link headers, times and folders", () => {

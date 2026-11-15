@@ -228,6 +228,20 @@ export function resolve(base: URL | null, href: string): URL | null {
   return u.protocol === "http:" || u.protocol === "https:" || u.protocol === "mailto:" ? u : null;
 }
 
+/** Resource addresses in real HTML attributes (including Canvas's API hints). */
+export function resourceUrls(html: string, base: URL): URL[] {
+  const found = new Map<string, URL>();
+  for (const t of tokens(html)) {
+    if (t.t !== "open") continue;
+    for (const [name, value] of t.attrs) {
+      if (name !== "href" && name !== "src" && name !== "data-api-endpoint") continue;
+      const u = resolve(base, value);
+      if (u) found.set(u.href, u);
+    }
+  }
+  return [...found.values()];
+}
+
 function isControl(ch: string): boolean {
   const c = ch.codePointAt(0)!;
   return c <= 0x1f || (c >= 0x7f && c <= 0x9f);

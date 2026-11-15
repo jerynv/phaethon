@@ -20,7 +20,7 @@ export function isWithin(child: string, parent: string): boolean {
   const p = path.resolve(parent);
   if (c === p) return true;
   const rel = path.relative(p, c);
-  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+  return rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
 }
 
 /** realpath(3), matching Rust's `canonicalize` on macOS and Linux. */

@@ -13,7 +13,7 @@ test.afterEach(async () => {
 test("the theme is saved in the vault and applied", async ({ page }) => {
   core = await startCore();
   await core.open(page);
-  await page.keyboard.press("Control+Comma");
+  await page.keyboard.press("ControlOrMeta+Comma");
   await page.getByRole("button", { name: "Appearance" }).click();
   await page.getByRole("radiogroup", { name: "Theme" }).getByRole("radio", { name: /Dark/ }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
@@ -26,7 +26,7 @@ test("the theme is saved in the vault and applied", async ({ page }) => {
 test("a key in the wrong format is refused under the field and never saved", async ({ page }) => {
   core = await startCore();
   await core.open(page);
-  await page.keyboard.press("Control+Comma");
+  await page.keyboard.press("ControlOrMeta+Comma");
   await page.getByRole("button", { name: "Providers", exact: true }).first().click();
   const key = page.getByPlaceholder("sk-ant-…");
   await key.fill("not-a-key");

@@ -64,12 +64,12 @@ const GENERIC_LABEL: Record<ToolCategory, string> = {
 export function shownPath(p: string, base: string, granted: Granted): { shown: string; inGrant: boolean } {
   for (const g of granted) {
     if (path.isAbsolute(p) && isWithin(p, g.path)) {
-      const rel = path.relative(g.path, p);
+      const rel = path.relative(g.path, p).split(path.sep).join("/");
       return { shown: rel ? `${g.label}/${rel}` : g.label, inGrant: true };
     }
   }
   if (path.isAbsolute(p) && isWithin(p, base)) {
-    const rel = path.relative(base, p);
+    const rel = path.relative(base, p).split(path.sep).join("/");
     return { shown: rel || ".", inGrant: false };
   }
   return { shown: p, inGrant: false };

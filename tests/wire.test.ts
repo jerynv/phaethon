@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
+import net from "node:net";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import { command, Refusal } from "../src/server/rpc/registry.ts";
 import type { Channel } from "../src/server/rpc/channel.ts";
 import { serve } from "../src/server/rpc/server.ts";
@@ -24,6 +29,48 @@ beforeAll(async () => {
 afterAll(() => server.close());
 
 describe("wire", () => {
+  it("rejects malformed paths and missing UI files while keeping the core available", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-static-test-"));
+    fs.writeFileSync(path.join(root, "index.html"), "<h1>Phaethon</h1>");
+    const web = await serve({ host: "127.0.0.1", port: 0, token, origins: [], webRoot: root });
+    const get = (target: string) => new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const request = http.get({ host: "127.0.0.1", port: web.port, path: target }, (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => { body += chunk; });
+        response.on("end", () => resolve({ status: response.statusCode!, body }));
+        response.on("error", reject);
+      });
+      request.on("error", reject);
+    });
+    try {
+      for (const target of ["/%ZZ", "/%E0%A4", "/%00", "http://[invalid/"]) expect((await get(target)).status, target).toBe(400);
+      expect(await get("/a-route")).toEqual({ status: 200, body: "<h1>Phaethon</h1>" });
+      fs.rmSync(path.join(root, "index.html"));
+      expect((await get("/missing.js")).status).toBe(404);
+      expect(await get("/healthz")).toEqual({ status: 200, body: "ok" });
+    } finally {
+      await web.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("closes an unused browser preconnection without waiting for request headers", async () => {
+    const idle = await serve({ host: "127.0.0.1", port: 0, token, origins: [] });
+    const socket = net.connect(idle.port, "127.0.0.1");
+    await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+    const closed = idle.close();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const stopped = await Promise.race([closed.then(() => true), new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 1000); })]);
+      expect(stopped).toBe(true);
+    } finally {
+      clearTimeout(timer);
+      socket.destroy();
+      await closed;
+    }
+  });
+
   it("answers a command and refuses with the plain message", async () => {
     const client = await wsClient(server.port, token);
     expect(await client.invoke("test_echo", { text: "hi" })).toMatchObject({ t: "ok", value: "hi" });

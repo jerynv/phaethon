@@ -48,7 +48,7 @@ function course(extra: Record<string, Record<string, unknown>> = {}): Visible {
   put("courses/CS101/files/Notes.pdf", "%PDF");
   put(
     "courses/CS101/files/Notes.pdf.md",
-    "# Text of Notes.pdf\n\n5.3 Properties of Functions\n\nA function f is injective if no two inputs give the same output.\n\n6.1 Graphs\n\nA graph is a set of vertices and a set of edges.",
+    "# Text of Notes.pdf\n\n5.3 Properties of Functions\n\nA function f is injective if no two inputs give the same output.\n\n6.1 Series\n\nA graph is a set of vertices and a set of edges.",
   );
   put("courses/CS101/files/HW/Problem set 06.pdf.md", "Problems\n1.\nDecide whether each function is injective.");
   return fixture("s", [["CS101", ALL]], extra);
@@ -56,12 +56,12 @@ function course(extra: Record<string, Record<string, unknown>> = {}): Visible {
 
 const MAP = `{"topics": [
   {"id": "a", "title": "Injective functions", "sections": "5.3", "terms": ["injective"], "weight": 4, "homework": ["Problem set 6 #1"], "evidence": [{"source": "courses/CS101/files/Notes.pdf", "quote": "A function f is injective if no two inputs give the same output."}]},
-  {"id": "b", "title": "Graphs", "sections": "6.1", "terms": ["graph", "vertices"], "weight": 2, "evidence": [{"source": "Notes.pdf", "quote": "A graph is a set of vertices and a set of edges."}]},
+  {"id": "b", "title": "Series", "sections": "6.1", "terms": ["graph", "vertices"], "weight": 2, "evidence": [{"source": "Notes.pdf", "quote": "A graph is a set of vertices and a set of edges."}]},
   {"id": "c", "title": "Preimages", "evidence": [{"source": "Notes.pdf", "quote": "The preimage of a set B under f is every input that lands in B."}]}
 ],
 "notation": [{"symbol": "f(x)", "meaning": "output", "evidence": {"source": "Notes.pdf", "quote": "no two inputs give the same output"}}],
 "exams": [
-  {"title": "Test 1", "through": "Problem set 6", "includes": ["a", "c"], "excludes": ["b"], "excludedWords": ["graphs", "combinatorics"], "homework": ["Problem set 06.pdf.md"], "summary": "through Problem set 6; not series or sequences", "evidence": [{"source": "courses/CS101/announcements.md", "quote": "Test 1 will not cover series or sequences."}, {"source": "announcements.md", "quote": "The test will cover all of chapter 9"}]},
+  {"title": "Test 1", "through": "Problem set 6", "includes": ["a", "c"], "excludes": ["b"], "excludedWords": ["series", "sequences"], "homework": ["Problem set 06.pdf.md"], "summary": "through Problem set 6; not series or sequences", "evidence": [{"source": "courses/CS101/announcements.md", "quote": "Test 1 will not cover series or sequences."}, {"source": "announcements.md", "quote": "The test will cover all of chapter 9"}]},
   {"title": "Final", "includes": ["a", "b"], "evidence": [{"source": "announcements.md", "quote": "The final covers everything we did all semester long."}]}
 ]}`;
 
@@ -74,7 +74,7 @@ describe("scope map", () => {
     expect(files.map((f) => f.label)).toEqual(["courses/CS101/announcements.md", "courses/CS101/files/HW/Problem set 06.pdf.md", "courses/CS101/files/Notes.pdf"]);
     const docs = new Docs(files);
     const { topics, notation, exams, dropped } = checkMap(JSON.parse(MAP), docs, new Set());
-    expect(topics.map((t) => t.title)).toEqual(["Injective functions", "Graphs"]);
+    expect(topics.map((t) => t.title)).toEqual(["Injective functions", "Series"]);
     expect(topics[0]!.evidence[0]!.at).toBe("§5.3");
     expect(topics[0]!.evidence[0]!.source).toBe("courses/CS101/files/Notes.pdf");
     expect(notation.length).toBe(1);
@@ -91,7 +91,7 @@ describe("scope map", () => {
     expect(scopeWords(exams[1]!)).toBe("Final: I couldn’t find what it covers");
     const said = (summary: string) => ({ ...t1, summary });
     expect(scopeWords(said("October 22 or 23; through Problem set 6; no series or sequences"))).toBe("Test 1: October 22 or 23; through Problem set 6; no series or sequences");
-    expect(scopeWords(said("through Problem set 6; no graphs"))).toBe("Test 1: through Problem set 6; no graphs; not combinatorics");
+    expect(scopeWords(said("through Problem set 6; no series"))).toBe("Test 1: through Problem set 6; no series; not sequences");
     expect(() => checkMap({ topics: [{ title: "x", evidence: [{ source: "Notes.pdf", quote: "not in the file at all, nowhere" }] }] }, docs, new Set())).toThrow();
   });
 
@@ -103,7 +103,7 @@ describe("scope map", () => {
         topics: [
           { id: "t2", title: "Dropped", evidence: [{ source: "Notes.pdf", quote: "This sentence is nowhere in the notes at all." }] },
           { id: "x", title: "Injective functions", evidence: [{ source: "Notes.pdf", quote: "A function f is injective if no two inputs give the same output." }] },
-          { id: "y", title: "Graphs", evidence: [{ source: "Notes.pdf", quote: "A graph is a set of vertices and a set of edges." }] },
+          { id: "y", title: "Series", evidence: [{ source: "Notes.pdf", quote: "A graph is a set of vertices and a set of edges." }] },
         ],
         exams: [{ title: "Test 1", includes: ["t2"], evidence: [{ source: "announcements.md", quote: "Test 1 will not cover series or sequences." }] }],
       },
@@ -112,9 +112,9 @@ describe("scope map", () => {
     );
     expect(topics.map((t) => [t.id, t.title])).toEqual([
       ["t1", "Injective functions"],
-      ["t2", "Graphs"],
+      ["t2", "Series"],
     ]);
-    // Rust mapped "t2" onto Graphs (the id it happened to assign); the dropped topic's id now maps to nothing.
+    // Rust mapped "t2" onto Series (the id it happened to assign); the dropped topic's id now maps to nothing.
     expect(exams[0]!.known).toBe(false);
     expect(exams[0]!.includes).toEqual([]);
   });
@@ -231,7 +231,7 @@ describe("scope map", () => {
     await new Promise((r) => setTimeout(r, 20));
     put("courses/CS101/files/Notes.pdf.md", "# Text of Notes.pdf\n\n5.3 Properties of Functions\n\nA function f is injective if no two inputs give the same output. More.");
     expect(cached(vis, seen, null)![1]).toBe(false);
-    state(vis, seen, "Midterm 2", "Everything on functions, not graphs", 9);
+    state(vis, seen, "Midterm 2", "Everything on functions, not series", 9);
     const r = new Scripted(['{"includes": ["t1", "t9"], "excludes": ["t2"]}']);
     const e = (await examScope(vis, seen, map, "midterm 2", r))!;
     expect(e.fromUser).toBe(true);
@@ -249,7 +249,7 @@ describe("scope map", () => {
     expect(p).toContain("- Injective functions (5.3)");
     expect(p).toContain("Test 1: through Problem set 6; not series or sequences");
     expect(p).toContain('[source: courses/CS101/announcements.md "Test 1 will not cover series or sequences."]');
-    expect(p).toContain("Not on Test 1: Graphs.");
+    expect(p).toContain("Not on Test 1: Series.");
     expect(p).toContain("Midterm 2: the student says it covers: Everything on functions");
     expect(p).toContain("Final: what it covers wasn't found");
     expect(p).toContain("changed since this was mapped");
@@ -270,15 +270,15 @@ describe("scope map", () => {
       parts: [...ALL],
       fingerprint: "",
       built: 0,
-      topics: [base("t1", "Sets"), base("t2", "Graphs"), base("t3", "Trees", true)],
+      topics: [base("t1", "Sets"), base("t2", "Series"), base("t3", "Trees", true)],
       notation: [],
       exams: [{ title: "Test 1", known: true, summary: "sets", includes: ["t1"], excludes: [], excludedWords: [], homework: [], evidence: [{ source: "courses/CS101/announcements.md", quote: "x" }], fromUser: false }],
       dropped: 0,
     };
     put(".phaethon/scope/CS101.json", JSON.stringify({ maps: { [partsKey(seen)]: map }, stated: [] }));
     const p = promptSection(vis)!;
-    expect(p).toContain("Not on Test 1: Graphs.");
-    expect(p).not.toContain("Not on Test 1: Graphs; Trees.");
+    expect(p).toContain("Not on Test 1: Series.");
+    expect(p).not.toContain("Not on Test 1: Series; Trees.");
   });
 
   it("a damaged store reads as empty but is never overwritten", async () => {

@@ -637,7 +637,7 @@ function ExamStep({
             What does {examTitleOf(exam, otherName) || "it"} cover?
             {picked?.state === "unchecked" && <span className="font-normal text-muted-foreground"> (optional)</span>}
           </Label>
-          <Input id={`${id}-scope`} placeholder="through Problem set 6; not graphs" value={scopeText} onChange={(e) => setScopeText(e.target.value)} />
+          <Input id={`${id}-scope`} placeholder="through Problem set 5; not series" value={scopeText} onChange={(e) => setScopeText(e.target.value)} />
           <p className="text-sm text-muted-foreground">
             {picked?.state === "unchecked" ? "Phaethon reads the course first to find out; anything you say here is used as you wrote it." : "In a few words, as the teacher said it."}
           </p>
@@ -683,7 +683,7 @@ function ScopeForm({ space, needs, onSaved }: { space: string; needs: UnknownSco
       }}
     >
       <Label htmlFor={`${id}-s`}>What does {needs.exam} cover?</Label>
-      <Input id={`${id}-s`} autoFocus placeholder="through Problem set 6; not graphs" value={text} onChange={(e) => setText(e.target.value)} aria-invalid={!!problem || undefined} />
+      <Input id={`${id}-s`} autoFocus placeholder="through Problem set 5; not series" value={text} onChange={(e) => setText(e.target.value)} aria-invalid={!!problem || undefined} />
       {problem && <p className="text-sm text-destructive-foreground">{problem}</p>}
       <div>
         <Button type="submit" size="sm">

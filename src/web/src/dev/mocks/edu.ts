@@ -237,7 +237,7 @@ const grounding = {
   asked: 7,
   kept: 5,
   dropped: [
-    { text: "How many edges does $K_5$ have?", why: "Graphs aren’t on Test 1." },
+    { text: "How many edges does $K_5$ have?", why: "Series aren’t on Test 1." },
     { text: "Which rule gives $\\binom{n}{k}$?", why: "The quote isn’t in Textbook chapter 2.pdf." },
   ],
   coverage: [
@@ -303,8 +303,8 @@ const scopeViews: Record<string, unknown> = {
         { id: "t2", title: "Sets and set operations", sections: "§2.1–2.2", terms: [], weight: 2, homework: ["Problem set 3"], evidence: [] },
         { id: "t3", title: "Functions", sections: "§2.3", terms: [], weight: 2, homework: ["Problem set 5"], evidence: [] },
         { id: "t4", title: "Induction", sections: "§5.1", terms: [], weight: 1, homework: ["Problem set 6"], evidence: [] },
-        { id: "t5", title: "Graphs", sections: "§10.1", terms: [], weight: 1, homework: [], evidence: [] },
-        { id: "t6", title: "Combinatorics", sections: "§6.1", terms: [], weight: 1, homework: [], evidence: [] },
+        { id: "t5", title: "Series", sections: "§10.1", terms: [], weight: 1, homework: [], evidence: [] },
+        { id: "t6", title: "Sequences", sections: "§6.1", terms: [], weight: 1, homework: [], evidence: [] },
       ],
       notation: [],
       exams: [
@@ -315,7 +315,7 @@ const scopeViews: Record<string, unknown> = {
           summary: "through Problem set 6",
           includes: ["t1", "t2", "t3", "t4"],
           excludes: ["t5", "t6"],
-          excludedWords: ["graphs", "combinatorics"],
+          excludedWords: ["series", "sequences"],
           homework: ["Problem set 1", "Problem set 6"],
           evidence: [{ source: `${CS101}/announcements.md`, quote: "Test 1 covers everything through Homework 6. It will not cover series or sequences." }],
           fromUser: false,

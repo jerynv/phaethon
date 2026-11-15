@@ -129,8 +129,8 @@ describe("quiz answers", () => {
     expect(tidyScope("October 22 or 23, 2026; through Problem set 6; no series or sequences; not series or sequences")).toBe(
       "October 22 or 23, 2026; through Problem set 6; no series or sequences",
     );
-    expect(tidyScope("through Problem set 6; not graphs")).toBe("through Problem set 6; not graphs");
-    expect(tidyScope("through Problem set 6; no graphs; not combinatorics")).toBe("through Problem set 6; no graphs; not combinatorics");
+    expect(tidyScope("through Problem set 6; not series")).toBe("through Problem set 6; not series");
+    expect(tidyScope("through Problem set 6; no series; not sequences")).toBe("through Problem set 6; no series; not sequences");
   });
 
   test("choices are lettered and lists read as words", () => {
@@ -266,7 +266,7 @@ describe("exam options", () => {
     summary: known ? "through Problem set 6" : "",
     includes: ["t1"],
     excludes: [],
-    excludedWords: known ? ["graphs"] : [],
+    excludedWords: known ? ["series"] : [],
     homework: [],
     evidence: [],
     fromUser: false,
@@ -291,7 +291,7 @@ describe("exam options", () => {
       ["Test 2", "unknown"],
       ["Final", "stated"],
     ]);
-    expect(scopeWords(opts[0]!.scope!)).toBe("through Problem set 6; not graphs");
+    expect(scopeWords(opts[0]!.scope!)).toBe("through Problem set 6; not series");
   });
 
   test("a stale or missing map leaves unknown tests unchecked", () => {

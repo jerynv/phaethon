@@ -307,7 +307,7 @@ export async function scoped(
     if (!examScope) {
       const title = scope.findExam(map.exams, wanted)?.title ?? wanted;
       throw new ScopeError(
-        `I couldn’t find what ${title} covers in your ${seen.state.name} materials, so I haven’t made anything: I won’t guess. Tell me what it covers (for example “through Problem set 6, not graphs”) and I’ll make it from that.`,
+        `I couldn’t find what ${title} covers in your ${seen.state.name} materials, so I haven’t made anything: I won’t guess. Tell me what it covers (for example “through Problem set 5, not series”) and I’ll make it from that.`,
         { course: `courses/${seen.state.folder}`, courseName: seen.state.name, exam: title },
       );
     }

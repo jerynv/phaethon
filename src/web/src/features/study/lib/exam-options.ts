@@ -19,7 +19,7 @@ export type ExamOption = {
 /** The choice that is a test not listed, named by the person. */
 export const OTHER_EXAM = "\u0000other";
 
-/** A known scope in a few words: "through Problem set 6; not series or sequences". */
+/** A known scope in a few words: "through Problem set 5; not series or sequences". */
 export function scopeWords(e: Pick<ExamScope, "summary" | "includes" | "excludedWords">): string {
   let s = e.summary || plural(e.includes.length, "topic");
   if (e.excludedWords.length && !/\bnot /i.test(s)) s += `; not ${e.excludedWords.join(" or ")}`;

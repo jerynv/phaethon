@@ -403,7 +403,7 @@ From the <source> files (and the current map, if one is given, which you extend 
 - "topics": what the course teaches, in the order it teaches it, at the grain of a lecture section or a homework problem (aim for 10 to 40 topics). Each: "id" (keep ids from the current map; new ones "t" plus a number), "title" (the course's own words), "sections" (the course's numbering if it has one, like "3.8–3.13", else omit), "terms" (2 to 8 words or short phrases the course uses for it), "weight" (1 to 5: how much the course leans on it: homework problems, lecture time, review sheets, "focus on"), "homework" (problems on it, like "Problem set 4 #3"), and "evidence": 1 to 3 passages that show the course teaches it.
 - A topic whose evidence is only in readings/ files (textbooks and other readings the course links to) counts only where the course points students to it: give it "assignedBy", 1 or 2 passages from the syllabus, assignments, announcements, modules or the course's own pages that assign or point to that chapter, section or topic, naming it (same form as evidence). Without one it is kept as reference only and never tested. Never give a topic for a chapter of a textbook nothing in the course points to.
 - "notation": symbols and notation the course defines that a student must know (like |s| for a string's length, ε for the empty string): "symbol", "meaning", "evidence" (one passage).
-- "exams": every exam the materials mention. Each: "title" as the course names it ("Test 1"), "date" (YYYY-MM-DD) if stated, "through" (the last homework or section it covers, if stated), "includes" (topic ids it covers), "excludes" (topic ids it explicitly leaves out), "excludedWords" (what it leaves out, in the course's words), "homework" (paths of the homework files it covers, copied from the source paths), "summary" (a few words, like "through Problem set 6; not series or sequences"), and "evidence": the passages that say what it covers. If the materials don't say what an exam covers, give it with "includes": [] and no evidence. Never infer an exam's coverage from dates alone.
+- "exams": every exam the materials mention. Each: "title" as the course names it ("Test 1"), "date" (YYYY-MM-DD) if stated, "through" (the last homework or section it covers, if stated), "includes" (topic ids it covers), "excludes" (topic ids it explicitly leaves out), "excludedWords" (what it leaves out, in the course's words), "homework" (paths of the homework files it covers, copied from the source paths), "summary" (a few words, like "through Problem set 5; not series or sequences"), and "evidence": the passages that say what it covers. If the materials don't say what an exam covers, give it with "includes": [] and no evidence. Never infer an exam's coverage from dates alone.
 
 Evidence: {"source": the <source> path copied exactly, "quote": words copied exactly from that source, one or two sentences or a heading line (at least five words), never paraphrased, never stitched together}. Quotes are checked against the files: one that isn't there is thrown away, and a topic with no real evidence is dropped.
 
@@ -775,9 +775,9 @@ export async function build(
 
 // ---- The person's word ----------------------------------------------------------
 
-export const RESOLVE_SYSTEM = `A student told you what an exam covers. Match what they said to the course's topics (given with ids, in the order taught). "includes": the ids of every topic the exam covers by what they said (for "through Problem set 6" or "up to section 5.4", every topic up to that point); "excludes": the ids of topics they said it leaves out. Use only what they said; when they don't say, leave the topic out of both.
+export const RESOLVE_SYSTEM = `A student told you what an exam covers. Match what they said to the course's topics (given with ids, in the order taught). "includes": the ids of every topic the exam covers by what they said (for "through Problem set 5" or "up to section 5.4", every topic up to that point); "excludes": the ids of topics they said it leaves out. Use only what they said; when they don't say, leave the topic out of both.
 
-Reply with only JSON: {"includes": ["t1"], "excludes": ["t9"], "summary": "a few words, like: through Problem set 6; not series or sequences"}`;
+Reply with only JSON: {"includes": ["t1"], "excludes": ["t9"], "summary": "a few words, like: through Problem set 5; not series or sequences"}`;
 
 const sectionsSuffix = (t: { sections?: string }) => (t.sections !== undefined ? ` (${t.sections})` : "");
 
@@ -865,7 +865,7 @@ export function inScope(map: ScopeMap, exam: ExamScope | null): Topic[] {
   return map.topics.filter((t) => !t.reference && (!exam || (exam.includes.includes(t.id) && !exam.excludes.includes(t.id))));
 }
 
-/** "Test 1: through Problem set 6; not series or sequences". */
+/** "Test 1: through Problem set 5; not series or sequences". */
 export function scopeWords(e: ExamScope): string {
   if (!e.known) return `${e.title}: I couldn’t find what it covers`;
   let s = e.summary === "" ? `${e.includes.length} topics` : e.summary;

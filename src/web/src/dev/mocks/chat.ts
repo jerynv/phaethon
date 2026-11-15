@@ -343,7 +343,7 @@ async function run(args: Record<string, unknown>) {
   }
 
   if (p.includes("practice")) {
-    const reply = `I’ll have Phaethon make a 10-question practice test for **Test 1** from your CS101 notes and homework, through Problem set 6 and leaving out graphs and combinatorics. It mixes multiple choice, true or false and short proofs at exam level.\n\n\`\`\`phaethon-study\n{"kind": "quiz", "title": "Test 1 practice", "exam": "Test 1", "focus": "", "count": 10, "kinds": ["choice", "truefalse", "short"], "difficulty": "exam", "sources": ["${CS101}"]}\n\`\`\``;
+    const reply = `I’ll have Phaethon make a 10-question practice test for **Test 1** from your CS101 notes and homework, through Problem set 6 and leaving out series and sequences. It mixes multiple choice, true or false and short proofs at exam level.\n\n\`\`\`phaethon-study\n{"kind": "quiz", "title": "Test 1 practice", "exam": "Test 1", "focus": "", "count": 10, "kinds": ["choice", "truefalse", "short"], "difficulty": "exam", "sources": ["${CS101}"]}\n\`\`\``;
     await say(ch, turn, reply, 8);
     return end(ch, space, turn, saveTurn(space, prompt, reply, [], replaceFrom));
   }

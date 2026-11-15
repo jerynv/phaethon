@@ -4,6 +4,10 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { useNav } from "@/app/store";
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
+import { CheckboxGroup } from "@base-ui/react/checkbox-group";
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
+import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
@@ -414,43 +418,7 @@ function QuestionView({
       <StudyText text={question.prompt} space={space} id={`q-${question.id}`} className="[&_.markdown]:text-base [&_.markdown]:leading-relaxed" />
 
       {!typed ? (
-        <div className="flex flex-col gap-1.5" role={multi ? "group" : "radiogroup"} aria-label="Choices">
-          {multi ? <p className="text-muted-foreground text-xs">Choose all that apply.</p> : null}
-          {choices.map((c, i) => {
-            const picked = includesAnswer(answer, c);
-            return (
-              <motion.button
-                key={c}
-                type="button"
-                role={multi ? "checkbox" : "radio"}
-                aria-checked={picked}
-                data-choice=""
-                whileTap={{ scale: 0.995 }}
-                onClick={() => {
-                  if (multi) {
-                    const list = answerList(answer);
-                    onAnswer(picked ? list.filter((x) => x.trim().toLowerCase() !== c.trim().toLowerCase()) : [...list, c]);
-                  } else onAnswer(c);
-                }}
-                className={cn(
-                  "flex min-h-11 items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-input hover:bg-accent/60",
-                  picked && "border-primary/60 bg-primary/6 hover:border-primary/60 hover:bg-primary/8",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex size-6 shrink-0 items-center justify-center border font-medium text-muted-foreground text-xs tabular-nums transition-colors",
-                    multi ? "rounded-md" : "rounded-full",
-                    picked && "border-primary bg-primary text-primary-foreground",
-                  )}
-                >
-                  {multi && picked ? <CheckCircle weight="bold" className="size-3.5" /> : i < 9 ? i + 1 : choiceLetter(i)}
-                </span>
-                <StudyText text={choiceLabel(question, c)} space={space} id={`q-${question.id}-${i}`} className="flex-1 [&_.markdown]:text-sm" />
-              </motion.button>
-            );
-          })}
-        </div>
+        <ChoiceList multi={multi} choices={choices} answer={answer} onAnswer={onAnswer} render={(c, i) => <StudyText text={choiceLabel(question, c)} space={space} id={`q-${question.id}-${i}`} className="flex-1 [&_.markdown]:text-sm" />} />
       ) : question.kind === "short" ? (
         <Textarea rows={4} aria-label="Your answer" placeholder="Your answer (⌘↵ for next)" value={typeof answer === "string" ? answer : ""} onChange={(e) => onAnswer(e.target.value)} />
       ) : (
@@ -795,5 +763,60 @@ function QuizSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+const CHOICE =
+  "group flex min-h-11 items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left outline-none transition-colors duration-150 hover:border-input hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary/60 data-checked:bg-primary/6 data-checked:hover:border-primary/60 data-checked:hover:bg-primary/8";
+const BADGE =
+  "flex size-6 shrink-0 items-center justify-center border font-medium text-muted-foreground text-xs tabular-nums transition-colors group-data-checked:border-primary group-data-checked:bg-primary group-data-checked:text-primary-foreground";
+
+/** Enter, ← and → move between questions, so Base UI's own handling of those keys stays out of the way (↑ and ↓ still move between choices). */
+const quizKeys = (e: React.KeyboardEvent & { preventBaseUIHandler?: () => void }) => {
+  if (e.key === "Enter" || e.key === "ArrowLeft" || e.key === "ArrowRight") e.preventBaseUIHandler?.();
+};
+
+/** A question's choices as Base UI radios (one answer) or checkboxes (several), drawn as numbered cards. */
+function ChoiceList({
+  multi,
+  choices,
+  answer,
+  onAnswer,
+  render,
+}: {
+  multi: boolean;
+  choices: string[];
+  answer: unknown;
+  onAnswer: (a: string | string[]) => void;
+  render: (choice: string, index: number) => ReactNode;
+}) {
+  const badge = (i: number, picked: boolean) => (
+    <span className={cn(BADGE, multi ? "rounded-md" : "rounded-full")}>{multi && picked ? <CheckCircle weight="bold" className="size-3.5" /> : i < 9 ? i + 1 : choiceLetter(i)}</span>
+  );
+  if (multi) {
+    const list = answerList(answer as never);
+    const value = choices.filter((c) => includesAnswer(answer as never, c));
+    return (
+      <CheckboxGroup value={value} onValueChange={(v) => onAnswer(list.filter((x) => !choices.includes(x)).concat(v as string[]))} aria-label="Choices" className="flex flex-col gap-1.5">
+        <p className="text-muted-foreground text-xs">Choose all that apply.</p>
+        {choices.map((c, i) => (
+          <CheckboxPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
+            {badge(i, value.includes(c))}
+            {render(c, i)}
+          </CheckboxPrimitive.Root>
+        ))}
+      </CheckboxGroup>
+    );
+  }
+  const value = choices.find((c) => includesAnswer(answer as never, c)) ?? null;
+  return (
+    <RadioGroupPrimitive value={value} onValueChange={(v) => onAnswer(v as string)} aria-label="Choices" className="flex flex-col gap-1.5">
+      {choices.map((c, i) => (
+        <RadioPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
+          {badge(i, value === c)}
+          {render(c, i)}
+        </RadioPrimitive.Root>
+      ))}
+    </RadioGroupPrimitive>
   );
 }

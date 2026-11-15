@@ -1,7 +1,7 @@
 import { BrainIcon, ChevronRightIcon, CopyIcon, CornerDownRightIcon, FileCodeIcon, PencilIcon, PlayIcon, RotateCcwIcon, SquareIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useRef, useState } from "react";
-import { useNav } from "@/app/store";
+import { useNav, useOpenThread } from "@/app/store";
 import { ClampedText, SurfaceError } from "@/components/errors";
 import { FileChip, copyText } from "@/components/file-chip";
 import { toast } from "@/components/toast";
@@ -53,6 +53,7 @@ function MessageMenu({ children, items }: { children: ReactNode; items: ReactNod
  * just-sent image opens its preview right away.
  */
 function AttachmentChip({ a, space }: { a: Attachment; space: string }) {
+  const thread = useOpenThread(space);
   const openFile = useNav((s) => s.openFile);
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,7 +85,7 @@ function AttachmentChip({ a, space }: { a: Attachment; space: string }) {
   const resolve = async () => {
     setBusy(true);
     try {
-      const saved = await threadLoad(space);
+      const saved = await threadLoad(space, thread);
       for (let i = saved.length - 1; i >= 0; i--) {
         const m = saved[i]!;
         if (m.role !== "user") continue;

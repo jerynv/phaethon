@@ -20,6 +20,7 @@ import { threadModelGet, type ModelPick } from "@/features/chat/api";
 import { CitationChip } from "@/features/chat/components/CitationChip";
 import { ModelPicker } from "@/features/chat/components/ModelPicker";
 import { useSpaceChat } from "@/features/chat/store";
+import { useOpenThread } from "@/app/store";
 import { planExamsGet } from "@/features/plan/api";
 import { cn } from "@/lib/utils";
 import { studyMakeCancel, studyMakeDeck, studyMakeQuiz, studyScope, studyScopeBuild, studyScopeState } from "../api";
@@ -413,18 +414,19 @@ function useStudyPick(space: string, open: boolean): { pick: ModelPick | null; s
   const saved = useStudyFlow((s) => s.pick);
   const setPick = useStudyFlow((s) => s.setPick);
   const chat = useSpaceChat(space).pick?.pick ?? null;
+  const thread = useOpenThread(space);
   const [fetched, setFetched] = useState<ModelPick | null>(null);
   useEffect(() => {
     if (!open || saved || chat) return;
     let live = true;
-    threadModelGet(space).then(
+    threadModelGet(space, thread).then(
       (v) => live && setFetched(v.pick),
       () => {},
     );
     return () => {
       live = false;
     };
-  }, [open, saved, chat, space]);
+  }, [open, saved, chat, space, thread]);
   return { pick: saved ?? chat ?? fetched, set: setPick };
 }
 

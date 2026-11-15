@@ -6,7 +6,11 @@ import type { AccessAnswer, LessonAnswer, UiRecord } from "#shared/agent.ts";
 import { useNav } from "@/app/store";
 import { toast } from "@/components/toast";
 import { StartTruncate } from "@/components/truncate";
+import { CheckboxGroup } from "@base-ui/react/checkbox-group";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Radio, RadioGroup } from "@/components/ui/radio-group";
+import { Toggle, ToggleGroup } from "@/components/ui/toggle-group";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { Spinner } from "@/components/ui/spinner";
@@ -219,6 +223,9 @@ export function AccessCard({ access, spaceName, onAnswer }: { access: PendingAcc
   );
 }
 
+/** A choice row: the whole row picks, the control shows the state. */
+const OPTION = "flex cursor-default items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent has-data-checked:border-primary/50 has-data-checked:bg-primary/6";
+
 const CONFIDENCE = [
   { value: 25, label: "Guessing" },
   { value: 50, label: "Unsure" },
@@ -256,36 +263,37 @@ export function QuestionCard({ question, space, disabled, onAnswer }: { question
     >
       <Markdown inline text={q.question} space={space} messageKey={q.id} className="mb-2.5" />
       {check ? (
-        <div className="flex flex-col gap-1">
-          {check.options.map((o) => {
-            const on = chosen.includes(o.value);
-            return (
-              <button
-                key={o.value}
-                type="button"
-                disabled={disabled}
-                aria-pressed={on}
-                onClick={() => setChosen((c) => (check.multiSelect ? (on ? c.filter((x) => x !== o.value) : [...c, o.value]) : [o.value]))}
-                className={cn("flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent", on && "border-primary/50 bg-primary/6")}
-              >
-                <span className={cn("mt-0.5 flex size-3.5 shrink-0 items-center justify-center border", check.multiSelect ? "rounded-[3px]" : "rounded-full", on ? "border-primary bg-primary" : "border-input")}>
-                  {on ? <span className={cn("bg-primary-foreground", check.multiSelect ? "h-1.5 w-1.5 rounded-[1px]" : "size-1.5 rounded-full")} /> : null}
-                </span>
+        check.multiSelect ? (
+          <CheckboxGroup value={chosen} onValueChange={(v) => setChosen(v as string[])} disabled={disabled} className="flex flex-col gap-1">
+            {check.options.map((o) => (
+              <label key={o.value} className={OPTION}>
+                <Checkbox value={o.value} className="mt-0.5" />
                 <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0 text-sm" />
-              </button>
-            );
-          })}
-        </div>
+              </label>
+            ))}
+          </CheckboxGroup>
+        ) : (
+          <RadioGroup value={chosen[0] ?? null} onValueChange={(v) => setChosen([v as string])} disabled={disabled} className="gap-1">
+            {check.options.map((o) => (
+              <label key={o.value} className={OPTION}>
+                <Radio value={o.value} className="mt-0.5" />
+                <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0 text-sm" />
+              </label>
+            ))}
+          </RadioGroup>
+        )
       ) : (
         <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="In your own words…" className="min-h-20" disabled={disabled} />
       )}
       <div className="mt-2.5 flex items-center gap-1.5 text-xs">
         <span className="mr-1 text-muted-foreground">How sure?</span>
-        {CONFIDENCE.map((c) => (
-          <button key={c.value} type="button" onClick={() => setConfidence(c.value === confidence ? null : c.value)} className={cn("h-6 rounded-md border px-2 text-xs transition-colors hover:bg-accent", confidence === c.value && "border-primary/50 bg-primary/6 text-foreground")}>
-            {c.label}
-          </button>
-        ))}
+        <ToggleGroup variant="segmented" value={confidence === null ? [] : [String(confidence)]} onValueChange={(v) => setConfidence(v.length ? Number(v[v.length - 1]) : null)}>
+          {CONFIDENCE.map((c) => (
+            <Toggle key={c.value} value={String(c.value)}>
+              {c.label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
       </div>
     </Card>
   );

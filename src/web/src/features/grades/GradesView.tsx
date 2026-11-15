@@ -479,17 +479,15 @@ function CourseTable({
                             <td className="h-8 pl-3 text-right tabular-nums">
                               {editable ? (
                                 <span className="inline-flex items-center justify-end gap-1">
-                                  <input
+                                  <Input
+                                    size="compact"
                                     aria-label={`Try a score for ${item.title}`}
+                                    aria-invalid={bad || undefined}
                                     inputMode="decimal"
                                     placeholder="–"
                                     value={typed}
                                     onChange={(e) => setScores((s) => ({ ...s, [key]: e.target.value }))}
-                                    className={cn(
-                                      "h-6 w-12 rounded-md border border-transparent bg-transparent px-1.5 text-right text-sm tabular-nums outline-none placeholder:text-subtle-foreground hover:border-input focus:border-ring",
-                                      typed.trim() && !bad && "border-primary/40 bg-primary/8 text-primary",
-                                      bad && "border-destructive/60 bg-destructive/6 text-destructive-foreground",
-                                    )}
+                                    className={cn("w-14 [&_input]:text-right [&_input]:tabular-nums", typed.trim() && !bad && "border-primary/40 bg-primary/8 text-primary")}
                                   />
                                   <span className="text-muted-foreground text-xs">{item.possible ? `/${item.possible}` : "%"}</span>
                                 </span>

@@ -399,6 +399,51 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
   );
 }
 
+function WritesGroup({ space }: { space: SpaceView }) {
+  const perms = useLoad(() => api.writePermissions(space.id), [space.id]);
+  const revoke = async (what: string, change: { thread?: string; scope: "conversation" | "space" }) => {
+    try {
+      await api.setWritePermission({ space: space.id, ...change, allow: false });
+      await perms.reload();
+      toast.success("Phaethon will ask again", what);
+    } catch (e) {
+      toast.error("Couldn’t change that", cleanMessage(e));
+    }
+  };
+  const since = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return (
+    <Group label="Changing files without asking">
+      <Loader state={perms} errorTitle="Couldn’t read what may change files" skeleton={<SkeletonCard rows={1} />}>
+        {(p) => {
+          const rows = [
+            ...p.spaces.map((x) => ({ key: "space", label: `Every conversation in ${space.name}`, since: x.since, change: { scope: "space" as const } })),
+            ...p.conversations.map((x) => ({ key: x.thread, label: x.title, since: x.since, change: { scope: "conversation" as const, thread: x.thread } })),
+          ];
+          return (
+            <Card>
+              {rows.length === 0 ? (
+                <div className="px-3.5 py-6 text-center text-muted-foreground text-xs">Phaethon asks before it changes a file here.</div>
+              ) : (
+                rows.map((r) => (
+                  <div key={r.key} className="flex min-h-11 items-center gap-2.5 px-3.5 py-2">
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <Truncate className="text-sm">{r.label}</Truncate>
+                      <span className="text-2xs text-muted-foreground tabular-nums">Since {since(r.since)}</span>
+                    </div>
+                    <Button size="xs" variant="ghost-destructive" onClick={() => void revoke(r.label, r.change)}>
+                      Ask again
+                    </Button>
+                  </div>
+                ))
+              )}
+            </Card>
+          );
+        }}
+      </Loader>
+    </Group>
+  );
+}
+
 function ExportGroup({ space }: { space: SpaceView }) {
   const [busy, setBusy] = useState(false);
   const run = async () => {
@@ -444,6 +489,7 @@ function SpaceDetail({ space, spaces, onBack }: { space: SpaceView; spaces: Spac
       <IdentityGroup space={space} />
       <AgentsGroup space={space} />
       <GrantsGroup space={space} spaces={spaces} />
+      <WritesGroup space={space} />
       <ExportGroup space={space} />
     </>
   );

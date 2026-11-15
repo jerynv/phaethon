@@ -141,3 +141,18 @@ test("tool steps read in plain words; technical details are opt-in", async ({ pa
   await page.keyboard.press("Escape");
   await expect(work.getByText("Reading file")).toBeVisible();
 });
+
+test("typing goes into the message box without clicking it first, and a card's keys never swallow it", async ({ page }) => {
+  core = await startCore();
+  await core.open(page);
+  const box = composer(page);
+  await expect(box).toBeFocused();
+  await page.keyboard.type("hello 3t");
+  await expect(box).toHaveValue("hello 3t");
+
+  // Focus elsewhere on the page (not a field): the next key still lands in the box.
+  await box.fill("");
+  await page.getByRole("button", { name: "New chat" }).first().focus();
+  await page.keyboard.type("yes");
+  await expect(box).toHaveValue("yes");
+});

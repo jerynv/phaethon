@@ -78,21 +78,17 @@ function useBusy() {
   return [busy, run] as const;
 }
 
-/**
- * Whether a key press belongs to a text field. The chat composer keeps focus
- * after sending, so while it is empty a card's single keys still answer; once
- * there is a draft, Y and N go into it.
- */
-const typing = (el: Element | null) => {
-  if (!el) return false;
-  if (el instanceof HTMLTextAreaElement && el.dataset.slot === "composer-input") return el.value !== "";
-  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable;
-};
+/** Whether a key press belongs to a text field. Anything typed into a field, the composer included, is never an answer. */
+const typing = (el: Element | null) => !!el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement).isContentEditable);
+
+/** The chat composer while it has focus and nothing in it: a new card may take focus from it. */
+const emptyComposer = (el: Element | null) => el instanceof HTMLTextAreaElement && el.dataset.slot === "composer-input" && el.value === "";
 
 /**
  * Single keys answer the card on screen (Y, N, …) unless the person is typing
  * somewhere. The newest card owns the keys; the card takes focus when nothing
- * else has it, so Enter and Escape work too.
+ * else has it (an empty composer counts), so Enter and Escape work too. Any
+ * other key typed while the card has focus goes to the composer.
  */
 function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HTMLDivElement | null>) {
   const latest = useRef(keys);
@@ -101,9 +97,8 @@ function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HT
   const active = useViewActive();
   useEffect(() => {
     if (!active) return;
-    if (!typing(document.activeElement) && (document.activeElement === document.body || !document.activeElement)) {
-      box.current?.querySelector<HTMLButtonElement>("[data-primary]")?.focus({ preventScroll: true });
-    }
+    const a = document.activeElement;
+    if (!a || a === document.body || emptyComposer(a)) box.current?.querySelector<HTMLButtonElement>("[data-primary]")?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || typing(document.activeElement)) return;
       if (document.querySelector("[role=dialog], [role=menu]")) return;
@@ -116,8 +111,9 @@ function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HT
       e.preventDefault();
       f();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture, so the card answers before the composer pulls the key in as text.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [box, active]);
 }
 

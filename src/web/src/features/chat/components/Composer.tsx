@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
+import { useViewActive } from "@/app/Header";
 import { useNav, useOpenThread } from "@/app/store";
 import { ConnectionLost, FieldError } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -28,6 +29,10 @@ type Pending = { id: string; file: File; previewUrl?: string };
 export type EditTarget = { index: number; text: string; attachments: Attachment[] };
 
 const drafts = new Map<string, string>();
+
+/** Whether the element takes typed text itself. */
+const editsText = (el: Element | null): boolean => el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || !!(el as HTMLElement | null)?.isContentEditable;
+
 /** Files picked but not sent yet, per conversation (`draftKey`), kept while another conversation is shown. */
 const stashes = new Map<string, { files: File[]; kept: Attachment[] }>();
 const pending = (file: File): Pending => ({ id: `${file.name}-${file.size}-${Math.random()}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined });
@@ -236,6 +241,33 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
   });
 
   useEffect(() => () => files.forEach((f) => f.previewUrl && URL.revokeObjectURL(f.previewUrl)), [files]);
+
+  // The message box has focus whenever its chat is the page on screen and
+  // nothing else has it, so typing starts straight away; and a key typed
+  // anywhere else on the page (not in another field, dialog or menu) lands
+  // here too, like a desktop chat app.
+  const onScreen = useViewActive();
+  useEffect(() => {
+    if (!onScreen) return;
+    const el = area.current;
+    const a = document.activeElement;
+    if (el && (!a || a === document.body)) el.focus({ preventScroll: true });
+  }, [onScreen, draftKey]);
+  useEffect(() => {
+    if (!onScreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = area.current;
+      if (!el || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1) return;
+      const a = document.activeElement;
+      if (a === el || editsText(a)) return;
+      if (e.key === " " && a && a !== document.body) return; // Space presses the focused button.
+      if (document.querySelector("[role=dialog], [role=menu], [role=listbox]")) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(el.value.length, el.value.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onScreen]);
 
   const add = useCallback(
     (list: File[]) => {

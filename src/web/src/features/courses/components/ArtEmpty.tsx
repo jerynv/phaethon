@@ -31,7 +31,8 @@ export function ArtEmpty({
       initial={reduce ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className={cn("mx-auto flex w-full max-w-md flex-col py-10", className)}
+      // my-auto centres it in a page laid out as a full-height column.
+      className={cn("mx-auto my-auto flex w-full max-w-md flex-col py-10", className)}
     >
       <Card>
         <CardMedia className="h-28">

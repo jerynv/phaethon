@@ -15,6 +15,8 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/compone
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Spinner } from "@/components/ui/spinner";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { FileIcon } from "@/features/viewer/FileIcon";
 import { useDelayed } from "@/hooks/use-delayed";
@@ -46,8 +48,8 @@ const PART_HINTS: Record<CoursePart, string> = {
 type SiteActions = { onImport: (c: LmsConnection) => void; onSignIn: (c: LmsConnection) => void; onDisconnect: (c: LmsConnection) => void; busy: boolean };
 
 /**
- * One course (refs 7274, 02a1): a breadcrumb row with its site's actions,
- * then the tab chosen on the left. Overview: an art card with the course's
+ * One course (refs 7274, 02a1, dc42): a breadcrumb row with the pane toggle
+ * and its site's actions, then underline tabs for its sections. Overview: an art card with the course's
  * numbers. Files: its content in grouped lists to open in the viewer.
  * Settings: what this space sees of it.
  */
@@ -55,13 +57,16 @@ export function CourseDetail({
   space,
   course,
   tab,
+  onTab,
+  pane,
+  onPane,
   connection,
   run,
   onImport,
   onSignIn,
   onDisconnect,
   busy,
-}: { space: string; course: CourseInfo; tab: DetailTab; connection: LmsConnection | null; run: ReactNode } & SiteActions) {
+}: { space: string; course: CourseInfo; tab: DetailTab; onTab: (t: DetailTab) => void; pane: boolean; onPane: () => void; connection: LmsConnection | null; run: ReactNode } & SiteActions) {
   const parts = useCourses((s) => partsOf(s.access.data, space, course.key));
   const [content, setContent] = useState<CourseContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,13 +94,24 @@ export function CourseDetail({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b px-6">
+      <div className="flex h-14 shrink-0 items-center gap-2 px-6 @container/crumb">
+        <Tooltip>
+          <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" className="-ml-2" aria-label={pane ? "Hide the course list" : "Show the course list"} aria-pressed={!pane} onClick={onPane} />}>
+            <Icon icon={icons.sidebar} />
+          </TooltipTrigger>
+          <TooltipPopup>{pane ? "Hide the course list" : "Show the course list"}</TooltipPopup>
+        </Tooltip>
         <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 items-center gap-2 text-sm">
-          <Icon icon={icons.folder} className="size-4 text-muted-foreground" />
-          <Truncate className="min-w-0 max-w-56 shrink text-muted-foreground">{connection ? connectionName(connection) : "Other courses"}</Truncate>
-          <Icon icon={icons.chevronRight} className="size-3.5 text-subtle-foreground" />
-          <Icon icon={icons.courses} className="size-4 text-muted-foreground" />
-          <Truncate className="min-w-0 font-medium">{course.name}</Truncate>
+          {/* The site gives up its room first, and goes when the row is narrow, so the course keeps its name. */}
+          <span className="flex min-w-8 shrink-4 items-center gap-2 @max-md/crumb:hidden">
+            <Icon icon={icons.folder} className="size-4 shrink-0 text-muted-foreground" />
+            <Truncate className="min-w-0 max-w-56 text-muted-foreground">{connection ? connectionName(connection) : "Other courses"}</Truncate>
+            <Icon icon={icons.chevronRight} className="size-3.5 shrink-0 text-subtle-foreground" />
+          </span>
+          <Icon icon={icons.courses} className="size-4 shrink-0 text-muted-foreground" />
+          <Truncate className="min-w-16 shrink font-medium" aria-current="page">
+            {course.name}
+          </Truncate>
         </nav>
         {connection ? (
           connection.signedIn ? (
@@ -121,13 +137,22 @@ export function CourseDetail({
                 Sign in again
               </MenuItem>
               <MenuSeparator />
-              <MenuItem variant="destructive" onClick={() => onDisconnect(connection)} disabled={!connection.signedIn}>
+              <MenuItem variant="destructive" onClick={() => onDisconnect(connection)}>
                 <Icon icon={icons.disconnected} />
                 Disconnect
               </MenuItem>
             </MenuPopup>
           </Menu>
         ) : null}
+      </div>
+      <div className="shrink-0 px-6">
+        <Tabs value={tab} onValueChange={(v) => onTab(v as DetailTab)}>
+          <TabsList variant="underline" aria-label="Course section" className="w-full">
+            <TabsTab value="overview">Overview</TabsTab>
+            <TabsTab value="files">Files</TabsTab>
+            <TabsTab value="settings">Settings</TabsTab>
+          </TabsList>
+        </Tabs>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <motion.div
@@ -315,7 +340,7 @@ function EntryRow({ entry: e, icon, selected, onOpen }: { entry: CourseContentEn
       onClick={onOpen}
       className={cn(
         "flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-sm outline-none transition-colors hover:bg-card hover:shadow-card focus-visible:ring-2 focus-visible:ring-ring",
-        selected && "bg-card shadow-card",
+        selected && "bg-row-selected hover:bg-row-selected hover:shadow-none",
       )}
     >
       {e.kind === "file" ? <FileIcon name={e.title} /> : <Icon icon={icon ?? icons.fileText} className="size-4 text-muted-foreground" />}
@@ -378,7 +403,7 @@ function SiteState({ course }: { course: CourseInfo }) {
   const active = run?.status === "running" && mine && !mine.result && !mine.failed;
   return (
     <div className="flex flex-wrap items-center gap-2 pt-2 text-xs" data-testid="course-site-state">
-      <Badge variant={conn.signedIn ? "success" : "warning"} size="sm">
+      <Badge variant={conn.signedIn ? "success" : "warning"} size="lg">
         {conn.signedIn ? "Signed in" : "Signed out"}
       </Badge>
       {!conn.signedIn ? <span className="text-muted-foreground">Sign in again to import</span> : null}
@@ -388,7 +413,7 @@ function SiteState({ course }: { course: CourseInfo }) {
           <span className="truncate tabular-nums">{mine.step ? stepText(mine) : "Waiting to import"}</span>
         </span>
       ) : mine?.result && run?.status !== "running" ? (
-        <Badge variant="info" size="sm">
+        <Badge variant="info" size="lg">
           Just imported
         </Badge>
       ) : null}

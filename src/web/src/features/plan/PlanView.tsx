@@ -27,6 +27,7 @@ import { useLoad } from "@/features/study/use-load";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
 import { type CourseRef, DEFAULT_STATE, type Exam as PlanExam, type PlanState, planExamsGet, planExamsSet, planSave, planStateGet, planStateSet, planUpcoming, type Upcoming } from "./api";
+import { DateField } from "./components/DateField";
 import { agenda, counts, type Entry, type Filter, relDay, type Show, shortDay, timeline } from "./lib/days";
 import { localDay, makePlan, planMarkdown, type PlanInput } from "./lib/schedule";
 
@@ -126,6 +127,8 @@ export function PlanView({ space }: { space: SpaceView }) {
     const done = d.state.done.includes(id);
     void setState({ ...d.state, done: done ? d.state.done.filter((x) => x !== id) : [...d.state.done, id] });
   };
+  const todayAll = everything.find((g) => g.day === today)?.entries ?? [];
+  const todaySessions = todayAll.flatMap((e) => (e.kind === "session" ? [e.session.id] : []));
   const addExam = () => setEditing({ id: "", title: "", course: filter.course ?? NO_COURSE, date: "" });
   const nothing = d && !d.items.length && !d.exams.length;
 
@@ -142,7 +145,7 @@ export function PlanView({ space }: { space: SpaceView }) {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="@container/page mx-auto w-full max-w-(--page-wide-max-width) px-8 pt-10 pb-16 @max-3xl/page:px-6">
+        <div className="@container/page mx-auto flex min-h-full w-full max-w-(--page-wide-max-width) flex-col px-8 pt-10 pb-16 @max-3xl/page:px-6">
           {data.error ? <SurfaceError title="Couldn’t load your plan" message={cleanMessage(data.error)} onRetry={data.reload} /> : null}
           {skeleton ? <PlanSkeleton /> : null}
           {nothing ? (
@@ -172,15 +175,16 @@ export function PlanView({ space }: { space: SpaceView }) {
                 onEditExam={(e) => setEditing({ id: e.id, title: e.title, course: e.course ?? NO_COURSE, date: e.date })}
                 onRemoveExam={(e) => void removeExam(e)}
               />
-              <div className="flex min-w-0 flex-col gap-6">
+              <div className="flex min-w-0 flex-col gap-6 @max-3xl/page:order-first">
+                <FilterBar filter={filter} onFilter={setFilter} colors={colors} />
                 <Today
                   today={today}
                   entries={shown.find((g) => g.day === today)?.entries ?? []}
                   next={shown.find((g) => g.day > today)}
                   done={d.state.done}
                   colors={colors}
-                  sessions={plan.days.reduce((n, x) => n + x.sessions.length, 0)}
-                  checked={plan.days.reduce((n, x) => n + x.sessions.filter((s) => d.state.done.includes(s.id)).length, 0)}
+                  sessions={todaySessions.length}
+                  checked={todaySessions.filter((id) => d.state.done.includes(id)).length}
                   onToggle={toggle}
                   space={space.id}
                   minutes={d.state.sessionMinutes}
@@ -199,7 +203,17 @@ export function PlanView({ space }: { space: SpaceView }) {
           ) : null}
         </div>
       </div>
-      <ExamPanel draft={editing} courses={d?.courses ?? []} onClose={() => setEditing(null)} onSave={saveExam} />
+      <ExamPanel
+        draft={editing}
+        courses={d?.courses ?? []}
+        onClose={() => setEditing(null)}
+        onSave={saveExam}
+        onDelete={(id) => {
+          const e = d?.exams.find((x) => x.id === id);
+          setEditing(null);
+          if (e) void removeExam(e);
+        }}
+      />
     </div>
   );
 }
@@ -278,26 +292,29 @@ function Filters({
   const c = counts(all);
   const sorted = [...exams].sort((a, b) => (a.date < b.date ? -1 : 1));
   return (
-    <nav aria-label="Filter the plan" className="flex min-w-0 flex-col">
-      <SideLabel>Show</SideLabel>
-      {SHOW.map((s) => (
-        <SideRow key={s.value} selected={filter.show === s.value} onClick={() => onFilter({ ...filter, show: s.value })} lead={<Icon icon={s.icon} className="size-4" />} label={s.label} trail={c[s.value] || ""} />
-      ))}
-      {colors.size ? (
-        <>
-          <SideLabel>Courses</SideLabel>
-          {[...colors].map(([name, color]) => (
-            <SideRow
-              key={name}
-              selected={filter.course === name}
-              onClick={() => onFilter({ ...filter, course: filter.course === name ? null : name })}
-              lead={<span className="size-2 rounded-full" style={{ backgroundColor: color }} />}
-              label={name}
-              trail={c.courses.get(name) ?? ""}
-            />
-          ))}
-        </>
-      ) : null}
+    <nav aria-label="Filter the plan" className="flex min-w-0 flex-col @3xl/page:sticky @3xl/page:top-6 @3xl/page:self-start">
+      {/* Narrow pages filter from the bar above the agenda instead. */}
+      <div className="flex flex-col @max-3xl/page:hidden">
+        <SideLabel>Show</SideLabel>
+        {SHOW.map((s) => (
+          <SideRow key={s.value} selected={filter.show === s.value} onClick={() => onFilter({ ...filter, show: s.value })} lead={<Icon icon={s.icon} className="size-4" />} label={s.label} trail={c[s.value] || ""} />
+        ))}
+        {colors.size ? (
+          <>
+            <SideLabel>Courses</SideLabel>
+            {[...colors].map(([name, color]) => (
+              <SideRow
+                key={name}
+                selected={filter.course === name}
+                onClick={() => onFilter({ ...filter, course: filter.course === name ? null : name })}
+                lead={<span className="size-2 rounded-full" style={{ backgroundColor: color }} />}
+                label={name}
+                trail={c.courses.get(name) ?? ""}
+              />
+            ))}
+          </>
+        ) : null}
+      </div>
       <SideLabel>Exams</SideLabel>
       <AnimatePresence initial={false}>
         {sorted.map((e) => (
@@ -337,6 +354,39 @@ function Filters({
   );
 }
 
+/** The left list's Show and Courses as one row over the agenda, for pages too narrow for the list beside it. */
+function FilterBar({ filter, onFilter, colors }: { filter: Filter; onFilter: (f: Filter) => void; colors: Map<string, string> }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 @3xl/page:hidden" data-testid="plan-filter-bar">
+      <SegmentedControl aria-label="Show" value={filter.show} onValueChange={(v) => onFilter({ ...filter, show: v as Show })}>
+        {SHOW.map((s) => (
+          <SegmentedControlItem key={s.value} value={s.value} className="px-2.5 text-xs">
+            {s.value === "session" ? "Sessions" : s.label}
+          </SegmentedControlItem>
+        ))}
+      </SegmentedControl>
+      {[...colors].map(([name, color]) => {
+        const on = filter.course === name;
+        return (
+          <button
+            key={name}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onFilter({ ...filter, course: on ? null : name })}
+            className={cn(
+              "flex h-7 max-w-48 items-center gap-1.5 rounded-full border px-2.5 text-xs outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+              on ? "border-primary/40 bg-primary/8 text-primary hover:bg-primary/12" : "text-muted-foreground",
+            )}
+          >
+            <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+            <span className="truncate">{name}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: PlanState) => void }) {
   return (
     <Popover>
@@ -373,7 +423,7 @@ function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: P
                       const next = on ? state.studyDays.filter((x) => x !== i) : [...state.studyDays, i].sort();
                       if (next.length) onState({ ...state, studyDays: next });
                     }}
-                    className={cn("flex size-8 items-center justify-center rounded-full border font-medium text-xs transition-colors", on ? "border-ink bg-ink text-ink-foreground" : "text-muted-foreground hover:bg-accent")}
+                    className={cn("flex size-8 items-center justify-center rounded-full border font-medium text-xs transition-colors", on ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent")}
                   >
                     {w}
                   </button>
@@ -517,19 +567,18 @@ function Agenda({
   );
 }
 
-/** One row: a time column, the course's dot (or a check box for a session), the title with its course, and what kind it is. */
+/** One row: a time column (clock times only), a check box for a session or the course's dot, the title over its course, and its kind as a badge. */
 function AgendaRow({ entry: e, done, color, minutes, onToggle, space }: { entry: Entry; done: boolean; color?: string; minutes: number; onToggle: (id: string) => void; space: string }) {
   const reduce = useReducedMotion();
-  const time = e.kind === "due" ? timeText(e.at) : e.kind === "exam" ? "All day" : `${minutes} min`;
-  const sub = e.kind === "session" ? [e.course, e.session.decks.length ? `Decks: ${e.session.decks.join(", ")}` : ""].filter(Boolean).join(" · ") : e.course;
+  const time = e.kind === "due" ? timeText(e.at) : e.kind === "exam" ? "All day" : "";
+  const sub = e.kind === "session" ? [e.course, `${minutes} min`, e.session.decks.length ? `Decks: ${e.session.decks.join(", ")}` : ""].filter(Boolean).join(" · ") : e.course;
+  const kind = e.kind === "exam" ? { label: "Exam", info: true } : e.kind === "session" ? { label: e.session.kind === "final-review" ? "Final review" : e.session.kind === "work" ? "Work" : "Review", info: e.session.kind === "final-review" } : null;
   const body = (
     <>
       <span className="w-16 shrink-0 text-muted-foreground text-xs tabular-nums">{time}</span>
       <span className="flex size-4 shrink-0 items-center justify-center">
         {e.kind === "session" ? (
           <Checkbox checked={done} onCheckedChange={() => onToggle(e.session.id)} aria-label={`${e.title} done`} />
-        ) : e.kind === "exam" ? (
-          <Icon icon={icons.flag} className="size-4 text-primary" />
         ) : (
           <span className="size-2 rounded-full bg-subtle-foreground" style={color ? { backgroundColor: color } : undefined} />
         )}
@@ -545,18 +594,10 @@ function AgendaRow({ entry: e, done, color, minutes, onToggle, space }: { entry:
           </span>
         ) : null}
       </span>
-      {e.kind === "exam" ? (
-        <Badge variant="info" size="sm">
-          Exam
+      {kind ? (
+        <Badge variant={kind.info ? "info" : "secondary"} size="lg">
+          {kind.label}
         </Badge>
-      ) : e.kind === "session" ? (
-        e.session.kind === "final-review" ? (
-          <Badge variant="info" size="sm">
-            Final review
-          </Badge>
-        ) : (
-          <span className="shrink-0 text-muted-foreground text-xs">{e.session.kind === "work" ? "Work" : "Review"}</span>
-        )
       ) : (
         <Icon icon={icons.external} className="size-3.5 shrink-0 text-subtle-foreground opacity-0 transition-opacity group-hover:opacity-100" />
       )}
@@ -576,7 +617,7 @@ function AgendaRow({ entry: e, done, color, minutes, onToggle, space }: { entry:
 // ---- The exam panel ----
 
 /** Adding or editing an exam, in a panel over the right of the page (7274's side panel). */
-function ExamPanel({ draft, courses, onClose, onSave }: { draft: Draft | null; courses: CourseRef[]; onClose: () => void; onSave: (e: PlanExam) => Promise<void> }) {
+function ExamPanel({ draft, courses, onClose, onSave, onDelete }: { draft: Draft | null; courses: CourseRef[]; onClose: () => void; onSave: (e: PlanExam) => Promise<void>; onDelete: (id: string) => void }) {
   const reduce = useReducedMotion();
   useEffect(() => {
     if (!draft) return;
@@ -597,14 +638,14 @@ function ExamPanel({ draft, courses, onClose, onSave }: { draft: Draft | null; c
           transition={{ type: "spring", stiffness: 480, damping: 40 }}
           className="absolute inset-y-3 right-3 z-(--z-sheet) flex w-80 flex-col rounded-panel border bg-popover shadow-popup"
         >
-          <ExamForm draft={draft} courses={courses} onCancel={onClose} onSave={onSave} />
+          <ExamForm draft={draft} courses={courses} onCancel={onClose} onSave={onSave} onDelete={draft.id ? () => onDelete(draft.id) : undefined} />
         </motion.aside>
       ) : null}
     </AnimatePresence>
   );
 }
 
-function ExamForm({ draft, courses, onSave, onCancel }: { draft: Draft; courses: CourseRef[]; onSave: (e: PlanExam) => Promise<void>; onCancel: () => void }) {
+function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft; courses: CourseRef[]; onSave: (e: PlanExam) => Promise<void>; onCancel: () => void; onDelete?: () => void }) {
   const [d, setD] = useState(draft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ title?: string; date?: string; save?: string }>({});
@@ -632,11 +673,8 @@ function ExamForm({ draft, courses, onSave, onCancel }: { draft: Draft; courses:
         void submit();
       }}
     >
-      <div className="flex items-start gap-3 border-b px-5 pt-5 pb-4">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="font-medium text-lg tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
-          <p className="text-muted-foreground text-sm">Reviews are planned before it.</p>
-        </div>
+      <div className="flex items-center gap-3 border-b px-5 pt-5 pb-4">
+        <h2 className="min-w-0 flex-1 font-medium text-lg tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
         <Button size="icon-xs" variant="ghost-muted" aria-label="Close" onClick={onCancel}>
           <Icon icon={icons.close} />
         </Button>
@@ -649,7 +687,7 @@ function ExamForm({ draft, courses, onSave, onCancel }: { draft: Draft; courses:
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="exam-date">Date</Label>
-          <Input id="exam-date" type="date" className="tabular-nums" value={d.date} aria-invalid={error.date ? true : undefined} onChange={(e) => setD({ ...d, date: e.target.value })} />
+          <DateField id="exam-date" value={d.date} today={localDay(Date.now())} invalid={!!error.date} onChange={(date) => setD({ ...d, date })} />
           <FieldError>{error.date}</FieldError>
         </div>
         <div className="flex flex-col gap-1.5">
@@ -670,7 +708,13 @@ function ExamForm({ draft, courses, onSave, onCancel }: { draft: Draft; courses:
         </div>
         <FieldError>{error.save}</FieldError>
       </div>
-      <div className="flex justify-end gap-2 border-t px-5 py-4">
+      <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
+        {draft.id && onDelete ? (
+          <Button size="sm" variant="ghost-destructive" className="mr-auto" disabled={busy} onClick={onDelete}>
+            <Icon icon={icons.delete} />
+            Delete exam
+          </Button>
+        ) : null}
         <Button size="sm" variant="outline" onClick={onCancel}>
           Cancel
         </Button>

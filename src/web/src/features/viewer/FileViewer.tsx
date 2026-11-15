@@ -122,7 +122,8 @@ export function FileViewer() {
     if (!target) return;
     navigator.clipboard.writeText(target.path).then(
       () => setCopied(true),
-      (e) => toast.error("Couldn’t copy the path", cleanMessage(e)),
+      // The browser's own reason ("Failed to execute 'writeText'…") means nothing to a person.
+      () => toast.error("Couldn’t copy the path", "The clipboard isn’t available right now. Try again."),
     );
   };
 

@@ -17,6 +17,9 @@ import { useCourses } from "../store";
 
 type Step = "kind" | "address" | "waiting";
 
+/** Each kind's tile: a plain monogram, so the four rows tell apart at a glance without borrowing anyone's logo. */
+const MONOGRAM: Record<LmsKind, string> = { canvas: "C", brightspace: "D2L", moodle: "M", blackboard: "Bb" };
+
 /**
  * Connect a course site: pick the kind, find the school or paste its address,
  * then sign in inside the core's own window. `again` signs in to an existing
@@ -42,6 +45,7 @@ export function ConnectDialog({
   const [note, setNote] = useState<string | null>(null);
   const attempt = useRef(0);
   const loadConnections = useCourses((s) => s.loadConnections);
+  const connections = useCourses((s) => s.connections.data);
 
   useEffect(() => {
     if (!open) return;
@@ -104,7 +108,7 @@ export function ConnectDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => (step === "waiting" && !o ? cancelWaiting() : onOpenChange(o))}>
-      <DialogPopup className={step === "kind" ? "max-w-lg" : "max-w-md"} showCloseButton={step !== "waiting"}>
+      <DialogPopup className={step === "kind" ? "max-w-xl" : "max-w-md"} showCloseButton={step !== "waiting"}>
         {step === "kind" ? (
           <>
             <DialogHeader>
@@ -129,7 +133,9 @@ export function ConnectDialog({
               <div className="flex flex-col gap-1">
                 <h3 className="px-1 pb-1 font-medium text-sm">Which one does your school use?</h3>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                  {KINDS.map((k) => (
+                  {KINDS.map((k) => {
+                    const connected = connections?.some((c) => c.kind === k.kind);
+                    return (
                     <button
                       key={k.kind}
                       type="button"
@@ -144,18 +150,25 @@ export function ConnectDialog({
                       }}
                       className="group flex min-h-14 min-w-0 items-center gap-3 rounded-xl px-1.5 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-muted-foreground shadow-card">
-                        <Icon icon={icons.courses} className="size-5" />
+                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card font-medium text-foreground text-sm tracking-tight shadow-card">
+                        {MONOGRAM[k.kind]}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium text-sm">{k.label}</span>
-                        <span className="block truncate text-muted-foreground text-xs">{k.example}</span>
+                        <span className="block truncate text-muted-foreground text-xs">{connected ? "Connected" : k.example}</span>
                       </span>
-                      <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card transition-colors group-hover:text-foreground">
-                        <Icon icon={icons.add} className="size-3.5" />
-                      </span>
+                      {connected ? (
+                        <span className="flex size-7 shrink-0 items-center justify-center text-primary">
+                          <Icon icon={icons.check} className="size-4" />
+                        </span>
+                      ) : (
+                        <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card transition-colors group-hover:text-foreground">
+                          <Icon icon={icons.add} className="size-3.5" />
+                        </span>
+                      )}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </DialogPanel>

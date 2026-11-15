@@ -171,7 +171,7 @@ export function GradesView({ space }: { space: SpaceView }) {
             </motion.div>
           ) : null}
         </AnimatePresence>
-        <div className="@container/page mx-auto flex w-full max-w-(--page-wide-max-width) flex-col gap-8 px-8 pt-10 pb-16 @max-3xl/page:px-6">
+        <div className="@container/page mx-auto flex min-h-full w-full max-w-(--page-wide-max-width) flex-col gap-8 px-8 pt-10 pb-16 @max-3xl/page:px-6">
           {grades.error ? <SurfaceError title="Couldn’t load your grades" message={cleanMessage(grades.error)} onRetry={grades.reload} /> : null}
           {refreshError ? <RefreshError message={refreshError} onRetry={() => void runRefresh()} onDismiss={() => setRefreshError(null)} /> : null}
           {skeleton ? <GradesSkeleton /> : null}
@@ -199,7 +199,7 @@ export function GradesView({ space }: { space: SpaceView }) {
               {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
               {withItems.length ? <Attention courses={withItems} fresh={fresh} now={now} /> : null}
               {focused && focused.items.length ? <CourseCharts course={focused} now={now} /> : null}
-              <AllTables courses={scope} fresh={fresh} now={now} />
+              {focused && !focused.items.length ? null : <AllTables courses={scope} fresh={fresh} now={now} />}
             </>
           ) : null}
         </div>
@@ -249,7 +249,7 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3">
           {heads.map((h) => {
             const c = h.course;
             const moved = h.trend && Math.abs(h.trend.delta) >= 0.05 ? rounded(h.trend.delta) : undefined;
@@ -346,29 +346,21 @@ type Range = (typeof RANGES)[number]["value"];
 function CourseCharts({ course, now }: { course: CourseGradeView; now: number }) {
   const cats = useMemo(() => categories(course), [course]);
   const series = useMemo(() => gradeSeries(course), [course]);
-  const [range, setRange] = useState<Range>("term");
+  const [range, setRange] = useState<Range>("1m");
   const days = RANGES.find((r) => r.value === range)!.days;
   const shown = series.filter((p) => p.at >= now - days * DAY);
   const usesWeights = course.groups.some((g) => (g.weight ?? 0) > 0);
   return (
-    <section aria-label="Breakdown and trend" className="grid gap-3 @3xl/page:grid-cols-2">
+    <section aria-label="Breakdown and trend" className="grid items-start gap-3 @3xl/page:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Breakdown</CardTitle>
-          <CardDescription>{usesWeights ? "Each category’s weight and where it stands" : "Each category’s points and where it stands"}</CardDescription>
         </CardHeader>
         <CardContent className="gap-4">
           {cats.length ? (
             <>
               <StackedBar segments={cats.map((c) => ({ id: c.name, label: c.name, value: c.weight }))} label={cats.map((c) => `${c.name} ${Math.round(c.weight)}${usesWeights ? "%" : " points"}`).join(", ")} />
-              <div className="flex flex-col">
-                <div className="flex h-6 items-center gap-2.5 text-subtle-foreground text-xs">
-                  <span className="flex-1 pl-4.5">Category</span>
-                  <span>Score</span>
-                  <span className="w-16 text-right">Share</span>
-                </div>
-                <BarLegend segments={cats.map((c) => ({ id: c.name, label: c.name, value: c.weight, display: c.percent != null ? pct(c.percent) : <span className="text-subtle-foreground">–</span> }))} />
-              </div>
+              <BarLegend segments={cats.map((c) => ({ id: c.name, label: c.name, value: c.weight, display: c.percent != null ? pct(c.percent) : <span className="text-subtle-foreground">–</span> }))} />
             </>
           ) : (
             <p className="text-muted-foreground text-sm">This course doesn’t list categories.</p>
@@ -376,11 +368,8 @@ function CourseCharts({ course, now }: { course: CourseGradeView; now: number })
         </CardContent>
       </Card>
       <Card>
-        <div className="flex items-start gap-3 px-5 pt-5 pb-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <CardTitle>Trend</CardTitle>
-            <CardDescription>The grade after each graded item</CardDescription>
-          </div>
+        <div className="flex items-center gap-3 px-5 pt-5 pb-3">
+          <CardTitle className="min-w-0 flex-1">Trend</CardTitle>
           <SegmentedControl variant="outline" aria-label="Range" value={range} onValueChange={setRange}>
             {RANGES.map((r) => (
               <SegmentedControlItem key={r.value} value={r.value} className="min-w-10 px-2.5 text-xs">
@@ -390,7 +379,7 @@ function CourseCharts({ course, now }: { course: CourseGradeView; now: number })
           </SegmentedControl>
         </div>
         <CardContent>
-          <TrendChart points={shown} />
+          <TrendChart points={shown} current={courseHead(course).percent} />
         </CardContent>
       </Card>
     </section>
@@ -399,26 +388,28 @@ function CourseCharts({ course, now }: { course: CourseGradeView; now: number })
 
 const shortDate = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-/** A thin blue line through the grade after each graded item (0922's rate chart), with a dot per item. */
-function TrendChart({ points }: { points: SeriesPoint[] }) {
+/** The grade now (the same figure as the course card, not the line's own last point, which can differ from the site's), then a thin blue line through the grade after each graded item (0922's rate chart), marked only at its end. */
+function TrendChart({ points, current }: { points: SeriesPoint[]; current: number | null }) {
   if (points.length < 2) {
     return <div className="flex h-36 items-center justify-center rounded-xl border border-border/70 border-dashed text-muted-foreground text-sm">Not enough graded in this range to draw a line.</div>;
   }
   const lo = Math.max(0, Math.floor(Math.min(...points.map((p) => p.percent)) - 2));
   const hi = Math.min(100, Math.ceil(Math.max(...points.map((p) => p.percent)) + 2));
   const t0 = points[0]!.at;
-  const t1 = points[points.length - 1]!.at;
+  const last = points[points.length - 1]!;
+  const t1 = last.at;
   const x = (t: number) => (t1 === t0 ? 50 : ((t - t0) / (t1 - t0)) * 100);
   const y = (v: number) => (hi === lo ? 50 : 100 - ((v - lo) / (hi - lo)) * 100);
   const line = points.map((p, i) => `${i ? "L" : "M"}${x(p.at)} ${y(p.percent)}`).join(" ");
-  const delta = points[points.length - 1]!.percent - points[0]!.percent;
+  const delta = last.percent - points[0]!.percent;
   const flat = Math.abs(delta) < 0.05;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-baseline gap-2 tabular-nums">
-        <span className="font-medium text-2xl text-foreground tracking-heading">{flat ? "0.0" : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)}`}</span>
-        <span className="text-muted-foreground text-sm">points since {shortDate(t0)}</span>
-        {!flat ? <Icon icon={delta > 0 ? icons.trendUp : icons.trendDown} className={cn("size-4 self-center", delta > 0 ? "text-success-foreground" : "text-destructive-foreground")} /> : null}
+        <span className="font-medium text-2xl text-foreground tracking-heading">{pct(current ?? last.percent)}</span>
+        <span className={cn("text-xs", flat ? "text-muted-foreground" : delta > 0 ? "text-success-foreground" : "text-destructive-foreground")}>
+          {flat ? "No change" : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)}`} since {shortDate(t0)}
+        </span>
       </div>
       <div className="flex gap-2">
         <div className="relative h-28 flex-1">
@@ -433,24 +424,25 @@ function TrendChart({ points }: { points: SeriesPoint[] }) {
           >
             <line x1="0" x2="100" y1="0" y2="0" className="stroke-border" vectorEffect="non-scaling-stroke" strokeDasharray="2 3" />
             <line x1="0" x2="100" y1="100" y2="100" className="stroke-border" vectorEffect="non-scaling-stroke" />
-            <path d={`${line} L100 100 L0 100 Z`} fill="currentColor" opacity="0.07" />
             <path d={line} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
           </motion.svg>
-          {points.map((p, i) => (
-            <Tooltip key={`${p.at}-${i}`}>
-              <TooltipTrigger
-                render={
-                  <span
-                    className={cn("-translate-x-1/2 -translate-y-1/2 absolute size-2 rounded-full border-2 border-card bg-primary transition-transform hover:scale-150", i === points.length - 1 && "size-2.5")}
-                    style={{ left: `${x(p.at)}%`, top: `${y(p.percent)}%` }}
-                  />
-                }
-              />
-              <TooltipPopup>
-                {p.title} · {pct(p.percent)} · {shortDate(p.at)}
-              </TooltipPopup>
-            </Tooltip>
-          ))}
+          {points.map((p, i) => {
+            const end = i === points.length - 1;
+            return (
+              <Tooltip key={`${p.at}-${i}`}>
+                <TooltipTrigger
+                  render={
+                    <span className="-translate-x-1/2 -translate-y-1/2 group absolute flex size-3 items-center justify-center" style={{ left: `${x(p.at)}%`, top: `${y(p.percent)}%` }} />
+                  }
+                >
+                  <span className={cn("size-2 rounded-full border-2 border-card bg-primary transition-opacity", end ? "opacity-100" : "opacity-0 group-hover:opacity-100")} />
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {p.title} · {pct(p.percent)} · {shortDate(p.at)}
+                </TooltipPopup>
+              </Tooltip>
+            );
+          })}
         </div>
         <div className="flex w-10 shrink-0 flex-col justify-between text-right text-2xs text-subtle-foreground tabular-nums">
           <span className="-translate-y-1/2">{hi}%</span>
@@ -487,7 +479,7 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
             r={r}
             many={many}
             right={
-              <Badge variant={r.item.missing ? "error" : "warning"} size="sm">
+              <Badge variant={r.item.missing ? "error" : "warning"} size="lg">
                 {r.item.missing ? "Missing" : "Late"}
               </Badge>
             }
@@ -502,7 +494,7 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
             many={many}
             badge={
               fresh.has(r.item) ? (
-                <Badge variant="info" size="sm">
+                <Badge variant="info" size="default">
                   New
                 </Badge>
               ) : null
@@ -511,9 +503,9 @@ function Attention({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
           />
         ))}
       </Panel>
-      <Panel icon={icons.goal} title="Biggest levers" hint="Open work worth the most" count={lever.length} empty="Everything is graded." testId="grades-levers">
+      <Panel icon={icons.goal} title="Worth the most" count={lever.length} empty="Everything is graded." testId="grades-levers">
         {lever.map((l) => (
-          <Line key={`${courseId(l.course)}${l.key}`} r={l} many={many} sub={l.next ? `${pct(l.next.percent)} here for ${l.next.letter}` : undefined} right={<span className="text-foreground tabular-nums">{weightText(l.weight)}</span>} />
+          <Line key={`${courseId(l.course)}${l.key}`} r={l} many={many} sub={l.next ? `needs ${pct(l.next.percent)} for ${/^[AEFIO]/.test(l.next.letter) ? "an" : "a"} ${l.next.letter}` : undefined} right={<span className="text-foreground tabular-nums">{weightText(l.weight)}</span>} />
         ))}
       </Panel>
     </section>
@@ -564,6 +556,9 @@ function AllTables({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
   const [sort, setSort] = useState<Sort>({ key: "due", dir: 1 });
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   const allClosed = courses.every((c) => closed[courseId(c)]);
+  const filtering = !!query.trim() || status !== "all";
+  // While filtering, only the courses with a match stay.
+  const matching = useMemo(() => (filtering ? courses.filter((c) => tableRows(c, { query, status, sort }).length) : courses), [filtering, courses, query, status, sort]);
   return (
     <section className="flex flex-col gap-3" aria-label="All grades">
       <div className="flex flex-wrap items-center gap-2">
@@ -579,14 +574,30 @@ function AllTables({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
             </SegmentedControlItem>
           ))}
         </SegmentedControl>
-        {courses.length > 1 ? (
+        {matching.length > 1 ? (
           <Button size="sm" variant="ghost-muted" onClick={() => setClosed(allClosed ? {} : Object.fromEntries(courses.map((c) => [courseId(c), true])))}>
             {allClosed ? "Expand all" : "Collapse all"}
           </Button>
         ) : null}
       </div>
+      {!matching.length ? (
+        <div className="flex h-11 items-center gap-2 px-1 text-muted-foreground text-sm">
+          <span className="min-w-0 truncate">{query.trim() ? `Nothing matches “${query.trim()}”.` : "Nothing matches this filter."}</span>
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-primary"
+            onClick={() => {
+              setQuery("");
+              setStatus("all");
+            }}
+          >
+            Clear
+          </Button>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4">
-        {courses.map((c) => (
+        {matching.map((c) => (
           <CourseTable
             key={courseId(c)}
             course={c}
@@ -667,7 +678,8 @@ function CourseTable({
           )}
         </div>
       </div>
-      <AutoHeight>
+      {/* Clip rather than hide the overflow, so the column header can still stick to the page's scroll. */}
+      <AutoHeight className="overflow-clip">
         {open ? (
           course.note && !course.items.length ? (
             <p className="px-5 py-4 text-muted-foreground text-sm [overflow-wrap:anywhere]">{course.note}</p>
@@ -676,10 +688,11 @@ function CourseTable({
           ) : (
             <>
               <Groups course={course} />
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-xl text-sm">
-                  <thead>
-                    <tr className="text-muted-foreground text-xs">
+              {/* Clipped, not scrolled: a scroll box would stop the column header from sticking under the course row. */}
+              <div className="overflow-x-clip">
+                <table className="w-full border-separate border-spacing-0 text-sm">
+                  <thead className="sticky top-13 z-5 bg-card/95 backdrop-blur-sm">
+                    <tr className="text-muted-foreground text-xs [&>th]:border-b">
                       <Th label="Assignment" k="title" sort={sort} onSort={onSort} className="pl-5 text-left" />
                       <th className="h-9 w-36 pl-3 text-left font-normal">Category</th>
                       <Th label="Due" k="due" sort={sort} onSort={onSort} className="w-24 pl-3 text-left" />
@@ -694,27 +707,27 @@ function CourseTable({
                         const typed = scores[key] ?? "";
                         const bad = r.bad.includes(key);
                         return (
-                          <tr key={key} className={cn("border-t transition-colors hover:bg-accent/50", item.excused && "text-muted-foreground")}>
+                          <tr key={key} className={cn("transition-colors hover:bg-accent/50 [&:not(:first-child)>td]:border-t", item.excused && "text-muted-foreground")}>
                             <td className="h-10 max-w-0 pl-5">
                               <div className="flex min-w-0 items-center gap-1.5">
                                 <Truncate className="min-w-0">{item.title}</Truncate>
                                 {item.missing ? (
-                                  <Badge variant="error" size="sm">
+                                  <Badge variant="error" size="default">
                                     Missing
                                   </Badge>
                                 ) : null}
                                 {item.late ? (
-                                  <Badge variant="warning" size="sm">
+                                  <Badge variant="warning" size="default">
                                     Late
                                   </Badge>
                                 ) : null}
                                 {item.excused ? (
-                                  <Badge variant="secondary" size="sm">
+                                  <Badge variant="secondary" size="default">
                                     Excused
                                   </Badge>
                                 ) : null}
                                 {fresh.has(item) ? (
-                                  <Badge variant="info" size="sm">
+                                  <Badge variant="info" size="default">
                                     New
                                   </Badge>
                                 ) : null}
@@ -738,7 +751,7 @@ function CourseTable({
                                     onChange={(e) => setScores((s) => ({ ...s, [key]: e.target.value }))}
                                     className={cn("w-14 [&_input]:text-right [&_input]:tabular-nums", typed.trim() && !bad && "border-primary/40 bg-primary/8 text-primary")}
                                   />
-                                  <span className="text-muted-foreground text-xs">{item.possible ? `/${item.possible}` : "%"}</span>
+                                  <span className="w-8 text-left text-muted-foreground text-xs">{item.possible ? `/${item.possible}` : "%"}</span>
                                 </span>
                               ) : (
                                 <span className={cn(item.missing && "text-destructive-foreground")}>{scoreText(item)}</span>
@@ -749,7 +762,7 @@ function CourseTable({
                         );
                       })
                     ) : (
-                      <tr className="border-t">
+                      <tr>
                         <td colSpan={5} className="h-11 px-5 text-muted-foreground text-sm">
                           Nothing here matches.
                         </td>
@@ -757,7 +770,7 @@ function CourseTable({
                     )}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t bg-well font-medium">
+                    <tr className="bg-well font-medium [&>td]:border-t">
                       <td className="h-10 rounded-bl-card pl-5 text-sm" colSpan={3}>
                         Course total
                       </td>
@@ -834,7 +847,7 @@ function GradesSkeleton() {
           <Skeleton className="h-3 w-28 animate-none" />
           <Skeleton className="h-2.5 w-48 animate-none" />
         </div>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3 px-5 pb-5">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3 px-5 pb-5">
           {[0, 1, 2].map((k) => (
             <div key={k} className="flex flex-col gap-2.5 rounded-xl border border-border/70 bg-well px-4 py-3.5">
               <Skeleton className="h-2.5 w-24 animate-none" />

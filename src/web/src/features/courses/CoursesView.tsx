@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
@@ -28,8 +27,9 @@ import { partsOf, useCourses } from "./store";
 /**
  * The Courses page of a space with study tools (docs/UI-REBUILD.md › Screens
  * › Courses; refs 7274, 02a1, 8bdf): on the left the course sites as folders
- * holding their courses, with Overview · Files · Settings for the chosen one;
- * on the right that course, under a breadcrumb with its site's actions.
+ * holding their courses (the pane folds away from the breadcrumb); on the
+ * right the chosen course, under a breadcrumb with its site's actions and
+ * underline tabs for Overview · Files · Settings.
  */
 export function CoursesView({ space }: { space: SpaceView }) {
   const load = useCourses((s) => s.load);
@@ -40,6 +40,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const [tab, setTab] = useState<DetailTab>("overview");
   const [query, setQuery] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({});
+  const [pane, setPane] = useState(true);
   const [connect, setConnect] = useState(false);
   const [again, setAgain] = useState<LmsConnection | null>(null);
   const [importing, setImporting] = useState<LmsConnection | null>(null);
@@ -91,7 +92,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
           <SurfaceError title="Couldn’t load your course sites" message={error} onRetry={() => void load()} />
         </div>
       ) : !hasAny ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 pt-10">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-10">
           {run ? (
             <div className="mx-auto max-w-(--page-max-width)">
               <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
@@ -105,7 +106,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-70 shrink-0 flex-col border-r" aria-label="Courses">
+          <aside className={cn("flex w-70 shrink-0 flex-col border-r", !pane && open && "hidden")} aria-label="Courses">
             <div className="flex h-14 shrink-0 items-center gap-2 px-4">
               <h2 className="flex-1 font-medium text-lg tracking-title">Courses</h2>
               <Tooltip>
@@ -116,31 +117,18 @@ export function CoursesView({ space }: { space: SpaceView }) {
               </Tooltip>
             </div>
             <div className="flex flex-col gap-3 px-4 pb-3">
-              <Tabs value={tab} onValueChange={(v) => setTab(v as DetailTab)}>
-                <TabsList aria-label="Course section" className="w-full">
-                  <TabsTab value="overview" className="flex-1">
-                    Overview
-                  </TabsTab>
-                  <TabsTab value="files" className="flex-1">
-                    Files
-                  </TabsTab>
-                  <TabsTab value="settings" className="flex-1">
-                    Settings
-                  </TabsTab>
-                </TabsList>
-              </Tabs>
               <div className="relative">
                 <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
                 <Input size="sm" value={query} placeholder="Search courses" aria-label="Search courses" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2" role="tree" aria-label="Course sites and courses" data-testid="course-list">
+            <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2" data-testid="course-list">
               {groups.map((g) => {
                 const list = q ? g.courses.filter((c) => c.name.toLowerCase().includes(q) || (c.code ?? "").toLowerCase().includes(q)) : g.courses;
                 if (q && !list.length) return null;
                 const isFolded = !q && folded[g.id];
                 return (
-                  <div key={g.id} role="group" className="flex flex-col">
+                  <div key={g.id} className="flex flex-col">
                     <SiteRow
                       connection={g.connection}
                       folded={!!isFolded}
@@ -194,12 +182,15 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 space={space.id}
                 course={open}
                 tab={tab}
+                onTab={setTab}
+                pane={pane}
+                onPane={() => setPane((p) => !p)}
                 connection={connections.data?.find((c) => c.id === open.connection) ?? null}
                 run={run ? <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} /> : null}
                 {...actions}
               />
             ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto px-8 pt-10">
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 pt-10">
                 {run ? (
                   <div className="mx-auto max-w-(--page-max-width)">
                     <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} />
@@ -263,7 +254,7 @@ function SiteRow({ connection: c, folded, onFold, onImport, onSignIn, onDisconne
               Sign in again
             </MenuItem>
             <MenuSeparator />
-            <MenuItem variant="destructive" onClick={() => onDisconnect(c)} disabled={!c.signedIn}>
+            <MenuItem variant="destructive" onClick={() => onDisconnect(c)}>
               <Icon icon={icons.disconnected} />
               Disconnect
             </MenuItem>
@@ -280,8 +271,7 @@ function CourseRow({ space, course, selected, onOpen }: { space: string; course:
   return (
     <button
       type="button"
-      role="treeitem"
-      aria-selected={selected}
+      aria-current={selected ? "true" : undefined}
       onClick={onOpen}
       className={cn(
         "flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",

@@ -25,11 +25,31 @@ type Load<T> = { data?: T; error?: string; loading: boolean };
 /** A listed conversation, plus rows the UI added before the core lists them (a just-sent new chat). */
 export type ThreadRow = ThreadListed & { optimistic?: true };
 
+/**
+ * A space's conversations as far as they are loaded: the first page (every
+ * pinned one and the newest `THREAD_PAGE` others), more pages on demand
+ * (`loadMoreThreads`), and single rows read again after a reply.
+ */
+export type ThreadList = Load<ThreadRow[]> & {
+  /** How many conversations the core has in the space, loaded or not (rows the UI added itself aren't counted). */
+  total?: number;
+  /** Whether there are older conversations past the loaded ones. */
+  hasMore?: boolean;
+  /** Where the next page starts. */
+  cursor?: string | null;
+  loadingMore?: boolean;
+};
+
+/** Conversations loaded per page. */
+export const THREAD_PAGE = 50;
+/** The most a refresh reloads at once (it keeps as many as were loaded). */
+const REFRESH_MAX = 500;
+
 type Nav = {
   spaces: Load<SpaceView[]>;
   activeSpace: string | null;
   view: View;
-  threads: Record<string, Load<ThreadRow[]>>;
+  threads: Record<string, ThreadList>;
   /** The conversation each space shows (an id, or `DRAFT` for its new chat). */
   open: Record<string, string>;
   collapsed: Record<string, boolean>;
@@ -47,7 +67,12 @@ type Nav = {
   setView(view: View): void;
   /** The selected view's tab was clicked again. */
   retapView(view: View): void;
+  /** Loads (or quietly reloads) a space's first page of conversations, keeping as many as were loaded. */
   loadThreads(space: string): Promise<void>;
+  /** Loads the space's next page of older conversations, if there is one. */
+  loadMoreThreads(space: string): Promise<void>;
+  /** Reads one conversation's row again (a reply finished, or its title went back to the automatic one). */
+  refreshThread(space: string, id: string): Promise<void>;
   /** Shows the space's new chat. Nothing is created until it is sent. */
   newChat(space: string): Promise<void>;
   openThread(space: string, id: string): Promise<void>;
@@ -96,12 +121,21 @@ function sortRows(rows: ThreadRow[]): ThreadRow[] {
   return [...rows].sort((a, b) => b.updated - a.updated);
 }
 
+/** Rows by id, the first of each kept. */
+function unique(rows: ThreadRow[]): ThreadRow[] {
+  const seen = new Set<string>();
+  return rows.filter((t) => !seen.has(t.id) && !!seen.add(t.id));
+}
+
 export const useNav = create<Nav>((set, get) => {
-  const setRows = (space: string, f: (rows: ThreadRow[]) => ThreadRow[]) =>
+  const setList = (space: string, f: (cur: ThreadList) => Partial<ThreadList>) =>
     set((s) => {
-      const cur = s.threads[space];
-      return { threads: { ...s.threads, [space]: { ...cur, loading: cur?.loading ?? false, data: f(cur?.data ?? []) } } };
+      const cur = s.threads[space] ?? { loading: false };
+      return { threads: { ...s.threads, [space]: { ...cur, ...f(cur) } } };
     });
+  const setRows = (space: string, f: (rows: ThreadRow[]) => ThreadRow[]) => setList(space, (cur) => ({ data: f(cur.data ?? []) }));
+  /** Bumped by each full reload, so a page that was asked for before it is dropped. */
+  const generation: Record<string, number> = {};
 
   const setOpen = (space: string, id: string) => {
     const open = { ...get().open, [space]: id };
@@ -157,25 +191,75 @@ export const useNav = create<Nav>((set, get) => {
 
     /** A quiet refresh: what is listed stays until the answer replaces it, and rows the UI just added are kept. */
     async loadThreads(space) {
-      set((s) => ({ threads: { ...s.threads, [space]: { ...s.threads[space], loading: true, error: undefined } } }));
+      const gen = (generation[space] = (generation[space] ?? 0) + 1);
+      const loaded = (get().threads[space]?.data ?? []).filter((t) => !t.pinned && !t.optimistic).length;
+      setList(space, () => ({ loading: true, error: undefined }));
       try {
-        const list = await api.threads(space);
-        set((s) => {
-          const listed = new Set(list.map((t) => t.id));
-          const pending = (s.threads[space]?.data ?? []).filter((t) => t.optimistic && !listed.has(t.id));
-          return { threads: { ...s.threads, [space]: { data: sortRows([...pending, ...list]), loading: false } } };
-        });
+        const page = await api.threads(space, { limit: Math.min(REFRESH_MAX, Math.max(THREAD_PAGE, loaded)) });
+        if (gen !== generation[space]) return;
+        const listed = new Set(page.items.map((t) => t.id));
+        setList(space, (cur) => ({
+          data: sortRows([...(cur.data ?? []).filter((t) => t.optimistic && !listed.has(t.id)), ...page.items]),
+          loading: false,
+          total: page.total,
+          hasMore: page.hasMore,
+          cursor: page.nextCursor,
+          loadingMore: false,
+        }));
         // The conversation the space shows: the one remembered, else the newest, else a new chat.
-        const rows = get().threads[space]?.data ?? [];
+        const has = (id: string | undefined) => !!id && (get().threads[space]?.data ?? []).some((t) => t.id === id);
         const shown = get().open[space];
-        if (shown === undefined || (shown !== DRAFT && !rows.some((t) => t.id === shown))) {
-          const remembered = readJson<Record<string, string>>(OPEN, {})[space];
-          const next = remembered === DRAFT ? DRAFT : rows.find((t) => t.id === remembered)?.id ?? rows[0]?.id ?? DRAFT;
+        if (shown === undefined || (shown !== DRAFT && !has(shown))) {
+          const remembered = readJson<Record<string, string>>(OPEN, {})[space] ?? shown;
+          // An older conversation than the first page holds is read on its own, so it stays open.
+          if (remembered && remembered !== DRAFT && !has(remembered)) await get().refreshThread(space, remembered).catch(() => {});
+          if (gen !== generation[space]) return;
+          const rows = get().threads[space]?.data ?? [];
+          const next = remembered === DRAFT ? DRAFT : has(remembered) ? remembered! : rows[0]?.id ?? DRAFT;
           if (shown === undefined || next !== shown) setOpen(space, next);
         }
       } catch (e) {
-        set((s) => ({ threads: { ...s.threads, [space]: { ...s.threads[space], loading: false, error: errorText(e) } } }));
+        if (gen === generation[space]) setList(space, () => ({ loading: false, loadingMore: false, error: errorText(e) }));
       }
+    },
+
+    async loadMoreThreads(space) {
+      const cur = get().threads[space];
+      // While the list reloads, its answer would replace this page's rows; the reload ends with a fresh cursor to continue from.
+      if (!cur?.hasMore || !cur.cursor || cur.loadingMore || cur.loading) return;
+      const gen = generation[space];
+      setList(space, () => ({ loadingMore: true }));
+      try {
+        const page = await api.threads(space, { limit: THREAD_PAGE, before: cur.cursor });
+        if (gen !== generation[space]) return;
+        setList(space, (c) => ({
+          data: sortRows(unique([...(c.data ?? []), ...page.items])),
+          hasMore: page.hasMore,
+          cursor: page.nextCursor,
+          loadingMore: false,
+        }));
+      } catch (e) {
+        if (gen === generation[space]) setList(space, () => ({ loadingMore: false }));
+        throw e;
+      }
+    },
+
+    async refreshThread(space, id) {
+      const t = await api.threadSummary(space, id);
+      setList(space, (cur) => {
+        const rows = cur.data ?? [];
+        const had = rows.find((x) => x.id === id);
+        if (!t) {
+          // Not saved: a row the UI added itself stays until the list is loaded again; a listed one was deleted elsewhere.
+          if (!had || had.optimistic) return {};
+          return { data: rows.filter((x) => x.id !== id), total: cur.total === undefined ? undefined : Math.max(0, cur.total - 1) };
+        }
+        return {
+          data: sortRows([t, ...rows.filter((x) => x.id !== id)]),
+          // A just-sent new chat was not counted until the core saved it.
+          total: cur.total !== undefined && had?.optimistic ? cur.total + 1 : cur.total,
+        };
+      });
     },
 
     async newChat(space) {
@@ -198,7 +282,8 @@ export const useNav = create<Nav>((set, get) => {
     async deleteThread(space, id) {
       const before = get().threads[space]?.data ?? [];
       const at = before.findIndex((t) => t.id === id);
-      setRows(space, (rows) => rows.filter((t) => t.id !== id));
+      const counted = !!before[at] && !before[at]!.optimistic;
+      setList(space, (cur) => ({ data: (cur.data ?? []).filter((t) => t.id !== id), total: counted && cur.total ? cur.total - 1 : cur.total }));
       // The space shows the next conversation down (or a new chat) instead.
       if (get().open[space] === id) {
         const rest = before.filter((t) => t.id !== id);
@@ -207,7 +292,11 @@ export const useNav = create<Nav>((set, get) => {
       try {
         await api.deleteThread(space, id);
       } catch (e) {
-        setRows(space, (rows) => (rows.some((t) => t.id === id) ? rows : sortRows([...rows, before[at]!].filter(Boolean))));
+        setList(space, (cur) =>
+          (cur.data ?? []).some((t) => t.id === id)
+            ? {}
+            : { data: sortRows([...(cur.data ?? []), before[at]!].filter(Boolean)), total: counted && cur.total !== undefined ? cur.total + 1 : cur.total },
+        );
         throw e;
       }
       const { [chatKey(space, id)]: _, ...unread } = get().unread;
@@ -225,7 +314,7 @@ export const useNav = create<Nav>((set, get) => {
         throw e;
       }
       // An emptied title goes back to the automatic one, which only the core knows.
-      if (!t) void get().loadThreads(space);
+      if (!t) void get().refreshThread(space, id).catch(() => {});
     },
 
     async pinThread(space, id, pinned) {

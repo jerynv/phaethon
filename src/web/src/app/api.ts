@@ -27,6 +27,13 @@ export type ThreadSummary = {
 /** A listed conversation, with whether it is replying right now (in this window or another). */
 export type ThreadListed = ThreadSummary & { running?: boolean };
 
+/**
+ * One page of a space's conversations, newest first: on the first page every
+ * pinned one comes first, then up to `limit` others. `nextCursor` asks for
+ * the page after (as `before`); `total` counts every conversation that matches.
+ */
+export type ThreadPage = { items: ThreadListed[]; total: number; hasMore: boolean; nextCursor: string | null };
+
 /** Where Phaethon writes files without asking (Settings lists these and can take them back). */
 export type WritePermissions = {
   spaces: { space: string; since: number }[];
@@ -92,7 +99,10 @@ export const api = {
   addToSpace: (id: string, folder: boolean) => invoke<{ paths: string[]; files: number; skipped: number } | null>("space_add", { id, folder }),
   exportSpace: (id: string) => invoke<{ fileName: string; files: number } | null>("space_export", { id }),
   showExport: () => invoke<void>("export_show"),
-  threads: (space: string) => invoke<ThreadListed[]>("threads_list", { space }),
+  threads: (space: string, page: { limit: number; before?: string | null; query?: string }) => invoke<ThreadPage>("threads_list", { space, ...page }),
+  /** One conversation's row, read again after a reply; null when it isn't saved. */
+  threadSummary: (space: string, thread: string) => invoke<ThreadListed | null>("thread_summary", { space, thread }),
+  threadsCount: (space: string) => invoke<{ total: number; pinned: number }>("threads_count", { space }),
   createThread: (space: string) => invoke<string>("thread_create", { space }),
   deleteThread: (space: string, thread: string) => invoke<void>("thread_delete", { space, thread }),
   renameThread: (space: string, thread: string, title: string) => invoke<unknown>("thread_rename", { space, thread, title }),

@@ -92,7 +92,7 @@ export const useChats = create<Chats>((set, get) => {
       return { messages: [...c.messages.slice(0, -1), next], ...(done ? { running: false, startedAt: undefined } : {}) };
     });
 
-  /** After a turn: positions from the saved file, the sidebar's titles, and the unread mark. */
+  /** After a turn: positions from the saved file, the sidebar's row, and the unread mark. */
   const settle = async (space: string, thread: string) => {
     const key = chatKey(space, thread);
     try {
@@ -101,7 +101,8 @@ export const useChats = create<Chats>((set, get) => {
     } catch {
       // What's on screen stays; the next load reads the file again.
     }
-    void useNav.getState().loadThreads(space);
+    // Only this conversation's row changes; the rest of the list is left as it is.
+    void useNav.getState().refreshThread(space, thread).catch(() => {});
     useNav.getState().replied(space, thread);
   };
 

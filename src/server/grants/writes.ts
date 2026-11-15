@@ -71,9 +71,14 @@ export function writePermissions(space: string): WritePermissions {
   const spaces = Object.entries(spaceMap()).map(([s, since]) => ({ space: s, since }));
   let conversations: WritePermissions["conversations"] = [];
   try {
-    conversations = listThreadsIn(spaceDir(space))
+    const dir = spaceDir(space);
+    // The listing's index only finds them; each is confirmed from its own meta file.
+    conversations = listThreadsIn(dir)
       .filter((t) => t.allowWrites)
-      .map((t) => ({ thread: t.id, title: t.title, since: t.allowWrites! }));
+      .flatMap((t) => {
+        const since = readMetaIn(dir, t.id).allowWrites;
+        return since ? [{ thread: t.id, title: t.title, since }] : [];
+      });
   } catch (e) {
     log.debug("couldn't list conversations for write permissions", { space, error: (e as Error).message });
   }

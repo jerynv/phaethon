@@ -1,7 +1,7 @@
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { AnimatePresence, motion } from "motion/react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNav, useOpenThread } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
-import { ToggleRow } from "@/components/ui/toggle-row";
+import { Switch } from "@/components/ui/switch";
 import { threadModelGet, type ModelPick } from "@/features/chat/api";
 import { CitationChip } from "@/features/chat/components/CitationChip";
 import { ModelPicker } from "@/features/chat/components/ModelPicker";
@@ -274,7 +274,8 @@ export function MakeDialog({
         onOpenChange(o);
       }}
     >
-      <DialogPopup className="max-w-xl rounded-panel" showCloseButton={false} aria-label={label}>
+      {/* Anchored near the top (not centred) so its top edge stays put as the steps change height. */}
+      <DialogPopup className="row-span-3 row-start-1 mt-(--dialog-top) max-h-(--dialog-anchored-max-height) max-w-xl self-start rounded-panel" showCloseButton={false} aria-label={label}>
         <form onSubmit={onSubmit} className="contents">
           <DialogHeader className="gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
@@ -284,6 +285,13 @@ export function MakeDialog({
                   {quiz ? "Practice questions from your course materials, each checked against them." : "Flashcards from your course materials, each tied to its passage."}
                 </DialogDescription>
               </div>
+              <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
+                <Icon icon={icons.close} />
+              </DialogClose>
+            </div>
+            {/* Steps, with the kind beside them while it can still change: one row, so the header keeps its height. */}
+            <div className="flex h-8 items-center justify-between gap-3">
+              <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
               {phase === "what" || phase === "how" ? (
                 <SegmentedControl aria-label="Kind" value={draft.kind} onValueChange={(k: MakeKind) => patch({ kind: k, count: emptyDraft(k).count })}>
                   <SegmentedControlItem value="quiz">
@@ -296,11 +304,7 @@ export function MakeDialog({
                   </SegmentedControlItem>
                 </SegmentedControl>
               ) : null}
-              <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
-                <Icon icon={icons.close} />
-              </DialogClose>
             </div>
-            <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
           </DialogHeader>
 
           <DialogPanel className="space-y-0 px-6 pt-1 pb-2">
@@ -360,13 +364,13 @@ export function MakeDialog({
             </AutoHeight>
           </DialogPanel>
 
-          <DialogFooter variant="bare" className="flex-row gap-2 px-6 pt-4 pb-6 *:flex-1">
+          <DialogFooter variant="bare" className="flex-row gap-2 px-6 pt-4 pb-6">
             {phase === "what" ? (
               <>
                 <Button type="button" variant="outline" onClick={close}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={!sources.data?.length}>
+                <Button type="submit" className="flex-1" disabled={!sources.data?.length}>
                   Next
                   <Icon icon={icons.arrowRight} />
                 </Button>
@@ -374,11 +378,11 @@ export function MakeDialog({
             ) : null}
             {phase === "how" ? (
               <>
-                <Button type="button" variant="outline" className="flex-none" onClick={() => go("what", -1)}>
+                <Button type="button" variant="outline" onClick={() => go("what", -1)}>
                   <Icon icon={icons.arrowLeft} />
                   Back
                 </Button>
-                <Button type="submit">
+                <Button type="submit" className="flex-1">
                   <Icon icon={icons.ai} />
                   {makeLabel}
                 </Button>
@@ -389,21 +393,17 @@ export function MakeDialog({
                 <Button type="button" variant="outline" onClick={() => go("what", -1)}>
                   Change test
                 </Button>
-                <Button type="submit" disabled={!draft.covers.trim()}>
+                <Button type="submit" className="flex-1" disabled={!draft.covers.trim()}>
                   <Icon icon={icons.ai} />
                   Make it
                 </Button>
               </>
             ) : null}
+            {/* While it runs, the stage list shows the one spinner; the only action is Stop. */}
             {phase === "run" ? (
-              <>
-                <Button type="button" variant="outline" className="flex-none" disabled={stopping} pending={stopping} onClick={() => void stop()}>
-                  Stop
-                </Button>
-                <Button type="button" pending aria-label={quiz ? "Making the quiz" : "Making the cards"}>
-                  {makeLabel}
-                </Button>
-              </>
+              <Button type="button" variant="outline" className="flex-1" disabled={stopping} pending={stopping} onClick={() => void stop()}>
+                {stopping ? "Stopping…" : "Stop"}
+              </Button>
             ) : null}
             {phase === "error" && failure ? (
               <>
@@ -415,7 +415,7 @@ export function MakeDialog({
                 <Button type="button" variant="outline" onClick={() => go(failure.advice.action === "scope" || failure.advice.action === "focus" ? "what" : "how", -1)}>
                   {failure.advice.action === "scope" || failure.advice.action === "focus" ? "Change what" : "Back"}
                 </Button>
-                <Button type="button" onClick={() => void generate()}>
+                <Button type="button" className="flex-1" onClick={() => void generate()}>
                   Try again
                 </Button>
               </>
@@ -426,7 +426,7 @@ export function MakeDialog({
                   Close
                 </Button>
                 {done.path ? (
-                  <Button type="button" onClick={() => (close(), onOpen(quiz ? { kind: "quiz", path: done.path! } : { kind: "review", paths: [done.path!] }))}>
+                  <Button type="button" className="flex-1" onClick={() => (close(), onOpen(quiz ? { kind: "quiz", path: done.path! } : { kind: "review", paths: [done.path!] }))}>
                     {quiz ? "Take the quiz" : "Start learning"}
                     <Icon icon={icons.arrowRight} />
                   </Button>
@@ -518,10 +518,14 @@ function Field({ label, htmlFor, children, hint }: { label: string; htmlFor?: st
 }
 
 /** A grey box with a glyph, a line and a muted explanation; `warning` when it wants an answer. */
-function Note({ icon, title, children, tone = "muted", action }: { icon: IconData; title: ReactNode; children?: ReactNode; tone?: "muted" | "warning" | "success"; action?: ReactNode }) {
+function Note({ icon, glyph, title, children, tone = "muted", action }: { icon?: IconData; glyph?: ReactNode; title: ReactNode; children?: ReactNode; tone?: "muted" | "warning"; action?: ReactNode }) {
   return (
     <div className="flex items-start gap-3">
-      <Icon icon={icon} className={cn("mt-0.5 size-4.5 shrink-0", tone === "warning" ? "text-warning-foreground" : tone === "success" ? "text-success-foreground" : "text-muted-foreground")} />
+      {glyph ? (
+        <span className="flex h-5 w-4.5 shrink-0 items-center justify-center">{glyph}</span>
+      ) : icon ? (
+        <Icon icon={icon} className={cn("mt-0.5 size-4.5 shrink-0", tone === "warning" ? "text-warning-foreground" : "text-muted-foreground")} />
+      ) : null}
       <div className="min-w-0 flex-1 text-sm">
         <p className="text-foreground [overflow-wrap:anywhere]">{title}</p>
         {children ? <div className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{children}</div> : null}
@@ -533,7 +537,9 @@ function Note({ icon, title, children, tone = "muted", action }: { icon: IconDat
 
 // ---- Step 1: what ----
 
-/** Courses as cards, three across (after 9091's plan cards): the name, what there is to read, its parts in the footer strip. */
+const PART_NAME = { syllabus: "Syllabus", assignments: "Assignments", files: "Files", readings: "Readings" } as const;
+
+/** Courses as cards, three across (after 9091's plan cards): a glyph and the name on the white sheet, one short fact in the footer strip. */
 function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSource[]; value: string | null; onChange: (folder: string) => void; invalid?: boolean }) {
   return (
     <RadioGroupPrimitive
@@ -545,25 +551,27 @@ function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSo
     >
       {sources.map((s) => {
         const parts = (["syllabus", "assignments", "files", "readings"] as const).filter((p) => s[p]);
-        const names = parts.map((p) => (p === "files" ? "Files" : p === "syllabus" ? "Syllabus" : p === "assignments" ? "Assignments" : "Readings"));
+        const first = parts[0] ? PART_NAME[parts[0]] : null;
+        const fact = first ? (parts.length > 1 ? `${first} +${parts.length - 1}` : first) : "Nothing to read yet";
         return (
           <RadioPrimitive.Root
             key={s.folder}
             value={s.folder}
             aria-label={s.name}
+            nativeButton
             render={<button type="button" />}
             className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-well text-left outline-none transition-[border-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:ring-1 data-checked:ring-primary"
           >
-            <span className="flex min-h-20 flex-col gap-1 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
-              <span className="flex items-start gap-2">
-                <span className="line-clamp-2 min-w-0 flex-1 text-foreground text-sm">{s.name}</span>
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-input transition-colors group-data-checked:border-primary group-data-checked:bg-primary">
+            <span className="flex min-h-20 flex-col gap-2 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
+              <span className="flex items-center justify-between gap-2">
+                <Icon icon={icons.courses} className="size-4 text-muted-foreground" />
+                <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-input transition-colors group-data-checked:border-primary group-data-checked:bg-primary">
                   <span className="size-1.5 rounded-full bg-white opacity-0 transition-opacity group-data-checked:opacity-100" />
                 </span>
               </span>
-              <span className="mt-auto text-muted-foreground text-xs tabular-nums">{parts.length ? plural(parts.length, "part") : "Nothing to read yet"}</span>
+              <span className="line-clamp-2 min-w-0 text-foreground text-sm">{s.name}</span>
             </span>
-            <Truncate className="px-3 py-1.5 text-muted-foreground text-xs">{names.join(" · ") || "Import it in Courses"}</Truncate>
+            <Truncate className="px-3 py-1.5 text-muted-foreground text-xs tabular-nums">{fact}</Truncate>
           </RadioPrimitive.Root>
         );
       })}
@@ -693,7 +701,7 @@ function WhatStep({
           )}
           <FieldError>{errs.exam}</FieldError>
           <AnimatePresence initial={false}>
-            {scopeNow.kind !== "none" ? (
+            {scopeNow.kind !== "none" && course ? (
               <motion.div key="scope" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18, ease: EASE }}>
                 <ScopePanel
                   space={space}
@@ -796,8 +804,7 @@ function ScopePanel({
     return (
       <Card variant="well" className="mt-1 gap-2.5 p-4" data-testid="scope-known">
         <Note
-          icon={icons.done}
-          tone="success"
+          glyph={<Disc />}
           title={
             <>
               <span className="text-muted-foreground">{state.kind === "stated" ? "You said it covers " : "Covers "}</span>
@@ -937,63 +944,61 @@ function HowStep({
   const difficulty = { easier: "Easier", exam: "Like the test", harder: "Harder" }[draft.difficulty];
   return (
     <div className="flex flex-col gap-5 pb-2">
-      <Field label="How many" hint={errs.count ? undefined : `Up to ${MAX_COUNT[draft.kind]}`}>
-        <div className="flex items-center gap-2">
-          <SegmentedControl aria-label="How many" value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="flex-1">
-            {sizes.map((n) => (
-              <SegmentedControlItem key={n} value={String(n)} className="flex-1 tabular-nums">
-                {n}
-              </SegmentedControlItem>
-            ))}
-          </SegmentedControl>
-          <Input
-            aria-label="Exact number"
-            inputMode="numeric"
-            className="w-20 tabular-nums"
-            value={draft.count ? String(draft.count) : ""}
-            aria-invalid={errs.count ? true : undefined}
-            onChange={(e) => patch({ count: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
-          />
-        </div>
-        <FieldError>{errs.count}</FieldError>
-      </Field>
-
-      {quiz ? (
-        <>
+      <div className={cn("grid gap-4", quiz && "grid-cols-2")}>
+        <Field label="How many" hint={errs.count ? undefined : `Up to ${MAX_COUNT[draft.kind]}`}>
+          <div className="flex items-center gap-2">
+            <SegmentedControl aria-label="How many" value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="min-w-0 flex-1">
+              {sizes.map((n) => (
+                <SegmentedControlItem key={n} value={String(n)} className="min-w-0 flex-1 px-1 tabular-nums">
+                  {n}
+                </SegmentedControlItem>
+              ))}
+            </SegmentedControl>
+            <Input
+              aria-label="Exact number"
+              inputMode="numeric"
+              className="w-14 shrink-0 tabular-nums"
+              value={draft.count ? String(draft.count) : ""}
+              aria-invalid={errs.count ? true : undefined}
+              onChange={(e) => patch({ count: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
+            />
+          </div>
+          <FieldError>{errs.count}</FieldError>
+        </Field>
+        {quiz ? (
           <Field label="Difficulty">
             <SegmentedControl aria-label="Difficulty" className="w-full" value={draft.difficulty} onValueChange={(d: MakeDraft["difficulty"]) => patch({ difficulty: d })}>
-              <SegmentedControlItem value="easier" className="flex-1">
+              <SegmentedControlItem value="easier" className="min-w-0 flex-1 px-1">
                 Easier
               </SegmentedControlItem>
-              <SegmentedControlItem value="exam" className="flex-1">
+              <SegmentedControlItem value="exam" className="min-w-0 flex-1 px-1">
                 Like the test
               </SegmentedControlItem>
-              <SegmentedControlItem value="harder" className="flex-1">
+              <SegmentedControlItem value="harder" className="min-w-0 flex-1 px-1">
                 Harder
               </SegmentedControlItem>
             </SegmentedControl>
           </Field>
-          <Field label="Kinds of question">
-            <Card className="divide-y px-4 shadow-none" role="group" aria-label="Kinds of question">
-              {KINDS.map((k) => (
-                <ToggleRow
-                  key={k.kind}
-                  className="py-2.5"
-                  title={k.label}
-                  description={KIND_HINT[k.kind]}
-                  checked={draft.kinds.includes(k.kind)}
-                  onCheckedChange={(p) => patch({ kinds: p ? [...draft.kinds, k.kind] : draft.kinds.filter((x) => x !== k.kind) })}
-                />
-              ))}
-            </Card>
-            <FieldError>{errs.kinds}</FieldError>
-          </Field>
-        </>
-      ) : null}
+        ) : null}
+      </div>
 
-      <Field label="Name" htmlFor="make-title">
-        <Input id="make-title" placeholder="Named for you if left empty" value={draft.title} maxLength={120} onChange={(e) => patch({ title: e.target.value })} />
-      </Field>
+      {quiz ? (
+        <Field label="Kinds of question">
+          {/* Two across, titles only; what each kind is shows on hover. */}
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Kinds of question">
+            {KINDS.map((k) => (
+              <KindToggle
+                key={k.kind}
+                label={k.label}
+                hint={KIND_HINT[k.kind]}
+                checked={draft.kinds.includes(k.kind)}
+                onCheckedChange={(p) => patch({ kinds: p ? [...draft.kinds, k.kind] : draft.kinds.filter((x) => x !== k.kind) })}
+              />
+            ))}
+          </div>
+          <FieldError>{errs.kinds}</FieldError>
+        </Field>
+      ) : null}
 
       <Card variant="well" className="gap-0 p-4" data-testid="make-summary">
         <div className="mb-1 flex h-6 items-center justify-between">
@@ -1006,12 +1011,39 @@ function HowStep({
         {scope ? <SummaryRow icon={icons.goal} label="For" value={scope} /> : null}
         <SummaryRow icon={quiz ? icons.quiz : icons.deck} label={quiz ? "Questions" : "Cards"} value={[plural(draft.count || 0, quiz ? "question" : "card"), quiz ? difficulty : null].filter(Boolean).join(" · ")} />
         {quiz ? <SummaryRow icon={icons.list} label="Kinds" value={draft.kinds.length ? draft.kinds.map(kindLabel).join(", ") : "None chosen"} /> : null}
+        <div className="flex h-8 items-center gap-3 text-sm">
+          <Icon icon={icons.rename} className="size-4 text-muted-foreground" />
+          <label htmlFor="make-title" className="shrink-0 text-muted-foreground">
+            Name
+          </label>
+          <input
+            id="make-title"
+            placeholder="Named for you"
+            value={draft.title}
+            maxLength={120}
+            onChange={(e) => patch({ title: e.target.value })}
+            className="-mr-1.5 h-7 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-right text-foreground outline-none transition-colors placeholder:text-subtle-foreground hover:bg-accent focus-visible:bg-card focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
         <div className="flex h-8 items-center gap-3 text-sm" data-testid="study-model">
           <Icon icon={icons.model} className="size-4 text-muted-foreground" />
           <span className="text-muted-foreground">Model</span>
           <span className="ml-auto flex min-w-0 justify-end">{model}</span>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** A compact on/off row for one kind of question: its name and a switch; the whole row is the label. */
+function KindToggle({ label, hint, checked, onCheckedChange }: { label: string; hint?: string; checked: boolean; onCheckedChange: (on: boolean) => void }) {
+  const id = useId();
+  return (
+    <div title={hint} className={cn("flex h-10 items-center gap-2 rounded-lg border px-3 transition-colors", checked ? "border-border bg-card" : "border-border/70 bg-well")}>
+      <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer truncate text-foreground text-sm">
+        {label}
+      </label>
+      <Switch id={id} size="sm" checked={checked} onCheckedChange={(v) => onCheckedChange(v)} />
     </div>
   );
 }
@@ -1039,7 +1071,6 @@ function RunView({ progress, fraction, started, quiz, course, exam, stopping }: 
   return (
     <div className="flex flex-col gap-4 pb-2" aria-live="polite" data-testid="make-progress">
       <div className="flex items-center gap-3">
-        <Spinner size="md" className="text-muted-foreground" />
         <span className={cn("min-w-0 flex-1 truncate text-base", !stopping && "text-shimmer")}>{stopping ? "Stopping…" : quiz ? "Making your quiz…" : "Making your cards…"}</span>
         <span className="shrink-0 text-muted-foreground text-sm tabular-nums">{`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</span>
       </div>
@@ -1107,7 +1138,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
       </div>
       <Card variant="well" className="gap-0 px-4 py-2">
         <DoneRow tone="done">{`Each ${noun} checked against your materials`}</DoneRow>
-        {dropped ? <DoneRow tone="muted">{`${plural(dropped, noun)} that didn’t match ${dropped === 1 ? "was" : "were"} left out`}</DoneRow> : null}
+        {dropped ? <DoneRow tone="info">{`${plural(dropped, noun)} that didn’t match ${dropped === 1 ? "was" : "were"} left out`}</DoneRow> : null}
         {topics.map((c) => (
           <DoneRow key={c.topic} tone="done" meta={String(c.count)}>
             {c.topic}
@@ -1118,7 +1149,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
   );
 }
 
-function DoneRow({ tone, meta, children }: { tone: "done" | "muted"; meta?: string; children: ReactNode }) {
+function DoneRow({ tone, meta, children }: { tone: "done" | "info"; meta?: string; children: ReactNode }) {
   return (
     <div className="flex min-h-9 items-center gap-3 text-sm">
       <Disc tone={tone} />

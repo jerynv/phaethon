@@ -39,10 +39,14 @@ type Nav = {
   viewer: { space: string; path: string } | null;
   /** Conversations (by `chatKey`) that got a reply while they weren't on screen. */
   unread: Record<string, true>;
+  /** Bumped when the already-selected view tab is clicked again, so the view can go back to its front page. */
+  retap: { view: View; n: number };
 
   loadSpaces(): Promise<void>;
   selectSpace(id: string, view?: View): void;
   setView(view: View): void;
+  /** The selected view's tab was clicked again. */
+  retapView(view: View): void;
   loadThreads(space: string): Promise<void>;
   /** Shows the space's new chat. Nothing is created until it is sent. */
   newChat(space: string): Promise<void>;
@@ -117,6 +121,7 @@ export const useNav = create<Nav>((set, get) => {
     paletteOpen: false,
     viewer: null,
     unread: {},
+    retap: { view: "chat", n: 0 },
 
     async loadSpaces() {
       set((s) => ({ spaces: { ...s.spaces, loading: true, error: undefined } }));
@@ -144,6 +149,10 @@ export const useNav = create<Nav>((set, get) => {
     setView(view) {
       set({ view, settings: null });
       seen();
+    },
+
+    retapView(view) {
+      set((s) => ({ retap: { view, n: s.retap.n + 1 } }));
     },
 
     /** A quiet refresh: what is listed stays until the answer replaces it, and rows the UI just added are kept. */

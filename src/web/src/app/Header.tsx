@@ -98,15 +98,17 @@ function ViewTabs() {
   const view = useNav((s) => s.view);
   const settings = useNav((s) => s.settings);
   const setView = useNav((s) => s.setView);
+  const retap = useNav((s) => s.retapView);
   if (!space?.educationEnabled) return null;
   return (
     <Tabs value={settings ? null : view} onValueChange={(v) => setView(v as View)} className="app-no-drag shrink-0">
       <TabsList aria-label="Views" variant="pill">
         {VIEWS.map((v, i) => (
           <Tooltip key={v.id}>
-            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} />}>
+            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} onClick={() => !settings && v.id === view && retap(v.id)} />}>
               <Icon icon={v.icon} />
-              <span className="@max-5xl/header:hidden">{v.label}</span>
+              {/* Narrow bars show icons only; so do the other tabs while a page shows a back crumb, so the crumb always fits. */}
+              <span className="@max-5xl/header:hidden group-has-[[data-slot=crumbs]]/header:[[role=tab][aria-selected=false]_&]:hidden">{v.label}</span>
             </TooltipTrigger>
             <TooltipPopup side="bottom">
               <span className="flex items-center gap-2">
@@ -159,7 +161,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
     <header
       data-slot="app-header"
       className={cn(
-        "@container/header app-drag grid h-(--titlebar-height) shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b px-3",
+        "group/header @container/header app-drag grid h-(--titlebar-height) shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b px-3",
         !sidebarOpen && isMac() && "pl-(--traffic-light-inset)",
       )}
     >

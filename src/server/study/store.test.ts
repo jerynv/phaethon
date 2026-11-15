@@ -201,7 +201,7 @@ describe("study store", () => {
     const raw = "q: uno\r\na: one\r\n\r\nQ: dos\r\nA: two\r\n";
     fs.writeFileSync(path.join(dir, DECKS, "Spanish.md"), raw);
     const o = overview(dir, T0);
-    expect([o.decks[0]!.title, o.decks[0]!.cards]).toEqual(["Spanish", 2]);
+    expect([o.decks[0]!.title, o.decks[0]!.cards, o.decks[0]!.firstFront]).toEqual(["Spanish", 2, "uno"]);
     expect(err(() => deckSave(dir, "study/decks/Spanish.md", "Spanish", cards([["uno", ""]])))).toContain("no answer");
     expect(() => deckSave(dir, null, "  ", cards([["a", "b"]]))).toThrow();
     expect(() => deckSave(dir, "study/decks/Missing.md", "x", cards([["a", "b"]]))).toThrow();
@@ -271,7 +271,7 @@ describe("study store", () => {
     expect(b.path).toBe(`${ATTEMPTS}/Practice-42 (2).json`);
     expect(attempts(dir).length).toBe(2);
     const o = overview(dir, T0);
-    expect(o.quizzes[0]).toMatchObject({ path: qp, title: "Practice", questions: 1, lastTaken: 42 });
+    expect(o.quizzes[0]).toMatchObject({ path: qp, title: "Practice", questions: 1, lastTaken: 42, firstPrompt: quiz.questions[0]!.prompt.replace(/\s+/g, " ").trim() });
     // A tampered attempt naming another file is never followed.
     const victim = path.join(dir, "notes.md");
     fs.writeFileSync(victim, "mine");

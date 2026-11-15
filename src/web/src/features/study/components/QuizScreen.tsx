@@ -48,7 +48,7 @@ import {
 import { beforeCheck, keyAction, missedIds, reviewList, SURE, type Sure, topicBreakdown, WHY_WORDS } from "../lib/quiz-results";
 import { loadQuizSession, saveQuizSession } from "../lib/quiz-session";
 import type { Attempt, Question, QuestionResult, Quiz, StudyEvent } from "../lib/types";
-import { needsModel, plural, progressWords, type MakeProgress } from "../lib/words";
+import { needsModel, plural, type MakeProgress } from "../lib/words";
 import type { StudyScreen } from "../StudyView";
 import { useLoad } from "../use-load";
 import { EASE, Slide } from "./motion";
@@ -507,7 +507,7 @@ function CheckSheet({ questions, answers, flagged, job, onGo, onSubmit }: { ques
           <CardTitle className="text-lg">{grading ? "Checking your answers…" : "Ready to check?"}</CardTitle>
           <CardDescription className="tabular-nums">
             {grading
-              ? progressWords(job.progress ?? { step: "grading", done: 0, total: 1 }, { quiz: true })
+              ? gradingWords(job.progress, questions.length - c.unanswered.length)
               : `${questions.length - c.unanswered.length} of ${questions.length} answered.${c.unanswered.length ? " Unanswered ones count as wrong." : ""}`}
           </CardDescription>
         </CardHeader>
@@ -534,8 +534,8 @@ function CheckSheet({ questions, answers, flagged, job, onGo, onSubmit }: { ques
           <Button variant="outline" disabled={grading} onClick={() => onGo(c.unanswered[0] ?? c.flagged[0] ?? 0)}>
             Keep going
           </Button>
-          <Button pending={grading} onClick={onSubmit}>
-            Check answers
+          <Button disabled={grading} onClick={onSubmit}>
+            {grading ? "Checking…" : "Check answers"}
           </Button>
         </CardFooter>
       </Card>
@@ -543,13 +543,20 @@ function CheckSheet({ questions, answers, flagged, job, onGo, onSubmit }: { ques
   );
 }
 
+/** The line under "Checking your answers…": how far it has got, never the title again. */
+function gradingWords(p: MakeProgress | null, answered: number): string {
+  if (p && p.total > 1) return `${Math.min(p.done, p.total)} of ${p.total} checked`;
+  return `${plural(answered, "answer")}, each checked against your materials`;
+}
+
 // ---- Results ----
 
-const VERDICT: Record<Verdict, { disc: "done" | "partial" | "wrong" | "muted"; label: string; className: string }> = {
-  correct: { disc: "done", label: "Right", className: "text-success-foreground" },
-  partial: { disc: "partial", label: "Partly right", className: "text-warning-foreground" },
-  wrong: { disc: "wrong", label: "Not right", className: "text-destructive-foreground" },
-  ungraded: { disc: "muted", label: "Not graded", className: "text-muted-foreground" },
+/** Each verdict as a small tinted chip (7274's "Pending"), so a list of misses stays calm. */
+const VERDICT: Record<Verdict, { label: string; chip: string }> = {
+  correct: { label: "Right", chip: "bg-primary/10 text-primary" },
+  partial: { label: "Partly right", chip: "bg-warning/12 text-warning-foreground" },
+  wrong: { label: "Not right", chip: "bg-destructive/8 text-destructive-foreground" },
+  ungraded: { label: "Not graded", chip: "bg-muted text-muted-foreground" },
 };
 
 /** One calm line for the score, not a grade. */
@@ -594,10 +601,20 @@ function Results({
   const g = quiz.grounding;
   const counts = attempt.results.reduce<Record<Verdict, number>>((n, r) => ((n[verdictOf(r)] += 1), n), { correct: 0, partial: 0, wrong: 0, ungraded: 0 });
   const reviewing = job?.kind === "reviewing";
+  // When the explanation lands: a brief tick on the button, then it points down at the card (it never asks again).
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const [justExplained, setJustExplained] = useState(false);
+  useEffect(() => {
+    if (!review) return;
+    setJustExplained(true);
+    reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const t = setTimeout(() => setJustExplained(false), 1200);
+    return () => clearTimeout(t);
+  }, [review]);
   return (
     <div className="flex flex-col gap-8" data-testid="quiz-results">
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }}>
-        <Card>
+        <Card className="rounded-panel">
           {reviewing ? <JobBar value={job.fraction} className="z-10" /> : null}
           <CardMedia className="h-28">
             <ArtCanvas palette="lilac" seed={path} weave className="absolute inset-0" />
@@ -626,10 +643,17 @@ function Results({
                   <Button onClick={() => onRetake(missed)}>
                     Retake {plural(missed.length, "miss", "misses")}
                   </Button>
-                  <Button variant="outline" pending={reviewing} disabled={!!job} onClick={onReview}>
-                    <Icon icon={icons.ai} />
-                    Explain my mistakes
-                  </Button>
+                  {review ? (
+                    <Button variant="outline" success={justExplained} onClick={() => reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}>
+                      Explained
+                      <Icon icon={icons.arrowDown} />
+                    </Button>
+                  ) : (
+                    <Button variant="outline" pending={reviewing} disabled={!!job} onClick={onReview}>
+                      <Icon icon={icons.ai} />
+                      {reviewing ? "Explaining…" : "Explain my mistakes"}
+                    </Button>
+                  )}
                 </>
               ) : (
                 <>
@@ -645,7 +669,7 @@ function Results({
       </motion.div>
 
       {review ? (
-        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE }}>
+        <motion.div ref={reviewRef} className="scroll-mt-6" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: EASE }}>
           <Card>
             <div className="flex items-center gap-2.5 border-b px-5 py-3">
               <Icon icon={icons.ai} className="size-4.5 text-muted-foreground" />
@@ -740,7 +764,7 @@ function ScoreBar({ results }: { results: QuestionResult[] }) {
             initial={{ opacity: 0, scaleY: 0.4 }}
             animate={{ opacity: 1, scaleY: 1 }}
             transition={{ duration: 0.2, delay: 0.03 * i, ease: EASE }}
-            className={cn("h-1.5 flex-1 rounded-full", v === "correct" ? "bg-primary" : v === "partial" ? "bg-warning" : v === "wrong" ? "bg-destructive/70" : "bg-muted")}
+            className={cn("h-1.5 flex-1 rounded-full", v === "correct" ? "bg-primary" : v === "partial" ? "bg-warning/50" : v === "wrong" ? "bg-destructive/35" : "bg-muted")}
           />
         );
       })}
@@ -777,12 +801,12 @@ function ReviewCard({ space, number, question, result, why, defaultOpen = false 
   return (
     <Collapsible defaultOpen={defaultOpen} className="overflow-hidden rounded-card border bg-card shadow-card">
       <CollapsibleTrigger className="group flex w-full items-start gap-3 px-5 py-4 text-left outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50">
-        <Disc tone={v.disc} className="mt-0.5" />
+        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-2xs text-muted-foreground tabular-nums">{number}</span>
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center gap-1.5 text-muted-foreground text-sm">
-            <span className="tabular-nums">{number}</span>
-            <span className="text-subtle-foreground">·</span>
-            <span className={v.className}>{verdict === "partial" && result.partial != null ? `${Math.round(result.partial * 100)}%` : (why ?? v.label)}</span>
+          <div className="mb-1.5 flex items-center gap-1.5 text-muted-foreground text-sm">
+            <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-xs tabular-nums", v.chip)}>
+              {verdict === "partial" && result.partial != null ? `${Math.round(result.partial * 100)}% right` : (why ?? v.label)}
+            </span>
             {question.topic ? (
               <>
                 <span className="text-subtle-foreground">·</span>
@@ -795,7 +819,7 @@ function ReviewCard({ space, number, question, result, why, defaultOpen = false 
         <Icon icon={icons.chevronDown} className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-180" />
       </CollapsibleTrigger>
       <CollapsiblePanel>
-        <div className="flex flex-col gap-3 px-5 pb-5 pl-12 text-sm">
+        <div className="flex flex-col gap-3 px-5 pb-5 pl-13 text-sm">
           {!result.correct ? (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl border border-border/70 bg-well px-4 py-3 text-sm">
               <dt className="text-muted-foreground">You said</dt>
@@ -878,7 +902,7 @@ function ChoiceList({
       <CheckboxGroup value={value} onValueChange={(v) => onAnswer(list.filter((x) => !choices.includes(x)).concat(v as string[]))} aria-label="Choices" className="flex flex-col gap-2">
         <p className="text-muted-foreground text-sm">Choose all that apply.</p>
         {choices.map((c, i) => (
-          <CheckboxPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
+          <CheckboxPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} nativeButton render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
             {keycap(i, value.includes(c))}
             {render(c, i)}
           </CheckboxPrimitive.Root>
@@ -890,7 +914,7 @@ function ChoiceList({
   return (
     <RadioGroupPrimitive value={value} onValueChange={(v) => onAnswer(v as string)} aria-label="Choices" className="flex flex-col gap-2">
       {choices.map((c, i) => (
-        <RadioPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
+        <RadioPrimitive.Root key={c} value={c} data-choice="" onKeyDown={quizKeys} className={CHOICE} nativeButton render={<motion.button type="button" whileTap={{ scale: 0.995 }} />}>
           {keycap(i, value === c)}
           {render(c, i)}
         </RadioPrimitive.Root>

@@ -25,8 +25,8 @@ export function Page({ children, narrow = false, className }: { children: ReactN
   );
 }
 
-/** The filled disc in front of a summary row (c06d's blue ticks): done, partly, missed, or nothing to say. */
-export function Disc({ tone = "done", className }: { tone?: "done" | "partial" | "wrong" | "muted"; className?: string }) {
+/** The filled disc in front of a summary row (c06d's blue ticks): done, partly, missed, a neutral note (a dash), or nothing to say. */
+export function Disc({ tone = "done", className }: { tone?: "done" | "partial" | "wrong" | "info" | "muted"; className?: string }) {
   return (
     <span
       aria-hidden
@@ -36,15 +36,20 @@ export function Disc({ tone = "done", className }: { tone?: "done" | "partial" |
         className,
       )}
     >
-      <Icon icon={tone === "wrong" ? icons.close : tone === "partial" ? icons.remove : icons.check} className="size-2.5 [--icon-stroke-small:2.25]" />
+      <Icon icon={tone === "wrong" ? icons.close : tone === "partial" || tone === "info" ? icons.remove : icons.check} className="size-2.5 [--icon-stroke-small:2.25]" />
     </span>
   );
 }
 
-/** "← Sets and functions" in the title bar: Study is already the selected tab, so the arrow goes back to it and the name truncates. */
+/**
+ * "← Sets and functions" in the title bar: Study is already the selected tab,
+ * so the arrow goes back to it and the name truncates. While crumbs show, the
+ * bar folds the other tabs to their icons so the crumb always has room
+ * (`data-slot="crumbs"`, see app/Header.tsx).
+ */
 export function Crumbs({ onBack, children }: { onBack: () => void; children: ReactNode }) {
   return (
-    <span className="flex min-w-0 items-center gap-1 overflow-hidden text-sm">
+    <span data-slot="crumbs" className="flex min-w-0 items-center gap-1 overflow-hidden text-sm">
       <button
         type="button"
         aria-label="Back to study"

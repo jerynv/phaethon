@@ -25,7 +25,7 @@ import { useLoad } from "../use-load";
 import { ConfirmDelete } from "./ConfirmDelete";
 import { MakeDialog } from "./MakeDialog";
 import { EASE } from "./motion";
-import { Page } from "./parts";
+import { Page, StudyText } from "./parts";
 
 /**
  * Study's front page (docs/UI-REBUILD.md › Study › Overview): what's due as a
@@ -87,7 +87,7 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
           />
         ) : data ? (
           <>
-            <DueCard data={data} onReview={() => open({ kind: "review", paths: null })} />
+            <DueCard data={data} onReview={() => open({ kind: "review", paths: null })} onQuiz={(path) => open({ kind: "quiz", path })} onMake={() => startMake("deck")} />
             <Stats data={data} />
             <Section icon={icons.deck} label="Decks" count={data.decks.length} action="Make cards" onAction={() => startMake("deck")}>
               {data.decks.length ? (
@@ -95,6 +95,7 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
                   <DeckCard
                     key={d.path}
                     index={i}
+                    space={space.id}
                     deck={d}
                     onOpen={() => open({ kind: "review", paths: [d.path], title: d.title })}
                     onEdit={() => open({ kind: "deck", path: d.path })}
@@ -159,32 +160,57 @@ function ago(ms: number): string {
   return t === "now" ? "just now" : /^\d+[mhd]$/.test(t) ? `${t} ago` : t;
 }
 
+/** Chosen so the lilac mesh has one saturated blob near the middle of the strip (2c35, d1d3), not even bands. */
+const HERO_SEED = "study-2686";
+
 const newCards = (data: StudyOverview) => data.decks.reduce((n, d) => n + d.new, 0);
 
-/** The hero: how much is due, about how long it takes, and the one ink action. */
-function DueCard({ data, onReview }: { data: StudyOverview; onReview: () => void }) {
+/** The quiz to suggest when no cards want you: one never taken, else the one taken longest ago. */
+function staleQuiz(data: StudyOverview): QuizSummary | undefined {
+  return [...data.quizzes].filter((q) => q.questions > 0).sort((a, b) => (a.lastTaken ?? 0) - (b.lastTaken ?? 0))[0];
+}
+
+/**
+ * The hero: how much is due, about how long it takes, and the one ink action
+ * (the overview's only ink button). Caught up, the action is still live: take
+ * a quiz, or make more cards.
+ */
+function DueCard({ data, onReview, onQuiz, onMake }: { data: StudyOverview; onReview: () => void; onQuiz: (path: string) => void; onMake: () => void }) {
   const fresh = newCards(data);
+  const quiz = !data.due && !fresh ? staleQuiz(data) : undefined;
   const { due, streakDays: streak } = data;
   const title = due ? plural(due, "card") + " due" : fresh ? `${plural(fresh, "new card")} to learn` : "You’re caught up";
   const meta = [
-    due ? `About ${plural(reviewMinutes(due), "minute")}` : fresh ? null : "Cards come due again as you review them",
+    due ? `About ${plural(reviewMinutes(due), "minute")}` : fresh ? null : quiz ? `${quiz.title} is ready to practise` : "Cards come due again as you review them",
     due && fresh ? `${fresh} new` : null,
     streak > 1 ? `${streak}-day streak` : null,
   ].filter(Boolean);
   return (
-    <Card data-testid="study-due">
-      <CardMedia className="h-24">
-        <ArtCanvas palette="lilac" seed="study" weave className="absolute inset-0" />
+    <Card data-testid="study-due" className="rounded-panel">
+      <CardMedia className="h-28">
+        <ArtCanvas palette="lilac" seed={HERO_SEED} weave className="absolute inset-0" />
       </CardMedia>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-4 p-5">
         <div className="min-w-0 flex-1">
           <h2 className="font-medium text-xl tabular-nums tracking-title">{title}</h2>
           {meta.length ? <p className="mt-1 text-muted-foreground text-sm tabular-nums">{meta.join(" · ")}</p> : null}
         </div>
-        <Button disabled={!due && !fresh} onClick={onReview}>
-          {due ? "Review due cards" : "Learn new cards"}
-          <Icon icon={icons.arrowRight} />
-        </Button>
+        {due || fresh ? (
+          <Button onClick={onReview}>
+            {due ? "Review due cards" : "Learn new cards"}
+            <Icon icon={icons.arrowRight} />
+          </Button>
+        ) : quiz ? (
+          <Button onClick={() => onQuiz(quiz.path)}>
+            Take a quiz
+            <Icon icon={icons.arrowRight} />
+          </Button>
+        ) : (
+          <Button onClick={onMake}>
+            <Icon icon={icons.add} />
+            Make cards
+          </Button>
+        )}
       </div>
     </Card>
   );
@@ -198,7 +224,7 @@ function Stats({ data }: { data: StudyOverview }) {
     <StatGrid>
       <StatTile label="Due now" value={data.due} />
       <StatTile label="New cards" value={newCards(data)} />
-      <StatTile label="Known" value={cards ? Math.round(known * 100) : "–"} unit={cards ? "%" : undefined} />
+      <StatTile label="Known" value={cards ? `${Math.round(known * 100)}%` : "–"} />
       <StatTile label="Streak" value={data.streakDays} unit={data.streakDays === 1 ? "day" : "days"} />
     </StatGrid>
   );
@@ -254,20 +280,22 @@ function ArtifactCard({
       initial={reduce ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, delay: Math.min(index, 6) * 0.03, ease: EASE }}
-      role="button"
-      tabIndex={0}
-      aria-label={title}
-      onClick={onOpen}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && (e.preventDefault(), onOpen())}
-      className="group flex min-w-0 cursor-pointer flex-col gap-3 rounded-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
+      className="group relative flex min-w-0 flex-col gap-3"
     >
-      <div className="relative h-36 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
+      {/* The whole card opens it: one real button stretched over the card, with the menu beside it (not inside). */}
+      <button
+        type="button"
+        aria-label={title}
+        onClick={onOpen}
+        className="absolute inset-0 cursor-pointer rounded-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
+      />
+      <div className="pointer-events-none relative h-36 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
         <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 shadow-card transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
           <div className="flex items-center justify-between gap-2">
             <Icon icon={icon} className="size-4.5 text-muted-foreground" />
             {badge}
           </div>
-          <Truncate className="min-w-0 text-muted-foreground text-sm">{line}</Truncate>
+          <div className="h-5 min-w-0 overflow-hidden text-muted-foreground text-sm">{line}</div>
           <div className="flex flex-col gap-2" aria-hidden>
             <span className="relative h-1.5 overflow-hidden rounded-full bg-muted">
               {meter != null ? (
@@ -282,16 +310,20 @@ function ArtifactCard({
             <span className="h-1.5 w-2/3 rounded-full bg-muted" />
           </div>
         </div>
-        <div className="absolute top-2 right-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          {menu}
-        </div>
       </div>
-      <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
+      <div className="absolute top-2 right-2">{menu}</div>
+      <div className="pointer-events-none relative flex min-w-0 flex-col gap-0.5 px-0.5">
         <Truncate className="min-w-0 font-medium text-base text-foreground">{title}</Truncate>
         <span className="truncate text-muted-foreground text-sm tabular-nums">{meta}</span>
       </div>
     </motion.div>
   );
+}
+
+/** A sheet's line: the first card or question, as study text on one line (math and blanks drawn, the rest cut). */
+function SheetLine({ text, fallback, space, id }: { text?: string; fallback: string; space: string; id: string }) {
+  if (!text) return <Truncate className="min-w-0">{fallback}</Truncate>;
+  return <StudyText text={text} space={space} id={id} className="truncate [&_*]:inline [&_.katex-display]:my-0 [&_.markdown]:text-muted-foreground [&_.markdown]:text-sm [&_br]:hidden [&_p]:m-0" />;
 }
 
 function CardMenu({ children, label }: { children: ReactNode; label: string }) {
@@ -303,7 +335,7 @@ function CardMenu({ children, label }: { children: ReactNode; label: string }) {
             size="icon-xs"
             variant="ghost-muted"
             aria-label={label}
-            className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 data-popup-open:opacity-100"
+            className="opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-popup-open:opacity-100"
           />
         }
       >
@@ -328,14 +360,15 @@ function Chip({ tone = "muted", children }: { tone?: "primary" | "muted" | "warn
   );
 }
 
-function DeckCard({ index, deck, onOpen, onEdit, onDelete }: { index: number; deck: DeckSummary; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
-  const meta = [deck.due ? `${deck.due} due` : deck.new ? `${deck.new} new` : null, plural(deck.cards, "card"), deck.cards ? `${percent(deck.mastery)} known` : null].filter(Boolean).join(" · ");
+function DeckCard({ index, space, deck, onOpen, onEdit, onDelete }: { index: number; space: string; deck: DeckSummary; onOpen: () => void; onEdit: () => void; onDelete: () => void }) {
+  // What's due is on the sheet's chip; the line under the name says where it's from and how well it's known.
+  const meta = [deck.course ?? "Your own cards", plural(deck.cards, "card"), deck.cards ? `${percent(deck.mastery)} known` : null].filter(Boolean).join(" · ");
   return (
     <ArtifactCard
       index={index}
       icon={icons.deck}
       title={deck.title}
-      line={deck.course ?? "Your own cards"}
+      line={<SheetLine text={deck.firstFront} fallback="No cards yet" space={space} id={`sheet-${deck.path}`} />}
       badge={deck.due ? <Chip tone="primary">{deck.due} due</Chip> : deck.new ? <Chip>{deck.new} new</Chip> : null}
       meter={deck.cards ? deck.mastery : null}
       meta={meta}
@@ -363,13 +396,13 @@ function DeckCard({ index, deck, onOpen, onEdit, onDelete }: { index: number; de
 
 function QuizCard({ index, space, quiz, onOpen, onDelete }: { index: number; space: string; quiz: QuizSummary; onOpen: () => void; onDelete: () => void }) {
   const draft = draftCount(space, quiz.path);
-  const meta = [plural(quiz.questions, "question"), quiz.lastTaken ? `taken ${ago(quiz.lastTaken)}` : "not taken yet"].join(" · ");
+  const meta = [quiz.course, plural(quiz.questions, "question"), quiz.lastTaken ? `taken ${ago(quiz.lastTaken)}` : "not taken yet"].filter(Boolean).join(" · ");
   return (
     <ArtifactCard
       index={index}
       icon={icons.quiz}
       title={quiz.title}
-      line={quiz.course ?? "Practice quiz"}
+      line={<SheetLine text={quiz.firstPrompt} fallback="Practice quiz" space={space} id={`sheet-${quiz.path}`} />}
       badge={
         draft ? (
           <Chip tone="primary">{draft} answered</Chip>
@@ -411,7 +444,7 @@ function SectionEmpty({ children, action, onAction }: { children: ReactNode; act
 /** Nothing at all yet: an art card that says what Study does and how to start. */
 function EmptyStudy({ noCourses, onCourses, onMake, onWrite }: { noCourses: boolean; onCourses: () => void; onMake: () => void; onWrite: () => void }) {
   return (
-    <Card className="mx-auto mt-6 w-full max-w-md">
+    <Card className="mx-auto mt-6 w-full max-w-md rounded-panel">
       <CardMedia className="h-32">
         <ArtCanvas palette="lilac" seed="study-empty" weave className="absolute inset-0" />
       </CardMedia>
@@ -443,8 +476,8 @@ function EmptyStudy({ noCourses, onCourses, onMake, onWrite }: { noCourses: bool
 function OverviewSkeleton() {
   return (
     <div className="flex flex-col gap-10 motion-safe:animate-skeleton" aria-hidden>
-      <div className="overflow-hidden rounded-card border">
-        <Skeleton className="h-24 animate-none rounded-none" />
+      <div className="overflow-hidden rounded-panel border">
+        <Skeleton className="h-28 animate-none rounded-none" />
         <div className="flex items-center gap-6 p-5">
           <div className="flex flex-1 flex-col gap-2">
             <Skeleton className="h-4 w-36 animate-none" />
@@ -453,11 +486,11 @@ function OverviewSkeleton() {
           <Skeleton className="h-8 w-40 animate-none rounded-full" />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+      <StatGrid>
         {[0, 1, 2, 3].map((i) => (
           <Skeleton key={i} className="h-22 animate-none rounded-xl" />
         ))}
-      </div>
+      </StatGrid>
       <div className="grid grid-cols-1 gap-x-6 gap-y-7 @xl/page:grid-cols-2">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="flex flex-col gap-3">

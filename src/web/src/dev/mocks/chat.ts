@@ -21,7 +21,7 @@ import { sleep, type MockChannel } from "../mock-core";
 import { mockThreadText, mockTurn, writeSpaces, writeThreads } from "./shell";
 
 const hash = new URLSearchParams(location.hash.slice(1));
-const CS101 = "courses/CS 101 Fall 2026";
+const CS101 = "courses/Logic and Discrete Math";
 const now = Date.now();
 
 const NOTES_BEFORE = `# Week 6: Functions

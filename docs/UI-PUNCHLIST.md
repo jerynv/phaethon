@@ -123,3 +123,4 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 80 | Use school and course-site logos | done — the site's own icon (fetched once a week by the core), else the Canvas or Moodle mark, else a D2L / Bb monogram |
 | 81 | About › Licenses: just "MIT" and a link to the GitHub licence page | done |
 | 82 | The P mark should be Phaethon blue | done — `BrandMark` is `text-primary` everywhere |
+| 83 | File reference hovers still look horrible | done — inline files read like links (underline on hover), no tint box, no path tooltip; citations the same, muted |

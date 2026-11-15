@@ -1,4 +1,4 @@
-// Adapted from T3 Code's timeline minimap (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
+// Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md. After its timeline minimap.
 import { type MouseEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";

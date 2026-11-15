@@ -78,8 +78,8 @@
   --row-selected: oklch(94.5% 0 0);
   --message: var(--ink);
   --message-foreground: var(--ink-foreground);
-  --border: oklch(92.6% 0 0);
-  --border-strong: oklch(88% 0 0);
+  --border: oklch(93.4% 0 0);
+  --border-strong: oklch(89% 0 0);
   --input: oklch(90.5% 0 0);
   --ring: var(--primary);
   --code: oklch(98.2% 0 0);
@@ -178,7 +178,7 @@
   --row-selected: oklch(100% 0 0 / 8%);
   --message: oklch(29% 0 0);
   --message-foreground: oklch(95.5% 0 0);
-  --border: oklch(100% 0 0 / 6.5%);
+  --border: oklch(100% 0 0 / 6%);
   --border-strong: oklch(100% 0 0 / 12%);
   --input: oklch(100% 0 0 / 11%);
   --code: oklch(100% 0 0 / 3%);

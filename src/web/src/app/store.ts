@@ -233,8 +233,8 @@ export const useNav = create<Nav>((set, get) => {
       const open: OpenTab = { ...tab, id, kept: !!opts.keep || !!opts.fresh || tab.kind !== "chat" };
       const at = tabs.findIndex((t) => t.id === get().activeTab);
       const active = at >= 0 ? tabs[at]! : undefined;
-      // A plain click lands in the preview tab, if the active one is a preview; otherwise it opens beside the active tab.
-      if (!opts.fresh && active && !active.kept) {
+      // A plain click on a conversation lands in the preview tab, if the active one is a preview conversation; anything else opens beside the active tab.
+      if (!opts.fresh && tab.kind === "chat" && active && active.kind === "chat" && !active.kept) {
         const next = [...tabs];
         next[at] = open;
         set({ closedTabs: [strip(active), ...get().closedTabs.filter((c) => tabId(c) !== active.id)].slice(0, MAX_CLOSED) });
@@ -357,7 +357,16 @@ export const useNav = create<Nav>((set, get) => {
           if (gen !== generation[space]) return;
           const rows = get().threads[space]?.data ?? [];
           const next = remembered === DRAFT ? DRAFT : has(remembered) ? remembered! : rows[0]?.id ?? DRAFT;
-          if (shown === undefined || next !== shown) setOpen(space, next);
+          if (shown === undefined || next !== shown) {
+            setOpen(space, next);
+            // A chat tab opened before the list arrived showed the new chat; it follows to the conversation the space shows.
+            const from = tabId({ kind: "chat", space, thread: shown ?? DRAFT });
+            const to = tabId({ kind: "chat", space, thread: next });
+            if (from !== to && get().tabs.some((t) => t.id === from) && !get().tabs.some((t) => t.id === to)) {
+              set({ tabs: get().tabs.map((t) => (t.id === from ? { ...t, id: to, thread: next } : t)), activeTab: get().activeTab === from ? to : get().activeTab });
+              saveTabs();
+            }
+          }
         }
       } catch (e) {
         if (gen === generation[space]) setList(space, () => ({ loading: false, loadingMore: false, error: errorText(e) }));

@@ -16,10 +16,10 @@ test("study tools: tabs appear and every view loads its empty state", async ({ p
   await dialog.getByLabel("Name").fill("Fall term");
   await dialog.getByRole("switch").click();
   await dialog.getByRole("button", { name: "Create space" }).click();
-  const tabs = page.getByRole("tablist", { name: "Views" });
-  await expect(tabs).toBeVisible();
+  const views = page.getByRole("list", { name: "Views" });
+  await expect(views).toBeVisible();
   for (const view of ["Study", "Grades", "Plan", "Courses"]) {
-    await tabs.getByRole("tab", { name: view }).click();
+    await views.getByRole("button", { name: new RegExp(`^${view}`) }).click();
     await expect(page.locator("[data-slot=app-header]")).toContainText(view);
     // Nothing failed to load: no surface error with a Retry.
     await expect(page.getByRole("main").getByRole("button", { name: "Retry" })).toHaveCount(0);

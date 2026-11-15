@@ -183,17 +183,7 @@ export function GradesView({ space }: { space: SpaceView }) {
           ) : null}
           {data?.length ? (
             <>
-              {focused ? (
-                <div className="-mb-4 flex min-w-0 items-center gap-1">
-                  {!one ? (
-                    <Button size="icon-sm" variant="ghost-muted" aria-label="All courses" onClick={() => setFocus(ALL)}>
-                      <Icon icon={icons.arrowLeft} />
-                    </Button>
-                  ) : null}
-                  <h1 className="min-w-0 truncate font-medium text-lg tracking-title">{focused.course}</h1>
-                </div>
-              ) : null}
-              {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
+              {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} onBack={one ? undefined : () => setFocus(ALL)} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
               {withItems.length ? <Attention courses={withItems} fresh={fresh} now={now} /> : null}
               {focused && focused.items.length ? <CourseCharts course={focused} now={now} /> : null}
               {focused && !focused.items.length ? null : <AllTables courses={scope} fresh={fresh} now={now} />}
@@ -269,7 +259,7 @@ function TermOverview({ courses, refreshing, onPick }: { courses: CourseGradeVie
 
 // ---- One course at a glance ----
 
-function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; now: number; refreshing: boolean }) {
+function CourseOverview({ course, now, refreshing, onBack }: { course: CourseGradeView; now: number; refreshing: boolean; onBack?: () => void }) {
   const h = courseHead(course);
   const s = courseStats(course, now);
   const up = h.trend && h.trend.delta >= 0.05;
@@ -278,6 +268,14 @@ function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; 
     <Card data-testid="grades-courses">
       <div className="flex items-start gap-4 px-5 pt-5 pb-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <h1 className="flex min-w-0 items-center gap-1.5 font-medium text-lg tracking-title">
+            {onBack ? (
+              <Button size="icon-xs" variant="ghost-muted" aria-label="All courses" className="-ml-1" onClick={onBack}>
+                <Icon icon={icons.arrowLeft} />
+              </Button>
+            ) : null}
+            <Truncate className="min-w-0">{course.course}</Truncate>
+          </h1>
           <CardDescription className="flex items-center gap-2 tabular-nums">
             {s.graded} of {s.total} graded · updated {relativeTime(course.updated).toLowerCase()}
             {refreshing ? <Spinner size="xs" tone="muted" /> : null}

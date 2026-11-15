@@ -71,8 +71,8 @@ test("two conversations in one space reply at once, and switching clears nothing
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("alpha3");
 
   // To another page and back: still there.
-  await page.getByRole("tab", { name: "Grades" }).click();
-  await page.getByRole("tab", { name: "Chat" }).click();
+  await page.getByRole("list", { name: "Views" }).getByRole("button", { name: /^Grades/ }).click();
+  await page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { name: /^first question/ }).click();
   await expect(page.locator("[data-slot=app-header]")).not.toContainText("New chat");
   await expect(page.locator('[data-role="user"]')).toHaveCount(1);
   await expect(page.locator('[data-role="user"]')).toContainText("first question");

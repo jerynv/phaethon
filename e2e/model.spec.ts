@@ -36,7 +36,7 @@ test("each conversation keeps its own model and effort", async ({ page }) => {
 
   await pick(page, "Claude Haiku 5.5");
   await page.getByRole("button", { name: /^Reasoning:/ }).click();
-  await page.getByRole("button", { name: "Low" }).click();
+  await page.getByRole("tab", { name: "Low" }).click();
   await send(page, "first conversation");
   // The choice is saved beside the conversation once it is sent.
   const [first] = fs.readdirSync(threads).filter((f) => f.endsWith(".model"));

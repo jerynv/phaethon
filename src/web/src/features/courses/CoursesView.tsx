@@ -111,7 +111,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
             <div className="flex h-14 shrink-0 items-center gap-2 px-4">
               <h2 className="flex-1 font-medium text-lg tracking-title">Courses</h2>
               <Tooltip>
-                <TooltipTrigger render={<Button size="icon-sm" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
+                <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
                   <Icon icon={icons.add} />
                 </TooltipTrigger>
                 <TooltipPopup>Connect a course site</TooltipPopup>
@@ -283,7 +283,7 @@ function CourseRow({ space, course, selected, onOpen }: { space: string; course:
       aria-current={selected ? "true" : undefined}
       onClick={onOpen}
       className={cn(
-        "flex h-8 min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+        "flex h-7 min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
         selected && "bg-row-selected hover:bg-row-selected",
       )}
     >

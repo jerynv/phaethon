@@ -27,7 +27,10 @@ test("a key in the wrong format is refused under the field and never saved", asy
   core = await startCore();
   await core.open(page);
   await page.keyboard.press("ControlOrMeta+Comma");
-  await page.getByRole("button", { name: "Providers", exact: true }).first().click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: /^Providers/ }).click();
+  // Nothing is set up yet, so Anthropic is added from the menu; its row opens on its key field.
+  await page.getByRole("button", { name: "Add provider" }).click();
+  await page.getByRole("menuitem", { name: "Anthropic" }).click();
   const key = page.getByPlaceholder("sk-ant-…");
   await key.fill("not-a-key");
   await page.getByRole("button", { name: "Check and save" }).click();

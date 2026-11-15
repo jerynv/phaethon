@@ -33,22 +33,26 @@ test("the view tabs stay in one place on every page, and the chat survives a pag
   await dialog.getByLabel("Name").fill("Fall term");
   await dialog.getByRole("switch").click();
   await dialog.getByRole("button", { name: "Create space" }).click();
-  const tabs = page.getByRole("tablist", { name: "Views" });
-  await expect(tabs).toBeVisible();
+  const views = page.getByRole("list", { name: "Views" });
+  await expect(views).toBeVisible();
   await composer(page).fill("a draft I haven't sent");
 
+  // Each page opens as its own tab; the search field never moves while pages come and go.
+  const search = page.getByRole("button", { name: "Search" });
   const boxes: Record<string, { x: number; y: number; width: number }> = {};
-  for (const view of ["Chat", "Study", "Grades", "Plan", "Courses"]) {
-    await tabs.getByRole("tab", { name: view }).click();
-    await expect(tabs.getByRole("tab", { name: view })).toHaveAttribute("aria-selected", "true");
+  const first = (await search.boundingBox())!;
+  for (const view of ["Study", "Grades", "Plan", "Courses"]) {
+    await views.getByRole("button", { name: new RegExp(`^${view}`) }).click();
+    await expect(views.getByRole("button", { name: new RegExp(`^${view}`) })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { name: view })).toHaveAttribute("aria-selected", "true");
     // Let page actions (Refresh, Save as note, …) arrive in the bar first.
     await page.waitForTimeout(400);
-    const b = (await tabs.boundingBox())!;
+    const b = (await search.boundingBox())!;
     boxes[view] = { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width) };
   }
-  for (const view of Object.keys(boxes)) expect(boxes[view], view).toEqual(boxes.Chat);
+  for (const view of Object.keys(boxes)) expect(boxes[view], view).toEqual({ x: Math.round(first.x), y: Math.round(first.y), width: Math.round(first.width) });
 
-  await tabs.getByRole("tab", { name: "Chat" }).click();
+  await page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { name: "New chat" }).click();
   await expect(composer(page)).toHaveValue("a draft I haven't sent");
 });
 

@@ -221,10 +221,10 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
     <header
       data-slot="app-header"
       data-sidebar={sidebarOpen ? "open" : "closed"}
-      className={cn("group/header @container/header app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}
+      className={cn("group/header @container/header app-drag grid h-(--titlebar-height) shrink-0 grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}
     >
-      <BrandMark className="size-4 shrink-0 text-foreground" label="Phaethon" />
-      <div className="mr-1 ml-1 flex shrink-0 items-center">
+      <div className="flex shrink-0 items-center gap-1">
+        <BrandMark className="size-4 shrink-0 text-foreground" label="Phaethon" />
         <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
           <Icon icon={icons.sidebar} />
         </HeaderIconButton>
@@ -237,7 +237,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
       <TabStrip />
       <div ref={bind.title} hidden />
       <SearchField />
-      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 shrink-0 items-center justify-end gap-1" />
+      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 items-center justify-end gap-1" />
     </header>
   );
 }

@@ -55,13 +55,15 @@ describe("which providers show", () => {
     expect(isAdded({ ...ollama, model: "llama3.2:3b" })).toBe(true);
     expect(isAdded({ ...ollama, baseUrl: "http://10.0.0.2:11434/v1" })).toBe(true);
   });
-  it("puts the default first, and always lists it", () => {
+  it("puts the default first, and lists only what was added", () => {
     const settings = {
       provider: "openai",
       model: "claude-opus-5-5",
-      providers: [p({ id: "anthropic", name: "Anthropic", hasKey: true, model: "claude-opus-5-5" }), p({})],
+      providers: [p({ id: "anthropic", name: "Anthropic", hasKey: true, model: "claude-opus-5-5" }), p({ hasKey: true })],
     } as unknown as Settings;
     expect(addedProviders(settings).map((x) => x.id)).toEqual(["openai", "anthropic"]);
+    // A default that was never set up is not pushed on the person.
+    expect(addedProviders({ ...settings, providers: [p({ id: "anthropic", hasKey: true }), p({})] } as unknown as Settings).map((x) => x.id)).toEqual(["anthropic"]);
   });
   it("names what's missing, address first", () => {
     const s = { model: "claude-opus-5-5" };

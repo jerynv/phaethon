@@ -257,7 +257,7 @@ function SideRow({ selected, onClick, lead, label, trail }: { selected?: boolean
       type="button"
       aria-pressed={selected}
       onClick={onClick}
-      className={cn("flex h-8 w-full min-w-0 items-center gap-2.5 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "bg-row-selected hover:bg-row-selected")}
+      className={cn("flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "bg-row-selected hover:bg-row-selected")}
     >
       <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">{lead}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>

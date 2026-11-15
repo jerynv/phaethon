@@ -87,7 +87,7 @@ test("long words and long messages never widen the page", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Show more" }).first()).toBeVisible();
   await expect(page.locator(".md-code")).toBeVisible();
   const overflow = await page.evaluate(() => {
-    const scroller = document.querySelector('[data-role="assistant"]')!.closest(".overflow-y-auto") as HTMLElement;
+    const scroller = document.querySelector('[data-role="assistant"]')!.closest("[data-slot=chat-scroll]") as HTMLElement;
     return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, timeline: scroller.scrollWidth - scroller.clientWidth };
   });
   expect(overflow).toEqual({ page: 0, timeline: 0 });
@@ -108,7 +108,7 @@ Long: $\mathrm{${"averyveryverylongword".repeat(8)}}$ done.`;
   await expect(page.getByText("Couldn’t draw this formula").or(page.locator(".markdown > .katex-error"))).toBeVisible();
   const m = await page.evaluate(() => {
     const md = document.querySelector('[data-role="assistant"] .markdown') as HTMLElement;
-    const scroller = md.closest(".overflow-y-auto") as HTMLElement;
+    const scroller = md.closest("[data-slot=chat-scroll]") as HTMLElement;
     const displays = [...md.querySelectorAll<HTMLElement>(".katex-display")].map((d) => d.scrollWidth - d.clientWidth);
     return { message: md.scrollWidth - md.clientWidth, timeline: scroller.scrollWidth - scroller.clientWidth, displays, wide: md.querySelectorAll(".katex-wide").length };
   });

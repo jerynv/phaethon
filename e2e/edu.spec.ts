@@ -63,7 +63,7 @@ const verdicts = JSON.stringify({ verdicts: [1, 2, 3, 4].map((i) => ({ id: `i${i
 test("make a quiz for a test from the dialog, take it with keys, and read the results", async ({ page }) => {
   core = await startCore({ script: { claude: true, steps: [{ text: mapReply }, { text: quizReply, delayMs: 400 }, { text: verdicts }] }, setup: (home) => vault(home) });
   await core.open(page);
-  await page.getByRole("tablist", { name: "Views" }).getByRole("tab", { name: "Study" }).click();
+  await page.getByRole("list", { name: "Views" }).getByRole("button", { name: /^Study/ }).click();
   await page.getByRole("button", { name: "New", exact: true }).click();
   await page.getByRole("menuitem", { name: /Quiz from course/ }).click();
   const dialog = page.getByRole("dialog");
@@ -154,7 +154,7 @@ test("a test the course doesn't scope is asked about in place, with its topics a
   const check = JSON.stringify({ verdicts: [1, 2].map((i) => ({ id: `i${i}`, verdict: "yes", missing: "", answerOk: true })) });
   core = await startCore({ script: { claude: true, steps: [{ text: JSON.stringify(map) }, { text: resolve }, { text: write }, { text: check }] }, setup: (home) => vault(home) });
   await core.open(page);
-  await page.getByRole("tablist", { name: "Views" }).getByRole("tab", { name: "Study" }).click();
+  await page.getByRole("list", { name: "Views" }).getByRole("button", { name: /^Study/ }).click();
   await page.getByRole("button", { name: "New", exact: true }).click();
   await page.getByRole("menuitem", { name: /Quiz from course/ }).click();
   const dialog = page.getByRole("dialog");
@@ -197,7 +197,7 @@ test("grades: what needs attention comes before the full tables, in order", asyn
   };
   core = await startCore({ setup: (home) => vault(home, grades) });
   await core.open(page);
-  await page.getByRole("tablist", { name: "Views" }).getByRole("tab", { name: "Grades" }).click();
+  await page.getByRole("list", { name: "Views" }).getByRole("button", { name: /^Grades/ }).click();
 
   const due = page.getByTestId("grades-due");
   await expect(due).toBeVisible();

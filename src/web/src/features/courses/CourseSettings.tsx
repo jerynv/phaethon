@@ -81,7 +81,7 @@ export function CourseSettings() {
         ) : (
           <div className="divide-y rounded-card border bg-card">
             {list.map((c) => (
-              <div key={c.id} className="flex min-h-14 items-center gap-3 px-4 py-3">
+              <div key={c.id} className="flex min-h-12 items-center gap-3 px-4 py-2.5">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground"><Icon icon={icons.courses} className="size-4" /></span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">

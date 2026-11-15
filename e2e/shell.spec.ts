@@ -15,11 +15,10 @@ test("the sidebar groups conversations under their spaces", async ({ page }) => 
   await expect(nav.getByRole("button", { name: "Go to School" })).toBeVisible();
   await expect(nav.getByRole("button", { name: "Go to Work" })).toBeVisible();
   await nav.getByRole("button", { name: "Go to Work" }).click();
-  await expect(page.locator("[data-slot=app-header]")).toContainText("Work");
-  // Spaces without study tools have no view tabs.
-  await expect(page.getByRole("tablist", { name: "Views" })).toHaveCount(0);
+  // Spaces without study tools list no pages.
+  await expect(page.getByRole("list", { name: "Views" })).toHaveCount(0);
   await nav.getByRole("button", { name: "Go to School" }).click();
-  await expect(page.locator("[data-slot=app-header]")).toContainText("School");
+  await expect(page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { selected: true })).toBeVisible();
 });
 
 test("a new space appears, selected, with a field error for an empty name", async ({ page }) => {

@@ -1,6 +1,7 @@
 // Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
-import { SearchIcon } from "lucide-react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { useRef } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
@@ -119,7 +120,7 @@ function CommandInput({
         )}
         placeholder={placeholder}
         size="lg"
-        startAddon={<SearchIcon className="translate-x-0.5 text-icon-muted" />}
+        startAddon={<Icon icon={icons.search} className="translate-x-0.5 text-icon-muted" />}
         {...props}
       />
     </div>

@@ -1,6 +1,7 @@
 // Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { CheckIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -92,7 +93,7 @@ function MenuSearchInput({
             className="pointer-events-none absolute top-1.5 left-0"
           />
         ) : (
-          <SearchIcon
+          <Icon icon={icons.search}
             aria-hidden="true"
             className="pointer-events-none absolute top-1.5 left-0 size-4 shrink-0 text-muted-foreground/55"
           />
@@ -261,7 +262,7 @@ function MenuRadioItemIndicator({
       data-slot="menu-radio-item-indicator"
       {...props}
     >
-      {children ?? <CheckIcon className="size-3.5" />}
+      {children ?? <Icon icon={icons.check} className="size-3.5" />}
     </MenuPrimitive.RadioItemIndicator>
   );
 }
@@ -349,7 +350,7 @@ function MenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRightIcon className="-me-0.5 ms-auto opacity-80" />
+      <Icon icon={icons.chevronRight} className="-me-0.5 ms-auto opacity-80" />
     </MenuPrimitive.SubmenuTrigger>
   );
 }

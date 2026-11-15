@@ -4,7 +4,8 @@ import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
 
-import { CheckIcon } from "lucide-react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { Spinner } from "./spinner";
@@ -45,8 +46,12 @@ const buttonVariants = cva(
         xs: "h-7 gap-1 px-[calc(--spacing(2)-1px)] text-sm sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5",
       },
       variant: {
+        // Near-black pill (white in dark mode): the one primary action on a surface.
         default:
-          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-primary bg-primary text-primary-foreground shadow-primary/24 shadow-xs [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-primary/90",
+          "[--control-icon-color:currentColor] border-ink bg-ink text-ink-foreground shadow-card [:hover,[data-pressed]]:bg-ink/86",
+        // The blue, for the rare action that must read as "go" next to a primary (Upgrade, Book).
+        accent:
+          "[--control-icon-color:currentColor] border-primary bg-primary text-primary-foreground shadow-card [:hover,[data-pressed]]:bg-primary/90",
         destructive:
           "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-destructive bg-destructive text-white shadow-destructive/24 shadow-xs [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-destructive/90",
         "destructive-outline":
@@ -64,38 +69,49 @@ const buttonVariants = cva(
           "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [:hover,[data-pressed]]:bg-black/80 focus-visible:ring-white",
         "media-navigation":
           "[--control-icon-color:currentColor] absolute top-1/2 z-20 -translate-y-1/2 border-transparent text-white/90 [:hover,[data-pressed]]:bg-white/10 [:hover,[data-pressed]]:text-white focus-visible:ring-white focus-visible:ring-offset-transparent",
+        // White with a hairline: the secondary action beside a primary.
         outline:
-          "[--control-icon-color:var(--contrast-muted-foreground)] border-input bg-popover not-dark:bg-clip-padding text-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] dark:bg-input/32 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-accent/50 dark:[:hover,[data-pressed]]:bg-input/64",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-border bg-card text-foreground shadow-card [:hover,[data-pressed]]:bg-accent dark:[:hover,[data-pressed]]:bg-input/40",
         overlay: "border-transparent bg-black/70 text-white/65 [:hover,[data-pressed]]:bg-black/90",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground [:active,[data-pressed]]:bg-secondary/80 [:hover,[data-pressed]]:bg-secondary/90",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent bg-secondary text-secondary-foreground [:hover,[data-pressed]]:bg-row-selected",
         "warning-outline":
           "border-warning/32 bg-warning-surface text-warning-foreground shadow-xs/5 [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-warning/40 [:hover,[data-pressed]]:bg-warning/16 dark:[:hover,[data-pressed]]:bg-warning/24",
+      },
+      // Last, so it wins over a size's radius. Text buttons are pills, icon and toolbar buttons rounded squares.
+      shape: {
+        pill: "rounded-full before:rounded-full",
+        rect: "",
       },
     },
   },
 );
 
+const RECT_SIZES = new Set<ButtonSize>(["compact", "icon", "icon-lg", "icon-micro", "icon-tiny", "icon-sm", "icon-xl", "icon-xs", "micro", "xs", "multiline", "sm-multiline"]);
+
 type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>["variant"]>;
 type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>["size"]>;
+type ButtonShape = NonNullable<VariantProps<typeof buttonVariants>["shape"]>;
 
 interface ButtonProps extends useRender.ComponentProps<"button"> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** `pill` (text buttons) or `rect` (icon and toolbar buttons); follows the size unless given. */
+  shape?: ButtonShape;
   /** Work is running: the label hides (the button keeps its width) behind a spinner, and clicks are ignored. */
   pending?: boolean;
   /** It just worked: a check replaces the label briefly. */
   success?: boolean;
 }
 
-function Button({ className, variant, size, render, pending, success, children, ...props }: ButtonProps) {
+function Button({ className, variant, size, shape, render, pending, success, children, ...props }: ButtonProps) {
   const typeValue: React.ButtonHTMLAttributes<HTMLButtonElement>["type"] = render
     ? undefined
     : "button";
 
   const state = pending ? "pending" : success ? "success" : undefined;
   const defaultProps = {
-    className: cn(buttonVariants({ className, size, variant }), state && "pointer-events-none"),
+    className: cn(buttonVariants({ size, variant, shape: shape ?? (RECT_SIZES.has(size ?? "default") ? "rect" : "pill") }), className, state && "pointer-events-none"),
     "data-slot": "button",
     "data-state": state,
     "aria-busy": pending || undefined,
@@ -113,7 +129,7 @@ function Button({ className, variant, size, render, pending, success, children, 
             transition={{ type: "spring", duration: 0.25, bounce: 0.35 }}
             className="visible absolute inset-0 flex items-center justify-center"
           >
-            {state === "pending" ? <Spinner size="sm" /> : <CheckIcon className="text-current" />}
+            {state === "pending" ? <Spinner size="sm" /> : <Icon icon={icons.check} className="text-current" />}
           </motion.span>
         </AnimatePresence>
       </>
@@ -129,7 +145,7 @@ function Button({ className, variant, size, render, pending, success, children, 
   });
 }
 
-export { Button, buttonVariants, type ButtonSize, type ButtonVariant };
+export { Button, buttonVariants, type ButtonShape, type ButtonSize, type ButtonVariant };
 
 const inlineButtonVariants = cva(
   "inline-flex shrink-0 cursor-pointer items-center gap-0.5 font-medium underline-offset-2 [text-align:var(--inline-button-text-align,center)] [white-space:var(--inline-button-white-space,nowrap)] hover:underline focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-64",

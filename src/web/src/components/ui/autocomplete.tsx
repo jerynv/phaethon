@@ -1,6 +1,7 @@
 // Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { Autocomplete as AutocompletePrimitive } from "@base-ui/react/autocomplete";
-import { ChevronsUpDownIcon, XIcon } from "lucide-react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 
 import { cn } from "@/lib/utils";
 import { Input } from "./input";
@@ -56,7 +57,7 @@ function AutocompleteInput({
           )}
         >
           <AutocompletePrimitive.Icon data-slot="autocomplete-icon">
-            <ChevronsUpDownIcon />
+            <Icon icon={icons.chevronsUpDown} />
           </AutocompletePrimitive.Icon>
         </AutocompleteTrigger>
       )}
@@ -67,7 +68,7 @@ function AutocompleteInput({
             sizeValue === "sm" ? "end-0" : "end-0.5",
           )}
         >
-          <XIcon />
+          <Icon icon={icons.close} />
         </AutocompleteClear>
       )}
     </div>
@@ -214,7 +215,7 @@ function AutocompleteClear({ className, ...props }: AutocompletePrimitive.Clear.
       data-slot="autocomplete-clear"
       {...props}
     >
-      <XIcon />
+      <Icon icon={icons.close} />
     </AutocompletePrimitive.Clear>
   );
 }

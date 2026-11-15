@@ -6,13 +6,11 @@ import {
   EllipsisIcon,
   FolderOpenIcon,
   MessageSquareIcon,
-  PanelLeftIcon,
   PencilLineIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
   RotateCcwIcon,
-  SearchIcon,
   Settings2Icon,
   SquarePenIcon,
   Trash2Icon,
@@ -20,6 +18,9 @@ import {
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Transition } from "motion/react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { BrandMark } from "@/components/brand-mark";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { toast } from "@/components/toast";
@@ -81,7 +82,7 @@ export function IconButton({ label, keys, onClick, children, className }: { labe
             type="button"
             aria-label={label}
             onClick={onClick}
-            className={cn("app-no-drag inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4", className)}
+            className={cn("app-no-drag inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4.5", className)}
           />
         }
       >
@@ -107,34 +108,23 @@ function Keys({ keys, className }: { keys: string[]; className?: string }) {
   );
 }
 
+/** The sidebar's share of the title bar: the mark, then hide-sidebar and new-chat. */
 function TopBar() {
   const toggle = useNav((s) => s.toggleSidebar);
   const space = useNav((s) => s.activeSpace);
   const newChat = useNav((s) => s.newChat);
   return (
-    <div className={cn("app-drag flex h-(--titlebar-height) shrink-0 items-center gap-1 pr-2", isMac() ? "pl-19" : "pl-3")}>
-      {!isMac() ? <span className="font-semibold text-sm tracking-tight">Phaethon</span> : null}
+    <div className={cn("app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b pr-2", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}>
+      <BrandMark className="size-4 text-foreground" label="Phaethon" />
+      {!isMac() ? <span className="font-medium text-sm tracking-title">Phaethon</span> : null}
       <div className="ml-auto flex items-center gap-0.5">
         <IconButton label="Hide sidebar" keys={keysFor("sidebar").keys} onClick={toggle}>
-          <PanelLeftIcon strokeWidth={1.75} />
+          <Icon icon={icons.sidebar} />
         </IconButton>
         <IconButton label="New chat" keys={keysFor("newChat").keys} onClick={() => space && void newChat(space)}>
-          <SquarePenIcon strokeWidth={1.75} />
+          <Icon icon={icons.newChat} />
         </IconButton>
       </div>
-    </div>
-  );
-}
-
-function SearchRow() {
-  const setPalette = useNav((s) => s.setPalette);
-  return (
-    <div className="px-2">
-      <SidebarMenuButton tone="muted" onClick={() => setPalette(true)}>
-        <SearchIcon className="size-3.5" strokeWidth={2} />
-        <span className="flex-1">Search</span>
-        <Keys keys={keysFor("search").keys} />
-      </SidebarMenuButton>
     </div>
   );
 }
@@ -653,7 +643,6 @@ export function Sidebar() {
       <SidebarRail />
       <SidebarHeader>
         <TopBar />
-        <SearchRow />
       </SidebarHeader>
       <SidebarContent className="pt-2 pb-2" onKeyDown={moveFocus}>
         <SidebarGroup>

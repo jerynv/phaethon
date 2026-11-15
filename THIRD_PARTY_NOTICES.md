@@ -214,6 +214,7 @@ holders as listed, under the MIT license text that follows the list.
 - **React, React DOM**: Copyright (c) Meta Platforms, Inc. and affiliates.
 - **Base UI (@base-ui/react)**: Copyright (c) 2019 Material-UI SAS
 - **Phosphor Icons (@phosphor-icons/react)**: Copyright (c) 2020 Phosphor Icons
+- **Hugeicons (@hugeicons/core-free-icons, @hugeicons/react)**: Copyright (c) 2025 Hugeicons
 - **Motion (motion)**: Copyright (c) 2018 Framer B.V.
 - **KaTeX**: Copyright (c) 2013-2020 Khan Academy and other contributors
 - **rehype-katex**: Copyright (c) Junyoung Choi

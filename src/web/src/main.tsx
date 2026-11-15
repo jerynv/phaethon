@@ -7,6 +7,12 @@ import "./index.css";
 applyTheme(useTheme.getState().choice);
 
 async function start() {
+  // Every primitive on one page, for design checks (docs/UI-REBUILD.md › Checks). Dev builds only.
+  if (import.meta.env.DEV && location.hash.startsWith("#gallery")) {
+    const { Gallery } = await import("./dev/Gallery");
+    createRoot(document.getElementById("root")!).render(<Gallery />);
+    return;
+  }
   if (import.meta.env.DEV && location.hash.startsWith("#mock")) {
     const { installMockCore } = await import("./dev/mock-core");
     installMockCore();

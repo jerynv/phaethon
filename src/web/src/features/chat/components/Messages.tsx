@@ -137,7 +137,7 @@ export function UserMessage({ m, space, onEdit, canEdit }: { m: Ask; space: stri
           </div>
         ) : null}
         {m.text.trim() ? (
-          <div className="max-w-5/6 rounded-xl bg-message px-3 py-2 text-base text-foreground">
+          <div className="max-w-5/6 rounded-xl bg-message px-3 py-2 text-base text-message-foreground">
             <ClampedText text={m.text} lines={12} />
           </div>
         ) : null}

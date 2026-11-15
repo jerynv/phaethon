@@ -1,7 +1,8 @@
 // Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { useRender } from "@base-ui/react/use-render";
-import { XIcon } from "lucide-react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { type ComponentProps, createContext, type ReactNode, use, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button, type ButtonVariant } from "./button";
@@ -133,7 +134,7 @@ function DialogPopup({
             className="absolute end-2 top-2"
             render={<Button size="icon-xs" variant="ghost-muted" />}
           >
-            <XIcon />
+            <Icon icon={icons.close} />
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>

@@ -12,13 +12,18 @@
 .light {
   /* Geometry. Radius steps are derived from --radius in @theme inline below. */
   --radius: 0.625rem;
-  --control-radius: 0.5625rem;
+  --control-radius: 0.625rem;
   --sidebar-width: 15.5rem;
-  --titlebar-height: 2.5rem;
+  --titlebar-height: 3rem;
+  /* The gap between the window edge and the app panel (docs/UI-REBUILD.md › App frame). */
+  --frame-inset: 0.5rem;
   /* Room for macOS's traffic lights when content starts at the window's left edge. */
   --traffic-light-inset: 4.75rem;
   --chat-max-width: 46rem;
+  --page-max-width: 48rem;
+  --page-wide-max-width: 64rem;
   --settings-max-width: 42rem;
+  --search-width: 20rem;
   --command-shell-inset: 0.5rem;
   --command-content-inset: 0.75rem;
   --viewport-max-width: calc(100vw - 2rem);
@@ -30,94 +35,163 @@
   --z-popup: 130;
   --z-tooltip: 140;
   --z-toast: 150;
-  /* Lucide strokes (components/icon.tsx): thin at 16 px, a touch heavier at 12 px. */
+  /* One stroke for every icon (components/icon.tsx): thin at 16 px and up, a touch heavier at 12 px. */
   --icon-stroke: 1.5;
-  --icon-stroke-small: 1.85;
+  --icon-stroke-small: 1.75;
 
-  /* Colours are oklch only: zinc neutrals, one cobalt accent, status hues (docs/UI-REBUILD.md › Colour). */
+  /*
+   * Colours are oklch only (docs/UI-REBUILD.md › Colour). Neutrals are true
+   * greys (chroma 0); --ink is the near-black of primary buttons and user
+   * bubbles; --primary is the one blue, for toggles, links, selection, focus
+   * and status, never for big filled buttons.
+   */
   --app-scrollbar-thumb: oklch(0% 0 0 / 14%);
   --app-scrollbar-thumb-hover: oklch(0% 0 0 / 24%);
-  --backdrop: oklch(0% 0 0 / 28%);
-  --popup-shadow-color: oklch(0% 0 0 / 55%);
+  --backdrop: oklch(0% 0 0 / 24%);
+  --popup-shadow-color: oklch(0% 0 0 / 40%);
+  --card-shadow-color: oklch(0% 0 0 / 5%);
 
+  --canvas: oklch(96.4% 0 0);
   --background: oklch(100% 0 0);
-  --foreground: oklch(21% 0.006 285.885);
-  --sidebar: oklch(98.5% 0 0);
-  --sidebar-foreground: oklch(27.4% 0.006 286.033);
+  --foreground: oklch(23% 0 0);
+  --sidebar: var(--background);
+  --sidebar-foreground: oklch(30% 0 0);
   --card: oklch(100% 0 0);
   --card-foreground: var(--foreground);
+  --well: oklch(98.2% 0 0);
   --popover: oklch(100% 0 0);
   --popover-foreground: var(--foreground);
-  --primary: oklch(52% 0.19 262);
+  --ink: oklch(25.5% 0 0);
+  --ink-foreground: oklch(99% 0 0);
+  --primary: oklch(61.5% 0.205 254);
   --primary-foreground: oklch(100% 0 0);
-  --secondary: oklch(96.7% 0.001 286.375);
-  --secondary-foreground: oklch(27.4% 0.006 286.033);
-  --muted: oklch(96.7% 0.001 286.375);
-  --muted-foreground: oklch(55.2% 0.016 285.938);
-  --subtle-foreground: oklch(70.5% 0.015 286.067);
-  --accent: oklch(95.8% 0.0016 286.4);
-  --accent-foreground: oklch(21% 0.006 285.885);
-  --row-selected: oklch(93.9% 0.0028 286.3);
-  --message: oklch(96.7% 0.001 286.375);
-  --border: oklch(92% 0.004 286.32);
-  --input: oklch(87.1% 0.006 286.286);
+  --secondary: oklch(96.4% 0 0);
+  --secondary-foreground: oklch(30% 0 0);
+  --muted: oklch(96.4% 0 0);
+  --muted-foreground: oklch(51% 0 0);
+  --subtle-foreground: oklch(66% 0 0);
+  --accent: oklch(96.2% 0 0);
+  --accent-foreground: oklch(23% 0 0);
+  --row-selected: oklch(95.2% 0 0);
+  --message: var(--ink);
+  --message-foreground: var(--ink-foreground);
+  --border: oklch(92.6% 0 0);
+  --border-strong: oklch(88% 0 0);
+  --input: oklch(90.5% 0 0);
   --ring: var(--primary);
-  --code: oklch(98% 0.0003 286.4);
+  --code: oklch(98.2% 0 0);
+  --keycap: oklch(96% 0 0);
+  --dot-matrix: oklch(23% 0 0 / 9%);
+  /* Art sits a little dimmer in dark mode (components/art.tsx). */
+  --art-veil: oklch(100% 0 0 / 0%);
 
-  --destructive: oklch(57.7% 0.245 27.325);
-  --destructive-foreground: oklch(50.5% 0.213 27.518);
-  --error: oklch(57.7% 0.245 27.325);
-  --error-foreground: oklch(50.5% 0.213 27.518);
-  --warning: oklch(76.9% 0.188 70.08);
-  --warning-foreground: oklch(55.5% 0.163 48.998);
-  --success: oklch(59.6% 0.145 163.225);
-  --success-foreground: oklch(50.8% 0.118 165.612);
-  --info: oklch(54.6% 0.245 262.881);
-  --info-foreground: oklch(48.8% 0.243 264.376);
+  --destructive: oklch(60.5% 0.215 25);
+  --destructive-foreground: oklch(53% 0.2 25);
+  --error: var(--destructive);
+  --error-foreground: var(--destructive-foreground);
+  --warning: oklch(76% 0.16 68);
+  --warning-foreground: oklch(55% 0.14 55);
+  --success: oklch(66% 0.17 150);
+  --success-foreground: oklch(52% 0.14 152);
+  --info: var(--primary);
+  --info-foreground: oklch(54% 0.2 256);
+
+  /* Categorical data (stacked bars, legends, heat): fixed hues, never status. */
+  --chart-1: oklch(80% 0.165 82);
+  --chart-2: oklch(68.5% 0.2 44);
+  --chart-3: oklch(73% 0.15 232);
+  --chart-4: oklch(71% 0.13 178);
+  --chart-5: oklch(64% 0.235 357);
+  --chart-6: oklch(62% 0.19 292);
 
   /* T3 Code's components read these "contrast" aliases; we have one contrast level. */
   --contrast-foreground: var(--foreground);
   --contrast-muted-foreground: var(--muted-foreground);
+
+  /*
+   * Art palettes (components/art.tsx): soft pastel mesh colours, four per
+   * palette plus a base. Same values in both themes; --art-veil dims them in
+   * dark mode.
+   */
+  --art-sky-0: oklch(90% 0.05 225);
+  --art-sky-1: oklch(83% 0.1 225);
+  --art-sky-2: oklch(87% 0.08 200);
+  --art-sky-3: oklch(80% 0.1 262);
+  --art-sky-4: oklch(95% 0.03 210);
+  --art-dawn-0: oklch(86% 0.07 250);
+  --art-dawn-1: oklch(80% 0.16 62);
+  --art-dawn-2: oklch(84% 0.1 352);
+  --art-dawn-3: oklch(78% 0.11 245);
+  --art-dawn-4: oklch(88% 0.14 85);
+  --art-meadow-0: oklch(84% 0.09 160);
+  --art-meadow-1: oklch(68% 0.14 148);
+  --art-meadow-2: oklch(85% 0.14 112);
+  --art-meadow-3: oklch(80% 0.11 200);
+  --art-meadow-4: oklch(62% 0.12 158);
+  --art-lilac-0: oklch(86% 0.06 280);
+  --art-lilac-1: oklch(72% 0.15 295);
+  --art-lilac-2: oklch(84% 0.1 335);
+  --art-lilac-3: oklch(81% 0.1 240);
+  --art-lilac-4: oklch(94% 0.03 290);
+  --art-ember-0: oklch(88% 0.06 70);
+  --art-ember-1: oklch(76% 0.15 45);
+  --art-ember-2: oklch(86% 0.11 85);
+  --art-ember-3: oklch(82% 0.09 20);
+  --art-ember-4: oklch(94% 0.04 95);
 }
 
 .dark {
   color-scheme: dark;
   --app-scrollbar-thumb: oklch(100% 0 0 / 10%);
   --app-scrollbar-thumb-hover: oklch(100% 0 0 / 18%);
-  --backdrop: oklch(0% 0 0 / 60%);
-  --popup-shadow-color: oklch(0% 0 0 / 80%);
+  --backdrop: oklch(0% 0 0 / 55%);
+  --popup-shadow-color: oklch(0% 0 0 / 75%);
+  --card-shadow-color: oklch(0% 0 0 / 30%);
 
-  --background: oklch(15.5% 0.0021 286.2);
-  --foreground: oklch(96.7% 0.001 286.375);
-  --sidebar: oklch(17.8% 0.002 286.2);
-  --sidebar-foreground: oklch(92% 0.004 286.32);
-  --card: oklch(20.1% 0.0039 286);
-  --popover: oklch(21% 0.0039 286.1);
-  --primary: oklch(64% 0.17 262);
+  --canvas: oklch(12.8% 0 0);
+  --background: oklch(17.2% 0 0);
+  --foreground: oklch(95.5% 0 0);
+  --sidebar: var(--background);
+  --sidebar-foreground: oklch(88% 0 0);
+  --card: oklch(19.6% 0 0);
+  --well: oklch(100% 0 0 / 3%);
+  --popover: oklch(21% 0 0);
+  --ink: oklch(94% 0 0);
+  --ink-foreground: oklch(18% 0 0);
+  --primary: oklch(66.5% 0.19 254);
   --primary-foreground: oklch(100% 0 0);
   --secondary: oklch(100% 0 0 / 6%);
-  --secondary-foreground: oklch(96.7% 0.001 286.375);
+  --secondary-foreground: oklch(92% 0 0);
   --muted: oklch(100% 0 0 / 5%);
-  --muted-foreground: oklch(70.5% 0.015 286.067);
-  --subtle-foreground: oklch(55.2% 0.016 285.938);
+  --muted-foreground: oklch(70% 0 0);
+  --subtle-foreground: oklch(54% 0 0);
   --accent: oklch(100% 0 0 / 6%);
-  --accent-foreground: oklch(96.7% 0.001 286.375);
+  --accent-foreground: oklch(95.5% 0 0);
   --row-selected: oklch(100% 0 0 / 8%);
-  --message: oklch(22.8% 0.0057 285.9);
+  --message: oklch(26% 0 0);
+  --message-foreground: oklch(95.5% 0 0);
   --border: oklch(100% 0 0 / 8%);
+  --border-strong: oklch(100% 0 0 / 14%);
   --input: oklch(100% 0 0 / 11%);
-  --code: oklch(18.8% 0.004 286);
+  --code: oklch(100% 0 0 / 3%);
+  --keycap: oklch(100% 0 0 / 8%);
+  --dot-matrix: oklch(100% 0 0 / 7%);
+  --art-veil: oklch(17.2% 0 0 / 38%);
 
-  --destructive: oklch(63.7% 0.237 25.331);
-  --destructive-foreground: oklch(70.4% 0.191 22.216);
-  --error: oklch(63.7% 0.237 25.331);
-  --error-foreground: oklch(70.4% 0.191 22.216);
-  --warning: oklch(82.8% 0.189 84.429);
-  --warning-foreground: oklch(82.8% 0.189 84.429);
-  --success: oklch(76.5% 0.177 163.223);
-  --success-foreground: oklch(76.5% 0.177 163.223);
-  --info: oklch(70.7% 0.165 254.624);
-  --info-foreground: oklch(70.7% 0.165 254.624);
+  --destructive: oklch(65% 0.21 24);
+  --destructive-foreground: oklch(72% 0.17 22);
+  --warning: oklch(80% 0.16 75);
+  --warning-foreground: oklch(82% 0.15 80);
+  --success: oklch(72% 0.17 152);
+  --success-foreground: oklch(76% 0.16 152);
+  --info-foreground: oklch(74% 0.15 250);
+
+  --chart-1: oklch(78% 0.15 82);
+  --chart-2: oklch(70% 0.18 44);
+  --chart-3: oklch(72% 0.14 232);
+  --chart-4: oklch(70% 0.12 178);
+  --chart-5: oklch(68% 0.2 357);
+  --chart-6: oklch(66% 0.17 292);
 }
 
 @theme {
@@ -145,6 +219,8 @@
   --text-xl--line-height: 1.625rem;
   --text-2xl: 1.5rem;
   --text-2xl--line-height: 1.875rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
 
   --tracking-title: -0.01em;
   --tracking-heading: -0.015em;
@@ -152,6 +228,20 @@
 }
 
 @theme inline {
+  --color-canvas: var(--canvas);
+  --color-well: var(--well);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-message-foreground: var(--message-foreground);
+  --color-border-strong: var(--border-strong);
+  --color-keycap: var(--keycap);
+  --color-dot-matrix: var(--dot-matrix);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-sidebar: var(--sidebar);
@@ -200,8 +290,16 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 6px);
   --radius-3xl: calc(var(--radius) + 10px);
+  --radius-4xl: calc(var(--radius) + 14px);
+  /* Semantic radii: cards 16, the app panel and hero cards 20, chips and inputs 10. */
+  --radius-card: var(--radius-2xl);
+  --radius-panel: var(--radius-3xl);
 
-  --shadow-popup: 0 16px 40px -18px var(--popup-shadow-color);
+  --shadow-popup: 0 16px 40px -18px var(--popup-shadow-color), 0 0 0 1px var(--border);
+  /* Cards lean on their hairline; this only lifts them off a grey well. */
+  --shadow-card: 0 1px 2px 0 var(--card-shadow-color);
+  /* The raised pill inside a segmented control or tab track. */
+  --shadow-raised: 0 1px 2px 0 var(--card-shadow-color), 0 0 0 0.5px var(--border-strong);
 
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --animate-skeleton: skeleton 2.4s infinite;
@@ -210,6 +308,9 @@
   --animate-indeterminate: indeterminate 1.4s var(--ease-drawer) infinite;
   --animate-shake: shake 0.32s ease-out;
   --animate-toast-countdown: toast-countdown linear forwards;
+  --animate-art-drift: art-drift 28s ease-in-out infinite alternate;
+  --animate-spin-fast: spin 0.9s linear infinite;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* One stepped breath for every skeleton (after T3 Code): a few frames per cycle, not one per vsync. */
   @keyframes skeleton {
@@ -273,6 +374,18 @@
       transform: scaleX(0);
     }
   }
+  /* Art blobs wander a few percent, slowly (components/art.tsx). */
+  @keyframes art-drift {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(3%, -2%, 0) scale(1.05);
+    }
+    100% {
+      transform: translate3d(-2%, 3%, 0) scale(0.98);
+    }
+  }
   @keyframes indeterminate {
     from {
       transform: translateX(-100%);
@@ -322,6 +435,19 @@
   animation: var(--animate-shimmer);
 }
 
+/* A fine woven grid over art, after the halftone look of the references. */
+@utility art-weave {
+  background-image:
+    repeating-linear-gradient(0deg, oklch(100% 0 0 / 14%) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, oklch(100% 0 0 / 14%) 0 1px, transparent 1px 3px);
+}
+
+/* Fades a texture out towards the bottom and both sides (the dot matrix over a page). */
+@utility mask-fade-top {
+  mask-image: linear-gradient(to bottom, black 0%, transparent 100%), linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%);
+  mask-composite: intersect;
+}
+
 /* Drag regions for the frameless title bar (macOS). */
 @utility app-drag {
   -webkit-app-region: drag;
@@ -353,7 +479,7 @@
     overflow: hidden;
   }
   body {
-    @apply bg-background text-foreground text-sm;
+    @apply bg-canvas text-foreground text-sm;
     overscroll-behavior: none;
   }
   ::selection {
@@ -370,11 +496,17 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
-  /* One stroke for every Lucide icon (components/icon.tsx); small glyphs a little heavier. */
-  svg.lucide {
+  :where([data-slot="icon"]) {
+    width: 1rem;
+    height: 1rem;
+  }
+  /* One stroke for every icon (components/icon.tsx); small glyphs a little heavier. */
+  svg.lucide,
+  [data-slot="icon"] [stroke] {
     stroke-width: var(--icon-stroke);
   }
-  svg.lucide:is(.size-3, .size-2\.5, .size-3\.5) {
+  svg.lucide:is(.size-3, .size-2\.5, .size-3\.5),
+  [data-slot="icon"]:is(.size-3, .size-2\.5, .size-3\.5) [stroke] {
     stroke-width: var(--icon-stroke-small);
   }
   /* The title bar drags the window; its controls don't. */

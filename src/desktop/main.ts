@@ -161,8 +161,11 @@ function createMainWindow(): BrowserWindow {
     // paintWhenInitiallyHidden: false; Electron never fires ready-to-show then,
     // and the window stays hidden for good.
     show: false,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#17171a" : "#fafafa",
+    // The web canvas colour (--canvas in src/web/src/index.css), so the first frame matches.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#070707" : "#f3f3f3",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Centred on the title bar inside the inset app panel (--frame-inset + --titlebar-height / 2).
+    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 22, y: 26 } } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

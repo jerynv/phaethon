@@ -1,5 +1,6 @@
 import { animate } from "motion/react";
 import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DotMatrix } from "@/components/art";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { errorText } from "@/lib/core";
@@ -88,7 +89,7 @@ function Pane({ active, children, name }: { active: boolean; children: ReactNode
     return () => a.stop();
   }, [active]);
   return (
-    <div ref={ref} data-page={name} hidden={!active} className="flex min-h-0 flex-1 flex-col">
+    <div ref={ref} data-page={name} hidden={!active} className="relative flex min-h-0 flex-1 flex-col">
       <ViewActive active={active}>{children}</ViewActive>
     </div>
   );
@@ -140,28 +141,39 @@ function Main() {
   );
 }
 
+/**
+ * The app frame (docs/UI-REBUILD.md › App frame): the window is a soft grey
+ * canvas, and the whole app sits in one white panel inset from its edges,
+ * with a large radius and a hairline. Inside the panel the sidebar and the
+ * main column share a top hairline, so the title bar reads as one band.
+ */
 export function Shell() {
   useShortcuts();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
   const toggleSidebar = useNav((s) => s.toggleSidebar);
   const viewer = useNav((s) => s.viewer);
   return (
-    <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar}>
-      <Sidebar />
-      <HeaderSlots>
-        {(bind) => (
-          <main className="flex min-w-0 flex-1 flex-col bg-background">
-            <AppHeader bind={bind} />
-            <Main />
-          </main>
-        )}
-      </HeaderSlots>
-      {viewer ? (
-        <Suspense fallback={null}>
-          <FileViewer />
-        </Suspense>
-      ) : null}
-      <CommandPalette />
-    </SidebarProvider>
+    <div data-slot="app-canvas" className="h-full bg-canvas p-(--frame-inset)">
+      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} data-frame="panel" className="overflow-hidden rounded-panel border bg-background shadow-card">
+        <Sidebar />
+        <HeaderSlots>
+          {(bind) => (
+            <main className="flex min-w-0 flex-1 flex-col bg-background">
+              <AppHeader bind={bind} />
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                <DotMatrix className="z-0" />
+                <Main />
+              </div>
+            </main>
+          )}
+        </HeaderSlots>
+        {viewer ? (
+          <Suspense fallback={null}>
+            <FileViewer />
+          </Suspense>
+        ) : null}
+        <CommandPalette />
+      </SidebarProvider>
+    </div>
   );
 }

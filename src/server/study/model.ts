@@ -11,6 +11,8 @@ import type { Block } from "../core/thread.ts";
 import { Refusal } from "../rpc/registry.ts";
 import { readSettings, type VaultSettings } from "../settings/settings.ts";
 import { readSpaceMeta } from "../spaces/meta.ts";
+import type { Effort } from "../providers/types.ts";
+import type { ModelPick } from "../threads/pick.ts";
 import type { Picture } from "./types.ts";
 
 /**
@@ -78,13 +80,15 @@ export class ApiModel implements Model {
     private readonly signal?: AbortSignal,
     /** Asked instead when no provider is set up (Rust: Claude Code when installed). */
     private readonly fallback?: () => Model | null,
+    /** The effort picked with the model; Study's work is reasoning work, so high by default. */
+    private readonly effort: Effort = "high",
   ) {}
 
   async complete(system: string, user: string, pictures: Picture[] = []): Promise<string> {
     try {
       // Mapping, writing items with their derivations and judging them are all reasoning work.
       const content = pictures.length ? (pictureBlocks(user, pictures) as Block[]) : user;
-      const req: Parameters<typeof completeText>[0] = { space: this.space, system, messages: [{ role: "user", content }], effort: "high" };
+      const req: Parameters<typeof completeText>[0] = { space: this.space, system, messages: [{ role: "user", content }], effort: this.effort };
       if (this.model) req.model = this.model;
       if (this.signal) req.signal = this.signal;
       return (await completeText(req)).text;
@@ -719,8 +723,12 @@ function reasoningOf(space: string, cli: Cli, model: string | null): string | nu
  * Phaethon's own provider, falling back to Claude Code (when installed) if no
  * provider is set up. The CLI model and reasoning are captured now, so a
  * settings change doesn't affect a workflow (or its retry) already running.
+ *
+ * With `pick` (a choice made in the UI, threads/pick.ts), that backend, model
+ * and effort answer instead of the vault's: Study asks with the model the
+ * person chose, like a conversation does.
  */
-export function modelForSpace(space: string, signal?: AbortSignal): Model {
+export function modelForSpace(space: string, signal?: AbortSignal, pick?: ModelPick | null): Model {
   let dir: string;
   try {
     dir = spaceDir(space);
@@ -728,14 +736,16 @@ export function modelForSpace(space: string, signal?: AbortSignal): Model {
     throw errText(e);
   }
   const settings = readSettings();
-  const backendCli = cliOfBackend(settings.backend);
+  const backendCli = cliOfBackend(pick ? pick.backend : settings.backend);
   if (backendCli) requireHome(settings, selectedInstance(settings, backendCli));
   const setupFor = (cli: Cli): CliSetup | null => {
     const configDir = requireHome(settings, selectedInstance(settings, cli));
     const { bin, launchArgs } = instanceBinary(cli, configDir);
     if (!bin) return null;
-    const model = cliModelOf(space, cli);
-    const setup: CliSetup = { bin, cwd: dir, configDir, model, reasoning: reasoningOf(space, cli, model), launchArgs };
+    const chosen = pick && cliOfBackend(pick.backend) === cli;
+    const model = chosen ? pick.model : cliModelOf(space, cli);
+    const reasoning = chosen ? (pick.effort && validReasoning(cli, pick.effort) ? pick.effort : null) : reasoningOf(space, cli, model);
+    const setup: CliSetup = { bin, cwd: dir, configDir, model, reasoning, launchArgs };
     if (signal) setup.signal = signal;
     return setup;
   };
@@ -757,6 +767,10 @@ export function modelForSpace(space: string, signal?: AbortSignal): Model {
     const s = setupFor(backendCli);
     if (!s) throw MISSING[backendCli];
     return new OtherCliModel(backendCli, s);
+  }
+  if (pick) {
+    const effort = pick.effort === "low" || pick.effort === "medium" || pick.effort === "high" ? pick.effort : undefined;
+    return new ApiModel(space, pick.model ?? undefined, signal, claude, effort);
   }
   const ref = typeof readSpaceMeta(space).model === "string" ? (readSpaceMeta(space).model as string) : undefined;
   return new ApiModel(space, ref, signal, claude);

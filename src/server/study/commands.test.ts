@@ -109,6 +109,36 @@ describe("study commands", () => {
     expect(await call("study_chat_cancel", { space: "s", origin: p.origin })).toBe(false);
   });
 
+  it.skipIf(!unix)("a quiz being made from Study stops by its run id, and nothing is saved", async () => {
+    fs.rmSync(path.join(spaceDir("s"), "study/quizzes"), { recursive: true, force: true });
+    fs.rmSync(path.join(vaultRoot(), ".phaethon/scope"), { recursive: true, force: true });
+    fakeClaude([], true);
+    const ch = channel<StudyEvent>();
+    const making = call("study_make_quiz", { space: "s", sources: ["courses/CS 101"], options: { count: 1, kinds: ["truefalse"], title: "Halted" }, runId: "r1", onEvent: ch });
+    for (let i = 0; i < 200 && !fs.existsSync(path.join(bin, "count")); i++) await new Promise((r) => setTimeout(r, 25));
+    expect(await call("study_make_cancel", { space: "s", runId: "r1" })).toBe(true);
+    expect(await making).toBeNull();
+    expect(finals(ch.messages)).toEqual([{ type: "cancelled" }]);
+    expect(fs.existsSync(path.join(spaceDir("s"), "study/quizzes/Halted.json"))).toBe(false);
+    expect(await call("study_make_cancel", { space: "s", runId: "r1" })).toBe(false);
+  });
+
+  it("the model picked in Study answers instead of the vault's", async () => {
+    const saved = process.env.PHAETHON_CODEX_BIN;
+    process.env.PHAETHON_CODEX_BIN = "/nonexistent/codex";
+    try {
+      const ch = channel<StudyEvent>();
+      await call("study_make_quiz", { space: "s", sources: ["courses/CS 101"], options: { count: 1 }, model: { backend: "codex-cli", model: null, effort: null }, onEvent: ch });
+      expect(finals(ch.messages)).toEqual([{ type: "error", message: expect.stringContaining("Codex was not found") }]);
+      const bad = channel<StudyEvent>();
+      await call("study_make_quiz", { space: "s", sources: ["courses/CS 101"], options: { count: 1 }, model: { backend: "nope" }, onEvent: bad });
+      expect(finals(bad.messages)).toEqual([{ type: "error", message: "That isn’t a model Phaethon knows how to use. Pick another one." }]);
+    } finally {
+      if (saved === undefined) delete process.env.PHAETHON_CODEX_BIN;
+      else process.env.PHAETHON_CODEX_BIN = saved;
+    }
+  });
+
   it("scope views and stated scopes", async () => {
     const visible = visibleFor("s");
     await build(visible, seenCourse(visible, "CS 101"), [], new Scripted([mapReply]), Date.now(), () => {});

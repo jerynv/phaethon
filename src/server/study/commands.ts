@@ -6,6 +6,7 @@ import * as citations from "./citations.ts";
 import { errText } from "./files.ts";
 import { makeDeck, makeQuiz, review, submit, type DeckOptions, type QuizOptions } from "./generate.ts";
 import * as material from "./material.ts";
+import { effectivePick, parsePick, type ModelPick } from "../threads/pick.ts";
 import { modelForSpace, type Model } from "./model.ts";
 import * as scope from "./scope.ts";
 import { sightForSpace } from "./sight.ts";
@@ -55,13 +56,81 @@ function text(v: unknown, name: string, cmd: string): string {
   return v;
 }
 
-/** The model for this space, made only when first needed (grading a short answer, a review). */
-function lazyModel(space: string): () => Model {
-  let m: Model | null = null;
-  return () => (m ??= modelForSpace(space));
+/**
+ * The model Study asks: the one picked in the UI (`model`, a ModelPick as the
+ * composer sends it); else the current conversation's, as the composer shows
+ * it (threads/pick.ts), so Study never quietly uses a different model than
+ * the chat beside it. The default's effort is left to Study (high).
+ */
+function pickFor(space: string, raw: unknown): ModelPick | null {
+  if (raw !== undefined && raw !== null) {
+    const p = parsePick(raw);
+    if (!p) throw "That isn’t a model Phaethon knows how to use. Pick another one.";
+    return p;
+  }
+  try {
+    return { ...effectivePick(space).pick, effort: null };
+  } catch {
+    return null;
+  }
 }
 
-function scopeMaterial(space: string, course: string) {
+/** The model for this space, made only when first needed (grading a short answer, a review). */
+function lazyModel(space: string, pick: ModelPick | null): () => Model {
+  let m: Model | null = null;
+  return () => (m ??= modelForSpace(space, undefined, pick));
+}
+
+// ---- Runs that can be stopped (making a deck or quiz, mapping a course) ----
+
+const RUNS = new Map<string, AbortController>();
+const runKey = (space: string, id: string) => `${space}\n${id}`;
+
+/**
+ * Runs `work` under `runId` so `study_make_cancel` can stop it: the model's
+ * calls are aborted and the stream ends with `cancelled` straight away (a
+ * call already answering finishes in the background and is thrown away).
+ */
+async function stoppable(
+  space: string,
+  runId: unknown,
+  emit: (e: StudyEvent) => void,
+  work: (signal: AbortSignal, emit: (e: StudyEvent) => void) => Promise<Finished | null>,
+): Promise<Finished | null | "cancelled"> {
+  const id = typeof runId === "string" && runId.trim() ? runId.trim() : null;
+  const abort = new AbortController();
+  const key = id ? runKey(space, id) : null;
+  if (key) {
+    RUNS.get(key)?.abort();
+    RUNS.set(key, abort);
+  }
+  let stopped = false;
+  const quiet = (e: StudyEvent) => {
+    if (!stopped) emit(e);
+  };
+  const cancelled = new Promise<"cancelled">((resolve) => abort.signal.addEventListener("abort", () => resolve("cancelled"), { once: true }));
+  try {
+    const working = work(abort.signal, quiet);
+    working.catch(() => {});
+    const first = await Promise.race([working, cancelled]);
+    if (first === "cancelled") stopped = true;
+    return first;
+  } finally {
+    if (key && RUNS.get(key) === abort) RUNS.delete(key);
+  }
+}
+
+/** Notes what a chat block made (so its card offers "Open"); a damaged note never fails the run. */
+function noteOrigin(dir: string, origin: unknown, path: string): void {
+  if (typeof origin !== "string" || !origin.trim()) return;
+  try {
+    chat.record(dir, origin.trim(), path, Date.now());
+  } catch {
+    // The quiz or deck is saved; only the chat card won't know it was made.
+  }
+}
+
+function scopeMaterial(space: string, course: string, pick: ModelPick | null) {
   const visible = visibleFor(space);
   const seen = scope.seenCourse(visible, course);
   const kept = scope.cached(visible, seen, null);
@@ -91,7 +160,7 @@ function scopeMaterial(space: string, course: string) {
       }
     } else exams.push(said);
   }
-  return { visible, seen, kept, map, stated, view: material.view(seen, map, exams, sightForSpace(space)) };
+  return { visible, seen, kept, map, stated, view: material.view(seen, map, exams, sightForSpace(space, pick)) };
 }
 
 commands({
@@ -130,46 +199,74 @@ commands({
     return null;
   },
 
-  study_make_deck: ({ space, sources: inputs, options, onEvent }: { space: string; sources: string[]; options?: DeckOptions; onEvent: Events }) =>
-    stream(onEvent, async (emit) => {
-      const dir = spaceDir(space);
-      const model = modelForSpace(space);
-      const [path, cards, grounding] = await makeDeck(dir, visibleFor(space), strings(inputs, "sources", "study_make_deck"), options ?? {}, model, emit, Date.now());
-      return { path, cards, grounding };
+  study_make_deck: (a: { space: string; sources: string[]; options?: DeckOptions; model?: unknown; runId?: string; origin?: string; onEvent: Events }) =>
+    stream(a.onEvent, async (emit) => {
+      const dir = spaceDir(a.space);
+      const inputs = strings(a.sources, "sources", "study_make_deck");
+      const pick = pickFor(a.space, a.model);
+      const out = await stoppable(a.space, a.runId, emit, async (signal, quiet) => {
+        const model = modelForSpace(a.space, signal, pick);
+        const [path, cards, grounding] = await makeDeck(dir, visibleFor(a.space), inputs, a.options ?? {}, model, quiet, Date.now());
+        noteOrigin(dir, a.origin, path);
+        return { path, cards, grounding };
+      });
+      if (out === "cancelled") {
+        emit({ type: "cancelled" });
+        return null;
+      }
+      return out;
     }),
 
-  study_make_quiz: ({ space, sources: inputs, options, onEvent }: { space: string; sources: string[]; options?: QuizOptions; onEvent: Events }) =>
-    stream(onEvent, async (emit) => {
-      const dir = spaceDir(space);
-      const model = modelForSpace(space);
-      const [path, questions, grounding] = await makeQuiz(dir, visibleFor(space), strings(inputs, "sources", "study_make_quiz"), options ?? {}, model, emit, Date.now());
-      return { path, questions, grounding };
+  study_make_quiz: (a: { space: string; sources: string[]; options?: QuizOptions; model?: unknown; runId?: string; origin?: string; onEvent: Events }) =>
+    stream(a.onEvent, async (emit) => {
+      const dir = spaceDir(a.space);
+      const inputs = strings(a.sources, "sources", "study_make_quiz");
+      const pick = pickFor(a.space, a.model);
+      const out = await stoppable(a.space, a.runId, emit, async (signal, quiet) => {
+        const model = modelForSpace(a.space, signal, pick);
+        const [path, questions, grounding] = await makeQuiz(dir, visibleFor(a.space), inputs, a.options ?? {}, model, quiet, Date.now());
+        noteOrigin(dir, a.origin, path);
+        return { path, questions, grounding };
+      });
+      if (out === "cancelled") {
+        emit({ type: "cancelled" });
+        return null;
+      }
+      return out;
     }),
 
-  study_quiz_submit: ({ space, path, answers, onEvent }: { space: string; path: string; answers?: Record<string, Answer>; onEvent: Events }) =>
+  /** Stops a `study_make_*` or `study_scope_build` run started with this `runId`. */
+  study_make_cancel: ({ space, runId }: { space: string; runId: string }) => {
+    spaceDir(space);
+    const abort = RUNS.get(runKey(space, text(runId, "runId", "study_make_cancel")));
+    abort?.abort();
+    return !!abort;
+  },
+
+  study_quiz_submit: ({ space, path, answers, model, onEvent }: { space: string; path: string; answers?: Record<string, Answer>; model?: unknown; onEvent: Events }) =>
     stream(onEvent, async (emit) => {
       const dir = spaceDir(space);
-      const attempt = await submit(dir, text(path, "path", "study_quiz_submit"), answers ?? {}, lazyModel(space), emit, Date.now());
+      const attempt = await submit(dir, text(path, "path", "study_quiz_submit"), answers ?? {}, lazyModel(space, pickFor(space, model)), emit, Date.now());
       return { attempt };
     }),
 
-  study_review_mistakes: ({ space, attemptPath, onEvent }: { space: string; attemptPath: string; onEvent: Events }) =>
+  study_review_mistakes: ({ space, attemptPath, model, onEvent }: { space: string; attemptPath: string; model?: unknown; onEvent: Events }) =>
     stream(onEvent, async (emit) => {
       const dir = spaceDir(space);
-      const summary = await review(dir, text(attemptPath, "attemptPath", "study_review_mistakes"), lazyModel(space), emit);
+      const summary = await review(dir, text(attemptPath, "attemptPath", "study_review_mistakes"), lazyModel(space, pickFor(space, model)), emit);
       return { summary };
     }),
 
-  study_chat_plan: ({ space, block, question }: { space: string; block: string; question: string }) => {
+  study_chat_plan: ({ space, block, question, model }: { space: string; block: string; question: string; model?: unknown }) => {
     const dir = spaceDir(space);
     const visible = visibleFor(space);
     const p = chat.plan(dir, visible, text(block, "block", "study_chat_plan"), text(question, "question", "study_chat_plan"));
-    const alert = chat.materialAlert(dir, visible, p, sightForSpace(space));
+    const alert = chat.materialAlert(dir, visible, p, sightForSpace(space, pickFor(space, model)));
     if (alert) p.material = alert;
     return p;
   },
 
-  study_chat_make: ({ space, block, question, reply, onEvent }: { space: string; block: string; question: string; reply: string; onEvent: Events }) => {
+  study_chat_make: ({ space, block, question, reply, model: picked, onEvent }: { space: string; block: string; question: string; reply: string; model?: unknown; onEvent: Events }) => {
     const emit = sender(onEvent);
     return (async () => {
       let run: ReturnType<typeof chat.claimRun> = null;
@@ -189,7 +286,7 @@ commands({
         run = chat.claimRun(dir, p.origin);
         if (!run) throw "This is already being made. It opens in Study when it’s ready.";
         const signal = run.abort.signal;
-        const model = modelForSpace(space, signal);
+        const model = modelForSpace(space, signal, pickFor(space, picked));
         let stopped = false;
         const quietEmit = (e: StudyEvent) => {
           if (!stopped) emit(e);
@@ -219,9 +316,9 @@ commands({
 
   study_chat_cancel: ({ space, origin }: { space: string; origin: string }) => chat.cancel(spaceDir(space), text(origin, "origin", "study_chat_cancel")),
 
-  study_scope: ({ space, course }: { space: string; course: string }) => {
+  study_scope: ({ space, course, model }: { space: string; course: string; model?: unknown }) => {
     spaceDir(space);
-    const { seen, kept, stated, view } = scopeMaterial(space, text(course, "course", "study_scope"));
+    const { seen, kept, stated, view } = scopeMaterial(space, text(course, "course", "study_scope"), pickFor(space, model));
     const out: Record<string, unknown> = { course: `courses/${seen.state.folder}`, name: seen.state.name, state: kept ? (kept[1] ? "fresh" : "stale") : "none" };
     if (kept) out.map = kept[0];
     out.stated = stated;
@@ -229,15 +326,23 @@ commands({
     return out;
   },
 
-  study_scope_build: ({ space, course, onEvent }: { space: string; course: string; onEvent: Events }) =>
+  study_scope_build: ({ space, course, model: picked, runId, onEvent }: { space: string; course: string; model?: unknown; runId?: string; onEvent: Events }) =>
     stream(onEvent, async (emit) => {
       const dir = spaceDir(space);
       const visible = visibleFor(space);
       const seen = scope.seenCourse(visible, text(course, "course", "study_scope_build"));
-      emit(progress("mapping", 0, 1));
-      const model = modelForSpace(space);
-      await scope.build(visible, seen, store.loadExams(dir), model, Date.now(), (d, t) => emit(progress("mapping", d, t)));
-      return {};
+      const pick = pickFor(space, picked);
+      const out = await stoppable(space, runId, emit, async (signal, quiet) => {
+        quiet(progress("mapping", 0, 1));
+        const model = modelForSpace(space, signal, pick);
+        await scope.build(visible, seen, store.loadExams(dir), model, Date.now(), (d, t) => quiet(progress("mapping", d, t)));
+        return {};
+      });
+      if (out === "cancelled") {
+        emit({ type: "cancelled" });
+        return null;
+      }
+      return out;
     }),
 
   study_scope_state: ({ space, course, exam, text: said }: { space: string; course: string; exam: string; text: string }) => {

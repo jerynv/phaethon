@@ -3,6 +3,7 @@ import path from "node:path";
 import { appFiles } from "../core/vault.ts";
 import { readSettings } from "../settings/settings.ts";
 import { readSpaceMeta } from "../spaces/meta.ts";
+import type { ModelPick } from "../threads/pick.ts";
 import type { Alert, Sees, Sight } from "./types.ts";
 
 /**
@@ -136,9 +137,9 @@ const PROVIDER_NAMES: Record<string, string> = { anthropic: "Anthropic", openai:
  * real provider/model resolution belongs to the agent worker's providers
  * module; this reads the same settings in the simplest way.
  */
-export function sightForSpace(space: string): Sight {
+export function sightForSpace(space: string, pick?: ModelPick | null): Sight {
   const settings = readSettings();
-  switch (settings.backend) {
+  switch (pick ? pick.backend : settings.backend) {
     case "claude-cli":
       return { sees: "yes", model: "Claude Code", shown: true };
     case "codex-cli":
@@ -150,7 +151,7 @@ export function sightForSpace(space: string): Sight {
   let model: string | null = null;
   let ref: unknown = null;
   try {
-    ref = readSpaceMeta(space).model;
+    ref = pick ? pick.model : readSpaceMeta(space).model;
   } catch {
     ref = null;
   }

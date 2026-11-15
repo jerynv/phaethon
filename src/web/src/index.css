@@ -20,6 +20,8 @@
   /* Room for macOS's traffic lights when content starts at the window's left edge. */
   --traffic-light-inset: 4.75rem;
   --chat-max-width: 46rem;
+  /* Where the onboarding column starts, so the title stays put between steps. */
+  --onboarding-top: 14vh;
   --page-max-width: 48rem;
   --page-wide-max-width: 64rem;
   --settings-max-width: 42rem;
@@ -92,6 +94,8 @@
   --dot-matrix: oklch(23% 0 0 / 9%);
   /* Art sits a little dimmer in dark mode (components/art.tsx). */
   --art-veil: oklch(100% 0 0 / 0%);
+  /* A thin strip of art across a card's top keeps more of its colour. */
+  --art-veil-strip: oklch(100% 0 0 / 0%);
 
   --destructive: oklch(60.5% 0.215 25);
   --destructive-foreground: oklch(53% 0.2 25);
@@ -189,6 +193,7 @@
   --avatar-letter: 85% 0.06;
   --dot-matrix: oklch(100% 0 0 / 7%);
   --art-veil: oklch(21.8% 0 0 / 38%);
+  --art-veil-strip: oklch(21.8% 0 0 / 19%);
 
   --destructive: oklch(65% 0.21 24);
   --destructive-foreground: oklch(72% 0.17 22);

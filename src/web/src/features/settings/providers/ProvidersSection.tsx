@@ -1,17 +1,17 @@
-import { EllipsisIcon, PlusIcon, RotateCwIcon } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { FieldError, cleanMessage } from "@/components/errors";
+import { EmptyState, FieldError, cleanMessage } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { ProviderIcon } from "@/components/provider-icon";
 import { SkeletonCard } from "@/components/skeletons";
 import { toast } from "@/components/toast";
-import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { Card, ConfirmDialog, Group, Loader, Row, Status, useLoad } from "../ui";
+import { ConfirmDialog, Field, Intro, Loader, Row, SettingsCard, Status, useLoad, Well } from "../ui";
 import {
   checkApiKey,
   clearApiKey,
@@ -97,87 +97,98 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
 
   if (!editing) {
     return (
-      <Row
-        label="API key"
-        description={<Status tone="ready">Saved</Status>}
-        below={outcome?.kind === "no-credit" ? <p className="text-warning-foreground text-xs">{outcomeText(outcome, p)}</p> : undefined}
-      >
-        <Button size="xs" variant="outline" onClick={() => setReplacing(true)}>
-          Replace
-        </Button>
-        <Button size="xs" variant="ghost-destructive" onClick={() => setConfirm(true)} disabled={busy === "remove"}>
-          {busy === "remove" ? <Spinner /> : null}
-          Remove
-        </Button>
+      <Field label="API key" hint={outcome?.kind === "no-credit" ? <span className="text-warning-foreground">{outcomeText(outcome, p)}</span> : undefined}>
+        <Well>
+          <Icon icon={icons.key} className="size-4 text-muted-foreground" />
+          <span aria-hidden className="text-muted-foreground tracking-tight">••••••••</span>
+          <Status tone="ready" className="ml-1">
+            Saved
+          </Status>
+          <span className="flex-1" />
+          <Button size="xs" variant="ghost" onClick={() => setReplacing(true)}>
+            Replace
+          </Button>
+          <Button size="xs" variant="ghost-destructive" onClick={() => setConfirm(true)} pending={busy === "remove"}>
+            Remove
+          </Button>
+        </Well>
         <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Remove your ${p.name} key?`} confirm="Remove key" destructive onConfirm={() => void remove()}>
           <p>Phaethon deletes it from this computer’s keychain. Conversations that use {p.name} stop answering until you add a key again.</p>
         </ConfirmDialog>
-      </Row>
+      </Field>
     );
   }
 
   const problem = outcome?.kind === "problem" ? outcome : null;
   return (
-    <Row
+    <Field
       label="API key"
       htmlFor={id}
-      description={p.keysUrl ? <>Create one at <span className="text-foreground/80">{host(p.keysUrl)}</span></> : p.key === "optional" ? "Only if your server asks for one." : undefined}
-      below={
-        <div className="flex flex-col gap-1.5">
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submit();
+      aside={
+        p.keysUrl ? (
+          <a href={p.keysUrl} target="_blank" rel="noreferrer noopener" className="text-primary text-sm hover:underline">
+            Get a key at {host(p.keysUrl)}
+          </a>
+        ) : p.key === "optional" ? (
+          <span className="text-subtle-foreground text-xs">Only if your server asks for one</span>
+        ) : undefined
+      }
+    >
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Input
+          id={id}
+          type="password"
+          autoFocus={autoFocus || replacing}
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          aria-invalid={problem ? true : undefined}
+          placeholder={p.keyPrefix ? `${p.keyPrefix}…` : "Paste your key"}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (problem) setOutcome(null);
+          }}
+          className="font-mono"
+        />
+        {replacing ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setReplacing(false);
+              setValue("");
+              setOutcome(null);
             }}
           >
-            <Input
-              id={id}
-              type="password"
-              size="sm"
-              autoFocus={autoFocus || replacing}
-              autoComplete="off"
-              spellCheck={false}
-              value={value}
-              aria-invalid={problem ? true : undefined}
-              placeholder={p.keyPrefix ? `${p.keyPrefix}…` : "Paste your key"}
-              onChange={(e) => {
-                setValue(e.target.value);
-                if (problem) setOutcome(null);
-              }}
-              className="font-mono"
-            />
-            <Button type="submit" size="sm" disabled={busy !== null} className="min-w-30">
-              {busy === "check" ? <Spinner /> : null}
-              {busy === "check" ? "Checking…" : "Check and save"}
-            </Button>
-            {replacing ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setReplacing(false);
-                  setValue("");
-                  setOutcome(null);
-                }}
-              >
-                Cancel
-              </Button>
-            ) : null}
-          </form>
-          {problem ? (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <FieldError>{outcomeText(problem, p)}</FieldError>
-              {canSaveUnchecked(problem) ? (
-                <button type="button" className="font-medium text-foreground text-xs hover:underline disabled:opacity-60" disabled={busy !== null} onClick={() => void submit(true)}>
-                  {busy === "save" ? "Saving…" : "Save without checking"}
-                </button>
-              ) : null}
-            </div>
+            Cancel
+          </Button>
+        ) : null}
+        <Button type="submit" size="sm" disabled={busy !== null && busy !== "check"} pending={busy === "check"}>
+          Check and save
+        </Button>
+      </form>
+      {busy === "check" ? (
+        <p role="status" className="text-muted-foreground text-xs">
+          Asking {p.name} whether the key works…
+        </p>
+      ) : null}
+      {problem ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <FieldError>{outcomeText(problem, p)}</FieldError>
+          {canSaveUnchecked(problem) ? (
+            <button type="button" className="font-medium text-foreground text-xs hover:underline disabled:opacity-60" disabled={busy !== null} onClick={() => void submit(true)}>
+              {busy === "save" ? "Saving…" : "Save without checking"}
+            </button>
           ) : null}
         </div>
-      }
-    />
+      ) : null}
+    </Field>
   );
 }
 
@@ -201,47 +212,39 @@ function UrlRow({ p, onChanged }: { p: ProviderInfo; onChanged: () => Promise<vo
     }
   };
   return (
-    <Row
-      label="Server address"
-      htmlFor={id}
-      below={
-        <div className="flex flex-col gap-1.5">
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (dirty) void save(draft.trim() || null);
-            }}
-          >
-            <Input
-              id={id}
-              size="sm"
-              value={draft}
-              spellCheck={false}
-              autoComplete="off"
-              aria-invalid={error ? true : undefined}
-              placeholder={p.defaultBaseUrl || "https://example.com/v1"}
-              onChange={(e) => {
-                setDraft(e.target.value);
-                setError(null);
-              }}
-              className="font-mono"
-            />
-            {dirty ? (
-              <Button type="submit" size="sm" disabled={busy} className="min-w-16">
-                {busy ? <Spinner /> : null}
-                {busy ? "Saving…" : "Save"}
-              </Button>
-            ) : p.defaultBaseUrl && p.baseUrl !== p.defaultBaseUrl ? (
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void save(null)}>
-                Reset
-              </Button>
-            ) : null}
-          </form>
-          <FieldError>{error}</FieldError>
-        </div>
-      }
-    />
+    <Field label="Server address" htmlFor={id}>
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty) void save(draft.trim() || null);
+        }}
+      >
+        <Input
+          id={id}
+          value={draft}
+          spellCheck={false}
+          autoComplete="off"
+          aria-invalid={error ? true : undefined}
+          placeholder={p.defaultBaseUrl || "https://example.com/v1"}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
+          className="font-mono"
+        />
+        {dirty ? (
+          <Button type="submit" size="sm" pending={busy}>
+            Save
+          </Button>
+        ) : p.defaultBaseUrl && p.baseUrl !== p.defaultBaseUrl ? (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void save(null)}>
+            Reset
+          </Button>
+        ) : null}
+      </form>
+      <FieldError>{error}</FieldError>
+    </Field>
   );
 }
 
@@ -263,7 +266,7 @@ function ServerRow({ p, server, onCheck }: { p: ProviderInfo; server: Server; on
       }
     >
       <Button size="xs" variant="outline" onClick={onCheck} disabled={checking} className="min-w-24">
-        {checking ? <Spinner /> : <RotateCwIcon />}
+        {checking ? <Spinner /> : <Icon icon={icons.retry} />}
         {checking ? "Checking…" : "Check again"}
       </Button>
     </Row>
@@ -291,12 +294,12 @@ function ModelRow({ p, settings, onChanged }: { p: ProviderInfo; settings: Setti
   };
   return (
     <Row
-      label="Model"
-      description={blocked ? (need?.field === "key" ? "Add a key to see the models." : "Add the address to see the models.") : "Used when a chat picks this provider without naming a model."}
+      label="Default model"
+      description={blocked ? (need?.field === "key" ? "Add a key to see the models." : "Add the address to see the models.") : "For chats that don’t name a model."}
       below={error ? <FieldError>{error}</FieldError> : undefined}
     >
       {busy ? <Spinner size="sm" tone="muted" /> : null}
-      <ModelChooser provider={p} current={current} disabled={blocked || busy} onChoose={(m) => void choose(m)} />
+      <ModelChooser provider={p} current={blocked ? null : current} disabled={blocked || busy} onChoose={(m) => void choose(m)} />
     </Row>
   );
 }
@@ -348,37 +351,47 @@ function ProviderCard({
   };
 
   return (
-    <div ref={ref}>
-      <Card className={cn(isNew && "ring-1 ring-primary/30")}>
-        <div className="flex min-h-11 items-center gap-2.5 px-3.5 py-2.5">
-          <ProviderIcon id={p.id} />
-          <Truncate className="min-w-0 flex-1 font-medium text-sm">{p.name}</Truncate>
-          <Status tone={st.tone === "busy" ? "busy" : st.tone}>{st.text}</Status>
-          {removable || onCancel ? (
+    <motion.div ref={ref} layout="position" initial={isNew ? { opacity: 0, y: 6 } : false} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 460, damping: 38 }}>
+      <SettingsCard
+        className={cn(isNew && "border-primary/40")}
+        icon={<ProviderIcon id={p.id} />}
+        title={p.name}
+        description={
+          <span className="flex min-w-0 items-center gap-2">
+            <Status tone={st.tone}>{st.text}</Status>
+            {p.id === settings.provider ? <span className="text-subtle-foreground">· Default</span> : null}
+          </span>
+        }
+        action={
+          removable || onCancel ? (
             <Menu>
-              <MenuTrigger render={<Button size="icon-xs" variant="ghost-muted" aria-label={`${p.name} actions`} />}>
-                <EllipsisIcon />
+              <MenuTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label={`${p.name} actions`} />}>
+                <Icon icon={icons.more} />
               </MenuTrigger>
               <MenuPopup align="end">
                 {onCancel && !added ? <MenuItem onClick={onCancel}>Cancel adding</MenuItem> : null}
                 {removable ? (
                   <MenuItem variant="destructive" onClick={() => setConfirm(true)}>
+                    <Icon icon={icons.delete} />
                     Remove {p.name}
                   </MenuItem>
                 ) : null}
               </MenuPopup>
             </Menu>
-          ) : null}
-        </div>
+          ) : null
+        }
+      >
         {p.editableBase ? <UrlRow p={p} onChanged={onChanged} /> : null}
-        {p.local ? <ServerRow p={p} server={server} onCheck={() => void check()} /> : null}
         {p.key !== "none" ? <KeyRow p={p} autoFocus={isNew && !p.editableBase} onChanged={onChanged} /> : null}
-        <ModelRow p={p} settings={settings} onChanged={onChanged} />
-      </Card>
+        <div className="flex flex-col">
+          {p.local ? <ServerRow p={p} server={server} onCheck={() => void check()} /> : null}
+          <ModelRow p={p} settings={settings} onChanged={onChanged} />
+        </div>
+      </SettingsCard>
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Remove ${p.name}?`} confirm="Remove" destructive onConfirm={() => void remove()}>
         <p>{p.hasKey ? "Its key is deleted from this computer’s keychain, and its" : "Its"} model and address go back to the defaults. Chats that use it stop answering until you add it again.</p>
       </ConfirmDialog>
-    </div>
+    </motion.div>
   );
 }
 
@@ -388,8 +401,8 @@ function AddProvider({ settings, shown, onAdd }: { settings: Settings; shown: Se
   const groups = PRESET_GROUPS.map((g) => ({ label: g.label, items: left.filter(g.test) })).filter((g) => g.items.length);
   return (
     <Menu>
-      <MenuTrigger render={<Button size="xs" variant="outline" />}>
-        <PlusIcon />
+      <MenuTrigger render={<Button size="sm" variant="outline" />}>
+        <Icon icon={icons.add} />
         Add provider
       </MenuTrigger>
       <MenuPopup align="end" className="w-56">
@@ -431,34 +444,25 @@ export function ProvidersSection() {
         for (const p of extra) shownIds.add(p.id);
         const list = [...added, ...extra];
         return (
-          <Group
-            label="Phaethon’s own agent answers with these"
-            action={<AddProvider settings={settings} shown={shownIds} onAdd={(id) => setPending((xs) => [...xs, id])} />}
-          >
+          <>
+            <Intro action={<AddProvider settings={settings} shown={shownIds} onAdd={(id) => setPending((xs) => [...xs, id])} />}>
+              Phaethon’s own agent answers with these.
+            </Intro>
             {list.length === 0 ? (
-              <Card>
-                <Empty className="py-10">
-                  <EmptyHeader>
-                    <EmptyTitle className="text-sm">No providers yet</EmptyTitle>
-                    <EmptyDescription className="text-xs">Add one to chat with Phaethon’s own agent.</EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              </Card>
+              <EmptyState palette="dawn" seed="providers" title="No providers yet" description="Add one to chat with Phaethon’s own agent." className="max-w-none" />
             ) : (
-              <div className="flex flex-col gap-3">
-                {list.map((p) => (
-                  <ProviderCard
-                    key={p.id}
-                    p={p}
-                    settings={settings}
-                    isNew={pending.includes(p.id) && !isAdded(p)}
-                    onChanged={reload}
-                    onCancel={pending.includes(p.id) ? () => setPending((xs) => xs.filter((x) => x !== p.id)) : undefined}
-                  />
-                ))}
-              </div>
+              list.map((p) => (
+                <ProviderCard
+                  key={p.id}
+                  p={p}
+                  settings={settings}
+                  isNew={pending.includes(p.id) && !isAdded(p)}
+                  onChanged={reload}
+                  onCancel={pending.includes(p.id) ? () => setPending((xs) => xs.filter((x) => x !== p.id)) : undefined}
+                />
+              ))
             )}
-          </Group>
+          </>
         );
       }}
     </Loader>

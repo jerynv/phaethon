@@ -343,7 +343,7 @@ e0fb, dc3a, 9e25, 8bdf. Left column (`w-64`) of section rows with icons and grou
 
 - Dialogs (9091, 8c35): `rounded-panel`, `p-6`, title `text-lg` + description; content in cards; footer with Cancel (outline) and the action (ink or accent), or one full-width ink button.
 - Menus (8386): `rounded-xl`, header block allowed (avatar, name, email), rows `h-8` with icons, a tinted "New" badge on the right.
-- Empty states: an `ArtTile` or `CardMedia` strip, one line title (`text-base font-medium`), one line muted, one ink or outline action. Never a lone grey icon in a void.
+- Empty states: an `ArtTile` or `CardMedia` strip, one line title (`text-base font-medium`), one line muted, one ink or outline action. Never a lone grey icon in a void. Use `EmptyState` from `components/errors.tsx` (`compact` for an empty inside a card).
 
 ## State and feedback
 

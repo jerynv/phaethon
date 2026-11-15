@@ -1,22 +1,25 @@
 import { useState } from "react";
 import { FieldError, cleanMessage } from "@/components/errors";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { type ThemeChoice, useTheme } from "@/app/theme";
 import { cn } from "@/lib/utils";
-import { Card, Group } from "./ui";
+import { SettingsCard } from "./ui";
 
-/** Settings › Appearance: System, Light or Dark, each with a small wireframe of the app. */
+/** Settings › Appearance: System, Light or Dark as three cards, each with a small wireframe of the app. */
 
-const CHOICES: { id: ThemeChoice; label: string }[] = [
-  { id: "system", label: "System" },
-  { id: "light", label: "Light" },
-  { id: "dark", label: "Dark" },
+const CHOICES: { id: ThemeChoice; label: string; icon: IconData }[] = [
+  { id: "system", label: "System", icon: icons.system },
+  { id: "light", label: "Light", icon: icons.light },
+  { id: "dark", label: "Dark", icon: icons.dark },
 ];
 
 /** A tiny app drawn with the real tokens (`.light` / `.dark` scope them): sidebar rows, a message, prose lines, a composer. */
 function Wire({ dark }: { dark: boolean }) {
   return (
-    <div className={cn("flex h-full w-full bg-background", dark ? "dark" : "light")}>
-      <div className="flex w-1/3 flex-col gap-1 border-r bg-sidebar p-1.5 pt-3">
+    <div className={cn("flex h-full w-full bg-canvas p-1.5", dark ? "dark" : "light")}>
+      <div className="flex flex-1 overflow-hidden rounded-md border bg-background">
+      <div className="flex w-1/3 flex-col gap-1 border-r p-1.5 pt-3">
         {["w-3/4", "w-1/2", "w-4/5", "w-2/5"].map((w, i) => (
           <span key={w} className={cn("h-1 rounded-full", w, i === 0 ? "bg-subtle-foreground" : "bg-row-selected")} />
         ))}
@@ -27,6 +30,7 @@ function Wire({ dark }: { dark: boolean }) {
           <span key={w} className={cn("h-1 rounded-full bg-row-selected", w)} />
         ))}
         <span className="mt-auto h-2.5 rounded-xs border border-input bg-card" />
+      </div>
       </div>
     </div>
   );
@@ -53,33 +57,40 @@ export function AppearanceSection() {
     void set(c).catch((e) => setError(`Couldn’t save the theme: ${cleanMessage(e)}`));
   };
   return (
-    <Group label="Theme">
-      <Card className="p-3.5">
-        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-0.5 rounded-lg bg-input/40 p-0.5">
-          {CHOICES.map((c) => {
-            const on = c.id === choice;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => pick(c.id)}
-                className={cn(
-                  "flex flex-col gap-2 rounded-md p-1.5 pb-2 text-xs transition-colors",
-                  on ? "bg-background text-foreground shadow-xs/10 dark:bg-input/72" : "text-muted-foreground hover:bg-background/55 hover:text-foreground dark:hover:bg-input/32",
-                )}
-              >
-                <span className={cn("block aspect-[16/10] w-full overflow-hidden rounded-sm border", on ? "border-primary/60 ring-1 ring-primary/40" : "border-border")}>
-                  <Preview choice={c.id} />
+    <SettingsCard icon={<Icon icon={icons.appearance} />} title="Theme" description="Light, dark, or whatever your computer uses.">
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
+        {CHOICES.map((c) => {
+          const on = c.id === choice;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => pick(c.id)}
+              className={cn(
+                "group flex flex-col overflow-hidden rounded-xl border bg-card text-left outline-none transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring",
+                on ? "border-primary ring-1 ring-primary" : "hover:border-border-strong",
+              )}
+            >
+              <span className="block aspect-[16/10] w-full overflow-hidden">
+                <Preview choice={c.id} />
+              </span>
+              <span className="flex h-9 items-center gap-2 border-t bg-well px-3 text-sm">
+                <Icon icon={c.icon} className={cn("size-4", on ? "text-primary" : "text-muted-foreground")} />
+                <span className="flex-1">{c.label}</span>
+                <span
+                  aria-hidden
+                  className={cn("flex size-4 items-center justify-center rounded-full border transition-colors", on ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}
+                >
+                  {on ? <Icon icon={icons.check} className="size-3" /> : null}
                 </span>
-                <span className="font-medium">{c.label}</span>
-              </button>
-            );
-          })}
-        </div>
-        <FieldError className="mt-2">{error}</FieldError>
-      </Card>
-    </Group>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <FieldError>{error}</FieldError>
+    </SettingsCard>
   );
 }

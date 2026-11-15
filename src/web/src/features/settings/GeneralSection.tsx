@@ -1,22 +1,25 @@
-import { ArrowRightIcon } from "lucide-react";
 import { api } from "@/app/api";
 import { keysFor, spaceKeys, viewKeys } from "@/app/shortcuts";
 import { useNav } from "@/app/store";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { SkeletonCard } from "@/components/skeletons";
 import { StartTruncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Switch } from "@/components/ui/switch";
+import { ToggleRow } from "@/components/ui/toggle-row";
 import { usePrefs } from "./prefs";
-import { Card, CopyButton, Group, Loader, Row, useLoad } from "./ui";
+import { CopyButton, Loader, Row, SettingsCard, useLoad } from "./ui";
 
-/** Settings › General: where the vault is, where models are chosen, chat display, and the keyboard shortcuts. */
+/** Settings › General: where the vault is, chat display and where models are chosen, and the keyboard shortcuts. */
 
 function Keys({ keys }: { keys: string[] }) {
   return (
-    <KbdGroup>
+    <KbdGroup className="gap-1">
       {keys.map((k) => (
-        <Kbd key={k}>{k}</Kbd>
+        <Kbd key={k} variant="keycap">
+          {k}
+        </Kbd>
       ))}
     </KbdGroup>
   );
@@ -44,52 +47,46 @@ export function GeneralSection() {
   const setTechnical = usePrefs((s) => s.setTechnicalDetails);
   return (
     <>
-      <Group label="Phaethon folder">
-        <Loader state={settings} errorTitle="Couldn’t read your settings" skeleton={<SkeletonCard rows={1} />}>
-          {(s) => (
-            <Card>
-              <Row
-                label="Vault"
-                description={s.vaultPath ? <StartTruncate value={s.vaultPath} className="font-mono text-2xs" /> : "Not chosen yet"}
-              >
-                {s.vaultPath ? <CopyButton text={s.vaultPath} label="Copy path" /> : null}
-              </Row>
-            </Card>
-          )}
-        </Loader>
-      </Group>
+      <Loader state={settings} errorTitle="Couldn’t read your settings" skeleton={<SkeletonCard rows={1} />}>
+        {(s) => (
+          <SettingsCard
+            icon={<Icon icon={icons.folder} />}
+            title="Phaethon folder"
+            description={s.vaultPath ? <StartTruncate value={s.vaultPath} className="font-mono text-xs" /> : "Not chosen yet"}
+            action={s.vaultPath ? <CopyButton text={s.vaultPath} label="Copy path" /> : null}
+          />
+        )}
+      </Loader>
 
-      <Group label="Models">
-        <Card>
+      <SettingsCard icon={<Icon icon={icons.chat} />} title="Chat" description="How replies look, and where their models come from.">
+        <div className="flex flex-col">
+          <ToggleRow
+            title="Show technical details"
+            description="Tool names, file paths and output under each reply’s steps, instead of plain words."
+            checked={technical}
+            onCheckedChange={setTechnical}
+          />
           <Row label="Model for each chat" description="Chosen in each conversation’s composer, next to Send.">
             <Button size="xs" variant="outline" onClick={() => openSettings("providers")}>
               Providers
-              <ArrowRightIcon />
+              <Icon icon={icons.arrowRight} />
             </Button>
           </Row>
-        </Card>
-      </Group>
+        </div>
+      </SettingsCard>
 
-      <Group label="Chat">
-        <Card>
-          <Row label="Show technical details" description="Tool names, file paths and output under each reply’s steps, instead of plain words." htmlFor="pref-technical">
-            <Switch id="pref-technical" checked={technical} onCheckedChange={setTechnical} />
-          </Row>
-        </Card>
-      </Group>
-
-      <Group label="Keyboard shortcuts">
-        <Card>
+      <SettingsCard icon={<Icon icon={icons.command} />} title="Keyboard shortcuts">
+        <ul className="-mt-2 flex flex-col">
           {shortcuts().map((s) => (
-            <div key={s.label} className="flex h-10 items-center justify-between gap-4 px-3.5 text-sm">
+            <li key={s.label} className="flex h-10 items-center justify-between gap-4 text-sm">
               <span className="min-w-0 truncate">{s.label}</span>
               <span className="shrink-0">
                 <Keys keys={s.keys} />
               </span>
-            </div>
+            </li>
           ))}
-        </Card>
-      </Group>
+        </ul>
+      </SettingsCard>
     </>
   );
 }

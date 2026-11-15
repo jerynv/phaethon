@@ -121,6 +121,8 @@ describe("canvas courses and content", () => {
           return json(fixture("files", b));
         case "/api/v1/courses/1001/files/5009":
           return json(fixture("file_5009", b));
+        case "/files/5009/download":
+          return { status: 200, ctype: "application/pdf", body: "%PDF-1.4" };
         case "/api/v1/courses/1001/pages/reading-guide":
           return json(fixture("page_reading_guide", b));
         case "/api/v1/courses/1001/assignments":
@@ -157,6 +159,13 @@ describe("canvas courses and content", () => {
       expect(aliases).toContain(at(alias));
     }
     expect(c.files.every((x) => x.url.href.startsWith(base))).toBe(true);
+    // Hidden from the Files browser (`hidden_for_user`) but not locked: imported
+    // through the syllabus link, downloaded with exactly the verifier Canvas gave.
+    const notes = c.files[2];
+    expect(notes.url.href).toBe(at("/files/5009/download?download_frd=1&verifier=Ch1"));
+    const got = await session(base).get(notes.url);
+    got.discard();
+    expect(f.log.at(-1)?.target).toBe("/files/5009/download?download_frd=1&verifier=Ch1");
 
     expect(c.pages.length).toBe(1);
     expect(c.pages[0].title).toBe("Reading guide");

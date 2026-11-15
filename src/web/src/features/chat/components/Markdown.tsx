@@ -10,8 +10,9 @@ import { citationOf, holdPartialCitation, markCitations } from "../lib/study-cit
 import { ACTIONS_FENCE } from "../lib/chat-actions";
 import { linkTarget, looksLikeFilePath } from "../lib/links";
 import { FileChip, copyText } from "@/components/file-chip";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { CopyIcon, ExternalLinkIcon } from "lucide-react";
 import { STUDY_FENCE } from "../lib/study-chat";
 import { CodeBlock } from "./CodeBlock";
 import { CitationChip } from "./CitationChip";
@@ -62,11 +63,11 @@ function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
       <ContextMenuTrigger render={<a href={url} target="_blank" rel="noreferrer noopener" className="md-link" title={url} />}>{children}</ContextMenuTrigger>
       <ContextMenuPopup>
         <ContextMenuItem onClick={() => window.open(url, "_blank", "noopener")}>
-          <ExternalLinkIcon />
+          <Icon icon={icons.external} />
           Open in browser
         </ContextMenuItem>
         <ContextMenuItem onClick={() => void copyText(url, "Link copied")}>
-          <CopyIcon />
+          <Icon icon={icons.copy} />
           Copy link
         </ContextMenuItem>
       </ContextMenuPopup>

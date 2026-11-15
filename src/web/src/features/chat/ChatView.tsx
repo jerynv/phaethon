@@ -1,10 +1,13 @@
-import { ArrowDownIcon, EllipsisIcon, FolderOpenIcon, SquarePenIcon, Trash2Icon } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
 import { chatKey, DRAFT, NO_SPACES, useNav, useOpenThread } from "@/app/store";
 import { SurfaceError } from "@/components/errors";
-import { SpaceAvatar } from "@/components/space-avatar";
+import { BrandMark } from "@/components/brand-mark";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { SkeletonTurns } from "@/components/skeletons";
 import { toast } from "@/components/toast";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
@@ -14,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { useCatalog } from "./catalog";
 import { Composer, type EditTarget } from "./components/Composer";
 import { AssistantMessage, UserMessage } from "./components/Messages";
+import { Welcome } from "./components/Welcome";
+import { isLimit, LimitCard } from "./components/LimitCard";
 import { useChats, useConv } from "./store";
 
 type Scroll = { top: number; pinned: boolean };
@@ -65,16 +70,16 @@ function HeaderActions({ space, thread }: { space: SpaceView; thread: string }) 
   const running = useConv(space.id, thread).running;
   return (
     <Menu>
-      <MenuTrigger render={<button type="button" aria-label="Conversation actions" className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" />}>
-        <EllipsisIcon className="size-4" />
+      <MenuTrigger render={<Button variant="ghost-muted" size="icon-sm" aria-label="Conversation actions" />}>
+        <Icon icon={icons.more} className="size-4.5" />
       </MenuTrigger>
       <MenuPopup align="end">
         <MenuItem onClick={() => void newChat(space.id)}>
-          <SquarePenIcon />
+          <Icon icon={icons.newChat} />
           New chat
         </MenuItem>
         <MenuItem onClick={() => void api.showSpace(space.id).catch((e) => toast.error("Couldn’t show the folder", errorText(e)))}>
-          <FolderOpenIcon />
+          <Icon icon={icons.folderOpen} />
           Show space folder
         </MenuItem>
         <MenuSeparator />
@@ -88,7 +93,7 @@ function HeaderActions({ space, thread }: { space: SpaceView; thread: string }) 
             )
           }
         >
-          <Trash2Icon />
+          <Icon icon={icons.delete} />
           Delete conversation
         </MenuItem>
       </MenuPopup>
@@ -106,6 +111,8 @@ export function ChatView({ space }: { space: SpaceView }) {
   const listedTitle = useNav((s) => (thread === DRAFT ? undefined : s.threads[space.id]?.data?.find((t) => t.id === thread)?.title));
   const spaces = useNav((s) => s.spaces.data) ?? NO_SPACES;
   const loadCatalog = useCatalog((s) => s.load);
+  const openSettings = useNav((s) => s.openSettings);
+  const [closedLimit, setClosedLimit] = useState<string | null>(null);
 
   // Opening a conversation shows what was there at once and refreshes it quietly.
   useEffect(() => {
@@ -114,7 +121,10 @@ export function ChatView({ space }: { space: SpaceView }) {
   useEffect(() => void loadCatalog(), [loadCatalog]);
 
   const last = chat.messages[chat.messages.length - 1];
-  const followKey = last ? `${chat.messages.length}:${last.role === "assistant" ? last.parts.length + (last.parts.at(-1)?.type === "text" ? (last.parts.at(-1) as { text: string }).text.length : 0) : 0}` : "0";
+  // What makes the timeline grow: new words or steps, and a card or an error arriving under the reply.
+  const followKey = last
+    ? `${chat.messages.length}:${last.role === "assistant" ? `${last.parts.length + (last.parts.at(-1)?.type === "text" ? (last.parts.at(-1) as { text: string }).text.length : 0)}:${last.status}:${!!last.approval}${!!last.access}${!!last.question}` : 0}`
+    : "0";
   const empty = chat.messages.length === 0 && (thread === DRAFT || chat.status === "ready");
   const failed = chat.status === "error" && chat.messages.length === 0;
   const { box, onScroll, away, toBottom, pin } = useFollow(key, followKey, !empty && !failed);
@@ -135,6 +145,8 @@ export function ChatView({ space }: { space: SpaceView }) {
     composer.current = { thread, key: next };
   }
 
+  const limit = last?.role === "assistant" && last.error && isLimit(last.error.code) && !chat.running && closedLimit !== last.key ? last : null;
+
   const retry = () => {
     const u = [...chat.messages].reverse().find((m) => m.role === "user");
     if (!u || u.role !== "user") return;
@@ -151,13 +163,12 @@ export function ChatView({ space }: { space: SpaceView }) {
           <SurfaceError title="Couldn’t open this conversation" message={chat.error} onRetry={() => void load(space.id, thread)} />
         </div>
       ) : empty ? (
-        <div className="flex flex-1 flex-col items-center justify-end px-4">
-          <div className="mb-5 flex flex-col items-center gap-3 text-center">
-            <SpaceAvatar name={space.name} hue={space.hue} className="size-8 rounded-lg text-sm" />
-            <h1 className="font-semibold text-xl tracking-[-0.015em]">What are we working on?</h1>
-            <p className="max-w-sm text-muted-foreground text-sm">
-              {space.educationEnabled ? "Ask about your courses, get a concept taught step by step, or make a practice quiz." : `Phaethon works inside ${space.name}: its files, its memory, nothing else.`}
-            </p>
+        // The welcome (refs a163, a6e6): the mark and the question sit about two fifths down, the composer and
+        // three starters under them. No art behind it; the page's dot matrix is enough.
+        <div className="flex grow-2 flex-col items-center justify-end px-8">
+          <div className="mb-6 flex flex-col items-center gap-4 text-center">
+            <BrandMark className="size-6 text-foreground" />
+            <h1 className="text-2xl text-foreground tracking-heading">Where should we begin?</h1>
           </div>
         </div>
       ) : (
@@ -180,24 +191,38 @@ export function ChatView({ space }: { space: SpaceView }) {
           </div>
         </div>
       )}
-      <div className={cn("relative", empty && "px-4")}>
+      <div className={cn("relative", empty && "px-8")}>
         {empty ? null : (
           <button
             type="button"
             onClick={toBottom}
             aria-label="Jump to latest"
             className={cn(
-              "absolute -top-10 left-1/2 z-10 inline-flex h-7 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-2.5 text-muted-foreground text-xs shadow-sm/5 transition-[opacity,transform] hover:text-foreground",
+              "absolute -top-11 left-1/2 z-10 inline-flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-3 text-muted-foreground text-sm shadow-card transition-[opacity,transform] hover:text-foreground",
               away ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0",
             )}
           >
-            <ArrowDownIcon className="size-3" strokeWidth={2.25} />
+            <Icon icon={icons.arrowDown} className="size-3.5" />
             {chat.running ? "Following reply" : "Latest"}
           </button>
         )}
+        <AnimatePresence initial={false}>
+          {limit && limit.role === "assistant" && limit.error ? (
+            <div key={limit.key} className="mx-auto w-full max-w-(--chat-max-width) px-4">
+              <LimitCard
+                code={limit.error.code}
+                message={limit.error.message}
+                retryAfterSecs={limit.error.retryAfterSecs}
+                onRetry={retry}
+                onSettings={() => openSettings("providers")}
+                onClose={() => setClosedLimit(limit.key)}
+              />
+            </div>
+          ) : null}
+        </AnimatePresence>
         <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
       </div>
-      {empty ? <div className="flex-1 pb-[12vh]" /> : null}
+      {empty ? <Welcome space={space} draftKey={key} /> : null}
     </div>
   );
 }

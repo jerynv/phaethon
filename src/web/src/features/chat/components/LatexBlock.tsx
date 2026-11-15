@@ -1,6 +1,7 @@
-import { DownloadIcon, FileWarningIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ClampedText } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -102,7 +103,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
         </span>
         <CopyButton text={source} className="size-6" label="Copy LaTeX" />
         <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60">
-          {saving ? <Spinner size="xs" /> : <DownloadIcon className="size-3" />}
+          {saving ? <Spinner size="xs" /> : <Icon icon={icons.download} className="size-3.5" />}
           Save
         </button>
       </div>
@@ -117,7 +118,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
       ) : (
         <div className="flex flex-col gap-2 p-3">
           <div className="flex items-start gap-2 text-sm">
-            <FileWarningIcon className="mt-0.5 size-4 shrink-0 text-warning" />
+            <Icon icon={icons.fileMissing} className="mt-0.5 size-4 text-warning" />
             <div className="min-w-0 flex-1">
               <p className="font-medium">{outcome.status === "failed" ? `Didn’t compile${outcome.line ? ` (line ${outcome.line})` : ""}` : outcome.status === "noEngine" ? "No TeX on this computer" : "Can’t compile here"}</p>
               <ClampedText className="text-muted-foreground text-xs" text={outcome.message} />

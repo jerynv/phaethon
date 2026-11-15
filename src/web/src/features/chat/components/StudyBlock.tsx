@@ -1,7 +1,8 @@
-import { Cards, Exam, FileText, Sparkle, WarningCircle } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNav } from "@/app/store";
 import { RowError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -44,13 +45,13 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   }, [block, space, question]);
 
   const kind = read.state === "ok" ? read.kind : guessKind(code);
-  const Icon = kind === "quiz" ? Exam : Cards;
+  const glyph = kind === "quiz" ? icons.quiz : icons.study;
 
   if (read.state === "invalid") return <RowError className="my-2" message={`This study plan couldn’t be read: ${read.why}`} />;
   if (read.state === "writing" || (!plan && !planError)) {
     return (
-      <div className="my-3 flex items-center gap-3 rounded-xl border p-3">
-        <Icon weight="light" className="size-5 shrink-0 text-muted-foreground" />
+      <div className="my-3 flex items-center gap-3 rounded-card border bg-card p-4 shadow-card">
+        <Icon icon={glyph} className="size-5 text-muted-foreground" />
         <div className="flex flex-1 flex-col gap-1.5">
           <span className="text-shimmer font-medium text-sm">{kind === "quiz" ? "Planning a quiz…" : "Planning flashcards…"}</span>
           <Skeleton className="h-2 w-2/3" />
@@ -68,19 +69,19 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   const notes = [...plan.notes, ...(plan.unknown.length ? [`Not in this space: ${plan.unknown.join(", ")}`] : []), ...(plan.material ? [plan.material.text] : [])];
 
   return (
-    <div className="my-3 overflow-hidden rounded-xl border bg-card" data-testid="study-block">
-      <div className="flex items-start gap-3 p-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
-          <Icon weight="light" className="size-4.5" />
+    <div className="my-3 overflow-hidden rounded-card border bg-card shadow-card" data-testid="study-block">
+      <div className="flex items-start gap-3 p-4">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-well text-foreground">
+          <Icon icon={glyph} className="size-4.5" />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="truncate font-medium text-sm">{planTitle(plan)}</span>
-          <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">{planSentence(plan)}</p>
+          <span className="truncate font-medium text-base">{planTitle(plan)}</span>
+          <p className="text-muted-foreground text-sm [overflow-wrap:anywhere]">{planSentence(plan)}</p>
           {plan.sources.length ? (
             <div className="mt-1 flex flex-wrap gap-1">
               {plan.sources.slice(0, 6).map((s) => (
                 <span key={s.path} className="inline-flex max-w-48 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground">
-                  <FileText weight="light" className="size-3 shrink-0" />
+                  <Icon icon={icons.fileText} className="size-3" />
                   <span className="truncate">{s.name}</span>
                 </span>
               ))}
@@ -90,7 +91,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
           {open && sources.error ? <RowError className="mt-1" message={`Couldn’t list your courses: ${errorText(sources.error)}`} onRetry={sources.reload} /> : null}
           {notes.map((n) => (
             <p key={n} className="flex items-start gap-1.5 text-warning-foreground text-xs">
-              <WarningCircle weight="light" className="mt-0.5 size-3.5 shrink-0" />
+              <Icon icon={icons.error} className="mt-0.5 size-3.5" />
               <span className="[overflow-wrap:anywhere]">{n}</span>
             </p>
           ))}
@@ -106,7 +107,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
             </Button>
           ) : (
             <Button size="xs" disabled={open && !draft && !sources.error} onClick={() => (sources.error ? sources.reload() : undefined, setOpen(true))}>
-              {open && !draft && !sources.error ? <Spinner size="xs" /> : <Sparkle weight="light" />}
+              {open && !draft && !sources.error ? <Spinner size="xs" /> : <Icon icon={icons.ai} />}
               {plan.kind === "quiz" ? "Make this quiz" : "Make these cards"}
             </Button>
           )}

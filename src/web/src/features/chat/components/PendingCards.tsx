@@ -1,5 +1,3 @@
-import { Path } from "@phosphor-icons/react";
-import { CircleHelpIcon, FilePenIcon, KeyRoundIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccessAnswer, LessonAnswer, UiRecord } from "#shared/agent.ts";
@@ -7,12 +5,17 @@ import { useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { toast } from "@/components/toast";
 import { StartTruncate } from "@/components/truncate";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { CheckboxGroup } from "@base-ui/react/checkbox-group";
 import { Button } from "@/components/ui/button";
+import { Card as Surface } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Radio, RadioGroup } from "@/components/ui/radio-group";
 import { Toggle, ToggleGroup } from "@/components/ui/toggle-group";
 import { Kbd } from "@/components/ui/kbd";
+import { KeyAction, KeyActions } from "@/components/ui/key-actions";
+import { Step, StepList } from "@/components/ui/step-list";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,26 +27,38 @@ import { useChats } from "../store";
 import { Markdown } from "./Markdown";
 import type { PendingAccess, PendingApproval, PendingQuestion } from "../lib/timeline";
 
-/** The frame every "needs you" card shares: an icon, a title line, a body, actions at the bottom right. */
-function Card({ icon, title, meta, children, actions, tone = "default", cardRef }: { icon: React.ReactNode; title: React.ReactNode; meta?: React.ReactNode; children?: React.ReactNode; actions?: React.ReactNode; tone?: "default" | "attention"; cardRef?: React.Ref<HTMLDivElement> }) {
+/**
+ * The frame every "needs you" card shares (ref d706): a white card, a blue
+ * status line on top ("Ready to change week6.md"), the body in a grey well,
+ * and the keyed choices underneath ("Y Apply change · N Don't allow").
+ */
+function Card({ icon, title, meta, children, keys, footer, cardRef }: { icon: IconData; title: React.ReactNode; meta?: React.ReactNode; children?: React.ReactNode; keys?: React.ReactNode; footer?: React.ReactNode; cardRef?: React.Ref<HTMLDivElement> }) {
   return (
     <motion.div
       ref={cardRef}
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, ease: "easeOut" }}
-      className={cn("my-3 overflow-hidden rounded-xl border bg-card", tone === "attention" && "border-warning/40")}
+      initial={{ opacity: 0, y: 6, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ type: "spring", stiffness: 460, damping: 36 }}
+      className="my-3"
       data-slot="pending-card"
     >
-      <div className="flex items-center gap-2 px-3 py-2">
-        <span className={cn("flex size-4 shrink-0 items-center justify-center [&_svg]:size-4", tone === "attention" ? "text-warning-foreground" : "text-muted-foreground")}>{icon}</span>
-        <div className="min-w-0 flex-1 truncate font-medium text-sm">{title}</div>
-        {meta ? <div className="shrink-0 text-2xs text-muted-foreground tabular-nums">{meta}</div> : null}
-      </div>
-      {children ? <div className="px-3 pb-2.5">{children}</div> : null}
-      {actions ? <div className="flex flex-wrap items-center justify-end gap-1.5 border-t bg-muted/40 px-3 py-2">{actions}</div> : null}
+      <Surface className="gap-3 p-3">
+        <div className="flex min-w-0 items-center gap-2.5 px-1 pt-1">
+          <Icon icon={icon} className="size-5 text-primary" />
+          <div className="min-w-0 flex-1 truncate text-base text-primary">{title}</div>
+          {meta ? <div className="shrink-0 text-muted-foreground text-xs tabular-nums">{meta}</div> : null}
+        </div>
+        {children}
+        {keys ? <KeyActions>{keys}</KeyActions> : null}
+        {footer}
+      </Surface>
     </motion.div>
   );
+}
+
+/** The grey inset that holds what is being asked about. */
+function Well({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn("flex flex-col gap-3 rounded-xl border border-border/70 bg-well p-4", className)}>{children}</div>;
 }
 
 function useBusy() {
@@ -91,7 +106,17 @@ function useAnswerKeys(keys: Record<string, () => void>, box: React.RefObject<HT
 }
 
 function Key({ k }: { k: string }) {
-  return <Kbd className="ml-0.5 h-4 min-w-4 bg-current/10 text-current">{k}</Kbd>;
+  return <Kbd className="-mr-0.5">{k}</Kbd>;
+}
+
+/** A keyed choice's label, with the spinner while that answer is being sent. */
+function Choice({ busy, children }: { busy: boolean; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      {children}
+      {busy ? <Spinner size="sm" className="text-muted-foreground" /> : null}
+    </span>
+  );
 }
 
 const DIFF_FOLDED = 8;
@@ -105,7 +130,7 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
   const rows = useMemo(() => foldDiff(lines), [lines]);
   const counts = diffCounts(lines);
   const failed = "Couldn’t send your answer";
-  const verb = approval.action === "create" ? "Create" : "Change";
+  const verb = approval.action === "create" ? "create" : "change";
   const allow = () => run("allow", () => onAnswer(true), failed);
   const deny = () => run("deny", () => onAnswer(false), failed);
   // Remembering is answered through the store, which saves it with the answer (core: agent_approve `remember`).
@@ -116,11 +141,11 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
   return (
     <Card
       cardRef={box}
-      tone="attention"
-      icon={<FilePenIcon strokeWidth={1.75} />}
+      icon={icons.done}
       title={
         <span className="flex min-w-0 items-center gap-1.5">
-          {verb} <StartTruncate value={approval.path} className="font-mono text-xs font-normal text-muted-foreground" />
+          <span className="shrink-0">Ready to {verb}</span>
+          <StartTruncate value={approval.path} className="font-mono text-sm" />
         </span>
       }
       meta={
@@ -128,58 +153,56 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
           <span className="text-success-foreground">+{counts.added}</span> <span className="text-error-foreground">−{counts.removed}</span>
         </span>
       }
-      actions={
+      keys={
         <>
-          <Button size="xs" variant="ghost" className="mr-auto" disabled={!!busy} onClick={deny}>
-            {busy === "deny" ? <Spinner size="xs" /> : null}
-            Don’t allow
-            <Key k="N" />
-          </Button>
+          <KeyAction shortcut="Y" data-primary="" disabled={!!busy} onClick={allow}>
+            <Choice busy={busy === "allow"}>{approval.action === "create" ? "Create file" : "Apply change"}</Choice>
+          </KeyAction>
+          <KeyAction shortcut="N" disabled={!!busy} onClick={deny}>
+            <Choice busy={busy === "deny"}>Don’t allow</Choice>
+          </KeyAction>
+        </>
+      }
+    >
+      <Well>
+        {approval.summary ? <p className="text-muted-foreground text-sm wrap-anywhere">{approval.summary}</p> : null}
+        <div className="max-h-64 overflow-auto rounded-lg border bg-card font-mono text-2xs leading-4.5">
+          {visible.map((r, i) =>
+            r.kind === "fold" ? (
+              <div key={i} className="bg-muted/60 px-2 text-muted-foreground">
+                ⋯ {r.count} unchanged {r.count === 1 ? "line" : "lines"}
+              </div>
+            ) : (
+              <div key={i} className={cn("whitespace-pre px-2", r.kind === "added" && "bg-success/10 text-success-foreground", r.kind === "removed" && "bg-error/10 text-error-foreground")}>
+                <span className="mr-2 inline-block w-2 select-none opacity-60">{r.kind === "added" ? "+" : r.kind === "removed" ? "−" : " "}</span>
+                {r.text || " "}
+              </div>
+            ),
+          )}
+          {long ? (
+            <button type="button" onClick={() => setShowAll((v) => !v)} className="w-full px-2 py-1 text-left font-sans text-muted-foreground hover:bg-accent hover:text-foreground">
+              {showAll ? "Show less" : `Show all ${rows.length} lines`}
+            </button>
+          ) : null}
+          {approval.truncated ? <div className="px-2 py-1 font-sans text-muted-foreground">The file is long; only the start is shown.</div> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
           <Tooltip>
-            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} onClick={() => remember("conversation")} />}>
-              {busy === "conversation" ? <Spinner size="xs" /> : null}
+            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} pending={busy === "conversation"} onClick={() => remember("conversation")} />}>
               Allow in this chat
               <Key k="C" />
             </TooltipTrigger>
             <TooltipPopup>This conversation writes files in {spaceName} without asking again</TooltipPopup>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} onClick={() => remember("space")} />}>
-              {busy === "space" ? <Spinner size="xs" /> : null}
+            <TooltipTrigger render={<Button size="xs" variant="outline" disabled={!!busy} pending={busy === "space"} onClick={() => remember("space")} />}>
               Always in {spaceName}
               <Key k="S" />
             </TooltipTrigger>
             <TooltipPopup>Every conversation writes files in {spaceName} without asking. Never outside it. Take it back in Settings › Spaces</TooltipPopup>
           </Tooltip>
-          <Button size="xs" data-primary="" disabled={!!busy} onClick={allow}>
-            {busy === "allow" ? <Spinner size="xs" /> : null}
-            {approval.action === "create" ? "Create file" : "Apply change"}
-            <Key k="Y" />
-          </Button>
-        </>
-      }
-    >
-      {approval.summary ? <p className="mb-2 text-muted-foreground text-xs [overflow-wrap:anywhere]">{approval.summary}</p> : null}
-      <div className="max-h-64 overflow-auto rounded-md border bg-code font-mono text-2xs leading-[1.1rem]">
-        {visible.map((r, i) =>
-          r.kind === "fold" ? (
-            <div key={i} className="bg-muted/60 px-2 text-muted-foreground">
-              ⋯ {r.count} unchanged {r.count === 1 ? "line" : "lines"}
-            </div>
-          ) : (
-            <div key={i} className={cn("whitespace-pre px-2", r.kind === "added" && "bg-success/10 text-success-foreground", r.kind === "removed" && "bg-error/10 text-error-foreground")}>
-              <span className="mr-2 inline-block w-2 select-none opacity-60">{r.kind === "added" ? "+" : r.kind === "removed" ? "−" : " "}</span>
-              {r.text || " "}
-            </div>
-          ),
-        )}
-        {long ? (
-          <button type="button" onClick={() => setShowAll((v) => !v)} className="w-full px-2 py-1 text-left font-sans text-muted-foreground hover:bg-accent hover:text-foreground">
-            {showAll ? "Show less" : `Show all ${rows.length} lines`}
-          </button>
-        ) : null}
-        {approval.truncated ? <div className="px-2 py-1 font-sans text-muted-foreground">The file is long; only the start is shown.</div> : null}
-      </div>
+        </div>
+      </Well>
     </Card>
   );
 }
@@ -194,41 +217,39 @@ export function AccessCard({ access, spaceName, onAnswer }: { access: PendingAcc
   return (
     <Card
       cardRef={box}
-      tone="attention"
-      icon={<KeyRoundIcon strokeWidth={1.75} />}
+      icon={icons.key}
       title={
-        <span className="flex min-w-0 items-center gap-1">
-          Read from <StartTruncate value={where} className="font-normal" />
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0">Wants to read</span>
+          <StartTruncate value={where} />
         </span>
       }
       meta="Read only"
-      actions={
+      keys={
         <>
-          <Button size="xs" variant="ghost" className="mr-auto" disabled={!!busy} onClick={() => answer("deny")}>
-            {busy === "deny" ? <Spinner size="xs" /> : null}
-            Don’t allow
-            <Key k="N" />
-          </Button>
-          <Button size="xs" variant="outline" disabled={!!busy} onClick={() => answer("always")}>
-            {busy === "always" ? <Spinner size="xs" /> : null}
-            Always allow
-            <Key k="A" />
-          </Button>
-          <Button size="xs" data-primary="" disabled={!!busy} onClick={() => answer("once")}>
-            {busy === "once" ? <Spinner size="xs" /> : null}
-            Allow once
-            <Key k="Y" />
-          </Button>
+          <KeyAction shortcut="Y" data-primary="" disabled={!!busy} onClick={() => answer("once")}>
+            <Choice busy={busy === "once"}>Allow once</Choice>
+          </KeyAction>
+          <KeyAction shortcut="A" disabled={!!busy} onClick={() => answer("always")}>
+            <Choice busy={busy === "always"}>Always allow</Choice>
+          </KeyAction>
+          <KeyAction shortcut="N" disabled={!!busy} onClick={() => answer("deny")}>
+            <Choice busy={busy === "deny"}>Don’t allow</Choice>
+          </KeyAction>
         </>
       }
     >
-      {access.reason ? <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">{access.reason}</p> : null}
+      {access.reason ? (
+        <Well>
+          <p className="text-base wrap-anywhere">{access.reason}</p>
+        </Well>
+      ) : null}
     </Card>
   );
 }
 
 /** A choice row: the whole row picks, the control shows the state. */
-const OPTION = "flex cursor-default items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent has-data-checked:border-primary/50 has-data-checked:bg-primary/6";
+const OPTION = "flex cursor-default items-start gap-3 rounded-xl border bg-card px-3 py-2.5 text-left text-base transition-colors hover:bg-accent has-data-checked:border-primary/50 has-data-checked:bg-primary/6";
 
 const CONFIDENCE = [
   { value: 25, label: "Guessing" },
@@ -249,125 +270,147 @@ export function QuestionCard({ question, space, disabled, onAnswer }: { question
   const submit = (answer: LessonAnswer) => run("send", () => onAnswer(answer), "Couldn’t send your answer");
   return (
     <Card
-      tone="attention"
-      icon={<CircleHelpIcon strokeWidth={1.75} />}
+      icon={icons.help}
       title={role}
       meta={check?.multiSelect ? "Choose all that apply" : null}
-      actions={
-        <>
-          <Button size="xs" variant="ghost" disabled={disabled || !!busy} onClick={() => submit({ dontKnow: true })}>
+      footer={
+        <div className="flex flex-wrap items-center gap-2 border-t px-1 pt-3">
+          <span className="text-muted-foreground text-sm">How sure?</span>
+          <ToggleGroup variant="segmented" value={confidence === null ? [] : [String(confidence)]} onValueChange={(v) => setConfidence(v.length ? Number(v[v.length - 1]) : null)}>
+            {CONFIDENCE.map((c) => (
+              <Toggle key={c.value} value={String(c.value)}>
+                {c.label}
+              </Toggle>
+            ))}
+          </ToggleGroup>
+          <span className="flex-1" />
+          <Button size="sm" variant="ghost" disabled={disabled || !!busy} onClick={() => submit({ dontKnow: true })}>
             I don’t know
           </Button>
-          <Button size="xs" disabled={disabled || !!busy || !ready} onClick={() => submit(check ? { answers: chosen, confidence: confidence ?? undefined } : { text, confidence: confidence ?? undefined })}>
-            {busy ? <Spinner size="xs" /> : null}
+          <Button size="sm" disabled={disabled || !ready} pending={!!busy} onClick={() => submit(check ? { answers: chosen, confidence: confidence ?? undefined } : { text, confidence: confidence ?? undefined })}>
             Answer
           </Button>
-        </>
+        </div>
       }
     >
-      <Markdown inline text={q.question} space={space} messageKey={q.id} className="mb-2.5" />
-      {check ? (
-        check.multiSelect ? (
-          <CheckboxGroup value={chosen} onValueChange={(v) => setChosen(v as string[])} disabled={disabled} className="flex flex-col gap-1">
-            {check.options.map((o) => (
-              <label key={o.value} className={OPTION}>
-                <Checkbox value={o.value} className="mt-0.5" />
-                <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0 text-sm" />
-              </label>
-            ))}
-          </CheckboxGroup>
+      <div className="flex flex-col gap-3 px-1">
+        <Markdown inline text={q.question} space={space} messageKey={q.id} className="text-base" />
+        {check ? (
+          check.multiSelect ? (
+            <CheckboxGroup value={chosen} onValueChange={(v) => setChosen(v as string[])} disabled={disabled} className="flex flex-col gap-1.5">
+              {check.options.map((o) => (
+                <label key={o.value} className={OPTION}>
+                  <Checkbox value={o.value} className="mt-0.5" />
+                  <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0" />
+                </label>
+              ))}
+            </CheckboxGroup>
+          ) : (
+            <RadioGroup value={chosen[0] ?? null} onValueChange={(v) => setChosen([v as string])} disabled={disabled} className="gap-1.5">
+              {check.options.map((o) => (
+                <label key={o.value} className={OPTION}>
+                  <Radio value={o.value} className="mt-1" />
+                  <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0" />
+                </label>
+              ))}
+            </RadioGroup>
+          )
         ) : (
-          <RadioGroup value={chosen[0] ?? null} onValueChange={(v) => setChosen([v as string])} disabled={disabled} className="gap-1">
-            {check.options.map((o) => (
-              <label key={o.value} className={OPTION}>
-                <Radio value={o.value} className="mt-0.5" />
-                <Markdown inline text={o.label} space={space} messageKey={q.id} className="min-w-0 text-sm" />
-              </label>
-            ))}
-          </RadioGroup>
-        )
-      ) : (
-        <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="In your own words…" className="min-h-20" disabled={disabled} />
-      )}
-      <div className="mt-2.5 flex items-center gap-1.5 text-xs">
-        <span className="mr-1 text-muted-foreground">How sure?</span>
-        <ToggleGroup variant="segmented" value={confidence === null ? [] : [String(confidence)]} onValueChange={(v) => setConfidence(v.length ? Number(v[v.length - 1]) : null)}>
-          {CONFIDENCE.map((c) => (
-            <Toggle key={c.value} value={String(c.value)}>
-              {c.label}
-            </Toggle>
-          ))}
-        </ToggleGroup>
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="In your own words…" className="min-h-20" disabled={disabled} />
+        )}
+        {busy ? (
+          <p className="flex items-center gap-2 text-muted-foreground text-sm" role="status">
+            <Spinner size="sm" /> Sending your answer…
+          </p>
+        ) : null}
       </div>
     </Card>
   );
 }
 
-/** Saved records that aren't tool steps: one quiet line each, the lesson plan as a small map. */
+/** One quiet line in the reply's step column: a glyph in the 20 px gutter, then words. */
+function Line({ icon, children }: { icon: IconData; children: React.ReactNode }) {
+  return (
+    <div className="my-0.5 flex min-h-8 min-w-0 items-center gap-3 text-muted-foreground text-sm">
+      <span className="flex w-5 shrink-0 justify-center">
+        <Icon icon={icon} className="size-4" />
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/** Saved records that aren't tool steps: one quiet line each, the lesson plan as a small path. */
 export function RecordLine({ record, spaceName }: { record: Exclude<UiRecord, { kind: "tool" }>; spaceName: (id: string) => string }) {
   const openSettings = useNav((s) => s.openSettings);
   switch (record.kind) {
     case "lessonPlan":
       return (
-        <div className="my-3 rounded-xl border bg-card p-3">
-          <div className="flex items-center gap-2 font-medium text-sm">
-            <Path className="size-4 text-muted-foreground" />
-            <span className="min-w-0 truncate">{record.goal}</span>
+        <Surface variant="well" className="my-3 gap-1 px-4 pt-3.5 pb-2">
+          <div className="flex items-center gap-2 text-muted-foreground text-sm">
+            <Icon icon={icons.path} className="size-4" />
+            Lesson plan
           </div>
-          <ol className="mt-2 flex flex-wrap items-center gap-1 text-xs">
-            {record.nodes.map((n, i) => (
-              <li key={n.id} className="flex items-center gap-1">
-                {i > 0 ? <span className="text-subtle-foreground">→</span> : null}
-                <span className="max-w-48 truncate rounded-md bg-muted px-1.5 py-0.5">{n.label}</span>
-              </li>
+          <p className="font-medium text-base">{record.goal}</p>
+          <StepList>
+            {record.nodes.map((n) => (
+              <Step key={n.id} state="pending">
+                <span className="text-foreground">{n.label}</span>
+              </Step>
             ))}
-          </ol>
-        </div>
+          </StepList>
+        </Surface>
       );
     case "check":
       return (
-        <div className="my-1.5 flex items-start gap-2 text-muted-foreground text-xs">
-          <CircleHelpIcon className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{record.question}</span>
-          {record.answered ? <span className={cn("shrink-0 font-medium", record.correct === true ? "text-success-foreground" : record.correct === false ? "text-error-foreground" : "")}>{record.correct === true ? "Right" : record.correct === false ? "Not quite" : "Answered"}</span> : null}
-        </div>
+        <Line icon={icons.help}>
+          <span className="min-w-0 flex-1 wrap-anywhere">{record.question}</span>
+          {record.answered ? (
+            <span
+              className={cn(
+                "shrink-0 rounded-md px-2 py-0.5 font-medium text-xs",
+                record.correct === true ? "bg-success/8 text-success-foreground" : record.correct === false ? "bg-error/8 text-error-foreground" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {record.correct === true ? "Right" : record.correct === false ? "Not quite" : "Answered"}
+            </span>
+          ) : null}
+        </Line>
       );
     case "approval":
       return (
-        <div className="my-1 flex min-w-0 items-center gap-2 text-muted-foreground text-xs">
-          <FilePenIcon className="size-3.5 shrink-0" strokeWidth={1.75} />
+        <Line icon={record.allowed ? icons.write : icons.blocked}>
           <span className="shrink-0">{record.allowed ? (record.action === "create" ? "Created" : "Changed") : "Not allowed:"}</span>
-          <StartTruncate value={record.path} className="font-mono text-2xs" />
+          <StartTruncate value={record.path} className="font-mono text-xs" />
           {record.auto ? (
             <>
               <span className="shrink-0 text-subtle-foreground">· {record.auto === "space" ? "allowed in this space" : "allowed in this chat"}</span>
-              <button type="button" onClick={() => openSettings("spaces")} className="shrink-0 hover:text-foreground hover:underline">
+              <button type="button" onClick={() => openSettings("spaces")} className="shrink-0 text-primary hover:underline">
                 Manage
               </button>
             </>
           ) : null}
-        </div>
+        </Line>
       );
     case "access":
       return (
-        <div className="my-1 flex min-w-0 items-center gap-2 text-muted-foreground text-xs">
-          <KeyRoundIcon className="size-3.5 shrink-0" strokeWidth={1.75} />
+        <Line icon={record.answer === "deny" ? icons.blocked : icons.key}>
           <span className="shrink-0">{record.answer === "deny" ? "Not allowed to read" : record.answer === "always" ? "Always allowed to read" : "Allowed once to read"}</span>
           <StartTruncate value={record.path ? `${spaceName(record.space)} / ${record.path}` : spaceName(record.space)} />
           {record.answer === "always" ? (
-            <button type="button" onClick={() => openSettings("spaces")} className="shrink-0 hover:text-foreground hover:underline">
+            <button type="button" onClick={() => openSettings("spaces")} className="shrink-0 text-primary hover:underline">
               Manage
             </button>
           ) : null}
-        </div>
+        </Line>
       );
     case "read":
       return (
-        <div className="my-1 flex min-w-0 items-center gap-2 text-muted-foreground text-xs">
+        <Line icon={record.tool === "search" ? icons.search : record.tool === "list" ? icons.list : icons.read}>
           <span className="shrink-0">{record.tool === "search" ? "Searched" : record.tool === "list" ? "Listed" : "Read"}</span>
           <StartTruncate value={record.path ? `${spaceName(record.space)} / ${record.path}` : spaceName(record.space)} />
           {record.query ? <span className="min-w-0 truncate">for “{record.query}”</span> : null}
-        </div>
+        </Line>
       );
     case "stopped":
     case "progress":

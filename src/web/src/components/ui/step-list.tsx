@@ -132,9 +132,12 @@ function Step({
   meta,
   children,
   detail,
+  wrap = false,
   className,
 }: {
   state?: StepState;
+  /** Let long text wrap onto more lines (reasoning in words) instead of truncating to one. */
+  wrap?: boolean;
   /** In an `icon` list: the tool's glyph. */
   icon?: IconData;
   /** A small grey chip on the right ("script", "file"). */
@@ -173,12 +176,19 @@ function Step({
           variant === "icon" ? "group-first/step:top-5 group-last/step:h-5" : "group-first/step:top-4 group-last/step:h-4",
         )}
       />
-      <div className="flex items-center gap-3">
+      <div className={cn("flex gap-3", wrap ? "items-start" : "items-center")}>
         <span className={cn("relative z-10 flex w-5 shrink-0 items-center justify-center", variant === "icon" ? "h-10" : "h-8")}>
           <span className="flex bg-background py-1">{marker}</span>
         </span>
-        <span className={cn("flex min-w-0 flex-1 items-center gap-2", variant === "icon" ? "h-10 text-base text-foreground" : "h-8 text-muted-foreground text-sm", state === "pending" && "text-subtle-foreground")}>
-          <span className={cn("min-w-0 flex-1 truncate", state === "active" && "text-shimmer")}>{children}</span>
+        <span
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2",
+            variant === "icon" ? "text-base text-foreground" : "text-muted-foreground text-sm",
+            wrap ? (variant === "icon" ? "min-h-10 py-2.5" : "min-h-8 py-1.5") : variant === "icon" ? "h-10" : "h-8",
+            state === "pending" && "text-subtle-foreground",
+          )}
+        >
+          <span className={cn("min-w-0 flex-1", wrap ? "wrap-anywhere" : "truncate", state === "active" && "text-shimmer")}>{children}</span>
           {meta ? <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{meta}</span> : null}
           {tag ? <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-muted-foreground text-xs">{tag}</span> : null}
         </span>

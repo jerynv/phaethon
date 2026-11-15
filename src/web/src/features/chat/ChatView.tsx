@@ -125,6 +125,16 @@ export function ChatView({ space }: { space: SpaceView }) {
   const firstUser = chat.messages.find((m) => m.role === "user");
   const title = thread === DRAFT ? "New chat" : (listedTitle ?? (firstUser?.role === "user" ? firstUser.text.split(/\s+/).join(" ").slice(0, 60) : undefined) ?? "Conversation");
 
+  // The composer is keyed by its conversation, except when a new chat has just been sent and taken its id:
+  // it is the same composer, so focus stays in it for the next message.
+  const composer = useRef({ thread, key });
+  if (composer.current.thread !== thread) {
+    const adopted = composer.current.thread === DRAFT && chat.running && chat.messages.length === 2;
+    // A kept key may equal the next conversation's (the next new chat): that one still needs its own composer.
+    const next = adopted ? composer.current.key : key === composer.current.key ? `${key}#${Date.now()}` : key;
+    composer.current = { thread, key: next };
+  }
+
   const retry = () => {
     const u = [...chat.messages].reverse().find((m) => m.role === "user");
     if (!u || u.role !== "user") return;
@@ -185,7 +195,7 @@ export function ChatView({ space }: { space: SpaceView }) {
             {chat.running ? "Following reply" : "Latest"}
           </button>
         )}
-        <Composer key={key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
+        <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
       </div>
       {empty ? <div className="flex-1 pb-[12vh]" /> : null}
     </div>

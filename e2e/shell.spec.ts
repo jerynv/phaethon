@@ -98,7 +98,7 @@ test("conversations can be renamed, pinned to the top and deleted after a confir
   await expect(rows).toHaveText([/Exam prep/, /newer question/]);
   await page.reload();
   await expect(rows).toHaveText([/Exam prep/, /newer question/]);
-  await expect(nav.getByLabel("Pinned")).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Exam prep, pinned" })).toBeVisible();
 
   // Delete asks first; cancelling keeps it.
   await nav.getByRole("button", { name: "Exam prep" }).hover();

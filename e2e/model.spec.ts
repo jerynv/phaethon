@@ -26,13 +26,21 @@ async function send(page: Page, text: string) {
 test("each conversation keeps its own model and effort", async ({ page }) => {
   core = await startCore({ script: { claude: true, repeatLast: true, steps: [{ text: "Okay." }] } });
   await core.open(page);
-  const state = path.join(core.home, "Phaethon", "default", "spaces", "school", ".phaethon");
+  const threads = path.join(core.home, "Phaethon", "default", "spaces", "school", ".phaethon", "threads");
+  const picks = () =>
+    fs
+      .readdirSync(threads)
+      .filter((f) => f.endsWith(".model"))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(threads, f), "utf8")).model as string)
+      .sort();
 
   await pick(page, "Claude Haiku 5.5");
   await page.getByRole("button", { name: /^Reasoning:/ }).click();
   await page.getByRole("button", { name: "Low" }).click();
   await send(page, "first conversation");
-  expect(JSON.parse(fs.readFileSync(path.join(state, "model"), "utf8"))).toEqual({ backend: "phaethon", model: "claude-haiku-5-5", effort: "low" });
+  // The choice is saved beside the conversation once it is sent.
+  const [first] = fs.readdirSync(threads).filter((f) => f.endsWith(".model"));
+  expect(JSON.parse(fs.readFileSync(path.join(threads, first!), "utf8"))).toEqual({ backend: "phaethon", model: "claude-haiku-5-5", effort: "low" });
   expect(core.requests().at(-1)?.effort).toBe("low");
 
   // A new conversation starts with the last pick; changing it there doesn't touch the first one.
@@ -47,10 +55,8 @@ test("each conversation keeps its own model and effort", async ({ page }) => {
   await page.getByRole("navigation").getByRole("button", { name: "second conversation" }).click();
   await expect(page.getByTestId("model-picker")).toContainText("Claude Opus 5.5");
 
-  // The archived first conversation carries its choice beside it.
-  const archived = fs.readdirSync(path.join(state, "threads")).filter((f) => f.endsWith(".model"));
-  expect(archived).toHaveLength(1);
-  expect(JSON.parse(fs.readFileSync(path.join(state, "threads", archived[0]!), "utf8")).model).toBe("claude-haiku-5-5");
+  // Each conversation carries its own choice beside it.
+  expect(picks()).toEqual(["claude-haiku-5-5", "claude-opus-5-5"]);
 });
 
 test("coding agents are in the same picker and say what they need", async ({ page }) => {

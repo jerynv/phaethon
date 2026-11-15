@@ -38,6 +38,7 @@
     "@napi-rs/keyring": "^1.2.0",
     "@phosphor-icons/react": "2.1.10",
     "@seydx/win-job": "0.1.0",
+    "@tanstack/react-virtual": "3.14.24",
     "@tesseract.js-data/eng": "1.0.0",
     "class-variance-authority": "^0.7.1",
     "cross-spawn": "7.0.6",

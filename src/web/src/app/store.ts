@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { errorText } from "@/lib/core";
 import { api, type SpaceView, type ThreadListed } from "./api";
+import { mergeRefresh } from "./sidebar/paging";
 
 /**
  * Where the user is: the active space, the view inside it, the overlays
@@ -75,7 +76,10 @@ type Nav = {
   refreshThread(space: string, id: string): Promise<void>;
   /** Shows the space's new chat. Nothing is created until it is sent. */
   newChat(space: string): Promise<void>;
+  /** Opens a conversation; one older than the loaded pages (opened from search) is read on its own so the sidebar can show it. */
   openThread(space: string, id: string): Promise<void>;
+  /** Adds a conversation the sidebar found elsewhere (a filter's search) to the space's list, if it isn't there. */
+  ensureThread(space: string, row: ThreadListed): void;
   /** A new chat was sent and the core gave it `id`: it takes the draft's place. */
   adoptDraft(space: string, id: string, title: string): void;
   deleteThread(space: string, id: string): Promise<void>;
@@ -197,15 +201,7 @@ export const useNav = create<Nav>((set, get) => {
       try {
         const page = await api.threads(space, { limit: Math.min(REFRESH_MAX, Math.max(THREAD_PAGE, loaded)) });
         if (gen !== generation[space]) return;
-        const listed = new Set(page.items.map((t) => t.id));
-        setList(space, (cur) => ({
-          data: sortRows([...(cur.data ?? []).filter((t) => t.optimistic && !listed.has(t.id)), ...page.items]),
-          loading: false,
-          total: page.total,
-          hasMore: page.hasMore,
-          cursor: page.nextCursor,
-          loadingMore: false,
-        }));
+        setList(space, (cur) => ({ ...mergeRefresh(cur, page), loading: false, total: page.total, loadingMore: false }));
         // The conversation the space shows: the one remembered, else the newest, else a new chat.
         const has = (id: string | undefined) => !!id && (get().threads[space]?.data ?? []).some((t) => t.id === id);
         const shown = get().open[space];
@@ -271,6 +267,13 @@ export const useNav = create<Nav>((set, get) => {
       setOpen(space, id);
       get().selectSpace(space, "chat");
       get().markRead(space, id);
+      const list = get().threads[space];
+      if (list?.data && !list.data.some((t) => t.id === id)) await get().refreshThread(space, id).catch(() => {});
+    },
+
+    ensureThread(space, row) {
+      if ((get().threads[space]?.data ?? []).some((t) => t.id === row.id)) return;
+      setRows(space, (rows) => sortRows([...rows, row]));
     },
 
     adoptDraft(space, id, title) {

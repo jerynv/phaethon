@@ -85,6 +85,37 @@ const threads: Record<string, Thread[]> = {
   thesis: [],
 };
 
+/**
+ * `#mock&many`: School holds about 1500 conversations and Work 400, spread
+ * over a year and a half (denser lately), with a few pinned, to try the
+ * sidebar at scale. Titles are invented from a small vocabulary.
+ */
+function manyConversations(count: number, seed: number): Thread[] {
+  const topics = ["Fourier series", "graph colouring", "the lab report", "binary search trees", "the reading response", "eigenvalues", "the group project", "dynamic programming", "the essay outline", "probability puzzles", "the poster draft", "regular expressions", "the study plan", "limits and continuity", "sorting algorithms", "the survey results"];
+  const forms = ["Questions about {t}", "Notes on {t}", "Explain {t} simply", "Practice set: {t}", "Review {t} before Friday", "Fix my approach to {t}", "Summarize {t}", "Ideas for {t}"];
+  let r = seed;
+  const rand = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const out: Thread[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = topics[Math.floor(rand() * topics.length)]!;
+    const title = `${forms[Math.floor(rand() * forms.length)]!.replace("{t}", t)} #${count - i}`;
+    const age = Math.round(45 * min * i * (1 + i / 150) + rand() * 30 * min);
+    out.push({
+      id: String(1_650_000_000_000 + seed * 10_000 + i),
+      title,
+      updated: now - 6 * min - age,
+      messages: 2 + Math.floor(rand() * 20),
+      text: [`Can you help with ${t}? (${title})`, `Sure. Here is a short walk through ${t}, step by step…`],
+      ...(i % 400 === 7 ? { pinned: now - day + i } : {}),
+    });
+  }
+  return out;
+}
+if (hash.has("many")) {
+  threads.school!.push(...manyConversations(1500, 1));
+  threads.work!.push(...manyConversations(400, 2));
+}
+
 const settings = {
   backend: "phaethon",
   hasAnthropicKey: false,

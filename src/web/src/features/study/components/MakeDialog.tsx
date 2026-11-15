@@ -65,7 +65,7 @@ const STEP_OF: Record<Phase, number> = { what: 0, how: 1, ask: 0, run: 2, error:
  * 3. The run, stage by stage (reading, mapping topics, writing, checking each
  *    against the source), stoppable; failures say what to do.
  * Opened from Study's overview, or from a chat card with the card's plan
- * filled in (`draft`).
+ * filled in (`draft`), at the second step when its course is known.
  */
 export function MakeDialog({
   space,
@@ -109,7 +109,8 @@ export function MakeDialog({
   useEffect(() => {
     if (!open) return;
     setDraft(given ?? emptyDraft(kind));
-    setPhase(given ? "how" : "what");
+    // A plan from chat with its course known starts at the second step; without one, at the first.
+    setPhase(given?.course ? "how" : "what");
     setDir(1);
     setErrs({});
     setEditScope(false);

@@ -173,7 +173,8 @@ test("a test the course doesn't scope is asked about in place, with its topics a
   await expect(dialog.getByText("Made a quiz of 2 questions")).toBeVisible({ timeout: 20_000 });
   await expect(dialog).toContainText("For Test 2");
   // What was said is kept for the course, so the next quiz for Test 2 knows it.
-  const said = fs.readdirSync(path.join(core.home, "Phaethon", "default", ".phaethon", "scope")).map((f) => fs.readFileSync(path.join(core.home, "Phaethon", "default", ".phaethon", "scope", f), "utf8")).join("");
+  const scopeDir = path.join(core.home, "Phaethon", "default", ".phaethon", "scope");
+  const said = fs.readdirSync(scopeDir).map((f) => fs.readFileSync(path.join(scopeDir, f), "utf8")).join("");
   expect(said).toContain("Power sets");
 });
 

@@ -63,8 +63,9 @@ const KINDS_KNOWN: QuestionKind[] = ["choice", "multi", "truefalse", "short", "c
  */
 export function draftFromPlan(plan: StudyPlan, courses: readonly string[], question: string): MakeDraft {
   const paths = plan.sources.map((s) => s.path).filter((p) => p !== "courses");
-  const course = plan.scope?.course ?? courseOfPaths(paths, courses) ?? (courses.length === 1 ? courses[0]! : null);
-  const files = paths.filter((p) => p !== course);
+  // Only a course this space has; otherwise the person picks one.
+  const course = [plan.scope?.course, courseOfPaths(paths, courses)].find((c): c is string => !!c && courses.includes(c)) ?? (courses.length === 1 ? courses[0]! : null);
+  const files = course ? paths.filter((p) => p !== course && p.startsWith(`${course}/`)) : [];
   const kinds = plan.kinds.filter((k): k is QuestionKind => (KINDS_KNOWN as string[]).includes(k));
   const d = emptyDraft(plan.kind, course);
   return {

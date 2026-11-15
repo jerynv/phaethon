@@ -1,26 +1,9 @@
-import { PushPinSimple } from "@phosphor-icons/react";
-import {
-  ChevronRightIcon,
-  CircleAlertIcon,
-  CopyIcon,
-  EllipsisIcon,
-  FolderOpenIcon,
-  MessageSquareIcon,
-  PencilLineIcon,
-  PinIcon,
-  PinOffIcon,
-  PlusIcon,
-  RotateCcwIcon,
-  Settings2Icon,
-  SquarePenIcon,
-  Trash2Icon,
-} from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type Transition } from "motion/react";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { BrandMark } from "@/components/brand-mark";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
+import { ProviderIcon } from "@/components/provider-icon";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { cleanMessage, FieldError, RowError } from "@/components/errors";
 import { toast } from "@/components/toast";
@@ -37,7 +20,6 @@ import {
   SidebarGroup,
   SidebarGroupAction,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
   SidebarMenuBadge,
@@ -48,7 +30,6 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { convState, useChats, useConvState, type ConvState } from "@/features/chat/store";
 import { errorText } from "@/lib/core";
 import { compactTime, isMac } from "@/lib/platform";
@@ -60,8 +41,9 @@ import { UpdatePill } from "./UpdatePill";
 import { chatKey, DRAFT, useNav, type ThreadRow } from "./store";
 
 /**
- * The left panel, after T3 Code's: spaces are groups with their
- * conversations under them, 28 px rows. Every conversation says what it is
+ * The left panel (references a163, 3940, 9334): a New chat row, then the
+ * "Spaces" section with each space's conversations under it as its recents,
+ * 28 px rows on a 16 px icon column, and a quiet footer. Every conversation says what it is
  * doing, and several can be busy at once: a status gutter on the left
  * (replying, needs you, new reply, failed, pinned) and a trailing label that
  * names the live state, else the time, giving way to actions on hover.
@@ -73,31 +55,6 @@ import { chatKey, DRAFT, useNav, type ThreadRow } from "./store";
 
 const SHOWN = 8;
 
-export function IconButton({ label, keys, onClick, children, className }: { label: string; keys?: string[]; onClick: () => void; children: ReactNode; className?: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            aria-label={label}
-            onClick={onClick}
-            className={cn("app-no-drag inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4.5", className)}
-          />
-        }
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipPopup side="bottom">
-        <span className="flex items-center gap-2">
-          {label}
-          {keys ? <Keys keys={keys} /> : null}
-        </span>
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 function Keys({ keys, className }: { keys: string[]; className?: string }) {
   return (
     <KbdGroup className={className}>
@@ -105,27 +62,6 @@ function Keys({ keys, className }: { keys: string[]; className?: string }) {
         <Kbd key={k}>{k}</Kbd>
       ))}
     </KbdGroup>
-  );
-}
-
-/** The sidebar's share of the title bar: the mark, then hide-sidebar and new-chat. */
-function TopBar() {
-  const toggle = useNav((s) => s.toggleSidebar);
-  const space = useNav((s) => s.activeSpace);
-  const newChat = useNav((s) => s.newChat);
-  return (
-    <div className={cn("app-drag flex h-(--titlebar-height) shrink-0 items-center gap-2 border-b pr-2", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}>
-      <BrandMark className="size-4 text-foreground" label="Phaethon" />
-      {!isMac() ? <span className="font-medium text-sm tracking-title">Phaethon</span> : null}
-      <div className="ml-auto flex items-center gap-0.5">
-        <IconButton label="Hide sidebar" keys={keysFor("sidebar").keys} onClick={toggle}>
-          <Icon icon={icons.sidebar} />
-        </IconButton>
-        <IconButton label="New chat" keys={keysFor("newChat").keys} onClick={() => space && void newChat(space)}>
-          <Icon icon={icons.newChat} />
-        </IconButton>
-      </div>
-    </div>
   );
 }
 
@@ -158,17 +94,12 @@ function useRowMotion() {
 
 type RowState = ConvState | "unread" | "pinned" | null;
 
-/** A turning arc over a faint ring, so a busy row reads as moving even at 12 px. */
+/** The spinner arc, in the info blue, so a busy row reads as moving even at 12 px. */
 function WorkingMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 12 12" className={cn("size-3 shrink-0 text-info-foreground", className)} aria-hidden>
-      <circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.75" opacity="0.2" />
-      <circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeDasharray="9 20" className="origin-center animate-spin [animation-duration:0.9s]" />
-    </svg>
-  );
+  return <Spinner size="xs" aria-hidden role={undefined} aria-label={undefined} className={cn("text-info-foreground", className)} />;
 }
 
-function StatusMark({ state }: { state: RowState }) {
+function StatusMark({ state }: { state: RowState | "idle" }) {
   return (
     <AnimatePresence initial={false} mode="popLayout">
       {state ? (
@@ -188,11 +119,13 @@ function StatusMark({ state }: { state: RowState }) {
               <span className="relative size-2 rounded-full bg-warning" />
             </span>
           ) : state === "failed" ? (
-            <CircleAlertIcon className="size-3 text-error-foreground" strokeWidth={2.25} />
+            <Icon icon={icons.error} className="size-3 text-error-foreground" />
           ) : state === "unread" ? (
             <span className="size-1.5 rounded-full bg-primary" />
+          ) : state === "pinned" ? (
+            <Icon icon={icons.pin} className="size-3 text-subtle-foreground" />
           ) : (
-            <PushPinSimple className="size-3 text-subtle-foreground" weight="fill" />
+            <span className="size-1.5 rounded-full border border-subtle-foreground/60" />
           )}
         </motion.span>
       ) : null}
@@ -266,31 +199,31 @@ function ThreadMenuItems({ a, Item, Separator }: { a: ThreadActions; Item: typeo
   return (
     <>
       <Item onClick={a.open}>
-        <MessageSquareIcon />
+        <Icon icon={icons.chat} />
         Open
       </Item>
       <Item onClick={a.rename}>
-        <PencilLineIcon />
+        <Icon icon={icons.rename} />
         Rename
         <span className="ml-auto pl-4 text-2xs text-muted-foreground">F2</span>
       </Item>
       {a.resetTitle ? (
         <Item onClick={a.resetTitle}>
-          <RotateCcwIcon />
+          <Icon icon={icons.undo} />
           Reset title
         </Item>
       ) : null}
       <Item onClick={a.pin}>
-        {a.pinned ? <PinOffIcon /> : <PinIcon />}
+        <Icon icon={a.pinned ? icons.unpin : icons.pin} />
         {a.pinned ? "Unpin" : "Pin to top"}
       </Item>
       <Item onClick={a.copy}>
-        <CopyIcon />
+        <Icon icon={icons.copy} />
         Copy title
       </Item>
       <Separator />
       <Item variant="destructive" disabled={a.busy} onClick={a.remove}>
-        <Trash2Icon />
+        <Icon icon={icons.delete} />
         Delete…
       </Item>
     </>
@@ -355,7 +288,7 @@ function ThreadRowItem({ space, thread, active, onDelete }: { space: string; thr
               data-state={state ?? undefined}
               onClick={actions.open}
               onKeyDown={onKeyDown}
-              className={cn("pl-7", state === "unread" && "font-medium text-foreground")}
+              className={cn("pl-8", state === "unread" && "font-medium text-foreground")}
             >
               <Truncate side="right" className="flex-1">
                 {thread.title}
@@ -367,12 +300,12 @@ function ThreadRowItem({ space, thread, active, onDelete }: { space: string; thr
               ) : null}
             </SidebarMenuButton>
             <span className="pointer-events-none absolute inset-y-0 left-2 flex w-4 items-center justify-center">
-              <StatusMark state={state} />
+              <StatusMark state={state ?? "idle"} />
             </span>
             <SidebarMenuTrail keep={menu}>
               <Menu open={menu} onOpenChange={setMenu}>
                 <MenuTrigger render={<SidebarMenuAction aria-label="Conversation actions" />}>
-                  <EllipsisIcon />
+                  <Icon icon={icons.more} />
                 </MenuTrigger>
                 <MenuPopup align="start" side="right">
                   <ThreadMenuItems a={actions} Item={MenuItem} Separator={MenuSeparator} />
@@ -395,9 +328,9 @@ function DraftRow({ space, active }: { space: string; active: boolean }) {
   const rowMotion = useRowMotion();
   return (
     <motion.li {...rowMotion} className="group/menu-item relative overflow-hidden" data-slot="sidebar-menu-item">
-      <SidebarMenuButton isActive={active} aria-current={active ? "page" : undefined} data-nav-row="" onClick={() => void newChat(space)} className="pl-7 text-muted-foreground">
+      <SidebarMenuButton isActive={active} aria-current={active ? "page" : undefined} data-nav-row="" onClick={() => void newChat(space)} className="relative pl-8 text-muted-foreground">
         <span className="pointer-events-none absolute inset-y-0 left-2 flex w-4 items-center justify-center">
-          <SquarePenIcon className="size-3" strokeWidth={2} />
+          <Icon icon={icons.newChat} className="size-3.5" />
         </span>
         <span className="flex-1 truncate">New chat</span>
       </SidebarMenuButton>
@@ -435,15 +368,15 @@ function SpaceMenuItems({ space, Item }: { space: SpaceView; Item: typeof MenuIt
   return (
     <>
       <Item onClick={() => void newChat(space.id)}>
-        <SquarePenIcon />
+        <Icon icon={icons.newChat} />
         New chat
       </Item>
       <Item onClick={() => void api.showSpace(space.id).catch((e) => toast.error("Couldn’t show the folder", errorText(e)))}>
-        <FolderOpenIcon />
+        <Icon icon={icons.folderOpen} />
         Show folder
       </Item>
       <Item onClick={() => openSettings("spaces")}>
-        <Settings2Icon />
+        <Icon icon={icons.settings} />
         Space settings
       </Item>
     </>
@@ -484,10 +417,10 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
               if (e.key === "ArrowRight" && collapsed) toggleCollapsed(space.id);
               else if (e.key === "ArrowLeft" && !collapsed) toggleCollapsed(space.id);
             }}
-            className="pl-6 group-hover/menu-item:pr-12 group-has-focus-visible/menu-item:pr-12 group-data-[keep=true]/menu-item:pr-12"
+            className="group-hover/menu-item:pr-18 group-has-focus-visible/menu-item:pr-18 group-data-[keep=true]/menu-item:pr-18"
           >
             <SpaceAvatar name={space.name} hue={space.hue} />
-            <Truncate className={cn("flex-1 font-medium", active && !settingsOpen ? "text-foreground" : "text-sidebar-foreground/90")}>{space.name}</Truncate>
+            <Truncate className={cn("flex-1", active && !settingsOpen ? "text-foreground" : "text-sidebar-foreground")}>{space.name}</Truncate>
             {collapsed ? (
               <span className={cn("ml-auto flex shrink-0 items-center gap-1.5 pl-1", hideOnHover)}>
                 {activity.working ? (
@@ -504,27 +437,20 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
               <SidebarMenuBadge className="text-3xs">⌘{index + 1}</SidebarMenuBadge>
             ) : null}
           </SidebarMenuButton>
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-expanded={!collapsed}
-            aria-label={`${collapsed ? "Expand" : "Collapse"} ${space.name}`}
-            onClick={() => toggleCollapsed(space.id)}
-            className="absolute inset-y-0 left-1 flex w-5 items-center justify-center text-subtle-foreground hover:text-foreground"
-          >
-            <ChevronRightIcon className={cn("size-3 transition-transform duration-150", !collapsed && "rotate-90")} strokeWidth={2.25} />
-          </button>
           <SidebarMenuTrail keep={menu}>
+            <SidebarMenuAction tabIndex={-1} aria-expanded={!collapsed} aria-label={`${collapsed ? "Expand" : "Collapse"} ${space.name}`} onClick={() => toggleCollapsed(space.id)}>
+              <Icon icon={icons.chevronRight} className={cn("transition-transform duration-150 ease-out-soft", !collapsed && "rotate-90")} />
+            </SidebarMenuAction>
             <Menu open={menu} onOpenChange={setMenu}>
               <MenuTrigger render={<SidebarMenuAction aria-label={`${space.name} actions`} />}>
-                <EllipsisIcon />
+                <Icon icon={icons.more} />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
                 <SpaceMenuItems space={space} Item={MenuItem} />
               </MenuPopup>
             </Menu>
             <SidebarMenuAction aria-label={`New chat in ${space.name}`} onClick={() => void newChat(space.id)}>
-              <SquarePenIcon strokeWidth={1.75} />
+              <Icon icon={icons.newChat} />
             </SidebarMenuAction>
           </SidebarMenuTrail>
         </ContextMenuTrigger>
@@ -544,9 +470,9 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
           >
             <SidebarMenuSub className="mt-px" aria-label={`${space.name} conversations`}>
               {threads?.loading && !threads.data ? (
-                [0, 1, 2].map((i) => <SidebarMenuSkeleton key={i} index={i + 1} className="pl-7" />)
+                [0, 1, 2].map((i) => <SidebarMenuSkeleton key={i} index={i + 1} className="pl-8" />)
               ) : threads?.error && !threads.data ? (
-                <RowError className="h-7 pl-7" message="Couldn’t load conversations" onRetry={() => void loadThreads(space.id)} />
+                <RowError className="h-7 pl-8" message="Couldn’t load conversations" onRetry={() => void loadThreads(space.id)} />
               ) : (
                 <LayoutGroup id={`threads-${space.id}`}>
                   <AnimatePresence initial={false}>
@@ -555,10 +481,10 @@ function SpaceGroup({ space, index, onDelete }: { space: SpaceView; index: numbe
                       <ThreadRowItem key={t.id} space={space.id} thread={t} active={chatOn && open === t.id} onDelete={(x) => onDelete(space.id, x)} />
                     ))}
                   </AnimatePresence>
-                  {count === 0 && !draftOpen ? <li className="flex h-7 items-center pl-7 text-subtle-foreground text-xs">No conversations yet</li> : null}
+                  {count === 0 && !draftOpen ? <li className="flex h-7 items-center pl-8 text-subtle-foreground text-xs">No conversations yet</li> : null}
                   {rest.length > SHOWN ? (
                     <li>
-                      <SidebarMenuButton size="sm" tone="muted" className="pl-7" data-nav-row="" onClick={() => setAll((v) => !v)}>
+                      <SidebarMenuButton size="sm" tone="muted" className="pl-8" data-nav-row="" onClick={() => setAll((v) => !v)}>
                         {all ? "Show fewer" : `Show ${rest.length - shown.length} more`}
                       </SidebarMenuButton>
                     </li>
@@ -610,10 +536,9 @@ function ConfirmDeleteThread({ target, onClose }: { target: { space: string; thr
           <FieldError>{error}</FieldError>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogClose render={<Button size="sm" variant="ghost" />}>Cancel</AlertDialogClose>
-          <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
-            {busy ? <Spinner size="sm" /> : null}
-            {busy ? "Deleting…" : "Delete"}
+          <AlertDialogClose render={<Button size="sm" variant="outline" />}>Cancel</AlertDialogClose>
+          <Button size="sm" variant="destructive" pending={busy} onClick={() => void remove()}>
+            Delete
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>
@@ -632,24 +557,89 @@ function moveFocus(e: KeyboardEvent<HTMLElement>) {
   rows[next]?.focus();
 }
 
+/** The rows above the spaces (the references' fixed rows): New chat, with its keys. */
+function FixedRows() {
+  const space = useNav((s) => s.activeSpace);
+  const newChat = useNav((s) => s.newChat);
+  return (
+    <SidebarMenu>
+      <li className="group/menu-item relative">
+        <SidebarMenuButton
+          data-nav-row=""
+          disabled={!space}
+          aria-keyshortcuts={keysFor("newChat").aria}
+          onClick={() => space && void newChat(space).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)))}
+        >
+          <Icon icon={icons.add} />
+          <span className="flex-1 truncate">New chat</span>
+          <SidebarMenuBadge className="invisible group-hover/menu-item:visible">
+            <Keys keys={keysFor("newChat").keys} />
+          </SidebarMenuBadge>
+        </SidebarMenuButton>
+      </li>
+    </SidebarMenu>
+  );
+}
+
+const CONNECT_MARKS = ["claude", "openai", "gemini", "mistral", "ollama"];
+
+/**
+ * The footer's invitation while no model is set up (a163's "Connect apps"):
+ * a short title, one line, the providers' marks. It opens Settings › Providers
+ * and goes away once a model answers.
+ */
+function ConnectModel() {
+  const openSettings = useNav((s) => s.openSettings);
+  const settingsOpen = useNav((s) => s.settings !== null);
+  const [ready, setReady] = useState(true);
+  useEffect(() => {
+    if (settingsOpen) return;
+    let live = true;
+    void api.settings().then((s) => live && setReady(s.providerReady !== false), () => {});
+    return () => {
+      live = false;
+    };
+  }, [settingsOpen]);
+  if (ready) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => openSettings("providers")}
+      className="flex flex-col items-start gap-1 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <span className="font-medium text-foreground text-sm">Connect a model</span>
+      <span className="text-muted-foreground text-xs">Claude, ChatGPT, Gemini, or one that runs on this computer.</span>
+      <span className="mt-1.5 flex items-center gap-2" aria-hidden>
+        {CONNECT_MARKS.map((id) => (
+          <ProviderIcon key={id} id={id} className="size-3.5" />
+        ))}
+        <span className="flex size-3.5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Icon icon={icons.add} className="size-2.5" />
+        </span>
+      </span>
+    </button>
+  );
+}
+
 export function Sidebar() {
   const spaces = useNav((s) => s.spaces);
   const loadSpaces = useNav((s) => s.loadSpaces);
   const openSettings = useNav((s) => s.openSettings);
+  const settingsOpen = useNav((s) => s.settings !== null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<{ space: string; thread: ThreadRow } | null>(null);
   return (
     <Panel aria-label="Spaces and conversations" role="navigation">
       <SidebarRail />
-      <SidebarHeader>
-        <TopBar />
-      </SidebarHeader>
-      <SidebarContent className="pt-2 pb-2" onKeyDown={moveFocus}>
+      <SidebarContent className="pt-2.5 pb-3" onKeyDown={moveFocus}>
         <SidebarGroup>
+          <FixedRows />
+        </SidebarGroup>
+        <SidebarGroup className="mt-4">
           <SidebarGroupLabel>
             Spaces
             <SidebarGroupAction aria-label="New space" onClick={() => setCreating(true)}>
-              <PlusIcon strokeWidth={2} />
+              <Icon icon={icons.add} />
             </SidebarGroupAction>
           </SidebarGroupLabel>
           {spaces.loading && !spaces.data ? (
@@ -657,7 +647,7 @@ export function Sidebar() {
           ) : spaces.error && !spaces.data ? (
             <RowError className="h-7 px-2" message="Couldn’t load your spaces" onRetry={() => void loadSpaces()} />
           ) : (
-            <SidebarMenu className="gap-2">
+            <SidebarMenu className="gap-3">
               {(spaces.data ?? []).map((s, i) => (
                 <SpaceGroup key={s.id} space={s} index={i} onDelete={(space, thread) => setDeleting({ space, thread })} />
               ))}
@@ -665,12 +655,13 @@ export function Sidebar() {
           )}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="gap-0.5">
+        <ConnectModel />
         <UpdatePill />
-        <SidebarMenuButton tone="muted" onClick={() => openSettings()}>
-          <Settings2Icon className="size-4" strokeWidth={1.75} />
+        <SidebarMenuButton isActive={settingsOpen} aria-keyshortcuts={keysFor("settings").aria} onClick={() => openSettings()} className="group/settings">
+          <Icon icon={icons.settings} />
           <span className="flex-1">Settings</span>
-          <Keys keys={keysFor("settings").keys} />
+          <Keys keys={keysFor("settings").keys} className="opacity-0 transition-opacity group-hover/settings:opacity-100" />
         </SidebarMenuButton>
       </SidebarFooter>
       <NewSpaceDialog open={creating} onOpenChange={setCreating} />

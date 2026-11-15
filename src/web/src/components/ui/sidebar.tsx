@@ -180,7 +180,7 @@ export function SidebarGroupLabel({ className, render, ...props }: useRender.Com
   return useRender({
     defaultTagName: "div",
     render,
-    props: mergeProps({ className: cn("group/label flex h-6 shrink-0 items-center gap-1 px-2 font-medium text-2xs text-muted-foreground", className), "data-slot": "sidebar-group-label" }, props),
+    props: mergeProps({ className: cn("group/label flex h-7 shrink-0 items-center gap-1 px-2 text-subtle-foreground text-xs", className), "data-slot": "sidebar-group-label" }, props),
   });
 }
 
@@ -270,7 +270,7 @@ export function SidebarMenuAction({ className, render, ...props }: useRender.Com
   const defaults = {
     type: "button" as const,
     className: cn(
-      "inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/8 [&_svg]:size-3.5",
+      "inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-row-selected hover:text-foreground [&_svg]:size-3.5",
       className,
     ),
     "data-slot": "sidebar-menu-action",
@@ -301,7 +301,7 @@ const WIDTHS = ["62%", "48%", "71%", "55%", "38%", "66%", "44%"];
 export function SidebarMenuSkeleton({ index = 0, icon = false, className }: { index?: number; icon?: boolean; className?: string }) {
   return (
     <div className={cn("flex h-7 items-center gap-2 px-2", className)} data-slot="sidebar-menu-skeleton" aria-hidden>
-      {icon ? <Skeleton className="size-4 shrink-0 rounded-[4px]" /> : null}
+      {icon ? <Skeleton className="size-4 shrink-0 rounded-xs" /> : null}
       <Skeleton className="h-2.5" style={{ width: WIDTHS[index % WIDTHS.length] }} />
     </div>
   );

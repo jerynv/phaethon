@@ -1,5 +1,8 @@
+import { BrandMark } from "@/components/brand-mark";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
+import { toast } from "@/components/toast";
+import { errorText } from "@/lib/core";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { createPortal } from "react-dom";
 import { SpaceAvatar } from "@/components/space-avatar";
@@ -14,14 +17,15 @@ import { useActiveSpace, useNav, type View } from "./store";
 import { VIEWS } from "./views";
 
 /**
- * The title bar over the main area, inside the app panel (docs/UI-REBUILD.md
- * › App frame). There is exactly one, rendered by the shell, so nothing in it
- * moves when the page changes:
+ * The title bar across the top of the app panel (docs/UI-REBUILD.md › App
+ * frame). There is exactly one, rendered by the shell, so nothing in it moves
+ * when the page changes:
  *
- *   [sidebar] [Chat Study Grades Plan Courses] | title ……[ Search ⌘K ]…… [page actions]
+ *   ● ● ●  ✳ ▯  [Chat Study Grades Plan Courses] | title ……[ Search ⌘K ]…… [page actions]
  *
- * Three columns: the view tabs (pill style) and the page's title on the left,
- * search centred on the panel, the page's actions on the right. Pages fill the
+ * Three columns: the mark, sidebar toggle, view tabs (pill style) and the
+ * page's title on the left, search centred on the panel, the page's actions
+ * on the right. Pages fill the
  * title and actions by rendering `<Header title actions />` anywhere in their
  * tree: it portals into the bar, and only while that page is the visible one
  * (a page kept alive in the background stays out of the bar). It is the
@@ -71,7 +75,7 @@ export function HeaderIconButton({ label, keys, onClick, children }: { label: st
             type="button"
             aria-label={label}
             onClick={onClick}
-            className="app-no-drag inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-4.5"
+            className="app-no-drag inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4.5"
           />
         }
       >
@@ -104,9 +108,9 @@ function ViewTabs() {
       <TabsList aria-label="Views" variant="pill">
         {VIEWS.map((v, i) => (
           <Tooltip key={v.id}>
-            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} />}>
+            <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} className="font-normal" />}>
               <Icon icon={v.icon} />
-              <span className="@max-5xl/header:hidden">{v.label}</span>
+              <span className="@max-xl/lead:hidden">{v.label}</span>
             </TooltipTrigger>
             <TooltipPopup side="bottom">
               <span className="flex items-center gap-2">
@@ -125,65 +129,84 @@ function ViewTabs() {
   );
 }
 
-/** Search, as a field centred in the bar; it opens the command palette. */
+/**
+ * Search, as a quiet field centred on the panel (the references' "Search ⌘K");
+ * it opens the command palette. The keys are plain text, not keycaps.
+ */
 function SearchField() {
   const setPalette = useNav((s) => s.setPalette);
-  const keys = keysFor("search").keys;
+  const open = useNav((s) => s.paletteOpen);
+  const { keys, aria } = keysFor("search");
   return (
     <button
       type="button"
       aria-label="Search"
-      aria-keyshortcuts={keysFor("search").aria}
+      aria-keyshortcuts={aria}
+      aria-expanded={open}
       onClick={() => setPalette(true)}
-      className="app-no-drag flex h-8 w-(--search-width) items-center gap-2 rounded-lg border bg-well pr-1.5 pl-2.5 text-sm text-subtle-foreground outline-none transition-colors hover:border-border-strong hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring @max-3xl/header:w-auto @max-3xl/header:border-transparent @max-3xl/header:bg-transparent"
+      className="app-no-drag group/search flex h-7 w-(--search-width) items-center gap-2 rounded-lg border bg-well pr-2 pl-2.5 text-sm text-subtle-foreground outline-none transition-colors hover:border-border-strong hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:border-border-strong @max-3xl/header:w-auto @max-3xl/header:border-transparent @max-3xl/header:bg-transparent @max-3xl/header:px-1.5"
     >
       <Icon icon={icons.search} className="size-4" />
       <span className="flex-1 text-left @max-3xl/header:hidden">Search</span>
-      <KbdGroup className="@max-3xl/header:hidden">
+      <span aria-hidden className="flex items-center gap-0.5 text-xs tabular-nums @max-3xl/header:hidden">
         {keys.map((k) => (
-          <Kbd key={k}>{k}</Kbd>
+          <span key={k}>{k}</span>
         ))}
-      </KbdGroup>
+      </span>
     </button>
   );
 }
 
-/** The shell's one title bar. */
+/**
+ * The shell's one title bar, across the whole panel (references a163, 9334,
+ * 3940): the mark and the sidebar toggle, the view tabs and the page's title
+ * on the left, search centred over the page, the page's actions on the right.
+ * On macOS the traffic lights sit in its left end.
+ */
 export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void } }) {
   const space = useActiveSpace();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
   const toggle = useNav((s) => s.toggleSidebar);
   const settings = useNav((s) => s.settings);
+  const newChat = useNav((s) => s.newChat);
   const tabs = !!space?.educationEnabled;
   return (
     <header
       data-slot="app-header"
+      data-sidebar={sidebarOpen ? "open" : "closed"}
       className={cn(
-        "@container/header app-drag grid h-(--titlebar-height) shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b px-3",
-        !sidebarOpen && isMac() && "pl-(--traffic-light-inset)",
+        "@container/header app-drag grid h-(--titlebar-height) shrink-0 items-center border-b transition-[grid-template-columns] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
+        // The first track is the sidebar's width, so search centres over the page below it.
+        "grid-cols-[var(--sidebar-width)_minmax(0,1fr)_auto_minmax(0,1fr)] data-[sidebar=closed]:grid-cols-[0_minmax(0,1fr)_auto_minmax(0,1fr)]",
       )}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        {!sidebarOpen ? (
-          <HeaderIconButton label="Show sidebar" keys={keysFor("sidebar").keys} onClick={toggle}>
+      <div className={cn("@container/lead col-span-2 flex min-w-0 items-center gap-1 pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}>
+        <BrandMark className="size-4 text-foreground" label="Phaethon" />
+        <div className="mr-1 ml-2 flex items-center">
+          <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
             <Icon icon={icons.sidebar} />
           </HeaderIconButton>
-        ) : null}
+          {!sidebarOpen && space ? (
+            <HeaderIconButton label="New chat" keys={keysFor("newChat").keys} onClick={() => void newChat(space.id).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)))}>
+              <Icon icon={icons.newChat} />
+            </HeaderIconButton>
+          ) : null}
+        </div>
         {space && !settings && !tabs ? (
-          <span className="flex min-w-0 shrink items-center gap-1.5 text-sm">
+          <span className="flex min-w-0 shrink items-center gap-2 px-1 text-sm">
             <SpaceAvatar name={space.name} hue={space.hue} />
-            <Truncate className="max-w-40 text-muted-foreground">{space.name}</Truncate>
+            <Truncate className="max-w-40 text-foreground">{space.name}</Truncate>
           </span>
         ) : null}
         <ViewTabs />
         <div
           ref={bind.title}
           data-slot="header-title"
-          className="flex min-w-0 flex-1 items-center gap-1.5 border-l pl-3 text-sm text-muted-foreground empty:hidden [&_.font-medium]:text-foreground"
+          className="ml-2 flex min-w-0 flex-1 items-center gap-1.5 border-l pl-3 text-sm text-muted-foreground empty:hidden [&_.font-medium]:text-foreground"
         />
       </div>
       <SearchField />
-      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 items-center justify-end gap-1" />
+      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 items-center justify-end gap-1 pr-3 pl-3" />
     </header>
   );
 }

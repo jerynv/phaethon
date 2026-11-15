@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { FieldError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
+import { ToggleRow } from "@/components/ui/toggle-row";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
 import { api } from "./api";
@@ -79,27 +80,27 @@ export function NewSpaceDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                   aria-label={`Hue ${h}`}
                   aria-pressed={h === hue}
                   onClick={() => setHue(h)}
-                  className={cn("size-5 rounded-full ring-offset-2 ring-offset-popover transition-shadow", h === hue && "ring-2 ring-foreground/60")}
+                  className={cn("size-5 rounded-full ring-offset-2 ring-offset-popover transition-[box-shadow,scale] hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", h === hue && "ring-2 ring-foreground/60")}
                   style={{ background: `oklch(0.62 0.14 ${h})` }}
                 />
               ))}
             </div>
           </div>
-          <label className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
-            <span className="flex flex-col">
-              <span className="font-medium text-sm">Study tools</span>
-              <span className="text-muted-foreground text-xs">Courses, flashcards, quizzes, grades and a study plan.</span>
-            </span>
-            <Switch checked={edu} onCheckedChange={setEdu} />
-          </label>
+          <ToggleRow
+            className="rounded-card border px-4"
+            icon={<Icon icon={icons.courses} />}
+            title="Study tools"
+            description="Courses, flashcards, quizzes, grades and a study plan."
+            checked={edu}
+            onCheckedChange={setEdu}
+          />
         </DialogPanel>
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => void submit()} disabled={busy} className="min-w-24">
-            {busy ? <Spinner size="sm" /> : null}
-            {busy ? "Creating…" : "Create space"}
+          <Button size="sm" onClick={() => void submit()} pending={busy}>
+            Create space
           </Button>
         </DialogFooter>
       </DialogPopup>

@@ -65,7 +65,7 @@ test("two conversations in one space reply at once, and switching clears nothing
 
   // Back to the first: it is all there, still streaming, under its own title, with no skeleton.
   await sidebar.getByRole("button", { name: /^first question/ }).click();
-  await expect(page.locator("main header")).toContainText("first question");
+  await expect(page.locator("[data-slot=app-header]")).toContainText("first question");
   await expect(page.locator('[data-role="user"]')).toHaveCount(1);
   await expect(page.locator('[data-role="user"]')).toContainText("first question");
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("alpha3");
@@ -73,7 +73,7 @@ test("two conversations in one space reply at once, and switching clears nothing
   // To another page and back: still there.
   await page.getByRole("tab", { name: "Grades" }).click();
   await page.getByRole("tab", { name: "Chat" }).click();
-  await expect(page.locator("main header")).not.toContainText("New chat");
+  await expect(page.locator("[data-slot=app-header]")).not.toContainText("New chat");
   await expect(page.locator('[data-role="user"]')).toHaveCount(1);
   await expect(page.locator('[data-role="user"]')).toContainText("first question");
 

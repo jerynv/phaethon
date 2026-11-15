@@ -1,5 +1,6 @@
-import { ArrowDownCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { api, type UpdateView } from "./api";
 import { useNav } from "./store";
 
@@ -19,9 +20,9 @@ export function UpdatePill() {
     <button
       type="button"
       onClick={() => openSettings("about")}
-      className="flex h-7 items-center gap-2 rounded-md bg-primary/8 px-2 text-primary text-sm transition-colors hover:bg-primary/12"
+      className="flex h-7 items-center gap-2 rounded-md bg-primary/8 px-2 text-primary text-sm transition-colors hover:bg-primary/12 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <ArrowDownCircleIcon className="size-4" />
+      <Icon icon={icons.download} className="size-4" />
       <span className="min-w-0 truncate">Update to {view.status.version}</span>
     </button>
   );

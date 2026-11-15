@@ -144,8 +144,9 @@ function Main() {
 /**
  * The app frame (docs/UI-REBUILD.md › App frame): the window is a soft grey
  * canvas, and the whole app sits in one white panel inset from its edges,
- * with a large radius and a hairline. Inside the panel the sidebar and the
- * main column share a top hairline, so the title bar reads as one band.
+ * with a large radius and a hairline. The title bar runs across the top of
+ * the panel; below it the sidebar and the page sit side by side, split by a
+ * hairline, and a faint dot matrix fades in at the top of every page.
  */
 export function Shell() {
   useShortcuts();
@@ -154,24 +155,26 @@ export function Shell() {
   const viewer = useNav((s) => s.viewer);
   return (
     <div data-slot="app-canvas" className="h-full bg-canvas p-(--frame-inset)">
-      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} data-frame="panel" className="overflow-hidden rounded-panel border bg-background shadow-card">
-        <Sidebar />
+      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} data-frame="panel" className="flex-col overflow-hidden rounded-panel border bg-background shadow-card">
         <HeaderSlots>
           {(bind) => (
-            <main className="flex min-w-0 flex-1 flex-col bg-background">
+            <>
               <AppHeader bind={bind} />
-              <div className="relative flex min-h-0 flex-1 flex-col">
-                <DotMatrix className="z-0" />
-                <Main />
+              <div className="flex min-h-0 flex-1">
+                <Sidebar />
+                <main className="relative flex min-w-0 flex-1 flex-col bg-background">
+                  <DotMatrix className="z-0" />
+                  <Main />
+                </main>
+                {viewer ? (
+                  <Suspense fallback={null}>
+                    <FileViewer />
+                  </Suspense>
+                ) : null}
               </div>
-            </main>
+            </>
           )}
         </HeaderSlots>
-        {viewer ? (
-          <Suspense fallback={null}>
-            <FileViewer />
-          </Suspense>
-        ) : null}
         <CommandPalette />
       </SidebarProvider>
     </div>

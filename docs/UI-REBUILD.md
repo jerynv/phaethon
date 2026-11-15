@@ -93,7 +93,7 @@ Tracking: `tracking-title` (-0.01em) on 15–18 px, `tracking-heading` (-0.015em
 
 ### Geometry and layers
 
-`--titlebar-height` 48, `--sidebar-width` 248 (user-resizable 216–420), `--chat-max-width` 736, `--page-max-width` 768, `--page-wide-max-width` 1024, `--settings-max-width` 672, `--search-width` 320, `--traffic-light-inset` 76 (the only place that number appears). Layers: `z-(--z-sheet)` < `--z-dialog` < `--z-popup` < `--z-tooltip` < `--z-toast`. Responsive rules use container queries on the surface (`@container/header`, `@container/composer`, `@container/page`), not viewport breakpoints.
+`--titlebar-height` 48, `--sidebar-width` 248 (user-resizable 216–420), `--chat-max-width` 736, `--page-max-width` 768, `--page-wide-max-width` 1024, `--settings-max-width` 672, `--search-width` 272, `--traffic-light-inset` 76 (the only place that number appears). Layers: `z-(--z-sheet)` < `--z-dialog` < `--z-popup` < `--z-tooltip` < `--z-toast`. Responsive rules use container queries on the surface (`@container/header`, `@container/composer`, `@container/page`), not viewport breakpoints.
 
 ### Motion
 
@@ -106,26 +106,31 @@ Tracking: `tracking-title` (-0.01em) on 15–18 px, `tracking-heading` (-0.015em
 After a163, 9334, b72b, dca9, 3940 (Alpaca) and 7274, 8bdf, 02a1 (Conduit Agent Space).
 
 ```
-┌ canvas (--canvas), padding --frame-inset ─────────────────────────────────────────────┐
-│ ┌ panel: rounded-panel, border, bg-background, shadow-card ─────────────────────────┐ │
-│ │ ● ● ●  P Phaethon   ▯ ✎ │ [💬 Chat][Study][Grades][Plan][Courses] | title  [ 🔍 Search  ⌘K ]  actions │
-│ │─────────────────────────┼───────────────────────────────────────────────────────────│ │
-│ │ sidebar (bg-background) │ main: page, faint dot matrix fading from the top          │ │
-│ │                         │                                                           │ │
-│ └─────────────────────────┴───────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+┌ canvas (--canvas), padding --frame-inset ──────────────────────────────────────────────┐
+│ ┌ panel: rounded-panel, border, bg-background, shadow-card ──────────────────────────┐ │
+│ │ ● ● ●  ✳ ▯  [💬 Chat][Study][Grades][Plan][Courses] | title   [ 🔍 Search  ⌘K ]   actions │
+│ │──────────────────────────┬─────────────────────────────────────────────────────────│ │
+│ │ + New chat               │ main: page, faint dot matrix fading from the top        │ │
+│ │ Spaces                   │                                                         │ │
+│ │ ⬛ School                 │                                                         │ │
+│ │ ○  conversation      4m  │                                                         │ │
+│ │──────────────────────────│                                                         │ │
+│ │ ⚙ Settings               │                                                         │ │
+│ └──────────────────────────┴─────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- The whole app is one white panel on the grey canvas. The sidebar and main column sit side by side in it, split by a hairline; both start with a 48 px row with a bottom hairline, so the title bar reads as one band.
-- macOS traffic lights sit in the panel's top-left (`trafficLightPosition` 22, 26 in `src/desktop/main.ts`), inside the sidebar's top row. With the sidebar hidden the header takes `pl-(--traffic-light-inset)`.
+- The whole app is one white panel on the grey canvas. The title bar runs across the top of the panel (48 px, bottom hairline), as in the Alpaca screens; below it the sidebar and the main column sit side by side, split by the sidebar's hairline, which starts under the title bar.
+- macOS traffic lights sit in the panel's top-left (`trafficLightPosition` 22, 26 in `src/desktop/main.ts`), at the title bar's left end, which takes `pl-(--traffic-light-inset)` on macOS and `pl-4` elsewhere (so the mark lines up with the sidebar's icon column).
 - The native window background is the canvas colour so the first frame matches.
 - `DotMatrix` sits behind the top of every page (absolute, `--dot-matrix`, fading by 96 px). Pages keep a transparent background so it shows.
+- Pages fade and lift 4 px in when they become visible; hidden pages stay mounted (keep-alive views) and out of the title bar.
 
 ### Title bar (`app/Header.tsx`)
 
-- Three columns: `[minmax(0,1fr) auto minmax(0,1fr)]`.
-  - Left: Show-sidebar (only when hidden), the view tabs as `TabsList variant="pill"` with an icon and label each (labels hide under `@5xl/header`), then the page's title slot after a hairline divider (muted; a `font-medium` part reads as the current item). A space without study tools shows its avatar and name instead of tabs.
-  - Centre: the search field, `w-(--search-width)`, `bg-well`, hairline, magnifier, "Search", the ⌘K keys; it opens the command palette. Under `@3xl/header` it collapses to the magnifier.
+- Four tracks: `[--sidebar-width][minmax(0,1fr)][auto][minmax(0,1fr)]`; the first collapses to 0 with the sidebar (animated with it), so search centres over the page, not the panel, which leaves the title room next to five tabs.
+  - Left (spanning the first two tracks): `BrandMark` (16 px), the Show/Hide sidebar icon button (plus New chat while the sidebar is hidden), the view tabs as `TabsList variant="pill"` with an icon and a regular-weight label each (labels hide when the left group is under `@xl/lead`), then the page's title slot after a hairline divider (muted; a `font-medium` part reads as the current item). A space without study tools shows its avatar and name instead of tabs.
+  - Centre: the search field, `w-(--search-width)`, `h-7`, `bg-well`, hairline, magnifier, "Search", and the keys as plain subtle text (the references' "⌘K", not keycaps); it opens the command palette. Under `@3xl/header` it collapses to the magnifier.
   - Right: the page's actions slot, right-aligned (`Button size="sm"` pills, `icon-sm` ghost icons).
 - The tablist keeps its accessible name "Views"; tabs keep their labels as names even when the text is hidden.
 - Pages render `<Header title actions />`; it portals into the bar only while the page is visible. Don't repeat the view name as the title; use it for context (a conversation's title, "Quiz / Sets and functions").
@@ -134,11 +139,17 @@ After a163, 9334, b72b, dca9, 3940 (Alpaca) and 7274, 8bdf, 02a1 (Conduit Agent 
 
 After 3940, a163, 9334 (rows, section labels, recents) and e0fb (status dots).
 
-- Top row (48 px, hairline below): the mark (`BrandMark`, 16 px) and, off macOS, "Phaethon"; Hide-sidebar and New-chat icon buttons (`size-8`, `rounded-lg`) on the right.
-- Then, when needed, a short list of fixed rows with icons (Search lives only in the title bar), a section label "Spaces" (`text-xs text-subtle-foreground`, sentence case, `h-7`, `mt-4`; refs: "Workspace", "Recents"), each space as a row with its avatar, and its conversations under it as the "recents" list: 28 px rows, `text-sm`, `rounded-md`, hover `bg-accent`, selected `bg-row-selected`. Status sits in a 16 px gutter on the left: a blue dot for a new reply, the spinner arc for replying, an amber dot for needs-you, a red mark for failed, a thin pin for pinned (the references' dot column).
-- Icons in rows are `size-4`, `text-muted-foreground`; trailing text (time, count, shortcut) `text-2xs text-subtle-foreground tabular-nums`, giving way to hover actions.
-- Footer (hairline above): Settings row with its keys; the update pill above it.
+- No top row of its own: the title bar holds the mark and the toggle. Content starts `pt-2.5` under the title bar's hairline.
+- Fixed rows first: New chat (`icons.add`, its keys on hover). Search lives only in the title bar.
+- A section label "Spaces" (`text-xs text-subtle-foreground`, regular weight, sentence case, `h-7`, `mt-4`; refs: "Projects", "Recents"; a `+` on hover adds a space). Each space is a row with its avatar in the 16 px icon column and its name in regular weight; hover shows collapse, `…` and new-chat actions. Its conversations follow as its recents: 28 px rows, `text-sm`, `rounded-md`, hover `bg-accent`, selected `bg-row-selected`, the title aligned with the space's name. Status sits in the icon column: a faint hollow ring for an idle conversation and a blue dot for a new reply (3940's dot column), the spinner arc for replying, an amber dot for needs-you, the error glyph for failed, a pin for pinned.
+- Trailing text (time, count, shortcut) is `text-2xs text-subtle-foreground tabular-nums` and gives way to hover actions.
+- Footer (hairline above): while no model is set up, a "Connect a model" block (title, one line, provider marks; a163's "Connect apps") that opens Settings › Providers; the update pill; the Settings row (its keys appear on hover; selected while Settings is open).
 - Resize rail, offcanvas collapse, keyboard row navigation, right-click menus: unchanged behaviour.
+
+### Command palette (`app/CommandPalette.tsx`)
+
+- ⌘K or the search field. Groups: Conversations (full-text, every space, with the matched snippet), Spaces, Views (in a space with study tools, with their keys), Actions. Rows use the menu row style with `icons.*` glyphs; meta on the right in `text-subtle-foreground`.
+- Searching shows the spinner in the empty state and the footer; a failure says so with the error glyph. The footer lists ↑↓ move, ↵ open, esc close.
 
 ## Primitives
 

@@ -305,6 +305,9 @@ describe("the conversation index", () => {
     const idx = fs.readFileSync(indexOf(d), "utf8");
     fs.rmSync(indexOf(d));
     fs.writeFileSync(indexOf(d), idx);
+    // Windows can give the rewrite the same timestamp as the file it replaced; another process's write is later in time.
+    const later = new Date(Date.now() + 2000);
+    fs.utimesSync(indexOf(d), later, later);
     expect(reads(() => listThreadsIn(d))).toMatchObject({ indexReads: 1, content: 0 });
     expect(reads(() => listThreadsIn(d))).toMatchObject({ indexReads: 0, content: 0 });
   });

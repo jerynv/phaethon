@@ -21,7 +21,7 @@ test("a reply streams in with markdown and math, and the conversation is listed"
     script: { claude: true, steps: [{ text: "Use **strong induction**: assume $F(k) < 2^k$ for every $k < n$.\n\n| n | F(n) |\n|---|---|\n| 1 | 1 |" }] },
   });
   await core.open(page);
-  await expect(page.getByRole("heading", { name: "What are we working on?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
   await composer(page).fill("Prove F(n) < 2^n");
   await page.keyboard.press("Enter");
   const reply = page.locator('[data-role="assistant"]').last();
@@ -33,7 +33,7 @@ test("a reply streams in with markdown and math, and the conversation is listed"
   await expect(page.getByRole("navigation").getByRole("button", { name: "Prove F(n) < 2^n" })).toBeVisible();
   // New chat empties the view; the old one reopens from the sidebar.
   await page.getByRole("button", { name: "New chat", exact: true }).first().click();
-  await expect(page.getByRole("heading", { name: "What are we working on?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
   await page.getByRole("navigation").getByRole("button", { name: "Prove F(n) < 2^n" }).click();
   await expect(page.locator('[data-role="assistant"]').locator("strong", { hasText: "strong induction" })).toBeVisible();
 });

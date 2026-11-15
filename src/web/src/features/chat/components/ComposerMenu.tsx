@@ -1,9 +1,10 @@
 // Adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT. See THIRD_PARTY_NOTICES.md.
-import { ChalkboardTeacher, ChatsCircle, ChatText, Exam, Lightning, NotePencil, Paperclip, Sparkle, type Icon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "@/components/ui/command";
 import { StartTruncate } from "@/components/truncate";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Spinner } from "@/components/ui/spinner";
 import { FileIcon } from "@/features/viewer/FileIcon";
 import { errorText, invoke } from "@/lib/core";
@@ -46,15 +47,15 @@ export function useSpaceFiles(space: string, on: boolean): { files: Listed[]; lo
   return state;
 }
 
-const COMMAND_ICON: Record<string, Icon> = {
-  quiz: Exam,
-  explain: ChalkboardTeacher,
-  socratic: ChatsCircle,
-  cram: Lightning,
-  normal: ChatText,
-  new: NotePencil,
-  model: Sparkle,
-  attach: Paperclip,
+const COMMAND_ICON: Record<string, IconData> = {
+  quiz: icons.quiz,
+  explain: icons.teacher,
+  socratic: icons.message,
+  cram: icons.streak,
+  normal: icons.chat,
+  new: icons.newChat,
+  model: icons.model,
+  attach: icons.attach,
 };
 
 export function ComposerMenu({
@@ -146,10 +147,10 @@ function FileRow({ path }: { path: string }) {
 }
 
 function CommandRow({ command }: { command: ComposerCommand }) {
-  const Glyph = COMMAND_ICON[command.id] ?? Sparkle;
+  const glyph = COMMAND_ICON[command.id] ?? icons.ai;
   return (
     <>
-      <Glyph className="size-4 shrink-0 text-muted-foreground" />
+      <Icon icon={glyph} className="size-4 text-muted-foreground" />
       <span className="shrink-0 font-medium font-mono text-xs">/{command.label}</span>
       <span className="min-w-0 truncate text-muted-foreground text-xs">{command.hint}</span>
     </>

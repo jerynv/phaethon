@@ -1,9 +1,10 @@
-import { CheckIcon, CopyIcon, FileCodeIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { copyText } from "@/components/file-chip";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { cn } from "@/lib/utils";
 
 /** Shiki, loaded the first time a code block appears; dual themes switch with `.dark`. */
 let shiki: Promise<typeof import("shiki")> | null = null;
@@ -38,15 +39,10 @@ export function useCopy(text: string) {
 }
 
 /** Copy with a confirmation that swaps the glyph for a check, briefly. */
-export function CopyButton({ text, className, label = "Copy" }: { text: string; className?: string; label?: string }) {
+export function CopyButton({ text, className, label = "Copy", variant = "ghost-muted" }: { text: string; className?: string; label?: string; variant?: "ghost-muted" | "outline" }) {
   const { copied, copy } = useCopy(text);
   return (
-    <button
-      type="button"
-      aria-label={copied ? "Copied" : label}
-      onClick={copy}
-      className={cn("inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground", className)}
-    >
+    <Button type="button" variant={variant} size="icon-xs" aria-label={copied ? "Copied" : label} onClick={copy} className={className}>
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.span
           key={copied ? "done" : "copy"}
@@ -56,11 +52,18 @@ export function CopyButton({ text, className, label = "Copy" }: { text: string; 
           transition={{ type: "spring", duration: 0.25, bounce: 0.35 }}
           className="inline-flex"
         >
-          {copied ? <CheckIcon className="size-3.5 text-success" /> : <CopyIcon className="size-3.5" />}
+          {copied ? <Icon icon={icons.check} className="size-3.5 text-success" /> : <Icon icon={icons.copy} className="size-3.5" />}
         </motion.span>
       </AnimatePresence>
-    </button>
+    </Button>
   );
+}
+
+/** "python" → "Python", "json" → "JSON": the block's label reads like a word, after ref 7cad's "JSON". */
+const LANG_NAMES: Record<string, string> = { json: "JSON", js: "JavaScript", javascript: "JavaScript", ts: "TypeScript", typescript: "TypeScript", tsx: "TSX", jsx: "JSX", html: "HTML", css: "CSS", sql: "SQL", sh: "Shell", bash: "Bash", zsh: "Shell", yaml: "YAML", yml: "YAML", md: "Markdown", markdown: "Markdown", py: "Python", cpp: "C++", csharp: "C#", cs: "C#", tex: "LaTeX", latex: "LaTeX", text: "Text" };
+function langName(lang?: string): string {
+  const l = (lang ?? "text").toLowerCase();
+  return LANG_NAMES[l] ?? l.charAt(0).toUpperCase() + l.slice(1);
 }
 
 export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
@@ -79,9 +82,9 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   return (
     <ContextMenu>
       <ContextMenuTrigger render={<div className="md-code group/code" data-slot="code-block" />}>
-        <div className="flex h-7 items-center justify-between border-b px-3">
-          <span className="font-mono text-2xs text-muted-foreground">{lang ?? "text"}</span>
-          <CopyButton text={code} className="-mr-1.5 size-5" label="Copy code" />
+        <div className="flex h-9 items-center justify-between pr-1.5 pl-3.5">
+          <span className="text-muted-foreground text-sm">{langName(lang)}</span>
+          <CopyButton text={code} label="Copy code" />
         </div>
         {html ? (
           <div className="md-code-body" dangerouslySetInnerHTML={{ __html: html }} />
@@ -93,11 +96,11 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
       </ContextMenuTrigger>
       <ContextMenuPopup>
         <ContextMenuItem onClick={() => void copyText(code, "Code copied")}>
-          <CopyIcon />
+          <Icon icon={icons.copy} />
           Copy code
         </ContextMenuItem>
         <ContextMenuItem onClick={() => void copyText(fenced, "Copied as Markdown")}>
-          <FileCodeIcon />
+          <Icon icon={icons.fileCode} />
           Copy as Markdown
         </ContextMenuItem>
       </ContextMenuPopup>

@@ -1,11 +1,13 @@
-import { ChalkboardTeacher } from "@phosphor-icons/react";
-import { ArrowUpIcon, FileIcon, FileImageIcon, FileTextIcon, PaperclipIcon, PencilIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { useNav, useOpenThread } from "@/app/store";
 import { ConnectionLost, FieldError } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
+import { Button } from "@/components/ui/button";
+import { FileIcon, kindOfName } from "@/features/viewer/FileIcon";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuRadioItemIndicator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
@@ -18,7 +20,7 @@ import { admit, formatBytes, MAX_FILES, mediaTypeOf, toBase64 } from "../lib/att
 import type { Attachment } from "../lib/timeline";
 import { useChats, useSpaceChat } from "../store";
 import { mentionText, rankCommands, rankFiles, replaceTrigger, triggerAt } from "../lib/composer-menu";
-import { ATTACH_EVENT } from "./ChatActions";
+import { ATTACH_EVENT, FILL_EVENT, type FillDetail } from "./ChatActions";
 import { ComposerMenu, type MenuItem, useSpaceFiles } from "./ComposerMenu";
 import { EffortPicker, ModelPicker, OPEN_MODEL_PICKER } from "./ModelPicker";
 
@@ -64,12 +66,9 @@ function TutorPicker({ mode, setMode, disabled }: { mode: TutorMode; setMode: (m
     <Menu>
       <MenuTrigger
         disabled={disabled}
-        className={cn(
-          "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent",
-          mode === "normal" ? "text-foreground/70" : "text-primary",
-        )}
+        render={<Button variant="secondary" size="sm" shape="rect" className={cn("h-8 sm:h-8", mode === "normal" ? "text-foreground" : "text-primary")} />}
       >
-        <ChalkboardTeacher className="size-3.5" />
+        <Icon icon={icons.teacher} className="size-4" />
         <span className="@max-lg/composer:hidden">{current.label}</span>
       </MenuTrigger>
       <MenuPopup side="top" align="start" className="w-64">
@@ -92,20 +91,30 @@ function TutorPicker({ mode, setMode, disabled }: { mode: TutorMode; setMode: (m
   );
 }
 
+/** A file waiting to be sent, as a pill (ref 8a83: "image.png ×"): thumbnail or kind glyph, name, size, remove. */
 function PendingChip({ p, onRemove }: { p: Pending; onRemove: () => void }) {
-  const type = mediaTypeOf(p.file);
-  const Icon = type.startsWith("image/") ? FileImageIcon : type === "application/pdf" || type.startsWith("text/") ? FileTextIcon : FileIcon;
+  const kind = kindOfName(p.file.name);
   return (
-    <div className="group/chip relative flex h-9 max-w-52 items-center gap-2 rounded-lg border bg-background pr-7 pl-1.5 text-xs">
-      {p.previewUrl ? <img src={p.previewUrl} alt="" className="size-6 shrink-0 rounded object-cover" /> : <Icon className="ml-0.5 size-4 shrink-0 text-muted-foreground" />}
-      <span className="flex min-w-0 flex-col leading-tight">
-        <MiddleTruncate value={p.file.name} className="min-w-0 font-medium" />
-        <span className="text-2xs text-muted-foreground tabular-nums">{formatBytes(p.file.size)}</span>
-      </span>
-      <button type="button" aria-label={`Remove ${p.file.name}`} onClick={onRemove} className="absolute top-1/2 right-1 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground">
-        <XIcon className="size-3" />
+    <motion.div
+      layout="position"
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ type: "spring", stiffness: 480, damping: 36 }}
+      className="group/chip flex h-8 max-w-56 items-center gap-2 rounded-full border bg-card pr-1 pl-1.5 text-sm"
+      title={`${p.file.name} · ${formatBytes(p.file.size)}`}
+    >
+      {p.previewUrl ? (
+        <img src={p.previewUrl} alt="" className="size-5 shrink-0 rounded-full object-cover" />
+      ) : (
+        <FileIcon kind={kind} className={cn("ml-0.5", kind === "pdf" ? "text-destructive" : kind === "spreadsheet" ? "text-success" : kind === "image" ? "text-primary" : "text-muted-foreground")} />
+      )}
+      <MiddleTruncate value={p.file.name} className="min-w-0" />
+      <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{formatBytes(p.file.size)}</span>
+      <button type="button" aria-label={`Remove ${p.file.name}`} onClick={onRemove} className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+        <Icon icon={icons.close} className="size-3.5" />
       </button>
-    </div>
+    </motion.div>
   );
 }
 
@@ -215,6 +224,17 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
     return () => window.removeEventListener(ATTACH_EVENT, open);
   }, []);
 
+  // A welcome starter card puts its words here, caret at the end, ready to finish the sentence.
+  useEffect(() => {
+    const fill = (e: Event) => {
+      const d = (e as CustomEvent<FillDetail>).detail;
+      if (d?.draftKey !== draftKey) return;
+      putText(d.text, d.text.length);
+    };
+    window.addEventListener(FILL_EVENT, fill);
+    return () => window.removeEventListener(FILL_EVENT, fill);
+  });
+
   useEffect(() => () => files.forEach((f) => f.previewUrl && URL.revokeObjectURL(f.previewUrl)), [files]);
 
   const add = useCallback(
@@ -268,7 +288,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
       {status === "lost" ? <ConnectionLost /> : null}
       {edit ? (
         <div className="flex items-center gap-2 px-1 text-muted-foreground text-xs">
-          <PencilIcon className="size-3" />
+          <Icon icon={icons.edit} className="size-3.5" />
           <span className="flex-1">Editing a message · the conversation continues from here</span>
           <button
             type="button"
@@ -284,7 +304,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         </div>
       ) : null}
       <div
-        className={cn("relative rounded-xl border bg-card shadow-xs/5 transition-colors focus-within:border-ring/40 dark:shadow-none", dragging && "border-primary/60 ring-2 ring-primary/15")}
+        className={cn("relative rounded-card border bg-card shadow-card transition-[border-color,box-shadow] focus-within:border-border-strong", dragging && "border-primary/60 ring-2 ring-primary/15")}
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;
           e.preventDefault();
@@ -302,23 +322,31 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
             <ComposerMenu key={trigger.kind} trigger={trigger} items={items} active={active} loading={spaceFiles.loading} error={spaceFiles.error} onActive={setActive} onPick={pickItem} />
           ) : null}
         </AnimatePresence>
-        {dragging ? <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-card/90 font-medium text-primary text-sm">Drop to attach</div> : null}
+        {dragging ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-card bg-card/90 font-medium text-primary text-sm">
+            <Icon icon={icons.attach} className="size-4" />
+            Drop to attach
+          </div>
+        ) : null}
         {files.length || kept.length ? (
-          <div className="flex flex-wrap gap-1.5 px-2.5 pt-2.5">
+          <div className="flex flex-wrap gap-1.5 px-3 pt-3">
             {kept.map((k, i) => (
               <PendingChip key={`k${i}`} p={{ id: `k${i}`, file: new File([], k.name, { type: k.mediaType }) }} onRemove={() => setKept((c) => c.filter((_, j) => j !== i))} />
             ))}
-            {files.map((f) => (
-              <PendingChip key={f.id} p={f} onRemove={() => setFiles((c) => c.filter((x) => x.id !== f.id))} />
-            ))}
+            <AnimatePresence initial={false}>
+              {files.map((f) => (
+                <PendingChip key={f.id} p={f} onRemove={() => setFiles((c) => c.filter((x) => x.id !== f.id))} />
+              ))}
+            </AnimatePresence>
           </div>
         ) : null}
         <textarea
           ref={area}
           value={text}
-          rows={2}
+          rows={hero ? 3 : 2}
           aria-label="Message"
-          placeholder={edit ? "Edit your message" : `Message ${space.name}`}
+          data-slot="composer-input"
+          placeholder={edit ? "Edit your message" : "Ask anything…"}
           onChange={(e) => {
             setText(e.target.value);
             syncCaret(e.target);
@@ -360,12 +388,12 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
             }
             if (e.key === "Escape" && edit) onEditDone();
           }}
-          className="block max-h-56 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base outline-none placeholder:text-placeholder [overflow-wrap:anywhere]"
+          className="block max-h-56 w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-base outline-none placeholder:text-placeholder [overflow-wrap:anywhere]"
         />
-        <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
+        <div className="flex items-center gap-1.5 px-3 pb-3">
           <Tooltip>
-            <TooltipTrigger render={<button type="button" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60" />}>
-              <PaperclipIcon className="size-4" />
+            <TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} className="size-8 sm:size-8" />}>
+              <Icon icon={icons.attach} className="size-4" />
             </TooltipTrigger>
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
           </Tooltip>
@@ -378,15 +406,14 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                 <EffortPicker pick={pick} onPick={setPick} disabled={busy} />
               </>
             ) : (
-              <span className="h-7 w-28 animate-skeleton rounded-md bg-muted" />
+              <span className="h-8 w-28 animate-skeleton rounded-lg bg-muted" />
             )}
             <span className="w-1" />
             <AnimatePresence mode="popLayout" initial={false}>
               {busy ? (
                 <motion.span key="stop" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ type: "spring", duration: 0.25, bounce: 0.3 }} className="inline-flex">
                   <Tooltip>
-                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="relative inline-flex size-7 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85" />}>
-                      <span className="absolute inset-0 animate-ping rounded-full bg-foreground/20 [animation-duration:2s]" aria-hidden />
+                    <TooltipTrigger render={<button type="button" aria-label="Stop" onClick={() => void chats().stop(space.id)} className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-opacity hover:opacity-85" />}>
                       <span className="size-2.5 rounded-xs bg-current" />
                     </TooltipTrigger>
                     <TooltipPopup>Stop</TooltipPopup>
@@ -404,9 +431,9 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                   exit={{ scale: 0.6, opacity: 0, y: -6 }}
                   whileTap={canSend ? { scale: 0.88 } : undefined}
                   transition={{ type: "spring", duration: 0.25, bounce: 0.3 }}
-                  className="inline-flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-subtle-foreground"
+                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground shadow-card transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
                 >
-                  <ArrowUpIcon className="size-4" />
+                  <Icon icon={icons.send} className="size-4" />
                 </motion.button>
               )}
             </AnimatePresence>

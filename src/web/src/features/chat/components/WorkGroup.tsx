@@ -1,37 +1,57 @@
-import { BookOpenText, FolderOpen, type Icon, MagnifyingGlass, PencilSimpleLine, Sparkle, TerminalWindow } from "@phosphor-icons/react";
-import { CheckIcon, ChevronRightIcon, CircleSlashIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ToolCategory } from "#shared/agent.ts";
 import { FileChip } from "@/components/file-chip";
+import { Icon, type IconData } from "@/components/icon";
+import { icons } from "@/components/icons";
+import { Spinner } from "@/components/ui/spinner";
+import { Step, StepList, ToolSummary, formatDuration } from "@/components/ui/step-list";
 import { usePrefs } from "@/features/settings/prefs";
 import { cn } from "@/lib/utils";
 import { elapsedText, friendlyStep, patienceHint } from "../lib/progress";
 import { workSummary, type ToolRecord } from "../lib/timeline";
+import { CopyButton } from "./CodeBlock";
 
-/** One glyph per kind of step, readable without knowing what a tool is. */
-const ICON: Record<ToolCategory, Icon> = {
-  read: BookOpenText,
-  list: FolderOpen,
-  search: MagnifyingGlass,
-  command: TerminalWindow,
-  write: PencilSimpleLine,
-  other: Sparkle,
+/** One glyph per kind of step, readable without knowing what a tool is (docs/UI-REBUILD.md › Icons). */
+const ICON: Record<ToolCategory, IconData> = {
+  read: icons.read,
+  list: icons.list,
+  search: icons.search,
+  command: icons.terminal,
+  write: icons.write,
+  other: icons.step,
 };
 
-/** When each running step was first seen in this window, so its own elapsed time survives re-renders. */
-const firstSeen = new Map<string, number>();
-function seenAt(id: string): number {
-  let t = firstSeen.get(id);
-  if (t === undefined) {
-    t = Date.now();
-    firstSeen.set(id, t);
-    if (firstSeen.size > 500) firstSeen.delete(firstSeen.keys().next().value!);
+/** The grey chip on a step's right ("file", "search"), after the references' "script · file" tags. */
+const TAG: Record<ToolCategory, string | null> = {
+  read: "file",
+  write: "edit",
+  list: "folder",
+  search: "search",
+  command: "command",
+  other: null,
+};
+
+/**
+ * When something was first and last seen running in this window, so a step,
+ * a work group or a reasoning block can say how long it took ("Thought 12s",
+ * "6m 12s"). Saved conversations carry no timings, so those show none.
+ */
+const spans = new Map<string, { start: number; end?: number }>();
+export function trackSpan(id: string, active: boolean): { ms: number; done: boolean } | null {
+  let s = spans.get(id);
+  if (!s) {
+    if (!active) return null;
+    s = { start: Date.now() };
+    spans.set(id, s);
+    if (spans.size > 500) spans.delete(spans.keys().next().value!);
   }
-  return t;
+  if (!active && s.end === undefined) s.end = Date.now();
+  if (active) s.end = undefined;
+  return { ms: (s.end ?? Date.now()) - s.start, done: s.end !== undefined };
 }
 
-function useNow(on: boolean): number {
+export function useNow(on: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;
@@ -41,35 +61,56 @@ function useNow(on: boolean): number {
   return now;
 }
 
-/** Three dots that breathe in turn: the app is working, without a spinner's urgency. */
-export function WorkingDots({ className }: { className?: string }) {
+/** A reassuring second line under a long step; grows in and out. */
+function Patience({ hint, className }: { hint: string | null; className?: string }) {
   return (
-    <span aria-hidden className={cn("inline-flex h-3 items-center gap-0.5", className)}>
-      {[0, 1, 2].map((i) => (
+    <AnimatePresence initial={false}>
+      {hint ? (
         <motion.span
-          key={i}
-          className="size-1 rounded-full bg-primary"
-          animate={{ opacity: [0.25, 1, 0.25], scale: [0.8, 1.15, 0.8] }}
-          transition={{ duration: 1.2, repeat: Number.POSITIVE_INFINITY, delay: i * 0.18, ease: "easeInOut" }}
-        />
-      ))}
-    </span>
+          key={hint}
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.18 }}
+          className={cn("block text-muted-foreground text-sm", className)}
+        >
+          {hint}
+        </motion.span>
+      ) : null}
+    </AnimatePresence>
   );
 }
 
 /**
- * The friendly line under a reply while Phaethon works: what it is doing in
- * plain words, how long this step has taken, and after a while a reassuring
- * second line. The words cross-fade when the step changes.
+ * The live line under a reply while Phaethon works on something that isn't a
+ * tool step (waiting for an answer, starting up): the spinner arc, what it is
+ * doing in plain words with a shimmer, and how long it has taken. The words
+ * cross-fade when they change.
  */
-export function ProgressLine({ text, since, category, technical }: { text: string; since?: number; category?: ToolCategory; technical?: string }) {
-  const now = useNow(true);
+/** "Waiting for you": the amber dot that replaces the spinner while a card above the composer needs an answer. */
+function WaitingDot() {
+  return <span className="size-1.5 rounded-full bg-warning" aria-hidden />;
+}
+
+export function ProgressLine({ text, since, category, technical, waiting = false }: { text: string; since?: number; category?: ToolCategory; technical?: string; waiting?: boolean }) {
+  const now = useNow(!waiting);
   const ms = since ? now - since : 0;
-  const hint = patienceHint(ms, category);
+  if (waiting) {
+    return (
+      <div className="my-1 flex h-9 min-w-0 items-center gap-3 text-base text-muted-foreground" role="status" data-slot="progress-line" data-waiting="">
+        <span className="flex w-5 shrink-0 justify-center">
+          <WaitingDot />
+        </span>
+        Waiting for you
+      </div>
+    );
+  }
   return (
-    <div className="my-1.5 flex flex-col gap-0.5" role="status" aria-live="polite" data-slot="progress-line">
-      <div className="flex h-6 min-w-0 items-center gap-2 text-sm">
-        <WorkingDots />
+    <div className="my-1 flex flex-col" role="status" aria-live="polite" data-slot="progress-line">
+      <div className="flex h-9 min-w-0 items-center gap-3 text-base">
+        <span className="flex w-5 shrink-0 justify-center">
+          <Spinner size="md" className="text-muted-foreground" />
+        </span>
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
             key={text}
@@ -77,103 +118,132 @@ export function ProgressLine({ text, since, category, technical }: { text: strin
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="min-w-0 truncate font-medium text-shimmer"
+            className="min-w-0 truncate text-shimmer"
           >
             {text}…
           </motion.span>
         </AnimatePresence>
-        {since ? <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{elapsedText(ms)}</span> : null}
-        {technical ? <span className="min-w-0 truncate font-mono text-2xs text-subtle-foreground">{technical}</span> : null}
+        {technical ? <span className="min-w-0 truncate font-mono text-subtle-foreground text-xs">{technical}</span> : null}
+        {since ? <span className="ml-auto shrink-0 text-muted-foreground text-sm tabular-nums">{elapsedText(ms)}</span> : null}
       </div>
-      <AnimatePresence initial={false}>
-        {hint ? (
-          <motion.span
-            key={hint}
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="pl-5 text-muted-foreground text-xs"
-          >
-            {hint}
-          </motion.span>
-        ) : null}
-      </AnimatePresence>
+      <Patience hint={patienceHint(ms, category)} className="pl-8" />
     </div>
   );
 }
 
-function StepStatus({ t }: { t: ToolRecord }) {
-  if (t.status === "running") return <WorkingDots className="shrink-0" />;
-  if (t.status === "success") return <CheckIcon className="size-3 shrink-0 text-subtle-foreground" />;
-  if (t.status === "failed") return <XIcon className="size-3 shrink-0 text-error" />;
-  return <CircleSlashIcon className="size-3 shrink-0 text-subtle-foreground" aria-label={t.status === "cancelled" ? "stopped" : "unfinished"} />;
+function stepState(t: ToolRecord) {
+  if (t.status === "running") return "active" as const;
+  if (t.status === "failed") return "failed" as const;
+  if (t.status === "success") return "done" as const;
+  return "pending" as const;
+}
+
+/** What a step says: plain words, or the tool's own label with Settings › Show technical details. */
+function stepLabel(t: ToolRecord, technical: boolean, spaceName?: string): string {
+  if (technical) return t.label;
+  const isFile = !!t.target && (t.category === "read" || t.category === "write");
+  if (!isFile) return friendlyStep(t, spaceName);
+  if (t.category === "read") return t.status === "running" ? "Reading" : "Read";
+  return t.status === "running" ? "Writing" : "Wrote";
+}
+
+/** A tool's output, with Show technical details: a code-like block with a copy button (ref 7cad). */
+function StepDetail({ text }: { text: string }) {
+  return (
+    <div className="group/detail relative mt-1 mb-1 rounded-xl border bg-code px-4 py-3">
+      <p className="line-clamp-3 pr-8 font-mono text-muted-foreground text-xs wrap-anywhere">{text}</p>
+      <CopyButton text={text} label="Copy output" className="absolute top-2 right-2" />
+    </div>
+  );
 }
 
 /**
- * Consecutive tool steps. While one runs: the friendly progress line. When
- * done: one quiet summary ("Read 3 files, searched twice") that opens to the
- * steps in plain words, each file a chip that opens it. Tool labels, raw
- * paths and output appear only with Settings › General › Show technical details.
+ * Consecutive tool steps (refs 7cad, 95ba). One summary line ("Read 3 files,
+ * searched twice … 4s") that opens to the steps on a rail, a glyph and a tag
+ * per step, each file a chip that opens it. While a step runs the line says
+ * what it is doing in plain words, with a shimmer, the elapsed time and after
+ * a while a reassuring second line. Tool labels, raw paths and output appear
+ * only with Settings › General › Show technical details.
  */
-export function WorkGroup({ tools, live, space, spaceName }: { tools: ToolRecord[]; live: boolean; space: string; spaceName?: string }) {
+export function WorkGroup({
+  tools,
+  live,
+  space,
+  spaceName,
+  spanKey,
+  waiting = false,
+}: {
+  tools: ToolRecord[];
+  live: boolean;
+  space: string;
+  spaceName?: string;
+  spanKey?: string;
+  /** A card under this reply needs an answer: the line stops spinning and counting and says so. */
+  waiting?: boolean;
+}) {
   const technical = usePrefs((s) => s.technicalDetails);
   const running = live ? tools.find((t) => t.status === "running") : undefined;
   const [open, setOpen] = useState(false);
+  const span = trackSpan(`work:${spanKey ?? tools[0]?.id ?? ""}`, !!running);
+  useNow(!!running);
+  const stepSpan = running ? trackSpan(`step:${spanKey ?? ""}:${running.id}`, true) : null;
   const failed = tools.filter((t) => t.status === "failed").length;
 
-  if (running) {
-    return (
-      <div data-slot="work-group" data-live="">
-        <ProgressLine text={friendlyStep(running, spaceName)} since={seenAt(running.id)} category={running.category} technical={technical ? `${running.label}${running.target ? ` · ${running.target}` : ""}` : undefined} />
-      </div>
-    );
-  }
+  const held = !!running && waiting;
+  const summary = held ? "Waiting for you" : running ? `${friendlyStep(running, spaceName)}…` : workSummary(tools);
+  // Under a second says nothing worth reading; the line shows a time once the work took one.
+  const duration = held ? undefined : span && span.ms >= 1000 ? (running ? elapsedText(span.ms) : formatDuration(span.ms)) : undefined;
 
   return (
-    <div className="my-1" data-slot="work-group">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="group/work -ml-1 flex h-6 max-w-full items-center gap-1.5 rounded-md px-1 text-muted-foreground text-xs transition-colors hover:text-foreground"
+    <div className={cn("my-1 transition-[margin]", open && "mb-2")} data-slot="work-group" data-live={running ? "" : undefined} role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>
+      <ToolSummary
+        summary={
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate">{summary}</span>
+            {failed && !running ? <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-label={`${failed} failed`} /> : null}
+          </span>
+        }
+        duration={duration}
+        running={!!running && !held}
+        lead={held ? <WaitingDot /> : undefined}
+        open={open}
+        onOpenChange={setOpen}
       >
-        <ChevronRightIcon className={cn("size-3 shrink-0 transition-transform duration-150", open && "rotate-90")} />
-        <span className="min-w-0 truncate">{workSummary(tools)}</span>
-        {failed ? <span className="size-1.5 shrink-0 rounded-full bg-error" aria-label={`${failed} failed`} /> : null}
-      </button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.ul
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className="ml-1.5 flex flex-col gap-0.5 overflow-hidden border-l pl-3"
-          >
-            {tools.map((t) => {
-              const Glyph = ICON[t.category] ?? Sparkle;
-              const isFile = !!t.target && (t.category === "read" || t.category === "write");
-              return (
-                <li key={t.id} className="flex min-w-0 flex-col py-0.5 first:mt-1">
-                  <div className="flex min-w-0 items-center gap-2 text-xs">
-                    <Glyph className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="shrink-0 text-foreground/85">{technical ? t.label : isFile ? (t.category === "read" ? (t.status === "running" ? "Reading" : "Read") : t.status === "running" ? "Writing" : "Wrote") : friendlyStep(t, spaceName)}</span>
-                    {isFile ? (
-                      <FileChip space={space} path={t.target!} variant="inline" className="min-w-0 text-xs" />
-                    ) : technical && t.target ? (
-                      <span className="min-w-0 truncate font-mono text-2xs text-muted-foreground">{t.target}</span>
-                    ) : null}
-                    <span className="flex-1" />
-                    <StepStatus t={t} />
-                  </div>
-                  {technical && t.detail ? <p className="mt-0.5 ml-5.5 line-clamp-3 font-mono text-2xs text-muted-foreground wrap-anywhere">{t.detail}</p> : null}
-                  {!technical && t.status === "failed" ? <p className="mt-0.5 ml-5.5 text-error-foreground text-xs">This step didn’t work; Phaethon carried on without it.</p> : null}
-                </li>
-              );
-            })}
-          </motion.ul>
-        ) : null}
-      </AnimatePresence>
+        <StepList variant="icon">
+          {tools.map((t) => {
+            const isFile = !!t.target && (t.category === "read" || t.category === "write");
+            return (
+              <Step
+                key={t.id}
+                state={stepState(t)}
+                icon={ICON[t.category] ?? icons.step}
+                tag={TAG[t.category] ?? undefined}
+                detail={
+                  technical && t.detail ? (
+                    <StepDetail text={t.detail} />
+                  ) : !technical && t.status === "failed" ? (
+                    <p className="pb-1 text-destructive-foreground text-sm">This step didn’t work; Phaethon carried on without it.</p>
+                  ) : undefined
+                }
+              >
+                <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+                  <span className={cn("shrink-0", t.status === "running" && "text-shimmer")}>{stepLabel(t, technical, spaceName)}</span>
+                  {isFile ? (
+                    <FileChip space={space} path={t.target!} className="min-w-0 rounded-full text-foreground" />
+                  ) : technical && t.target ? (
+                    <span className="min-w-0 truncate font-mono text-muted-foreground text-xs">{t.target}</span>
+                  ) : null}
+                  {t.status === "cancelled" || t.status === "incomplete" ? (
+                    <Icon icon={icons.blocked} label={t.status === "cancelled" ? "stopped" : "unfinished"} className="size-3.5 text-subtle-foreground" />
+                  ) : null}
+                </span>
+              </Step>
+            );
+          })}
+        </StepList>
+      </ToolSummary>
+      {running && !held ? <Patience hint={patienceHint(stepSpan?.ms ?? 0, running.category)} className="pl-8" /> : null}
+      {running && technical ? <p className="truncate pl-8 font-mono text-subtle-foreground text-xs">{`${running.label}${running.target ? ` · ${running.target}` : ""}`}</p> : null}
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import { FolderOpenIcon, FolderPlusIcon, GraduationCapIcon, PaperclipIcon, PlusIcon, Settings2Icon } from "lucide-react";
 import { api } from "@/app/api";
 import { useNav, type SettingsSection } from "@/app/store";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
 import { errorText } from "@/lib/core";
@@ -9,6 +10,10 @@ import { actionLabel, readActions, type ChatActionId } from "../lib/chat-actions
 
 /** Composer listens for this to open its file picker. */
 export const ATTACH_EVENT = "phaethon:attach";
+
+/** The welcome's starter cards put words in the composer of one conversation (`draftKey`). */
+export const FILL_EVENT = "phaethon:composer-fill";
+export type FillDetail = { draftKey: string; text: string };
 
 const SECTION: Partial<Record<ChatActionId, SettingsSection>> = {
   "settings-assistant": "providers",
@@ -20,12 +25,12 @@ const SECTION: Partial<Record<ChatActionId, SettingsSection>> = {
 };
 
 function icon(id: ChatActionId) {
-  if (id === "attach-files") return <PaperclipIcon />;
-  if (id === "add-files" || id === "add-folder") return <FolderPlusIcon />;
-  if (id === "show-folder") return <FolderOpenIcon />;
-  if (id === "import-courses") return <GraduationCapIcon />;
-  if (id === "new-space") return <PlusIcon />;
-  return <Settings2Icon />;
+  if (id === "attach-files") return <Icon icon={icons.attach} />;
+  if (id === "add-files" || id === "add-folder") return <Icon icon={icons.folderAdd} />;
+  if (id === "show-folder") return <Icon icon={icons.folderOpen} />;
+  if (id === "import-courses") return <Icon icon={icons.courses} />;
+  if (id === "new-space") return <Icon icon={icons.add} />;
+  return <Icon icon={icons.settings} />;
 }
 
 /** Buttons the assistant offered (a `phaethon-actions` block): at most three, known ones only. */
@@ -56,7 +61,7 @@ export function ChatActions({ code, space }: { code: string; space: string }) {
   return (
     <div className="my-2 flex flex-wrap gap-1.5">
       {ids.map((id) => (
-        <Button key={id} size="xs" variant="outline" onClick={() => run(id)}>
+        <Button key={id} size="sm" variant="outline" onClick={() => run(id)}>
           {icon(id)}
           {actionLabel(id, fileManagerName())}
         </Button>

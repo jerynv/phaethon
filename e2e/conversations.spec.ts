@@ -55,7 +55,7 @@ test("two conversations in one space reply at once, and switching clears nothing
 
   // A second conversation in the same space, while the first is still replying.
   await page.getByRole("button", { name: "New chat", exact: true }).first().click();
-  await expect(page.getByRole("heading", { name: "What are we working on?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
   await send(page, "second question");
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("beta3");
   await expect(sidebar.getByRole("button", { name: "second question, replying" })).toBeVisible();
@@ -119,7 +119,7 @@ test("New chat leaves nothing behind until something is sent", async ({ page }) 
   await core.open(page);
   const newChat = page.getByRole("button", { name: "New chat", exact: true }).first();
   for (let i = 0; i < 3; i++) await newChat.click();
-  await expect(page.getByRole("heading", { name: "What are we working on?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
   // No draft row under the space: the New chat row itself is selected, and no conversation is saved.
   await expect(nav(page).getByRole("list", { name: "School conversations" }).getByRole("button", { name: "New chat", exact: true })).toHaveCount(0);
   await expect(newChat).toHaveAttribute("aria-current", "page");

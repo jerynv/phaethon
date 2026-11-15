@@ -117,6 +117,36 @@ function lockPermissions(target: Electron.Session, allowed: ReadonlySet<string>)
 const APP_PERMISSIONS = new Set(["clipboard-sanitized-write", "fullscreen"]);
 const NO_PERMISSIONS = new Set<string>();
 
+/**
+ * The system's own menu for text: right-click in a field (spelling fixes,
+ * cut, copy, paste, select all) or on selected text (copy, select all). The
+ * page's own menus (messages, files, code) call preventDefault, so this only
+ * appears where the page has none.
+ */
+function textMenuTemplate(contents: Electron.WebContents, p: Electron.ContextMenuParams): Electron.MenuItemConstructorOptions[] {
+  const items: Electron.MenuItemConstructorOptions[] = [];
+  if (p.isEditable && p.misspelledWord) {
+    for (const word of p.dictionarySuggestions.slice(0, 5)) items.push({ label: word, click: () => contents.replaceMisspelling(word) });
+    if (!p.dictionarySuggestions.length) items.push({ label: "No suggestions", enabled: false });
+    items.push({ label: "Add to dictionary", click: () => contents.session.addWordToSpellCheckerDictionary(p.misspelledWord) });
+    items.push({ type: "separator" });
+  }
+  if (p.isEditable) {
+    items.push({ role: "cut", enabled: p.editFlags.canCut }, { role: "copy", enabled: p.editFlags.canCopy }, { role: "paste", enabled: p.editFlags.canPaste });
+    items.push({ type: "separator" }, { role: "selectAll", enabled: p.editFlags.canSelectAll });
+  } else if (p.selectionText.trim()) {
+    items.push({ role: "copy" }, { type: "separator" }, { role: "selectAll" });
+  }
+  return items;
+}
+
+function textContextMenu(window: BrowserWindow): void {
+  window.webContents.on("context-menu", (_event, params) => {
+    const template = textMenuTemplate(window.webContents, params);
+    if (template.length) Menu.buildFromTemplate(template).popup({ window });
+  });
+}
+
 function createMainWindow(): BrowserWindow {
   const min = { width: 380, height: 480 };
   const saved = captureTo ? null : loadWindowState(min);
@@ -145,6 +175,7 @@ function createMainWindow(): BrowserWindow {
   });
   const origin = devUrl ? new URL(devUrl).origin : APP_ORIGIN;
   hardenContents(window, origin);
+  textContextMenu(window);
   if (!captureTo) keepWindowState(window);
   window.once("ready-to-show", () => {
     if (captureTo) return;

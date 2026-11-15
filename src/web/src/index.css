@@ -472,6 +472,9 @@
   .markdown .md-link:hover {
     text-decoration-color: currentColor;
   }
+  .markdown .md-file code {
+    font-size: 0.86em;
+  }
   .markdown .md-inline-code {
     font-size: 0.86em;
     padding: 0.1em 0.35em;

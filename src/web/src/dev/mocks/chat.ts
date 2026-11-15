@@ -76,7 +76,7 @@ def is_injective(f, domain):
     return True
 \`\`\`
 
-Test 1 covers this, but not series or sequences [source: ${CS101}/announcements.md "Test 1 will not cover series or sequences."].`;
+Test 1 covers this, but not series or sequences [source: ${CS101}/announcements.md "Test 1 will not cover series or sequences."]. The full definitions are in [your Lecture 7 notes](<${CS101}/files/Lecture 7 Functions.md>), and I added the example to \`notes/week6.md\`. More practice: [Book of Proof](https://www.people.vcu.edu/~rhammack/BookOfProof/).`;
 
 const SAVED: UiMessage[] = [
   { role: "user", text: "What’s the difference between injective and surjective? I keep mixing them up.", attachments: [], index: 0, records: [], at: now - 3_600_000 },
@@ -376,7 +376,7 @@ async function run(args: Record<string, unknown>) {
   await sleep(200);
   ch.send({ kind: "thinking", delta: "Start from the course's own wording, then one worked example that is injective but not surjective, then a table." });
   await tool(ch, turn, "d1", "search", "Searching files for “injective”", undefined, 400);
-  await tool(ch, turn, "d2", "read", "Reading file", `${CS101}/files/Lecture 7 Functions.md`, 450);
+  await tool(ch, turn, "d2", "read", "Reading file", `${CS101}/files/Lecture 7 Functions.md`, p.includes("long") ? 14000 : 450);
   await tool(ch, turn, "d3", "read", "Reading file", `${CS101}/syllabus.md`, 300, "failed", "No such file in this course");
   ch.send({ kind: "progress", text: "Found the definition in Lecture 7; checking what Test 1 covers." });
   await tool(ch, turn, "d4", "read", "Reading file", `${CS101}/announcements.md`, 300);

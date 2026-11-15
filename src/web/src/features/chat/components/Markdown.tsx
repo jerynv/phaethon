@@ -8,6 +8,10 @@ import remarkMath from "remark-math";
 import { prepareMath } from "../lib/math";
 import { citationOf, holdPartialCitation, markCitations } from "../lib/study-cite";
 import { ACTIONS_FENCE } from "../lib/chat-actions";
+import { linkTarget, looksLikeFilePath } from "../lib/links";
+import { FileChip, copyText } from "@/components/file-chip";
+import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { CopyIcon, ExternalLinkIcon } from "lucide-react";
 import { STUDY_FENCE } from "../lib/study-chat";
 import { CodeBlock } from "./CodeBlock";
 import { CitationChip } from "./CitationChip";
@@ -51,6 +55,25 @@ function useWideMath(source: string) {
   return ref;
 }
 
+/** A web or mail link: opens in the browser (the desktop shell routes `_blank` there); right-click copies it. */
+function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger render={<a href={url} target="_blank" rel="noreferrer noopener" className="md-link" title={url} />}>{children}</ContextMenuTrigger>
+      <ContextMenuPopup>
+        <ContextMenuItem onClick={() => window.open(url, "_blank", "noopener")}>
+          <ExternalLinkIcon />
+          Open in browser
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => void copyText(url, "Link copied")}>
+          <CopyIcon />
+          Copy link
+        </ContextMenuItem>
+      </ContextMenuPopup>
+    </ContextMenu>
+  );
+}
+
 function makeComponents(ctx: Ctx): Components {
   return {
     pre: ({ children }) => <>{children}</>,
@@ -58,7 +81,10 @@ function makeComponents(ctx: Ctx): Components {
       const text = String(children ?? "").replace(/\n$/, "");
       const lang = /language-([\w+-]+)/.exec(className ?? "")?.[1];
       const block = node?.position && node.position.start.line !== node.position.end.line;
-      if (!lang && !block) return <code className="md-inline-code">{children}</code>;
+      if (!lang && !block) {
+        if (looksLikeFilePath(text)) return <FileChip space={ctx.space} path={text.trim()} variant="inline" label={<code>{text.trim()}</code>} />;
+        return <code className="md-inline-code">{children}</code>;
+      }
       if (lang === "mermaid") return <MermaidBlock code={text} streaming={ctx.streaming} />;
       if (lang === "latex" || lang === "tex") return <LatexBlock source={text} space={ctx.space} streaming={ctx.streaming} />;
       if (lang === STUDY_FENCE) return <StudyBlock code={text} space={ctx.space} streaming={ctx.streaming} messageKey={ctx.messageKey} />;
@@ -68,11 +94,10 @@ function makeComponents(ctx: Ctx): Components {
     a: ({ href, children }) => {
       const cite = citationOf(href);
       if (cite) return <CitationChip space={ctx.space} citation={cite} />;
-      return (
-        <a href={href} target="_blank" rel="noreferrer noopener" className="md-link">
-          {children}
-        </a>
-      );
+      const target = linkTarget(href);
+      if (target.kind === "file") return <FileChip space={ctx.space} path={target.path} variant="inline" label={children} />;
+      if (target.kind !== "external") return <span className="md-link">{children}</span>;
+      return <ExternalLink url={target.url}>{children}</ExternalLink>;
     },
     table: ({ children }) => (
       <div className="md-table-wrap">

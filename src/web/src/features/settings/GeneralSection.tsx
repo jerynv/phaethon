@@ -6,9 +6,11 @@ import { SkeletonCard } from "@/components/skeletons";
 import { StartTruncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { Switch } from "@/components/ui/switch";
+import { usePrefs } from "./prefs";
 import { Card, CopyButton, Group, Loader, Row, useLoad } from "./ui";
 
-/** Settings › General: where the vault is, where models are chosen, and the keyboard shortcuts. */
+/** Settings › General: where the vault is, where models are chosen, chat display, and the keyboard shortcuts. */
 
 function Keys({ keys }: { keys: string[] }) {
   return (
@@ -38,6 +40,8 @@ function shortcuts(): { label: string; keys: string[] }[] {
 export function GeneralSection() {
   const settings = useLoad(() => api.settings());
   const openSettings = useNav((s) => s.openSettings);
+  const technical = usePrefs((s) => s.technicalDetails);
+  const setTechnical = usePrefs((s) => s.setTechnicalDetails);
   return (
     <>
       <Group label="Phaethon folder">
@@ -62,6 +66,14 @@ export function GeneralSection() {
               Providers
               <ArrowRightIcon />
             </Button>
+          </Row>
+        </Card>
+      </Group>
+
+      <Group label="Chat">
+        <Card>
+          <Row label="Show technical details" description="Tool names, file paths and output under each reply’s steps, instead of plain words." htmlFor="pref-technical">
+            <Switch id="pref-technical" checked={technical} onCheckedChange={setTechnical} />
           </Row>
         </Card>
       </Group>

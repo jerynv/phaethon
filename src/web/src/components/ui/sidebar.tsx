@@ -164,9 +164,10 @@ export function SidebarFooter({ className, ...props }: React.ComponentProps<"div
   return <div className={cn("flex shrink-0 flex-col gap-1 border-t p-2", className)} data-slot="sidebar-footer" {...props} />;
 }
 
-export function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
+/** The scrolling middle. `scrollRef` is the scrolling element (for a windowed list); `fade="end"` fades only the bottom edge, under a sticky top row. */
+export function SidebarContent({ className, scrollRef, fade = true, ...props }: React.ComponentProps<"div"> & { scrollRef?: React.Ref<HTMLDivElement>; fade?: boolean | "end" }) {
   return (
-    <ScrollArea hideScrollbars scrollFade scrollFadePadding={false} className="h-auto min-h-0 flex-1">
+    <ScrollArea hideScrollbars scrollFade={fade} scrollFadePadding={false} viewportRef={scrollRef} className="h-auto min-h-0 flex-1">
       <div className={cn("flex w-full min-w-0 flex-col [overflow-anchor:none]", className)} data-slot="sidebar-content" {...props} />
     </ScrollArea>
   );

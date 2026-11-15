@@ -75,7 +75,10 @@ type Nav = {
   refreshThread(space: string, id: string): Promise<void>;
   /** Shows the space's new chat. Nothing is created until it is sent. */
   newChat(space: string): Promise<void>;
+  /** Opens a conversation; one older than the loaded pages (opened from search) is read on its own so the sidebar can show it. */
   openThread(space: string, id: string): Promise<void>;
+  /** Adds a conversation the sidebar found elsewhere (a filter's search) to the space's list, if it isn't there. */
+  ensureThread(space: string, row: ThreadListed): void;
   /** A new chat was sent and the core gave it `id`: it takes the draft's place. */
   adoptDraft(space: string, id: string, title: string): void;
   deleteThread(space: string, id: string): Promise<void>;
@@ -271,6 +274,13 @@ export const useNav = create<Nav>((set, get) => {
       setOpen(space, id);
       get().selectSpace(space, "chat");
       get().markRead(space, id);
+      const list = get().threads[space];
+      if (list?.data && !list.data.some((t) => t.id === id)) await get().refreshThread(space, id).catch(() => {});
+    },
+
+    ensureThread(space, row) {
+      if ((get().threads[space]?.data ?? []).some((t) => t.id === row.id)) return;
+      setRows(space, (rows) => sortRows([...rows, row]));
     },
 
     adoptDraft(space, id, title) {

@@ -1,4 +1,4 @@
-import { type ComponentProps, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -23,12 +23,62 @@ function useIsCut<T extends HTMLElement>() {
  * Overflow).
  */
 export function Truncate({
-  children,
-  tooltip,
-  className,
-  side = "top",
+  lazy = false,
   ...props
-}: Omit<ComponentProps<"span">, "children"> & { children: ReactNode; tooltip?: ReactNode; side?: "top" | "bottom" | "left" | "right" }) {
+}: Omit<ComponentProps<"span">, "children"> & {
+  children: ReactNode;
+  tooltip?: ReactNode;
+  side?: "top" | "bottom" | "left" | "right";
+  /** Measure only when the pointer comes over it, for rows in a long windowed list that mount by the dozen while scrolling. */
+  lazy?: boolean;
+}) {
+  return lazy ? <LazyTruncate {...props} /> : <EagerTruncate {...props} />;
+}
+
+type TruncateProps = Omit<ComponentProps<"span">, "children"> & { children: ReactNode; tooltip?: ReactNode; side?: "top" | "bottom" | "left" | "right" };
+
+/** Opens after the app's tooltip delay (App.tsx's provider), as a hovered trigger would. */
+const LAZY_DELAY = 400;
+
+function LazyTruncate({ children, tooltip, className, side = "top", onPointerEnter, onPointerLeave, ...props }: TruncateProps) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const timer = useRef(0);
+  const [cut, setCut] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const span = (
+    <span
+      ref={ref}
+      className={cn("block min-w-0 truncate", className)}
+      onPointerEnter={(e) => {
+        const el = ref.current;
+        const isCut = !!el && el.scrollWidth > el.clientWidth + 1;
+        setCut(isCut);
+        clearTimeout(timer.current);
+        if (isCut) timer.current = window.setTimeout(() => setOpen(true), LAZY_DELAY);
+        onPointerEnter?.(e);
+      }}
+      onPointerLeave={(e) => {
+        clearTimeout(timer.current);
+        setOpen(false);
+        onPointerLeave?.(e);
+      }}
+      {...props}
+    >
+      {children}
+    </span>
+  );
+  if (!cut) return span;
+  // The trigger only places the popup; opening and closing follow the pointer over the text.
+  return (
+    <Tooltip open={open} onOpenChange={(o) => !o && setOpen(false)}>
+      <TooltipTrigger render={span} />
+      <TooltipPopup side={side}>{tooltip ?? children}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function EagerTruncate({ children, tooltip, className, side = "top", ...props }: TruncateProps) {
   const [ref, cut] = useIsCut<HTMLSpanElement>();
   const span = <span ref={ref} className={cn("block min-w-0 truncate", className)} {...props}>{children}</span>;
   if (!cut) return span;

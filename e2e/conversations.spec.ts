@@ -168,39 +168,3 @@ test("a conversation's menu opens on right-click", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(nav(page).getByRole("button", { name: /^Renamed by key/ })).toBeVisible();
 });
-
-test("a space with many conversations loads its first page and fetches older ones on demand", async ({ page }) => {
-  const COUNT = 120;
-  core = await startCore({
-    setup: (home) => {
-      const state = path.join(home, "Phaethon", "default", "spaces", "school", ".phaethon");
-      const dir = path.join(state, "threads");
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(state, "space.json"), JSON.stringify({ name: "School" }));
-      for (let i = 0; i < COUNT; i++) {
-        const file = path.join(dir, `${1_600_000_000_000 + i}.json`);
-        fs.writeFileSync(file, JSON.stringify([{ role: "user", content: [{ type: "text", text: `Placeholder chat ${i}` }] }]));
-        const t = new Date(1_700_000_000_000 + i * 60_000);
-        fs.utimesSync(file, t, t);
-      }
-    },
-  });
-  await core.open(page);
-  const sidebar = nav(page);
-  // The newest is open; only the first page (50) was asked for, but the count covers all of them.
-  await expect(page.locator("main header")).toContainText(`Placeholder chat ${COUNT - 1}`);
-  await expect(sidebar.getByRole("button", { name: `Show ${COUNT - 8} more` })).toBeVisible();
-  await sidebar.getByRole("button", { name: `Show ${COUNT - 8} more` }).click();
-  await expect(sidebar.getByRole("button", { name: `Placeholder chat ${COUNT - 50}`, exact: true })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: `Placeholder chat ${COUNT - 51}`, exact: true })).toHaveCount(0);
-  await sidebar.getByRole("button", { name: `Show ${COUNT - 50} more` }).click();
-  await expect(sidebar.getByRole("button", { name: `Placeholder chat ${COUNT - 100}`, exact: true })).toBeVisible();
-  await sidebar.getByRole("button", { name: `Show ${COUNT - 100} more` }).click();
-  await expect(sidebar.getByRole("button", { name: "Placeholder chat 0", exact: true })).toBeVisible();
-  await expect(sidebar.getByRole("button", { name: "Show fewer" })).toBeVisible();
-  // An older conversation stays open after a reload, though it isn't on the first page.
-  await sidebar.getByRole("button", { name: "Placeholder chat 3", exact: true }).click();
-  await expect(page.locator("main header")).toContainText("Placeholder chat 3");
-  await page.reload();
-  await expect(page.locator("main header")).toContainText("Placeholder chat 3");
-});

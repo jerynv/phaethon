@@ -9,7 +9,7 @@ import { recordBlock, userMessage, type Block, type Message } from "../core/thre
 import { ensureVault, spaceDir } from "../core/vault.ts";
 import { reference } from "../attachments/attachments.ts";
 import { setWritesAllowed, writePermissions, writesAllowed } from "../grants/writes.ts";
-import { forgetIndexes, indexStats, INDEX_NAME } from "./listing.ts";
+import { forgetIndexes, indexedRows, indexStats, INDEX_NAME } from "./listing.ts";
 import { cursorOf, pageOf, parseCursor } from "./page.ts";
 import { deleteThreadIn, listThreadsIn, saveIn, threadSummaryIn, UNREADABLE_TITLE, updateMetaIn, type ThreadSummary } from "./store.ts";
 import "./commands.ts";
@@ -248,6 +248,101 @@ describe("the conversation index", () => {
     expect(listThreadsIn(d).map((t) => t.id)).toEqual(["50"]);
   });
 
+  it.skipIf(!canSymlinkFiles)("a linked meta file counts as none, even when the index holds the link's own stamp", () => {
+    const d = tempSpace();
+    saveIn(d, "52", chat("plain title", "a"));
+    const outside = path.join(env.home, `outside-meta-${n}`);
+    fs.writeFileSync(outside, JSON.stringify({ title: "Planted", pinned: 1, allowWrites: 1 }));
+    symlink(outside, path.join(threadsOf(d), "52.meta"), "file");
+    listThreadsIn(d);
+    // The index names the link's stamp with a planted title, pin and write permission.
+    const st = fs.lstatSync(path.join(threadsOf(d), "52.meta"));
+    const idx = JSON.parse(fs.readFileSync(indexOf(d), "utf8")) as { threads: { id: string; meta?: Record<string, unknown> }[] };
+    idx.threads.find((t) => t.id === "52")!.meta = { title: "Planted", pinned: 1, allowWrites: 1, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, size: st.size };
+    fs.writeFileSync(indexOf(d), JSON.stringify(idx));
+    forgetIndexes();
+    const row = listThreadsIn(d)[0]!;
+    expect(row.title).toBe("plain title");
+    expect(row.renamed).toBeUndefined();
+    expect(row.pinned).toBeUndefined();
+    expect(row.allowWrites).toBeUndefined();
+  });
+
+  it("takes titles from the index only in the shape the core gives them", () => {
+    const d = tempSpace();
+    saveIn(d, "53", chat("real content title", "a"));
+    saveIn(d, "54", chat("other", "b"));
+    updateMetaIn(d, "54", { title: "Real meta title" });
+    const good = listThreadsIn(d);
+    const idx = JSON.parse(fs.readFileSync(indexOf(d), "utf8")) as { threads: { id: string; title: string; meta?: { title?: string } }[] };
+    const long = `\u202Eline one\nline two ${"x".repeat(380)}`;
+    idx.threads.find((t) => t.id === "53")!.title = long;
+    idx.threads.find((t) => t.id === "54")!.meta!.title = long;
+    fs.writeFileSync(indexOf(d), JSON.stringify(idx));
+    forgetIndexes();
+    const r = reads(() => listThreadsIn(d));
+    expect(r.result).toEqual(good);
+    // Both entries are dropped whole and read again.
+    expect(r.content).toBe(2);
+    expect(r.meta).toBe(1);
+    // Titles as the core reads them are taken as they are, including one cut at 120 characters right before a space.
+    fs.writeFileSync(path.join(threadsOf(d), "54.meta"), JSON.stringify({ title: `${"é".repeat(119)} tail` }));
+    listThreadsIn(d);
+    forgetIndexes();
+    const again = reads(() => listThreadsIn(d));
+    expect(again).toMatchObject({ content: 0, meta: 0, indexWrites: 0 });
+    expect(again.result.find((t) => t.id === "54")!.title).toBe(`${"é".repeat(119)} `);
+  });
+
+  it("remembers an index it read from disk, so listings after a restart read it once", () => {
+    const d = tempSpace();
+    saveIn(d, "55", chat("one", "a"));
+    listThreadsIn(d);
+    forgetIndexes();
+    expect(reads(() => listThreadsIn(d))).toMatchObject({ indexReads: 1, indexWrites: 0, content: 0 });
+    expect(reads(() => listThreadsIn(d))).toMatchObject({ indexReads: 0, indexWrites: 0, content: 0 });
+    // Written by another process: read again once, then remembered again.
+    const idx = fs.readFileSync(indexOf(d), "utf8");
+    fs.rmSync(indexOf(d));
+    fs.writeFileSync(indexOf(d), idx);
+    expect(reads(() => listThreadsIn(d))).toMatchObject({ indexReads: 1, content: 0 });
+    expect(reads(() => listThreadsIn(d))).toMatchObject({ indexReads: 0, content: 0 });
+  });
+
+  it("rewrites a padded index instead of reading the padding every time", () => {
+    const d = tempSpace();
+    saveIn(d, "56", chat("one", "a"));
+    saveIn(d, "57", chat("two", "b"));
+    const good = listThreadsIn(d);
+    const idx = JSON.parse(fs.readFileSync(indexOf(d), "utf8")) as Record<string, unknown> & { threads: Record<string, unknown>[] };
+    for (const padded of [{ ...idx, pad: "x".repeat(100_000) }, { ...idx, threads: idx.threads.map((t) => ({ ...t, pad: "y".repeat(1000) })) }]) {
+      fs.writeFileSync(indexOf(d), JSON.stringify(padded) + " ".repeat(10_000));
+      forgetIndexes();
+      const r = reads(() => listThreadsIn(d));
+      expect(r.result).toEqual(good);
+      expect(r).toMatchObject({ content: 0, indexWrites: 1 });
+      expect(fs.statSync(indexOf(d)).size).toBeLessThan(2000);
+    }
+  });
+
+  it("a conversation that can't be read for now is read again, without rewriting the index each time", () => {
+    const d = tempSpace();
+    for (const id of ["58", "59", "60"]) saveIn(d, id, chat(`q ${id}`, "a"));
+    const sources = {
+      content: (file: string) => (file.endsWith("59.json") ? { title: UNREADABLE_TITLE, messages: 0, keep: false } : { title: "t", messages: 2 }),
+      meta: () => ({}),
+    };
+    expect(reads(() => indexedRows(threadsOf(d), sources))).toMatchObject({ content: 3, indexWrites: 1 });
+    for (let i = 0; i < 3; i++) expect(reads(() => indexedRows(threadsOf(d), sources))).toMatchObject({ content: 1, indexWrites: 0 });
+    // Once it was kept, failing again drops it from the index (one rewrite), then no more.
+    const ok = { content: () => ({ title: "t", messages: 2 }), meta: () => ({}) };
+    fs.utimesSync(fileOf(d, "59"), new Date(1_700_000_000_000), new Date(1_700_000_000_000));
+    expect(reads(() => indexedRows(threadsOf(d), ok))).toMatchObject({ content: 1, indexWrites: 1 });
+    fs.utimesSync(fileOf(d, "59"), new Date(1_700_000_001_000), new Date(1_700_000_001_000));
+    expect(reads(() => indexedRows(threadsOf(d), sources))).toMatchObject({ content: 1, indexWrites: 1 });
+    expect(reads(() => indexedRows(threadsOf(d), sources))).toMatchObject({ content: 1, indexWrites: 0 });
+  });
+
   it("refuses to list (or write an index) when the threads folder is a link", () => {
     const d = tempSpace();
     const other = tempSpace();
@@ -328,6 +423,27 @@ describe("pages", () => {
   it("refuse cursors that aren't ones", () => {
     for (const bad of ["", "x", "12", "12:../x", ":5", "1:2:3", 5, null, "99999999999999999:1"]) expect(parseCursor(bad)).toBeNull();
     expect(parseCursor("17:100-2")).toEqual({ updated: 17, id: "100-2" });
+    expect(parseCursor("-157593600000:9002")).toEqual({ updated: -157593600000, id: "9002" });
+  });
+
+  it("reach conversations dated before 1970 across a page boundary", async () => {
+    ensureVault();
+    const space = "old-dates";
+    await call("space_create", { name: "Old dates" });
+    const d = spaceDir(space);
+    for (let i = 0; i < 5; i++) {
+      saveIn(d, String(9000 + i), chat(`old ${i}`, "a"));
+      setTime(d, String(9000 + i), -157_766_400_000 + i * 86_400_000);
+    }
+    type P = { items: ThreadSummary[]; nextCursor: string | null };
+    const seen: string[] = [];
+    let page = await call<P>("threads_list", { space, limit: 2 });
+    seen.push(...page.items.map((t) => t.id));
+    while (page.nextCursor) {
+      page = await call<P>("threads_list", { space, limit: 2, before: page.nextCursor });
+      seen.push(...page.items.map((t) => t.id));
+    }
+    expect(seen).toEqual(["9004", "9003", "9002", "9001", "9000"]);
   });
 });
 

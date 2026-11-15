@@ -583,7 +583,7 @@ export function listThreadsIn(dir: string): ThreadSummary[] {
   return out;
 }
 
-/** One page of the space's conversations (see `page.ts`). */
+/** One page of the space's conversations (see `page.ts`). Each page is cut from a full listing: unchanged conversations aren't read, but every one is statted. */
 export function listPageIn(dir: string, opts: { limit: number; before: { updated: number; id: string } | null; query: string }): Page<ThreadSummary> {
   return pageOf(listThreadsIn(dir), opts);
 }

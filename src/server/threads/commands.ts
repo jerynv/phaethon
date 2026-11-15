@@ -73,7 +73,7 @@ commands({
     return t && withRunning(args.space, [t])[0]!;
   },
 
-  /** How many conversations a space has (and how many are pinned), from its index. */
+  /** How many conversations a space has (and how many are pinned): a listing (index-backed, so only changed files are read), without the rows. */
   threads_count: ({ space }: { space: string }) => {
     const dir = spaceDir(space);
     return wrap("This space’s conversations couldn’t be counted", () => countThreadsIn(dir));

@@ -27,7 +27,8 @@ export const cursorOf = (t: { updated: number; id: string }) => `${t.updated}:${
 /** A cursor's position; null when it isn't one. */
 export function parseCursor(v: unknown): { updated: number; id: string } | null {
   if (typeof v !== "string") return null;
-  const m = /^(\d{1,16}):(.+)$/.exec(v);
+  // A file dated before 1970 has a negative time, and its cursor has to work too.
+  const m = /^(-?\d{1,16}):(.+)$/.exec(v);
   if (!m || !isValidThreadId(m[2])) return null;
   return { updated: Number(m[1]), id: m[2] };
 }

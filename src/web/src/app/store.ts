@@ -210,13 +210,14 @@ export const useNav = create<Nav>((set, get) => {
           if (shown === undefined || next !== shown) setOpen(space, next);
         }
       } catch (e) {
-        if (gen === generation[space]) setList(space, () => ({ loading: false, error: errorText(e) }));
+        if (gen === generation[space]) setList(space, () => ({ loading: false, loadingMore: false, error: errorText(e) }));
       }
     },
 
     async loadMoreThreads(space) {
       const cur = get().threads[space];
-      if (!cur?.hasMore || !cur.cursor || cur.loadingMore) return;
+      // While the list reloads, its answer would replace this page's rows; the reload ends with a fresh cursor to continue from.
+      if (!cur?.hasMore || !cur.cursor || cur.loadingMore || cur.loading) return;
       const gen = generation[space];
       setList(space, () => ({ loadingMore: true }));
       try {

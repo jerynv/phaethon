@@ -1,4 +1,4 @@
-import { CalendarCheckIcon, CpuIcon, GraduationCapIcon, MessageCircleQuestionIcon, PaperclipIcon, RabbitIcon, SquarePenIcon, type LucideIcon, SparklesIcon } from "lucide-react";
+import { ChalkboardTeacher, ChatsCircle, ChatText, Exam, Lightning, NotePencil, Paperclip, Sparkle, type Icon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "@/components/ui/command";
@@ -45,15 +45,15 @@ export function useSpaceFiles(space: string, on: boolean): { files: Listed[]; lo
   return state;
 }
 
-const COMMAND_ICON: Record<string, LucideIcon> = {
-  quiz: MessageCircleQuestionIcon,
-  explain: GraduationCapIcon,
-  socratic: SparklesIcon,
-  cram: RabbitIcon,
-  normal: CalendarCheckIcon,
-  new: SquarePenIcon,
-  model: CpuIcon,
-  attach: PaperclipIcon,
+const COMMAND_ICON: Record<string, Icon> = {
+  quiz: Exam,
+  explain: ChalkboardTeacher,
+  socratic: ChatsCircle,
+  cram: Lightning,
+  normal: ChatText,
+  new: NotePencil,
+  model: Sparkle,
+  attach: Paperclip,
 };
 
 export function ComposerMenu({
@@ -145,10 +145,10 @@ function FileRow({ path }: { path: string }) {
 }
 
 function CommandRow({ command }: { command: ComposerCommand }) {
-  const Icon = COMMAND_ICON[command.id] ?? SparklesIcon;
+  const Glyph = COMMAND_ICON[command.id] ?? Sparkle;
   return (
     <>
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
+      <Glyph className="size-4 shrink-0 text-muted-foreground" />
       <span className="shrink-0 font-medium font-mono text-xs">/{command.label}</span>
       <span className="min-w-0 truncate text-muted-foreground text-xs">{command.hint}</span>
     </>

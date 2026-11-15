@@ -30,7 +30,7 @@ export function CitationChip({ space, citation }: { space: string; citation: Cit
           />
         }
       >
-        <FileTextIcon className="size-3 shrink-0" strokeWidth={2} />
+        <FileTextIcon className="size-3 shrink-0" />
         <span className="truncate">{citeName(citation.path)}</span>
       </PreviewCardTrigger>
       <PreviewCardPopup className="w-80">

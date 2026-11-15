@@ -21,7 +21,7 @@ export function UpdatePill() {
       onClick={() => openSettings("about")}
       className="flex h-7 items-center gap-2 rounded-md bg-primary/8 px-2 text-primary text-sm transition-colors hover:bg-primary/12"
     >
-      <ArrowDownCircleIcon className="size-4" strokeWidth={1.75} />
+      <ArrowDownCircleIcon className="size-4" />
       <span className="min-w-0 truncate">Update to {view.status.version}</span>
     </button>
   );

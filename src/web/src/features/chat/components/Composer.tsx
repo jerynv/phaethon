@@ -1,5 +1,5 @@
 import { ChalkboardTeacher } from "@phosphor-icons/react";
-import { ArrowUpIcon, CheckIcon, FileIcon, FileImageIcon, FileTextIcon, PaperclipIcon, PencilIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, FileIcon, FileImageIcon, FileTextIcon, PaperclipIcon, PencilIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
@@ -7,7 +7,7 @@ import { useNav } from "@/app/store";
 import { ConnectionLost, FieldError } from "@/components/errors";
 import { toast } from "@/components/toast";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
-import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
+import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuRadioItemIndicator, MenuTrigger } from "@/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCoreStatus } from "@/hooks/use-core-status";
 import { errorText } from "@/lib/core";
@@ -59,37 +59,36 @@ function useTutorMode(space: string) {
 }
 
 function TutorPicker({ mode, setMode, disabled }: { mode: TutorMode; setMode: (m: TutorMode) => void; disabled: boolean }) {
-  const [open, setOpen] = useState(false);
   const current = TUTOR.find((t) => t.id === mode) ?? TUTOR[0]!;
   return (
-    <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
-      <PopoverTrigger disabled={disabled} className={cn("inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent", mode === "normal" ? "text-foreground/70" : "text-primary")}>
+    <Menu>
+      <MenuTrigger
+        disabled={disabled}
+        className={cn(
+          "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent",
+          mode === "normal" ? "text-foreground/70" : "text-primary",
+        )}
+      >
         <ChalkboardTeacher className="size-3.5" />
         <span className="@max-lg/composer:hidden">{current.label}</span>
-      </PopoverTrigger>
-      <PopoverPopup side="top" align="start" padding="none" className="w-60">
-        <div className="p-1">
-          <div className="px-2 pt-1 pb-1.5 font-medium text-2xs text-muted-foreground">Teaching mode</div>
-          {TUTOR.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => {
-                setMode(t.id);
-                setOpen(false);
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
-            >
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm">{t.label}</span>
-                <span className="truncate text-muted-foreground text-xs">{t.hint}</span>
-              </span>
-              <CheckIcon className={cn("size-3.5 shrink-0", t.id === mode ? "opacity-100" : "opacity-0")} strokeWidth={2.25} />
-            </button>
-          ))}
-        </div>
-      </PopoverPopup>
-    </Popover>
+      </MenuTrigger>
+      <MenuPopup side="top" align="start" className="w-64">
+        <MenuGroup>
+          <MenuGroupLabel>Teaching mode</MenuGroupLabel>
+          <MenuRadioGroup value={mode} onValueChange={(v) => setMode(v as TutorMode)}>
+            {TUTOR.map((t) => (
+              <MenuRadioItem key={t.id} value={t.id} className="items-start gap-2 py-1.5">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm">{t.label}</span>
+                  <span className="truncate text-muted-foreground text-xs">{t.hint}</span>
+                </span>
+                <MenuRadioItemIndicator className="mt-0.5" />
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -98,13 +97,13 @@ function PendingChip({ p, onRemove }: { p: Pending; onRemove: () => void }) {
   const Icon = type.startsWith("image/") ? FileImageIcon : type === "application/pdf" || type.startsWith("text/") ? FileTextIcon : FileIcon;
   return (
     <div className="group/chip relative flex h-9 max-w-52 items-center gap-2 rounded-lg border bg-background pr-7 pl-1.5 text-xs">
-      {p.previewUrl ? <img src={p.previewUrl} alt="" className="size-6 shrink-0 rounded object-cover" /> : <Icon className="ml-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />}
+      {p.previewUrl ? <img src={p.previewUrl} alt="" className="size-6 shrink-0 rounded object-cover" /> : <Icon className="ml-0.5 size-4 shrink-0 text-muted-foreground" />}
       <span className="flex min-w-0 flex-col leading-tight">
         <MiddleTruncate value={p.file.name} className="min-w-0 font-medium" />
         <span className="text-2xs text-muted-foreground tabular-nums">{formatBytes(p.file.size)}</span>
       </span>
       <button type="button" aria-label={`Remove ${p.file.name}`} onClick={onRemove} className="absolute top-1/2 right-1 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground">
-        <XIcon className="size-3" strokeWidth={2.25} />
+        <XIcon className="size-3" />
       </button>
     </div>
   );
@@ -363,7 +362,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
           <Tooltip>
             <TooltipTrigger render={<button type="button" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60" />}>
-              <PaperclipIcon className="size-4" strokeWidth={1.75} />
+              <PaperclipIcon className="size-4" />
             </TooltipTrigger>
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
           </Tooltip>

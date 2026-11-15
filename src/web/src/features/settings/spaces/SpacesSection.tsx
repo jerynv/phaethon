@@ -501,7 +501,7 @@ export function SpacesSection() {
                 </span>
                 {s.description ? <Truncate className="text-muted-foreground text-xs">{s.description}</Truncate> : <span className="text-subtle-foreground text-xs">No description</span>}
               </span>
-              <ChevronRightIcon className="size-4 shrink-0 text-subtle-foreground transition-colors group-hover:text-foreground" strokeWidth={1.75} />
+              <ChevronRightIcon className="size-4 shrink-0 text-subtle-foreground transition-colors group-hover:text-foreground" />
             </button>
           ))}
         </Card>

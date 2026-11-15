@@ -1,4 +1,5 @@
-import { MessageSquareIcon, MoonIcon, PlusIcon, Settings2Icon, SquarePenIcon, SunIcon } from "lucide-react";
+import { ChatTeardropText, SlidersHorizontal } from "@phosphor-icons/react";
+import { MoonIcon, PlusIcon, SquarePenIcon, SunIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { toast } from "@/components/toast";
@@ -71,7 +72,7 @@ export function CommandPalette() {
   const actions: Item[] = useMemo(
     () => [
       { id: "new", label: "New chat", icon: <SquarePenIcon />, run: () => active && void nav().newChat(active).catch((e) => toast.error("Couldn’t start a new chat", errorText(e))) },
-      { id: "settings", label: "Open settings", icon: <Settings2Icon />, run: () => nav().openSettings() },
+      { id: "settings", label: "Open settings", icon: <SlidersHorizontal />, run: () => nav().openSettings() },
       {
         id: "theme",
         label: document.documentElement.classList.contains("dark") ? "Switch to light theme" : "Switch to dark theme",
@@ -89,7 +90,7 @@ export function CommandPalette() {
     id: `${c.space}/${c.threadId}`,
     label: c.title,
     detail: `${spaceName(c.space)} · ${compactTime(c.updated)}`,
-    icon: <MessageSquareIcon />,
+    icon: <ChatTeardropText />,
     snippet: c.snippets[0],
     run: () => void nav().openThread(c.space, c.threadId).catch((e) => toast.error("Couldn’t open that conversation", errorText(e))),
   }));

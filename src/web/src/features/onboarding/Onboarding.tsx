@@ -151,12 +151,12 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
       <p className="mt-1.5 text-muted-foreground text-sm">Use a key from a model provider, or a coding agent you already have. You can change this in Settings.</p>
       {readyName ? (
         <p className="mt-4 flex items-center gap-1.5 text-sm text-success-foreground">
-          <CheckIcon className="size-3.5" strokeWidth={2.5} />
+          <CheckIcon className="size-3.5" />
           <Truncate>Answers with {readyName}</Truncate>
         </p>
       ) : null}
       <div className="mt-5 flex flex-col gap-2">
-        <Choice icon={<KeyRoundIcon strokeWidth={1.75} />} title="An API key" text="Anthropic, OpenAI, OpenRouter and others" on={draft.method === "key"} onClick={() => patch({ method: draft.method === "key" ? null : "key" })}>
+        <Choice icon={<KeyRoundIcon />} title="An API key" text="Anthropic, OpenAI, OpenRouter and others" on={draft.method === "key"} onClick={() => patch({ method: draft.method === "key" ? null : "key" })}>
           {settingsError ? (
             <RowError message="Couldn’t read your settings." onRetry={load} />
           ) : settings ? (
@@ -165,7 +165,7 @@ function Answers({ draft, patch, onBack, onNext }: { draft: Draft; patch: (p: Pa
             <SkeletonRows count={2} />
           )}
         </Choice>
-        <Choice icon={<SquareTerminalIcon strokeWidth={1.75} />} title="A coding agent" text="Claude Code, Codex or Gemini CLI" on={draft.method === "agent"} onClick={() => patch({ method: draft.method === "agent" ? null : "agent" })}>
+        <Choice icon={<SquareTerminalIcon />} title="A coding agent" text="Claude Code, Codex or Gemini CLI" on={draft.method === "agent"} onClick={() => patch({ method: draft.method === "agent" ? null : "agent" })}>
           <AgentList chosen={ready} onUse={setReady} />
         </Choice>
       </div>
@@ -289,7 +289,7 @@ function KeyForm({ settings, provider, onProvider, onSaved }: { settings: Settin
           </FieldError>
         ) : outcome ? (
           <p className={cn("flex items-start gap-1.5 text-xs", outcome.kind === "no-credit" ? "text-warning-foreground" : "text-success-foreground")}>
-            <CheckIcon className="mt-0.5 size-3 shrink-0" strokeWidth={2.5} />
+            <CheckIcon className="mt-0.5 size-3 shrink-0" />
             {outcomeText(outcome, info)}
           </p>
         ) : null}
@@ -367,7 +367,7 @@ function AgentList({ chosen, onUse }: { chosen: string | null; onUse: (backend: 
                 <span className="text-muted-foreground text-xs">Not installed</span>
               ) : on ? (
                 <span className="flex items-center gap-1 text-success-foreground text-xs">
-                  <CheckIcon className="size-3" strokeWidth={2.5} />
+                  <CheckIcon className="size-3" />
                   In use
                 </span>
               ) : waiting ? (

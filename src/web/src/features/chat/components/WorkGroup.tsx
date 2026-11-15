@@ -1,4 +1,5 @@
-import { CheckIcon, ChevronRightIcon, CircleSlashIcon, FilePenIcon, FileTextIcon, FolderTreeIcon, SearchIcon, SquareTerminalIcon, WrenchIcon, XIcon } from "lucide-react";
+import { BookOpenText, FolderOpen, type Icon, MagnifyingGlass, PencilSimpleLine, Sparkle, TerminalWindow } from "@phosphor-icons/react";
+import { CheckIcon, ChevronRightIcon, CircleSlashIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ToolCategory } from "#shared/agent.ts";
@@ -8,13 +9,14 @@ import { cn } from "@/lib/utils";
 import { elapsedText, friendlyStep, patienceHint } from "../lib/progress";
 import { workSummary, type ToolRecord } from "../lib/timeline";
 
-const ICON: Record<ToolCategory, typeof FileTextIcon> = {
-  read: FileTextIcon,
-  list: FolderTreeIcon,
-  search: SearchIcon,
-  command: SquareTerminalIcon,
-  write: FilePenIcon,
-  other: WrenchIcon,
+/** One glyph per kind of step, readable without knowing what a tool is. */
+const ICON: Record<ToolCategory, Icon> = {
+  read: BookOpenText,
+  list: FolderOpen,
+  search: MagnifyingGlass,
+  command: TerminalWindow,
+  write: PencilSimpleLine,
+  other: Sparkle,
 };
 
 /** When each running step was first seen in this window, so its own elapsed time survives re-renders. */
@@ -149,12 +151,12 @@ export function WorkGroup({ tools, live, space, spaceName }: { tools: ToolRecord
             className="ml-1.5 flex flex-col gap-0.5 overflow-hidden border-l pl-3"
           >
             {tools.map((t) => {
-              const Icon = ICON[t.category] ?? WrenchIcon;
+              const Glyph = ICON[t.category] ?? Sparkle;
               const isFile = !!t.target && (t.category === "read" || t.category === "write");
               return (
                 <li key={t.id} className="flex min-w-0 flex-col py-0.5 first:mt-1">
                   <div className="flex min-w-0 items-center gap-2 text-xs">
-                    <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                    <Glyph className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="shrink-0 text-foreground/85">{technical ? t.label : isFile ? (t.category === "read" ? (t.status === "running" ? "Reading" : "Read") : t.status === "running" ? "Writing" : "Wrote") : friendlyStep(t, spaceName)}</span>
                     {isFile ? (
                       <FileChip space={space} path={t.target!} variant="inline" className="min-w-0 text-xs" />

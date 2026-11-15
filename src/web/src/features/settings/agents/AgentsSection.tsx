@@ -216,7 +216,7 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="flex h-10 w-full items-center gap-2 px-3.5 text-muted-foreground text-sm transition-colors hover:bg-accent/50 hover:text-foreground">
-        <PlusIcon className="size-3.5" strokeWidth={2} />
+        <PlusIcon className="size-3.5" />
         Add account
       </button>
     );

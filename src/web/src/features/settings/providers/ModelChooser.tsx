@@ -96,12 +96,12 @@ export function ModelChooser({
       >
         <ProviderIcon id={provider.id} className="size-3.5" />
         {label ? <Truncate className="flex-1">{label}</Truncate> : <span className="flex-1 truncate text-placeholder">Choose a model</span>}
-        <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" strokeWidth={2.25} />
+        <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverPopup side="bottom" align="end" padding="none" className="w-80 max-w-(--viewport-max-width)" initialFocus={() => document.getElementById(`model-search-${provider.id}`) as HTMLElement}>
         <div className="flex max-h-[min(22rem,var(--available-height))] min-h-0 flex-col">
           <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
-            <SearchIcon className="size-3.5 shrink-0 text-subtle-foreground" strokeWidth={2} />
+            <SearchIcon className="size-3.5 shrink-0 text-subtle-foreground" />
             <input
               id={`model-search-${provider.id}`}
               value={query}
@@ -117,7 +117,7 @@ export function ModelChooser({
             {loading && !models ? <SkeletonRows count={5} /> : null}
             {error && !models ? (
               <div className="flex items-start gap-2 px-2 py-2 text-muted-foreground text-xs">
-                <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-error" strokeWidth={2} />
+                <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-error" />
                 <span className="line-clamp-3 min-w-0 flex-1 [overflow-wrap:anywhere]">{error}</span>
                 <button type="button" className="shrink-0 font-medium text-foreground hover:underline" onClick={() => void load(true)}>
                   Retry
@@ -142,7 +142,7 @@ export function ModelChooser({
                     <Truncate className="shrink">{m.name}</Truncate>
                     {m.name !== m.id ? <Truncate className="min-w-0 flex-1 font-mono text-2xs text-subtle-foreground">{m.id}</Truncate> : null}
                   </span>
-                  <CheckIcon className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} strokeWidth={2.25} />
+                  <CheckIcon className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} />
                 </div>
               );
             })}

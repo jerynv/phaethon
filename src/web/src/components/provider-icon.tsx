@@ -40,7 +40,7 @@ const MARKS: Record<string, { src: string; mono?: boolean; dark?: string }> = {
 
 export function ProviderIcon({ id, className }: { id: string; className?: string }) {
   const mark = MARKS[id];
-  if (!mark) return <ServerIcon aria-hidden className={cn("size-4 shrink-0 text-muted-foreground", className)} strokeWidth={1.75} />;
+  if (!mark) return <ServerIcon aria-hidden className={cn("size-4 shrink-0 text-muted-foreground", className)} />;
   if (mark.dark) {
     return (
       <>

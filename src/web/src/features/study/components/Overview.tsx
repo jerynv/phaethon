@@ -243,8 +243,8 @@ function Section({ icon, label, count, action, onAction, children }: { icon: Ico
 
 /**
  * An artifact card (after b72b): a grey frame holding a white sheet that runs
- * off its bottom edge, with the item's glyph, a line about it and a thin
- * meter; the name and a muted line sit under the frame.
+ * off its bottom edge, with the item's glyph and its first line; the name
+ * and a muted line sit under the frame.
  */
 function ArtifactCard({
   index,
@@ -252,7 +252,6 @@ function ArtifactCard({
   title,
   line,
   badge,
-  meter,
   meta,
   onOpen,
   menu,
@@ -262,8 +261,6 @@ function ArtifactCard({
   title: string;
   line: ReactNode;
   badge?: ReactNode;
-  /** 0..1, or null when there's nothing to measure yet. */
-  meter: number | null;
   meta: ReactNode;
   onOpen: () => void;
   menu: ReactNode;
@@ -283,26 +280,13 @@ function ArtifactCard({
         onClick={onOpen}
         className="absolute inset-0 cursor-pointer rounded-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
       />
-      <div className="pointer-events-none relative h-36 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
+      <div className="pointer-events-none relative h-28 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
         <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
           <div className="flex items-center justify-between gap-2">
             <Icon icon={icon} className="size-4.5 text-muted-foreground" />
             {badge}
           </div>
           <div className="h-5 min-w-0 overflow-hidden text-muted-foreground text-sm">{line}</div>
-          <div className="flex flex-col gap-2" aria-hidden>
-            <span className="relative h-1.5 overflow-hidden rounded-full bg-muted">
-              {meter != null ? (
-                <motion.span
-                  className="absolute inset-y-0 left-0 rounded-full bg-foreground/30"
-                  initial={reduce ? false : { width: 0 }}
-                  animate={{ width: `${Math.max(meter > 0 ? 3 : 0, meter * 100)}%` }}
-                  transition={{ duration: 0.5, delay: 0.1 + Math.min(index, 6) * 0.03, ease: EASE }}
-                />
-              ) : null}
-            </span>
-            <span className="h-1.5 w-2/3 rounded-full bg-muted" />
-          </div>
         </div>
       </div>
       <div className="absolute top-2 right-2">{menu}</div>
@@ -364,7 +348,6 @@ function DeckCard({ index, space, deck, onOpen, onEdit, onDelete }: { index: num
       title={deck.title}
       line={<SheetLine text={deck.firstFront} fallback="No cards yet" space={space} id={`sheet-${deck.path}`} />}
       badge={deck.due ? <Chip tone="primary">{deck.due} due</Chip> : deck.new ? <Chip>{deck.new} new</Chip> : null}
-      meter={deck.cards ? deck.mastery : null}
       meta={meta}
       onOpen={onOpen}
       menu={
@@ -404,7 +387,6 @@ function QuizCard({ index, space, quiz, onOpen, onDelete }: { index: number; spa
           <Chip tone={quiz.lastScore < 0.6 ? "warning" : "muted"}>{percent(quiz.lastScore)}</Chip>
         ) : null
       }
-      meter={quiz.lastScore ?? null}
       meta={meta}
       onOpen={onOpen}
       menu={

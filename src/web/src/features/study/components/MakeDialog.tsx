@@ -10,7 +10,7 @@ import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -279,12 +279,7 @@ export function MakeDialog({
         <form onSubmit={onSubmit} className="contents">
           <DialogHeader className="gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <DialogTitle className="font-medium text-base tracking-title">{label}</DialogTitle>
-                <DialogDescription className="text-muted-foreground text-sm">
-                  {quiz ? "Practice questions from your course materials, each checked against them." : "Flashcards from your course materials, each tied to its passage."}
-                </DialogDescription>
-              </div>
+              <DialogTitle className="min-w-0 flex-1 font-medium text-base tracking-title">{label}</DialogTitle>
               <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
                 <Icon icon={icons.close} />
               </DialogClose>
@@ -564,7 +559,7 @@ function CoursePicker({ sources, value, onChange, invalid }: { sources: CourseSo
             render={<button type="button" />}
             className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-well text-left outline-none transition-[border-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:ring-1 data-checked:ring-primary"
           >
-            <span className="flex min-h-20 flex-col gap-2 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
+            <span className="flex h-20 flex-col gap-2 rounded-b-xl border-b border-border/70 bg-card px-3 py-2.5">
               <span className="flex items-center justify-between gap-2">
                 <Icon icon={icons.courses} className="size-4 text-muted-foreground" />
                 <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-input transition-colors group-data-checked:border-primary group-data-checked:bg-primary">
@@ -727,7 +722,7 @@ function WhatStep({
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <Input aria-label="Topics" placeholder="e.g. induction proofs, power sets (empty for anything)" value={draft.focus} onChange={(e) => patch({ focus: e.target.value })} />
+          <Input aria-label="Topics" placeholder="e.g. induction proofs, power sets" value={draft.focus} onChange={(e) => patch({ focus: e.target.value })} />
           {suggestions.topics.length ? <Chips items={suggestions.topics} value={draft.focus} onChange={(focus) => patch({ focus })} /> : null}
         </div>
       )}

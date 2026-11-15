@@ -112,7 +112,6 @@ export function ConnectDialog({
           <>
             <DialogHeader>
               <DialogTitle>Connect a course site</DialogTitle>
-              <DialogDescription>Bring your courses’ files, assignments and grades into Phaethon.</DialogDescription>
             </DialogHeader>
             <DialogPanel className="flex flex-col gap-5">
               <div className="flex flex-col gap-1">

@@ -1,17 +1,15 @@
 import { api } from "@/app/api";
 import { keysFor, spaceKeys, viewKeys } from "@/app/shortcuts";
-import { useNav } from "@/app/store";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { SkeletonCard } from "@/components/skeletons";
 import { StartTruncate } from "@/components/truncate";
-import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { usePrefs } from "./prefs";
-import { CopyButton, Loader, Row, SettingsCard, useLoad } from "./ui";
+import { CopyButton, Loader, SettingsCard, useLoad } from "./ui";
 
-/** Settings › General: where the vault is, chat display and where models are chosen, and the keyboard shortcuts. */
+/** Settings › General: where the vault is, how replies read, and the keyboard shortcuts. */
 
 function Keys({ keys }: { keys: string[] }) {
   return (
@@ -42,7 +40,6 @@ function shortcuts(): { label: string; keys: string[] }[] {
 
 export function GeneralSection() {
   const settings = useLoad(() => api.settings());
-  const openSettings = useNav((s) => s.openSettings);
   const technical = usePrefs((s) => s.technicalDetails);
   const setTechnical = usePrefs((s) => s.setTechnicalDetails);
   return (
@@ -58,20 +55,14 @@ export function GeneralSection() {
         )}
       </Loader>
 
-      <SettingsCard icon={<Icon icon={icons.chat} />} title="Chat" description="How replies look, and where their models come from.">
+      <SettingsCard icon={<Icon icon={icons.chat} />} title="Chat">
         <div className="flex flex-col">
           <ToggleRow
             title="Show technical details"
-            description="Tool names, file paths and output under each reply’s steps, instead of plain words."
+            description="Tool names, paths and output under each step."
             checked={technical}
             onCheckedChange={setTechnical}
           />
-          <Row label="Model for each chat" description="Chosen in each conversation’s composer, next to Send.">
-            <Button size="xs" variant="outline" onClick={() => openSettings("providers")}>
-              Providers
-              <Icon icon={icons.arrowRight} />
-            </Button>
-          </Row>
         </div>
       </SettingsCard>
 

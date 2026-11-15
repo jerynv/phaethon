@@ -57,7 +57,7 @@ export function AppearanceSection() {
     void set(c).catch((e) => setError(`Couldn’t save the theme: ${cleanMessage(e)}`));
   };
   return (
-    <SettingsCard icon={<Icon icon={icons.appearance} />} title="Theme" description="Light, dark, or whatever your computer uses.">
+    <SettingsCard icon={<Icon icon={icons.appearance} />} title="Theme">
       <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
         {CHOICES.map((c) => {
           const on = c.id === choice;

@@ -377,7 +377,7 @@ export function AgentsSection() {
               />
             ))}
             {others.length ? (
-              <SettingsCard icon={<Icon icon={icons.pending} />} title="Coming later" description="Phaethon will learn to work with these.">
+              <SettingsCard icon={<Icon icon={icons.pending} />} title="Coming later">
                 <div className="flex flex-col">
                   {others.map((c) => (
                     <div key={c.id} className="flex h-11 items-center gap-3">

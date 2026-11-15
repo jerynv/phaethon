@@ -10,18 +10,18 @@ import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
 import { FILL_EVENT, type FillDetail } from "./ChatActions";
 
-type Starter = { id: string; icon: IconData; title: string; line: string; prompt: string };
+type Starter = { id: string; icon: IconData; title: string; prompt: string };
 
 /** A study space starts from learning; any other space from its files. Each fills the composer, never sends. */
 const STUDY: Starter[] = [
-  { id: "teach", icon: icons.teacher, title: "Teach me", line: "A concept, step by step", prompt: "Teach me " },
-  { id: "quiz", icon: icons.quiz, title: "Quiz me", line: "Questions from your notes", prompt: "Quiz me on " },
-  { id: "plan", icon: icons.plan, title: "Plan my week", line: "Study time around what’s due", prompt: "Plan my week around what’s due" },
+  { id: "teach", icon: icons.teacher, title: "Teach me", prompt: "Teach me " },
+  { id: "quiz", icon: icons.quiz, title: "Quiz me", prompt: "Quiz me on " },
+  { id: "plan", icon: icons.plan, title: "Plan my week", prompt: "Plan my week around what’s due" },
 ];
 const GENERAL: Starter[] = [
-  { id: "create", icon: icons.create, title: "Create", line: "Notes, plans, drafts", prompt: "Draft " },
-  { id: "find", icon: icons.find, title: "Find", line: "Answers in your files", prompt: "Find where my files mention " },
-  { id: "summarize", icon: icons.fileText, title: "Summarize", line: "Long files, made short", prompt: "Summarize " },
+  { id: "create", icon: icons.create, title: "Create", prompt: "Draft " },
+  { id: "find", icon: icons.find, title: "Find", prompt: "Find where my files mention " },
+  { id: "summarize", icon: icons.fileText, title: "Summarize", prompt: "Summarize " },
 ];
 
 /** A small white file label set on the art tile. */
@@ -61,12 +61,9 @@ export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: strin
     <div className="@container/welcome flex grow-3 flex-col items-center px-8 pb-6">
       <div className="mt-5 grid w-full max-w-(--chat-max-width) grid-cols-1 gap-3 @xl/welcome:grid-cols-3" role="group" aria-label="Starters">
         {starters.map((s) => (
-          <Card key={s.id} variant="interactive" render={<button type="button" onClick={() => fill(draftKey, s.prompt)} />} className="flex-row items-center gap-3 p-3 text-left @xl/welcome:flex-col @xl/welcome:items-start @xl/welcome:gap-5 @xl/welcome:p-4">
+          <Card key={s.id} variant="interactive" render={<button type="button" onClick={() => fill(draftKey, s.prompt)} />} className="flex-row items-center gap-3 p-3 text-left @xl/welcome:flex-col @xl/welcome:items-start @xl/welcome:gap-4 @xl/welcome:p-4">
             <Icon icon={s.icon} className="size-5 text-muted-foreground" />
-            <span className="flex flex-col gap-0.5">
-              <span className="font-medium text-foreground text-sm">{s.title}</span>
-              <span className="text-muted-foreground text-sm">{s.line}</span>
-            </span>
+            <span className="font-medium text-foreground text-sm">{s.title}</span>
           </Card>
         ))}
       </div>
@@ -79,10 +76,7 @@ export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: strin
             <FileTag name="slides.pdf" className="ml-2" />
           </span>
         </ArtTile>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="font-medium text-foreground text-sm">Add files to {space.name}</span>
-          <span className="truncate text-muted-foreground text-sm">Notes, slides and PDFs to read and cite</span>
-        </span>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground text-sm">Add files to {space.name}</span>
         {adding ? <Spinner size="md" className="text-muted-foreground" /> : <Icon icon={icons.folderAdd} className="size-4.5 text-muted-foreground" />}
       </Card>
     </div>

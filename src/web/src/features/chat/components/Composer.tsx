@@ -32,9 +32,9 @@ const drafts = new Map<string, string>();
 const stashes = new Map<string, { files: File[]; kept: Attachment[] }>();
 const pending = (file: File): Pending => ({ id: `${file.name}-${file.size}-${Math.random()}`, file, previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined });
 
-const TUTOR: { id: TutorMode; label: string; hint: string }[] = [
-  { id: "normal", label: "Normal", hint: "Answers and explains" },
-  { id: "quiz", label: "Quiz me", hint: "Asks questions to check you" },
+const TUTOR: { id: TutorMode; label: string; hint?: string }[] = [
+  { id: "normal", label: "Normal" },
+  { id: "quiz", label: "Quiz me" },
   { id: "explain", label: "Explain it back", hint: "You teach it, it corrects you" },
   { id: "socratic", label: "Socratic", hint: "Leads with questions, never the answer" },
   { id: "cram", label: "Exam cram", hint: "Fast review of what’s on the exam" },
@@ -79,7 +79,7 @@ function TutorPicker({ mode, setMode, disabled }: { mode: TutorMode; setMode: (m
               <MenuRadioItem key={t.id} value={t.id} className="items-start gap-2 py-1.5">
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm">{t.label}</span>
-                  <span className="truncate text-muted-foreground text-xs">{t.hint}</span>
+                  {t.hint ? <span className="truncate text-muted-foreground text-xs">{t.hint}</span> : null}
                 </span>
                 <MenuRadioItemIndicator className="mt-0.5" />
               </MenuRadioItem>

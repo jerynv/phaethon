@@ -468,7 +468,7 @@ function ExportGroup({ space }: { space: SpaceView }) {
     }
   };
   return (
-    <SettingsCard icon={<Icon icon={icons.download} />} title="Export" description="Everything in a space is plain files you can take with you.">
+    <SettingsCard icon={<Icon icon={icons.download} />} title="Export">
       <div className="flex flex-col">
         <Row label="Export space" description="A zip of its files, conversations and memory.">
           <Button size="xs" variant="outline" onClick={() => void run()} pending={busy}>
@@ -545,7 +545,7 @@ export function SpacesSection() {
           className="max-w-none"
         />
       ) : (
-        <SettingsCard icon={<Icon icon={icons.deck} />} title="Spaces" description="Each keeps its own files, conversations and memory." action={add}>
+        <SettingsCard icon={<Icon icon={icons.deck} />} title="Spaces" action={add}>
           <div className="-mx-2 flex flex-col gap-px">
             {list.map((s) => (
               <button

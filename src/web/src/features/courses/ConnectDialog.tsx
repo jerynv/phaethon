@@ -362,7 +362,7 @@ function SchoolStep({ kind, onPick }: { kind: LmsKind; onPick: (s: LmsSchool) =>
           aria-controls={`${id}-list`}
           aria-autocomplete="list"
           aria-activedescendant={open && active >= 0 ? `${id}-o${active}` : undefined}
-          placeholder="Example University"
+          placeholder="School name"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);

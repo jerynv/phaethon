@@ -30,16 +30,16 @@ const ALL = ["overview", "syllabus", "assignments", "announcements", "files", "g
 const lmsCourseList = [
   { id: "101", name: "Computer Science 101", code: "CS 101", term: "Fall 2026", current: true },
   { id: "102", name: "Calculus II", code: "MATH 201", term: "Fall 2026", current: true },
-  { id: "103", name: "Introduction to Psychology", code: "PSY-P 101", term: "Fall 2026", current: true },
-  { id: "104", name: "Elementary Spanish I", code: "SPAN-S 100", term: "Fall 2026", current: true },
-  { id: "90", name: "Introduction to Programming", code: "CSCI-C 200", term: "Spring 2026", current: false },
-  { id: "91", name: "Writing and Research", code: "ENG-W 131", term: "Spring 2026", current: false },
+  { id: "103", name: "Introduction to Psychology", code: "PSY 101", term: "Fall 2026", current: true },
+  { id: "104", name: "Elementary Spanish I", code: "SPAN 101", term: "Fall 2026", current: true },
+  { id: "90", name: "Introduction to Programming", code: "CS 100", term: "Spring 2026", current: false },
+  { id: "91", name: "Writing and Research", code: "ENG 110", term: "Spring 2026", current: false },
 ];
 const schools = [
-  { name: "Example University Downtown", address: "https://school.instructure.com" },
+  { name: "Example University", address: "https://school.instructure.com" },
   { name: "Example University Downtown", address: "https://school.instructure.com" },
   { name: "Example State University", address: "https://examplestate.instructure.com" },
-  { name: "Ivy Tech Community College", address: "https://examplecc.instructure.com" },
+  { name: "Example Community College", address: "https://examplecc.instructure.com" },
 ];
 const connections: { id: string; kind: string; address: string; schoolName?: string; signedIn: boolean; lastSync?: number; courses: string[] }[] = empty
   ? []
@@ -48,7 +48,7 @@ const connections: { id: string; kind: string; address: string; schoolName?: str
         id: "c1",
         kind: "canvas",
         address: "https://school.instructure.com",
-        schoolName: "Example University Downtown",
+        schoolName: "Example University",
         signedIn: scenario !== "signedout",
         lastSync: Date.now() - 3 * DAY,
         courses: ["101", "102", "103"],

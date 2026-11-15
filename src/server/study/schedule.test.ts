@@ -118,21 +118,21 @@ describe("schedule", () => {
 
   it("exams match their course and dates are local", () => {
     const exams: Exam[] = [
-      { course: "CS 101", title: "Test 1", date: "2026-10-15" },
-      { course: "MATH 301", title: "Exam", date: "2026-10-21T14:00" },
+      { course: "CS 101", title: "Test 1", date: "2026-10-22" },
+      { course: "MATH 301", title: "Exam", date: "2026-10-28T14:00" },
       { title: "Finals", date: "2026-12-14" },
       { title: "bad", date: "soon" },
     ];
     const off = -4 * 3600;
     const now = examStart("2026-10-10T12:00:00Z", 0)!;
     const cs101 = nextExam(exams, "CS 101 Fall 2026 (All Sections)", now, off)!;
-    expect(cs101).toBe(examStart("2026-10-15T04:00:00Z", 0));
+    expect(cs101).toBe(examStart("2026-10-22T04:00:00Z", 0));
     expect(nextExam(exams, "FA26- LITERATURE & WRITING- 34567", now, off)).toBe(examStart("2026-12-14T04:00:00Z", 0));
     expect(nextExam(exams, null, now, off)).toBe(examStart("2026-12-14T04:00:00Z", 0));
-    expect(nextExam(exams, "MATH 301", now, off)).toBe(examStart("2026-10-21T18:00:00Z", 0));
-    expect(examStart("2026-10-21T14:00:00-04:00", 99)).toBe(examStart("2026-10-21T18:00:00Z", 0));
+    expect(nextExam(exams, "MATH 301", now, off)).toBe(examStart("2026-10-28T18:00:00Z", 0));
+    expect(examStart("2026-10-28T14:00:00-04:00", 99)).toBe(examStart("2026-10-28T18:00:00Z", 0));
     expect(nextExam(exams.slice(0, 1), "CS 101", cs101 + 1, off)).toBeNull();
     expect(sameCourse("", "x")).toBe(false);
-    expect(sameCourse("csci cs101", "CS 101 Fall")).toBe(true);
+    expect(sameCourse("cs 101", "CS 101 Fall")).toBe(true);
   });
 });

@@ -26,11 +26,11 @@ describe("study prompt sections", () => {
     fixture("school", [["CS 101", ALL]]);
     put("courses/CS 101/syllabus.md", "# Syllabus\n\nWe study logic.\n");
     fs.mkdirSync(path.join(spaceDir("school"), "study"), { recursive: true });
-    fs.writeFileSync(path.join(spaceDir("school"), "study", "exams.json"), JSON.stringify([{ course: "CS 101", title: "Test 1", date: "2999-10-15" }]));
+    fs.writeFileSync(path.join(spaceDir("school"), "study", "exams.json"), JSON.stringify([{ course: "CS 101", title: "Test 1", date: "2999-10-22" }]));
 
     const study = studyPromptSection("school")!;
     expect(study).toContain("study/decks/<Title>.md");
-    expect(study).toContain("Upcoming exams: Test 1 (CS 101) on 2999-10-15.");
+    expect(study).toContain("Upcoming exams: Test 1 (CS 101) on 2999-10-22.");
     const scope = scopePromptSection("school")!;
     expect(scope).toContain("## CS 101");
     expect(scope).toContain("Not mapped yet");

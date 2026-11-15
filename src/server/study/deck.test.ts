@@ -110,7 +110,7 @@ describe("deck", () => {
   });
 
   it("a passage read from a page's picture says so on its source line", () => {
-    const src = "courses/C/files/Notes/notes cs101 Fa26 - 20260917.pdf";
+    const src = "courses/C/files/Notes/notes cs101 Fa26 - 20260924.pdf";
     const n: Note = { front: "What is a reflexive relation?", back: "(a,a) ∈ R for every a.", source: src, quote: "R is reflexive if (a,a) e R for all a", picture: 3 };
     const w = write(deckOf([n]));
     expect(w).toContain(`From: ${src} (p. 3, read from a picture of the page)\nQuote: "R is reflexive if (a,a) e R for all a"\n`);

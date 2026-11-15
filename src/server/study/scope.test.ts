@@ -209,18 +209,18 @@ describe("scope map", () => {
     const m = new Scripted(["no json", MAP]);
     const calls: [number, number][] = [];
     const exams = [
-      { course: "CS101", title: "Test 1", date: "2026-10-15" },
+      { course: "CS101", title: "Test 1", date: "2026-10-22" },
       { title: "Midterm 2", date: "2026-11-20" },
     ];
     const map = await build(vis, seen, exams, m, 7, (d, t) => calls.push([d, t]));
     expect(m.calls()).toBe(2);
-    expect(m.asked[0]!.user).toContain("Test 1 on 2026-10-15");
+    expect(m.asked[0]!.user).toContain("Test 1 on 2026-10-22");
     expect(calls).toEqual([
       [0, 1],
       [1, 1],
     ]);
     expect(map.exams.map((e) => [e.title, e.known, e.date ?? null])).toEqual([
-      ["Test 1", true, "2026-10-15"],
+      ["Test 1", true, "2026-10-22"],
       ["Final", false, null],
       ["Midterm 2", false, "2026-11-20"],
     ]);

@@ -14,7 +14,7 @@ import { COURSES_DIR, courseDir, gradeKey, load as loadStore, loadGrades, nowSec
  * A space sees a course only where `<vault>/.phaethon/course-access.json`
  * allows it, part by part:
  *
- *   { "school": { "canvas-school-instructure-com/1002": ["overview", "syllabus", "files"] } }
+ *   { "school": { "canvas-school-instructure-com/1001": ["overview", "syllabus", "files"] } }
  *
  * Inside a space the courses it may see appear as `courses/<folder>/...`, and
  * everything that reads course material in a space goes through `Visible`, so

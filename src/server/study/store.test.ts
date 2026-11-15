@@ -230,9 +230,9 @@ describe("study store", () => {
     const p = deckSave(dir, null, "Logic", cards([["p → q is false when?", "p true, q false"]]));
     const file = path.join(dir, p);
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("title: Logic\n", "title: Logic\ncourse: CS 101 Fall 2026 (All Sections)\n"));
-    const examDay = "2026-10-15";
+    const examDay = "2026-10-22";
     fs.writeFileSync(path.join(dir, EXAMS), JSON.stringify([{ course: "CS 101", title: "Test 1", date: examDay }]));
-    const now = examStart("2026-10-12", offsetSecs(T0))! + 10 * HOUR_MS;
+    const now = examStart("2026-10-19", offsetSecs(T0))! + 10 * HOUR_MS;
     const id = deckView(dir, p).cards[0]!.id;
     const r = rate(dir, p, id, 5, now);
     const exam = examStart(examDay, offsetSecs(now))!;
@@ -240,20 +240,20 @@ describe("study store", () => {
     const prompt = promptSection(dir, false, now)!;
     expect(prompt).toContain("study/decks/<Title>.md");
     expect(prompt).toContain("Q: <question>");
-    expect(prompt).toContain("Test 1 (CS 101) on 2026-10-15");
+    expect(prompt).toContain("Test 1 (CS 101) on 2026-10-22");
     expect(promptSection(dir, false, exam + DAY)!).not.toContain("Upcoming");
   });
 
   it("exams.json in either form keeps its good entries (fixed)", () => {
     const dir = space();
     fs.mkdirSync(path.join(dir, "study"), { recursive: true });
-    fs.writeFileSync(path.join(dir, EXAMS), JSON.stringify({ exams: [{ title: "A", date: "2026-10-15" }, { title: 3 }, { course: null, date: "2026-11-01" }] }));
+    fs.writeFileSync(path.join(dir, EXAMS), JSON.stringify({ exams: [{ title: "A", date: "2026-10-22" }, { title: 3 }, { course: null, date: "2026-11-01" }] }));
     expect(loadExams(dir)).toEqual([
-      { title: "A", date: "2026-10-15" },
+      { title: "A", date: "2026-10-22" },
       { title: "", date: "2026-11-01" },
     ]);
-    fs.writeFileSync(path.join(dir, EXAMS), JSON.stringify([{ date: 5 }, { course: "X", title: "B", date: "2026-10-15" }]));
-    expect(loadExams(dir)).toEqual([{ course: "X", title: "B", date: "2026-10-15" }]);
+    fs.writeFileSync(path.join(dir, EXAMS), JSON.stringify([{ date: 5 }, { course: "X", title: "B", date: "2026-10-22" }]));
+    expect(loadExams(dir)).toEqual([{ course: "X", title: "B", date: "2026-10-22" }]);
   });
 
   it("quizzes, attempts and deleting a quiz removes only its listed attempts (fixed)", () => {

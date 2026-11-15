@@ -105,9 +105,9 @@ describe("sign-in (ported from login.rs)", () => {
     const h = new FakeHost();
     setHost(h);
     setLoginTimingForTests(20, 60_000);
-    const done = signIn(site, "Sign in to School", "persist:lms-login-x");
+    const done = signIn(site, "Sign in to your school", "persist:lms-login-x");
     const id = await windowOpened(h);
-    expect(h.ops[0]).toEqual({ op: "windowOpen", url: `${s.base}/login`, title: "Sign in to School", partition: "persist:lms-login-x", width: 960, height: 780 });
+    expect(h.ops[0]).toEqual({ op: "windowOpen", url: `${s.base}/login`, title: "Sign in to your school", partition: "persist:lms-login-x", width: 960, height: 780 });
     // Still on the login page: not yet.
     h.jar = [h.cookie("canvas_session", "sess", "127.0.0.1")];
     h.emit({ kind: "windowNavigated", window: id, url: `${s.base}/login/canvas` });

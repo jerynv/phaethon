@@ -34,8 +34,8 @@ function vault(): void {
   put("readings/stewart.pdf.md", "Stewart chapter 11 on series.\n");
   put("pages/week 1.md", "Week 1: review integrals.\n");
   put("modules.md", "Module 1: series.\n");
-  fs.mkdirSync(path.join(dir, "courses/Linear Algebra"), { recursive: true });
-  fs.writeFileSync(path.join(dir, "courses/Linear Algebra/syllabus.md"), "Linear algebra syllabus: eigenvalues.\n");
+  fs.mkdirSync(path.join(dir, "courses/Matrix Algebra"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "courses/Matrix Algebra/syllabus.md"), "Matrix algebra syllabus: eigenvalues.\n");
   const store: Store = {
     connections: [
       {
@@ -45,7 +45,7 @@ function vault(): void {
         signedIn: false,
         courses: {
           "1": { name: "Calculus II", folder: "Calculus II", files: {}, links: {}, due: [{ title: "PS 4", due: "2026-10-14T23:59:00Z", anchor: "ps-4" }] },
-          "2": { name: "Linear Algebra", folder: "Linear Algebra", files: {}, links: {}, due: [] },
+          "2": { name: "Matrix Algebra", folder: "Matrix Algebra", files: {}, links: {}, due: [] },
         },
       },
     ],
@@ -161,15 +161,15 @@ describe("access.rs", () => {
       "courses/Calculus II/grades.md",
       "courses/Calculus II/GRADES.md",
       "courses/Calculus II/assignments.md",
-      "courses/Linear Algebra/syllabus.md",
-      "courses/Linear Algebra",
+      "courses/Matrix Algebra/syllabus.md",
+      "courses/Matrix Algebra",
       "courses/calculus ii/README.md",
       "courses/Calculus%20II/README.md",
       "courses/Calculus II/missing.md",
     ]) {
       expect(() => ok(bad), bad).toThrow();
     }
-    expect(() => ok("courses/Linear Algebra")).toThrow('"courses/Linear Algebra" isn’t among the courses this space can see');
+    expect(() => ok("courses/Matrix Algebra")).toThrow('"courses/Matrix Algebra" isn’t among the courses this space can see');
     expect(() => ok("courses/Nope")).toThrow('"courses/Nope" isn’t among the courses this space can see');
     expect(() => ok("courses/Calculus II/missing.md")).toThrow('"courses/Calculus II/missing.md" does not exist');
     const seen = vis.courses[0];
@@ -184,7 +184,7 @@ describe("access.rs", () => {
     set("school", "canvas-x/1", ["files"]);
     const calc = path.join(dir, "courses/Calculus II");
     symlink(path.join(calc, "grades.md"), path.join(calc, "files/g.md"));
-    symlink(path.join(dir, "courses/Linear Algebra"), path.join(calc, "files/la"));
+    symlink(path.join(dir, "courses/Matrix Algebra"), path.join(calc, "files/la"));
     symlink(path.join(dir, "spaces/work"), path.join(calc, "files/work"));
     const vis = visible("school");
     for (const bad of ["courses/Calculus II/files/g.md", "courses/Calculus II/files/la/syllabus.md", "courses/Calculus II/files/work"]) {
@@ -219,7 +219,7 @@ describe("access.rs", () => {
     allowAll(["school"], ["canvas-x/1"]);
     const all = view(null);
     expect(all.spaces).toEqual(["home", "school", "work"]);
-    expect(all.courses.map((c) => c.folder)).toEqual(["courses/Calculus II", "courses/Linear Algebra"]);
+    expect(all.courses.map((c) => c.folder)).toEqual(["courses/Calculus II", "courses/Matrix Algebra"]);
     expect(Object.keys(all.access).length).toBe(2);
     const one = view("work");
     expect(one.access).toEqual({ work: { "canvas-x/2": ["syllabus"] } });

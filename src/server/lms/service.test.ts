@@ -89,9 +89,9 @@ describe("service (ported from service.rs)", () => {
   it("schools best match first", () => {
     const names = [
       "Example Online - Parents",
-      "Bethel University (Example)",
+      "Northfield College (Example)",
       "Example University Health, Inc.",
-      "Lebanon Community School Corporation (Parent/Guardian Example)",
+      "Riverside Community School Corporation (Parent/Guardian Example)",
       "Example University",
       "Example State University",
     ];
@@ -101,7 +101,7 @@ describe("service (ported from service.rs)", () => {
     ).map((s) => s.name);
     expect(got[0]).toBe("Example University");
     expect(got[1]).toBe("Example University Health, Inc.");
-    expect(got[got.length - 1]).toBe("Lebanon Community School Corporation (Parent/Guardian Example)");
+    expect(got[got.length - 1]).toBe("Riverside Community School Corporation (Parent/Guardian Example)");
   });
 
   it("school search through a fake endpoint: collapsed names, valid sites, no duplicates", async () => {

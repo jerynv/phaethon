@@ -37,7 +37,7 @@ class Fake implements Keys {
   }
 }
 
-const School = "canvas-school-instructure-com";
+const CONN = "canvas-school-instructure-com";
 const SECRET = '{"cookies":[{"name":"canvas_session","value":"s3cr3t"}],"csrf":"t"}';
 const FOLDERS: [string, string][] = [
   ["1002", "CS 101 Fall 2026 (All Sections)"],
@@ -51,11 +51,11 @@ const school = () => path.join(root(), "spaces/school");
 
 /** The space's old record (lms.json and grades.json). */
 function writeOldRecord(): void {
-  const c: Conn = { id: School, kind: "canvas", address: "https://school.instructure.com", schoolName: "Example University", lastSync: 5, signedIn: false, courses: {} };
+  const c: Conn = { id: CONN, kind: "canvas", address: "https://school.instructure.com", schoolName: "Example University", lastSync: 5, signedIn: false, courses: {} };
   for (const [id, folder] of FOLDERS) c.courses[id] = { name: folder, folder, files: {}, links: {}, due: [] };
   save(school(), { connections: [c] });
   saveGrades(school(), {
-    courses: { [`${School}/1002`]: { connection: School, courseId: "1002", course: "CS101", folder: "courses/CS 101 Fall 2026 (All Sections)", updated: 1, current: {}, groups: [], items: [] } },
+    courses: { [`${CONN}/1002`]: { connection: CONN, courseId: "1002", course: "CS101", folder: "courses/CS 101 Fall 2026 (All Sections)", updated: 1, current: {}, groups: [], items: [] } },
   });
 }
 
@@ -75,7 +75,7 @@ function oldVault(): void {
 
 function keysWithOld(): Fake {
   const k = new Fake();
-  k.entries.set(`space/school/${School}`, SECRET);
+  k.entries.set(`space/school/${CONN}`, SECRET);
   return k;
 }
 
@@ -86,11 +86,11 @@ function checkMoved(k: Fake): void {
   const st = load(root());
   expect(st.connections.length).toBe(1);
   const c = st.connections[0];
-  expect([c.id, c.schoolName, c.lastSync, c.signedIn]).toEqual([School, "Example University", 5, true]);
+  expect([c.id, c.schoolName, c.lastSync, c.signedIn]).toEqual([CONN, "Example University", 5, true]);
   expect(Object.keys(c.courses).length).toBe(4);
   for (const s of Object.values(c.courses)) expect(fs.statSync(path.join(root(), "courses", s.folder, "files/Notes/a.pdf.md")).isFile()).toBe(true);
-  expect(loadGrades(root()).courses[`${School}/1002`].folder).toBe("courses/CS 101 Fall 2026 (All Sections)");
-  expect([...k.entries]).toEqual([[`vault/${School}`, SECRET]]);
+  expect(loadGrades(root()).courses[`${CONN}/1002`].folder).toBe("courses/CS 101 Fall 2026 (All Sections)");
+  expect([...k.entries]).toEqual([[`vault/${CONN}`, SECRET]]);
   const vis = visible("school");
   expect(vis.courses.length).toBe(4);
   expect(vis.courses.every((x) => ALL_PARTS.every((p) => x.parts.has(p)) && x.parts.size === 6)).toBe(true);
@@ -122,7 +122,7 @@ describe("migration to the vault (ported from migrate.rs)", () => {
       fs.renameSync(path.join(root(), "courses", f), path.join(school(), "courses", f));
     }
     writeOldRecord();
-    k.entries.set(`space/school/${School}`, SECRET);
+    k.entries.set(`space/school/${CONN}`, SECRET);
     const r = run(k);
     expect(r.moved.length).toBe(2);
     checkMoved(k);
@@ -134,7 +134,7 @@ describe("migration to the vault (ported from migrate.rs)", () => {
     const r = run(k);
     expect(r.notes.length).toBe(1);
     expect(r.notes[0]).not.toContain("s3cr3t");
-    expect(k.entries.get(`space/school/${School}`)).toBe(SECRET);
+    expect(k.entries.get(`space/school/${CONN}`)).toBe(SECRET);
     expect(fs.existsSync(path.join(school(), ".phaethon/lms.json"))).toBe(true);
     k.failVaultSet = false;
     run(k);
@@ -147,7 +147,7 @@ describe("migration to the vault (ported from migrate.rs)", () => {
     const r = run(k);
     expect(r.notes.some((n) => n.includes("trying again next time"))).toBe(true);
     expect(fs.existsSync(path.join(school(), ".phaethon/lms.json"))).toBe(true);
-    expect(k.entries.get(`space/school/${School}`)).toBe(SECRET);
+    expect(k.entries.get(`space/school/${CONN}`)).toBe(SECRET);
     k.failSpaceGet = false;
     run(k);
     checkMoved(k);
@@ -157,10 +157,10 @@ describe("migration to the vault (ported from migrate.rs)", () => {
     const k = keysWithOld();
     run(k);
     checkMoved(k);
-    const secret = k.entries.get(`vault/${School}`)!;
-    k.entries.delete(`vault/${School}`);
-    k.entries.set(`space/school/${School}`, secret);
-    markSignedIn(School, false);
+    const secret = k.entries.get(`vault/${CONN}`)!;
+    k.entries.delete(`vault/${CONN}`);
+    k.entries.set(`space/school/${CONN}`, secret);
+    markSignedIn(CONN, false);
     // A normal launch (no space keeps an lms.json) reads nothing from the keychain.
     k.calls = 0;
     expect(run(k)).toEqual(empty);
@@ -177,7 +177,7 @@ describe("migration to the vault (ported from migrate.rs)", () => {
     run(k);
     const k2 = new Fake();
     k2.failSpaceGet = true;
-    markSignedIn(School, false);
+    markSignedIn(CONN, false);
     expect(run(k2)).toEqual(empty);
     expect(k2.calls).toBe(0);
   });
@@ -191,7 +191,7 @@ describe("migration to the vault (ported from migrate.rs)", () => {
     expect(st.connections[0].courses["1002"].folder).toBe("CS 101 Fall 2026 (All Sections) (2)");
     expect(fs.statSync(path.join(root(), "courses/CS 101 Fall 2026 (All Sections) (2)/syllabus.md")).isFile()).toBe(true);
     expect(fs.readFileSync(path.join(taken, "mine.md"), "utf8")).toBe("someone else's");
-    expect(loadGrades(root()).courses[`${School}/1002`].folder).toBe("courses/CS 101 Fall 2026 (All Sections) (2)");
+    expect(loadGrades(root()).courses[`${CONN}/1002`].folder).toBe("courses/CS 101 Fall 2026 (All Sections) (2)");
   });
 
   it("a vault without course sites is left alone", () => {

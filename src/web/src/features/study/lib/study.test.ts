@@ -277,11 +277,11 @@ describe("exam options", () => {
       course: "courses/Computer Science 101",
       name: "Computer Science 101",
       state: "fresh",
-      map: { course: "x", name: "x", built: 0, topics: [], notation: [], exams: [scope("Test 1", true, "2026-10-15"), scope("Test 2", false, "2026-11-19")], dropped: 0 },
+      map: { course: "x", name: "x", built: 0, topics: [], notation: [], exams: [scope("Test 1", true, "2026-10-22"), scope("Test 2", false, "2026-11-26")], dropped: 0 },
       stated: [{ exam: "Final", text: "everything", at: 0 }],
     };
     const opts = examOptions(course, view, [
-      { id: "a", title: "Exam 1", date: "2026-10-15", course: "Discrete" },
+      { id: "a", title: "Exam 1", date: "2026-10-22", course: "Discrete" },
       { id: "b", title: "Quiz 3", date: "2026-11-01" },
       { id: "c", title: "Lab exam", date: "2026-10-20", course: "Calculus" },
     ]);
@@ -298,7 +298,7 @@ describe("exam options", () => {
     const stale: ScopeView = { course: "c", name: "c", state: "stale", map: { course: "x", name: "x", built: 0, topics: [], notation: [], exams: [scope("Test 1", false)], dropped: 0 }, stated: [] };
     expect(examOptions(course, stale, []).map((o) => o.state)).toEqual(["unchecked"]);
     expect(examOptions(course, null, [{ id: "x", title: "Midterm", date: "2026-10-01" }]).map((o) => o.state)).toEqual(["unchecked"]);
-    expect(examDate("2026-10-15")).toMatch(/15/);
+    expect(examDate("2026-10-22")).toMatch(/22/);
     expect(examDate(undefined)).toBe("");
   });
 });

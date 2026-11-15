@@ -26,7 +26,7 @@ function coursesJson() {
     courses: [
       {
         id: 7,
-        fullname: "CS101 Computer Science 101",
+        fullname: "CS101 Introduction to Computer Science",
         shortname: "CS101-FA26",
         idnumber: "",
         summary: "<p>Logic, sets, proofs &amp; counting.</p>",
@@ -56,7 +56,7 @@ function stateJson(base: string): Record<string, unknown> {
       { id: "101", name: "Course syllabus", visible: true, uservisible: true, sectionid: "50", module: "resource", url: `${base}/mod/resource/view.php?id=101` },
       { id: "102", name: "Office hours: Tue 2–4pm", visible: true, uservisible: true, sectionid: "50", module: "label" },
       { id: "103", name: "Reading guide", visible: true, uservisible: true, sectionid: "51", module: "page", url: `${base}/mod/page/view.php?id=103` },
-      { id: "104", name: "Open textbook: Discrete Math", visible: true, uservisible: true, sectionid: "51", module: "url", url: `${base}/mod/url/view.php?id=104` },
+      { id: "104", name: "Open textbook: Computer Science", visible: true, uservisible: true, sectionid: "51", module: "url", url: `${base}/mod/url/view.php?id=104` },
       { id: "105", name: "Homework 1", visible: true, uservisible: true, sectionid: "51", module: "assign", url: `${base}/mod/assign/view.php?id=105` },
       { id: "106", name: "Lecture slides", visible: true, uservisible: true, sectionid: "51", module: "folder", url: `${base}/mod/folder/view.php?id=106` },
       { id: "107", name: "Quiz 1 (opens after Homework 1)", visible: true, uservisible: false, sectionid: "51", module: "quiz", url: `${base}/mod/quiz/view.php?id=107` },
@@ -221,7 +221,7 @@ describe("moodle courses", () => {
     const f = await fake();
     const list = await moodle.courses(f.session());
     expect(list.length).toBe(3);
-    expect(list[0]).toEqual({ id: "7", name: "CS101 Computer Science 101", code: "CS101-FA26", term: "Fall 2026", current: true });
+    expect(list[0]).toEqual({ id: "7", name: "CS101 Introduction to Computer Science", code: "CS101-FA26", term: "Fall 2026", current: true });
     expect(list[1].current).toBe(false);
     expect(list[2].current).toBe(false);
     expect(list[2].name).toBe("Research & Writing");
@@ -268,7 +268,7 @@ describe("moodle courses", () => {
 function checkContent(c: CourseContent, base: string): void {
   expect(c.modules.map((m) => [m.name, m.items])).toEqual([
     ["General", ["Announcements", "Course syllabus"]],
-    ["Week 1: Logic & Proofs", ["Reading guide", "Open textbook: Discrete Math", "Homework 1", "Lecture slides"]],
+    ["Week 1: Logic & Proofs", ["Reading guide", "Open textbook: Computer Science", "Homework 1", "Lecture slides"]],
   ]);
   const syllabus = `${base}/pluginfile.php/401/mod_resource/content/3/CS101%20Syllabus%20Fall%202026.pdf`;
   const l1 = `${base}/pluginfile.php/406/mod_folder/content/0/Lecture%201%20-%20Propositions.pdf`;
@@ -290,7 +290,7 @@ function checkContent(c: CourseContent, base: string): void {
   expect(page.html).not.toContain("Last modified");
 
   expect(c.links.length).toBe(1);
-  expect(c.links[0].title).toBe("Open textbook: Discrete Math");
+  expect(c.links[0].title).toBe("Open textbook: Computer Science");
   expect(c.links[0].url.href).toBe("https://discrete.openmathbooks.org/pdfs/dmoi4.pdf");
 
   expect(c.assignments.length).toBe(1);
@@ -345,7 +345,7 @@ describe("moodle parsing", () => {
     expect(s[1].name).toBe("Week 1: Logic & Proofs");
     expect(s[1].cms.map((c) => [c.id, c.modname, c.name])).toEqual([
       [103, "page", "Reading guide"],
-      [104, "url", "Open textbook: Discrete Math"],
+      [104, "url", "Open textbook: Computer Science"],
       [105, "assign", "Homework 1"],
       [106, "folder", "Lecture slides"],
     ]);

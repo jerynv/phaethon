@@ -116,7 +116,7 @@ describe("blackboard courses and content", () => {
       ["_100_1", "Calculus II", "MATH-201-FA26", "Fall 2026", true],
       ["_102_1", "Computer Science 101", "CS-101-FA26", null, true],
       ["_103_1", "American History", "HIST-H105-FA26", null, false],
-      ["_101_1", "Introductory Psychology", "PSY-P101-SP26", "Spring 2026", false],
+      ["_101_1", "Introductory Psychology", "PSY-101-SP26", "Spring 2026", false],
     ]);
     expect(got.some((c) => c.id === "_200_1")).toBe(false);
     expect(f.log.filter((s) => s.target === "/learn/api/public/v1/terms/_10_1").length).toBe(1);

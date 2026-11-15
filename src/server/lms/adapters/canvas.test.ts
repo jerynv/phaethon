@@ -86,7 +86,7 @@ describe("canvas courses and content", () => {
       ["1002", "Calculus II", "MATH201", "Fall 2026", true],
       ["1003", "Intro to Ethics", "P100", "Spring 2020", false],
       ["1005", "Research Seminar", null, null, false],
-      ["900", "Discrete Mathematics", "CS101", "Spring 2026", false],
+      ["900", "Introduction to Programming", "CS101", "Spring 2026", false],
     ]);
     expect(f.log.length).toBe(3);
     for (const s of f.log) {
@@ -360,11 +360,11 @@ describe("canvas courses and content", () => {
     const c = await canvas.content(session(base), "1001");
     const byName = new Map(c.files.map((x) => [x.name, x.url.href]));
     expect([...byName.keys()].sort()).toEqual([
-      "Unit3_Review_Problems.pdf", // announcement body link
-      "Unit3_formula_sheet.pdf", // attachment on a discussion reached through a module item
       "Problem set 10.pdf", // announcement attachment, hidden_for_user but downloadable
       "Problem set 8.pdf", // discussion attachment
       "Problem_set_9.pdf", // discussion body link
+      "Unit3_Review_Problems.pdf", // announcement body link
+      "Unit3_formula_sheet.pdf", // attachment on a discussion reached through a module item
       "seating chart.pdf", // attachment without its own url, fetched by id
       "z-table.pdf", // quiz description link
     ]);

@@ -1,7 +1,7 @@
 [
   {
     "id": 900,
-    "name": "Discrete Mathematics",
+    "name": "Introduction to Programming",
     "course_code": "CS101",
     "workflow_state": "completed",
     "enrollment_term_id": 4,

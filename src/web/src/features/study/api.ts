@@ -2,6 +2,7 @@
 import { Channel, invoke } from "@/lib/core";
 
 import { untilTerminal, type StreamEnd } from "../courses/lib/stream";
+import type { ModelPick } from "@/features/chat/api";
 import type {
   CardInput,
   CitationCheck,
@@ -28,7 +29,7 @@ export const studyRate = (space: string, deck: string, card: string, confidence:
   invoke<{ due: number; again: boolean }>("study_rate", { space, deck, card, confidence });
 export const studyQuiz = (space: string, path: string) => invoke<Quiz>("study_quiz", { space, path });
 export const studyDelete = (space: string, path: string) => invoke<void>("study_delete", { space, path });
-export const studyScope = (space: string, course: string) => invoke<ScopeView>("study_scope", { space, course });
+export const studyScope = (space: string, course: string, model?: ModelPick | null) => invoke<ScopeView>("study_scope", { space, course, ...(model ? { model } : {}) });
 export const studyScopeState = (space: string, course: string, exam: string, text: string) =>
   invoke<void>("study_scope_state", { space, course, exam, text });
 export const studyCitationsCheck = (space: string, citations: { path: string; quote: string }[]) =>
@@ -43,14 +44,25 @@ function stream(cmd: string, args: Record<string, unknown>, onEvent: (e: StudyEv
   );
 }
 
-export const studyMakeDeck = (space: string, sources: string[], options: DeckOptions, onEvent: (e: StudyEvent) => void) =>
-  stream("study_make_deck", { space, sources, options }, onEvent);
-export const studyMakeQuiz = (space: string, sources: string[], options: QuizOptions, onEvent: (e: StudyEvent) => void) =>
-  stream("study_make_quiz", { space, sources, options }, onEvent);
-export const studyQuizSubmit = (space: string, path: string, answers: Record<string, string | string[]>, onEvent: (e: StudyEvent) => void) =>
-  stream("study_quiz_submit", { space, path, answers }, onEvent);
-export const studyReviewMistakes = (space: string, attemptPath: string, onEvent: (e: StudyEvent) => void) =>
-  stream("study_review_mistakes", { space, attemptPath }, onEvent);
+/**
+ * How a run is asked: `model` is the pick made in the dialog (the core uses
+ * the current conversation's when absent), `runId` lets `studyMakeCancel`
+ * stop it, `origin` is the chat block it was made for.
+ */
+export type RunOptions = { model?: ModelPick | null; runId?: string; origin?: string };
+const runArgs = (o: RunOptions = {}) => ({ ...(o.model ? { model: o.model } : {}), ...(o.runId ? { runId: o.runId } : {}), ...(o.origin ? { origin: o.origin } : {}) });
+
+export const studyMakeDeck = (space: string, sources: string[], options: DeckOptions, onEvent: (e: StudyEvent) => void, run?: RunOptions) =>
+  stream("study_make_deck", { space, sources, options, ...runArgs(run) }, onEvent);
+export const studyMakeQuiz = (space: string, sources: string[], options: QuizOptions, onEvent: (e: StudyEvent) => void, run?: RunOptions) =>
+  stream("study_make_quiz", { space, sources, options, ...runArgs(run) }, onEvent);
+/** Stops the make or mapping run started with `runId`; false when none is running. */
+export const studyMakeCancel = (space: string, runId: string) => invoke<boolean>("study_make_cancel", { space, runId });
+export const studyQuizSubmit = (space: string, path: string, answers: Record<string, string | string[]>, onEvent: (e: StudyEvent) => void, model?: ModelPick | null) =>
+  stream("study_quiz_submit", { space, path, answers, ...runArgs({ model }) }, onEvent);
+export const studyReviewMistakes = (space: string, attemptPath: string, onEvent: (e: StudyEvent) => void, model?: ModelPick | null) =>
+  stream("study_review_mistakes", { space, attemptPath, ...runArgs({ model }) }, onEvent);
 
 /** Map what a course teaches and what each test covers, so a quiz for a test can be grounded. */
-export const studyScopeBuild = (space: string, course: string, onEvent: (e: StudyEvent) => void) => stream("study_scope_build", { space, course }, onEvent);
+export const studyScopeBuild = (space: string, course: string, onEvent: (e: StudyEvent) => void, run?: RunOptions) =>
+  stream("study_scope_build", { space, course, ...runArgs(run) }, onEvent);

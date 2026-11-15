@@ -189,10 +189,10 @@ describe("quiz answers", () => {
     });
 
     test("layout, question and flags survive leaving, without crossing quiz revisions", () => {
-      saveQuizSession("school", "study/quizzes/test.json", 42, { layout: "all", flagged: ["q2", "q2", "removed"], at: 99 });
-      expect(loadQuizSession("school", "study/quizzes/test.json", 42, ["q1", "q2"])).toEqual({ layout: "all", flagged: ["q2"], at: 1 });
-      expect(loadQuizSession("school", "study/quizzes/test.json", 43, ["q1", "q2"])).toEqual({ layout: "single", flagged: [], at: 0 });
-      expect(loadQuizSession("work", "study/quizzes/test.json", 42, ["q1", "q2"])).toEqual({ layout: "single", flagged: [], at: 0 });
+      saveQuizSession("school", "study/quizzes/test.json", 42, { layout: "all", flagged: ["q2", "q2", "removed"], at: 99, sure: { q1: "sure", removed: "guess", q2: "maybe" as never } });
+      expect(loadQuizSession("school", "study/quizzes/test.json", 42, ["q1", "q2"])).toEqual({ layout: "all", flagged: ["q2"], at: 1, sure: { q1: "sure" } });
+      expect(loadQuizSession("school", "study/quizzes/test.json", 43, ["q1", "q2"])).toEqual({ layout: "single", flagged: [], at: 0, sure: {} });
+      expect(loadQuizSession("work", "study/quizzes/test.json", 42, ["q1", "q2"])).toEqual({ layout: "single", flagged: [], at: 0, sure: {} });
     });
   });
 

@@ -1,16 +1,19 @@
-/** Where a quiz was left (layout, flags, question), kept beside the answer draft. */
-export type QuizSession = { layout: "single" | "all"; flagged: string[]; at: number };
+import type { Sure } from "./quiz-results";
+
+/** Where a quiz was left (layout, flags, question, how sure of each answer), kept beside the answer draft. */
+export type QuizSession = { layout: "single" | "all"; flagged: string[]; at: number; sure?: Record<string, Sure> };
 
 const key = (space: string, path: string) => `phaethon.quiz-session:${space}:${path}`;
 
 export function loadQuizSession(space: string, path: string, created: number, ids: string[]): QuizSession {
-  const fallback: QuizSession = { layout: "single", flagged: [], at: 0 };
+  const fallback: QuizSession = { layout: "single", flagged: [], at: 0, sure: {} };
   try {
     const value = JSON.parse(globalThis.localStorage?.getItem(key(space, path)) ?? "null") as {
       created?: number;
       layout?: string;
       flagged?: unknown;
       at?: unknown;
+      sure?: unknown;
     } | null;
     if (!value || value.created !== created) return fallback;
     return {
@@ -19,6 +22,11 @@ export function loadQuizSession(space: string, path: string, created: number, id
         ? [...new Set<string>(value.flagged.filter((id: unknown): id is string => typeof id === "string" && ids.includes(id)))]
         : [],
       at: Number.isInteger(value.at) ? Math.max(0, Math.min(ids.length - 1, value.at as number)) : 0,
+      sure: Object.fromEntries(
+        Object.entries(value.sure && typeof value.sure === "object" ? (value.sure as Record<string, unknown>) : {}).filter(
+          (e): e is [string, Sure] => ids.includes(e[0]) && (e[1] === "guess" || e[1] === "unsure" || e[1] === "sure"),
+        ),
+      ),
     };
   } catch {
     return fallback;

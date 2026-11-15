@@ -28,18 +28,18 @@ const spaces = [
 
 const ALL = ["overview", "syllabus", "assignments", "announcements", "files", "grades"];
 const lmsCourseList = [
-  { id: "101", name: "Computer Science 101", code: "CS 101", term: "Fall 2026", current: true },
-  { id: "102", name: "Calculus II", code: "MATH 201", term: "Fall 2026", current: true },
-  { id: "103", name: "Introduction to Psychology", code: "PSY 101", term: "Fall 2026", current: true },
-  { id: "104", name: "Elementary Spanish I", code: "SPAN 101", term: "Fall 2026", current: true },
-  { id: "90", name: "Introduction to Programming", code: "CS 100", term: "Spring 2026", current: false },
-  { id: "91", name: "Writing and Research", code: "ENG 110", term: "Spring 2026", current: false },
+  { id: "101", name: "Logic and Discrete Math", code: "MTH 214", term: "Fall 2026", current: true },
+  { id: "102", name: "Calculus II", code: "MTH 162", term: "Fall 2026", current: true },
+  { id: "103", name: "Mind and Behavior", code: "PSY 105", term: "Fall 2026", current: true },
+  { id: "104", name: "Beginning Spanish", code: "SPN 101", term: "Fall 2026", current: true },
+  { id: "90", name: "Programming Foundations", code: "CMP 110", term: "Spring 2026", current: false },
+  { id: "91", name: "Writing Studio", code: "WRT 120", term: "Spring 2026", current: false },
 ];
 const schools = [
-  { name: "Example University", address: "https://school.instructure.com" },
-  { name: "Example University Downtown", address: "https://school.instructure.com" },
-  { name: "Example State University", address: "https://examplestate.instructure.com" },
-  { name: "Example Community College", address: "https://examplecc.instructure.com" },
+  { name: "Northfield State University", address: "https://canvas.northfield.example" },
+  { name: "Northfield State, Lakeview campus", address: "https://canvas.northfield.example" },
+  { name: "Ridgeway College", address: "https://ridgeway.example" },
+  { name: "Harbor Community College", address: "https://harbor.example" },
 ];
 const connections: { id: string; kind: string; address: string; schoolName?: string; signedIn: boolean; lastSync?: number; courses: string[] }[] = empty
   ? []
@@ -47,8 +47,8 @@ const connections: { id: string; kind: string; address: string; schoolName?: str
       {
         id: "c1",
         kind: "canvas",
-        address: "https://school.instructure.com",
-        schoolName: "Example University",
+        address: "https://canvas.northfield.example",
+        schoolName: "Northfield State University",
         signedIn: scenario !== "signedout",
         lastSync: Date.now() - 3 * DAY,
         courses: ["101", "102", "103"],
@@ -106,7 +106,7 @@ const contentEntries = (name: string) => [
   { path: `courses/${name}/assignments.md`, title: "Homework 6: Induction", kind: "assignment", anchor: "homework-6" },
   { path: `courses/${name}/files/syllabus.pdf`, title: "syllabus.pdf", kind: "file", bytes: 2048 * 61 },
   { path: `courses/${name}/files/Lecture notes/Week 3 board.pdf`, title: "Week 3 board.pdf", kind: "file", bytes: 1024 * 1024 * 3.2 },
-  { path: `courses/${name}/files/Textbook chapter 2.pdf`, title: "Textbook chapter 2.pdf", kind: "file", bytes: 1024 * 1024 * 8.4 },
+  { path: `courses/${name}/files/Course notes chapter 2.pdf`, title: "Course notes chapter 2.pdf", kind: "file", bytes: 1024 * 1024 * 8.4 },
   { path: `courses/${name}/files/Test 1 review.docx`, title: "Test 1 review.docx", kind: "file", bytes: 1024 * 44 },
   { path: `courses/${name}/pages/office-hours.md`, title: "Office hours", kind: "page" },
 ];
@@ -114,7 +114,7 @@ const contentEntries = (name: string) => [
 // ---- Study ----
 
 type MockCard = { front: string; back: string; source?: string; quote?: string; picture?: number; confidence?: number; due?: number };
-const CS101 = "courses/Computer Science 101";
+const CS101 = "courses/Logic and Discrete Math";
 const CALC = "courses/Calculus II";
 const now0 = Date.now();
 const decks: Record<string, { title: string; course?: string; sources: string[]; cards: MockCard[] }> = empty
@@ -122,12 +122,12 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
   : {
       "study/decks/Sets and functions.md": {
         title: "Sets and functions",
-        course: "Computer Science 101",
-        sources: [`${CS101}/files/Textbook chapter 2.pdf`, `${CS101}/syllabus.md`],
+        course: "Logic and Discrete Math",
+        sources: [`${CS101}/files/Course notes chapter 2.pdf`, `${CS101}/syllabus.md`],
         cards: [
-          { front: "What is the power set $\\mathcal{P}(S)$ of a set $S$?", back: "The set of all subsets of $S$, including $\\emptyset$ and $S$ itself.", source: `${CS101}/files/Textbook chapter 2.pdf`, quote: "Given a set S, the power set of S is the set of all subsets of the set S.", confidence: 4, due: now0 - DAY },
-          { front: "A function is {{injective}} when $f(a) = f(b)$ implies $a = b$.", back: "", source: `${CS101}/files/Textbook chapter 2.pdf`, quote: "A function f is said to be one-to-one, or an injunction, if and only if f(a) = f(b) implies that a = b", confidence: 2, due: now0 - 3600_000 },
-          { front: "How many elements does $\\mathcal{P}(S)$ have when $|S| = n$?", back: "$2^n$", source: `${CS101}/files/Textbook chapter 2.pdf`, quote: "the power set of a set with n elements has 2^n elements" },
+          { front: "What is the power set $\\mathcal{P}(S)$ of a set $S$?", back: "The set of all subsets of $S$, including $\\emptyset$ and $S$ itself.", source: `${CS101}/files/Course notes chapter 2.pdf`, quote: "Given a set S, the power set of S is the set of all subsets of the set S.", confidence: 4, due: now0 - DAY },
+          { front: "A function is {{injective}} when $f(a) = f(b)$ implies $a = b$.", back: "", source: `${CS101}/files/Course notes chapter 2.pdf`, quote: "A function f is said to be one-to-one, or an injunction, if and only if f(a) = f(b) implies that a = b", confidence: 2, due: now0 - 3600_000 },
+          { front: "How many elements does $\\mathcal{P}(S)$ have when $|S| = n$?", back: "$2^n$", source: `${CS101}/files/Course notes chapter 2.pdf`, quote: "the power set of a set with n elements has 2^n elements" },
           { front: "What makes a function a bijection?", back: "It is both one-to-one (injective) and onto (surjective).", source: `${CS101}/files/Lecture notes/Week 3 board.pdf`, quote: "bijection = 1-1 and onto", picture: 2 },
           { front: "State De Morgan’s law for sets.", back: "$\\overline{A \\cup B} = \\overline{A} \\cap \\overline{B}$ and $\\overline{A \\cap B} = \\overline{A} \\cup \\overline{B}$", confidence: 5, due: now0 + 5 * DAY },
           { front: "What is the Cartesian product $A \\times B$?", back: "The set of ordered pairs $(a, b)$ with $a \\in A$ and $b \\in B$." },
@@ -135,7 +135,7 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
       },
       "study/decks/Logic and proofs.md": {
         title: "Logic and proofs",
-        course: "Computer Science 101",
+        course: "Logic and Discrete Math",
         sources: [`${CS101}/modules.md`],
         cards: [
           { front: "What is the contrapositive of $p \\to q$?", back: "$\\neg q \\to \\neg p$, which is logically equivalent to $p \\to q$.", source: `${CS101}/modules.md`, quote: "The contrapositive of p → q is ¬q → ¬p", confidence: 3, due: now0 - 2 * 3600_000 },
@@ -182,9 +182,9 @@ const test1: MockQuestion[] = [
     choices: ["$\\{a, b\\}$", "$\\{\\emptyset, \\{a\\}, \\{b\\}, \\{a, b\\}\\}$", "$\\{\\{a\\}, \\{b\\}\\}$", "$\\{\\emptyset, a, b\\}$"],
     answer: "$\\{\\emptyset, \\{a\\}, \\{b\\}, \\{a, b\\}\\}$",
     explanation: "The power set holds every subset, including the empty set and the set itself.",
-    source: `${CS101}/files/Textbook chapter 2.pdf`,
+    source: `${CS101}/files/Course notes chapter 2.pdf`,
     topic: "Power sets",
-    citations: [{ source: `${CS101}/files/Textbook chapter 2.pdf`, quote: "Given a set S, the power set of S is the set of all subsets of the set S.", at: "§2.1" }],
+    citations: [{ source: `${CS101}/files/Course notes chapter 2.pdf`, quote: "Given a set S, the power set of S is the set of all subsets of the set S.", at: "§2.1" }],
   },
   {
     id: "q2",
@@ -193,9 +193,9 @@ const test1: MockQuestion[] = [
     choices: ["true", "false"],
     answer: "false",
     explanation: "That property is one-to-one (injective). Onto means every element of the codomain is hit.",
-    source: `${CS101}/files/Textbook chapter 2.pdf`,
+    source: `${CS101}/files/Course notes chapter 2.pdf`,
     topic: "Functions",
-    citations: [{ source: `${CS101}/files/Textbook chapter 2.pdf`, quote: "A function f is said to be one-to-one, or an injunction, if and only if f(a) = f(b) implies that a = b", at: "§2.3" }],
+    citations: [{ source: `${CS101}/files/Course notes chapter 2.pdf`, quote: "A function f is said to be one-to-one, or an injunction, if and only if f(a) = f(b) implies that a = b", at: "§2.3" }],
   },
   {
     id: "q3",
@@ -224,9 +224,9 @@ const test1: MockQuestion[] = [
     prompt: "Explain why $|\\mathcal{P}(S)| = 2^n$ when $|S| = n$.",
     answer: "Each of the n elements is either in a subset or not, so there are 2 choices per element and 2^n subsets.",
     explanation: "Building a subset is n independent yes/no choices.",
-    source: `${CS101}/files/Textbook chapter 2.pdf`,
+    source: `${CS101}/files/Course notes chapter 2.pdf`,
     topic: "Power sets",
-    citations: [{ source: `${CS101}/files/Textbook chapter 2.pdf`, quote: "the power set of a set with n elements has 2^n elements", at: "§2.1" }],
+    citations: [{ source: `${CS101}/files/Course notes chapter 2.pdf`, quote: "the power set of a set with n elements has 2^n elements", at: "§2.1" }],
   },
 ];
 const grounding = {
@@ -237,8 +237,8 @@ const grounding = {
   asked: 7,
   kept: 5,
   dropped: [
-    { text: "How many edges does $K_5$ have?", why: "Series aren’t on Test 1." },
-    { text: "Which rule gives $\\binom{n}{k}$?", why: "The quote isn’t in Textbook chapter 2.pdf." },
+    { text: "How many edges does $K_5$ have?", why: "Graphs aren’t on Test 1." },
+    { text: "Which rule gives $\\binom{n}{k}$?", why: "The quote isn’t in Course notes chapter 2.pdf." },
   ],
   coverage: [
     { topic: "Power sets", sections: "§2.1", count: 2 },
@@ -252,7 +252,7 @@ const quizzes: Record<string, { title: string; course?: string; sources: string[
   : {
       "study/quizzes/Test 1 practice.json": {
         title: "Test 1 practice",
-        course: "Computer Science 101",
+        course: "Logic and Discrete Math",
         sources: [CS101],
         created: now0 - 2 * DAY,
         questions: test1,
@@ -292,11 +292,11 @@ const cardsOf = (path: string) =>
 const scopeViews: Record<string, unknown> = {
   [CS101]: {
     course: CS101,
-    name: "Computer Science 101",
+    name: "Logic and Discrete Math",
     state: "fresh",
     map: {
       course: CS101,
-      name: "Computer Science 101",
+      name: "Logic and Discrete Math",
       built: now0 - 4 * DAY,
       topics: [
         { id: "t1", title: "Propositional logic", sections: "§1.1–1.3", terms: [], weight: 2, homework: ["Problem set 1"], evidence: [] },
@@ -382,7 +382,7 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "101",
-      course: "Computer Science 101",
+      course: "Logic and Discrete Math",
       folder: CS101,
       updated: Date.now() - 2 * 3600_000,
       current: { percent: 91.25, letter: "A-", points: 146, possible: 160 },
@@ -401,8 +401,8 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "103",
-      course: "Introduction to Psychology",
-      folder: "courses/Introduction to Psychology",
+      course: "Mind and Behavior",
+      folder: "courses/Mind and Behavior",
       updated: Date.now() - 2 * 3600_000,
       current: {},
       groups: [],
@@ -427,7 +427,7 @@ const localDate = (days: number) => {
 let exams: { id: string; course?: string; title: string; date: string }[] = empty
   ? []
   : [
-      { id: "e1", course: "Computer Science 101", title: "Test 1", date: localDate(4) },
+      { id: "e1", course: "Logic and Discrete Math", title: "Test 1", date: localDate(4) },
       { id: "e2", course: "Calculus II", title: "Midterm 2", date: localDate(12) },
     ];
 let planState = { studyDays: [0, 1, 2, 3, 4, 5], sessionsPerDay: 3, sessionMinutes: 25, done: [] as string[] };
@@ -734,6 +734,11 @@ export default {
     scopeViews[course] = { ...base, course, name: course.replace(/^courses\//, ""), map: { ...base.map, course, name: course.replace(/^courses\//, ""), exams: [] }, stated: [] };
     send({ type: "done" });
   },
+  study_make_cancel: (args: Args) => {
+    const stop = runs.get(String(args.runId));
+    stop?.();
+    return !!stop;
+  },
   study_make_deck: (args: Args) => make(args, false),
   study_make_quiz: (args: Args) => make(args, true),
   study_citations_check: (args: Args) =>
@@ -746,14 +751,14 @@ export default {
     return {
       courses: [
         { name: "Calculus II", folder: "Calculus II" },
-        { name: "Computer Science 101", folder: "Computer Science 101" },
-        { name: "Introduction to Psychology", folder: "Introduction to Psychology" },
+        { name: "Logic and Discrete Math", folder: "Logic and Discrete Math" },
+        { name: "Mind and Behavior", folder: "Mind and Behavior" },
       ],
       items: [
-        { course: "Computer Science 101", folder: "Computer Science 101", title: "Homework 6: Induction", due: at2359(2), link: `${CS101}/assignments.md#homework-6` },
+        { course: "Logic and Discrete Math", folder: "Logic and Discrete Math", title: "Homework 6: Induction", due: at2359(2), link: `${CS101}/assignments.md#homework-6` },
         { course: "Calculus II", folder: "Calculus II", title: "Homework 3", due: at2359(3), link: "courses/Calculus II/assignments.md#homework-3" },
-        { course: "Introduction to Psychology", folder: "Introduction to Psychology", title: "Reading: Chapter 4, Memory", due: at2359(0), link: "courses/Introduction to Psychology/assignments.md#reading-chapter-4" },
-        { course: "Introduction to Psychology", folder: "Introduction to Psychology", title: "Reflection paper 2", due: at2359(9), link: "courses/Introduction to Psychology/assignments.md#reflection-paper-2" },
+        { course: "Mind and Behavior", folder: "Mind and Behavior", title: "Reading: Chapter 4, Memory", due: at2359(0), link: "courses/Mind and Behavior/assignments.md#reading-chapter-4" },
+        { course: "Mind and Behavior", folder: "Mind and Behavior", title: "Reflection paper 2", due: at2359(9), link: "courses/Mind and Behavior/assignments.md#reflection-paper-2" },
         { course: "Calculus II", folder: "Calculus II", title: "Quiz 3 (online)", due: at2359(6), link: "courses/Calculus II/assignments.md#quiz-3" },
       ],
     };
@@ -784,44 +789,69 @@ export default {
 
 let importCancel: (() => void) | null = null;
 
+const runs = new Map<string, () => void>();
+
 async function make(args: Args, quiz: boolean) {
   const send = streamTo(args.onEvent);
   const sources = args.sources as string[];
   const options = args.options as { count: number; title?: string; focus?: string; exam?: string; fromAttempt?: string };
   if (!sources.length && !options.fromAttempt) throw "Choose what to make them from.";
-  const steps: [string, number, number, number?, number?][] = [
-    ["reading", 0, 1],
-    ["reading", 1, 1],
-    ["making", 0, 3],
-    ["checking", 0, options.count, 0, 0],
-    ["checking", Math.round(options.count / 2), options.count, Math.round(options.count / 2) - 1, 1],
-    ["making", 1, 3],
-    ["checking", options.count, options.count, options.count, 2],
-    ["saving", 0, 1],
-  ];
+  let cancelled = false;
+  const runId = typeof args.runId === "string" ? args.runId : null;
+  if (runId) runs.set(runId, () => (cancelled = true));
+  const wait = async (ms: number) => {
+    await sleep(ms);
+    if (cancelled) throw new Error("cancelled");
+  };
   const course = sources.map((x) => /^courses\/[^/]+/.exec(x)?.[0]).find(Boolean);
-  if (options.exam && course && !scopeViews[course]) {
-    await sleep(400);
-    send({ type: "needsScope", course, courseName: course.replace(/^courses\//, ""), exam: options.exam });
-    send({ type: "error", message: `I couldn’t find what ${options.exam} covers in the course materials, and I won’t guess.` });
-    return;
-  }
-  for (const [step, done, total, kept, dropped] of steps) {
-    await sleep(500);
-    send({ type: "progress", step, done, total, ...(kept != null ? { kept, dropped } : {}) });
-    if (scenario === "nomodel" && step === "making") {
-      send({ type: "error", message: "No model is set up for this space. Add an API key in Settings, or sign in to Claude Code." });
+  const view = course ? (scopeViews[course] as { state: string; map?: { exams: { title: string; known: boolean }[] }; stated: { exam: string }[] } | undefined) : undefined;
+  try {
+    if (course && (!view || view.state === "none")) {
+      for (let d = 0; d <= 3; d++) {
+        await wait(500);
+        send({ type: "progress", step: "mapping", done: d, total: 3 });
+      }
+    }
+    const said = view?.stated.some((x) => x.exam.toLowerCase() === options.exam?.toLowerCase());
+    const known = view?.map?.exams.some((e) => e.known && e.title.toLowerCase() === options.exam?.toLowerCase());
+    if (options.exam && course && !said && !known) {
+      await wait(300);
+      send({ type: "needsScope", course, courseName: course.replace(/^courses\//, ""), exam: options.exam });
+      send({ type: "error", message: `I couldn’t find what ${options.exam} covers in the course materials, and I won’t guess.` });
       return;
     }
+    const steps: [string, number, number, number?, number?][] = [
+      ["reading", 0, 1],
+      ["reading", 1, 1],
+      ["making", 0, 3],
+      ["checking", 0, options.count, 0, 0],
+      ["checking", Math.round(options.count / 2), options.count, Math.round(options.count / 2) - 1, 1],
+      ["making", 1, 3],
+      ["checking", options.count, options.count, options.count, 2],
+      ["saving", 0, 1],
+    ];
+    for (const [step, done, total, kept, dropped] of steps) {
+      await wait(700);
+      send({ type: "progress", step, done, total, ...(kept != null ? { kept, dropped } : {}) });
+      if (scenario === "nomodel" && step === "making") {
+        send({ type: "error", message: "No model is set up for this space. Add an API key in Settings, or sign in to Claude Code." });
+        return;
+      }
+    }
+  } catch {
+    send({ type: "cancelled" });
+    return;
+  } finally {
+    if (runId) runs.delete(runId);
   }
   const title = options.title || (options.fromAttempt ? "Mistakes to review" : options.focus ? `${quiz ? "Quiz" : "Cards"} on ${options.focus}` : quiz ? "Practice quiz" : "New cards");
   if (quiz) {
     const path = `study/quizzes/${title}.json`;
-    quizzes[path] = { title, course: "Computer Science 101", sources, created: Date.now(), questions: test1, grounding: { ...grounding, exam: options.exam ?? "", scope: options.exam ? grounding.scope : "" } };
+    quizzes[path] = { title, course: "Logic and Discrete Math", sources, created: Date.now(), questions: test1, grounding: { ...grounding, exam: options.exam ?? "", scope: options.exam ? grounding.scope : "" } };
     send({ type: "done", path, questions: test1.length, grounding: quizzes[path]!.grounding });
   } else {
     const path = `study/decks/${title}.md`;
-    decks[path] = { title, course: "Computer Science 101", sources, cards: decks["study/decks/Sets and functions.md"]?.cards.map((c) => ({ ...c, confidence: undefined, due: undefined })) ?? [] };
+    decks[path] = { title, course: "Logic and Discrete Math", sources, cards: decks["study/decks/Sets and functions.md"]?.cards.map((c) => ({ ...c, confidence: undefined, due: undefined })) ?? [] };
     send({ type: "done", path, cards: decks[path]!.cards.length, grounding });
   }
 }

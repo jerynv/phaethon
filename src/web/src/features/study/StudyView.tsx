@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { DeckEditor } from "./components/DeckEditor";
+import { useStudyFlow } from "./flow-store";
 import { Overview } from "./components/Overview";
 import { QuizScreen } from "./components/QuizScreen";
 import { ReviewSession } from "./components/ReviewSession";
@@ -17,7 +18,12 @@ export type StudyScreen =
   | { kind: "deck"; path: string | null };
 
 export function StudyView({ space }: { space: SpaceView }) {
-  const [screen, setScreen] = useState<StudyScreen>({ kind: "overview" });
+  // A screen asked for from elsewhere (a quiz made from a chat card) opens first.
+  const [screen, setScreen] = useState<StudyScreen>(() => useStudyFlow.getState().take(space.id) ?? { kind: "overview" });
+  const next = useStudyFlow((s) => (s.next?.space === space.id ? s.next.screen : null));
+  useEffect(() => {
+    if (next) setScreen(useStudyFlow.getState().take(space.id) ?? next);
+  }, [next, space.id]);
   const back = () => setScreen({ kind: "overview" });
   return (
     <div className="flex min-h-0 flex-1 flex-col">

@@ -134,7 +134,7 @@ export type StudyEvent =
 
 export type Confidence = 1 | 2 | 3 | 4 | 5;
 
-export type DeckOptions = { count: number; focus?: string; title?: string; fromAttempt?: string; exam?: string };
+export type DeckOptions = { count: number; focus?: string; title?: string; fromAttempt?: string; exam?: string; context?: string };
 export type QuizOptions = {
   count: number;
   kinds: QuestionKind[];
@@ -142,6 +142,7 @@ export type QuizOptions = {
   title?: string;
   focus?: string;
   exam?: string;
+  context?: string;
 };
 
 export type CourseSource = { name: string; folder: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };

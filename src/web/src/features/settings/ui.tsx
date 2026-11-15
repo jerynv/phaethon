@@ -1,7 +1,8 @@
-import { CheckIcon, CopyIcon } from "lucide-react";
 import { createContext, type DependencyList, type ReactNode, use, useCallback, useEffect, useRef, useState } from "react";
 import { SkeletonCard } from "@/components/skeletons";
 import { SurfaceError, cleanMessage } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import {
   AlertDialog,
@@ -18,28 +19,123 @@ import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
 
 /**
- * The pieces every settings section is built from: a group (sentence-case
- * label over a hairline card), rows inside it (label and a one-line
- * description on the left, the control on the right, at least 44 px), and a
- * loader that shows a skeleton after 150 ms and a surface error with Retry.
+ * The pieces every settings section is built from (docs/UI-REBUILD.md ›
+ * Settings, after e0fb and 9e25):
+ *
+ * - `SettingsCard`: a white card with a 40 px tile, a title and one line,
+ *   then the card's fields. `CardBlock` starts a new part of a card under a
+ *   full-width hairline ("Triggers" / "Skills").
+ * - `Field`: a label above its control, with a hint or an error under it.
+ * - `Row`: a setting as a sentence, title and description on the left and
+ *   the control on the right (a switch row is `ToggleRow` from the
+ *   primitives).
+ * - `useLoad` + `Loader`: a skeleton after 150 ms, a surface error with Retry.
  */
 
-export function Group({ label, action, children, className }: { label?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
+/** The 40 px square that leads a card: a hairline, a soft shadow, the glyph or brand mark inside. */
+export function Tile({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <section className={cn("flex flex-col gap-2", className)}>
-      {label || action ? (
-        <div className="flex min-h-6 items-center justify-between gap-3 px-1">
-          {label ? <h2 className="font-medium text-2xs text-muted-foreground">{label}</h2> : <span />}
-          {action}
-        </div>
-      ) : null}
+    <span
+      aria-hidden
+      className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-foreground shadow-card [&_svg]:size-5 [&_img]:size-5", className)}
+    >
       {children}
+    </span>
+  );
+}
+
+export function SettingsCard({
+  icon,
+  title,
+  description,
+  action,
+  media,
+  children,
+  className,
+  id,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  /** Top-right: a menu, a badge, an add button. */
+  action?: ReactNode;
+  /** Art across the top. */
+  media?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  id?: string;
+}) {
+  return (
+    <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card shadow-card", className)}>
+      {media}
+      <header className="flex items-center gap-4 p-5">
+        {icon ? <Tile>{icon}</Tile> : null}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h2 className="truncate font-medium text-lg tracking-title">{title}</h2>
+          {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}
+        </div>
+        {action ? <div className="flex shrink-0 items-center gap-1.5">{action}</div> : null}
+      </header>
+      {children ? <div className="flex flex-col gap-5 px-5 pb-5">{children}</div> : null}
     </section>
   );
 }
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("divide-y overflow-hidden rounded-xl border bg-card", className)}>{children}</div>;
+/** A new part of a card under a full-width hairline, with an optional heading and action. */
+export function CardBlock({ title, action, children, className }: { title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("-mx-5 flex flex-col gap-2 border-t px-5 pt-5", className)}>
+      {title || action ? (
+        <div className="flex min-h-7 items-center justify-between gap-3">
+          {title ? <h3 className="font-medium text-sm">{title}</h3> : <span />}
+          {action}
+        </div>
+      ) : null}
+      {children}
+    </div>
+  );
+}
+
+/** A label above its control; a hint or an error below. */
+export function Field({
+  label,
+  htmlFor,
+  aside,
+  hint,
+  children,
+  className,
+}: {
+  label: ReactNode;
+  htmlFor?: string;
+  /** Right of the label: a link ("Get a key"), a status. */
+  aside?: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const Label = htmlFor ? "label" : "div";
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      <div className="flex min-h-5 items-center justify-between gap-3">
+        <Label htmlFor={htmlFor} className="text-muted-foreground text-sm">
+          {label}
+        </Label>
+        {aside}
+      </div>
+      {children}
+      {hint ? <div className="text-muted-foreground text-xs">{hint}</div> : null}
+    </div>
+  );
+}
+
+/** A section's lead-in above its cards: one muted line and an action on the right. */
+export function Intro({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex min-h-8 items-center justify-between gap-3 px-1">
+      <p className="min-w-0 text-muted-foreground text-sm">{children}</p>
+      {action}
+    </div>
+  );
 }
 
 export function Row({
@@ -60,13 +156,13 @@ export function Row({
 }) {
   const Label = htmlFor ? "label" : "div";
   return (
-    <div className={cn("flex min-h-11 flex-col justify-center gap-2 px-3.5 py-3", className)}>
+    <div data-slot="settings-row" className={cn("flex min-h-11 flex-col justify-center gap-2 py-1", className)}>
       <div className="flex min-w-0 items-center gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <Label htmlFor={htmlFor} className="font-medium text-sm">
+          <Label htmlFor={htmlFor} className="text-foreground text-sm">
             {label}
           </Label>
-          {description ? <div className="min-w-0 text-muted-foreground text-xs">{description}</div> : null}
+          {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}
         </div>
         {children ? <div className="flex shrink-0 items-center gap-1.5">{children}</div> : null}
       </div>
@@ -75,10 +171,15 @@ export function Row({
   );
 }
 
+/** A grey inset line holding a value and its actions: a saved key, a path, a command. */
+export function Well({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn("flex min-h-9 min-w-0 items-center gap-2 rounded-lg border bg-well py-1 pr-1 pl-3 text-sm", className)}>{children}</div>;
+}
+
 /** A status dot and its word. */
 export function Status({ tone, children, className }: { tone: "ready" | "warning" | "neutral" | "error" | "busy"; children: ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex shrink-0 items-center gap-1.5 text-muted-foreground text-xs", className)}>
+    <span className={cn("inline-flex min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground text-sm", className)}>
       <span
         className={cn(
           "size-1.5 shrink-0 rounded-full",
@@ -169,7 +270,7 @@ export function CopyButton({ text, label = "Copy", className }: { text: string; 
           />
         }
       >
-        {done ? <CheckIcon className="text-success" /> : <CopyIcon />}
+        {done ? <Icon icon={icons.check} className="text-success" /> : <Icon icon={icons.copy} />}
       </TooltipTrigger>
       <TooltipPopup side="top">{done ? "Copied" : label}</TooltipPopup>
     </Tooltip>
@@ -204,7 +305,7 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="px-5 py-3">
-          <AlertDialogClose render={<Button size="sm" variant="ghost" />}>Cancel</AlertDialogClose>
+          <AlertDialogClose render={<Button size="sm" variant="outline" />}>Cancel</AlertDialogClose>
           <Button
             size="sm"
             variant={destructive ? "destructive" : "default"}

@@ -1,9 +1,10 @@
-import { ChevronRightIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, type SpaceView } from "@/app/api";
 import { HUES } from "@/app/NewSpaceDialog";
 import { useNav } from "@/app/store";
-import { FieldError, RowError, SurfaceError, cleanMessage } from "@/components/errors";
+import { EmptyState, FieldError, RowError, SurfaceError, cleanMessage } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { SkeletonCard, SkeletonRows } from "@/components/skeletons";
 import { SpaceAvatar } from "@/components/space-avatar";
 import { toast } from "@/components/toast";
@@ -11,11 +12,10 @@ import { StartTruncate, Truncate } from "@/components/truncate";
 import { AsyncButton } from "@/components/async-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
+import { ToggleRow } from "@/components/ui/toggle-row";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
 import {
@@ -29,7 +29,7 @@ import {
   revokeGrant,
   setFullAccess,
 } from "../agents/api";
-import { Card, ConfirmDialog, Group, Loader, Row, useCrumb, useLoad } from "../ui";
+import { CardBlock, ConfirmDialog, Field, Loader, Row, SettingsCard, useCrumb, useLoad, Well } from "../ui";
 
 /**
  * Settings › Spaces: the list of spaces, and per space its name,
@@ -52,7 +52,7 @@ function Swatches({ value, onChange, disabled }: { value: number; onChange: (h: 
           aria-checked={h === value}
           disabled={disabled}
           onClick={() => onChange(h)}
-          className={cn("size-5 rounded-full ring-offset-2 ring-offset-card transition-shadow disabled:opacity-60", h === value && "ring-2 ring-foreground/60")}
+          className={cn("size-6 rounded-full ring-offset-2 ring-offset-card transition-shadow disabled:opacity-60", h === value && "ring-2 ring-primary")}
           style={{ background: `oklch(0.62 0.14 ${h})` }}
         />
       ))}
@@ -119,21 +119,14 @@ function NewSpace({ open, onOpenChange, onCreated }: { open: boolean; onOpenChan
             <Label>Colour</Label>
             <Swatches value={hue} onChange={setHue} />
           </div>
-          <label className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5">
-            <span className="flex flex-col">
-              <span className="font-medium text-sm">Study tools</span>
-              <span className="text-muted-foreground text-xs">Courses, flashcards, quizzes, grades and a study plan.</span>
-            </span>
-            <Switch checked={edu} onCheckedChange={setEdu} />
-          </label>
+          <ToggleRow title="Study tools" description="Courses, flashcards, quizzes, grades and a study plan." checked={edu} onCheckedChange={setEdu} />
         </DialogPanel>
         <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => void submit()} disabled={busy} className="min-w-24">
-            {busy ? <Spinner /> : null}
-            {busy ? "Creating…" : "Create space"}
+          <Button size="sm" onClick={() => void submit()} pending={busy}>
+            Create space
           </Button>
         </DialogFooter>
       </DialogPopup>
@@ -164,7 +157,6 @@ function SavedField({ id, value, placeholder, maxLength, onSave }: { id: string;
       <div className="relative">
         <Input
           id={id}
-          size="sm"
           value={draft}
           maxLength={maxLength}
           placeholder={placeholder}
@@ -209,24 +201,33 @@ function IdentityGroup({ space }: { space: SpaceView }) {
     }
   };
   return (
-    <Group label="Space">
-      <Card>
-        <Row label="Name" htmlFor={`name-${space.id}`} below={<SavedField id={`name-${space.id}`} value={space.name} maxLength={60} onSave={(name) => update({ name })} />} />
-        <Row
-          label="Description"
-          htmlFor={`desc-${space.id}`}
-          description="Phaethon reads it to know what the space is for."
-          below={<SavedField id={`desc-${space.id}`} value={space.description} placeholder="What this space is for" maxLength={200} onSave={(description) => update({ description })} />}
+    <SettingsCard
+      icon={<SpaceAvatar name={space.name} hue={space.hue} className="size-10 rounded-xl text-base" />}
+      title={space.name}
+      description={space.description || "No description"}
+    >
+      <Field label="Name" htmlFor={`name-${space.id}`}>
+        <SavedField id={`name-${space.id}`} value={space.name} maxLength={60} onSave={(name) => update({ name })} />
+      </Field>
+      <Field label="Description" htmlFor={`desc-${space.id}`} hint="Phaethon reads it to know what the space is for.">
+        <SavedField id={`desc-${space.id}`} value={space.description} placeholder="What this space is for" maxLength={200} onSave={(description) => update({ description })} />
+      </Field>
+      <Field label="Colour" aside={busy === "hue" ? <Spinner size="sm" tone="muted" /> : undefined}>
+        <Swatches value={space.hue} disabled={busy === "hue"} onChange={(hue) => void quick("hue", { hue })} />
+        {busy === "hue" && error ? <FieldError>{error}</FieldError> : null}
+      </Field>
+      <CardBlock>
+        <ToggleRow
+          className="py-0"
+          title="Study tools"
+          description="Courses, flashcards, quizzes, grades and a study plan."
+          checked={space.educationEnabled}
+          pending={busy === "edu"}
+          onCheckedChange={(on) => void quick("edu", { educationEnabled: on })}
         />
-        <Row label="Colour" below={busy === "hue" && error ? <FieldError>{error}</FieldError> : undefined}>
-          {busy === "hue" ? <Spinner size="sm" tone="muted" /> : null}
-          <Swatches value={space.hue} disabled={busy === "hue"} onChange={(hue) => void quick("hue", { hue })} />
-        </Row>
-        <Row label="Study tools" description="Courses, flashcards, quizzes, grades and a study plan." below={busy !== "hue" && error ? <FieldError>{error}</FieldError> : undefined}>
-          <Switch checked={space.educationEnabled} disabled={busy === "edu"} onCheckedChange={(on) => void quick("edu", { educationEnabled: on })} aria-label="Study tools" />
-        </Row>
-      </Card>
-    </Group>
+        {busy !== "hue" && error ? <FieldError>{error}</FieldError> : null}
+      </CardBlock>
+    </SettingsCard>
   );
 }
 
@@ -276,56 +277,59 @@ function AgentsGroup({ space }: { space: SpaceView }) {
 
   const w = ws.data;
   return (
-    <Group label="Coding agents">
-      <Card>
-        <Row
-          label="Working folder"
-          description={
-            w ? (
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <StartTruncate value={w.path} className="font-mono text-2xs" />
-                {!w.available ? (
-                  <span className="flex items-center gap-1 text-warning-foreground">
-                    <TriangleAlertIcon className="size-3 shrink-0" />
-                    This folder is missing. Choose it again or use Phaethon’s folder.
-                  </span>
-                ) : w.kind === "managed" ? (
-                  <span>Phaethon’s own folder for this space</span>
-                ) : null}
-              </span>
+    <SettingsCard icon={<Icon icon={icons.terminal} />} title="Coding agents" description="Where Claude Code, Codex and Gemini CLI work in this space.">
+      <Field
+        label="Working folder"
+        hint={
+          w && !w.available ? (
+            <span className="flex items-center gap-1 text-warning-foreground">
+              <Icon icon={icons.warning} className="size-3" />
+              This folder is missing. Choose it again or use Phaethon’s folder.
+            </span>
+          ) : w?.kind === "managed" ? (
+            "Phaethon’s own folder for this space."
+          ) : undefined
+        }
+      >
+        <Well>
+          <Icon icon={icons.folder} className="size-4 text-muted-foreground" />
+          <span className="min-w-0 flex-1">
+            {w ? (
+              <StartTruncate value={w.path} className="font-mono text-xs" />
             ) : ws.error ? (
               <RowError message="Couldn’t read the working folder" onRetry={() => void ws.reload()} />
             ) : wsWaiting ? (
               <SkeletonRows count={1} className="-mx-2 [&>div]:h-4" />
-            ) : null
-          }
-          below={error ? <FieldError>{error}</FieldError> : undefined}
-        >
+            ) : null}
+          </span>
           {w?.kind === "folder" ? (
-            <Button size="xs" variant="ghost" onClick={() => void clear()} disabled={busy !== null}>
-              {busy === "clear" ? <Spinner /> : null}
+            <Button size="xs" variant="ghost" onClick={() => void clear()} disabled={busy !== null} pending={busy === "clear"}>
               Use Phaethon’s folder
             </Button>
           ) : null}
-          <Button size="xs" variant="outline" onClick={() => void choose()} disabled={busy !== null || !w} className="min-w-22">
-            {busy === "choose" ? <Spinner /> : null}
-            {busy === "choose" ? "Choosing…" : "Choose…"}
+          <Button size="xs" variant="outline" onClick={() => void choose()} disabled={!w || (busy !== null && busy !== "choose")} pending={busy === "choose"}>
+            Choose…
           </Button>
-        </Row>
-        <Row
-          label="Full access"
+        </Well>
+        <FieldError>{error}</FieldError>
+      </Field>
+      <CardBlock>
+        <ToggleRow
+          className="py-0"
+          title="Full access"
           description={on ? "Coding agents can change files and run commands anywhere on this computer." : "Coding agents can read this space and write only where you allow."}
-          below={fa.error ? <RowError message="Couldn’t read full access" onRetry={() => void fa.reload()} /> : undefined}
-        >
-          {busy === "access" ? <Spinner size="sm" tone="muted" /> : null}
-          <Switch checked={on} disabled={busy === "access" || !fa.data} onCheckedChange={(next) => (next ? setConfirm(true) : void access(false))} aria-label="Full access" />
-        </Row>
-      </Card>
+          checked={on}
+          disabled={!fa.data}
+          pending={busy === "access"}
+          onCheckedChange={(next) => (next ? setConfirm(true) : void access(false))}
+        />
+        {fa.error ? <RowError message="Couldn’t read full access" onRetry={() => void fa.reload()} /> : null}
+      </CardBlock>
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Give coding agents full access in ${space.name}?`} confirm="Turn on full access" destructive onConfirm={() => void access(true)}>
         <p>Claude Code, Codex and Gemini CLI run without Phaethon’s walls in this space: they can edit and delete files, run any command, and reach folders outside the space.</p>
         <p>Phaethon’s own agent isn’t affected. The setting stays on this computer and isn’t synced with your vault.</p>
       </ConfirmDialog>
-    </Group>
+    </SettingsCard>
   );
 }
 
@@ -356,7 +360,7 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
     }
   };
   return (
-    <Group label="Access between spaces">
+    <SettingsCard icon={<Icon icon={icons.locked} />} title="Access between spaces" description="Asked for in a chat when one space needs another’s files.">
       <Loader state={grants} errorTitle="Couldn’t read the access list" skeleton={<SkeletonCard rows={2} />}>
         {(g) => {
           const rows = [
@@ -364,13 +368,13 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
             ...g.incoming.map((x) => ({ id: x.id, other: x.to, path: x.path, text: `${nameOf(x.to)} reads from here` })),
           ];
           return (
-            <Card>
+            <div className="flex flex-col">
               {rows.length === 0 ? (
-                <div className="px-3.5 py-6 text-center text-muted-foreground text-xs">No other space can read this one, and it reads none. Access is asked for in a chat when needed.</div>
+                <p className="text-muted-foreground text-sm">No other space can read this one, and it reads none.</p>
               ) : (
                 rows.map((r) => (
-                  <div key={r.id} className="flex min-h-11 items-center gap-2.5 px-3.5 py-2">
-                    <SpaceAvatar name={nameOf(r.other)} hue={hueOf(r.other)} />
+                  <div key={r.id} className="flex min-h-12 items-center gap-3 border-t py-2 first:border-t-0">
+                    <SpaceAvatar name={nameOf(r.other)} hue={hueOf(r.other)} className="size-6 rounded-md text-2xs" />
                     <div className="flex min-w-0 flex-1 flex-col">
                       <Truncate className="text-sm">{r.text}</Truncate>
                       <StartTruncate value={r.path} className="font-mono text-2xs text-muted-foreground" />
@@ -382,20 +386,20 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
                 ))
               )}
               {g.problems.length ? (
-                <div className="flex flex-col gap-1 bg-warning-surface px-3.5 py-2.5 text-warning-foreground text-xs">
+                <div className="mt-2 flex flex-col gap-1 rounded-lg bg-warning/8 px-3 py-2.5 text-warning-foreground text-xs">
                   {g.problems.map((p) => (
                     <span key={p} className="flex items-start gap-1.5 [overflow-wrap:anywhere]">
-                      <TriangleAlertIcon className="mt-0.5 size-3 shrink-0" />
+                      <Icon icon={icons.warning} className="mt-0.5 size-3" />
                       {p}
                     </span>
                   ))}
                 </div>
               ) : null}
-            </Card>
+            </div>
           );
         }}
       </Loader>
-    </Group>
+    </SettingsCard>
   );
 }
 
@@ -412,7 +416,7 @@ function WritesGroup({ space }: { space: SpaceView }) {
   };
   const since = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return (
-    <Group label="Changing files without asking">
+    <SettingsCard icon={<Icon icon={icons.write} />} title="Changing files without asking" description="Where you said yes for good to Phaethon’s edits.">
       <Loader state={perms} errorTitle="Couldn’t read what may change files" skeleton={<SkeletonCard rows={1} />}>
         {(p) => {
           const rows = [
@@ -420,15 +424,15 @@ function WritesGroup({ space }: { space: SpaceView }) {
             ...p.conversations.map((x) => ({ key: x.thread, label: x.title, since: x.since, change: { scope: "conversation" as const, thread: x.thread } })),
           ];
           return (
-            <Card>
+            <div className="flex flex-col">
               {rows.length === 0 ? (
-                <div className="px-3.5 py-6 text-center text-muted-foreground text-xs">Phaethon asks before it changes a file here.</div>
+                <p className="text-muted-foreground text-sm">Phaethon asks before it changes a file here.</p>
               ) : (
                 rows.map((r) => (
-                  <div key={r.key} className="flex min-h-11 items-center gap-2.5 px-3.5 py-2">
+                  <div key={r.key} className="flex min-h-12 items-center gap-3 border-t py-2 first:border-t-0">
                     <div className="flex min-w-0 flex-1 flex-col">
                       <Truncate className="text-sm">{r.label}</Truncate>
-                      <span className="text-2xs text-muted-foreground tabular-nums">Since {since(r.since)}</span>
+                      <span className="text-muted-foreground text-xs tabular-nums">Since {since(r.since)}</span>
                     </div>
                     <Button size="xs" variant="ghost-destructive" onClick={() => void revoke(r.label, r.change)}>
                       Ask again
@@ -436,11 +440,11 @@ function WritesGroup({ space }: { space: SpaceView }) {
                   </div>
                 ))
               )}
-            </Card>
+            </div>
           );
         }}
       </Loader>
-    </Group>
+    </SettingsCard>
   );
 }
 
@@ -464,12 +468,11 @@ function ExportGroup({ space }: { space: SpaceView }) {
     }
   };
   return (
-    <Group label="Export">
-      <Card>
+    <SettingsCard icon={<Icon icon={icons.download} />} title="Export" description="Everything in a space is plain files you can take with you.">
+      <div className="flex flex-col">
         <Row label="Export space" description="A zip of its files, conversations and memory.">
-          <Button size="xs" variant="outline" onClick={() => void run()} disabled={busy} className="min-w-24">
-            {busy ? <Spinner /> : null}
-            {busy ? "Exporting…" : "Export…"}
+          <Button size="xs" variant="outline" onClick={() => void run()} pending={busy}>
+            Export…
           </Button>
         </Row>
         <Row label="Space folder" description="Open it in your file manager.">
@@ -477,8 +480,8 @@ function ExportGroup({ space }: { space: SpaceView }) {
             Show
           </AsyncButton>
         </Row>
-      </Card>
-    </Group>
+      </div>
+    </SettingsCard>
   );
 }
 
@@ -506,53 +509,60 @@ export function SpacesSection() {
 
   if (current) return <SpaceDetail key={current.id} space={current} spaces={list} onBack={back} />;
 
+  const add = (
+    <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+      <Icon icon={icons.add} />
+      New space
+    </Button>
+  );
+
   return (
-    <Group
-      label="Spaces"
-      action={
-        spaces.data ? (
-          <Button size="xs" variant="outline" onClick={() => setCreating(true)}>
-            <PlusIcon />
-            New space
-          </Button>
-        ) : null
-      }
-    >
+    <>
       {spaces.error && !spaces.data ? (
         <SurfaceError title="Couldn’t load your spaces" message={spaces.error} onRetry={() => void refreshSpaces()} />
       ) : !spaces.data ? (
         waiting ? <SkeletonCard rows={3} /> : null
       ) : list.length === 0 ? (
-        <Card>
-          <Empty className="py-10">
-            <EmptyHeader>
-              <EmptyTitle className="text-sm">No spaces yet</EmptyTitle>
-              <EmptyDescription className="text-xs">A space keeps its own files, conversations and memory.</EmptyDescription>
-            </EmptyHeader>
-            <Button size="xs" onClick={() => setCreating(true)}>
-              <PlusIcon />
+        <EmptyState
+          palette="meadow"
+          seed="spaces"
+          title="No spaces yet"
+          description="A space keeps its own files, conversations and memory."
+          action={
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Icon icon={icons.add} />
               New space
             </Button>
-          </Empty>
-        </Card>
+          }
+          className="max-w-none"
+        />
       ) : (
-        <Card>
-          {list.map((s) => (
-            <button key={s.id} type="button" onClick={() => setEditing(s.id)} className="group flex min-h-11 w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-accent/50">
-              <SpaceAvatar name={s.name} hue={s.hue} className="size-7 rounded-md text-xs" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex min-w-0 items-center gap-2">
-                  <Truncate className="min-w-0 font-medium text-sm">{s.name}</Truncate>
-                  {s.educationEnabled ? <span className="shrink-0 text-2xs text-muted-foreground">Study tools</span> : null}
+        <SettingsCard icon={<Icon icon={icons.deck} />} title="Spaces" description="Each keeps its own files, conversations and memory." action={add}>
+          <div className="-mx-2 flex flex-col gap-px">
+            {list.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setEditing(s.id)}
+                className="group flex min-h-14 w-full items-center gap-3 rounded-lg px-2 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <SpaceAvatar name={s.name} hue={s.hue} className="size-8 rounded-lg text-xs" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Truncate className="min-w-0 text-sm">{s.name}</Truncate>
+                    {s.educationEnabled ? (
+                      <span className="shrink-0 rounded-sm bg-primary/8 px-1.5 text-primary text-xs leading-5">Study tools</span>
+                    ) : null}
+                  </span>
+                  {s.description ? <Truncate className="text-muted-foreground text-sm">{s.description}</Truncate> : <span className="text-sm text-subtle-foreground">No description</span>}
                 </span>
-                {s.description ? <Truncate className="text-muted-foreground text-xs">{s.description}</Truncate> : <span className="text-subtle-foreground text-xs">No description</span>}
-              </span>
-              <ChevronRightIcon className="size-4 shrink-0 text-subtle-foreground transition-colors group-hover:text-foreground" />
-            </button>
-          ))}
-        </Card>
+                <Icon icon={icons.chevronRight} className="size-4 text-subtle-foreground transition-[color,translate] group-hover:translate-x-0.5 group-hover:text-foreground" />
+              </button>
+            ))}
+          </div>
+        </SettingsCard>
       )}
       <NewSpace open={creating} onOpenChange={setCreating} onCreated={(s) => setEditing(s.id)} />
-    </Group>
+    </>
   );
 }

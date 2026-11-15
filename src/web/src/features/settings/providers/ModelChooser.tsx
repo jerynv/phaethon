@@ -1,9 +1,11 @@
-import { CheckIcon, ChevronDownIcon, CircleAlertIcon, CornerDownLeftIcon, SearchIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cleanMessage } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { ProviderIcon } from "@/components/provider-icon";
 import { SkeletonRows } from "@/components/skeletons";
 import { Truncate } from "@/components/truncate";
+import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { listModels, type ModelInfo, type ProviderInfo } from "./api";
@@ -92,16 +94,16 @@ export function ModelChooser({
     <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
       <PopoverTrigger
         disabled={disabled}
-        className="inline-flex h-7 w-52 min-w-0 items-center gap-2 rounded-control border border-input bg-popover px-2 text-left text-sm shadow-xs/5 transition-colors hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-64 data-popup-open:bg-accent/50 dark:bg-input/32"
+        className="inline-flex h-7 w-52 min-w-0 items-center gap-2 rounded-lg border bg-card px-2.5 text-left text-sm shadow-card outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 data-popup-open:bg-accent"
       >
         <ProviderIcon id={provider.id} className="size-3.5" />
         {label ? <Truncate className="flex-1">{label}</Truncate> : <span className="flex-1 truncate text-placeholder">Choose a model</span>}
-        <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
+        <Icon icon={icons.chevronDown} className="size-3.5 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverPopup side="bottom" align="end" padding="none" className="w-80 max-w-(--viewport-max-width)" initialFocus={() => document.getElementById(`model-search-${provider.id}`) as HTMLElement}>
         <div className="flex max-h-[min(22rem,var(--available-height))] min-h-0 flex-col">
           <div className="flex h-9 shrink-0 items-center gap-2 border-b px-3">
-            <SearchIcon className="size-3.5 shrink-0 text-subtle-foreground" />
+            <Icon icon={icons.search} className="size-3.5 text-subtle-foreground" />
             <input
               id={`model-search-${provider.id}`}
               value={query}
@@ -117,7 +119,7 @@ export function ModelChooser({
             {loading && !models ? <SkeletonRows count={5} /> : null}
             {error && !models ? (
               <div className="flex items-start gap-2 px-2 py-2 text-muted-foreground text-xs">
-                <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-error" />
+                <Icon icon={icons.error} className="mt-0.5 size-3.5 text-error" />
                 <span className="line-clamp-3 min-w-0 flex-1 [overflow-wrap:anywhere]">{error}</span>
                 <button type="button" className="shrink-0 font-medium text-foreground hover:underline" onClick={() => void load(true)}>
                   Retry
@@ -136,13 +138,13 @@ export function ModelChooser({
                   data-highlighted={i === hi || undefined}
                   onMouseMove={() => setHi(i)}
                   onClick={() => choose(m.id)}
-                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm data-highlighted:bg-accent"
+                  className="flex h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm data-highlighted:bg-accent"
                 >
                   <span className="flex min-w-0 flex-1 items-baseline gap-2">
                     <Truncate className="shrink">{m.name}</Truncate>
                     {m.name !== m.id ? <Truncate className="min-w-0 flex-1 font-mono text-2xs text-subtle-foreground">{m.id}</Truncate> : null}
                   </span>
-                  <CheckIcon className={cn("size-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} />
+                  <Icon icon={icons.check} className={cn("size-3.5 text-primary", selected ? "opacity-100" : "opacity-0")} />
                 </div>
               );
             })}
@@ -154,11 +156,11 @@ export function ModelChooser({
                 data-highlighted={hi === rows.length || undefined}
                 onMouseMove={() => setHi(rows.length)}
                 onClick={() => choose(typed)}
-                className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm data-highlighted:bg-accent"
+                className="flex h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm data-highlighted:bg-accent"
               >
                 <span className="shrink-0 text-muted-foreground">Use</span>
                 <Truncate className="min-w-0 flex-1 font-mono text-xs">{typed}</Truncate>
-                <CornerDownLeftIcon className="size-3.5 shrink-0 text-subtle-foreground" />
+                <Kbd>Enter</Kbd>
               </div>
             ) : null}
             {models && models.length > 0 && rows.length === 0 && !canType && typed ? (

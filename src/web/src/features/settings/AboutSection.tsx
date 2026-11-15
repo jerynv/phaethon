@@ -1,14 +1,17 @@
-import { RotateCwIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type InstallEvent, type UpdateView } from "@/app/api";
+import { ArtCanvas } from "@/components/art";
+import { BrandMark } from "@/components/brand-mark";
 import { ClampedText, FieldError, cleanMessage } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { Channel, invoke } from "@/lib/core";
 import { relativeTime } from "@/lib/platform";
-import { Card, Row, Status, useLoad } from "./ui";
+import { CardBlock, Row, SettingsCard, Status, useLoad } from "./ui";
 
 /** Settings › About: the version, updates (check, then install with a progress bar), and licenses. */
 
@@ -17,7 +20,7 @@ const mb = (n: number) => (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1);
 function Progress({ ev }: { ev: InstallEvent }) {
   const pct = ev.kind === "downloading" && ev.total ? Math.min(100, (ev.received / ev.total) * 100) : null;
   return (
-    <div className="flex flex-col gap-1.5 px-3.5 pb-3">
+    <div className="flex flex-col gap-1.5 pb-1">
       <div className="relative h-0.5 overflow-hidden rounded-full bg-muted">
         {pct !== null ? (
           <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${pct}%` }} />
@@ -25,7 +28,7 @@ function Progress({ ev }: { ev: InstallEvent }) {
           <div className="absolute inset-y-0 w-2/5 animate-indeterminate rounded-full bg-primary" />
         )}
       </div>
-      <div className="flex items-center justify-between text-muted-foreground text-xs">
+      <div className="flex items-center justify-between text-muted-foreground text-xs" role="status">
         <span>{ev.kind === "downloading" ? "Downloading" : ev.kind === "installing" ? "Installing" : "Restarting Phaethon"}</span>
         {ev.kind === "downloading" ? (
           <span className="tabular-nums">{ev.total ? `${mb(ev.received)} / ${mb(ev.total)} MB` : `${mb(ev.received)} MB`}</span>
@@ -121,7 +124,7 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
         below={<FieldError>{message}</FieldError>}
       >
         <Button size="xs" variant="outline" onClick={() => void check()} disabled={busy} className="min-w-28">
-          {busy ? <Spinner /> : <RotateCwIcon />}
+          {busy ? <Spinner /> : <Icon icon={icons.retry} />}
           {busy ? "Checking…" : "Retry"}
         </Button>
       </Row>
@@ -153,48 +156,50 @@ export function AboutSection() {
   const info = useLoad(() => api.coreInfo());
   const update = useLoad(() => api.updateState());
   return (
-    <Card>
-      <div className="flex items-center gap-3 px-3.5 py-4">
-        <span className="inline-flex size-10 shrink-0 select-none items-center justify-center rounded-xl bg-primary font-semibold text-lg text-primary-foreground tracking-hero">P</span>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="font-semibold text-lg tracking-title">Phaethon</span>
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {info.data ? (
-              `Version ${info.data.version}`
-            ) : info.error ? (
-              <span className="inline-flex items-center gap-1.5">
-                Couldn’t read the version.
-                <button type="button" className="font-medium text-foreground hover:underline" onClick={() => void info.reload()}>
-                  Retry
-                </button>
-              </span>
-            ) : (
-              <VersionSkeleton />
-            )}
-          </span>
-        </div>
-      </div>
-      {update.data ? (
-        <UpdateRow initial={update.data} />
-      ) : update.error ? (
-        <Row label="Updates" description={<Status tone="error">Couldn’t read the update status</Status>} below={<FieldError>{update.error}</FieldError>}>
-          <Button size="xs" variant="outline" onClick={() => void update.reload()} disabled={update.loading} className="min-w-20">
-            {update.loading ? <Spinner /> : <RotateCwIcon />}
-            Retry
-          </Button>
-        </Row>
-      ) : (
-        <UpdateSkeleton />
-      )}
-      <Row label="Licenses" description="Phaethon is MIT licensed. Its interface components come from T3 Code (MIT); the other libraries it uses are listed in THIRD_PARTY_NOTICES.md." />
-    </Card>
+    <SettingsCard
+      media={<ArtCanvas palette="sky" seed="about" weave className="h-28" />}
+      icon={<BrandMark />}
+      title="Phaethon"
+      description={
+        <span className="tabular-nums">
+          {info.data ? (
+            `Version ${info.data.version}`
+          ) : info.error ? (
+            <span className="inline-flex items-center gap-1.5">
+              Couldn’t read the version.
+              <button type="button" className="font-medium text-foreground hover:underline" onClick={() => void info.reload()}>
+                Retry
+              </button>
+            </span>
+          ) : (
+            <VersionSkeleton />
+          )}
+        </span>
+      }
+    >
+      <CardBlock>
+        {update.data ? (
+          <UpdateRow initial={update.data} />
+        ) : update.error ? (
+          <Row label="Updates" description={<Status tone="error">Couldn’t read the update status</Status>} below={<FieldError>{update.error}</FieldError>}>
+            <Button size="xs" variant="outline" onClick={() => void update.reload()} disabled={update.loading} className="min-w-20">
+              {update.loading ? <Spinner /> : <Icon icon={icons.retry} />}
+              Retry
+            </Button>
+          </Row>
+        ) : (
+          <UpdateSkeleton />
+        )}
+        <Row label="Licenses" description="Phaethon is MIT licensed. Its interface components come from T3 Code (MIT); the other libraries it uses are listed in THIRD_PARTY_NOTICES.md." />
+      </CardBlock>
+    </SettingsCard>
   );
 }
 
 function UpdateSkeleton() {
   const show = useDelayed(true);
   return (
-    <div className="flex min-h-17 items-center gap-4 px-3.5 py-3 motion-safe:animate-skeleton" aria-hidden>
+    <div className="flex min-h-11 items-center gap-4 py-1 motion-safe:animate-skeleton" aria-hidden>
       {show ? (
         <>
           <div className="flex flex-1 flex-col gap-1.5">

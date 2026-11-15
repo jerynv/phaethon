@@ -1,6 +1,8 @@
-import { EllipsisIcon, PlusIcon, RotateCwIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { FieldError, RowError, cleanMessage } from "@/components/errors";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { ProviderIcon } from "@/components/provider-icon";
 import { SkeletonCard } from "@/components/skeletons";
 import { toast } from "@/components/toast";
@@ -13,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
-import { Card, ConfirmDialog, CopyButton, Group, Loader, Row, Status, useLoad } from "../ui";
+import { CardBlock, ConfirmDialog, CopyButton, Field, Intro, Loader, Row, SettingsCard, Status, useLoad, Well } from "../ui";
 import {
   CLI_IDS,
   CLI_INFO,
@@ -62,8 +64,13 @@ function UsageBar({ w }: { w: UsageWindow }) {
   return (
     <div className="grid grid-cols-[4.5rem_1fr_2.25rem_5.5rem] items-center gap-3 text-xs">
       <span className="truncate text-muted-foreground">{w.label}</span>
-      <div className="h-1 overflow-hidden rounded-full bg-muted">
-        <div className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")} style={{ width: `${pct}%` }} />
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ type: "spring", stiffness: 420, damping: 40 }}
+          className={cn("h-full rounded-full", pct >= 90 ? "bg-destructive" : pct >= 75 ? "bg-warning" : "bg-primary")}
+        />
       </div>
       <span className="text-right tabular-nums">{pct}%</span>
       <span className="truncate text-right text-subtle-foreground tabular-nums">{reset ? (reset === "now" ? "resets now" : `resets in ${reset}`) : ""}</span>
@@ -146,6 +153,7 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
 
   return (
     <Row
+      className="py-3"
       label={
         <span className="flex min-w-0 items-center gap-2">
           <Truncate className="min-w-0">{i.config.name}</Truncate>
@@ -181,19 +189,25 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
         </Button>
       ) : null}
       {many && !current && i.installed ? (
-        <Button size="xs" variant="outline" disabled={busy === "use"} onClick={() => void act("use")} className="min-w-12">
-          {busy === "use" ? <Spinner /> : "Use"}
+        <Button size="xs" variant="outline" pending={busy === "use"} onClick={() => void act("use")}>
+          Use
         </Button>
       ) : null}
       {canSignOut || canRemove ? (
         <Menu>
           <MenuTrigger render={<Button size="icon-xs" variant="ghost-muted" aria-label={`${i.config.name} actions`} />}>
-            {busy === "out" ? <Spinner /> : <EllipsisIcon />}
+            {busy === "out" ? <Spinner /> : <Icon icon={icons.more} />}
           </MenuTrigger>
           <MenuPopup align="end">
-            {canSignOut ? <MenuItem onClick={() => void act("out")}>Sign out</MenuItem> : null}
+            {canSignOut ? (
+              <MenuItem onClick={() => void act("out")}>
+                <Icon icon={icons.signOut} />
+                Sign out
+              </MenuItem>
+            ) : null}
             {canRemove ? (
               <MenuItem variant="destructive" onClick={() => setConfirm(true)}>
+                <Icon icon={icons.delete} />
                 Remove account
               </MenuItem>
             ) : null}
@@ -215,8 +229,8 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   const id = `new-account-${cli}`;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="flex h-10 w-full items-center gap-2 px-3.5 text-muted-foreground text-sm transition-colors hover:bg-accent/50 hover:text-foreground">
-        <PlusIcon className="size-3.5" />
+      <button type="button" onClick={() => setOpen(true)} className="flex h-8 w-fit items-center gap-2 rounded-md text-primary text-sm transition-opacity hover:opacity-80">
+        <Icon icon={icons.add} className="size-4" />
         Add account
       </button>
     );
@@ -246,17 +260,13 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
       below={
         <div className="flex flex-col gap-1.5">
           <form
-            className="flex items-center gap-1.5"
+            className="flex items-center gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               void submit();
             }}
           >
-            <Input id={id} size="sm" autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
-            <Button type="submit" size="sm" disabled={busy} className="min-w-16">
-              {busy ? <Spinner /> : null}
-              {busy ? "Adding…" : "Add"}
-            </Button>
+            <Input id={id} autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
             <Button
               size="sm"
               variant="ghost"
@@ -266,6 +276,9 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
               }}
             >
               Cancel
+            </Button>
+            <Button type="submit" size="sm" pending={busy}>
+              Add
             </Button>
           </form>
           <FieldError>{error}</FieldError>
@@ -281,40 +294,48 @@ function CliCard({ cli, status, instances, onChanged, onRecheck, rechecking }: {
   const mine = instances.filter((i) => i.config.cli === cli);
   const cur = currentInstance(instances, cli);
   return (
-    <Card>
-      <div className="flex min-h-11 items-center gap-2.5 px-3.5 py-2.5">
-        <ProviderIcon id={cli} />
-        <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          <span className="shrink-0 font-medium text-sm">{info.name}</span>
-          <span className="truncate text-muted-foreground text-xs">{info.company}</span>
-        </div>
-        <Status tone={installed ? "ready" : "neutral"}>{installed ? "Installed" : "Not installed"}</Status>
-      </div>
-      {!installed ? (
-        <Row
-          label="Install"
-          description="Run this in a terminal, then check again."
-          below={
-            <div className="flex items-center gap-1 rounded-md border bg-muted/50 py-0.5 pr-0.5 pl-2.5">
-              <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1 font-mono text-xs">{info.install}</code>
-              <CopyButton text={info.install} label="Copy command" />
-            </div>
-          }
-        >
-          <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking} className="min-w-24">
-            {rechecking ? <Spinner /> : <RotateCwIcon />}
+    <SettingsCard
+      icon={<ProviderIcon id={cli} />}
+      title={info.name}
+      description={
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0">{info.company}</span>
+          <span className="text-subtle-foreground">·</span>
+          <Status tone={installed ? "ready" : "neutral"}>{installed ? "Installed" : "Not installed"}</Status>
+        </span>
+      }
+      action={
+        !installed ? (
+          <Button size="sm" variant="outline" onClick={onRecheck} disabled={rechecking} className="min-w-28">
+            {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
             {rechecking ? "Checking…" : "Check again"}
           </Button>
-        </Row>
+        ) : null
+      }
+    >
+      {!installed ? (
+        <Field label="Install" hint="Run this in a terminal, then check again.">
+          <Well>
+            <Icon icon={icons.terminal} className="size-4 text-muted-foreground" />
+            <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1 font-mono text-xs">{info.install}</code>
+            <CopyButton text={info.install} label="Copy command" />
+          </Well>
+        </Field>
       ) : (
-        <>
-          {mine.map((i) => (
-            <InstanceRow key={i.config.id} i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
-          ))}
+        <CardBlock title={mine.length > 1 ? "Accounts" : "Account"}>
+          <div className="flex flex-col divide-y">
+            <AnimatePresence initial={false}>
+              {mine.map((i) => (
+                <motion.div key={i.config.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}>
+                  <InstanceRow i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
           <AddAccount cli={cli} onChanged={onChanged} />
-        </>
+        </CardBlock>
       )}
-    </Card>
+    </SettingsCard>
   );
 }
 
@@ -343,33 +364,30 @@ export function AgentsSection() {
         const others = clis.filter((c) => !c.supported || !(CLI_IDS as readonly string[]).includes(c.id));
         return (
           <>
-            <Group label="Chats can hand work to these command-line agents">
-              <div className="flex flex-col gap-3">
-                {CLI_IDS.map((cli) => (
-                  <CliCard
-                    key={cli}
-                    cli={cli}
-                    status={clis.find((c) => c.id === cli)}
-                    instances={instances}
-                    onChanged={refresh}
-                    onRecheck={() => void recheck()}
-                    rechecking={rechecking}
-                  />
-                ))}
-              </div>
-            </Group>
+            <Intro>Chats can hand work to these command-line agents. Each signs in with its own login; Phaethon never sees it.</Intro>
+            {CLI_IDS.map((cli) => (
+              <CliCard
+                key={cli}
+                cli={cli}
+                status={clis.find((c) => c.id === cli)}
+                instances={instances}
+                onChanged={refresh}
+                onRecheck={() => void recheck()}
+                rechecking={rechecking}
+              />
+            ))}
             {others.length ? (
-              <Group label="Coming later">
-                <Card>
+              <SettingsCard icon={<Icon icon={icons.pending} />} title="Coming later" description="Phaethon will learn to work with these.">
+                <div className="flex flex-col">
                   {others.map((c) => (
-                    <div key={c.id} className="flex min-h-11 items-center gap-2.5 px-3.5 py-2.5">
+                    <div key={c.id} className="flex h-11 items-center gap-3">
                       <ProviderIcon id={c.id} />
-                      <span className="flex-1 truncate font-medium text-sm">{c.name}</span>
-                      <span className="text-muted-foreground text-xs">Not supported yet</span>
+                      <span className="flex-1 truncate text-sm">{c.name}</span>
+                      <span className="text-muted-foreground text-sm">Not supported yet</span>
                     </div>
                   ))}
-                </Card>
-              </Group>
+                </div>
+              </SettingsCard>
             ) : null}
           </>
         );

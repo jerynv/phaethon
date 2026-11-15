@@ -1,14 +1,17 @@
-import { CircleAlertIcon, RotateCwIcon, TriangleAlertIcon, WifiOffIcon } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
+import { type ArtPalette, ArtCanvas } from "./art";
+import { Icon } from "./icon";
+import { icons } from "./icons";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 
 /**
  * The four error sizes (docs/UI-REBUILD.md › Errors): a field error under an
  * input, a row error inside a list row, a surface alert at the top of a panel
- * or where a reply failed, and toasts (toast.tsx) for background work.
+ * or where a reply failed, and toasts (toast.tsx) for background work. Also
+ * the empty state, the quiet cousin of an error: art, one line, one action.
  */
 
 /** A message from the core, unwrapped if a provider sent JSON (`{"error":{"message":…}}`). */
@@ -54,7 +57,7 @@ export function FieldError({ children, className }: { children: ReactNode; class
   if (!children) return null;
   return (
     <p className={cn("flex items-start gap-1.5 text-destructive-foreground text-xs", className)} role="alert">
-      <CircleAlertIcon className="mt-0.5 size-3 shrink-0" />
+      <Icon icon={icons.error} className="mt-0.5 size-3" />
       <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
     </p>
   );
@@ -64,7 +67,7 @@ export function FieldError({ children, className }: { children: ReactNode; class
 export function RowError({ message, onRetry, className }: { message: string; onRetry?: () => void; className?: string }) {
   return (
     <div className={cn("flex min-w-0 items-center gap-2 text-muted-foreground text-xs", className)}>
-      <CircleAlertIcon className="size-3.5 shrink-0 text-error" />
+      <Icon icon={icons.error} className="size-3.5 text-error" />
       <span className="min-w-0 truncate" title={message}>
         {message}
       </span>
@@ -100,7 +103,7 @@ export function SurfaceError({
   const all = onRetry ? [...actions, { label: "Retry", onClick: onRetry }] : actions;
   return (
     <Alert variant={tone} controlAlignment="first-line" className={className}>
-      {icon ?? (tone === "warning" ? <TriangleAlertIcon /> : <CircleAlertIcon />)}
+      {icon ?? <Icon icon={tone === "warning" ? icons.warning : icons.error} />}
       <AlertTitle className="truncate">{title}</AlertTitle>
       {message ? (
         <AlertDescription>
@@ -111,7 +114,7 @@ export function SurfaceError({
         <AlertAction>
           {all.map((a) => (
             <Button key={a.label} size="xs" variant={a.primary ? "default" : "outline"} onClick={a.onClick}>
-              {a.label === "Retry" ? <RotateCwIcon /> : null}
+              {a.label === "Retry" ? <Icon icon={icons.retry} /> : null}
               {a.label}
             </Button>
           ))}
@@ -124,9 +127,56 @@ export function SurfaceError({
 export function ConnectionLost({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-surface px-3 py-2 text-warning-foreground text-xs", className)} role="status">
-      <WifiOffIcon className="size-3.5 shrink-0" />
+      <Icon icon={icons.offline} className="size-3.5" />
       <span className="min-w-0 flex-1 truncate">Reconnecting to Phaethon’s core…</span>
       <span className="size-1.5 shrink-0 animate-status-pulse rounded-full bg-warning" />
+    </div>
+  );
+}
+
+/**
+ * Nothing here yet (docs/UI-REBUILD.md › Dialogs, menus, empty states): a
+ * strip of seeded art, a one-line title, one muted line and one action. Never
+ * a lone grey icon in a void. `compact` drops the art strip to a small tile
+ * for empties inside a card.
+ */
+export function EmptyState({
+  title,
+  description,
+  action,
+  palette = "sky",
+  seed,
+  compact,
+  className,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  action?: ReactNode;
+  palette?: ArtPalette;
+  seed?: string;
+  compact?: boolean;
+  className?: string;
+}) {
+  if (compact) {
+    return (
+      <div data-slot="empty-state" className={cn("flex items-center gap-4 py-2", className)}>
+        <ArtCanvas palette={palette} seed={seed} grain="subtle" className="size-12 shrink-0 rounded-xl" />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="font-medium text-base">{title}</p>
+          {description ? <p className="text-muted-foreground text-sm">{description}</p> : null}
+        </div>
+        {action}
+      </div>
+    );
+  }
+  return (
+    <div data-slot="empty-state" className={cn("w-full max-w-sm overflow-hidden rounded-card border bg-card shadow-card", className)}>
+      <ArtCanvas palette={palette} seed={seed} weave className="h-28" />
+      <div className="flex flex-col items-start gap-1 p-5">
+        <p className="font-medium text-base">{title}</p>
+        {description ? <p className="text-muted-foreground text-sm">{description}</p> : null}
+        {action ? <div className="mt-3">{action}</div> : null}
+      </div>
     </div>
   );
 }

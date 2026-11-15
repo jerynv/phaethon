@@ -38,8 +38,10 @@ test("each conversation keeps its own model and effort", async ({ page }) => {
   await page.getByRole("button", { name: /^Reasoning:/ }).click();
   await page.getByRole("tab", { name: "Low" }).click();
   await send(page, "first conversation");
-  // The choice is saved beside the conversation once it is sent.
-  const [first] = fs.readdirSync(threads).filter((f) => f.endsWith(".model"));
+  // The choice is saved beside the conversation once it is sent (a moment after the send lands).
+  const modelFiles = () => fs.readdirSync(threads).filter((f) => f.endsWith(".model"));
+  await expect.poll(() => modelFiles().length).toBeGreaterThan(0);
+  const [first] = modelFiles();
   expect(JSON.parse(fs.readFileSync(path.join(threads, first!), "utf8"))).toEqual({ backend: "phaethon", model: "claude-haiku-5-5", effort: "low" });
   expect(core.requests().at(-1)?.effort).toBe("low");
 

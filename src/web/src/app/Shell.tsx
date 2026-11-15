@@ -1,13 +1,15 @@
-import { lazy, Suspense, useEffect } from "react";
+import { animate } from "motion/react";
+import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
 import { errorText } from "@/lib/core";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import type { SpaceView } from "./api";
 import { CommandPalette } from "./CommandPalette";
-import { Header } from "./Header";
+import { AppHeader, HeaderSlots, ViewActive } from "./Header";
 import { matchShortcut } from "./shortcuts";
 import { Sidebar } from "./Sidebar";
-import { useActiveSpace, useNav } from "./store";
+import { useActiveSpace, useNav, type View } from "./store";
 import { VIEWS } from "./views";
 import { EmptySpaces } from "./EmptySpaces";
 
@@ -17,6 +19,13 @@ const PlanView = lazy(() => import("@/features/plan/PlanView").then((m) => ({ de
 const CoursesView = lazy(() => import("@/features/courses/CoursesView").then((m) => ({ default: m.CoursesView })));
 const SettingsView = lazy(() => import("@/features/settings/SettingsView").then((m) => ({ default: m.SettingsView })));
 const FileViewer = lazy(() => import("@/features/viewer/FileViewer").then((m) => ({ default: m.FileViewer })));
+
+const PAGES: Record<Exclude<View, "chat">, ComponentType<{ space: SpaceView }>> = {
+  study: StudyView,
+  grades: GradesView,
+  plan: PlanView,
+  courses: CoursesView,
+};
 
 /** App-wide keys (app/shortcuts.ts). */
 function useShortcuts() {
@@ -61,25 +70,73 @@ function useShortcuts() {
   }, []);
 }
 
-function PageFallback() {
-  return <div className="flex-1" />;
+/**
+ * One page in the main area. Hidden pages stay mounted (state, scroll and
+ * running replies survive) but out of layout and out of the title bar; the
+ * page that becomes visible fades and lifts in, briefly.
+ */
+function Pane({ active, children, name }: { active: boolean; children: ReactNode; name: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const first = useRef(true);
+  useLayoutEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (!active || !ref.current) return;
+    const a = animate(ref.current, { opacity: [0, 1], transform: ["translateY(4px)", "translateY(0px)"] }, { duration: 0.18, ease: "easeOut" });
+    return () => a.stop();
+  }, [active]);
+  return (
+    <div ref={ref} data-page={name} hidden={!active} className="flex min-h-0 flex-1 flex-col">
+      <ViewActive active={active}>{children}</ViewActive>
+    </div>
+  );
 }
 
 function Main() {
   const view = useNav((s) => s.view);
+  const settings = useNav((s) => s.settings);
   const space = useActiveSpace();
   const spaces = useNav((s) => s.spaces);
-  if (spaces.data && spaces.data.length === 0) return <EmptySpaces />;
-  if (!space) return <div className="flex flex-1 flex-col"><Header /></div>;
-  const v = space.educationEnabled ? view : "chat";
+  const current: View = space?.educationEnabled ? view : "chat";
+  // Views visited in this space; the keep-alive ones stay mounted after.
+  const [visited, setVisited] = useState<{ space?: string; views: Set<View> }>({ views: new Set() });
+  const seen = visited.space === space?.id ? visited.views : new Set<View>();
+  if (space && !settings && !seen.has(current)) setVisited({ space: space.id, views: new Set([...seen, current]) });
+
+  if (spaces.data && spaces.data.length === 0 && !settings) return <EmptySpaces />;
   return (
-    <Suspense fallback={<PageFallback />}>
-      {v === "chat" ? <ChatView key={space.id} space={space} /> : null}
-      {v === "study" ? <StudyView key={space.id} space={space} /> : null}
-      {v === "grades" ? <GradesView key={space.id} space={space} /> : null}
-      {v === "plan" ? <PlanView key={space.id} space={space} /> : null}
-      {v === "courses" ? <CoursesView key={space.id} space={space} /> : null}
-    </Suspense>
+    <>
+      {space ? (
+        <>
+          {/* Chat is always mounted, so a reply, draft or scroll position survives any page switch. */}
+          <Pane name="chat" active={!settings && current === "chat"}>
+            <ChatView key={space.id} space={space} />
+          </Pane>
+          {(Object.keys(PAGES) as Exclude<View, "chat">[]).map((id) => {
+            const meta = VIEWS.find((v) => v.id === id)!;
+            const active = !settings && current === id;
+            if (!active && !(meta.keepAlive && seen.has(id) && space.educationEnabled)) return null;
+            const Page = PAGES[id];
+            return (
+              <Pane key={`${space.id}:${id}`} name={id} active={active}>
+                <Suspense fallback={<div className="flex-1" />}>
+                  <Page space={space} />
+                </Suspense>
+              </Pane>
+            );
+          })}
+        </>
+      ) : null}
+      {settings ? (
+        <Pane name="settings" active>
+          <Suspense fallback={<div className="flex-1" />}>
+            <SettingsView />
+          </Suspense>
+        </Pane>
+      ) : null}
+    </>
   );
 }
 
@@ -87,22 +144,18 @@ export function Shell() {
   useShortcuts();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
   const toggleSidebar = useNav((s) => s.toggleSidebar);
-  const settings = useNav((s) => s.settings);
   const viewer = useNav((s) => s.viewer);
-  if (settings) {
-    return (
-      <Suspense fallback={<PageFallback />}>
-        <SettingsView />
-        <CommandPalette />
-      </Suspense>
-    );
-  }
   return (
     <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar}>
       <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col bg-background">
-        <Main />
-      </main>
+      <HeaderSlots>
+        {(bind) => (
+          <main className="flex min-w-0 flex-1 flex-col bg-background">
+            <AppHeader bind={bind} />
+            <Main />
+          </main>
+        )}
+      </HeaderSlots>
       {viewer ? (
         <Suspense fallback={null}>
           <FileViewer />

@@ -71,18 +71,18 @@ export function CourseSettings() {
         ) : !connections.data ? (
           showConnSkeleton ? <SkeletonCard rows={1} /> : <div className="h-15" />
         ) : list.length === 0 ? (
-          <div className="flex min-h-11 items-center gap-3 rounded-card border bg-card px-4 py-3 shadow-card">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card"><Icon icon={icons.courses} className="size-4" /></span>
+          <div className="flex min-h-11 items-center gap-3 rounded-card border bg-card px-4 py-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground"><Icon icon={icons.courses} className="size-4" /></span>
             <span className="min-w-0 flex-1 text-muted-foreground text-sm">No course sites connected.</span>
             <Button size="xs" variant="outline" onClick={() => setConnect(true)}>
               Connect site
             </Button>
           </div>
         ) : (
-          <div className="divide-y rounded-card border bg-card shadow-card">
+          <div className="divide-y rounded-card border bg-card">
             {list.map((c) => (
               <div key={c.id} className="flex min-h-14 items-center gap-3 px-4 py-3">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card"><Icon icon={icons.courses} className="size-4" /></span>
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground"><Icon icon={icons.courses} className="size-4" /></span>
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <Truncate className="min-w-0 font-medium text-sm">{connectionName(c)}</Truncate>
@@ -115,9 +115,9 @@ export function CourseSettings() {
         ) : !access.data ? (
           showAccessSkeleton ? <SkeletonCard rows={3} /> : <div className="h-36" />
         ) : courses.length === 0 ? (
-          <div className="flex min-h-11 items-center rounded-card border bg-card px-4 py-3 text-muted-foreground text-sm shadow-card">Imported courses show here.</div>
+          <div className="flex min-h-11 items-center rounded-card border bg-card px-4 py-3 text-muted-foreground text-sm">Imported courses show here.</div>
         ) : (
-          <div className="overflow-x-auto rounded-card border bg-card shadow-card">
+          <div className="overflow-x-auto rounded-card border bg-card">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b">

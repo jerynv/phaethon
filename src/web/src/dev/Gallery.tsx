@@ -6,7 +6,6 @@ import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
 import { KeyAction, KeyActions } from "@/components/ui/key-actions";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import { BarLegend, StackedBar } from "@/components/ui/stacked-bar";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { Step, StepList, ThoughtToggle, ToolSummary } from "@/components/ui/step-list";
@@ -42,7 +41,7 @@ function Welcome() {
       <DotMatrix seed="welcome" />
       <BrandMark className="size-6 text-foreground" />
       <h1 className="font-normal text-2xl tracking-heading">Where should we begin?</h1>
-      <div className="w-full max-w-(--chat-max-width) rounded-card border bg-card shadow-card">
+      <div className="w-full max-w-(--chat-max-width) rounded-card border bg-card">
         <div className="px-4 pt-3.5 pb-10 text-base text-placeholder">Ask anything…</div>
         <div className="flex items-center gap-2 px-3 pb-3">
           <Button variant="outline" size="icon-sm" aria-label="Attach">
@@ -115,7 +114,7 @@ function Panel() {
             </TabsList>
           </Tabs>
           <Tabs value={mode} onValueChange={(v) => setMode(v as string)}>
-            <TabsList variant="pill">
+            <TabsList>
               <TabsTab value="pending">
                 <Icon icon={icons.chat} />
                 Chat
@@ -131,26 +130,30 @@ function Panel() {
             </TabsList>
           </Tabs>
           <Tabs value={mode} onValueChange={(v) => setMode(v as string)} className="w-full">
-            <TabsList variant="underline" className="w-full justify-start">
+            <TabsList className="w-full justify-start">
               <TabsTab value="pending">Crawl links</TabsTab>
               <TabsTab value="dismissed">Individual</TabsTab>
             </TabsList>
           </Tabs>
           <div className="flex gap-3">
-            <SegmentedControl value={range} onValueChange={setRange} aria-label="Range">
+            <Tabs value={range} onValueChange={setRange}>
+<TabsList aria-label="Range">
               {["1d", "1w", "1m", "3m"].map((r) => (
-                <SegmentedControlItem key={r} value={r}>
+                <TabsTab key={r} value={r}>
                   {r.toUpperCase()}
-                </SegmentedControlItem>
+                </TabsTab>
               ))}
-            </SegmentedControl>
-            <SegmentedControl value={range} onValueChange={setRange} variant="outline" aria-label="Range">
+            </TabsList>
+</Tabs>
+            <Tabs value={range} onValueChange={setRange}>
+<TabsList aria-label="Range">
               {["1d", "1w", "1m", "3m"].map((r) => (
-                <SegmentedControlItem key={r} value={r}>
+                <TabsTab key={r} value={r}>
                   {r.toUpperCase()}
-                </SegmentedControlItem>
+                </TabsTab>
               ))}
-            </SegmentedControl>
+            </TabsList>
+</Tabs>
           </div>
         </div>
       </Section>

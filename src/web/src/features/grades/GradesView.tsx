@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { BarLegend, StackedBar } from "@/components/ui/stacked-bar";
@@ -186,14 +186,16 @@ export function GradesView({ space }: { space: SpaceView }) {
             <>
               {!one ? (
                 <div className="-mb-3 flex min-w-0 items-center gap-3 overflow-x-auto">
-                  <SegmentedControl aria-label="Course" value={focused ? courseId(focused) : ALL} onValueChange={setFocus}>
-                    <SegmentedControlItem value={ALL}>All courses</SegmentedControlItem>
+                  <Tabs value={focused ? courseId(focused) : ALL} onValueChange={setFocus}>
+<TabsList aria-label="Course">
+                    <TabsTab value={ALL}>All courses</TabsTab>
                     {data.map((c) => (
-                      <SegmentedControlItem key={courseId(c)} value={courseId(c)} className="max-w-48">
+                      <TabsTab key={courseId(c)} value={courseId(c)} className="max-w-48">
                         <span className="truncate">{c.course}</span>
-                      </SegmentedControlItem>
+                      </TabsTab>
                     ))}
-                  </SegmentedControl>
+                  </TabsList>
+</Tabs>
                 </div>
               ) : null}
               {focused ? <CourseOverview course={focused} now={now} refreshing={refresh?.course === focused.course} /> : <TermOverview courses={data} refreshing={refresh?.course} onPick={(c) => setFocus(courseId(c))} />}
@@ -370,13 +372,15 @@ function CourseCharts({ course, now }: { course: CourseGradeView; now: number })
       <Card>
         <div className="flex items-center gap-3 px-5 pt-5 pb-3">
           <CardTitle className="min-w-0 flex-1">Trend</CardTitle>
-          <SegmentedControl variant="outline" aria-label="Range" value={range} onValueChange={setRange}>
+          <Tabs value={range} onValueChange={setRange}>
+<TabsList aria-label="Range">
             {RANGES.map((r) => (
-              <SegmentedControlItem key={r.value} value={r.value} className="min-w-10 px-2.5 text-xs">
+              <TabsTab key={r.value} value={r.value} className="min-w-10 px-2.5 text-xs">
                 {r.label}
-              </SegmentedControlItem>
+              </TabsTab>
             ))}
-          </SegmentedControl>
+          </TabsList>
+</Tabs>
         </div>
         <CardContent>
           <TrendChart points={shown} current={courseHead(course).percent} />
@@ -567,13 +571,15 @@ function AllTables({ courses, fresh, now }: { courses: CourseGradeView[]; fresh:
           <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
           <Input size="sm" value={query} placeholder="Filter assignments" aria-label="Filter assignments" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
         </div>
-        <SegmentedControl aria-label="Show" value={status} onValueChange={setStatus}>
+        <Tabs value={status} onValueChange={setStatus}>
+<TabsList aria-label="Show">
           {STATUS.map((s) => (
-            <SegmentedControlItem key={s.value} value={s.value} className="px-2.5 text-xs">
+            <TabsTab key={s.value} value={s.value} className="px-2.5 text-xs">
               {s.label}
-            </SegmentedControlItem>
+            </TabsTab>
           ))}
-        </SegmentedControl>
+        </TabsList>
+</Tabs>
         {matching.length > 1 ? (
           <Button size="sm" variant="ghost-muted" onClick={() => setClosed(allClosed ? {} : Object.fromEntries(courses.map((c) => [courseId(c), true])))}>
             {allClosed ? "Expand all" : "Collapse all"}
@@ -647,7 +653,7 @@ function CourseTable({
 
   return (
     // Not a Card: the card's clipping would stop the header from sticking.
-    <section id={id} className="scroll-mt-3 rounded-card border bg-card shadow-card" data-testid="grades-course">
+    <section id={id} className="scroll-mt-3 rounded-card border bg-card" data-testid="grades-course">
       <div className={cn("sticky top-0 z-10 flex h-13 items-center gap-2 rounded-t-card bg-card/95 px-3 backdrop-blur-sm", open ? "border-b" : "rounded-b-card")}>
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
           <motion.span animate={{ rotate: open ? 0 : -90 }} transition={{ duration: 0.15, ease: EASE }} className="flex shrink-0 text-muted-foreground">

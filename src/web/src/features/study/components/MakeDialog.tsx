@@ -13,7 +13,7 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@/components/
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -293,16 +293,18 @@ export function MakeDialog({
             <div className="flex h-8 items-center justify-between gap-3">
               <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
               {phase === "what" || phase === "how" ? (
-                <SegmentedControl aria-label="Kind" value={draft.kind} onValueChange={(k: MakeKind) => patch({ kind: k, count: emptyDraft(k).count })}>
-                  <SegmentedControlItem value="quiz">
+                <Tabs value={draft.kind} onValueChange={(k: MakeKind) => patch({ kind: k, count: emptyDraft(k).count })}>
+<TabsList aria-label="Kind">
+                  <TabsTab value="quiz">
                     <Icon icon={icons.quiz} />
                     Quiz
-                  </SegmentedControlItem>
-                  <SegmentedControlItem value="deck">
+                  </TabsTab>
+                  <TabsTab value="deck">
                     <Icon icon={icons.deck} />
                     Cards
-                  </SegmentedControlItem>
-                </SegmentedControl>
+                  </TabsTab>
+                </TabsList>
+</Tabs>
               ) : null}
             </div>
           </DialogHeader>
@@ -650,15 +652,17 @@ function WhatStep({
       </Field>
 
       <Field label="For">
-        <SegmentedControl aria-label="For" className="w-full" value={draft.target} onValueChange={(t: MakeDraft["target"]) => patch({ target: t })}>
-          <SegmentedControlItem value="exam" className="flex-1">
+        <Tabs value={draft.target} onValueChange={(t: MakeDraft["target"]) => patch({ target: t })} className="w-full">
+<TabsList aria-label="For" className="w-full">
+          <TabsTab value="exam" className="flex-1">
             <Icon icon={icons.goal} />A test
-          </SegmentedControlItem>
-          <SegmentedControlItem value="topics" className="flex-1">
+          </TabsTab>
+          <TabsTab value="topics" className="flex-1">
             <Icon icon={icons.read} />
             Topics
-          </SegmentedControlItem>
-        </SegmentedControl>
+          </TabsTab>
+        </TabsList>
+</Tabs>
       </Field>
 
       {draft.target === "exam" ? (
@@ -947,13 +951,15 @@ function HowStep({
       <div className={cn("grid gap-4", quiz && "grid-cols-2")}>
         <Field label="How many" hint={errs.count ? undefined : `Up to ${MAX_COUNT[draft.kind]}`}>
           <div className="flex items-center gap-2">
-            <SegmentedControl aria-label="How many" value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="min-w-0 flex-1">
+            <Tabs value={preset} onValueChange={(v: string) => patch({ count: Number(v) })} className="min-w-0 flex-1">
+<TabsList aria-label="How many" className="w-full">
               {sizes.map((n) => (
-                <SegmentedControlItem key={n} value={String(n)} className="min-w-0 flex-1 px-1 tabular-nums">
+                <TabsTab key={n} value={String(n)} className="min-w-0 flex-1 px-1 tabular-nums">
                   {n}
-                </SegmentedControlItem>
+                </TabsTab>
               ))}
-            </SegmentedControl>
+            </TabsList>
+</Tabs>
             <Input
               aria-label="Exact number"
               inputMode="numeric"
@@ -967,17 +973,19 @@ function HowStep({
         </Field>
         {quiz ? (
           <Field label="Difficulty">
-            <SegmentedControl aria-label="Difficulty" className="w-full" value={draft.difficulty} onValueChange={(d: MakeDraft["difficulty"]) => patch({ difficulty: d })}>
-              <SegmentedControlItem value="easier" className="min-w-0 flex-1 px-1">
+            <Tabs value={draft.difficulty} onValueChange={(d: MakeDraft["difficulty"]) => patch({ difficulty: d })} className="w-full">
+<TabsList aria-label="Difficulty" className="w-full">
+              <TabsTab value="easier" className="min-w-0 flex-1 px-1">
                 Easier
-              </SegmentedControlItem>
-              <SegmentedControlItem value="exam" className="min-w-0 flex-1 px-1">
+              </TabsTab>
+              <TabsTab value="exam" className="min-w-0 flex-1 px-1">
                 Like the test
-              </SegmentedControlItem>
-              <SegmentedControlItem value="harder" className="min-w-0 flex-1 px-1">
+              </TabsTab>
+              <TabsTab value="harder" className="min-w-0 flex-1 px-1">
                 Harder
-              </SegmentedControlItem>
-            </SegmentedControl>
+              </TabsTab>
+            </TabsList>
+</Tabs>
           </Field>
         ) : null}
       </div>

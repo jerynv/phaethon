@@ -20,11 +20,11 @@ import { cn } from "@/lib/utils";
 const cardVariants = cva("relative flex flex-col overflow-hidden text-card-foreground", {
   variants: {
     variant: {
-      default: "rounded-card border bg-card shadow-card",
+      default: "rounded-card border bg-card",
       well: "rounded-xl border border-border/70 bg-well",
       ghost: "rounded-card bg-card",
       interactive:
-        "rounded-card border bg-card shadow-card transition-[border-color,box-shadow,translate] duration-150 hover:border-border-strong hover:shadow-raised active:translate-y-px focus-visible:ring-2 focus-visible:ring-ring outline-none",
+        "rounded-card border bg-card transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring outline-none",
     },
   },
   defaultVariants: { variant: "default" },

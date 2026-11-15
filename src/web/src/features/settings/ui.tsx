@@ -37,7 +37,7 @@ export function Tile({ children, className }: { children: ReactNode; className?:
   return (
     <span
       aria-hidden
-      className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-foreground shadow-card [&_svg]:size-5 [&_img]:size-5", className)}
+      className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card text-foreground [&_svg]:size-5 [&_img]:size-5", className)}
     >
       {children}
     </span>
@@ -66,7 +66,7 @@ export function SettingsCard({
   id?: string;
 }) {
   return (
-    <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card shadow-card", className)}>
+    <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card", className)}>
       {media ? <div className="[--art-veil:var(--art-veil-strip)]">{media}</div> : null}
       <header className="flex items-center gap-4 p-5">
         {icon ? <Tile>{icon}</Tile> : null}

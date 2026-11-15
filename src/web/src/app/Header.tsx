@@ -111,7 +111,7 @@ function ViewTabs() {
   if (!space?.educationEnabled) return null;
   return (
     <Tabs value={settings ? null : view} onValueChange={(v) => setView(v as View)} className="app-no-drag shrink-0">
-      <TabsList aria-label="Views" variant="pill">
+      <TabsList aria-label="Views" size="sm">
         {VIEWS.map((v, i) => (
           <Tooltip key={v.id}>
             <TooltipTrigger render={<TabsTab value={v.id} aria-label={v.label} onClick={() => !settings && v.id === view && retap(v.id)} className="h-6 gap-1.5 px-2 font-normal [&_svg]:size-3.5" />}>

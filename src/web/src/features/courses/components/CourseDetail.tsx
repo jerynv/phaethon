@@ -147,7 +147,7 @@ export function CourseDetail({
       </div>
       <div className="shrink-0 px-6">
         <Tabs value={tab} onValueChange={(v) => onTab(v as DetailTab)}>
-          <TabsList variant="underline" aria-label="Course section" className="w-full">
+          <TabsList aria-label="Course section" className="w-full">
             <TabsTab value="overview">Overview</TabsTab>
             <TabsTab value="files">Files</TabsTab>
             <TabsTab value="settings">Settings</TabsTab>
@@ -339,7 +339,7 @@ function EntryRow({ entry: e, icon, selected, onOpen }: { entry: CourseContentEn
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-sm outline-none transition-colors hover:bg-card hover:shadow-card focus-visible:ring-2 focus-visible:ring-ring",
+        "flex min-h-10 min-w-0 items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-sm outline-none transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-ring",
         selected && "bg-row-selected hover:bg-row-selected hover:shadow-none",
       )}
     >

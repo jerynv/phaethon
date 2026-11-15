@@ -30,7 +30,7 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
   const overall = run.courses.reduce((n, c) => n + fraction(c), 0) / Math.max(run.courses.length, 1);
 
   return (
-    <div className="relative overflow-hidden rounded-card border bg-card shadow-card" data-testid="import-run">
+    <div className="relative overflow-hidden rounded-card border bg-card" data-testid="import-run">
       <div className="absolute inset-x-0 top-0 h-0.5 bg-muted">
         <div
           className={cn("h-full transition-[width] duration-300 ease-out", run.status === "failed" ? "bg-error" : run.status === "running" ? "bg-primary" : "bg-success")}

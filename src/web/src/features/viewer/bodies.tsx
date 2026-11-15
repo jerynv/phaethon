@@ -23,7 +23,7 @@ export function PageSkeleton({ kind }: { kind: ViewKind }) {
   return (
     <div className="p-4 motion-safe:animate-skeleton" aria-hidden>
       {paper ? (
-        <div className="flex aspect-[1/1.294] w-full flex-col gap-2.5 rounded-sm border bg-card p-[9%] shadow-xs/5">
+        <div className="flex aspect-[1/1.294] w-full flex-col gap-2.5 rounded-sm border bg-card p-[9%]">
           <Skeleton className="mb-3 h-3 w-1/2 animate-none" />
           {lines.map((w, i) => (w === "0" ? <div key={i} className="h-2" /> : <Skeleton key={i} className="h-2 animate-none" style={{ width: w }} />))}
         </div>
@@ -41,7 +41,7 @@ export function PageSkeleton({ kind }: { kind: ViewKind }) {
 function Placeholder({ view, title, text, onOpen }: { view: FileView; title: string; text?: string; onOpen: () => void }) {
   return (
     <div className="flex flex-col items-center px-6 pt-16 pb-8 text-center">
-      <div className="mb-4 flex size-12 items-center justify-center rounded-xl border bg-card shadow-card">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-xl border bg-card">
         <FileIcon kind={view.kind} name={view.name} className="size-5" />
       </div>
       <p className="font-medium text-sm">{title}</p>
@@ -238,7 +238,7 @@ function PdfPage({ doc, n, width, ratio }: { doc: PDFDocumentProxy; n: number; w
   }, [near, doc, n, width, drawn]);
 
   return (
-    <div ref={box} className="relative overflow-hidden rounded-sm border bg-zinc-50 shadow-xs/5" style={{ width, minHeight: drawn ? undefined : Math.round(width * ratio) }}>
+    <div ref={box} className="relative overflow-hidden rounded-sm border bg-zinc-50" style={{ width, minHeight: drawn ? undefined : Math.round(width * ratio) }}>
       <canvas ref={canvas} className={cn("block", !drawn && "invisible absolute")} />
       {failed ? <p className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">Page {n} couldn’t be drawn.</p> : null}
       <span className="pointer-events-none absolute right-1.5 bottom-1 rounded bg-zinc-950/55 px-1 text-3xs text-zinc-50 tabular-nums">{n}</span>
@@ -269,7 +269,7 @@ function DocxBody({ bytes, onOpen }: { bytes: ArrayBuffer; onOpen: () => void })
       {state === "failed" ? (
         <SurfaceError title="Couldn’t read this document" message="Open it in its own app instead." actions={[{ label: "Open in default app", onClick: onOpen }]} />
       ) : null}
-      <div className={cn("overflow-x-auto rounded-sm border bg-zinc-50 px-6 py-5 text-zinc-900 shadow-xs/5 [&_section.docx]:!p-0 [&_section.docx]:!w-auto [&_section.docx]:!min-h-0", state !== "ok" && "hidden")} ref={host} />
+      <div className={cn("overflow-x-auto rounded-sm border bg-zinc-50 px-6 py-5 text-zinc-900 [&_section.docx]:!p-0 [&_section.docx]:!w-auto [&_section.docx]:!min-h-0", state !== "ok" && "hidden")} ref={host} />
       {state === "loading" ? <PageSkeleton kind="docx" /> : null}
     </div>
   );

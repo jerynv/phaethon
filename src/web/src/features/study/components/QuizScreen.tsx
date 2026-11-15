@@ -799,7 +799,7 @@ function ReviewCard({ space, number, question, result, why, defaultOpen = false 
   const given = answerList(result.given).map((a) => choiceLabel(question, a)).join(", ");
   const expected = answerList(result.expected).map((a) => choiceLabel(question, a)).join(", ");
   return (
-    <Collapsible defaultOpen={defaultOpen} className="overflow-hidden rounded-card border bg-card shadow-card">
+    <Collapsible defaultOpen={defaultOpen} className="overflow-hidden rounded-card border bg-card">
       <CollapsibleTrigger className="group flex w-full items-start gap-3 px-5 py-4 text-left outline-none transition-colors hover:bg-accent/50 focus-visible:bg-accent/50">
         <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-2xs text-muted-foreground tabular-nums">{number}</span>
         <div className="min-w-0 flex-1">
@@ -867,7 +867,7 @@ function QuizSkeleton() {
 }
 
 const CHOICE =
-  "group flex min-h-14 items-center gap-4 rounded-card border bg-card px-4 py-3 text-left shadow-card outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:bg-primary/4 data-checked:ring-1 data-checked:ring-primary";
+  "group flex min-h-14 items-center gap-4 rounded-card border bg-card px-4 py-3 text-left outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring data-checked:border-primary data-checked:bg-primary/4 data-checked:ring-1 data-checked:ring-primary";
 const KEYCAP =
   "flex size-7 shrink-0 items-center justify-center rounded-md border bg-keycap font-medium text-muted-foreground text-xs tabular-nums transition-colors group-data-checked:border-primary group-data-checked:bg-primary group-data-checked:text-primary-foreground";
 

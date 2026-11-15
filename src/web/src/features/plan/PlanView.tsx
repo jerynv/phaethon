@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -327,7 +327,7 @@ function Filters({
             transition={{ duration: 0.18 }}
             className={cn("group relative flex min-h-12 items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent", e.date < today && "opacity-60")}
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
               <Icon icon={icons.flag} className="size-4" />
             </span>
             <button type="button" onClick={() => onEditExam(e)} className="flex min-w-0 flex-1 flex-col text-left outline-none after:absolute after:inset-0 focus-visible:after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring" aria-label={`Edit ${e.title}`}>
@@ -358,13 +358,15 @@ function Filters({
 function FilterBar({ filter, onFilter, colors }: { filter: Filter; onFilter: (f: Filter) => void; colors: Map<string, string> }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 @3xl/page:hidden" data-testid="plan-filter-bar">
-      <SegmentedControl aria-label="Show" value={filter.show} onValueChange={(v) => onFilter({ ...filter, show: v as Show })}>
+      <Tabs value={filter.show} onValueChange={(v: Show) => onFilter({ ...filter, show: v })}>
+<TabsList aria-label="Show">
         {SHOW.map((s) => (
-          <SegmentedControlItem key={s.value} value={s.value} className="px-2.5 text-xs">
+          <TabsTab key={s.value} value={s.value} className="px-2.5 text-xs">
             {s.value === "session" ? "Sessions" : s.label}
-          </SegmentedControlItem>
+          </TabsTab>
         ))}
-      </SegmentedControl>
+      </TabsList>
+</Tabs>
       {[...colors].map(([name, color]) => {
         const on = filter.course === name;
         return (
@@ -395,7 +397,7 @@ function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: P
           <button type="button" className="flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent" />
         }
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-card">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground">
           <Icon icon={icons.mode} className="size-4" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
@@ -445,13 +447,15 @@ function ScheduleSettings({ state, onState }: { state: PlanState; onState: (s: P
           </div>
           <div className="flex items-center justify-between gap-3">
             <span className="font-medium text-sm">Minutes each</span>
-            <SegmentedControl aria-label="Minutes each" value={String(state.sessionMinutes)} onValueChange={(v) => onState({ ...state, sessionMinutes: Number(v) })}>
+            <Tabs value={String(state.sessionMinutes)} onValueChange={(v: string) => onState({ ...state, sessionMinutes: Number(v) })}>
+<TabsList aria-label="Minutes each">
               {[15, 25, 45, 60].map((m) => (
-                <SegmentedControlItem key={m} value={String(m)} className="min-w-0 px-2.5 text-xs tabular-nums">
+                <TabsTab key={m} value={String(m)} className="min-w-0 px-2.5 text-xs tabular-nums">
                   {m}
-                </SegmentedControlItem>
+                </TabsTab>
               ))}
-            </SegmentedControl>
+            </TabsList>
+</Tabs>
           </div>
         </div>
       </PopoverPopup>

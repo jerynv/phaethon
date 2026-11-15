@@ -53,7 +53,6 @@
   --app-scrollbar-thumb-hover: oklch(0% 0 0 / 24%);
   --backdrop: oklch(0% 0 0 / 24%);
   --popup-shadow-color: oklch(0% 0 0 / 40%);
-  --card-shadow-color: oklch(0% 0 0 / 5%);
 
   --canvas: oklch(96.4% 0 0);
   --background: oklch(100% 0 0);
@@ -157,7 +156,6 @@
   --app-scrollbar-thumb-hover: oklch(100% 0 0 / 18%);
   --backdrop: oklch(0% 0 0 / 55%);
   --popup-shadow-color: oklch(0% 0 0 / 75%);
-  --card-shadow-color: oklch(0% 0 0 / 30%);
 
   --canvas: oklch(19% 0 0);
   --background: oklch(21.8% 0 0);
@@ -323,9 +321,7 @@
 
   --shadow-popup: 0 16px 40px -18px var(--popup-shadow-color), 0 0 0 1px var(--border);
   /* Cards lean on their hairline; this only lifts them off a grey well. */
-  --shadow-card: 0 1px 2px 0 var(--card-shadow-color);
   /* The raised pill inside a segmented control or tab track. */
-  --shadow-raised: 0 1px 2px 0 var(--card-shadow-color), 0 0 0 0.5px var(--border-strong);
 
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --animate-skeleton: skeleton 2.4s infinite;
@@ -423,6 +419,20 @@
 }
 
 /* Popovers and menus: flat, one hairline, a soft drop in light mode only. */
+/* A page that scrolls: the scrollbar lane is reserved on both edges so the column stays centred. */
+@utility page-scroll {
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+/* Scrolls without a scrollbar (the chat; its history rail stands in). */
+@utility scroll-quiet {
+  overflow-y: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @utility dropdown-glass {
   background: var(--popover);
   border: 1px solid var(--border);
@@ -548,28 +558,35 @@
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus-visible {
     @apply outline-none ring-0;
   }
-  /* Thin, quiet scrollbars everywhere. */
+  /* Scrollbars: thin, and only there while the pointer is over what scrolls. Pages
+     reserve the lane on both sides (`page-scroll`) so centred content stays centred. */
   * {
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  :hover {
     scrollbar-color: var(--app-scrollbar-thumb) transparent;
   }
+  :hover::-webkit-scrollbar-thumb {
+    background: var(--app-scrollbar-thumb);
+  }
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--app-scrollbar-thumb);
-    border: 3px solid transparent;
+    background: transparent;
+    border: 2px solid transparent;
     border-radius: 999px;
-    background-clip: content-box;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--app-scrollbar-thumb-hover);
     background-clip: content-box;
   }
   ::-webkit-scrollbar-track,
   ::-webkit-scrollbar-corner {
     background: transparent;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--app-scrollbar-thumb-hover);
+    background-clip: content-box;
   }
 }
 

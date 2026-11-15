@@ -27,7 +27,7 @@ const GENERAL: Starter[] = [
 /** A small white file label set on the art tile. */
 function FileTag({ name, className }: { name: string; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-0.5 rounded-md bg-card/90 px-1.5 text-3xs text-foreground shadow-card", className)}>
+    <span className={cn("inline-flex items-center gap-0.5 rounded-md bg-card/90 px-1.5 text-3xs text-foreground", className)}>
       <Icon icon={icons.file} className="size-2.5 text-muted-foreground" />
       {name}
     </span>

@@ -50,7 +50,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   if (read.state === "invalid") return <RowError className="my-2" message={`This study plan couldn’t be read: ${read.why}`} />;
   if (read.state === "writing" || (!plan && !planError)) {
     return (
-      <div className="my-3 flex items-center gap-4 rounded-card border bg-card p-3 shadow-card">
+      <div className="my-3 flex items-center gap-4 rounded-card border bg-card p-3">
         <span className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-well text-muted-foreground">
           <Icon icon={glyph} className="size-5" />
         </span>
@@ -71,11 +71,11 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   const notes = [...plan.notes, ...(plan.unknown.length ? [`Not in this space: ${plan.unknown.join(", ")}`] : []), ...(plan.material ? [plan.material.text] : [])];
 
   return (
-    <div className="my-3 overflow-hidden rounded-card border bg-card shadow-card" data-testid="study-block">
+    <div className="my-3 overflow-hidden rounded-card border bg-card" data-testid="study-block">
       <div className="flex items-start gap-4 p-3">
         <ArtTile palette="lilac" seed={planTitle(plan)} className="size-14">
           <span className="flex size-full items-center justify-center">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-card/90 text-foreground shadow-card">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-card/90 text-foreground">
               <Icon icon={glyph} className="size-4" />
             </span>
           </span>

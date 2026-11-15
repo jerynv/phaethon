@@ -29,7 +29,7 @@ function Window({ children }: { children: ReactNode }) {
       initial={{ opacity: 0, x: 12, y: 12 }}
       animate={{ opacity: 1, x: 0, y: 0 }}
       transition={{ type: "spring", stiffness: 420, damping: 40, delay: 0.08 }}
-      className="pointer-events-none absolute top-20 left-16 -right-px -bottom-px flex select-none overflow-hidden rounded-tl-panel border-t border-l bg-background shadow-card"
+      className="pointer-events-none absolute top-20 left-16 -right-px -bottom-px flex select-none overflow-hidden rounded-tl-panel border-t border-l bg-background"
     >
       {children}
     </motion.div>
@@ -105,7 +105,7 @@ function Welcome() {
     <div className="flex flex-1 flex-col items-center px-8 pt-16">
       <BrandMark className="size-6" />
       <p className="mt-4 text-xl tracking-title">Where should we begin?</p>
-      <div className="mt-6 w-full max-w-md rounded-card border bg-card p-3 shadow-card">
+      <div className="mt-6 w-full max-w-md rounded-card border bg-card p-3">
         <p className="h-12 text-placeholder text-sm">Ask anything…</p>
         <div className="flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-control border">
@@ -123,7 +123,7 @@ function Welcome() {
           { icon: icons.quiz, title: "Quiz me" },
           { icon: icons.plan, title: "Plan my week" },
         ].map((c) => (
-          <div key={c.title} className="flex flex-col gap-4 rounded-card border bg-card p-3 shadow-card">
+          <div key={c.title} className="flex flex-col gap-4 rounded-card border bg-card p-3">
             <Icon icon={c.icon} className="size-4 text-muted-foreground" />
             <span className="font-medium text-xs">{c.title}</span>
           </div>
@@ -189,7 +189,7 @@ function AnswersPreview({ draft }: { draft: Draft }) {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 420, damping: 40 }}
-        className="w-full max-w-sm rounded-panel border bg-card p-6 shadow-card"
+        className="w-full max-w-sm rounded-panel border bg-card p-6"
       >
         <p className="mb-3 text-lg tracking-title">{agent ? "Coding agents" : "Providers"}</p>
         <div className="flex flex-col">
@@ -201,7 +201,7 @@ function AnswersPreview({ draft }: { draft: Draft }) {
                 <span className="flex-1 text-sm">{r.name}</span>
                 {on && draft.answer ? <span className="text-success-foreground text-xs">Ready</span> : null}
                 <span className={cn("flex h-5 w-8 items-center rounded-full p-0.5 transition-colors duration-200", on ? "justify-end bg-primary" : "bg-input")}>
-                  <motion.span layout transition={{ type: "spring", stiffness: 520, damping: 36 }} className="size-4 rounded-full bg-white shadow-card" />
+                  <motion.span layout transition={{ type: "spring", stiffness: 520, damping: 36 }} className="size-4 rounded-full bg-white" />
                 </span>
               </div>
             );

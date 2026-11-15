@@ -290,7 +290,7 @@ function ArtifactCard({
         className="absolute inset-0 cursor-pointer rounded-card outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-4 focus-visible:ring-offset-background"
       />
       <div className="pointer-events-none relative h-36 overflow-hidden rounded-card border border-border/70 bg-well transition-colors duration-150 group-hover:border-border-strong">
-        <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 shadow-card transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
+        <div className="absolute inset-x-8 top-5 -bottom-px flex flex-col gap-3 rounded-t-xl border border-b-0 bg-card px-5 pt-5 transition-transform duration-200 ease-(--ease-out-soft) group-hover:-translate-y-1">
           <div className="flex items-center justify-between gap-2">
             <Icon icon={icon} className="size-4.5 text-muted-foreground" />
             {badge}

@@ -170,7 +170,7 @@ export function EmptyState({
     );
   }
   return (
-    <div data-slot="empty-state" className={cn("w-full max-w-sm overflow-hidden rounded-card border bg-card shadow-card", className)}>
+    <div data-slot="empty-state" className={cn("w-full max-w-sm overflow-hidden rounded-card border bg-card", className)}>
       <ArtCanvas palette={palette} seed={seed} weave className="h-28" />
       <div className="flex flex-col items-start gap-1 p-5">
         <p className="font-medium text-base">{title}</p>

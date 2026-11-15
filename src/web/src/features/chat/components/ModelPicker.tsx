@@ -8,7 +8,7 @@ import { RowError } from "@/components/errors";
 import { SkeletonRows } from "@/components/skeletons";
 import { Truncate } from "@/components/truncate";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ModelPick } from "../api";
@@ -203,7 +203,7 @@ function RailButton({ active, label, onClick, children, dim }: { active: boolean
             aria-selected={active}
             aria-label={label}
             onClick={onClick}
-            className={cn("relative inline-flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-accent", active && "bg-background shadow-raised dark:bg-accent", dim && "opacity-55")}
+            className={cn("relative inline-flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-accent", active && "bg-background dark:bg-accent", dim && "opacity-55")}
           />
         }
       >
@@ -302,19 +302,21 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
             <span className="text-subtle-foreground">Reasoning</span>
             {model.defaultEffort ? <span className="text-subtle-foreground">Default: {EFFORT_LABEL[model.defaultEffort] ?? model.defaultEffort}</span> : null}
           </div>
-          <SegmentedControl
+          <Tabs
             value={level}
             onValueChange={(e) => {
               onPick({ ...pick, effort: e === model.defaultEffort ? null : e });
               setOpen(false);
             }}
           >
+            <TabsList aria-label="Reasoning">
             {model.efforts.map((e) => (
-              <SegmentedControlItem key={e} value={e}>
+              <TabsTab key={e} value={e}>
                 {EFFORT_LABEL[e] ?? e}
-              </SegmentedControlItem>
+              </TabsTab>
             ))}
-          </SegmentedControl>
+          </TabsList>
+</Tabs>
         </div>
       </PopoverPopup>
     </Popover>

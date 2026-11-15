@@ -120,7 +120,7 @@ export function ArtTile({ className, ...props }: ArtCanvasProps) {
 export function ArtFrame({ palette = "sky", seed, className, cardClassName, children, ...props }: Omit<ArtCanvasProps, "children"> & { cardClassName?: string; children: ReactNode }) {
   return (
     <ArtCanvas palette={palette} seed={seed} className={cn("rounded-panel border", className)} {...props}>
-      <div className={cn("absolute inset-0 top-10 left-10 overflow-hidden rounded-tl-card bg-card shadow-card", cardClassName)}>{children}</div>
+      <div className={cn("absolute inset-0 top-10 left-10 overflow-hidden rounded-tl-card bg-card", cardClassName)}>{children}</div>
     </ArtCanvas>
   );
 }

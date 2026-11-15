@@ -144,8 +144,8 @@ function TooltipPopup({
             "relative flex origin-(--transform-origin) text-balance text-xs transition-[scale,opacity] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0",
             // The references' tooltip (7cad "Copy", 95ba "Codex"): a near-black pill, white text, keys in a lighter tint.
             variant === "glass"
-              ? "dropdown-glass rounded-md text-popover-foreground shadow-xl shadow-black/25"
-              : "rounded-lg bg-tooltip text-tooltip-foreground shadow-md/10 [&_[data-slot=kbd]]:bg-tooltip-foreground/15 [&_[data-slot=kbd]]:text-tooltip-foreground/80",
+              ? "dropdown-glass rounded-md text-popover-foreground shadow-popup"
+              : "rounded-lg bg-tooltip text-tooltip-foreground [&_[data-slot=kbd]]:bg-tooltip-foreground/15 [&_[data-slot=kbd]]:text-tooltip-foreground/80",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-2xs leading-relaxed"
               : "max-w-80 wrap-anywhere whitespace-normal leading-snug",

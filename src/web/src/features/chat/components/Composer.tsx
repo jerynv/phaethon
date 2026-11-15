@@ -304,7 +304,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         </div>
       ) : null}
       <div
-        className={cn("relative rounded-card border bg-card shadow-card transition-[border-color,box-shadow] focus-within:border-border-strong", dragging && "border-primary/60 ring-2 ring-primary/15")}
+        className={cn("relative rounded-card border bg-card transition-[border-color,box-shadow] focus-within:border-border-strong", dragging && "border-primary/60 ring-2 ring-primary/15")}
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;
           e.preventDefault();
@@ -431,7 +431,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                   exit={{ scale: 0.6, opacity: 0, y: -6 }}
                   whileTap={canSend ? { scale: 0.88 } : undefined}
                   transition={{ type: "spring", duration: 0.25, bounce: 0.3 }}
-                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground shadow-card transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
+                  className="inline-flex size-8 items-center justify-center rounded-full bg-ink text-ink-foreground transition-colors hover:bg-ink/86 disabled:bg-primary/30 disabled:text-primary-foreground disabled:shadow-none dark:disabled:bg-primary/15 dark:disabled:text-primary/60"
                 >
                   <Icon icon={icons.send} className="size-4" />
                 </motion.button>

@@ -155,7 +155,7 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
             {revealed ? (
               <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18, ease: EASE }} className="flex flex-col gap-3">
                 <p className="text-center text-muted-foreground text-sm">How well did you know it?</p>
-                <KeyActions aria-label="How well did you know it?" className="shadow-card max-sm:grid-flow-row max-sm:grid-cols-2 max-sm:divide-x-0">
+                <KeyActions aria-label="How well did you know it?" className="max-sm:grid-flow-row max-sm:grid-cols-2 max-sm:divide-x-0">
                   {RATINGS.map((r) => (
                     <KeyAction key={r.key} shortcut={r.key} onClick={() => rate(r.confidence)} className="justify-center text-sm">
                       {r.label}

@@ -198,7 +198,7 @@ export function ChatView({ space }: { space: SpaceView }) {
             onClick={toBottom}
             aria-label="Jump to latest"
             className={cn(
-              "absolute -top-11 left-1/2 z-10 inline-flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-3 text-muted-foreground text-sm shadow-card transition-[opacity,transform] hover:text-foreground",
+              "absolute -top-11 left-1/2 z-10 inline-flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-3 text-muted-foreground text-sm transition-[opacity,transform] hover:text-foreground",
               away ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0",
             )}
           >

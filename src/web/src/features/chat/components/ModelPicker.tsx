@@ -127,7 +127,7 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
       <PopoverTrigger
         disabled={disabled}
         data-testid="model-picker"
-        className="inline-flex h-8 min-w-0 max-w-56 items-center gap-1.5 rounded-lg px-2.5 text-foreground text-sm transition-colors hover:bg-accent disabled:opacity-60 data-popup-open:bg-accent"
+        className="inline-flex h-7 min-w-0 max-w-56 items-center gap-1.5 rounded-md px-2 text-foreground text-sm transition-colors hover:bg-accent disabled:opacity-60 data-popup-open:bg-accent"
       >
         <ProviderIcon id={groupIdOf(pick)} className="size-3.5" />
         <span className="min-w-0 truncate">{name}</span>
@@ -288,14 +288,20 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
   const level = pick.effort ?? model.defaultEffort ?? model.efforts[Math.floor(model.efforts.length / 2)]!;
   return (
     <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
-      <PopoverTrigger
-        disabled={disabled}
-        aria-label={`Reasoning: ${EFFORT_LABEL[level] ?? level}`}
-        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent"
-      >
-        <EffortGlyph level={level} levels={model.efforts} className="size-3.5" />
-        <span className="@max-md/composer:hidden">{EFFORT_LABEL[level] ?? level}</span>
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              disabled={disabled}
+              aria-label={`Reasoning: ${EFFORT_LABEL[level] ?? level}`}
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent sm:size-6"
+            />
+          }
+        >
+          <EffortGlyph level={level} levels={model.efforts} className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup>Reasoning · {EFFORT_LABEL[level] ?? level}</TooltipPopup>
+      </Tooltip>
       <PopoverPopup side="top" align="end" padding="none" className="rounded-xl">
         <div className="flex flex-col gap-2 p-3">
           <div className="flex items-center justify-between gap-6 px-0.5 text-xs">

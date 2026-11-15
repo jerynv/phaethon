@@ -67,26 +67,37 @@ function useTutorMode(space: string) {
 
 function TutorPicker({ mode, setMode, disabled }: { mode: TutorMode; setMode: (m: TutorMode) => void; disabled: boolean }) {
   const current = TUTOR.find((t) => t.id === mode) ?? TUTOR[0]!;
+  const on = mode !== "normal";
   return (
     <Menu>
-      <MenuTrigger
-        disabled={disabled}
-        render={<Button variant="secondary" size="sm" shape="rect" className={cn("h-8 sm:h-8", mode === "normal" ? "text-foreground" : "text-primary")} />}
-      >
-        <Icon icon={icons.teacher} className="size-4" />
-        <span className="@max-lg/composer:hidden">{current.label}</span>
-      </MenuTrigger>
-      <MenuPopup side="top" align="start" className="w-64">
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              disabled={disabled}
+              aria-label={`Teaching mode: ${current.label}`}
+              render={on ? <Button variant="ghost" size="xs" className="text-primary hover:text-primary" /> : <Button variant="ghost-muted" size="icon-xs" />}
+            />
+          }
+        >
+          <Icon icon={icons.teacher} />
+          {on ? <span className="@max-md/composer:hidden">{current.label}</span> : null}
+        </TooltipTrigger>
+        <TooltipPopup>{on ? current.label : "Teaching mode"}</TooltipPopup>
+      </Tooltip>
+      <MenuPopup side="top" align="start" className="w-60">
         <MenuGroup>
           <MenuGroupLabel>Teaching mode</MenuGroupLabel>
           <MenuRadioGroup value={mode} onValueChange={(v) => setMode(v as TutorMode)}>
             {TUTOR.map((t) => (
-              <MenuRadioItem key={t.id} value={t.id} className="items-start gap-2 py-1.5">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-sm">{t.label}</span>
-                  {t.hint ? <span className="truncate text-muted-foreground text-xs">{t.hint}</span> : null}
+              <MenuRadioItem key={t.id} value={t.id} className="py-1.5">
+                <span className="flex items-start gap-2">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-sm">{t.label}</span>
+                    {t.hint ? <span className="truncate text-muted-foreground text-xs">{t.hint}</span> : null}
+                  </span>
+                  <MenuRadioItemIndicator className="mt-1" />
                 </span>
-                <MenuRadioItemIndicator className="mt-0.5" />
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
@@ -422,10 +433,10 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
           }}
           className="block max-h-56 w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-base outline-none placeholder:text-placeholder [overflow-wrap:anywhere]"
         />
-        <div className="flex items-center gap-1.5 px-3 pb-3">
+        <div className="flex items-center gap-1 px-2.5 pb-2.5">
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost-muted" size="icon-sm" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} />}>
-              <Icon icon={icons.attach} className="size-4" />
+            <TooltipTrigger render={<Button variant="ghost-muted" size="icon-xs" aria-label="Attach files" onClick={() => picker.current?.click()} disabled={busy} />}>
+              <Icon icon={icons.attach} />
             </TooltipTrigger>
             <TooltipPopup>Attach files · images, PDFs, Word, text</TooltipPopup>
           </Tooltip>
@@ -438,7 +449,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
                 <EffortPicker pick={pick} onPick={setPick} disabled={busy} />
               </>
             ) : (
-              <span className="h-8 w-28 animate-skeleton rounded-lg bg-muted" />
+              <span className="h-7 w-28 animate-skeleton rounded-lg bg-muted" />
             )}
             <span className="w-1" />
             <AnimatePresence mode="popLayout" initial={false}>

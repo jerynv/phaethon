@@ -95,3 +95,13 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | # | Ask | Status |
 |---|-----|--------|
 | 64 | Walk every user-facing string down the clean-copy ladder: cut captions that restate the label, hedges about worries the user never had, explanations of the system | done — 24 strings cut or shortened; rule added to `docs/UI-REBUILD.md` |
+
+## Round 6 — after the install
+
+| # | Ask | Status |
+|---|-----|--------|
+| 65 | Typing into the message box shows nothing: nothing had focus on open | done — the composer takes focus when its chat is on screen; typing anywhere on the page lands in it; cards no longer swallow keys |
+| 66 | Mode selection UI is bad | done — a quiet icon button; the mode's name shows only when one is on |
+| 67 | The teacher icon is horrible | done — lightbulb |
+| 68 | Paperclip still too big | done — `icon-xs` |
+| 69 | No text for the thinking strength | done — the bars alone, name in the tooltip |

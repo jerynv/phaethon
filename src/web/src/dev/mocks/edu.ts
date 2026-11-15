@@ -376,6 +376,11 @@ function gradeData() {
         item("Quiz 1", "Quizzes", 8, 10, { due: at(-12) }),
         item("Midterm 1", "Exams", 81, 100, { due: at(-6), comments: ["Review integration by parts before the next exam."] }),
         item("Homework 3", "Homework", undefined, 20, { due: at(3) }),
+        // A long term's worth: weekly sets and reading checks, so the tables run well below the fold.
+        ...Array.from({ length: 14 }, (_, i) => item(`Problem set ${i + 1}`, "Homework", i < 10 ? [19, 17, 20, 15, 18, 16, 20, 14, 19, 18][i] : undefined, 20, { due: at(-70 + i * 7) })),
+        ...Array.from({ length: 10 }, (_, i) => item(`Reading check ${i + 1}`, "Quizzes", i < 8 ? [5, 4, 5, 3, 5, 4, 4, 5][i] : undefined, 5, { due: at(-60 + i * 7), ...(i === 7 ? { late: true } : {}) })),
+        item("Quiz 2", "Quizzes", undefined, 10, { due: at(1) }),
+        item("Midterm 2", "Exams", undefined, 100, { due: at(12) }),
         item("Final exam", "Exams", undefined, 100, { due: at(40) }),
       ],
     },

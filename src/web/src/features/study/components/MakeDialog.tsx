@@ -145,7 +145,7 @@ export function MakeDialog({
     const e: typeof errs = {};
     if (!draft.course && !draft.files.length) e.course = "Choose a course.";
     if (draft.target === "exam" && !draft.exam.trim()) e.exam = "Choose a test, or make it on topics instead.";
-    if (draft.target === "exam" && scopeNow.kind === "unknown" && !draft.covers.trim()) e.covers = `Say what ${examTitle || "it"} covers: tap topics below or write a few words.`;
+    if (draft.target === "exam" && scopeNow.kind === "unknown" && !draft.covers.trim()) e.covers = `Say what ${examTitle || "it"} covers: tap a suggestion or write a few words.`;
     setErrs(e);
     return !Object.keys(e).length;
   };
@@ -975,11 +975,11 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
           </p>
         </div>
       </motion.div>
-      {g?.coverage.length ? (
+      {g?.coverage.some((c) => c.count > 0) ? (
         <div className="flex flex-col gap-1">
           <p className="text-muted-foreground text-xs">By topic</p>
           <ul className="flex flex-wrap gap-1">
-            {g.coverage.map((c) => (
+            {g.coverage.filter((c) => c.count > 0).map((c) => (
               <li key={c.topic} className="flex items-center gap-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs">
                 <span className="max-w-48 truncate">{c.topic}</span>
                 <span className="text-muted-foreground tabular-nums">{c.count}</span>

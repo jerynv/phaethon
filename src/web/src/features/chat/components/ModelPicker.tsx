@@ -1,5 +1,6 @@
 import { CheckIcon, ChevronDownIcon, LayoutGridIcon, SearchIcon, Settings2Icon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useViewActive } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { ProviderIcon } from "@/components/provider-icon";
 import { RowError } from "@/components/errors";
@@ -20,6 +21,9 @@ import { EffortGlyph } from "./EffortGlyph";
 
 const sameModel = (a: ModelPick, b: Pick<CatalogModel, "backend" | "model">) => a.backend === b.backend && a.model === b.model;
 
+/** Dispatched on window (the composer's `/model`) to open the picker. */
+export const OPEN_MODEL_PICKER = "phaethon:open-model-picker";
+
 export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPick: (p: ModelPick) => void; disabled?: boolean }) {
   const { groups, status, error, load, loadModels } = useCatalog();
   const openSettings = useNav((s) => s.openSettings);
@@ -30,6 +34,13 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => void load(), [load]);
+  const visible = useViewActive();
+  useEffect(() => {
+    if (disabled || !visible) return;
+    const show = () => setOpen(true);
+    window.addEventListener(OPEN_MODEL_PICKER, show);
+    return () => window.removeEventListener(OPEN_MODEL_PICKER, show);
+  }, [disabled, visible]);
   useEffect(() => {
     if (!open) return;
     setQuery("");

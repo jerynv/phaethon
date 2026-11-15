@@ -71,6 +71,15 @@ beforeEach(() => {
 const view = (p: string) => viewFile("school", school, p);
 const bytes = (p: string) => fileBytes("school", school, p);
 
+describe("space_files", () => {
+  it("lists the space's own files, never hidden ones, links or another space's", async () => {
+    if (canSymlinkFiles) symlink(v("spaces/work/secret.md"), path.join(school, "notes/linked.md"));
+    const files = (await call("space_files", { space: "school" })) as { path: string }[];
+    const paths = files.map((f) => f.path).sort();
+    expect(paths).toEqual(["notes/README", "notes/blob.bin", "notes/fig.png", "notes/guide.tex", "notes/paper.pdf", "notes/plan.md", "notes/run.py"]);
+  });
+});
+
 describe("viewer", () => {
   it("shows each kind of file in the space", () => {
     const md = view("notes/plan.md");

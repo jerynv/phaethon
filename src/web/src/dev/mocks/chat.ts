@@ -544,6 +544,8 @@ const picks: Record<string, { backend: string; model: string | null; effort: str
 let lastPick: { backend: string; model: string | null; effort: string | null } = { backend: "phaethon", model: "claude-sonnet-5-5", effort: null };
 
 export default {
+  space_files: () =>
+    [...Object.keys(FILES), "notes/algebra-notes.md", "notes/week5.md", "essays/draft-1.docx"].map((path, i) => ({ path, modified: Date.now() - i * 3_600_000, size: 1200 + i * 300 })),
   thread_model_get: (args: Record<string, unknown>) => {
     const own = args.thread ? picks[conv(args)] : undefined;
     return own ? { pick: own, saved: true } : { pick: lastPick, saved: false };

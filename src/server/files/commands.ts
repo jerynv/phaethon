@@ -7,6 +7,7 @@ import { getSpace } from "../spaces/meta.ts";
 import { addToSpace } from "./add.ts";
 import { exportSpace, suggestedName } from "./export.ts";
 import { openFile, revealFile, showSpace } from "./open.ts";
+import { listFiles } from "./list.ts";
 import { fileBytes, viewFile } from "./viewer.ts";
 
 /** The last export's path, in memory only (as before): "Show export" names no path. */
@@ -26,6 +27,9 @@ commands({
   file_view: ({ space, path: p }: { space: string; path: string }) => viewFile(space, spaceDir(space), String(p ?? "")),
 
   file_bytes: ({ space, path: p }: { space: string; path: string }) => fileBytes(space, spaceDir(space), String(p ?? "")),
+
+  /** The space's own files, newest first (the composer's `@` mentions). */
+  space_files: ({ space }: { space: string }) => listFiles(spaceDir(space)),
 
   space_show: async ({ id }: { id: string }) => {
     let dir: string;

@@ -295,7 +295,7 @@ commands({
           if (signal.aborted) resolve("cancelled");
           signal.addEventListener("abort", () => resolve("cancelled"), { once: true });
         });
-        const making = chat.make(dir, visible, p, question, reply, model, quietEmit, Date.now());
+        const making = chat.make(dir, visible, p, question, reply, model, quietEmit, Date.now(), signal);
         making.catch(() => {});
         const first = await Promise.race([making, cancelled]);
         if (first === "cancelled") {

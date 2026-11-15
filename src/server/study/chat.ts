@@ -472,15 +472,15 @@ export function countOf(space: string, p: string): number {
 }
 
 /** Makes the plan's quiz or deck (once per origin) and notes it; returns path, count, grounding. */
-export async function make(space: string, visible: Visible, p: Plan, question: string, reply: string, model: Model, emit: Emit, now: number): Promise<[string, number, Grounding | null]> {
+export async function make(space: string, visible: Visible, p: Plan, question: string, reply: string, model: Model, emit: Emit, now: number, signal?: AbortSignal): Promise<[string, number, Grounding | null]> {
   const already = made(space, p.origin);
   if (already !== null) return [already, countOf(space, already), null];
   const inputs = p.sources.map((s) => s.path);
   const ctx = context(question, reply);
   const [out, n, g] =
     p.kind === "quiz"
-      ? await makeQuiz(space, visible, inputs, { count: p.count, kinds: p.kinds, difficulty: p.difficulty, focus: p.focus ?? null, title: p.title ?? null, context: ctx, exam: p.exam ?? null }, model, emit, now)
-      : await makeDeck(space, visible, inputs, { count: p.count, focus: p.focus ?? null, title: p.title ?? null, fromAttempt: null, context: ctx, exam: p.exam ?? null }, model, emit, now);
+      ? await makeQuiz(space, visible, inputs, { count: p.count, kinds: p.kinds, difficulty: p.difficulty, focus: p.focus ?? null, title: p.title ?? null, context: ctx, exam: p.exam ?? null }, model, emit, now, signal)
+      : await makeDeck(space, visible, inputs, { count: p.count, focus: p.focus ?? null, title: p.title ?? null, fromAttempt: null, context: ctx, exam: p.exam ?? null }, model, emit, now, signal);
   record(space, p.origin, out, now);
   return [out, n, g];
 }

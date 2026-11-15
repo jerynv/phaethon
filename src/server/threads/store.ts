@@ -186,6 +186,8 @@ function hasContent(p: string): boolean {
  * Returns the new id, or null when there was nothing to move.
  */
 export function migrateIn(dir: string): string | null {
+  // Checked before anything is read, moved or removed: a linked `.phaethon` must not touch another space's files.
+  threadsDir(dir);
   const cur = legacy.thread(dir);
   if (!isRegularFile(cur)) return null;
   removeIfThere(`${cur}.tmp`);

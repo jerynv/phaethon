@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { tempHome } from "../../../tests/harness.ts";
 import { spaceDir, vaultRoot } from "../core/vault.ts";
 import { cancel, claimRun, context, make, origin, parse, plan, record, releaseRun, resolveSources, running } from "./chat.ts";
+import { STOPPED } from "./generate.ts";
 import { deleteItem } from "./store.ts";
 import { ALL, Scripted, fixture, put } from "./testing.ts";
 import { Visible, visibleFor } from "./visible.ts";
@@ -144,6 +145,17 @@ function reply(): string {
 const YES2 = '{"verdicts": [{"id": "i1", "verdict": "yes", "answerOk": true}, {"id": "i2", "verdict": "yes", "answerOk": true}]}';
 
 describe("making", () => {
+  it("a stopped run saves nothing, so the card can be made again", async () => {
+    const v = vis();
+    const question = "Can you quiz me on eigenvalues for MATH301?";
+    const answer = `I'll make 2 questions on eigenvalues.\n\n\`\`\`phaethon-study\n${BLOCK}\n\`\`\``;
+    const p = plan(dir, v, BLOCK, question);
+    const stop = new AbortController();
+    stop.abort();
+    await expect(make(dir, v, p, question, answer, new Scripted([mapReply(), reply(), YES2]), () => {}, 1, stop.signal)).rejects.toBe(STOPPED);
+    expect(plan(dir, v, BLOCK, question).made).toBeUndefined();
+  });
+
   it("a plan is made once with the conversation and opened again after", async () => {
     const v = vis();
     const question = "Can you quiz me on eigenvalues for MATH301?";

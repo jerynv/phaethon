@@ -168,6 +168,19 @@ describe("conversations", () => {
     expect(readSessionIn(other, "2000")).toBeNull();
   });
 
+  it.skipIf(!canSymlinkFiles)("never migrates or removes another space's old conversation through a linked .phaethon", () => {
+    const victim = tempSpace();
+    fs.mkdirSync(path.join(victim, ".phaethon"), { recursive: true });
+    fs.writeFileSync(path.join(victim, ".phaethon/thread.json"), "[]");
+    fs.writeFileSync(path.join(victim, ".phaethon/session"), `${S1}\n`);
+    const linked = tempSpace();
+    symlink(path.join(victim, ".phaethon"), path.join(linked, ".phaethon"), "dir");
+    expect(() => listThreadsIn(linked)).toThrow(/not a folder/);
+    expect(() => migrateIn(linked)).toThrow(/not a folder/);
+    expect(fs.readFileSync(path.join(victim, ".phaethon/thread.json"), "utf8")).toBe("[]");
+    expect(fs.existsSync(path.join(victim, ".phaethon/session"))).toBe(true);
+  });
+
   it("a busy conversation refuses and others in the same space don't", async () => {
     const turn = claim(turnKey("school", "1"))!;
     await expect(whileIdle(turnKey("school", "1"), () => 1)).rejects.toThrow(BUSY);

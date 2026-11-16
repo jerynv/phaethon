@@ -89,7 +89,7 @@ function useShortcuts() {
  * keeps its layout and styles, so showing it again (a long conversation) costs
  * no relayout and its scroll position is where it was. Nothing inherited is
  * toggled on it (`inert`, `visibility`, `pointer-events`), which would restyle
- * the whole page. The page that becomes visible fades and lifts in, briefly.
+ * the whole page. The page that becomes visible fades in, briefly, in place: nothing slides.
  */
 function Pane({ active, children, name }: { active: boolean; children: ReactNode; name: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -100,7 +100,7 @@ function Pane({ active, children, name }: { active: boolean; children: ReactNode
       return;
     }
     if (!active || !ref.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const a = animate(ref.current, { opacity: [0, 1], transform: ["translateY(4px)", "translateY(0px)"] }, { duration: 0.18, ease: "easeOut" });
+    const a = animate(ref.current, { opacity: [0, 1] }, { duration: 0.14, ease: "easeOut" });
     return () => a.stop();
   }, [active]);
   return (

@@ -226,8 +226,6 @@
    * has room for the wordmark and the toggle.
    */
   --container-titlebar-brand: 8rem;
-  /* Below this an inactive page tab (components/ui/page-tabs.tsx) drops its ×, as a browser's does. */
-  --container-page-tab: 7rem;
 
   /* The type scale (docs/UI-REBUILD.md › Typeface and type scale). */
   --text-3xs: 0.625rem;

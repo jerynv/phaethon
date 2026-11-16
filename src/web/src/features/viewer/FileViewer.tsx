@@ -167,7 +167,7 @@ function FileTabs({ files, active }: { files: ViewerFile[]; active: ViewerFile }
             aria-label={name}
             title={f.path}
             data-file={key}
-            className="animate-in fade-in duration-150"
+            className="w-40 animate-in fade-in duration-150"
             onClick={() => show(f)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {

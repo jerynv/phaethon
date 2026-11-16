@@ -269,7 +269,8 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
         ) : null}
         <div className="h-full min-w-4 flex-1" />
         <div ref={bind.title} hidden />
-        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-10 min-w-0 shrink-0 items-center justify-end gap-1 pr-3" />
+        {/* A fixed share of the bar for the page's actions, so pages with more or fewer of them never resize the tabs. */}
+        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-10 min-w-56 shrink-0 items-center justify-end gap-1 pr-3" />
       </div>
     </header>
   );

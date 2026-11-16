@@ -29,8 +29,9 @@ async function send(page: Page, text: string) {
 const words = (tag: string, n: number) => Array.from({ length: n }, (_, i) => `${tag}${i}`).join(" ");
 
 test("two conversations in one space reply at once, and switching clears nothing", async ({ page }) => {
-  const first = words("alpha", 40);
-  const second = words("beta", 40);
+  // Long enough that both are still streaming while the second starts, even on a busy machine.
+  const first = words("alpha", 120);
+  const second = words("beta", 120);
   core = await startCore({
     script: {
       claude: true,
@@ -78,11 +79,11 @@ test("two conversations in one space reply at once, and switching clears nothing
   await expect(page.locator('[data-role="user"]')).toContainText("first question");
 
   // Both finish. The one on screen is simply done; the other one has a new reply.
-  await expect(page.locator('[data-role="assistant"]').last()).toContainText("alpha39", { timeout: 15_000 });
-  await expect(sidebar.getByRole("button", { name: "second question, new reply" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("alpha119", { timeout: 20_000 });
+  await expect(sidebar.getByRole("button", { name: "second question, new reply" })).toBeVisible({ timeout: 20_000 });
   await expect(sidebar.getByRole("button", { name: /^first question/ })).toHaveAccessibleName("first question");
   await sidebar.getByRole("button", { name: /^second question/ }).click();
-  await expect(page.locator('[data-role="assistant"]').last()).toContainText("beta39");
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("beta119");
   await expect(sidebar.getByRole("button", { name: /^second question/ })).toHaveAccessibleName("second question");
 
   // Each reply went to its own conversation, and the model was asked once for each.

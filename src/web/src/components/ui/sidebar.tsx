@@ -183,7 +183,7 @@ export function SidebarGroupLabel({ className, render, ...props }: useRender.Com
   return useRender({
     defaultTagName: "div",
     render,
-    props: mergeProps({ className: cn("group/label flex h-7 shrink-0 items-center gap-1 px-2 text-subtle-foreground text-xs", className), "data-slot": "sidebar-group-label" }, props),
+    props: mergeProps({ className: cn("group/label flex h-7 shrink-0 items-center gap-1 px-2 type-label", className), "data-slot": "sidebar-group-label" }, props),
   });
 }
 

@@ -226,6 +226,13 @@ export const useNav = create<Nav>((set, get) => {
     const space = get().activeSpace ?? get().spaces.data?.[0]?.id;
     return space ? chatTab(space) : null;
   };
+  /** After the last tab closes: a new chat in the active space (never the page just closed). */
+  const openFreshChat = () => {
+    const space = get().activeSpace ?? get().spaces.data?.[0]?.id;
+    if (!space) return saveTabs();
+    setOpen(space, DRAFT);
+    get().openTab({ kind: "chat", space, thread: DRAFT });
+  };
 
   return {
     spaces: { loading: true },
@@ -283,7 +290,7 @@ export const useNav = create<Nav>((set, get) => {
     closeTab(id) {
       const tabs = get().tabs;
       const at = tabs.findIndex((t) => t.id === id);
-      if (at < 0) return;
+      if (at < 0 || !canCloseTab(tabs, id)) return;
       const closing = tabs[at]!;
       const rest = tabs.filter((t) => t.id !== id);
       set({ closedTabs: [strip(closing), ...get().closedTabs.filter((c) => tabId(c) !== id)].slice(0, MAX_CLOSED) });
@@ -295,10 +302,8 @@ export const useNav = create<Nav>((set, get) => {
       const neighbour = rest[Math.min(at, rest.length - 1)];
       if (neighbour) commit(rest, neighbour.id);
       else {
-        set({ tabs: [] });
-        const fb = fallbackTab();
-        if (fb) get().openTab(fb);
-        else saveTabs();
+        set({ tabs: [], activeTab: null });
+        openFreshChat();
       }
     },
 
@@ -635,6 +640,17 @@ export function useOpenThread(space: string | null | undefined): string {
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
   window.__phaethon = { ...(window.__phaethon ?? {}), nav: useNav };
+}
+
+/**
+ * Whether closing tab `id` would change anything. Closing the last tab leaves a
+ * new chat, so the one tab that can't close is a lone new chat: closing it
+ * would put the same tab back.
+ */
+export function canCloseTab(tabs: readonly OpenTab[], id: string): boolean {
+  const tab = tabs.find((t) => t.id === id);
+  if (!tab) return false;
+  return !(tabs.length === 1 && tab.kind === "chat" && tab.thread === DRAFT);
 }
 
 /** A tab without its open-state, for the closed list. */

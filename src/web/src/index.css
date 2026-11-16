@@ -487,37 +487,6 @@
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
 }
-/*
- * The active page tab's lower corners (components/ui/page-tabs.tsx): an 8 px
- * square either side of the tab, filled with the page's colour outside a
- * quarter circle, with a hairline along the curve, so the tab's sides flare
- * into the strip's bottom hairline the way a browser's tab does. The square
- * overlaps the tab by 1 px so the curve continues the tab's own border.
- */
-@utility page-tab-foot {
-  --foot: 0.5rem;
-  position: absolute;
-  bottom: 0;
-  width: var(--foot);
-  height: var(--foot);
-  pointer-events: none;
-  background: radial-gradient(
-    circle at var(--foot-x, 0) 0,
-    transparent calc(var(--foot) - 1.5px),
-    var(--border) calc(var(--foot) - 1px),
-    var(--border) calc(var(--foot) - 0.25px),
-    var(--background) var(--foot)
-  );
-  &[data-side="start"] {
-    --foot-x: 0%;
-    left: calc(1px - var(--foot));
-  }
-  &[data-side="end"] {
-    --foot-x: 100%;
-    right: calc(1px - var(--foot));
-  }
-}
-
 /* Scrolls without a scrollbar (the chat; its history rail stands in). */
 @utility scroll-quiet {
   overflow-y: auto;

@@ -14,7 +14,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { chordText, keysFor } from "./shortcuts";
-import { DRAFT, type OpenTab, useActiveSpace, useNav } from "./store";
+import { canCloseTab, DRAFT, type OpenTab, useActiveSpace, useNav } from "./store";
 import { VIEWS } from "./views";
 
 /**
@@ -22,7 +22,7 @@ import { VIEWS } from "./views";
  * frame). There is exactly one, rendered by the shell, so nothing in it moves
  * when the page changes:
  *
- *   ● ● ●  Phaethon        ▯ │╭tab╮ tab │ tab  + ………………………… [page actions]
+ *   ● ● ●  Phaethon        ▯ │ (tab) tab │ tab  + ……………………… [page actions]
  *   └──── the sidebar's column ────┘
  *
  * The left end is exactly the sidebar's column (its width, live while it is
@@ -109,7 +109,7 @@ function useTabLabel(tab: OpenTab): { icon: (typeof icons)[keyof typeof icons]; 
 }
 
 /** A tab's right-click menu: keep it, close it, the others, or the ones after it; bring back the last closed. */
-function TabMenuItems({ tab, last, only }: { tab: OpenTab; last: boolean; only: boolean }) {
+function TabMenuItems({ tab, last, only, closable }: { tab: OpenTab; last: boolean; only: boolean; closable: boolean }) {
   const close = useNav((s) => s.closeTab);
   const keep = useNav((s) => s.keepTab);
   const closeOthers = useNav((s) => s.closeOtherTabs);
@@ -124,7 +124,7 @@ function TabMenuItems({ tab, last, only }: { tab: OpenTab; last: boolean; only: 
           Keep open
         </ContextMenuItem>
       ) : null}
-      <ContextMenuItem onClick={() => close(tab.id)}>
+      <ContextMenuItem disabled={!closable} onClick={() => close(tab.id)}>
         <Icon icon={icons.close} />
         Close
         <MenuShortcut>{chordText(keysFor("closeTab").keys)}</MenuShortcut>
@@ -145,7 +145,7 @@ function TabMenuItems({ tab, last, only }: { tab: OpenTab; last: boolean; only: 
   );
 }
 
-function TabButton({ tab, active, last, only }: { tab: OpenTab; active: boolean; last: boolean; only: boolean }) {
+function TabButton({ tab, active, last, only, closable }: { tab: OpenTab; active: boolean; last: boolean; only: boolean; closable: boolean }) {
   const { icon, label, space } = useTabLabel(tab);
   const activate = useNav((s) => s.activateTab);
   const close = useNav((s) => s.closeTab);
@@ -175,8 +175,9 @@ function TabButton({ tab, active, last, only }: { tab: OpenTab; active: boolean;
         </Truncate>
       }
       closeLabel={`Close ${label}`}
-      onClose={() => close(tab.id)}
-      menu={<TabMenuItems tab={tab} last={last} only={only} />}
+      // A lone new chat has no ×: closing it would put the same tab back.
+      onClose={closable ? () => close(tab.id) : undefined}
+      menu={<TabMenuItems tab={tab} last={last} only={only} closable={closable} />}
     />
   );
 }
@@ -198,7 +199,7 @@ function TabStrip() {
       }}
     >
       {tabs.map((t, i) => (
-        <TabButton key={t.id} tab={t} active={t.id === active} last={i === tabs.length - 1} only={tabs.length === 1} />
+        <TabButton key={t.id} tab={t} active={t.id === active} last={i === tabs.length - 1} only={tabs.length === 1} closable={canCloseTab(tabs, t.id)} />
       ))}
     </PageTabList>
   );
@@ -248,10 +249,11 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
           </HeaderIconButton>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-1 items-end">
+      {/* Everything here is centred on the bar's middle line, the line the wordmark and the toggle sit on. */}
+      <div className="flex min-w-0 flex-1 items-center">
         <TabStrip />
         {space ? (
-          <div className="flex h-10 shrink-0 items-center">
+          <div className="flex shrink-0 items-center">
             <Tooltip>
               <TooltipTrigger render={<PageTabNew label="New chat" onClick={startChat} className="-ml-1" />} />
               <TooltipPopup side="bottom">
@@ -270,7 +272,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
         <div className="h-full min-w-4 flex-1" />
         <div ref={bind.title} hidden />
         {/* A fixed share of the bar for the page's actions, so pages with more or fewer of them never resize the tabs. */}
-        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-10 min-w-56 shrink-0 items-center justify-end gap-1 pr-3" />
+        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-full min-w-56 shrink-0 items-center justify-end gap-1 pr-3" />
       </div>
     </header>
   );

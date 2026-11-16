@@ -15,10 +15,10 @@ import { ContextMenu, ContextMenuPopup, ContextMenuTrigger } from "./context-men
  *     <PageTabNew label="New chat" onClick={…} />
  *   </div>
  *
- * Every tab has a shape: the inactive ones sit on the strip between thin
- * separators and fill in on hover; the active one is the page's colour with a
- * hairline edge, its lower corners flaring into the strip's hairline, so it
- * reads as part of the page below.
+ * Slim (28 px, `h-7`), centred on the bar's middle line, the same line as the
+ * wordmark and the sidebar toggle. Every tab is a `rounded-md` pill, 4 px
+ * apart: the inactive ones a faint fill on the strip, deeper on hover; the
+ * active one the page's colour with a hairline edge.
  *
  * Nothing moves but what was asked to: tabs are all one width, up to 200 px
  * (`w-50`, or the caller's), shrinking together only when the bar can't hold
@@ -29,11 +29,11 @@ import { ContextMenu, ContextMenuPopup, ContextMenuTrigger } from "./context-men
  * choosing a tab never shifts a label. Not a picker: choosing one of a few values is `Tabs`.
  */
 
-/** The strip behind a tab list: the tab-strip colour and the hairline the active tab breaks. Put it on the bar (relative) holding the list. */
+/** The strip behind a tab list: the tab-strip colour and a hairline along its bottom. Put it on the bar (relative) holding the list. */
 export const pageTabStripClassName =
   "bg-tab-strip after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border";
 
-/** The tabs, bottom-aligned in the strip; scrolls sideways without a scrollbar when they don't fit. */
+/** The tabs, centred in the strip; scrolls sideways without a scrollbar when they don't fit. */
 export function PageTabList({ className, children, ref, ...props }: React.ComponentProps<"div">) {
   const own = React.useRef<HTMLDivElement | null>(null);
   // When the strip narrows (a window or sidebar resize, a tab opening), the active tab stays in view.
@@ -54,7 +54,7 @@ export function PageTabList({ className, children, ref, ...props }: React.Compon
         if (typeof ref === "function") ref(el);
         else if (ref) ref.current = el;
       }}
-      className={cn("app-no-drag scroll-quiet flex h-10 min-w-0 shrink scroll-px-2 items-end self-end overflow-x-auto overflow-y-hidden px-2", className)}
+      className={cn("app-no-drag scroll-quiet flex h-7 min-w-0 shrink scroll-px-2 items-center self-center overflow-x-auto overflow-y-hidden px-2", className)}
     >
       {children}
     </div>
@@ -76,7 +76,8 @@ export function PageTab({
   /** The tab's name, already truncated by the caller (`Truncate`, `MiddleTruncate`). */
   label: React.ReactNode;
   closeLabel: string;
-  onClose: () => void;
+  /** Leave it out when closing would change nothing (a lone new chat): no ×, and a middle-click does nothing. */
+  onClose?: () => void;
   /** The right-click menu's items. */
   menu: React.ReactNode;
 }) {
@@ -89,16 +90,14 @@ export function PageTab({
         aria-selected={active}
         data-slot="page-tab"
         onAuxClick={(e) => {
-          if (e.button === 1) onClose();
+          if (e.button === 1) onClose?.();
         }}
         {...props}
         className={cn(
           // Up to 200 px each, shrinking together (all to the same width, active or not) only when the bar
           // can't hold them; the page's actions have their own fixed share, so switching pages never resizes them.
-          // The separator before each tab hides next to the active or hovered tab, as a browser's does.
-          "group/tab relative flex h-10 w-50 min-w-28 shrink cursor-default select-none outline-none",
-          "before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-border-strong before:transition-opacity",
-          "first:before:opacity-0 hover:before:opacity-0 aria-selected:z-10 aria-selected:before:opacity-0 [:hover+&]:before:opacity-0 [[aria-selected=true]+&]:before:opacity-0",
+          // 4 px between neighbouring pills.
+          "group/tab relative flex h-7 w-50 min-w-28 shrink cursor-default select-none px-0.5 outline-none",
           className,
         )}
       >
@@ -106,40 +105,33 @@ export function PageTab({
           data-slot="page-tab-surface"
           // The same box active or not (a 1 px border, transparent when inactive), so a label never moves.
           className={cn(
-            "relative flex min-w-0 flex-1 rounded-t-lg border border-b-0 bg-clip-padding text-sm transition-colors group-focus-visible/tab:ring-2 group-focus-visible/tab:ring-ring group-focus-visible/tab:ring-inset",
-            active ? "border-border bg-background text-foreground" : "border-transparent text-muted-foreground group-hover/tab:text-foreground",
+            "flex min-w-0 flex-1 items-center gap-1.5 rounded-md border bg-clip-padding pr-1 pl-2 text-xs transition-colors group-focus-visible/tab:ring-2 group-focus-visible/tab:ring-ring group-focus-visible/tab:ring-inset",
+            active ? "border-border bg-background text-foreground" : "border-transparent bg-foreground/4 text-muted-foreground group-hover/tab:bg-foreground/7 group-hover/tab:text-foreground",
           )}
         >
-          {active ? null : (
-            <span aria-hidden className="pointer-events-none absolute inset-x-0.5 top-1 bottom-1 rounded-md bg-foreground/5 opacity-0 transition-opacity group-hover/tab:opacity-100" />
-          )}
-          <span className="relative flex min-w-0 flex-1 items-center gap-2 pr-1.5 pl-3">
-            <span className="flex shrink-0 [&_svg]:size-4">{icon}</span>
-            <span className="flex min-w-0 flex-1">{label}</span>
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label={closeLabel}
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose();
-              }}
-              // Its slot is always there; only the inactive ones hide it until hovered.
-              className={cn(
-                "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-[opacity,background-color,color] hover:bg-foreground/8 hover:text-foreground",
-                active ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
-              )}
-            >
-              <Icon icon={icons.close} className="size-3" />
-            </button>
+          <span className="flex shrink-0 [&_svg]:size-3.5">{icon}</span>
+          <span className="flex min-w-0 flex-1">{label}</span>
+          {/* Its slot is always there (so a label never moves); only the inactive ones hide the × until hovered. */}
+          <span className="flex size-5 shrink-0">
+            {onClose ? (
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-label={closeLabel}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className={cn(
+                  "flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-[opacity,background-color,color] hover:bg-foreground/8 hover:text-foreground",
+                  active ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
+                )}
+              >
+                <Icon icon={icons.close} className="size-3" />
+              </button>
+            ) : null}
           </span>
         </span>
-        {active ? (
-          <>
-            <span aria-hidden className="page-tab-foot" data-side="start" />
-            <span aria-hidden className="page-tab-foot" data-side="end" />
-          </>
-        ) : null}
       </ContextMenuTrigger>
       <ContextMenuPopup>{menu}</ContextMenuPopup>
     </ContextMenu>
@@ -154,11 +146,11 @@ export function PageTabNew({ label, className, ...props }: Omit<React.ComponentP
       aria-label={label}
       {...props}
       className={cn(
-        "app-no-drag flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+        "app-no-drag flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
     >
-      <Icon icon={icons.add} className="size-4" />
+      <Icon icon={icons.add} className="size-3.5" />
     </button>
   );
 }

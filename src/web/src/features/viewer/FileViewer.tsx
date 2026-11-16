@@ -110,10 +110,10 @@ export function FileViewer() {
           }
         }}
       />
-      <header className={cn("app-drag relative flex h-(--titlebar-height) shrink-0 items-end", pageTabStripClassName)}>
+      <header className={cn("app-drag relative flex h-(--titlebar-height) shrink-0 items-center", pageTabStripClassName)}>
         <FileTabs files={files} active={target} />
         <div className="h-full min-w-2 flex-1" />
-        <div className="app-no-drag flex h-10 shrink-0 items-center pr-2">
+        <div className="app-no-drag flex shrink-0 items-center pr-2">
           <HeaderButton label={files.length > 1 ? "Close all files" : "Close"} onClick={closeAll}>
             <Icon icon={icons.close} />
           </HeaderButton>

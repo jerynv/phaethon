@@ -67,6 +67,29 @@ test("settings opens inside the shell and Esc goes back", async ({ page }) => {
   await expect(composer(page)).toBeVisible();
 });
 
+test("closing every tab leaves one new chat on the welcome, which has no close", async ({ page }) => {
+  core = await startCore({ script: { claude: true, steps: [{ text: "Sure." }] } });
+  await core.open(page);
+  await composer(page).fill("Hello");
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-role="assistant"]').last()).toContainText("Sure.");
+  await page.keyboard.press("ControlOrMeta+Comma");
+  const strip = page.getByRole("tablist", { name: "Open pages" });
+  await expect(strip.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
+
+  const closes = strip.getByRole("button", { name: /^Close / });
+  for (let i = 0; i < 10 && (await closes.count()) > 0; i++) await closes.first().click({ force: true });
+  await expect(strip.getByRole("tab")).toHaveCount(1);
+  await expect(strip.getByRole("tab", { name: "New chat" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
+  await expect(closes).toHaveCount(0);
+  // ⌘W and a middle-click on it change nothing.
+  await page.keyboard.press("ControlOrMeta+w");
+  await strip.getByRole("tab", { name: "New chat" }).click({ button: "middle" });
+  await expect(strip.getByRole("tab")).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
+});
+
 test("a file named in a reply opens in the viewer, a web link stays a link", async ({ page }) => {
   core = await startCore({
     setup: withNotes,

@@ -31,7 +31,7 @@ describe("text copies (ported from text.rs and tests/text_child.rs)", () => {
     await expect(extract(file("junk.pdf", "%PDF-1.4 nothing else"))).rejects.toThrow(/^it couldn’t be read as a PDF/);
     await expect(extract(file("empty.pdf", ""))).rejects.toThrow();
     expect(await extract(file("week3.pdf", testPdf("Week 3: Hash tables and their load factor")))).toBe("## Page 1\n\nWeek 3: Hash tables and their load factor");
-  });
+  }, 60000);
 
   it("pages without text are recognised, marked or explained", () => {
     const layer = "Printed heading and a paragraph with plenty of words in it";

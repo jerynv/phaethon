@@ -83,7 +83,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
     <ContextMenu>
       <ContextMenuTrigger render={<div className="md-code group/code" data-slot="code-block" />}>
         <div className="flex h-9 items-center justify-between pr-1.5 pl-3.5">
-          <span className="text-muted-foreground text-sm">{langName(lang)}</span>
+          <span className="text-muted-foreground text-xs">{langName(lang)}</span>
           <CopyButton text={code} label="Copy code" />
         </div>
         {html ? (

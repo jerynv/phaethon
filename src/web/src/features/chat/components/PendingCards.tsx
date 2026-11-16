@@ -177,7 +177,7 @@ export function ApprovalCard({ approval, onAnswer }: { approval: PendingApproval
       }
     >
       <Well>
-        <div className="-mx-2 max-h-64 overflow-auto font-mono text-2xs leading-4.5">
+        <div className="-mx-2 max-h-64 overflow-auto font-mono text-xs leading-5">
           {visible.map((r, i) =>
             r.kind === "fold" ? (
               <div key={i} className="bg-muted/60 px-2 text-muted-foreground">

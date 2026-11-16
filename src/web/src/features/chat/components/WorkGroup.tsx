@@ -114,7 +114,7 @@ export function ProgressLine({ text, since, category, technical, waiting = false
           </motion.span>
         </AnimatePresence>
         {technical ? <span className="min-w-0 truncate font-mono text-subtle-foreground text-xs">{technical}</span> : null}
-        {since ? <span className="ml-auto shrink-0 text-subtle-foreground text-xs tabular-nums">{elapsedText(ms)}</span> : null}
+        {since ? <span className="ml-auto shrink-0 type-meta">{elapsedText(ms)}</span> : null}
       </div>
       <Patience hint={patienceHint(ms, category)} className="pl-7.5" />
     </div>

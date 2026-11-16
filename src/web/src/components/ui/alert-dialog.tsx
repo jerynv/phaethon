@@ -125,7 +125,7 @@ function AlertDialogFooter({
 function AlertDialogTitle({ className, ...props }: AlertDialogPrimitive.Title.Props) {
   return (
     <AlertDialogPrimitive.Title
-      className={cn("wrap-anywhere shrink-0 font-semibold text-xl leading-snug", className)}
+      className={cn("wrap-anywhere shrink-0 type-title", className)}
       data-slot="alert-dialog-title"
       {...props}
     />

@@ -184,7 +184,7 @@ export function ChatView({ space }: { space: SpaceView }) {
         <div className="flex grow-2 flex-col items-center justify-end px-8">
           <div className="mb-5 flex flex-col items-center gap-3 text-center">
             <BrandMark className="size-5" />
-            <h1 className="text-2xl text-foreground tracking-heading">Where should we begin?</h1>
+            <h1 className="type-display">Where should we begin?</h1>
           </div>
         </div>
       ) : (

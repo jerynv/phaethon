@@ -163,7 +163,7 @@ export function CommandPalette() {
                       {item.keys ? (
                         <span className="shrink-0 text-2xs text-subtle-foreground tabular-nums">{item.keys.join(" ")}</span>
                       ) : item.detail ? (
-                        <span className="max-w-40 shrink-0 truncate text-subtle-foreground text-xs tabular-nums">{item.detail}</span>
+                        <span className="max-w-40 shrink-0 truncate type-meta">{item.detail}</span>
                       ) : null}
                     </CommandItem>
                   ))}

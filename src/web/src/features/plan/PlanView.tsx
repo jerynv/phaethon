@@ -246,7 +246,7 @@ function daysText(days: number[]): string {
 function SideLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="mt-6 flex h-7 items-center justify-between px-2 first:mt-0">
-      <h3 className="text-subtle-foreground text-xs">{children}</h3>
+      <h3 className="type-label">{children}</h3>
       {action}
     </div>
   );
@@ -507,7 +507,7 @@ function Today({
     <Card data-testid="plan-today">
       <div className="flex items-start gap-4 px-5 pt-5 pb-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h2 className="font-medium text-base tracking-title">
+          <h2 className="type-heading">
             Today <span className="font-normal text-muted-foreground">· {shortDay(today)}</span>
           </h2>
           <p className="text-muted-foreground text-sm">{entries.length ? [due ? `${due} due` : null, study ? `${study} to study` : null].filter(Boolean).join(" · ") : "A clear day"}</p>
@@ -688,7 +688,7 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
       }}
     >
       <div className="flex items-center gap-3 border-b px-5 pt-5 pb-4">
-        <h2 className="min-w-0 flex-1 font-medium text-base tracking-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
+        <h2 className="min-w-0 flex-1 type-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
         <Button size="icon-xs" variant="ghost-muted" aria-label="Close" onClick={onCancel}>
           <Icon icon={icons.close} />
         </Button>

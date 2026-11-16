@@ -163,7 +163,7 @@ export function WorkLogCommandBody({ command, output, running = false, full = tr
   );
   if (!full && !printed) return null;
   return (
-    <div className="flex min-w-0 flex-col divide-y rounded-lg bg-code font-mono text-xs leading-relaxed">
+    <div className="flex min-w-0 flex-col divide-y rounded-lg bg-code font-mono text-xs leading-5">
       {full ? (
         <pre className="whitespace-pre-wrap px-3 py-2 text-foreground/85 wrap-anywhere">
           <span className="select-none text-subtle-foreground">$ </span>

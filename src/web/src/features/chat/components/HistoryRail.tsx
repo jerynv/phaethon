@@ -171,8 +171,8 @@ export function HistoryRail({
           {active ? (
             <span className="pointer-events-none absolute left-8 w-80 -translate-y-1/2" style={{ top: `${topOf(hover!)}%` }}>
               <span className="block rounded-xl border bg-popover p-3 text-left text-popover-foreground shadow-popup">
-                <span className="block truncate font-medium text-sm leading-5">{active.userText || "Your message"}</span>
-                {active.assistantText ? <span className="mt-1 line-clamp-3 text-muted-foreground text-sm leading-5">{active.assistantText}</span> : null}
+                <span className="block truncate font-medium text-sm">{active.userText || "Your message"}</span>
+                {active.assistantText ? <span className="mt-1 line-clamp-3 text-muted-foreground text-sm">{active.assistantText}</span> : null}
               </span>
             </span>
           ) : null}

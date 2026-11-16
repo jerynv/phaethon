@@ -42,7 +42,7 @@ function Welcome() {
     <div className="relative flex flex-col items-center gap-6 overflow-hidden rounded-panel border bg-background px-10 pt-16 pb-10">
       <DotMatrix seed="welcome" />
       <BrandMark className="size-6" />
-      <h1 className="font-normal text-2xl tracking-heading">Where should we begin?</h1>
+      <h1 className="type-display">Where should we begin?</h1>
       <div className="w-full max-w-(--chat-max-width) rounded-card border bg-card">
         <div className="px-4 pt-3.5 pb-10 text-base text-placeholder">Ask anything…</div>
         <div className="flex items-center gap-2 px-3 pb-3">

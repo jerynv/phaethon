@@ -95,7 +95,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       <div aria-hidden className="app-drag absolute inset-x-0 top-0 h-(--titlebar-height)" />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-24 shrink-0 items-end justify-center pb-2">
-          <span className="font-medium text-base tracking-title">Phaethon</span>
+          <span className="font-medium text-base">Phaethon</span>
         </div>
         <div className="page-scroll min-h-0 flex-1">
           <div className="mx-auto flex min-h-full w-full max-w-sm flex-col justify-start px-6 pt-(--onboarding-top) pb-16">
@@ -150,7 +150,7 @@ function Dots({ step }: { step: number }) {
 function Title({ children, sub }: { children: ReactNode; sub?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-col gap-2">
-      <h1 className="font-medium text-2xl tracking-heading">{children}</h1>
+      <h1 className="type-display">{children}</h1>
       {sub ? <p className="text-muted-foreground text-sm">{sub}</p> : null}
     </div>
   );

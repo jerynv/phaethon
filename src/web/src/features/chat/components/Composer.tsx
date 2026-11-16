@@ -126,7 +126,7 @@ function PendingChip({ p, onRemove }: { p: Pending; onRemove: () => void }) {
         <FileIcon kind={kind} className={cn("ml-0.5", kind === "pdf" ? "text-destructive" : kind === "spreadsheet" ? "text-success" : kind === "image" ? "text-primary" : "text-muted-foreground")} />
       )}
       <MiddleTruncate value={p.file.name} className="min-w-0" />
-      <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{formatBytes(p.file.size)}</span>
+      <span className="shrink-0 type-meta">{formatBytes(p.file.size)}</span>
       <button type="button" aria-label={`Remove ${p.file.name}`} onClick={onRemove} className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
         <Icon icon={icons.close} className="size-3.5" />
       </button>

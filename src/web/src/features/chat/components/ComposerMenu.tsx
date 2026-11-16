@@ -95,7 +95,7 @@ export function ComposerMenu({
           {items.length ? (
             <CommandList className="max-h-72 overflow-y-auto p-1" aria-label={label}>
               <CommandGroup items={items}>
-                <CommandGroupLabel className="px-2 pt-1 pb-1.5 font-medium text-2xs text-muted-foreground">{label}</CommandGroupLabel>
+                <CommandGroupLabel className="px-2 pt-1 pb-1.5 type-label">{label}</CommandGroupLabel>
                 {items.map((item, i) => (
                   <CommandItem
                     key={item.id}

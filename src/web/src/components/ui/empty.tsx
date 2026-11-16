@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils";
 
 const emptySizeClassName = {
   compact:
-    "min-h-64 gap-4 p-6 md:p-10 [&_[data-slot=empty-media]]:mb-0 [&_[data-slot=empty-title]]:text-lg [&_[data-slot=empty-description]]:text-sm",
+    "min-h-64 gap-4 p-6 md:p-10 [&_[data-slot=empty-media]]:mb-0 [&_[data-slot=empty-description]]:text-sm",
   default: "gap-6 p-6 md:p-12",
-  hero: "gap-6 p-6 md:p-12 [&_[data-slot=empty-title]]:text-2xl sm:[&_[data-slot=empty-title]]:text-3xl",
+  hero: "gap-6 p-6 md:p-12 [&_[data-slot=empty-title]]:type-display",
 } as const;
 
 function Empty({
@@ -90,7 +90,7 @@ function EmptyMedia({
 
 function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("font-semibold text-xl", className)} data-slot="empty-title" {...props} />
+    <div className={cn("type-heading", className)} data-slot="empty-title" {...props} />
   );
 }
 

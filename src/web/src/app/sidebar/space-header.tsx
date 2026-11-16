@@ -114,7 +114,7 @@ export const SpaceHeader = memo(function SpaceHeader({ space, index, folded, cou
             ) : null}
           </span>
         ) : index < 9 && isMac() ? (
-          <SidebarMenuBadge className="text-3xs">⌘{index + 1}</SidebarMenuBadge>
+          <SidebarMenuBadge>⌘{index + 1}</SidebarMenuBadge>
         ) : null}
       </SidebarMenuButton>
       <SidebarMenuTrail keep={menu}>

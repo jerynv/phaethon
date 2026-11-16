@@ -202,7 +202,7 @@ function DialogFooter({
 function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
-      className={cn("wrap-anywhere font-semibold text-lg tracking-title", className)}
+      className={cn("wrap-anywhere type-title", className)}
       data-slot="dialog-title"
       {...props}
     />

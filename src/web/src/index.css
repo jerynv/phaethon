@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/inter";
+/* Inter with its optical-size axis (text cut at 14 px and under, display cut towards 32 px) and its true italic. */
+@import "@fontsource-variable/inter/opsz.css";
+@import "@fontsource-variable/inter/opsz-italic.css";
 @import "@fontsource-variable/jetbrains-mono";
 @import "katex/dist/katex.min.css";
 
@@ -244,11 +246,19 @@
    */
   --container-titlebar-brand: 8rem;
 
-  /* The type scale (docs/UI-REBUILD.md › Typeface and type scale). */
+  /*
+   * The type scale (docs/UI-REBUILD.md › Type). Dense desktop sizes: 13 px is
+   * the UI base, 14 px the reading size. Each size carries its own tracking
+   * (after Inter's dynamic metrics, eased because the optical-size axis
+   * already tightens the display cut): a hair open at 10–11 px, neutral at
+   * 12–14, closing a little per step above. A `tracking-*` class still wins.
+   */
   --text-3xs: 0.625rem;
   --text-3xs--line-height: 0.875rem;
+  --text-3xs--letter-spacing: 0.01em;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
+  --text-2xs--letter-spacing: 0.005em;
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -256,17 +266,22 @@
   --text-base: 0.875rem;
   --text-base--line-height: 1.375rem;
   --text-lg: 0.9375rem;
-  --text-lg--line-height: 1.375rem;
+  --text-lg--line-height: 1.25rem;
+  --text-lg--letter-spacing: -0.005em;
   --text-xl: 1.125rem;
-  --text-xl--line-height: 1.625rem;
-  --text-2xl: 1.5rem;
-  --text-2xl--line-height: 1.875rem;
-  --text-3xl: 1.875rem;
-  --text-3xl--line-height: 2.25rem;
+  --text-xl--line-height: 1.5rem;
+  --text-xl--letter-spacing: -0.008em;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.75rem;
+  --text-2xl--letter-spacing: -0.012em;
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: 2rem;
+  --text-3xl--letter-spacing: -0.016em;
 
-  --tracking-title: -0.01em;
-  --tracking-heading: -0.015em;
-  --tracking-hero: -0.02em;
+  /* Kept so older call sites read the same; the sizes above already carry these. */
+  --tracking-title: -0.005em;
+  --tracking-heading: -0.012em;
+  --tracking-hero: -0.016em;
 }
 
 @theme inline {
@@ -437,6 +452,33 @@
       transform: translateX(250%);
     }
   }
+}
+
+/*
+ * Type roles (docs/UI-REBUILD.md › Type): one size, weight and colour per
+ * role, so a page title or a group label reads the same on every screen.
+ * Utilities, not components: a role class plus layout classes on any element.
+ */
+@utility type-display {
+  @apply text-2xl font-medium text-foreground;
+}
+@utility type-hero {
+  @apply text-3xl font-medium text-foreground tabular-nums;
+}
+@utility type-stat {
+  @apply text-2xl font-medium text-foreground tabular-nums;
+}
+@utility type-title {
+  @apply text-lg font-medium text-foreground;
+}
+@utility type-heading {
+  @apply text-base font-medium text-foreground;
+}
+@utility type-label {
+  @apply text-xs font-medium text-subtle-foreground;
+}
+@utility type-meta {
+  @apply text-xs text-subtle-foreground tabular-nums;
 }
 
 /* Popovers and menus: flat, one hairline, a soft drop in light mode only. */
@@ -655,7 +697,7 @@
 @layer components {
   .markdown {
     font-size: var(--text-base);
-    line-height: 1.6;
+    line-height: var(--text-base--line-height);
     color: var(--foreground);
     overflow-wrap: anywhere;
   }
@@ -672,22 +714,24 @@
   .markdown h2,
   .markdown h3,
   .markdown h4 {
+    /* Prose headings are the one 600 in the app: they have to outrank a bold run in the text. */
     font-weight: 600;
-    letter-spacing: -0.01em;
     margin: 1.2em 0 0.4em;
   }
   .markdown h1 {
-    font-size: 1.0625rem;
-    line-height: 1.625rem;
+    font-size: var(--text-xl);
+    line-height: var(--text-xl--line-height);
+    letter-spacing: var(--text-xl--letter-spacing);
   }
   .markdown h2 {
-    font-size: 0.9375rem;
-    line-height: 1.5rem;
+    font-size: var(--text-lg);
+    line-height: var(--text-lg--line-height);
+    letter-spacing: var(--text-lg--letter-spacing);
   }
   .markdown h3,
   .markdown h4 {
-    font-size: 0.875rem;
-    line-height: 1.375rem;
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
   }
   .markdown ul,
   .markdown ol {
@@ -750,8 +794,8 @@
     overflow-x: auto;
     padding: 0.7rem 0.85rem;
     font-family: var(--font-mono);
-    font-size: 0.78rem;
-    line-height: 1.6;
+    font-size: var(--text-xs);
+    line-height: var(--text-sm--line-height);
     white-space: pre;
     overflow-wrap: normal;
   }
@@ -777,7 +821,7 @@
     width: 100%;
     border-collapse: collapse;
     font-size: var(--text-sm);
-    line-height: 1.25rem;
+    line-height: var(--text-sm--line-height);
   }
   .md-table-wrap th {
     font-weight: 500;

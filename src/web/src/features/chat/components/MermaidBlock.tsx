@@ -67,7 +67,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
   return (
     <figure className="group/mermaid relative my-3 overflow-x-auto rounded-lg border bg-card p-4">
       <div className="flex justify-center [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: svg }} />
-      <button type="button" onClick={() => setShowSource(true)} className="absolute top-2 right-2 rounded-md px-1.5 py-0.5 text-2xs text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/mermaid:opacity-100">
+      <button type="button" onClick={() => setShowSource(true)} className="absolute top-2 right-2 rounded-md px-1.5 py-0.5 text-muted-foreground text-xs opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/mermaid:opacity-100">
         Source
       </button>
     </figure>

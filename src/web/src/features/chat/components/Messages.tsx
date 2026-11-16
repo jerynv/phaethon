@@ -182,13 +182,13 @@ export const UserMessage = memo(function UserMessage({ m, space, onEdit, canEdit
         <div className="relative flex max-w-3/4 flex-col items-end gap-1.5">
           {m.attachments.length ? <Attachments list={m.attachments} space={space} /> : null}
           {m.text.trim() ? (
-            <div className="max-w-full rounded-2xl bg-message px-3.5 py-2 text-message-foreground text-sm">
+            <div className="max-w-full rounded-2xl bg-message px-3.5 py-2 text-base text-message-foreground">
               <ClampedText text={m.text} lines={12} />
             </div>
           ) : null}
           {/* Under the bubble, out of the flow, so a hover row never pushes the reply down. */}
           <div className="absolute top-full right-0 mt-0.5 flex h-6 items-center gap-0.5 whitespace-nowrap opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
-            <span className="mr-1 text-subtle-foreground text-xs tabular-nums">{clock(m.at)}</span>
+            <span className="mr-1 type-meta">{clock(m.at)}</span>
             {canEdit ? (
               <MessageAction label="Edit and resend" onClick={() => onEdit(m)}>
                 <Icon icon={icons.edit} />
@@ -392,7 +392,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                 ) : null}
               </>
             ) : null}
-            <span className="ml-1 text-subtle-foreground text-xs tabular-nums opacity-0 transition-opacity group-hover/msg:opacity-100">{clock(m.at)}</span>
+            <span className="ml-1 type-meta opacity-0 transition-opacity group-hover/msg:opacity-100">{clock(m.at)}</span>
           </div>
         ) : null}
       </div>

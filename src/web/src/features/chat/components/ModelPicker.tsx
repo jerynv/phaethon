@@ -243,7 +243,7 @@ function GroupRows({
     <div className="pb-1">
       {showHeader || group.need ? (
         <div className="flex h-8 items-center gap-2 px-2.5">
-          {showHeader ? <span className="text-subtle-foreground text-xs">{group.name}</span> : null}
+          {showHeader ? <span className="type-label">{group.name}</span> : null}
           {group.need ? (
             <button type="button" onClick={onSetup} className="ml-auto inline-flex items-center gap-1 rounded-sm px-1 text-warning-foreground text-xs hover:underline">
               {group.need} · Set up
@@ -266,7 +266,7 @@ function GroupRows({
             data-highlighted={i === hi || undefined}
             onMouseMove={() => setHi(i)}
             onClick={() => choose(m)}
-            className="flex h-9 cursor-pointer items-center gap-3 rounded-lg px-2.5 text-base data-highlighted:bg-accent"
+            className="flex h-9 cursor-pointer items-center gap-3 rounded-lg px-2.5 text-sm data-highlighted:bg-accent"
           >
             <ProviderIcon id={group.id} />
             <Truncate className="flex-1">{m.name}</Truncate>

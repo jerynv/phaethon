@@ -48,7 +48,7 @@ function Sidebar({ spaces, active, recents }: { spaces: { name: string; hue: num
         <span className="font-medium text-sm">Phaethon</span>
       </div>
       <div className="flex flex-col gap-px p-2">
-        <span className="flex h-7 items-center px-2 text-subtle-foreground text-xs">Spaces</span>
+        <span className="flex h-7 items-center px-2 type-label">Spaces</span>
         {spaces.map((s, i) => (
           <div key={`${s.name}-${i}`}>
             <SideRow selected={i === active}>
@@ -104,7 +104,7 @@ function Welcome() {
   return (
     <div className="flex flex-1 flex-col items-center px-8 pt-16">
       <BrandMark className="size-6" />
-      <p className="mt-4 text-xl tracking-title">Where should we begin?</p>
+      <p className="mt-4 font-medium text-xl">Where should we begin?</p>
       <div className="mt-6 w-full max-w-md rounded-card border bg-card p-3">
         <p className="h-12 text-placeholder text-sm">Ask anything…</p>
         <div className="flex items-center gap-2">
@@ -161,7 +161,7 @@ function SpacePreview({ draft }: { draft: Draft }) {
         <TitleBar study={draft.edu} />
         <div className="flex flex-1 flex-col gap-3 p-8">
           <SpaceAvatar name={name} hue={HUES[0]!} className="size-10 rounded-xl text-base" />
-          <p className="truncate text-xl tracking-title">{name}</p>
+          <p className="truncate text-xl">{name}</p>
           <p className="text-muted-foreground text-sm">{draft.edu ? "Chat, study, grades, a plan and courses" : "Chat, files and memory"}</p>
         </div>
       </div>
@@ -191,7 +191,7 @@ function AnswersPreview({ draft }: { draft: Draft }) {
         transition={{ type: "spring", stiffness: 420, damping: 40 }}
         className="w-full max-w-sm rounded-panel border bg-card p-6"
       >
-        <p className="mb-3 text-lg tracking-title">{agent ? "Coding agents" : "Providers"}</p>
+        <p className="mb-3 text-lg">{agent ? "Coding agents" : "Providers"}</p>
         <div className="flex flex-col">
           {rows.map((r) => {
             const on = r.id === chosen;

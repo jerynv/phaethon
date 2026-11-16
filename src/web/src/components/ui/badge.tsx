@@ -18,9 +18,9 @@ const badgeVariants = cva(
           "h-7 min-w-7 rounded-control px-[calc(--spacing(2)-1px)] text-sm sm:h-6 sm:min-w-6 sm:text-xs",
         default:
           "h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs",
-        lg: "h-6.5 min-w-6.5 px-[calc(--spacing(1.5)-1px)] text-base sm:h-5.5 sm:min-w-5.5 sm:text-sm",
+        lg: "h-6.5 min-w-6.5 px-[calc(--spacing(1.5)-1px)] text-sm sm:h-5.5 sm:min-w-5.5 sm:text-xs",
         // Fractional leading rounds font metrics and raises fixed-height labels, especially under zoom.
-        sm: "h-5 min-w-5 rounded-sm px-[calc(--spacing(1)-1px)] text-xs leading-none sm:h-4 sm:min-w-4 sm:text-3xs",
+        sm: "h-5 min-w-5 rounded-sm px-[calc(--spacing(1)-1px)] text-xs leading-none sm:h-4 sm:min-w-4 sm:text-2xs",
       },
       variant: {
         default: "bg-primary text-primary-foreground [button&,a&]:hover:bg-primary/90",

@@ -108,12 +108,12 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
       <div className="flex h-8 items-center gap-1 border-b px-2">
         <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
           {(["pdf", "source"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-5 rounded-sm px-1.5 font-medium text-2xs", tab === t ? "bg-background text-foreground dark:bg-white/10" : "text-muted-foreground hover:text-foreground")}>
+            <button key={t} type="button" onClick={() => setTab(t)} className={cn("h-5 rounded-sm px-1.5 font-medium text-xs", tab === t ? "bg-background text-foreground dark:bg-white/10" : "text-muted-foreground hover:text-foreground")}>
               {t === "pdf" ? "PDF" : "LaTeX"}
             </button>
           ))}
         </div>
-        <span className="ml-1.5 min-w-0 flex-1 truncate text-2xs text-muted-foreground">
+        <span className="ml-1.5 min-w-0 flex-1 truncate text-muted-foreground text-xs">
           {outcome === null ? (
             <span className="inline-flex items-center gap-1.5">
               <Spinner size="xs" /> Compiling…
@@ -123,7 +123,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
           ) : null}
         </span>
         <CopyButton text={source} className="size-6" label="Copy LaTeX" />
-        <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-60">
+        <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-muted-foreground text-xs hover:bg-accent hover:text-foreground disabled:opacity-60">
           {saving ? <Spinner size="xs" /> : <Icon icon={icons.download} className="size-3.5" />}
           Save
         </button>

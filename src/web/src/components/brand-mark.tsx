@@ -44,7 +44,7 @@ export function BrandWordmark({
       {/* The glyph's foot sits a pixel above its box's bottom: next to the name it drops onto the text's baseline. */}
       <BrandMark className={cn("size-3.5", markClassName)} />
       {showName ? (
-        <span aria-hidden className={cn("-ml-px font-semibold text-foreground text-xl leading-none tracking-title", nameClassName)}>
+        <span aria-hidden className={cn("-ml-px font-semibold text-foreground text-xl leading-none", nameClassName)}>
           haethon
         </span>
       ) : null}

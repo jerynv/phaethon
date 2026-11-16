@@ -148,7 +148,7 @@ function TooltipPopup({
               : "rounded-lg bg-tooltip text-tooltip-foreground [&_[data-slot=kbd]]:bg-tooltip-foreground/15 [&_[data-slot=kbd]]:text-tooltip-foreground/80",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-2xs leading-relaxed"
-              : "max-w-80 wrap-anywhere whitespace-normal leading-snug",
+              : "max-w-80 wrap-anywhere whitespace-normal",
             className,
           )}
           data-slot="tooltip-popup"

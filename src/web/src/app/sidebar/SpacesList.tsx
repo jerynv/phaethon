@@ -706,7 +706,7 @@ export function SpacesList({
                                     data-enter=""
                                     data-next={nextAt ?? ""}
                                     style={{ "--i": enterStep(b.start) } as CSSProperties}
-                                    className={cn("sticky z-10 flex h-7 items-center pl-8 text-subtle-foreground text-xs", single ? "top-0" : "top-7")}
+                                    className={cn("sticky z-10 flex h-7 items-center pl-8 type-label", single ? "top-0" : "top-7")}
                                   >
                                     {/* Opaque only while stuck over rows: in place, the gliding selected fill passes under the label's text. */}
                                     <span data-slot="sidebar-group-sticky-fill" className="absolute inset-0 -z-10 bg-sidebar" />
@@ -743,7 +743,7 @@ export function SpacesList({
                                           ) : it.kind === "error" ? (
                                             <RowError className="h-7 pl-8" message="Couldn’t load conversations" onRetry={() => void loadThreads(it.space)} />
                                           ) : (
-                                            <span className="pl-8 text-subtle-foreground text-xs">{it.text}</span>
+                                            <span className="pl-8 type-label">{it.text}</span>
                                           )}
                                         </li>
                                       );

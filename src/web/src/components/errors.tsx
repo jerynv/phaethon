@@ -162,7 +162,7 @@ export function EmptyState({
       <div data-slot="empty-state" className={cn("flex items-center gap-4 py-2", className)}>
         <ArtCanvas palette={palette} seed={seed} grain="subtle" className="size-12 shrink-0 rounded-xl" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="font-medium text-base">{title}</p>
+          <p className="type-heading">{title}</p>
           {description ? <p className="text-muted-foreground text-sm">{description}</p> : null}
         </div>
         {action}
@@ -173,7 +173,7 @@ export function EmptyState({
     <div data-slot="empty-state" className={cn("w-full max-w-sm overflow-hidden rounded-card border bg-card", className)}>
       <ArtCanvas palette={palette} seed={seed} weave className="h-28" />
       <div className="flex flex-col items-start gap-1 p-5">
-        <p className="font-medium text-base">{title}</p>
+        <p className="type-heading">{title}</p>
         {description ? <p className="text-muted-foreground text-sm">{description}</p> : null}
         {action ? <div className="mt-3 flex self-stretch">{action}</div> : null}
       </div>

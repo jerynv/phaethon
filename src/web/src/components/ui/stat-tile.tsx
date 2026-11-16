@@ -32,7 +32,7 @@ function StatTile({
     <div data-slot="stat-tile" className={cn("flex min-w-0 flex-col gap-1 rounded-xl border border-border/70 bg-well px-4 py-3.5", className)} {...props}>
       <span className="truncate text-muted-foreground text-sm">{label}</span>
       <span className="flex items-baseline gap-1.5">
-        <span className="font-medium text-2xl text-foreground tabular-nums tracking-heading">{value}</span>
+        <span className="type-stat">{value}</span>
         {unit ? <span className="text-muted-foreground text-sm">{unit}</span> : null}
         {delta !== undefined ? (
           <span

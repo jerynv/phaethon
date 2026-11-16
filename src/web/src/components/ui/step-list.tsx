@@ -171,7 +171,7 @@ function Step({
         >
           {/* The shimmer paints plain text only; a step that passes its own elements (a label and a file chip) shimmers its label itself. */}
           <span className={cn("min-w-0 flex-1", wrap ? "wrap-anywhere" : "truncate", state === "active" && typeof children === "string" && "text-shimmer")}>{children}</span>
-          {meta ? <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{meta}</span> : null}
+          {meta ? <span className="shrink-0 type-meta">{meta}</span> : null}
         </span>
       </div>
       {detail ? <div className="relative z-10 pb-2 pl-8">{detail}</div> : null}
@@ -213,7 +213,7 @@ function ToolSummary({
         </span>
         <span className={cn("min-w-0 truncate text-sm", running && "text-shimmer")}>{summary}</span>
         <Icon icon={icons.chevronRight} className={cn("size-3 shrink-0 text-subtle-foreground transition-transform duration-200", open && "rotate-90")} />
-        {duration ? <span className="ml-auto shrink-0 text-subtle-foreground text-xs tabular-nums">{duration}</span> : null}
+        {duration ? <span className="ml-auto shrink-0 type-meta">{duration}</span> : null}
       </button>
       {children ? <Collapse open={open}>{children}</Collapse> : null}
     </div>

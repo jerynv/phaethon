@@ -64,7 +64,16 @@ type Nav = {
   /** The conversation each space shows (an id, or `DRAFT` for its new chat). */
   open: Record<string, string>;
   collapsed: Record<string, boolean>;
+  /** The sidebar docked beside the page (remembered); see `compact`. */
   sidebarOpen: boolean;
+  /**
+   * The window is too narrow to dock the sidebar beside a page
+   * (components/ui/sidebar.tsx › PAGE_MIN_WIDTH): it floats over the page
+   * instead, shut until asked for (`peek`), and `sidebarOpen` waits for a wider window.
+   */
+  compact: boolean;
+  /** The floating sidebar is out (compact windows only). Choosing a page, a conversation or Settings puts it away. */
+  peek: boolean;
   settings: SettingsSection | null;
   paletteOpen: boolean;
   /** What the palette starts with when it opens (the sidebar's search hands its text over). */
@@ -123,7 +132,10 @@ type Nav = {
   replied(space: string, thread: string): void;
   markRead(space: string, thread: string): void;
   toggleCollapsed(space: string): void;
+  /** Docks or hides the sidebar; in a compact window, brings the floating one out or puts it away. */
   toggleSidebar(): void;
+  setCompact(compact: boolean): void;
+  setPeek(peek: boolean): void;
   openSettings(section?: SettingsSection): void;
   closeSettings(): void;
   setPalette(open: boolean, query?: string): void;
@@ -214,10 +226,16 @@ export const useNav = create<Nav>((set, get) => {
   const activeTabOf = () => get().tabs.find((t) => t.id === get().activeTab);
   /** Replaces the tabs and makes `id` the active one. */
   const commit = (tabs: OpenTab[], id: string) => {
+    const space = get().activeSpace;
     set({ tabs, activeTab: id });
     const tab = tabs.find((t) => t.id === id);
     if (tab) apply(tab);
+    settle(space);
     saveTabs();
+  };
+  /** A page was chosen: the floating sidebar goes away, unless only the space changed (its list is what you choose from next). */
+  const settle = (spaceBefore: string | null) => {
+    if (get().peek && get().activeSpace === spaceBefore) set({ peek: false });
   };
   /** A space's chat tab: the conversation it shows (an id, or its new chat). */
   const chatTab = (space: string): Tab => ({ kind: "chat", space, thread: get().open[space] ?? DRAFT });
@@ -242,6 +260,8 @@ export const useNav = create<Nav>((set, get) => {
     open: {},
     collapsed: readJson<Record<string, boolean>>(COLLAPSED, {}),
     sidebarOpen: readJson<boolean>(SIDEBAR, true),
+    compact: false,
+    peek: false,
     settings: null,
     paletteOpen: false,
     paletteQuery: "",
@@ -282,8 +302,10 @@ export const useNav = create<Nav>((set, get) => {
     activateTab(id) {
       const tab = get().tabs.find((t) => t.id === id);
       if (!tab) return;
+      const space = get().activeSpace;
       set({ activeTab: id });
       apply(tab);
+      settle(space);
       saveTabs();
     },
 
@@ -570,9 +592,17 @@ export const useNav = create<Nav>((set, get) => {
     },
 
     toggleSidebar() {
+      if (get().compact) return set({ peek: !get().peek });
       const open = !get().sidebarOpen;
       set({ sidebarOpen: open });
       writeJson(SIDEBAR, open);
+    },
+
+    setCompact(compact) {
+      if (compact !== get().compact) set({ compact, peek: false });
+    },
+    setPeek(peek) {
+      if (peek !== get().peek) set({ peek });
     },
 
     openSettings(section = "general") {
@@ -583,7 +613,7 @@ export const useNav = create<Nav>((set, get) => {
       if (tab?.kind === "settings") get().closeTab(tab.id);
     },
     setPalette(open, query = "") {
-      set({ paletteOpen: open, paletteQuery: open ? query : "" });
+      set({ paletteOpen: open, paletteQuery: open ? query : "", ...(open ? { peek: false } : {}) });
     },
     openFile(space, path) {
       const file = { space, path };

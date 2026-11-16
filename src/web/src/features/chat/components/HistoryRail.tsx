@@ -25,6 +25,13 @@ const HIT_MAX = 40;
 
 type Geometry = { inView: boolean[]; current: number | null; atEnd: boolean; gutter: number };
 
+/** A custom property's length in px (`46rem`, `736px`); custom properties come back as written, unresolved. */
+function lengthPx(value: string): number {
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n)) return 0;
+  return /r?em\s*$/.test(value) ? n * (Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16) : n;
+}
+
 function measure(box: HTMLElement, items: RailItem[]): Geometry {
   const boxTop = box.getBoundingClientRect().top;
   // One query for every turn (a long conversation has hundreds), then a lookup per item.
@@ -47,7 +54,7 @@ function measure(box: HTMLElement, items: RailItem[]): Geometry {
       break;
     }
   }
-  const column = Math.min(box.clientWidth, Number.parseFloat(getComputedStyle(box).getPropertyValue("--chat-max-width")) || box.clientWidth);
+  const column = Math.min(box.clientWidth, lengthPx(getComputedStyle(box).getPropertyValue("--chat-max-width")) || box.clientWidth);
   return { inView, current, atEnd: box.scrollHeight - top - box.clientHeight <= 1, gutter: Math.max(0, (box.clientWidth - column) / 2) };
 }
 

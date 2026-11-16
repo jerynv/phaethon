@@ -1,4 +1,4 @@
-import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNav, type ViewerFile } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -12,6 +12,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatBytes } from "@/features/courses/lib/sites";
 import { cn } from "@/lib/utils";
 import { useDelayed } from "@/hooks/use-delayed";
+import { observeResize } from "@/lib/observe-resize";
 import { fileBytes, fileOpen, fileView } from "./api";
 import { Body, PageSkeleton } from "./bodies";
 import { FileIcon, kindOfName } from "./FileIcon";
@@ -21,6 +22,8 @@ const WIDTH_KEY = "phaethon.viewerWidth";
 const MIN = 320;
 const MAX = 720;
 const DEFAULT = 440;
+/** The narrowest page the panel leaves beside it; with less room the panel covers the page instead. */
+const PAGE_MIN = 360;
 
 function readWidth(): number {
   try {
@@ -58,23 +61,39 @@ const nameOf = (path: string) => path.split("/").pop() ?? path;
  * its top (like an editor's), the one on show highlighted; each keeps its
  * place while another is shown. A middle-click or the tab's × closes it, the
  * tab's right-click menu closes the others, and the panel's own × shuts them all.
+ * It never squeezes the page under `PAGE_MIN`: it gives up width first, and
+ * where even its narrowest would, it covers the page until it is shut.
  */
 export function FileViewer() {
   const files = useNav((s) => s.files);
   const target = useNav((s) => s.viewer);
   const closeAll = useNav((s) => s.closeAllFiles);
   const [width, setWidth] = useState(readWidth);
+  // The room beside the sidebar (the page's column plus the panel), from the row they share.
+  const self = useRef<HTMLElement>(null);
+  const [room, setRoom] = useState(Number.POSITIVE_INFINITY);
+  useLayoutEffect(() => {
+    const row = self.current?.parentElement;
+    if (!row) return;
+    const gap = row.querySelector<HTMLElement>("[data-slot=sidebar-gap]");
+    const measure = () => setRoom(row.getBoundingClientRect().width - (gap?.getBoundingClientRect().width ?? 0));
+    measure();
+    const stops = [observeResize(row, measure), ...(gap ? [observeResize(gap, measure)] : [])];
+    return () => stops.forEach((stop) => stop());
+  }, [target === null]);
+  const covers = room - PAGE_MIN < MIN;
+  const shown = covers ? room : Math.min(width, room - PAGE_MIN);
 
   // Resize from the left edge; the width is remembered.
   const drag = useRef<{ x: number; w: number } | null>(null);
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    drag.current = { x: e.clientX, w: width };
+    drag.current = { x: e.clientX, w: shown };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
-    setWidth(Math.round(Math.min(MAX, Math.max(MIN, drag.current.w + drag.current.x - e.clientX))));
+    setWidth(Math.round(Math.min(MAX, room - PAGE_MIN, Math.max(MIN, drag.current.w + drag.current.x - e.clientX))));
   };
   const onPointerUp = () => {
     if (!drag.current) return;
@@ -88,14 +107,20 @@ export function FileViewer() {
 
   if (!target) return null;
   return (
-    <aside className="relative flex h-full shrink-0 flex-col border-l bg-background" style={{ width }} aria-label="Files">
+    <aside
+      ref={self}
+      className={cn("flex h-full shrink-0 flex-col bg-background", covers ? "absolute inset-y-0 right-0 z-10" : "relative border-l")}
+      style={{ width: shown }}
+      aria-label="Files"
+    >
       <div
+        hidden={covers}
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize"
         aria-valuemin={MIN}
         aria-valuemax={MAX}
-        aria-valuenow={width}
+        aria-valuenow={shown}
         className="-left-1 absolute inset-y-0 z-20 w-2 cursor-col-resize after:absolute after:inset-y-0 after:left-1 after:w-px after:transition-colors hover:after:bg-primary/50 active:after:bg-primary"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

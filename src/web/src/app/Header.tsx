@@ -61,6 +61,14 @@ export function Header({ actions }: { title?: ReactNode; actions?: ReactNode }) 
   return actions && slots.actions ? createPortal(actions, slots.actions) : null;
 }
 
+/**
+ * A page action's words beside its icon. In a narrow title bar only the icon
+ * stays (the words remain its accessible name), so the open tabs keep their room.
+ */
+export function ActionLabel({ children }: { children: ReactNode }) {
+  return <span className="@max-xl/header:sr-only">{children}</span>;
+}
+
 /** Provides the slots the title bar's `Header` portals into. */
 export function HeaderSlots({ children }: { children: (bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }) => ReactNode }) {
   const [title, setTitle] = useState<HTMLElement | null>(null);
@@ -212,7 +220,9 @@ function TabStrip() {
  */
 export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void } }) {
   const space = useActiveSpace();
-  const sidebarOpen = useNav((s) => s.sidebarOpen);
+  // The column is the docked sidebar's; a compact window's floating sidebar leaves the bar as it is when hidden.
+  const sidebarOpen = useNav((s) => s.sidebarOpen && !s.compact);
+  const peek = useNav((s) => s.peek);
   const toggle = useNav((s) => s.toggleSidebar);
   const newChat = useNav((s) => s.newChat);
   const setPalette = useNav((s) => s.setPalette);
@@ -223,7 +233,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
     <header
       data-slot="app-header"
       data-sidebar={sidebarOpen ? "open" : "closed"}
-      className={cn("group/header app-drag relative flex h-(--titlebar-height) shrink-0 items-stretch", pageTabStripClassName)}
+      className={cn("group/header app-drag @container/header relative flex h-(--titlebar-height) shrink-0 items-stretch", pageTabStripClassName)}
     >
       {/*
         The sidebar's column: its width (min-width animates with the sidebar's slide and follows a drag at once),
@@ -239,7 +249,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
       >
         <BrandWordmark showName={sidebarOpen} nameClassName="hidden @titlebar-brand/lead:inline" markClassName="@titlebar-brand/lead:relative @titlebar-brand/lead:top-px" />
         {sidebarOpen ? <span className="flex-1" /> : null}
-        <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
+        <HeaderIconButton label={sidebarOpen || peek ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
           <Icon icon={icons.sidebar} />
         </HeaderIconButton>
         {/* With the sidebar hidden its search comes along; its New chat is the + after the tabs. */}
@@ -271,8 +281,11 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
         ) : null}
         <div className="h-full min-w-4 flex-1" />
         <div ref={bind.title} hidden />
-        {/* A fixed share of the bar for the page's actions, so pages with more or fewer of them never resize the tabs. */}
-        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-full min-w-56 shrink-0 items-center justify-end gap-1 pr-3" />
+        {/*
+          A fixed share of the bar for the page's actions, so pages with more or fewer of them never resize the tabs.
+          In a narrow bar the share goes, so the tabs keep room for at least one.
+        */}
+        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-full shrink-0 items-center justify-end gap-1 pr-3 @3xl/header:min-w-56" />
       </div>
     </header>
   );

@@ -95,7 +95,8 @@ export function Row({
           </Label>
           {description ? <div className="min-w-0 text-muted-foreground text-xs">{description}</div> : null}
         </div>
-        {children ? <div className="flex shrink-0 items-center gap-1.5">{children}</div> : null}
+        {/* Never wider than three fifths of the row, so the label keeps room; a long value (a path) truncates inside. */}
+        {children ? <div className="flex min-w-0 max-w-3/5 shrink-0 items-center gap-1.5">{children}</div> : null}
       </div>
       {below}
     </div>

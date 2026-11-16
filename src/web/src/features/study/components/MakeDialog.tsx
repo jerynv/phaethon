@@ -233,14 +233,17 @@ export function MakeDialog({
       {/* Anchored near the top (not centred) so its top edge stays put as the steps change height. */}
       <DialogPopup className="row-span-3 row-start-1 mt-(--dialog-top) max-h-(--dialog-anchored-max-height) max-w-xl self-start rounded-panel" showCloseButton={false} aria-label={label}>
         <form onSubmit={onSubmit} className="contents">
-          <DialogHeader className="gap-4 p-6 pr-6 pb-4">
+          <DialogHeader className="@container/makehead gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
               <DialogTitle className="min-w-0 flex-1">{label}</DialogTitle>
               <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
                 <Icon icon={icons.close} />
               </DialogClose>
             </div>
-            {/* Steps, with the kind beside them while it can still change: one row, so the header keeps its height. */}
+            {/*
+              Steps, with the kind beside them while it can still change: one row, so the header keeps its height.
+              In a narrow dialog only the current step keeps its name and the kinds show their icons.
+            */}
             <div className="flex h-8 items-center justify-between gap-3">
               <Steps step={step} done={phase === "done"} onStep={(i) => (i === 0 && phase === "how" ? go("what", -1) : undefined)} labels={["What", quiz ? "Questions" : "Cards", "Make"]} />
               {phase === "what" || phase === "how" ? (
@@ -248,11 +251,11 @@ export function MakeDialog({
 <TabsList aria-label="Kind">
                   <TabsTab value="quiz">
                     <Icon icon={icons.quiz} />
-                    Quiz
+                    <span className="@max-md/makehead:sr-only">Quiz</span>
                   </TabsTab>
                   <TabsTab value="deck">
                     <Icon icon={icons.deck} />
-                    Cards
+                    <span className="@max-md/makehead:sr-only">Cards</span>
                   </TabsTab>
                 </TabsList>
 </Tabs>
@@ -427,7 +430,7 @@ function Steps({ step, done, labels, onStep }: { step: number; done: boolean; la
         const past = i < step || (done && i === step);
         return (
           <li key={l} className="flex items-center gap-2">
-            {i > 0 ? <span className={cn("h-px w-6 bg-border transition-colors duration-200", i <= step && "bg-primary/50")} aria-hidden /> : null}
+            {i > 0 ? <span className={cn("h-px w-6 bg-border transition-colors duration-200 @max-md/makehead:w-3", i <= step && "bg-primary/50")} aria-hidden /> : null}
             <button
               type="button"
               disabled={i >= step}
@@ -452,7 +455,7 @@ function Steps({ step, done, labels, onStep }: { step: number; done: boolean; la
                   </span>
                 )}
               </AnimatePresence>
-              {l}
+              <span className={cn(i !== step && "@max-md/makehead:sr-only")}>{l}</span>
             </button>
           </li>
         );

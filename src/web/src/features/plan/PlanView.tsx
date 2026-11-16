@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -142,7 +142,7 @@ export function PlanView({ space }: { space: SpaceView }) {
           d && !nothing ? (
             <Button size="sm" variant="outline" disabled={saving} onClick={() => void save()}>
               {saving ? <Spinner size="sm" /> : <Icon icon={icons.fileText} />}
-              {saving ? "Saving…" : "Save as note"}
+              <ActionLabel>{saving ? "Saving…" : "Save as note"}</ActionLabel>
             </Button>
           ) : null
         }
@@ -505,8 +505,8 @@ function Today({
   const study = entries.length - due;
   return (
     <Card data-testid="plan-today">
-      <div className="flex items-start gap-4 px-5 pt-5 pb-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-5 pt-5 pb-3">
+        <div className="flex min-w-40 flex-1 flex-col gap-1">
           <h2 className="type-heading">
             Today <span className="font-normal text-muted-foreground">· {shortDay(today)}</span>
           </h2>

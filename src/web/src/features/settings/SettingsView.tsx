@@ -5,7 +5,9 @@ import { Header } from "@/app/Header";
 import { type SettingsSection, useNav } from "@/app/store";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
+import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { cn } from "@/lib/utils";
 import { AboutSection } from "./AboutSection";
@@ -115,7 +117,7 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
   const markers = useMarkers(section);
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
   return (
-    <nav aria-label="Settings" className="flex w-64 shrink-0 flex-col overflow-y-auto border-r px-3 pt-(--pane-top) pb-3 max-[1180px]:w-52">
+    <nav aria-label="Settings" className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r px-3 pt-(--pane-top) pb-3 @2xl/settings:flex @5xl/settings:w-64">
       <button
         type="button"
         onClick={close}
@@ -153,6 +155,49 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
           </div>
         ))}
       </RowHighlightGroup>
+    </nav>
+  );
+}
+
+/**
+ * Settings too narrow for its nav column: Back, and the section on show as a
+ * menu of every section, in the nav's groups, above the section.
+ */
+function SectionBar({ section, onReset }: { section: SettingsSection; onReset: () => void }) {
+  const close = useNav((s) => s.closeSettings);
+  const open = useNav((s) => s.openSettings);
+  const markers = useMarkers(section);
+  const groups = [...new Set(SECTIONS.map((s) => s.group))];
+  const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
+  return (
+    <nav aria-label="Settings" className="flex items-center gap-1 @2xl/settings:hidden">
+      <Button size="icon-sm" variant="ghost-muted" aria-label="Back" onClick={close}>
+        <Icon icon={icons.arrowLeft} />
+      </Button>
+      <Menu>
+        <MenuTrigger render={<Button size="sm" variant="ghost" className="min-w-0 gap-2 px-2" />}>
+          <Icon icon={meta.icon} className="text-muted-foreground" />
+          <span className="truncate">{meta.label}</span>
+          <Icon icon={icons.chevronsUpDown} className="text-muted-foreground" />
+        </MenuTrigger>
+        <MenuPopup align="start" className="w-56">
+          {groups.map((g, i) => (
+            <div key={g}>
+              {i > 0 ? <MenuSeparator /> : null}
+              <MenuGroup>
+                <MenuGroupLabel>{g}</MenuGroupLabel>
+                {SECTIONS.filter((s) => s.group === g).map((s) => (
+                  <MenuItem key={s.id} aria-current={s.id === section ? "page" : undefined} onClick={() => (s.id === section ? onReset() : open(s.id))}>
+                    <Icon icon={s.icon} />
+                    <span className={cn("flex-1", s.id === section && "font-medium")}>{s.label}</span>
+                    <MarkerView m={markers[s.id]} />
+                  </MenuItem>
+                ))}
+              </MenuGroup>
+            </div>
+          ))}
+        </MenuPopup>
+      </Menu>
     </nav>
   );
 }
@@ -206,7 +251,7 @@ export function SettingsView() {
     </span>
   );
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="@container/settings flex min-h-0 flex-1">
       <Header title={title} />
       <Nav section={section} onReset={() => setReset((n) => n + 1)} />
       <div className="page-scroll relative min-h-0 flex-1">
@@ -215,8 +260,9 @@ export function SettingsView() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-6 px-8 pt-8 pb-12"
+          className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-6 px-4 pt-3 pb-12 @2xl/settings:px-8 @2xl/settings:pt-8"
         >
+          <SectionBar section={section} onReset={() => setReset((n) => n + 1)} />
           <CrumbContext value={setCrumb}>
             <Body section={section} />
           </CrumbContext>

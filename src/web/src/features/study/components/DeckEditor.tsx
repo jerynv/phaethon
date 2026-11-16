@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -110,7 +110,7 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
             {savedPath && !dirty ? (
               <Button size="sm" variant="outline" onClick={() => open({ kind: "review", paths: [savedPath], title: title.trim() })}>
                 <Icon icon={icons.play} />
-                Review
+                <ActionLabel>Review</ActionLabel>
               </Button>
             ) : null}
             <Button size="sm" pending={saving} disabled={!dirty && !!savedPath} onClick={() => void save()}>

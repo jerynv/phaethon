@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { ArtCanvas } from "@/components/art";
 import { cleanMessage, SurfaceError } from "@/components/errors";
@@ -64,7 +64,7 @@ export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScr
           <Menu>
             <MenuTrigger render={<Button size="sm" variant="outline" />}>
               <Icon icon={icons.add} />
-              New
+              <ActionLabel>New</ActionLabel>
             </MenuTrigger>
             <MenuPopup align="end" className="min-w-56">
               <MenuItem onClick={() => startMake("deck")}>
@@ -214,8 +214,9 @@ function DueCard({ data, onReview, onQuiz, onMake }: { data: StudyOverview; onRe
   ].filter(Boolean);
   return (
     <Card data-testid="study-due">
+      {/* The action wraps under the count rather than squeezing it into a column. */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-4 p-5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-48 flex-1">
           <h2 className="type-title tabular-nums">{title}</h2>
           {meta.length ? <p className="mt-1 text-muted-foreground text-sm tabular-nums">{meta.join(" · ")}</p> : null}
         </div>

@@ -128,3 +128,9 @@ Every ask since the UI complaints began, in order. Status: `done` (merged in mai
 | 85 | The make flow says you can close it, but closing stopped the run and nothing showed its progress | done — runs live in a job store; closing keeps them going; Study lists them under "Making now" with progress and Stop; the chat card shows its own |
 | 86 | Pressing Make again starts a second run | done — the same course, test and kind joins the run under way |
 | 87 | No word when a run finishes out of sight | done — a toast with "Open" |
+
+## Round 8 — responsiveness and resizing
+
+| # | Ask | Status |
+|---|-----|--------|
+| 88 | The UI holds up at every window size from the 380 × 480 minimum up, and while resizing | done — the sidebar floats over the page in a window too narrow to dock it; Settings swaps its nav column for a section menu; Courses shows list or course; the viewer narrows or covers the page; narrow title rows wrap; page actions go icon-only in a narrow title bar; `e2e/responsive.spec.ts` sweeps every page at 380, 560 and 800 wide |

@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { ActionLabel, Header } from "@/app/Header";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
 import { Icon, type IconData } from "@/components/icon";
@@ -170,14 +170,14 @@ export function GradesView({ space }: { space: SpaceView }) {
                     Up to date
                   </motion.span>
                 ) : updated && !refresh ? (
-                  <motion.span key="when" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mr-1 text-subtle-foreground text-xs tabular-nums max-md:hidden">
+                  <motion.span key="when" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mr-1 text-subtle-foreground text-xs tabular-nums @max-3xl/header:hidden">
                     Updated {relativeTime(updated).toLowerCase()}
                   </motion.span>
                 ) : null}
               </AnimatePresence>
               <Button size="sm" variant="outline" disabled={!!refresh} onClick={() => void runRefresh()}>
                 {refresh ? <Spinner size="sm" /> : <Icon icon={icons.reload} />}
-                {refresh ? "Refreshing…" : "Refresh"}
+                <ActionLabel>{refresh ? "Refreshing…" : "Refresh"}</ActionLabel>
               </Button>
             </>
           ) : null
@@ -295,8 +295,9 @@ function TermOverview({ courses, refreshing, onPick, onAll }: { courses: CourseG
   const gpa = termGpa(heads.map((h) => h.letter), scale);
   return (
     <section data-testid="grades-courses" className="flex flex-col gap-4">
-      <div className="flex items-end justify-between gap-6">
-        <div className="flex min-w-0 flex-col gap-0.5">
+      {/* The GPA wraps under the title rather than squeezing the summary into a column. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="flex min-w-48 flex-1 flex-col gap-0.5">
           <h1 id="grades-title" tabIndex={-1} className="type-title outline-none">
             Grades
           </h1>

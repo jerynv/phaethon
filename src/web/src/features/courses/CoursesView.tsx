@@ -9,6 +9,7 @@ import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
+import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
 import { ArtEmpty } from "./components/ArtEmpty";
 import { CourseDetail } from "./components/CourseDetail";
@@ -27,8 +28,12 @@ import { partsOf, useCourses } from "./store";
  * › Courses; refs 7274, 02a1, 8bdf): on the left the course sites as folders
  * holding their courses (the pane folds away from the breadcrumb); on the
  * right the chosen course as one page, under a breadcrumb with its site's
- * actions and a `…` menu holding the course's settings.
+ * actions and a `…` menu holding the course's settings. Too narrow for both
+ * side by side (`SPLIT_MIN_WIDTH`, the `@2xl` container size), it shows one at
+ * a time: the course, with the breadcrumb's pane toggle bringing the list up
+ * in its place, and choosing a course going back to it.
  */
+const SPLIT_MIN_WIDTH = 672;
 export function CoursesView({ space }: { space: SpaceView }) {
   const load = useCourses((s) => s.load);
   const connections = useCourses((s) => s.connections);
@@ -37,6 +42,9 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pane, setPane] = useState(true);
+  // In a narrow page the list stands in for the course while it is asked for.
+  const [listUp, setListUp] = useState(false);
+  const [bodyRef, narrow] = useNarrow<HTMLDivElement>(SPLIT_MIN_WIDTH);
   const [connect, setConnect] = useState(false);
   const [again, setAgain] = useState<LmsConnection | null>(null);
   const [importing, setImporting] = useState<LmsConnection | null>(null);
@@ -60,6 +68,11 @@ export function CoursesView({ space }: { space: SpaceView }) {
   }, [connections.data, courses]);
   const ordered = groups.flatMap((g) => g.courses);
   const open = ordered.find((c) => c.key === openKey) ?? ordered.find((c) => partsOf(access.data, space.id, c.key).length > 0) ?? ordered[0];
+  const listShown = narrow ? listUp || !open : pane;
+  const choose = (key: string) => {
+    setOpenKey(key);
+    setListUp(false);
+  };
 
   const signInAgain = (c: LmsConnection) => {
     setImporting(null);
@@ -100,8 +113,8 @@ export function CoursesView({ space }: { space: SpaceView }) {
           </ArtEmpty>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1">
-          <aside className={cn("flex w-70 shrink-0 flex-col border-r", !pane && open && "hidden")} aria-label="Courses">
+        <div ref={bodyRef} className="flex min-h-0 flex-1">
+          <aside className={cn("flex shrink-0 flex-col", narrow ? "flex-1" : "w-70 border-r", !listShown && open && "hidden")} aria-label="Courses">
             <div className="flex shrink-0 flex-col gap-(--pane-row-gap) px-2 pt-(--pane-top) pb-2">
               <div className="flex h-(--pane-row-height) items-center gap-2 pl-2">
                 <h2 className="flex-1 type-title">Courses</h2>
@@ -128,7 +141,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
               />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2" data-testid="course-list">
-              <CourseTree space={space.id} groups={groups} query={query} openKey={open?.key} onOpen={setOpenKey} {...actions} />
+              <CourseTree space={space.id} groups={groups} query={query} openKey={open?.key} onOpen={choose} {...actions} />
             </div>
             <div className="flex h-(--footer-height) shrink-0 items-center border-t px-4 text-subtle-foreground text-xs tabular-nums" data-testid="course-count">
               <span className="truncate">
@@ -136,7 +149,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
               </span>
             </div>
           </aside>
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className={cn("flex min-w-0 flex-1 flex-col", narrow && listShown && "hidden")}>
             {error ? (
               <div className="px-6 pt-4">
                 <SurfaceError title="Couldn’t load your course sites" message={error} onRetry={() => void load()} />
@@ -147,8 +160,8 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 key={open.key}
                 space={space.id}
                 course={open}
-                pane={pane}
-                onPane={() => setPane((p) => !p)}
+                pane={listShown}
+                onPane={() => (narrow ? setListUp((u) => !u) : setPane((p) => !p))}
                 connection={connections.data?.find((c) => c.id === open.connection) ?? null}
                 run={run ? <ImportRun run={run} onSignInAgain={() => runConnection && signInAgain(runConnection)} /> : null}
                 {...actions}

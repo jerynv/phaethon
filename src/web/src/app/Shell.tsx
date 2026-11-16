@@ -163,21 +163,31 @@ function Main() {
  * The app frame (docs/UI-REBUILD.md › App frame): the app fills the window.
  * The title bar runs across the top; below it the sidebar and the page sit
  * side by side, split by a hairline, and a faint dot field fades in at the
- * top of every page.
+ * top of every page. In a window too narrow for both (`compact`), the sidebar
+ * floats over the page when asked for instead.
  */
 export function Shell() {
   useShortcuts();
   const sidebarOpen = useNav((s) => s.sidebarOpen);
+  const compact = useNav((s) => s.compact);
+  const peek = useNav((s) => s.peek);
   const toggleSidebar = useNav((s) => s.toggleSidebar);
+  const setCompact = useNav((s) => s.setCompact);
   const viewer = useNav((s) => s.viewer);
   return (
     <div className="h-full bg-background">
-      <SidebarProvider open={sidebarOpen} onToggle={toggleSidebar} className="flex-col overflow-hidden bg-background">
+      <SidebarProvider
+        open={compact ? peek : sidebarOpen}
+        floating={compact}
+        onCompactChange={setCompact}
+        onToggle={toggleSidebar}
+        className="flex-col overflow-hidden bg-background"
+      >
         <HeaderSlots>
           {(bind) => (
             <>
               <AppHeader bind={bind} />
-              <div className="flex min-h-0 flex-1">
+              <div data-slot="app-body" className="relative flex min-h-0 flex-1">
                 <Sidebar />
                 <main className="relative flex min-w-0 flex-1 flex-col bg-background">
                   <DotMatrix className="z-0" />

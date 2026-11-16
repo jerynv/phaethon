@@ -438,7 +438,8 @@ describe.skipIf(!walled)("walls, with a fake engine", () => {
 
   it("finds the house style beside the document", async () => {
     const dir = tmp("fake-style");
-    const log = await failureLog(fake(dir, "ls > doc.log; cat phaethon.sty >> doc.log; exit 1"));
+    // Shell builtins only: the macOS sandbox lets nothing but TeX and the shells run, so /bin/ls and /bin/cat are refused there.
+    const log = await failureLog(fake(dir, `for f in *; do echo "$f"; done > doc.log; while IFS= read -r l; do printf '%s\\n' "$l"; done < phaethon.sty >> doc.log; exit 1`));
     expect(log.split("\n").slice(0, 3)).toEqual(["doc.log", "doc.tex", "phaethon.sty"]);
     expect(log).toContain("\\ProvidesPackage{phaethon}");
     fs.rmSync(dir, { recursive: true });

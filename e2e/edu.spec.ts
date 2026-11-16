@@ -61,7 +61,7 @@ const quizReply = JSON.stringify({
 const verdicts = JSON.stringify({ verdicts: [1, 2, 3, 4].map((i) => ({ id: `i${i}`, verdict: "yes", missing: "", answerOk: true })) });
 
 test("make a quiz for a test from the dialog, take it with keys, and read the results", async ({ page }) => {
-  core = await startCore({ script: { claude: true, steps: [{ text: mapReply }, { text: quizReply, delayMs: 400 }, { text: verdicts }] }, setup: (home) => vault(home) });
+  core = await startCore({ script: { claude: true, steps: [{ text: mapReply }, { text: quizReply, delayMs: 3000 }, { text: verdicts }] }, setup: (home) => vault(home) });
   await core.open(page);
   await page.getByRole("list", { name: "Views" }).getByRole("button", { name: /^Study/ }).click();
   await page.getByRole("button", { name: "New", exact: true }).click();

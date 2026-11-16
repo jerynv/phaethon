@@ -114,6 +114,20 @@ describe("the saved conversation", () => {
     expect(merged[0].role === "user" && merged[0].attachments[0]).toEqual({ name: "a.png", path: "files/a.png", mediaType: "image/png", previewUrl: "blob:x" });
     expect(mergeSaved(live.slice(0, 1), saved)).toHaveLength(2);
   });
+
+  test("keeps the messages a save doesn't change, so they don't render again", () => {
+    const saved: UiMessage[] = [
+      { role: "user", text: "hi", attachments: [{ name: "a.png", path: "files/a.png", mediaType: "image/png" }], index: 0, records: [], at: 5 },
+      { role: "assistant", text: "hello", attachments: [], index: 1, records: [], at: 6 },
+    ];
+    const shown = fromUi(saved);
+    const again = mergeSaved(shown, saved);
+    expect(again[0]).toBe(shown[0]);
+    expect(again[1]).toBe(shown[1]);
+    const moved = mergeSaved(shown, saved.map((m) => ({ ...m, index: m.index + 2 })));
+    expect(moved[0]).not.toBe(shown[0]);
+    expect(moved[0].index).toBe(2);
+  });
 });
 
 describe("a failed turn", () => {

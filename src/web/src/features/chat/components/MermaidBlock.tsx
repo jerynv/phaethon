@@ -4,21 +4,30 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CodeBlock } from "./CodeBlock";
 
 let mermaid: Promise<typeof import("mermaid")> | null = null;
+/** Drawn diagrams by theme and source: a conversation opened again shows them at once, at their size. */
+const drawn = new Map<string, string>();
+const themeOf = () => (document.documentElement.classList.contains("dark") ? "dark" : "neutral");
 
 /** A diagram drawn once its code has finished arriving; its source stays one click away if it can't be drawn. */
 export function MermaidBlock({ code, streaming }: { code: string; streaming: boolean }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const [svg, setSvg] = useState<string | null>(null);
+  const [svg, setSvg] = useState<string | null>(() => (streaming ? null : (drawn.get(`${themeOf()}\n${code}`) ?? null)));
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
   useEffect(() => {
     if (streaming) return;
+    const theme = themeOf();
+    const key = `${theme}\n${code}`;
+    const hit = drawn.get(key);
+    if (hit) return setSvg(hit);
     let live = true;
     mermaid ??= import("mermaid");
     void mermaid
       .then(async ({ default: m }) => {
-        m.initialize({ startOnLoad: false, theme: document.documentElement.classList.contains("dark") ? "dark" : "neutral", fontFamily: "Inter Variable, sans-serif", securityLevel: "strict" });
+        m.initialize({ startOnLoad: false, theme, fontFamily: "Inter Variable, sans-serif", securityLevel: "strict" });
         const out = await m.render(`m${id}`, code);
+        if (drawn.size > 100) drawn.clear();
+        drawn.set(key, out.svg);
         if (live) setSvg(out.svg);
       })
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message.split("\n")[0]! : "The diagram has a mistake in it."));

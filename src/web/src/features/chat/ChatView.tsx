@@ -1,7 +1,8 @@
 import { AnimatePresence } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { api, type SpaceView } from "@/app/api";
-import { Header } from "@/app/Header";
+import { Header, useViewActive } from "@/app/Header";
 import { chatKey, DRAFT, NO_SPACES, useNav, useOpenThread } from "@/app/store";
 import { SurfaceError } from "@/components/errors";
 import { BrandMark } from "@/components/brand-mark";
@@ -20,50 +21,16 @@ import { HistoryRail, type RailItem } from "./components/HistoryRail";
 import { AssistantMessage, UserMessage } from "./components/Messages";
 import { Welcome } from "./components/Welcome";
 import { isLimit, LimitCard } from "./components/LimitCard";
-import { replyText } from "./lib/timeline";
+import { firstMounted, type Mounted, mountedAll, widen } from "./lib/scroll";
+import { replyText, type UserMessage as UserMessageData } from "./lib/timeline";
+import { heldPlace, useTimelineScroll } from "./timeline-scroll";
 import { useChats, useConv } from "./store";
 
-type Scroll = { top: number; pinned: boolean };
-/** Where each conversation was scrolled to, so coming back finds it as it was left. */
-const scrolls = new Map<string, Scroll>();
-
-/**
- * Follows the bottom while new content arrives, unless the user scrolled up
- * to read; remembers the position per conversation (`key`).
- */
-function useFollow(key: string, dep: unknown, mounted: boolean) {
-  const box = useRef<HTMLDivElement>(null);
-  const pinned = useRef(true);
-  const [away, setAway] = useState(false);
-  const onScroll = useCallback(() => {
-    const el = box.current;
-    if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    pinned.current = near;
-    scrolls.set(key, { top: el.scrollTop, pinned: near });
-    setAway(!near);
-  }, [key]);
-  // A conversation opens where it was left (the bottom the first time).
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const saved = scrolls.get(key);
-    pinned.current = !saved || saved.pinned;
-    el.scrollTop = pinned.current ? el.scrollHeight : saved!.top;
-    setAway(!pinned.current);
-  }, [key, mounted]);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [dep]);
-  const toBottom = () => {
-    const el = box.current;
-    if (!el) return;
-    pinned.current = true;
-    scrolls.set(key, { top: el.scrollHeight, pinned: true });
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  };
-  return { box, onScroll, away, toBottom, pin: () => (pinned.current = true) };
+/** A callback that keeps one identity across renders and always runs the latest `fn` (props of memoized messages). */
+function useStable<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args: A) => ref.current(...args), []);
 }
 
 function HeaderActions({ space, thread }: { space: SpaceView; thread: string }) {
@@ -123,15 +90,41 @@ export function ChatView({ space }: { space: SpaceView }) {
   useEffect(() => void loadCatalog(), [loadCatalog]);
 
   const last = chat.messages[chat.messages.length - 1];
-  // What makes the timeline grow: new words or steps, and a card or an error arriving under the reply.
-  const followKey = last
-    ? `${chat.messages.length}:${last.role === "assistant" ? `${last.parts.length + (last.parts.at(-1)?.type === "text" ? (last.parts.at(-1) as { text: string }).text.length : 0)}:${last.status}:${!!last.approval}${!!last.access}${!!last.question}` : 0}`
-    : "0";
   const empty = chat.messages.length === 0 && (thread === DRAFT || chat.status === "ready");
   const failed = chat.status === "error" && chat.messages.length === 0;
-  const { box, onScroll, away, toBottom, pin } = useFollow(key, followKey, !empty && !failed);
+  // A message sent from this window (it has no saved index yet) takes the view to the end.
+  const lastUser = chat.messages.findLast((m) => m.role === "user");
+  const sentKey = lastUser && lastUser.index === undefined ? lastUser.key : null;
+
+  // A long conversation mounts its newest messages (or those around where it was left) first, then the
+  // rest a step per frame (after LibreChat's progressive row mount), so opening one never stalls on
+  // rendering all of it. Sending a message mounts through the newest.
+  const count = chat.messages.length;
+  const [mount, setMount] = useState<{ key: string; win: Mounted | null }>({ key, win: null });
+  let win = mount.key === key ? mount.win : null;
+  if (win === null && count > 0) {
+    const held = heldPlace(key);
+    win = firstMounted(count, held ? chat.messages.findIndex((m) => m.key === held.key) : -1);
+  }
+  if (win && sentKey && win.to !== null) win = { ...win, to: null };
+  if (mount.key !== key || mount.win !== win) setMount({ key, win });
+  const from = Math.min(win?.from ?? 0, count);
+  const to = win?.to == null ? count : Math.min(win.to, count);
+  const complete = !win || mountedAll(win);
+  // A hidden page waits: the rest mounts when it is shown again.
+  const onScreen = useViewActive();
+  useEffect(() => {
+    if (complete || !onScreen) return;
+    const id = requestAnimationFrame(() => startTransition(() => setMount((m) => (m.key === key && m.win ? { key, win: widen(m.win, count) } : m))));
+    return () => cancelAnimationFrame(id);
+  }, [key, from, to, complete, onScreen, count]);
+  const mountAll = () => {
+    if (!complete) flushSync(() => setMount({ key, win: { from: 0, to: null } }));
+  };
+
+  const scroll = useTimelineScroll(key, !empty && !failed && chat.messages.length > 0, sentKey);
   const showSkeleton = useDelayed(chat.status === "loading" && chat.messages.length === 0);
-  const spaceName = (id: string) => spaces.find((s) => s.id === id)?.name ?? id;
+  const spaceName = useCallback((id: string) => spaces.find((s) => s.id === id)?.name ?? id, [spaces]);
   const lastUserIndex = [...chat.messages].reverse().find((m) => m.role === "user")?.index;
   // A conversation never shows "New chat" while it loads: its listed title, else its first message.
   const firstUser = chat.messages.find((m) => m.role === "user");
@@ -164,12 +157,14 @@ export function ChatView({ space }: { space: SpaceView }) {
     return out;
   }, [chat.messages]);
 
-  const retry = () => {
+  const retry = useStable(() => {
     const u = [...chat.messages].reverse().find((m) => m.role === "user");
     if (!u || u.role !== "user") return;
-    pin();
     void useChats.getState().send(space.id, { prompt: u.text, uploads: [], shown: u.attachments, replaceFrom: u.index, keepAttachments: u.attachments.map((a) => a.path!).filter(Boolean) }, thread);
-  };
+  });
+  const editMessage = useStable((m: UserMessageData) => {
+    if (m.index !== undefined) setEdit({ index: m.index, text: m.text, attachments: m.attachments.filter((a) => a.path) });
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -190,36 +185,42 @@ export function ChatView({ space }: { space: SpaceView }) {
         </div>
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={box} data-slot="chat-scroll" onScroll={onScroll} className="scroll-quiet relative min-h-0 flex-1 overflow-x-hidden [overflow-anchor:none]">
-          {showSkeleton ? <SkeletonTurns /> : null}
-          <div className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-4 px-4 pt-6 pb-8">
-            {chat.messages.map((m, i) =>
+          <div ref={scroll.box} data-slot="chat-scroll" className="scroll-quiet relative min-h-0 flex-1 overflow-x-hidden">
+          {showSkeleton ? (
+            <div className="[overflow-anchor:none]">
+              <SkeletonTurns />
+            </div>
+          ) : null}
+          {/* Messages never anchor the browser's scroll anchoring; the end marker below does (see timeline-scroll.ts). */}
+          <div ref={scroll.content} className="mx-auto flex w-full max-w-(--chat-max-width) flex-col gap-4 px-4 pt-6 pb-8 [overflow-anchor:none]">
+            {(complete ? chat.messages : chat.messages.slice(from, to)).map((m, j) =>
               m.role === "user" ? (
-                <UserMessage
-                  key={m.key}
-                  m={m}
-                  space={space.id}
-                  canEdit={!chat.running && m.index !== undefined && m.index === lastUserIndex}
-                  onEdit={() => m.index !== undefined && setEdit({ index: m.index, text: m.text, attachments: m.attachments.filter((a) => a.path) })}
-                />
+                <UserMessage key={m.key} m={m} space={space.id} canEdit={!chat.running && m.index !== undefined && m.index === lastUserIndex} onEdit={editMessage} />
+              ) : (complete ? j : from + j) === count - 1 ? (
+                <AssistantMessage key={m.key} m={m} space={space.id} last running={chat.running} startedAt={chat.startedAt} spaceName={spaceName} onRetry={retry} />
               ) : (
-                <AssistantMessage key={m.key} m={m} space={space.id} last={i === chat.messages.length - 1} running={chat.running} startedAt={chat.startedAt} spaceName={spaceName} onRetry={retry} />
+                // Older replies don't depend on the run, so a streaming reply re-renders only itself.
+                <AssistantMessage key={m.key} m={m} space={space.id} last={false} running={false} spaceName={spaceName} onRetry={retry} />
               ),
             )}
           </div>
+          <div aria-hidden data-slot="chat-end" className="h-px [overflow-anchor:auto]" />
           </div>
-          <HistoryRail box={box} items={rail} />
+          <HistoryRail box={scroll.boxRef} items={rail} onJump={(turn, offset) => scroll.jumpTo(turn, offset)} onWheel={scroll.wheel} reveal={mountAll} />
         </div>
       )}
       <div className={cn("relative", empty && "px-8")}>
         {empty ? null : (
           <button
             type="button"
-            onClick={toBottom}
+            onClick={() => {
+              mountAll();
+              scroll.toEnd();
+            }}
             aria-label="Jump to latest"
             className={cn(
               "absolute -top-11 left-1/2 z-10 inline-flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border bg-popover px-3 text-muted-foreground text-sm transition-[opacity,transform] hover:text-foreground",
-              away ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0",
+              scroll.away ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0",
             )}
           >
             <Icon icon={icons.arrowDown} className="size-3.5" />

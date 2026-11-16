@@ -44,11 +44,14 @@ function useWideMath(source: string) {
     if (!box || !source.includes("$")) return;
     const check = () => {
       const width = box.clientWidth;
-      for (const k of box.querySelectorAll<HTMLElement>(".katex")) {
-        if (k.parentElement?.closest(".katex-display")) continue;
-        k.classList.remove("katex-wide");
-        if (k.getBoundingClientRect().width > width + 4) k.classList.add("katex-wide");
-      }
+      // Not laid out (a hidden page): leave it as it was until it is shown.
+      if (width === 0) return;
+      const inline = [...box.querySelectorAll<HTMLElement>(".katex")].filter((k) => !k.parentElement?.closest(".katex-display"));
+      if (inline.length === 0) return;
+      // All writes, then all reads, then all writes: one layout for the message, not one per formula.
+      for (const k of inline) k.classList.remove("katex-wide");
+      const wide = inline.map((k) => k.getBoundingClientRect().width > width + 4);
+      inline.forEach((k, i) => wide[i] && k.classList.add("katex-wide"));
     };
     check();
     return observeResize(box, check);

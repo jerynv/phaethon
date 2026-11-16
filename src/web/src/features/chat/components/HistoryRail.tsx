@@ -27,33 +27,46 @@ type Geometry = { inView: boolean[]; current: number | null; atEnd: boolean; gut
 
 function measure(box: HTMLElement, items: RailItem[]): Geometry {
   const boxTop = box.getBoundingClientRect().top;
-  const tops = items.map((it) => {
-    const el = box.querySelector<HTMLElement>(`[data-turn="${CSS.escape(it.id)}"]`);
-    return el ? el.getBoundingClientRect().top - boxTop + box.scrollTop : Number.POSITIVE_INFINITY;
-  });
+  // One query for every turn (a long conversation has hundreds), then a lookup per item.
+  const found = new Map<string, number>();
+  for (const el of box.querySelectorAll<HTMLElement>("[data-turn]")) found.set(el.dataset.turn!, el.getBoundingClientRect().top - boxTop + box.scrollTop);
+  const tops = items.map((it) => found.get(it.id) ?? Number.POSITIVE_INFINITY);
   const top = box.scrollTop;
   const bottom = top + box.clientHeight;
   const inView = tops.map((t, i) => {
     const next = tops[i + 1] ?? box.scrollHeight;
     return t < bottom && next > top;
   });
-  // The first turn that starts on screen, else the one being read.
+  // The turn being read: the first still on screen below the line a jump leaves its turn at (as T3 Code
+  // does), so right after a jump the turn jumped to is current and Next goes to the one after it.
   let current: number | null = null;
-  let preceding: number | null = null;
   for (let i = 0; i < tops.length; i++) {
-    const t = tops[i]!;
-    if (t >= top + TARGET_OFFSET + 1) {
-      current = t <= bottom ? i : preceding;
+    const end = tops[i + 1] ?? box.scrollHeight;
+    if (tops[i]! < bottom && end > top + TARGET_OFFSET + 1) {
+      current = i;
       break;
     }
-    preceding = i;
   }
-  if (current === null) current = preceding;
   const column = Math.min(box.clientWidth, Number.parseFloat(getComputedStyle(box).getPropertyValue("--chat-max-width")) || box.clientWidth);
   return { inView, current, atEnd: box.scrollHeight - top - box.clientHeight <= 1, gutter: Math.max(0, (box.clientWidth - column) / 2) };
 }
 
-export function HistoryRail({ box, items }: { box: RefObject<HTMLDivElement | null>; items: RailItem[] }) {
+export function HistoryRail({
+  box,
+  items,
+  onJump,
+  onWheel,
+  reveal,
+}: {
+  box: RefObject<HTMLDivElement | null>;
+  items: RailItem[];
+  /** Shows `turn` `offset` px below the top of the view (the timeline decides how it travels). */
+  onJump: (turn: HTMLElement, offset: number) => void;
+  /** A wheel over the rail, for the timeline to scroll by. */
+  onWheel: (deltaY: number) => void;
+  /** Mounts every turn, for a jump to one a long conversation hasn't mounted yet. */
+  reveal: () => void;
+}) {
   const [geo, setGeo] = useState<Geometry>({ inView: [], current: null, atEnd: true, gutter: 0 });
   const [hover, setHover] = useState<number | null>(null);
   const frame = useRef<number | null>(null);
@@ -86,13 +99,12 @@ export function HistoryRail({ box, items }: { box: RefObject<HTMLDivElement | nu
   if (items.length < MIN_ITEMS) return null;
 
   const jump = (index: number) => {
-    const el = box.current;
     const it = items[index];
-    if (!el || !it) return;
-    const turn = el.querySelector<HTMLElement>(`[data-turn="${CSS.escape(it.id)}"]`);
-    if (!turn) return;
-    const top = turn.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - TARGET_OFFSET;
-    el.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    if (!box.current || !it) return;
+    const sel = `[data-turn="${CSS.escape(it.id)}"]`;
+    if (!box.current.querySelector(sel)) reveal();
+    const turn = box.current.querySelector<HTMLElement>(sel);
+    if (turn) onJump(turn, TARGET_OFFSET);
   };
   const indexAt = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -114,7 +126,7 @@ export function HistoryRail({ box, items }: { box: RefObject<HTMLDivElement | nu
         "group/rail pointer-events-none absolute inset-y-0 left-0 z-10 w-18",
         persistent ? "opacity-100" : "hidden opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100 [@media(pointer:fine)]:block",
       )}
-      onWheel={(e) => box.current?.scrollBy({ top: e.deltaY })}
+      onWheel={(e) => onWheel(e.deltaY)}
     >
       <div className={cn("absolute top-1/2 left-3 -translate-y-1/2 select-none", hit > 0 ? "pointer-events-auto" : "pointer-events-none")} style={{ height: `min(${Math.max(1, (items.length - 1) * SPACING)}px, max(4rem, calc(100% - 14.75rem)))`, width: hit }}>
         <RailArrow direction="previous" disabled={prev === null} onClick={() => prev !== null && jump(prev)} />

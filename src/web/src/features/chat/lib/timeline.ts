@@ -248,18 +248,26 @@ export function mergeSaved(live: Message[], saved: UiMessage[], keepLive = false
       agree = false;
       return m;
     }
+    // A message the save doesn't change keeps its identity, so it doesn't render again.
     if (m.role === "user" && s.role === "user") {
       if (!aligned && s.text !== m.text) {
         agree = false;
         return m;
       }
-      return { ...m, index: s.index, at: m.at ?? s.at, attachments: s.attachments.map((a, j) => ({ ...a, previewUrl: m.attachments[j]?.previewUrl })) };
+      const attachments = s.attachments.map((a, j) => ({ ...a, previewUrl: m.attachments[j]?.previewUrl }));
+      const same = m.index === s.index && (m.at ?? s.at) === m.at && sameAttachments(m.attachments, attachments);
+      return same ? m : { ...m, index: s.index, at: m.at ?? s.at, attachments };
     }
     if (m.role === "assistant" && s.role === "assistant") {
-      return { ...m, index: s.index, at: m.at ?? s.at, question: m.question ?? s.question };
+      const same = m.index === s.index && (m.at ?? s.at) === m.at && (m.question ?? s.question) === m.question;
+      return same ? m : { ...m, index: s.index, at: m.at ?? s.at, question: m.question ?? s.question };
     }
     return m;
   });
+}
+
+function sameAttachments(a: Attachment[], b: Attachment[]): boolean {
+  return a.length === b.length && a.every((x, i) => x.name === b[i]!.name && x.path === b[i]!.path && x.mediaType === b[i]!.mediaType && x.previewUrl === b[i]!.previewUrl);
 }
 
 /** What the timeline draws for a reply, in order: consecutive tool records gathered into one work group. */

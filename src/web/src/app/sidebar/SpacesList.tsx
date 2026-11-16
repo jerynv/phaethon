@@ -1,15 +1,16 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type Ref } from "react";
 import { RowError } from "@/components/errors";
 import { TruncateTips } from "@/components/truncate";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Menu, MenuItem, MenuPopup, MenuSeparator } from "@/components/ui/menu";
 import { SidebarContent, SidebarMenuSkeleton } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import type { SpaceView } from "../api";
 import { DRAFT, THREAD_PAGE, useNav, type ThreadList, type ThreadRow } from "../store";
 import type { ThreadFilter } from "./filter";
-import { foldTitle, LABEL, layoutSpaces, revealOffset, ROW, STICKY, threadKey, type Item, type Layout, type SpaceInput } from "./layout";
+import { foldTitle, LABEL, layoutSpaces, revealOffset, ROW, STICKY, STICKY_SINGLE, threadKey, type Item, type Layout, type SpaceInput } from "./layout";
 import { ListContext, type ListContextValue } from "./list-context";
 import { LoaderRow, RowSlot, ThreadMenuItems, type LoaderMode } from "./rows";
 import { SpaceHeader, SpaceMenuItems } from "./space-header";
@@ -57,6 +58,9 @@ function firstBelow(items: readonly Item[], y: number): number {
 
 /** A row's title tooltip sits beside the whole row, clear of its "…". */
 const tipAnchor = (title: HTMLElement) => title.closest("[data-slot=sidebar-menu-item]");
+
+/** A row's place in the entrance's sequence: one step per row from the top, capped so a long list doesn't keep stepping. */
+const enterStep = (start: number) => Math.min(12, Math.round(start / ROW));
 
 type Anchor = { top: number; marks: Array<{ key: string; offset: number; place: string }> };
 type Ghost = { item: Item; block: string; y: number };
@@ -106,6 +110,8 @@ function ItemMenu({ itemKey, layout, spaces, context }: { itemKey: string; layou
 }
 
 export type SpacesListHandle = {
+  /** Whether any conversation is listed (a search may have none). */
+  hasRows(): boolean;
   focusFirst(rowsOnly?: boolean): void;
   openFirst(): void;
   /** After a delete: focuses what now sits where the deleted row was. False when there is nothing to focus. */
@@ -118,9 +124,12 @@ export function SpacesList({
   filter,
   onDelete,
   onExitTop,
+  single = false,
   ref,
 }: {
   spaces: SpaceView[];
+  /** One space on its own (the switcher above names it): no space rows, only its conversations, which step in as it is shown. */
+  single?: boolean;
   /** The filter's text, folded; empty when not filtering. */
   query: string;
   filter: ThreadFilter;
@@ -140,6 +149,17 @@ export function SpacesList({
   const loadMoreThreads = useNav((s) => s.loadMoreThreads);
   const today = useToday();
   const filtering = !!query;
+  /** What sticks at the top of the list and covers the rows under it. */
+  const sticky = single ? STICKY_SINGLE : STICKY;
+  const stickyRef = useRef(sticky);
+  stickyRef.current = sticky;
+  // A space just shown: its rows step in, one after another, for a moment.
+  const [entering, setEntering] = useState(single);
+  useEffect(() => {
+    if (!entering) return;
+    const t = setTimeout(() => setEntering(false), 520);
+    return () => clearTimeout(t);
+  }, [entering]);
 
   // ---- What is listed: each space's rows (filtered while the filter has text), then the layout.
   /** The spaces the last render listed. */
@@ -154,7 +174,7 @@ export function SpacesList({
         const added = data.reduce((n, t) => n + (t.optimistic ? 1 : 0), 0);
         out.push({
           id: sp.id,
-          collapsed: !!collapsed[sp.id],
+          collapsed: !single && !!collapsed[sp.id],
           status: list?.data ? "ready" : list?.error ? "error" : "loading",
           rows: data,
           hasMore: !!list?.hasMore,
@@ -192,11 +212,11 @@ export function SpacesList({
       });
     }
     return out;
-  }, [spaces, threads, collapsed, filtering, query, filter.results]);
+  }, [spaces, threads, collapsed, filtering, query, filter.results, single]);
   useEffect(() => {
     shownRef.current = new Set(inputs.map((i) => i.id));
   }, [inputs]);
-  const layout = useMemo(() => layoutSpaces(inputs, today), [inputs, today]);
+  const layout = useMemo(() => layoutSpaces(inputs, today, undefined, { headers: !single }), [inputs, today, single]);
   const { items, sections } = layout;
   const spaceById = useMemo(() => new Map(spaces.map((s, i) => [s.id, { space: s, index: i }])), [spaces]);
 
@@ -387,9 +407,9 @@ export function SpacesList({
     if (i === undefined && collapsed[chatSpace] && !filtering) i = layout.index.get(`space:${chatSpace}`);
     if (i === undefined) return;
     pending.current = null;
-    const off = revealOffset(items[i]!, el.scrollTop, el.clientHeight);
+    const off = revealOffset(items[i]!, el.scrollTop, el.clientHeight, "nearest", sticky);
     if (off !== null) el.scrollTop = off;
-  }, [target, layout, items, chatSpace, collapsed, filtering]);
+  }, [target, layout, items, chatSpace, collapsed, filtering, sticky]);
 
   // ---- A new filter starts at the top; clearing it goes back to the open conversation.
   const lastQuery = useRef(query);
@@ -400,9 +420,9 @@ export function SpacesList({
     if (!el) return;
     el.scrollTop = 0;
     const i = !query && target ? layout.index.get(target) : undefined;
-    const off = i === undefined ? null : revealOffset(items[i]!, 0, el.clientHeight);
+    const off = i === undefined ? null : revealOffset(items[i]!, 0, el.clientHeight, "nearest", sticky);
     if (off !== null) el.scrollTop = off;
-  }, [query, target, layout, items]);
+  }, [query, target, layout, items, sticky]);
 
   // ---- Keyboard: arrows move through space rows and conversations, scrolling as they go.
   const focusItem = useCallback(
@@ -410,11 +430,11 @@ export function SpacesList({
       const it = items[i];
       const el = scrollRef.current;
       if (!it || !el) return;
-      const off = revealOffset(it, el.scrollTop, el.clientHeight);
+      const off = revealOffset(it, el.scrollTop, el.clientHeight, "nearest", sticky);
       if (off !== null) el.scrollTop = off;
       setFocusTo(it.key);
     },
-    [items],
+    [items, sticky],
   );
   const focusItemRef = useRef(focusItem);
   focusItemRef.current = focusItem;
@@ -444,6 +464,9 @@ export function SpacesList({
     if (next !== -1) focusItem(next);
   };
   useImperativeHandle(ref, () => ({
+    hasRows() {
+      return items.some((x) => x.kind === "row");
+    },
     focusFirst(rowsOnly) {
       const i = items.findIndex((it) => (rowsOnly ? it.kind === "row" : it.kind === "row" || it.kind === "space"));
       if (i !== -1) focusItem(i);
@@ -543,24 +566,41 @@ export function SpacesList({
     if (top > 0) {
       const ti = targetRef.current ? L.index.get(targetRef.current) : undefined;
       if (near(ti)) mark(ti);
-      for (let i = firstBelow(L.items, top + STICKY); i < L.items.length && L.items[i]!.start < bottom && marks.length < 24; i++) {
+      const cover = stickyRef.current;
+      for (let i = firstBelow(L.items, top + cover); i < L.items.length && L.items[i]!.start < bottom && marks.length < 24; i++) {
         const it = L.items[i]!;
-        if ((it.kind === "row" || it.kind === "space") && it.start >= top + STICKY && it.start + it.size <= bottom) mark(i);
+        if ((it.kind === "row" || it.kind === "space") && it.start >= top + cover && it.start + it.size <= bottom) mark(i);
       }
     }
     anchor.current = { top, marks };
+  }, []);
+  // ---- A stuck group label fades as the next one slides over it, so no label ever shows half cut off.
+  const fadeLabels = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const stuckAt = el.scrollTop + stickyRef.current - LABEL;
+    for (const l of el.querySelectorAll<HTMLElement>("[data-slot=sidebar-group-sticky]")) {
+      const next = Number(l.dataset.next);
+      const gap = Number.isFinite(next) && l.dataset.next !== "" ? next - stuckAt : Infinity;
+      const text = l.querySelector<HTMLElement>("[data-slot=sidebar-group-sticky-text]");
+      if (text) text.style.opacity = gap < LABEL ? String(Math.max(0, gap / LABEL)) : "";
+    }
   }, []);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
       captureAnchor();
+      fadeLabels();
       hideTip.current?.();
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [captureAnchor]);
-  useLayoutEffect(() => captureAnchor());
+  }, [captureAnchor, fadeLabels]);
+  useLayoutEffect(() => {
+    captureAnchor();
+    fadeLabels();
+  });
 
   // ---- Render: each space in view as a section (its sticky row, then its groups in view, each with a sticky label and its rows in view).
   // Sections and groups are placed with `top`, not a transform: a sticky row inside works from layout positions, and a transform would leave it behind.
@@ -587,7 +627,7 @@ export function SpacesList({
       <SidebarContent
         scrollRef={scrollRef}
         fade="end"
-        className="px-2 pb-3"
+        className={cn("px-2 pb-3", single && "mt-3")}
         onKeyDown={onKeyDown}
         onFocus={(e) => setFocused((e.target as HTMLElement).closest<HTMLElement>("[data-item-key]")?.dataset.itemKey ?? null)}
         onBlur={(e) => {
@@ -602,6 +642,7 @@ export function SpacesList({
             style={{ height: layout.size }}
             data-slot="sidebar-spaces"
             data-instant={instant || undefined}
+            data-entering={entering || undefined}
             onContextMenuCapture={(e) => {
               const t = e.target as HTMLElement;
               // A title being edited gets the system's menu; a label or a gap gets none.
@@ -626,7 +667,7 @@ export function SpacesList({
                 const standIn = input.collapsed && chatOn(sec.space) && !!open[sec.space] && open[sec.space] !== DRAFT;
                 return (
                   <div key={sec.space} data-slide="" className="absolute inset-x-0" style={{ top: sec.start, height: sec.end - sec.start }}>
-                    <SpaceHeader space={entry.space} index={entry.index} folded={input.collapsed} count={input.count} standIn={standIn} filtering={filtering} />
+                    {single ? null : <SpaceHeader space={entry.space} index={entry.index} folded={input.collapsed} count={input.count} standIn={standIn} filtering={filtering} />}
                     {sec.blocks.length ? (
                       <ul
                         aria-label={`${entry.space.name} conversations`}
@@ -639,16 +680,28 @@ export function SpacesList({
                           .map((bi) => {
                             const b = sec.blocks[bi]!;
                             const label = b.label !== undefined ? items[b.from]! : null;
+                            // Where the next label sits (or, with space rows, where this space ends), for fadeLabels.
+                            const after = sec.blocks.slice(bi + 1).find((x) => x.label !== undefined);
+                            const nextAt = after ? after.start + items[after.from]!.size - LABEL : single ? null : sec.end;
                             return (
-                              <li key={b.key} data-slide="" className="absolute inset-x-0" style={{ top: b.start - bodyTop, height: b.end - b.start, paddingTop: label ? label.size - LABEL : 0 }}>
+                              // A group reaches to the end of its space, so its label stays stuck until the next group's label slides over it
+                              // (later labels paint over earlier ones), instead of being pushed up and showing half cut off.
+                              <li key={b.key} data-slide="" className="pointer-events-none absolute inset-x-0" style={{ top: b.start - bodyTop, height: sec.end - b.start, paddingTop: label ? label.size - LABEL : 0 }}>
                                 {label ? (
-                                  <div aria-hidden data-slot="sidebar-group-sticky" className="sticky top-7 z-10 flex h-7 items-center bg-sidebar pl-8 text-subtle-foreground text-xs">
-                                    {b.label}
+                                  <div
+                                    aria-hidden
+                                    data-slot="sidebar-group-sticky"
+                                    data-enter=""
+                                    data-next={nextAt ?? ""}
+                                    style={{ "--i": enterStep(b.start) } as CSSProperties}
+                                    className={cn("sticky z-10 flex h-7 items-center bg-sidebar pl-8 text-subtle-foreground text-xs", single ? "top-0" : "top-7")}
+                                  >
+                                    <span data-slot="sidebar-group-sticky-text">{b.label}</span>
                                     {/* Stuck over rows, a short masked edge hides the cut-off text under it. */}
                                     <span data-slot="sidebar-group-sticky-edge" className="pointer-events-none absolute inset-x-0 top-full h-3 bg-sidebar mask-b-from-40%" />
                                   </div>
                                 ) : null}
-                                <ul aria-label={b.label} className="absolute inset-0">
+                                <ul aria-label={b.label} className="pointer-events-auto absolute inset-x-0 top-0" style={{ height: b.end - b.start }}>
                                     {blocks.get(bi)!.map((it) => {
                                       const y = it.start - b.start;
                                       if (it.kind === "row") {
@@ -658,6 +711,7 @@ export function SpacesList({
                                             key={it.key}
                                             itemKey={it.key}
                                             y={y}
+                                            step={enterStep(it.start)}
                                             fresh={isFresh(it)}
                                             space={it.space}
                                             thread={it.thread!}
@@ -669,7 +723,7 @@ export function SpacesList({
                                       }
                                       if (it.kind === "loader") return <LoaderRow key={it.key} itemKey={it.key} space={it.space} mode={loaderMode(it.section)} y={y} />;
                                       return (
-                                        <li key={it.key} className="absolute inset-x-0 top-0 flex h-7 items-center" style={{ transform: `translateY(${y}px)` }}>
+                                        <li key={it.key} data-enter="" className="absolute inset-x-0 top-0 flex h-7 items-center" style={{ transform: `translateY(${y}px)`, "--i": enterStep(it.start) } as CSSProperties}>
                                           {it.kind === "skeleton" ? (
                                             <SidebarMenuSkeleton index={Number(it.key.slice(-1)) + 1} className="w-full pl-8" />
                                           ) : it.kind === "error" ? (

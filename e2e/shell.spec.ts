@@ -1,4 +1,4 @@
-import { expect, startCore, test, type Core } from "./core";
+import { expect, openNewSpace, startCore, switchSpace, test, type Core } from "./core";
 
 /** The frame around everything: spaces and conversations in the sidebar, search, new spaces, the theme. */
 
@@ -8,32 +8,38 @@ test.afterEach(async () => {
   core = undefined;
 });
 
-test("the sidebar groups conversations under their spaces", async ({ page }) => {
+test("the sidebar shows one space at a time, chosen from the switcher", async ({ page }) => {
   core = await startCore();
   await core.open(page);
   const nav = page.getByRole("navigation", { name: "Spaces and conversations" });
-  await expect(nav.getByRole("button", { name: "Go to School" })).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Go to Work" })).toBeVisible();
-  await nav.getByRole("button", { name: "Go to Work" }).click();
-  // Spaces without study tools list no pages.
+  await expect(nav.getByRole("button", { name: "Space: School" })).toBeVisible();
+  await expect(nav.getByRole("list", { name: "School conversations" })).toBeAttached();
+  await nav.getByRole("button", { name: "Space: School" }).click();
+  // The menu lists every space, the one on show ticked.
+  await expect(page.getByRole("menuitem", { name: /^School/ })).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("menuitem", { name: /^Work/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await switchSpace(page, "Work");
+  // Only the space on show is listed, and spaces without study tools list no pages.
+  await expect(nav.getByRole("list", { name: "School conversations" })).toHaveCount(0);
   await expect(page.getByRole("list", { name: "Views" })).toHaveCount(0);
-  await nav.getByRole("button", { name: "Go to School" }).click();
+  await switchSpace(page, "School");
   await expect(page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { selected: true })).toBeVisible();
 });
 
 test("a new space appears, selected, with a field error for an empty name", async ({ page }) => {
   core = await startCore();
   await core.open(page);
-  await page.getByRole("button", { name: "New space" }).click();
+  await openNewSpace(page);
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Create space" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Give the space a name.");
   await dialog.getByLabel("Name").fill("A very long space name that will certainly not fit in the sidebar row");
   await dialog.getByRole("button", { name: "Create space" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("navigation").getByRole("button", { name: /Go to A very long space name/ })).toBeVisible();
-  const row = await page.getByRole("navigation").getByRole("button", { name: /Go to A very long/ }).evaluate((b) => b.parentElement!.getBoundingClientRect().width);
-  expect(row).toBeLessThan(250);
+  const switcher = page.getByRole("navigation").getByRole("button", { name: /^Space: A very long space name/ });
+  await expect(switcher).toBeVisible();
+  expect(await switcher.evaluate((b) => b.getBoundingClientRect().width)).toBeLessThan(250);
 });
 
 test("search finds a conversation in any space", async ({ page }) => {

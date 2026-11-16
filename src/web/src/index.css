@@ -24,7 +24,6 @@
   --page-max-width: 48rem;
   --page-wide-max-width: 64rem;
   --settings-max-width: 42rem;
-  --search-width: 17rem;
   --command-shell-inset: 0.5rem;
   --command-content-inset: 0.75rem;
   --viewport-max-width: calc(100vw - 2rem);
@@ -823,6 +822,27 @@
   @container scroll-state(stuck: top) {
     [data-slot="sidebar-group-sticky-edge"] {
       visibility: visible;
+    }
+  }
+  /* A space just switched to: its labels and rows step in from the top, one after another. */
+  [data-slot="sidebar-spaces"][data-entering] li[data-enter] > *,
+  [data-slot="sidebar-spaces"][data-entering] div[data-enter] {
+    animation: sidebar-enter 240ms var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 22ms);
+  }
+  @keyframes sidebar-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+  /* The switcher's sweep while a space comes in. */
+  @keyframes space-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
     }
   }
 }

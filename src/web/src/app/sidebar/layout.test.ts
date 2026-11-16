@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cursorPosition, foldTitle, groupThreads, LABEL, LABEL_GAP, layoutSpaces, revealOffset, ROW, SPACE_GAP, STICKY, type SpaceInput } from "./layout";
+import { cursorPosition, foldTitle, groupThreads, LABEL, LABEL_GAP, layoutSpaces, revealOffset, ROW, SPACE_GAP, STICKY, STICKY_SINGLE, type SpaceInput } from "./layout";
 import type { ThreadRow } from "../store";
 
 // Wednesday 12 November 2025, 15:00 local time.
@@ -123,6 +123,22 @@ describe("layoutSpaces", () => {
     expect(l.items.find((i) => i.kind === "note")!.text).toBe("No conversations yet");
   });
 
+  it("lists one space without a row of its own, its first label at the top", () => {
+    const l = layoutSpaces([space("a", [row("1", at(2025, 10, 12)), row("2", at(2025, 10, 11))])], NOW, "en-US", { headers: false });
+    expect(l.items.map((i) => [i.kind, i.start])).toEqual([
+      ["label", 0],
+      ["row", LABEL],
+      ["label", ROW + LABEL],
+      ["row", ROW + 2 * LABEL + LABEL_GAP],
+    ]);
+    expect(l.index.has("space:a")).toBe(false);
+    expect(l.sections[0]!.blocks.map((b) => [b.label, b.from, b.to])).toEqual([
+      ["Today", 0, 2],
+      ["Yesterday", 2, 4],
+    ]);
+    expect(layoutSpaces([space("a", [], { status: "loading" })], NOW, undefined, { headers: false }).items.map((i) => i.kind)).toEqual(["skeleton", "skeleton", "skeleton"]);
+  });
+
   it("indexes conversations by space and id, and keeps a 1500-row space cheap", () => {
     const rows = Array.from({ length: 1500 }, (_, i) => row(String(i), NOW - i * 3_600_000 * 5));
     const t = performance.now();
@@ -148,6 +164,10 @@ describe("revealOffset", () => {
     const r = item("20");
     expect(revealOffset(r, r.start - 10, 400)).toBe(r.start - STICKY);
     expect(revealOffset(r, r.start - 400 + 10, 400)).toBe(r.start + r.size - 400);
+  });
+  it("covers only the group label when there are no space rows", () => {
+    const r = item("20");
+    expect(revealOffset(r, r.start - 10, 400, "nearest", STICKY_SINGLE)).toBe(r.start - STICKY_SINGLE);
   });
   it("centres a row that is far away", () => {
     const r = item("150");

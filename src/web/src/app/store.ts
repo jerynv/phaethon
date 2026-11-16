@@ -67,7 +67,12 @@ type Nav = {
   sidebarOpen: boolean;
   settings: SettingsSection | null;
   paletteOpen: boolean;
-  viewer: { space: string; path: string } | null;
+  /** What the palette starts with when it opens (the sidebar's search hands its text over). */
+  paletteQuery: string;
+  /** The files open in the viewer, as tabs, in order. */
+  files: ViewerFile[];
+  /** The file on show (one of `files`), or null when the viewer is shut. */
+  viewer: ViewerFile | null;
   /** Conversations (by `chatKey`) that got a reply while they weren't on screen. */
   unread: Record<string, true>;
   /** Bumped when the already-selected view tab is clicked again, so the view can go back to its front page. */
@@ -83,6 +88,10 @@ type Nav = {
   closeTab(id: string): void;
   keepTab(id: string): void;
   reopenTab(): void;
+  /** Closes every tab but `id` (it becomes the active one). */
+  closeOtherTabs(id: string): void;
+  /** Closes the tabs after `id`. */
+  closeTabsToRight(id: string): void;
   /** The next (1) or previous (-1) tab, wrapping. */
   cycleTab(dir: 1 | -1): void;
 
@@ -117,12 +126,25 @@ type Nav = {
   toggleSidebar(): void;
   openSettings(section?: SettingsSection): void;
   closeSettings(): void;
-  setPalette(open: boolean): void;
+  setPalette(open: boolean, query?: string): void;
+  /** Opens a file in the viewer: in its tab when it is open already, else in a new tab after the one on show. */
   openFile(space: string, path: string): void;
-  closeFile(): void;
+  /** Shows an open file's tab. */
+  showFile(file: ViewerFile): void;
+  /** Closes one file's tab (the one on show by default); the viewer shuts with the last. */
+  closeFile(file?: ViewerFile): void;
+  /** Closes every file but `file`. */
+  closeOtherFiles(file: ViewerFile): void;
+  /** Shuts the viewer and all its tabs. */
+  closeAllFiles(): void;
 };
 
 const LAST_SPACE = "phaethon.lastSpace";
+
+export type ViewerFile = { space: string; path: string };
+/** The most file tabs kept open; past it the oldest one not on show closes. */
+export const MAX_FILES = 12;
+const sameFile = (a: ViewerFile, b: ViewerFile) => a.space === b.space && a.path === b.path;
 const COLLAPSED = "phaethon.collapsed";
 const SIDEBAR = "phaethon.sidebar";
 const OPEN = "phaethon.openThreads";
@@ -215,6 +237,8 @@ export const useNav = create<Nav>((set, get) => {
     sidebarOpen: readJson<boolean>(SIDEBAR, true),
     settings: null,
     paletteOpen: false,
+    paletteQuery: "",
+    files: [],
     viewer: null,
     unread: {},
     retap: { view: "chat", n: 0 },
@@ -276,6 +300,25 @@ export const useNav = create<Nav>((set, get) => {
         if (fb) get().openTab(fb);
         else saveTabs();
       }
+    },
+
+    closeOtherTabs(id) {
+      const keep = get().tabs.find((t) => t.id === id);
+      if (!keep) return;
+      const gone = get().tabs.filter((t) => t.id !== id);
+      set({ closedTabs: [...gone.reverse().map(strip), ...get().closedTabs].slice(0, MAX_CLOSED) });
+      commit([keep], id);
+    },
+
+    closeTabsToRight(id) {
+      const tabs = get().tabs;
+      const at = tabs.findIndex((t) => t.id === id);
+      if (at < 0 || at === tabs.length - 1) return;
+      const gone = tabs.slice(at + 1);
+      set({ closedTabs: [...gone.reverse().map(strip), ...get().closedTabs].slice(0, MAX_CLOSED) });
+      const rest = tabs.slice(0, at + 1);
+      const active = get().activeTab;
+      commit(rest, rest.some((t) => t.id === active) ? active! : id);
     },
 
     keepTab(id) {
@@ -534,14 +577,43 @@ export const useNav = create<Nav>((set, get) => {
       const tab = activeTabOf();
       if (tab?.kind === "settings") get().closeTab(tab.id);
     },
-    setPalette(open) {
-      set({ paletteOpen: open });
+    setPalette(open, query = "") {
+      set({ paletteOpen: open, paletteQuery: open ? query : "" });
     },
     openFile(space, path) {
-      set({ viewer: { space, path } });
+      const file = { space, path };
+      const { files, viewer } = get();
+      const had = files.find((f) => sameFile(f, file));
+      if (had) return set({ viewer: had });
+      const at = viewer ? files.findIndex((f) => sameFile(f, viewer)) + 1 : files.length;
+      let next = [...files.slice(0, at), file, ...files.slice(at)];
+      while (next.length > MAX_FILES) {
+        const drop = next.findIndex((f) => f !== file && !(viewer && sameFile(f, viewer)));
+        next = next.filter((_, i) => i !== drop);
+      }
+      set({ files: next, viewer: file });
     },
-    closeFile() {
-      set({ viewer: null });
+    showFile(file) {
+      const had = get().files.find((f) => sameFile(f, file));
+      if (had) set({ viewer: had });
+    },
+    closeFile(file) {
+      const { files, viewer } = get();
+      const target = file ?? viewer;
+      if (!target) return;
+      const at = files.findIndex((f) => sameFile(f, target));
+      if (at === -1) return;
+      const next = files.filter((_, i) => i !== at);
+      // Closing the one on show shows its neighbour (the next, else the previous), as a browser does.
+      const showing = viewer && !sameFile(viewer, target) ? viewer : (next[at] ?? next[at - 1] ?? null);
+      set({ files: next, viewer: showing });
+    },
+    closeOtherFiles(file) {
+      const had = get().files.find((f) => sameFile(f, file));
+      if (had) set({ files: [had], viewer: had });
+    },
+    closeAllFiles() {
+      set({ files: [], viewer: null });
     },
   };
 });

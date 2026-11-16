@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type KeyboardEvent } from "react";
+import { memo, useEffect, useRef, type CSSProperties, type KeyboardEvent } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { RowError } from "@/components/errors";
@@ -261,14 +261,15 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
  * or a page of older ones arrives). A deleted row stays a moment as a ghost
  * (`leaving`) to fade out; one scrolling out simply goes.
  */
-export const RowSlot = memo(function RowSlot({ y, fresh, leaving = false, ...row }: RowProps & { y: number; fresh: boolean; leaving?: boolean }) {
+export const RowSlot = memo(function RowSlot({ y, step = 0, fresh, leaving = false, ...row }: RowProps & { y: number; step?: number; fresh: boolean; leaving?: boolean }) {
   return (
     <li
       data-slide=""
+      data-enter=""
       data-item-key={leaving ? undefined : row.itemKey}
       aria-hidden={leaving || undefined}
       className={cn("absolute inset-x-0 top-0 h-7", fresh && !leaving && "animate-in fade-in duration-200", leaving && "pointer-events-none opacity-0 transition-opacity duration-150")}
-      style={{ transform: `translateY(${y}px)` }}
+      style={{ transform: `translateY(${y}px)`, "--i": step } as CSSProperties}
     >
       <ThreadRowItem {...row} />
     </li>

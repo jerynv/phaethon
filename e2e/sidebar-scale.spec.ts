@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
-import { expect, startCore, test, type Core } from "./core";
+import { expect, startCore, switchSpace, test, type Core } from "./core";
 
 /**
  * The sidebar with 1500 conversations in one space (and 300 in another),
  * against the real core: only the rows on screen exist, older pages load as
- * the list scrolls, the filter finds conversations that aren't loaded, and
+ * the list scrolls, the search finds conversations that aren't loaded, and
  * one opened from search beyond the loaded pages scrolls into view.
  */
 
@@ -111,11 +111,10 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   expect(perf.long).toBeLessThan(150);
 
   // The filter narrows to matching titles, loaded or not (the core finds the rest), and Escape clears it.
-  const filter = sidebar.getByRole("searchbox", { name: "Filter chats" });
+  const filter = sidebar.getByRole("searchbox", { name: "Search chats" });
   await filter.fill("Placeholderq3x");
   await expect(row(page, 3)).toBeVisible();
   await expect(row(page, SCHOOL - 1)).toHaveCount(0);
-  await expect(sidebar.getByRole("button", { name: "Go to Work" })).toHaveCount(0);
   await filter.press("Escape");
   await expect(filter).toHaveValue("");
   await expect(row(page, 3)).toHaveCount(0);
@@ -141,14 +140,11 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   await expect(focused).toHaveAccessibleName(/^Placeholder chat \d+ /);
   expect(await inView(page, focused)).toBe(true);
   await page.keyboard.press("Home");
-  await expect(focused).toHaveAccessibleName(/^Go to /);
+  await expect(focused).toHaveAccessibleName(new RegExp(`^Placeholder chat ${SCHOOL - 1} `));
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
   await expect(focused).toHaveAccessibleName(/ chat \d+ /);
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
-  await expect(sidebar.getByRole("searchbox", { name: "Filter chats" })).toBeFocused();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowUp");
+  await expect(sidebar.getByRole("searchbox", { name: "Search chats" })).toBeFocused();
 
   // It stays open after a reload, though it isn't on the first page.
   await page.reload();
@@ -157,7 +153,7 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
   await expect.poll(() => inView(page, row(page, 7))).toBe(true);
 });
 
-test("1500 conversations: a first click opens a cut title, the next space is reachable, the view holds still, a delete keeps focus", async ({ page }) => {
+test("1500 conversations: a first click opens a cut title, pages keep coming, another space is a switch away, the view holds still, a delete keeps focus", async ({ page }) => {
   core = await startCore({
     setup: (home) => {
       seed(home, "school", "School", SCHOOL, "Placeholder");
@@ -174,29 +170,29 @@ test("1500 conversations: a first click opens a cut title, the next space is rea
   await cut.click();
   await expect(page.locator("[data-slot=app-header]")).toContainText(`Placeholder chat ${SCHOOL - 3}`);
 
-  // School loads a share of pages on its own, then offers "Show older", so scrolling on reaches Work.
+  // One space at a time: its pages keep loading as it scrolls, with no "Show older" to press.
   const older = sidebar.getByRole("button", { name: "Show older" });
-  const work = sidebar.getByRole("button", { name: "Go to Work" });
-  // About 250 rows of 29 px: some 20 steps of 400 px (paging through all 1500 would take over a hundred).
-  let steps = 0;
-  for (; steps < 40 && !(await inView(page, work)); steps++) {
+  const height = () => page.evaluate(() => document.querySelector("[data-slot=sidebar-spaces]")!.getBoundingClientRect().height);
+  const before = await height();
+  for (let i = 0; i < 30; i++) {
     await scroller(page).evaluate((el) => el.scrollBy(0, 400));
     await page.waitForTimeout(60);
   }
-  expect(await inView(page, work)).toBe(true);
-  expect(steps).toBeLessThan(30);
-  await expect.poll(() => inView(page, older)).toBe(true);
-  const listed = () => page.evaluate(() => document.querySelectorAll("[data-slot=sidebar-spaces] li[data-item-key^='row:school/']").length);
-  const shareEnd = await sidebar.locator("li[data-item-key^='row:school/']").last().getAttribute("data-item-key");
-  await older.click();
-  await expect(sidebar.locator(`li[data-item-key='${shareEnd}']`)).toBeAttached();
-  // The next page arrives under it (ids count down with age), and the button is gone until School's next share is in.
-  const nextOlder = `row:school/${Number(shareEnd!.split("/")[1]) - 1}`;
-  await expect(sidebar.locator(`li[data-item-key='${nextOlder}']`)).toBeAttached();
+  await expect.poll(height).toBeGreaterThan(before);
   await expect(older).toHaveCount(0);
   // A page arriving in view doesn't fade its rows in over the others.
   expect(await sidebar.locator("li[data-item-key].animate-in").count()).toBe(0);
+  const listed = () => page.evaluate(() => document.querySelectorAll("[data-slot=sidebar-spaces] li[data-item-key^='row:school/']").length);
   expect(await listed()).toBeLessThan(80);
+
+  // Work is a switch away: only its conversations are listed, and School's come back as they were.
+  await switchSpace(page, "Work");
+  await expect(sidebar.getByRole("button", { name: new RegExp(`^Other chat ${WORK - 1} `) })).toBeVisible();
+  await expect(sidebar.locator("li[data-item-key^='row:school/']")).toHaveCount(0);
+  await switchSpace(page, "School");
+  await expect(row(page, SCHOOL - 3)).toHaveAttribute("aria-current", "page");
+  // The rows' entrance is over before anything is measured.
+  await expect(sidebar.locator("[data-entering]")).toHaveCount(0);
 
   // Pinning a conversation below the one being read adds a Pinned group above the view; what is on screen doesn't move.
   await scroller(page).evaluate((el) => (el.scrollTop = 1500));

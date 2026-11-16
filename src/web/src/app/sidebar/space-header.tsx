@@ -16,7 +16,7 @@ import { useNav, type ThreadRow } from "../store";
 import { WorkingMark } from "./rows";
 
 /** How many of a space's conversations are replying and waiting, and whether any has a new reply. */
-function useSpaceActivity(space: string, threads: ThreadRow[] | undefined) {
+export function useSpaceActivity(space: string, threads: ThreadRow[] | undefined) {
   const prefix = `${space}/`;
   const local = useChats(
     useShallow((s) => {

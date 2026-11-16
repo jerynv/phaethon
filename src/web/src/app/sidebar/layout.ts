@@ -22,6 +22,8 @@ export const LABEL_GAP = 8;
 export const SPACE_GAP = 12;
 /** What the sticky space row and group label cover at the top of the list. */
 export const STICKY = LABEL * 2;
+/** What sticks at the top of a list without space rows: the group label alone. */
+export const STICKY_SINGLE = LABEL;
 
 export type ThreadGroup = { key: string; label: string; rows: ThreadRow[] };
 
@@ -144,13 +146,14 @@ export type Layout = { items: Item[]; sections: Section[]; size: number; index: 
 export const threadKey = (space: string, id: string) => `row:${space}/${id}`;
 
 /**
- * Every space, one after another: its row, then (unless folded) its groups,
+ * Every space, one after another: its row (unless `headers` is false), then (unless folded) its groups,
  * each a label and its conversations. While there are more to load, a
  * skeleton row (`loader`) follows the last conversation that is part of the
  * loaded run; conversations read on their own from further back (one opened
  * from search) come after it, in their own month.
  */
-export function layoutSpaces(spaces: readonly SpaceInput[], now: number, locale?: string): Layout {
+export function layoutSpaces(spaces: readonly SpaceInput[], now: number, locale?: string, opts: { headers?: boolean } = {}): Layout {
+  const headers = opts.headers ?? true;
   const items: Item[] = [];
   const sections: Section[] = [];
   const index = new Map<string, number>();
@@ -163,7 +166,8 @@ export function layoutSpaces(spaces: readonly SpaceInput[], now: number, locale?
       items.push({ ...it, start: y, section: si, space: sp.id });
       y += it.size;
     };
-    push({ key: `space:${sp.id}`, kind: "space", size: ROW, group: -1 });
+    // One space on its own (the switcher names it) lists its conversations without a row of its own.
+    if (headers) push({ key: `space:${sp.id}`, kind: "space", size: ROW, group: -1 });
     const block = (label: string | undefined, key: string, fill: () => void) => {
       const b: Block = { key, label, start: y, end: y, from: items.length, to: items.length };
       const g = section.blocks.length;
@@ -223,8 +227,8 @@ export function layoutSpaces(spaces: readonly SpaceInput[], now: number, locale?
 }
 
 /** The scroll offset that shows `item` below the sticky rows, or null when it already is. Far away, it is centred. */
-export function revealOffset(item: Item, scrollTop: number, height: number, mode: "nearest" | "center" = "nearest"): number | null {
-  const cover = item.kind === "space" ? 0 : STICKY;
+export function revealOffset(item: Item, scrollTop: number, height: number, mode: "nearest" | "center" = "nearest", sticky: number = STICKY): number | null {
+  const cover = item.kind === "space" ? 0 : sticky;
   const top = item.start;
   const bottom = item.start + item.size;
   if (top >= scrollTop + cover && bottom <= scrollTop + height) return null;

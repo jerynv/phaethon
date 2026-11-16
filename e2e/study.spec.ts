@@ -1,4 +1,4 @@
-import { expect, startCore, test, type Core } from "./core";
+import { expect, openNewSpace, startCore, test, type Core } from "./core";
 
 /** A space with study tools gets its view tabs, and each view opens on a fresh vault without failing. */
 
@@ -11,7 +11,7 @@ test.afterEach(async () => {
 test("study tools: tabs appear and every view loads its empty state", async ({ page }) => {
   core = await startCore();
   await core.open(page);
-  await page.getByRole("button", { name: "New space" }).click();
+  await openNewSpace(page);
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Fall term");
   await dialog.getByRole("switch").click();

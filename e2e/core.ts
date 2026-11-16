@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import { test as base, type Page } from "@playwright/test";
+import { expect, test as base, type Page } from "@playwright/test";
 
 /**
  * Starts the real core on a throwaway home folder, serving the built UI, with
@@ -88,4 +88,17 @@ export async function startCore(options: { script?: object; setup?: (home: strin
 }
 
 export const test = base;
-export { expect } from "@playwright/test";
+export { expect };
+
+/** Shows space `name` from the switcher at the top of the sidebar. */
+export async function switchSpace(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: /^Space: / }).click();
+  await page.getByRole("menuitem", { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) }).click();
+  await expect(page.getByRole("button", { name: `Space: ${name}` })).toBeVisible();
+}
+
+/** Opens the New space dialog from the switcher's menu. */
+export async function openNewSpace(page: Page): Promise<void> {
+  await page.getByRole("button", { name: /^Space: / }).click();
+  await page.getByRole("menuitem", { name: "New space" }).click();
+}

@@ -5,13 +5,14 @@ import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
 import { api } from "../api";
-import { THREAD_PAGE } from "../store";
+import { keysFor } from "../shortcuts";
+import { THREAD_PAGE, useNav } from "../store";
 import { nextResults, type FilterList } from "./paging";
 
 export type { FilterList };
 
 /**
- * The sidebar's filter: the row under New chat that narrows the listed
+ * The sidebar's search: the field beside New chat that narrows the listed
  * conversations by title. Loaded rows are filtered in the list at once; this
  * asks the core (`threads_list` with a query) for matches that aren't loaded,
  * page by page. ⌘K stays the full-text search.
@@ -89,7 +90,12 @@ export function useThreadFilter(query: string, spaceIds: readonly string[]) {
   return { results, loadMore, drop, busy };
 }
 
-/** The filter row: a magnifier in the icon column and "Filter chats"; Escape clears it, ↓ moves into the matches. */
+/**
+ * The sidebar's one search field: typing narrows the space's conversations
+ * by title at once; its keys (⌘K) open the full search, every space and every
+ * message, starting from what was typed. Escape clears, ↓ moves into the
+ * matches, Enter opens the first.
+ */
 export function FilterField({
   value,
   onChange,
@@ -107,15 +113,18 @@ export function FilterField({
   onUp: () => void;
   onEnter: () => void;
 }) {
+  const setPalette = useNav((s) => s.setPalette);
+  const { keys, aria } = keysFor("search");
   return (
-    <div className="group/filter relative flex h-7 items-center rounded-md transition-colors hover:bg-accent has-focus-visible:bg-transparent">
-      <Icon icon={icons.search} className="pointer-events-none absolute left-2 size-4 text-icon-muted" />
+    <div className="group/filter relative flex h-7 min-w-0 flex-1 items-center rounded-lg border bg-well transition-colors hover:border-border-strong has-focus-visible:border-ring/60 has-focus-visible:bg-background">
+      <Icon icon={icons.search} className="pointer-events-none absolute left-2 size-4 text-subtle-foreground" />
       <input
         ref={inputRef}
         type="text"
         role="searchbox"
-        aria-label="Filter chats"
-        placeholder="Filter chats"
+        aria-label="Search chats"
+        aria-keyshortcuts={aria}
+        placeholder="Search"
         autoComplete="off"
         spellCheck={false}
         value={value}
@@ -137,19 +146,31 @@ export function FilterField({
             onEnter();
           }
         }}
-        className="h-7 w-full min-w-0 rounded-md bg-transparent pr-7 pl-8 text-sm text-foreground outline-none placeholder:text-subtle-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+        className="h-full w-full min-w-0 rounded-lg bg-transparent pr-12 pl-7.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground"
       />
-      {value ? (
-        <span className="absolute right-1 flex items-center">
-          {busy ? (
+      <span className="absolute right-1 flex items-center">
+        {value ? (
+          busy ? (
             <Spinner size="xs" className="mr-1 text-subtle-foreground" />
           ) : (
-            <SidebarMenuAction aria-label="Clear filter" onClick={() => onChange("")}>
+            <SidebarMenuAction aria-label="Clear search" onClick={() => onChange("")}>
               <Icon icon={icons.close} />
             </SidebarMenuAction>
-          )}
-        </span>
-      ) : null}
+          )
+        ) : (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="Search everything"
+            onClick={() => setPalette(true)}
+            className="flex h-5 items-center gap-0.5 rounded-sm px-1 text-subtle-foreground text-xs tabular-nums transition-colors hover:bg-foreground/6 hover:text-muted-foreground"
+          >
+            {keys.map((k) => (
+              <span key={k}>{k}</span>
+            ))}
+          </button>
+        )}
+      </span>
     </div>
   );
 }

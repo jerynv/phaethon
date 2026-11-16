@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, startCore, test, type Core } from "./core";
+import { expect, openNewSpace, startCore, test, type Core } from "./core";
 
 /**
  * The shell and chat interactions against the real core: the title bar never
@@ -28,7 +28,7 @@ function withNotes(home: string) {
 test("the view tabs stay in one place on every page, and the chat survives a page switch", async ({ page }) => {
   core = await startCore();
   await core.open(page);
-  await page.getByRole("button", { name: "New space" }).click();
+  await openNewSpace(page);
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Fall term");
   await dialog.getByRole("switch").click();
@@ -37,20 +37,20 @@ test("the view tabs stay in one place on every page, and the chat survives a pag
   await expect(views).toBeVisible();
   await composer(page).fill("a draft I haven't sent");
 
-  // Each page opens as its own tab; the search field never moves while pages come and go.
-  const search = page.getByRole("button", { name: "Search" });
-  const boxes: Record<string, { x: number; y: number; width: number }> = {};
-  const first = (await search.boundingBox())!;
+  // Each page opens as its own tab; the tab strip never moves while pages come and go.
+  const strip = page.getByRole("tablist", { name: "Open pages" });
+  const boxes: Record<string, { x: number; y: number }> = {};
+  const first = (await strip.boundingBox())!;
   for (const view of ["Study", "Grades", "Plan", "Courses"]) {
     await views.getByRole("button", { name: new RegExp(`^${view}`) }).click();
     await expect(views.getByRole("button", { name: new RegExp(`^${view}`) })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { name: view })).toHaveAttribute("aria-selected", "true");
     // Let page actions (Refresh, Save as note, …) arrive in the bar first.
     await page.waitForTimeout(400);
-    const b = (await search.boundingBox())!;
-    boxes[view] = { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width) };
+    const b = (await strip.boundingBox())!;
+    boxes[view] = { x: Math.round(b.x), y: Math.round(b.y) };
   }
-  for (const view of Object.keys(boxes)) expect(boxes[view], view).toEqual({ x: Math.round(first.x), y: Math.round(first.y), width: Math.round(first.width) });
+  for (const view of Object.keys(boxes)) expect(boxes[view], view).toEqual({ x: Math.round(first.x), y: Math.round(first.y) });
 
   await page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { name: "New chat" }).click();
   await expect(composer(page)).toHaveValue("a draft I haven't sent");
@@ -79,7 +79,23 @@ test("a file named in a reply opens in the viewer, a web link stays a link", asy
   await expect(reply.getByRole("link", { name: "the docs" })).toHaveAttribute("href", "https://example.com");
   await reply.locator('[data-slot="file-chip"][data-path="notes/plan.md"]').click();
   await expect(page.getByText("Day 1: induction")).toBeVisible();
-  await expect(reply.locator('[data-slot="file-chip"][data-path="notes/week6.md"]')).toBeVisible();
+
+  // A second file opens in its own tab beside the first; the first keeps its place.
+  const files = page.getByRole("tablist", { name: "Open files" });
+  await reply.locator('[data-slot="file-chip"][data-path="notes/week6.md"]').click();
+  await expect(files.getByRole("tab")).toHaveCount(2);
+  await expect(files.getByRole("tab", { name: "week6.md" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Week 6" })).toBeVisible();
+  // Opening one already open shows its tab instead of adding another.
+  await reply.locator('[data-slot="file-chip"][data-path="notes/plan.md"]').click();
+  await expect(files.getByRole("tab")).toHaveCount(2);
+  await expect(files.getByRole("tab", { name: "plan.md" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Day 1: induction")).toBeVisible();
+  // Closing the one on show shows its neighbour; closing the last shuts the viewer.
+  await files.getByRole("button", { name: "Close plan.md" }).click();
+  await expect(files.getByRole("tab", { name: "week6.md" })).toHaveAttribute("aria-selected", "true");
+  await files.getByRole("button", { name: "Close week6.md" }).click();
+  await expect(page.getByRole("complementary", { name: "Files" })).toHaveCount(0);
 });
 
 test("the composer completes @ with the space's files and / with commands", async ({ page }) => {

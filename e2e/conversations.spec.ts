@@ -120,9 +120,9 @@ test("New chat leaves nothing behind until something is sent", async ({ page }) 
   const newChat = page.getByRole("button", { name: "New chat", exact: true }).first();
   for (let i = 0; i < 3; i++) await newChat.click();
   await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
-  // No draft row under the space: the New chat row itself is selected, and no conversation is saved.
+  // No draft row under the space: the New chat button itself is pressed, and no conversation is saved.
   await expect(nav(page).getByRole("list", { name: "School conversations" }).getByRole("button", { name: "New chat", exact: true })).toHaveCount(0);
-  await expect(newChat).toHaveAttribute("aria-current", "page");
+  await expect(newChat).toHaveAttribute("aria-pressed", "true");
   expect(savedConversations(core)).toEqual([]);
   await send(page, "now it counts");
   await expect(page.getByText("Hi.")).toBeVisible();

@@ -40,6 +40,7 @@ type Item = {
 export function CommandPalette() {
   const open = useNav((s) => s.paletteOpen);
   const setOpen = useNav((s) => s.setPalette);
+  const startWith = useNav((s) => s.paletteQuery);
   const spaces = useNav((s) => s.spaces.data) ?? NO_SPACES;
   const active = useNav((s) => s.activeSpace);
   const edu = spaces.find((s) => s.id === active)?.educationEnabled ?? false;
@@ -52,12 +53,13 @@ export function CommandPalette() {
   const seq = useRef(0);
 
   useEffect(() => {
-    if (!open) {
+    if (open) setQuery(startWith);
+    else {
       setQuery("");
       setResults(null);
       setError(null);
     }
-  }, [open]);
+  }, [open, startWith]);
 
   useEffect(() => {
     const q = query.trim();
@@ -120,7 +122,7 @@ export function CommandPalette() {
   ];
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+    <CommandDialog open={open} onOpenChange={(o) => setOpen(o)}>
       <CommandDialogPopup className="max-w-xl">
         <Command items={groups} filter={null} value={query} onValueChange={setQuery} itemToStringValue={(i: unknown) => (i as Item).label}>
           <CommandInput placeholder="Search conversations, spaces and actions" />

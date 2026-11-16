@@ -179,11 +179,11 @@ export function ChatView({ space }: { space: SpaceView }) {
           <SurfaceError title="Couldn’t open this conversation" message={chat.error} onRetry={() => void load(space.id, thread)} />
         </div>
       ) : empty ? (
-        // The welcome (refs a163, a6e6): the mark and the question sit about two fifths down, the composer and
-        // three starters under them. No art behind it; the page's dot matrix is enough.
+        // The welcome (refs a163, a6e6): the mark, the question and the composer are one group a little above
+        // centre, a row of starter chips under it. No art behind it; the page's dot matrix is enough.
         <div className="flex grow-2 flex-col items-center justify-end px-8">
-          <div className="mb-6 flex flex-col items-center gap-4 text-center">
-            <BrandMark className="size-6" />
+          <div className="mb-5 flex flex-col items-center gap-3 text-center">
+            <BrandMark className="size-5" />
             <h1 className="text-2xl text-foreground tracking-heading">Where should we begin?</h1>
           </div>
         </div>

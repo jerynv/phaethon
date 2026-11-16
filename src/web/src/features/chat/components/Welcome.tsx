@@ -3,8 +3,7 @@ import { api, type SpaceView } from "@/app/api";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
-import { Card } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@/components/ui/button";
 import { errorText } from "@/lib/core";
 import { FILL_EVENT, type FillDetail } from "./ChatActions";
 
@@ -22,12 +21,13 @@ const GENERAL: Starter[] = [
   { id: "summarize", icon: icons.fileText, title: "Summarize", prompt: "Summarize " },
 ];
 
-
 function fill(draftKey: string, text: string) {
   window.dispatchEvent(new CustomEvent<FillDetail>(FILL_EVENT, { detail: { draftKey, text } }));
 }
 
-/** Under the welcome composer: three starter cards in a row and, at the bottom, one quiet row that brings files into the space. */
+const CHIP = "h-8 gap-1.5 px-3 font-normal text-sm sm:h-8";
+
+/** Under the welcome composer: one centred row of starter chips, and a quieter one that brings files into the space. */
 export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: string }) {
   const starters = space.educationEnabled ? STUDY : GENERAL;
   const [adding, setAdding] = useState(false);
@@ -43,25 +43,19 @@ export function Welcome({ space, draftKey }: { space: SpaceView; draftKey: strin
       .finally(() => setAdding(false));
   };
   return (
-    <div className="@container/welcome flex grow-3 flex-col items-center px-8 pb-6">
-      <div className="mt-5 grid w-full max-w-(--chat-max-width) grid-cols-1 gap-3 @xl/welcome:grid-cols-3" role="group" aria-label="Starters">
+    <div className="flex grow-3 flex-col items-center px-8 pb-6">
+      <div className="mt-3 flex w-full max-w-(--chat-max-width) flex-wrap items-center justify-center gap-2" role="group" aria-label="Starters">
         {starters.map((s) => (
-          <Card key={s.id} variant="interactive" render={<button type="button" onClick={() => fill(draftKey, s.prompt)} />} className="flex-row items-center gap-3 p-3 text-left @xl/welcome:flex-col @xl/welcome:items-start @xl/welcome:gap-4 @xl/welcome:p-4">
-            <Icon icon={s.icon} className="size-5 text-muted-foreground" />
-            <span className="font-medium text-foreground text-sm">{s.title}</span>
-          </Card>
+          <Button key={s.id} variant="outline" className={CHIP} onClick={() => fill(draftKey, s.prompt)}>
+            <Icon icon={s.icon} className="size-4" />
+            {s.title}
+          </Button>
         ))}
+        <Button variant="ghost-muted" className={CHIP} onClick={addFiles} pending={adding}>
+          <Icon icon={icons.folderAdd} className="size-4" />
+          Add files to {space.name}
+        </Button>
       </div>
-      <span className="min-h-6 flex-1" />
-      <button
-        type="button"
-        onClick={addFiles}
-        aria-busy={adding || undefined}
-        className="flex h-8 items-center gap-2 rounded-lg px-3 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      >
-        {adding ? <Spinner size="sm" /> : <Icon icon={icons.folderAdd} className="size-4" />}
-        Add files to {space.name}
-      </button>
     </div>
   );
 }

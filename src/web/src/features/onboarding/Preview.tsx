@@ -117,16 +117,16 @@ function Welcome() {
           </span>
         </div>
       </div>
-      <div className="mt-4 grid w-full max-w-md grid-cols-3 gap-2">
+      <div className="mt-2 flex w-full max-w-md flex-wrap justify-center gap-1.5">
         {[
           { icon: icons.teacher, title: "Teach me" },
           { icon: icons.quiz, title: "Quiz me" },
           { icon: icons.plan, title: "Plan my week" },
         ].map((c) => (
-          <div key={c.title} className="flex flex-col gap-4 rounded-card border bg-card p-3">
-            <Icon icon={c.icon} className="size-4 text-muted-foreground" />
-            <span className="font-medium text-xs">{c.title}</span>
-          </div>
+          <span key={c.title} className="flex h-6 items-center gap-1 rounded-full border bg-card px-2 text-xs">
+            <Icon icon={c.icon} className="size-3 text-muted-foreground" />
+            {c.title}
+          </span>
         ))}
       </div>
     </div>

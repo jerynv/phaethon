@@ -125,3 +125,32 @@ test("no page puts a control past the window's edge, from the smallest window up
     await page.keyboard.press("Escape");
   }
 });
+
+test("in a narrow window a wide formula shrinks to fit, one too wide even then scrolls with its edge faded, and off-screen messages are skipped", async ({ page }) => {
+  const matrix = String.raw`A = \begin{pmatrix}1 & 2 & 0 & 3 \\ 0 & 1 & 1 & -1 \\ 1 & 3 & 1 & 2\end{pmatrix}, \qquad \operatorname{rref}(A) = \begin{pmatrix}1 & 0 & -2 & 5 \\ 0 & 1 & 1 & -1 \\ 0 & 0 & 0 & 0\end{pmatrix}`;
+  const chain = String.raw`\text{new coordinates} \xrightarrow{P} \text{old coordinates} \xrightarrow{A} \text{transformed output} \xrightarrow{P^{-1}} \text{new coordinates again}`;
+  core = await startCore({ script: { claude: true, steps: [{ text: `Next:\n\n$$${matrix}$$\n\nand\n\n$$${chain}$$` }] } });
+  await core.open(page);
+  await page.getByRole("textbox", { name: "Message" }).fill("give me a problem");
+  await page.keyboard.press("Enter");
+  const [fits, tooWide] = [page.locator(".katex-display").first(), page.locator(".katex-display").nth(1)];
+  await expect(tooWide).toBeVisible();
+
+  await page.setViewportSize({ width: 440, height: 640 });
+  // Shrunk to fit: drawn smaller, and no longer a scroller.
+  await expect(fits).toHaveAttribute("data-fit", /^0\.\d+$/);
+  expect(await fits.evaluate((d) => d.scrollWidth - d.clientWidth)).toBe(0);
+  // At the smallest size and still too wide: it scrolls, and the side with more past it fades.
+  await expect(tooWide).toHaveAttribute("data-fit", "0.7");
+  await expect(tooWide).toHaveAttribute("data-more-end", "");
+  await expect(tooWide).not.toHaveAttribute("data-more-start", "");
+  await tooWide.evaluate((d) => (d.scrollLeft = d.scrollWidth));
+  await expect(tooWide).toHaveAttribute("data-more-start", "");
+  await expect(tooWide).not.toHaveAttribute("data-more-end", "");
+
+  // Wide again: full size.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(fits).not.toHaveAttribute("data-fit");
+  // Every message can be skipped by the browser while off screen.
+  expect(await page.locator("[data-msg]").evaluateAll((ms) => ms.map((m) => getComputedStyle(m).contentVisibility))).toEqual(["auto", "auto"]);
+});

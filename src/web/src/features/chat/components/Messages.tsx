@@ -171,7 +171,7 @@ export const UserMessage = memo(function UserMessage({ m, space, onEdit, canEdit
       }
     >
       <motion.div
-        className="group/msg flex origin-bottom-right flex-col items-end pb-5"
+        className="group/msg render-near-view flex origin-bottom-right flex-col items-end pb-5"
         data-role="user"
         data-turn={m.key}
         data-msg={m.key}
@@ -298,7 +298,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         </>
       }
     >
-      <div className="group/msg relative flex flex-col" data-role="assistant" data-status={m.status} data-msg={m.key}>
+      <div className="group/msg render-near-view relative flex flex-col" data-role="assistant" data-status={m.status} data-msg={m.key}>
         <div ref={body} className="flex flex-col">
           {segs.map((s) => {
             switch (s.type) {

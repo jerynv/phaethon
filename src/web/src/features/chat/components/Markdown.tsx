@@ -30,12 +30,31 @@ type Ctx = { space: string; streaming: boolean; messageKey: string };
 
 const KATEX_OPTIONS = { throwOnError: false, strict: "ignore", errorColor: "var(--error-foreground)" } as const;
 
+/** The smallest a display formula shrinks to fit its message before it scrolls instead. */
+const MATH_FIT_MIN = 0.7;
+
+/** Marks which sides of a sideways scroller have more past them (`data-more-start` / `data-more-end`), for the edge fade. */
+function markMore(el: HTMLElement) {
+  const more = el.scrollWidth - el.clientWidth;
+  el.toggleAttribute("data-more-start", more > 1 && el.scrollLeft > 1);
+  el.toggleAttribute("data-more-end", more > 1 && el.scrollLeft < more - 1);
+}
+
 /**
+ * Math wider than the message, rechecked when the text or width changes.
+ *
  * KaTeX breaks inline math only after relations and operators, so one
  * unbreakable piece (a long \text{}, an inline matrix, a formula that
  * failed and shows its source) can be wider than the message and push the
  * whole conversation sideways. Those few get `katex-wide`: their own
- * sideways scroll, like display math. Rechecked when the text or width changes.
+ * sideways scroll.
+ *
+ * A display formula wider than the message (a matrix in a narrow window)
+ * shrinks to fit, down to `MATH_FIT_MIN`; past that it scrolls, and the
+ * edge with more of it past fades out.
+ *
+ * A message the browser is skipping off screen (`render-near-view`) is left
+ * alone, since measuring it would lay it out, and checked when it comes near.
  */
 function useWideMath(source: string) {
   const ref = useRef<HTMLDivElement>(null);
@@ -44,17 +63,55 @@ function useWideMath(source: string) {
     if (!box || !source.includes("$")) return;
     const check = () => {
       const width = box.clientWidth;
-      // Not laid out (a hidden page): leave it as it was until it is shown.
-      if (width === 0) return;
-      const inline = [...box.querySelectorAll<HTMLElement>(".katex")].filter((k) => !k.parentElement?.closest(".katex-display"));
-      if (inline.length === 0) return;
+      // Not laid out (a hidden page), or skipped off screen: leave it as it was until it is shown.
+      if (width === 0 || !box.checkVisibility({ contentVisibilityAuto: true })) return;
+      const katex = [...box.querySelectorAll<HTMLElement>(".katex")];
+      const inline = katex.filter((k) => !k.parentElement?.closest(".katex-display"));
+      const displays = [...box.querySelectorAll<HTMLElement>(".katex-display")];
+      if (inline.length === 0 && displays.length === 0) return;
       // All writes, then all reads, then all writes: one layout for the message, not one per formula.
       for (const k of inline) k.classList.remove("katex-wide");
       const wide = inline.map((k) => k.getBoundingClientRect().width > width + 4);
+      // A formula is a row of base boxes (`katex-base`; `base` before KaTeX 0.19); its width at the current size, and that size, give the width it needs at full size.
+      const fits = displays.map((d) => {
+        const bases = d.querySelectorAll<HTMLElement>(".katex-html > :is(.katex-base, .base)");
+        if (bases.length === 0) return 1;
+        const drawn = bases[bases.length - 1]!.getBoundingClientRect().right - bases[0]!.getBoundingClientRect().left;
+        const scale = Number(d.dataset.fit ?? 1);
+        const room = d.clientWidth - 8; // its 4 px side padding
+        return Math.max(MATH_FIT_MIN, Math.min(1, room / (drawn / scale)));
+      });
       inline.forEach((k, i) => wide[i] && k.classList.add("katex-wide"));
+      displays.forEach((d, i) => {
+        const fit = Math.floor(fits[i]! * 100) / 100;
+        if (fit === Number(d.dataset.fit ?? 1)) return;
+        if (fit === 1) {
+          delete d.dataset.fit;
+          d.style.removeProperty("font-size");
+        } else {
+          d.dataset.fit = String(fit);
+          d.style.fontSize = `${fit}em`;
+        }
+      });
+      for (const d of displays) markMore(d);
     };
     check();
-    return observeResize(box, check);
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && t.classList.contains("katex-display")) markMore(t);
+    };
+    const msg = box.closest<HTMLElement>(".render-near-view");
+    const onNear = (e: Event) => {
+      if (!(e as ContentVisibilityAutoStateChangeEvent).skipped) check();
+    };
+    box.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    msg?.addEventListener("contentvisibilityautostatechange", onNear);
+    const stop = observeResize(box, check);
+    return () => {
+      stop();
+      box.removeEventListener("scroll", onScroll, { capture: true });
+      msg?.removeEventListener("contentvisibilityautostatechange", onNear);
+    };
   }, [source]);
   return ref;
 }

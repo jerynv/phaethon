@@ -551,6 +551,18 @@
   mask-composite: intersect;
 }
 
+/* One message of a conversation: off screen, the browser skips its style,
+   layout and paint (a long chat with math is tens of thousands of elements,
+   and without this every frame of a window resize lays all of them out).
+   Until first drawn it holds an estimated height; after that, its last real
+   one. It always clips like `contain: paint`, so the clip margin keeps hover
+   rows and focus rings drawn just past its box. */
+@utility render-near-view {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 12rem;
+  overflow-clip-margin: 1rem;
+}
+
 /* Drag regions for the frameless title bar (macOS). */
 @utility app-drag {
   -webkit-app-region: drag;
@@ -815,6 +827,16 @@
     padding: 0.35em 4px;
     margin: 0.6em 0;
     overscroll-behavior-x: contain;
+  }
+  /* Too wide even shrunk (see useWideMath): the edge with more past it fades out. */
+  .markdown .katex-display[data-more-end] {
+    mask-image: linear-gradient(to left, transparent, black 2rem);
+  }
+  .markdown .katex-display[data-more-start] {
+    mask-image: linear-gradient(to right, transparent, black 2rem);
+  }
+  .markdown .katex-display[data-more-start][data-more-end] {
+    mask-image: linear-gradient(to right, transparent, black 2rem, black calc(100% - 2rem), transparent);
   }
   .markdown .katex {
     font-size: 1.06em;

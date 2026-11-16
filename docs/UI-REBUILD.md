@@ -29,6 +29,7 @@ No raw values in components: use these tokens and the Tailwind scale. A one-off 
 | Token | Light | Dark | Use |
 |---|---|---|---|
 | `--canvas` | `oklch(96.4% 0 0)` | `oklch(12.8% 0 0)` | the window behind the app panel |
+| `--tab-strip` | `oklch(96.4% 0 0)` | `oklch(17.5% 0 0)` | the strip behind open tabs (title bar, viewer); the active tab is the page's colour |
 | `--background` | `oklch(100% 0 0)` | `oklch(17.2% 0 0)` | the app panel, pages, sidebar |
 | `--card` | `oklch(100% 0 0)` | `oklch(19.6% 0 0)` | cards, the composer |
 | `--well` | `oklch(98.2% 0 0)` | `oklch(100% 0 0 / 3%)` | grey inset boxes, stat tiles, card footers, the search field |
@@ -93,7 +94,7 @@ Flat. Hairlines carry all the structure: `border` is 1 px `--border` (light, nev
 
 ### Geometry and layers
 
-`--titlebar-height` 48, `--sidebar-width` 248 (user-resizable 216–420), `--chat-max-width` 736, `--page-max-width` 768, `--page-wide-max-width` 1024, `--settings-max-width` 672, `--traffic-light-inset` 76 (the only place that number appears). Layers: `z-(--z-sheet)` < `--z-dialog` < `--z-popup` < `--z-tooltip` < `--z-toast`. Responsive rules use container queries on the surface (`@container/header`, `@container/composer`, `@container/page`), not viewport breakpoints.
+`--titlebar-height` 48, `--sidebar-width` 248 (user-resizable 216–420), `--chat-max-width` 736, `--page-max-width` 768, `--page-wide-max-width` 1024, `--settings-max-width` 672, `--traffic-light-inset` 88 (17 + the 54 px button group + 17; the web side of `trafficLightPosition`). Container sizes: `titlebar-brand` 128 (the sidebar column's content box from which the wordmark spells out), `page-tab` 112 (an inactive tab narrower than this drops its ×). Layers: `z-(--z-sheet)` < `--z-dialog` < `--z-popup` < `--z-tooltip` < `--z-toast`. Responsive rules use container queries on the surface (`@container/header`, `@container/composer`, `@container/page`), not viewport breakpoints.
 
 ### Motion
 
@@ -106,9 +107,9 @@ Flat. Hairlines carry all the structure: `border` is 1 px `--border` (light, nev
 The app fills the window edge to edge: no inset panel, no outer canvas, no rounded border or shadow around it. One window, one surface.
 
 ```
-┌ window, bg-background ─────────────────────────────────────────────────────────────────┐
-│ ● ● ●  ✳ ▯  [💬 conversation][Study][Settings] …………………………………………………………………   actions │
-│──────────────────────────┬─────────────────────────────────────────────────────────────│
+┌ window ────────────────────────────────────────────────────────────────────────────────┐
+│ ● ● ●  Phaethon       ▯ │ ╭💬 conversation ×╮ Study × │ Settings ×  + …………………  actions │
+│                          │─╯                 ╰─────────────────────────────────────────│
 │ ● School             ⇕   │ main: page, faint dot matrix fading from the top            │
 │ [🔍 Search   ⌘K]  ✎      │                                                             │
 │ ⧉ Study                  │                                                             │
@@ -119,8 +120,8 @@ The app fills the window edge to edge: no inset panel, no outer canvas, no round
 └──────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-- The title bar runs across the top (48 px, bottom hairline); below it the sidebar and the main column sit side by side, split by the sidebar's hairline.
-- macOS traffic lights sit at the title bar's left end (`trafficLightPosition` 14, 18 in `src/desktop/main.ts`), which takes `pl-(--traffic-light-inset)` on macOS and `pl-4` elsewhere.
+- The title bar runs across the top (48 px). Its left end is exactly the sidebar's column: the same width (live while the sidebar is dragged, sliding with it when it opens or closes), the sidebar's colour and its hairline on the right, and no hairline under it, so the sidebar runs from the window's top to its bottom. The rest of the bar is the tab strip (`--tab-strip`, hairline along its bottom) over the main column; the tabs start at the main column's edge.
+- macOS traffic lights sit in the column's left end, centred on the 48 px bar and as far from the window's edge as from the mark: `trafficLightPosition` 17, 17 in `src/desktop/main.ts` (the buttons are 14 px, so 48 / 2 − 7), and the column takes `pl-(--traffic-light-inset)` (17 + 54 + 17 = 88) on macOS and `pl-4` elsewhere. Measured in the mock with the platform set to macOS: the buttons span x 17–71 and y 17–31, the mark x 88–102 and y 17–31.
 - The native window background is the `--background` colour so the first frame matches.
 - `DotMatrix` sits behind the top of every page (absolute, `--dot-matrix`, fading by 96 px). Pages keep a transparent background so it shows.
 - Pages fade and lift 4 px in when they become visible; hidden pages stay mounted (keep-alive views) and out of the title bar.
@@ -128,16 +129,16 @@ The app fills the window edge to edge: no inset panel, no outer canvas, no round
 
 ### Title bar (`app/Header.tsx`)
 
-One row, nothing in it moves when the page changes: `BrandMark` (16 px), the Show/Hide sidebar icon button (plus Search and New chat icons while the sidebar is hidden), the open tabs across the rest of the bar, then the page's actions slot (`Button size="sm"` pills, `icon-sm` ghost icons). There is no search field here: the sidebar has the one search field, and ⌘K opens the palette from anywhere.
+One row, nothing in it moves when the page changes. In the sidebar's column: the wordmark (`BrandWordmark`: the mark as the P of "Phaethon", 14 px at the cap height of 18 px Inter, "haethon" in 600 on the same baseline) while the column has room, else the mark alone, and the Show/Hide sidebar icon button at the column's right end, over the sidebar's New chat. With the sidebar hidden the column shrinks to the mark, the toggle and Search (the + after the tabs is New chat). Then the open tabs, a + (New chat in the space on show, keys in its tooltip) after the last, and the page's actions slot (`Button size="sm"` pills, `icon-sm` ghost icons) at the right. There is no search field here: the sidebar has the one search field, and ⌘K opens the palette from anywhere.
 
-- **Open tabs** (`tablist` "Open pages", `app/store.ts` `tabs`): every open page is a tab, like a browser's: a conversation (its title, or "New chat"), a page (Study, Grades, Plan, Courses) or Settings. A tab is 28 px, `rounded-md`, icon + truncated label, a close × that appears on hover and stays on the active tab; the active tab sits on `bg-row-selected`. A conversation opened by a plain click is a preview (italic label) and the next plain click on another conversation reuses its tab; a sent message, a double-click, ⌘-click or middle-click keeps it. Pages and Settings always open kept. Right-click a tab for Keep open, Close, Close others, Close tabs to the right and Reopen closed tab. Ctrl+Tab walks the tabs, ⌘W closes the active one, ⇧⌘T reopens the last closed, arrows move within the strip. Tabs persist across launches. Every open tab stays mounted (its state, scroll and running replies survive); only the active one is shown.
+- **Open tabs** (`tablist` "Open pages", `app/store.ts` `tabs`, drawn with `components/ui/page-tabs.tsx`): every open page is a tab, like a browser's: a conversation (its title, or "New chat"), a page (Study, Grades, Plan, Courses) or Settings. Every tab has a shape: 40 px tall at the bottom of the strip, icon + truncated label + ×. Inactive tabs sit on the strip between 16 px separators (hidden beside the active or hovered tab) and fill in (`bg-foreground/5`, `rounded-lg`) on hover; the active tab is the page's colour with a hairline edge and `rounded-t-lg` corners, breaking the strip's hairline, its lower corners flaring into it, so it reads as part of the page. Tabs share the width up to 240 px; squeezed, inactive ones drop their × and go down to 72 px (the active one keeps 112), then the strip scrolls sideways, always keeping the active tab in view. No shadows. A conversation opened by a plain click is a preview (italic label) and the next plain click on another conversation reuses its tab; a sent message, a double-click, ⌘-click or middle-click keeps it. Pages and Settings always open kept. Right-click a tab for Keep open, Close, Close others, Close tabs to the right and Reopen closed tab. Ctrl+Tab walks the tabs, ⌘W closes the active one, ⇧⌘T reopens the last closed, arrows move within the strip. Tabs persist across launches. Every open tab stays mounted (its state, scroll and running replies survive); only the active one is shown.
 - Pages render `<Header actions />`; it portals into the bar only while the page is visible. The tab is the page's title; the bar has no title slot.
 
 ### Sidebar (`app/Sidebar.tsx`, `app/sidebar/`, `components/ui/sidebar.tsx`)
 
 After 3940, a163, 9334 (rows, section labels, recents) and e0fb (status dots).
 
-- No top row of its own: the title bar holds the mark and the toggle. Content starts `pt-2` under the title bar's hairline.
+- No top row of its own: the title bar's left end is the sidebar's column and holds the wordmark and the toggle. Content starts `pt-2` under it.
 - **One space at a time.** First the space switcher (`app/sidebar/space-switcher.tsx`): a 32 px row with the space's dot, its name (`font-medium`), a blue dot when another space has a new reply or is replying, and `icons.chevronsUpDown`. It opens a menu: "Spaces" with every space (dot, name, its replying / needs-you / new-reply marks, a tick on the one on show, ⌘1–9 on the rest), then New space, New chat in the space, Show folder, Space settings. Only the chosen space's conversations are listed, so spaces never compete for the sidebar's height. A switch sweeps a thin blue line under the switcher (and keeps sweeping while the space's list loads), the name and dot pop in, and the list comes in fresh with its labels and rows stepping down into place (240 ms each, 22 ms apart, at most 12 steps).
 - Then one row: the search field (`h-7 rounded-lg border bg-well`, magnifier, "Search", the ⌘K keys as plain subtle text that open the palette) and New chat beside it as an icon button (`icons.newChat`, `size-7 rounded-lg`, pressed on `bg-row-selected` while the space's new chat is on show; its keys in the tooltip). Typing narrows the space's conversations by title (loaded rows at once, the core's matches from further back after a pause); Esc clears, ↓ moves into the matches, Enter opens the first, or the palette when nothing matches. While there is text, a quiet row under the list offers "Search everything for “…”" (the palette, starting from the text). This is the app's only search field.
 - Then the space's pages (Study, Grades, Plan, Courses) as `SidebarMenuButton` rows with their icons, keys on hover and `aria-current="page"` on the open one (list "Views"; only for a space with study tools). These rows stay put; the conversations scroll under them, 12 px below.
@@ -160,7 +161,7 @@ All in `components/ui/` unless noted. `#gallery` renders each.
 |---|---|---|
 | Button | `@/components/ui/button` | `default` = ink pill; `outline` = white pill with hairline; `accent` = blue pill (rare); `secondary` = grey; `ghost`, `ghost-muted`, `destructive`, `destructive-outline`. `shape` is `pill` for text sizes, `rect` (`rounded-control`) for icon, `xs`, `compact`, `micro` sizes; pass `shape="rect"` for a toolbar or in-card action ("Save", "Edit message"). `pending` and `success` keep their width. One `default` button per surface. |
 | Card | `@/components/ui/card` | `Card` (`default`, `well`, `ghost`, `interactive`), `CardMedia` (art across the top), `CardHeader`, `CardTitle`, `CardDescription`, `CardAction` (top-right badge or button), `CardContent`, `CardFooter` (grey, hairline above, actions right). 16 px radius, `p-5`. |
-| Tabs | `@/components/ui/tabs` | The one way to pick one of a few things: a grey track with a flat pill that slides to the chosen tab. Section tabs, value choices ("1W · 1M · All", "Quiz · Cards", a filter), everything. `size="sm"` for dense toolbars. Panels optional. There is no second tab or segmented component. |
+| Tabs | `@/components/ui/tabs` | The one way to pick one of a few things: a grey track with a flat pill that slides to the chosen tab. Section tabs, value choices ("1W · 1M · All", "Quiz · Cards", a filter), everything. `size="sm"` for dense toolbars. Panels optional. There is no second picker or segmented component (open documents are `PageTab`s, which are not a picker). |
 | Switch | `@/components/ui/switch` | Blue (`--primary`, the app's one blue) when on with a white thumb, `--input` when off. |
 | Toggle row | `@/components/ui/toggle-row` | `ToggleRow title description checked onCheckedChange icon? pending?`. The row is the label. Stack in `divide-y` inside a Card. |
 | Stat tile | `@/components/ui/stat-tile` | `StatTile label value unit? hint? delta? tone?` on `bg-well` with a soft hairline, label above a 24 px number. `StatGrid` lays them two across in a card, four across on a wide page. |
@@ -168,9 +169,10 @@ All in `components/ui/` unless noted. `#gallery` renders each.
 | Keycap and keyed actions | `@/components/ui/kbd`, `@/components/ui/key-actions` | `Kbd` is a small flat 16 px chip (`text-2xs`, faint tint, no border); `keycap` is the 20 px grey key of an approval choice. `KeyActions` + `KeyAction shortcut="Y"` is the split bar under an approval card; the card binds the keys. |
 | Steps | `@/components/ui/step-list` | `ThoughtToggle state label open onOpenChange` (the "Thinking… / Thought 12s" pill: spinner, dark tick disc, or failed mark; chevron right when closed, down when open). `StepList open` with `Step state meta? detail?` on a 1 px rail (reasoning in words). `ToolSummary summary duration running open` is the quiet "18 tools, edited 5 files, ran 2 commands › … 6m 12s" line. `formatDuration`. |
 | Work log | `@/components/ui/work-log` | After T3 Code's work log. `WorkLogList`, `WorkLogRow icon state label trailing? expanded onExpandedChange?` (a 28 px line; a chevron when it opens), `WorkLogDetails` (indented to the text, selectable), `WorkLogCommand` (a command as a row label), `WorkLogCommandBody command output full?`, `commandIsCut`. |
+| Page tabs | `@/components/ui/page-tabs` | Open documents as a browser's tabs: `pageTabStripClassName` on the bar, `PageTabList`, `PageTab active icon label closeLabel onClose menu`, `PageTabNew`. The title bar's open pages and the viewer's open files. Not a picker (that is `Tabs`). |
 | Spinner | `@/components/ui/spinner` | A faint ring with a turning arc. |
 | Art | `@/components/art` | See Art. |
-| Brand mark | `@/components/brand-mark` | `BrandMark` in Phaethon blue (`text-primary`). |
+| Brand mark | `@/components/brand-mark` | `BrandMark` in Phaethon blue (`text-primary`); `BrandWordmark` is "Phaethon" with the mark as its P. |
 | Icon | `@/components/icon`, `@/components/icons` | See Icons. |
 
 Existing primitives (menu, dialog, alert-dialog, popover, select, combobox, autocomplete, command, tooltip, input, textarea, checkbox, radio-group, badge, alert, empty, skeleton, scroll-area, sidebar, toast) keep their API; they take the new tokens automatically. Menus and popovers are `rounded-xl`, `shadow-popup`, rows `rounded-sm h-7`, icons `size-4 text-muted-foreground` (ref 8386: Settings / Language / Docs / Apps / Logout with a "New" tint badge).
@@ -192,7 +194,7 @@ Where art goes: **empty states and onboarding only.** The dot field (`DotMatrix`
 **One family: Hugeicons stroke-rounded** (`@hugeicons/core-free-icons` 4.4.0 + `@hugeicons/react` 1.1.10, both MIT). Chosen by side-by-side comparison with Tabler (1.5), Lucide (1.5) and Phosphor Light against the references: the Conduit and Alpaca screens are drawn in Hugeicons (the circles-and-plus "Apps"/"Artifacts" glyph, the door "Logout", the scan-frame "Find", the bell with the low clapper, the waving hand, the rounded terminal square), and its 24 px grid with soft joins and 1.5 px strokes matches their weight. Tabler and Lucide are thinner-cornered and geometric; Phosphor Light is lighter and smaller in the box.
 
 - Draw with `<Icon icon={icons.name} />`. Only `components/icons.ts` imports from the package; add a concept there before using a new glyph. Lucide and Phosphor are being removed screen by screen; don't add new uses.
-- Size with `size-*` only: `size-4` in chrome, rows, menus and buttons; `size-3.5` in small buttons and chips; `size-3` inline; `size-4.5` for title-bar and tool-row icons; `size-5` for an action card's or empty state's leading glyph. Default (no class) is 16 px.
+- Size with `size-*` only: `size-4` in chrome, rows, menus, buttons, tabs and work-log rows; `size-3.5` in small buttons and chips; `size-3` inline and for disclosure chevrons in work rows; `size-4.5` for title-bar icon buttons; `size-5` for an action card's or empty state's leading glyph. Default (no class) is 16 px.
 - Stroke comes from CSS: `--icon-stroke` 1.5, `--icon-stroke-small` 1.75 at 12–14 px. Never pass `strokeWidth`.
 - Brand and provider logos stay as they are (`assets/providers/`, `components/provider-icon.tsx`).
 
@@ -345,7 +347,7 @@ e0fb, dc3a, 9e25, 8bdf. Left column (`w-64`) of section rows with icons and grou
 
 ### Viewer
 
-02a1, 8bdf. The file viewer is a resizable panel at the right of the main column (hairline on its left edge). Every file opened stays open as a tab, like an editor's: the 48 px header is the tab strip ("Open files": file glyph, middle-truncated name, × on hover and on the one on show, `bg-row-selected` for it; middle-click closes, right-click offers Close, Close others, Close all, Copy path; arrows move between tabs) with one × at the end that shuts them all. Opening a file already open shows its tab; a new one opens after the one on show; past 12 the oldest not on show closes. Closing the one on show shows its neighbour. Under the strip, a 40 px toolbar for the file on show: its glyph, its folder (muted, start-truncated) and name, its size, and open externally, show in folder, copy path. Each tab keeps its own place while another is shown. The body scrolls with the document centred; a footer row for counts ("63 words · 375 characters") and Cancel/Save when editing. A side info panel (8bdf's "Skills info") is a 280 px column of label/value rows.
+02a1, 8bdf. The file viewer is a resizable panel at the right of the main column (hairline on its left edge). Every file opened stays open as a tab: the 48 px header is a tab strip drawn exactly like the title bar's (`components/ui/page-tabs.tsx`; "Open files": file glyph, middle-truncated name, ×; the one on show joins the toolbar below; middle-click closes, right-click offers Close, Close others, Close all, Copy path; arrows move between tabs) with one × at the end that shuts them all. Opening a file already open shows its tab; a new one opens after the one on show; past 12 the oldest not on show closes. Closing the one on show shows its neighbour. Under the strip, a 40 px toolbar for the file on show: its glyph, its folder (muted, start-truncated) and name, its size, and open externally, show in folder, copy path. Each tab keeps its own place while another is shown. The body scrolls with the document centred; a footer row for counts ("63 words · 375 characters") and Cancel/Save when editing. A side info panel (8bdf's "Skills info") is a 280 px column of label/value rows.
 
 ### Dialogs, menus, empty states
 

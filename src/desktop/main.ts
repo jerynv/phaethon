@@ -169,8 +169,10 @@ function createMainWindow(): BrowserWindow {
     // The web --background colour (src/web/src/index.css), so the first frame matches.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#1a1a1a" : "#ffffff",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // Centred on the 48 px title bar.
-    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 14, y: 18 } } : {}),
+    // The buttons are 14 px across: y = 48 / 2 - 7 centres them on the 48 px title bar, and x is the
+    // same 17 px from the window's left edge, as macOS does in a toolbar window. The web side leaves
+    // 17 + 54 + 17 px for them (--traffic-light-inset in src/web/src/index.css).
+    ...(process.platform === "darwin" ? { trafficLightPosition: { x: 17, y: 17 } } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

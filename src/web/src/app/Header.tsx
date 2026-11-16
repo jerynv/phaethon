@@ -1,4 +1,4 @@
-import { BrandMark } from "@/components/brand-mark";
+import { BrandWordmark } from "@/components/brand-mark";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
@@ -6,9 +6,10 @@ import { errorText } from "@/lib/core";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Truncate } from "@/components/truncate";
-import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { MenuShortcut } from "@/components/ui/menu";
+import { PageTab, PageTabList, PageTabNew, pageTabStripClassName } from "@/components/ui/page-tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -21,12 +22,17 @@ import { VIEWS } from "./views";
  * frame). There is exactly one, rendered by the shell, so nothing in it moves
  * when the page changes:
  *
- *   ● ● ●  ✳ ▯  [tab] [tab] [tab] ………………………………………… [page actions]
+ *   ● ● ●  Phaethon        ▯ │╭tab╮ tab │ tab  + ………………………… [page actions]
+ *   └──── the sidebar's column ────┘
  *
- * The mark and the sidebar toggle, then the open tabs (every open page: a
- * conversation, a study page, settings) across the rest of the bar, and the
- * page's actions. Search lives in the sidebar (and on ⌘K); with the sidebar
- * hidden, its icon joins New chat by the toggle. A
+ * The left end is exactly the sidebar's column (its width, live while it is
+ * dragged, its colour and its hairline): the traffic lights on macOS, the
+ * wordmark (the mark alone when the column is narrow) and the sidebar toggle
+ * at its right end. The open tabs (every open page: a conversation, a study
+ * page, settings) start at the main column's edge, as a browser's tabs, with
+ * a + for a new chat after the last, then the page's actions. With the
+ * sidebar hidden the column shrinks to the mark, the toggle and Search, and
+ * the tabs follow them. A
  * page fills the actions by rendering `<Header actions />` anywhere in its
  * tree: it portals into the bar, and only while that page is the visible one
  * (a page kept alive in the background stays out of the bar). The tab is the
@@ -149,80 +155,52 @@ function TabButton({ tab, active, last, only }: { tab: OpenTab; active: boolean;
     if (active) ref.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
   return (
-    <ContextMenu>
-    <ContextMenuTrigger
-      render={<div />}
+    <PageTab
       ref={ref}
-      role="tab"
-      tabIndex={active ? 0 : -1}
-      aria-selected={active}
+      active={active}
       data-tab={tab.id}
       data-kept={tab.kept || undefined}
       onClick={() => activate(tab.id)}
       onDoubleClick={() => keep(tab.id)}
-      onAuxClick={(e) => {
-        if (e.button === 1) close(tab.id);
-      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           activate(tab.id);
         } else if (e.key === "Delete" || e.key === "Backspace") close(tab.id);
       }}
-      className={cn(
-        "group/tab relative flex h-7 max-w-48 min-w-0 shrink-0 cursor-default select-none items-center gap-1.5 rounded-md pr-1 pl-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-        active ? "bg-row-selected text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      <Icon icon={icon} className="size-3.5 shrink-0" />
-      <Truncate tooltip={space && space !== label ? `${label} · ${space}` : label} side="bottom" className={cn("min-w-0 flex-1", !tab.kept && "italic")}>
-        {label}
-      </Truncate>
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label={`Close ${label}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          close(tab.id);
-        }}
-        className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-[opacity,background-color,color] hover:bg-foreground/8 hover:text-foreground",
-          active ? "opacity-100" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100",
-        )}
-      >
-        <Icon icon={icons.close} className="size-3" />
-      </button>
-    </ContextMenuTrigger>
-    <ContextMenuPopup>
-      <TabMenuItems tab={tab} last={last} only={only} />
-    </ContextMenuPopup>
-    </ContextMenu>
+      icon={<Icon icon={icon} />}
+      label={
+        <Truncate tooltip={space && space !== label ? `${label} · ${space}` : label} side="bottom" className={cn("min-w-0 flex-1", !tab.kept && "italic")}>
+          {label}
+        </Truncate>
+      }
+      closeLabel={`Close ${label}`}
+      onClose={() => close(tab.id)}
+      menu={<TabMenuItems tab={tab} last={last} only={only} />}
+    />
   );
 }
 
-/** Every open page, as a browser-like strip. Ctrl+Tab walks it, ⌘W closes the active one, ⇧⌘T brings the last closed back. */
+/** Every open page, as a browser's strip. Ctrl+Tab walks it, ⌘W closes the active one, ⇧⌘T brings the last closed back. */
 function TabStrip() {
   const tabs = useNav((s) => s.tabs);
   const active = useNav((s) => s.activeTab);
   const cycle = useNav((s) => s.cycleTab);
   return (
-    <div
-      role="tablist"
+    <PageTabList
       aria-label="Open pages"
-      className="app-no-drag scroll-quiet flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1"
       onKeyDown={(e) => {
         if (e.key === "ArrowRight") cycle(1);
         else if (e.key === "ArrowLeft") cycle(-1);
         else return;
         e.preventDefault();
-        requestAnimationFrame(() => (document.querySelector<HTMLElement>('[role="tablist"][aria-label="Open pages"] [aria-selected="true"]'))?.focus());
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="tablist"][aria-label="Open pages"] [aria-selected="true"]')?.focus());
       }}
     >
       {tabs.map((t, i) => (
         <TabButton key={t.id} tab={t} active={t.id === active} last={i === tabs.length - 1} only={tabs.length === 1} />
       ))}
-    </div>
+    </PageTabList>
   );
 }
 
@@ -237,31 +215,62 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
   const toggle = useNav((s) => s.toggleSidebar);
   const newChat = useNav((s) => s.newChat);
   const setPalette = useNav((s) => s.setPalette);
+  const startChat = () => {
+    if (space) void newChat(space.id).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)));
+  };
   return (
     <header
       data-slot="app-header"
       data-sidebar={sidebarOpen ? "open" : "closed"}
-      className={cn("group/header @container/header app-drag grid h-(--titlebar-height) shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b pr-3", isMac() ? "pl-(--traffic-light-inset)" : "pl-4")}
+      className={cn("group/header app-drag relative flex h-(--titlebar-height) shrink-0 items-stretch", pageTabStripClassName)}
     >
-      <div className="flex shrink-0 items-center gap-1">
-        <BrandMark className="size-4 shrink-0" label="Phaethon" />
+      {/*
+        The sidebar's column: its width (min-width animates with the sidebar's slide and follows a drag at once),
+        its colour and hairline, covering the strip's hairline so the column runs unbroken into the sidebar.
+      */}
+      <div
+        data-slot="titlebar-lead"
+        className={cn(
+          "relative z-10 flex shrink-0 items-center gap-1 transition-[min-width,max-width,background-color] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
+          isMac() ? "pl-(--traffic-light-inset)" : "pl-4",
+          sidebarOpen ? "@container/lead min-w-(--sidebar-width) max-w-(--sidebar-width) border-r bg-sidebar pr-1.75" : "min-w-0 max-w-none pr-0",
+        )}
+      >
+        <BrandWordmark showName={sidebarOpen} nameClassName="hidden @titlebar-brand/lead:inline" markClassName="@titlebar-brand/lead:relative @titlebar-brand/lead:top-px" />
+        {sidebarOpen ? <span className="flex-1" /> : null}
         <HeaderIconButton label={sidebarOpen ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
           <Icon icon={icons.sidebar} />
         </HeaderIconButton>
+        {/* With the sidebar hidden its search comes along; its New chat is the + after the tabs. */}
         {!sidebarOpen && space ? (
-          <>
-            <HeaderIconButton label="Search" keys={keysFor("search").keys} onClick={() => setPalette(true)}>
-              <Icon icon={icons.search} />
-            </HeaderIconButton>
-            <HeaderIconButton label="New chat" keys={keysFor("newChat").keys} onClick={() => void newChat(space.id).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)))}>
-              <Icon icon={icons.newChat} />
-            </HeaderIconButton>
-          </>
+          <HeaderIconButton label="Search" keys={keysFor("search").keys} onClick={() => setPalette(true)}>
+            <Icon icon={icons.search} />
+          </HeaderIconButton>
         ) : null}
       </div>
-      <TabStrip />
-      <div ref={bind.title} hidden />
-      <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex min-w-0 items-center justify-end gap-1" />
+      <div className="flex min-w-0 flex-1 items-end">
+        <TabStrip />
+        {space ? (
+          <div className="flex h-10 shrink-0 items-center">
+            <Tooltip>
+              <TooltipTrigger render={<PageTabNew label="New chat" onClick={startChat} className="-ml-1" />} />
+              <TooltipPopup side="bottom">
+                <span className="flex items-center gap-2">
+                  New chat
+                  <KbdGroup>
+                    {keysFor("newChat").keys.map((k) => (
+                      <Kbd key={k}>{k}</Kbd>
+                    ))}
+                  </KbdGroup>
+                </span>
+              </TooltipPopup>
+            </Tooltip>
+          </div>
+        ) : null}
+        <div className="h-full min-w-4 flex-1" />
+        <div ref={bind.title} hidden />
+        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-10 min-w-0 shrink-0 items-center justify-end gap-1 pr-3" />
+      </div>
     </header>
   );
 }

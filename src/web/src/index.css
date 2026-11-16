@@ -15,9 +15,13 @@
   --control-radius: 0.625rem;
   --sidebar-width: 15.5rem;
   --titlebar-height: 3rem;
-  /* The gap between the window edge and the app panel (docs/UI-REBUILD.md › App frame). */
-  /* Room for macOS's traffic lights when content starts at the window's left edge. */
-  --traffic-light-inset: 4.75rem;
+  /*
+   * Room for macOS's traffic lights at the title bar's left end: the 54 px
+   * group (three 14 px buttons, 6 px apart) placed 17 px from the window's
+   * edge (trafficLightPosition in src/desktop/main.ts), and the same 17 px
+   * again before the mark: 17 + 54 + 17.
+   */
+  --traffic-light-inset: 5.5rem;
   --chat-max-width: 46rem;
   /* Where the onboarding column starts, so the title stays put between steps. */
   --onboarding-top: 14vh;
@@ -55,6 +59,8 @@
 
   --canvas: oklch(96.4% 0 0);
   --background: oklch(100% 0 0);
+  /* The title bar's tab strip, behind the open tabs; the active tab is the page's colour. */
+  --tab-strip: oklch(96.4% 0 0);
   --foreground: oklch(23% 0 0);
   --sidebar: var(--background);
   --sidebar-foreground: oklch(30% 0 0);
@@ -157,6 +163,7 @@
 
   --canvas: oklch(19% 0 0);
   --background: oklch(21.8% 0 0);
+  --tab-strip: oklch(17.5% 0 0);
   --foreground: oklch(95.5% 0 0);
   --sidebar: var(--background);
   --sidebar-foreground: oklch(88% 0 0);
@@ -214,12 +221,13 @@
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /*
-   * The title bar (app/Header.tsx): below header-labels the view tabs show
-   * icons only, leaving the page title room; below header-title the title is
-   * dropped rather than shown as "Str…".
+   * The title bar's sidebar column (app/Header.tsx) spells out "Phaethon"
+   * beside the mark while its content box (inside the traffic-light inset)
+   * has room for the wordmark and the toggle.
    */
-  --container-header-labels: 40rem;
-  --container-header-title: 7rem;
+  --container-titlebar-brand: 8rem;
+  /* Below this an inactive page tab (components/ui/page-tabs.tsx) drops its ×, as a browser's does. */
+  --container-page-tab: 7rem;
 
   /* The type scale (docs/UI-REBUILD.md › Typeface and type scale). */
   --text-3xs: 0.625rem;
@@ -248,6 +256,7 @@
 
 @theme inline {
   --color-canvas: var(--canvas);
+  --color-tab-strip: var(--tab-strip);
   --color-well: var(--well);
   --color-ink: var(--ink);
   --color-ink-foreground: var(--ink-foreground);
@@ -421,6 +430,37 @@
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
 }
+/*
+ * The active page tab's lower corners (components/ui/page-tabs.tsx): an 8 px
+ * square either side of the tab, filled with the page's colour outside a
+ * quarter circle, with a hairline along the curve, so the tab's sides flare
+ * into the strip's bottom hairline the way a browser's tab does. The square
+ * overlaps the tab by 1 px so the curve continues the tab's own border.
+ */
+@utility page-tab-foot {
+  --foot: 0.5rem;
+  position: absolute;
+  bottom: 0;
+  width: var(--foot);
+  height: var(--foot);
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--foot-x, 0) 0,
+    transparent calc(var(--foot) - 1.5px),
+    var(--border) calc(var(--foot) - 1px),
+    var(--border) calc(var(--foot) - 0.25px),
+    var(--background) var(--foot)
+  );
+  &[data-side="start"] {
+    --foot-x: 0%;
+    left: calc(1px - var(--foot));
+  }
+  &[data-side="end"] {
+    --foot-x: 100%;
+    right: calc(1px - var(--foot));
+  }
+}
+
 /* Scrolls without a scrollbar (the chat; its history rail stands in). */
 @utility scroll-quiet {
   overflow-y: auto;

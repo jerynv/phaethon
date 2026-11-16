@@ -117,7 +117,8 @@ test("stopping one conversation leaves the other replying", async ({ page }) => 
 test("New chat leaves nothing behind until something is sent", async ({ page }) => {
   core = await startCore({ script: { claude: true, steps: [{ text: "Hi." }] } });
   await core.open(page);
-  const newChat = page.getByRole("button", { name: "New chat", exact: true }).first();
+  // The sidebar's New chat (the title bar's + after the tabs does the same, unpressed).
+  const newChat = nav(page).getByRole("button", { name: "New chat", exact: true }).first();
   for (let i = 0; i < 3; i++) await newChat.click();
   await expect(page.getByRole("heading", { name: "Where should we begin?" })).toBeVisible();
   // No draft row under the space: the New chat button itself is pressed, and no conversation is saved.

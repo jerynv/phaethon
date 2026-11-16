@@ -5,7 +5,8 @@ import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
-import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
+import { PageTab, PageTabList, pageTabStripClassName } from "@/components/ui/page-tabs";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatBytes } from "@/features/courses/lib/sites";
@@ -109,9 +110,10 @@ export function FileViewer() {
           }
         }}
       />
-      <header className="app-drag flex h-(--titlebar-height) shrink-0 items-center gap-1 border-b pr-2 pl-2">
+      <header className={cn("app-drag relative flex h-(--titlebar-height) shrink-0 items-end", pageTabStripClassName)}>
         <FileTabs files={files} active={target} />
-        <div className="app-no-drag flex shrink-0 items-center">
+        <div className="h-full min-w-2 flex-1" />
+        <div className="app-no-drag flex h-10 shrink-0 items-center pr-2">
           <HeaderButton label={files.length > 1 ? "Close all files" : "Close"} onClick={closeAll}>
             <Icon icon={icons.close} />
           </HeaderButton>
@@ -125,7 +127,7 @@ export function FileViewer() {
   );
 }
 
-/** The open files as tabs: glyph and name (middle-cut), × on hover and on the one on show. Arrows move between them. */
+/** The open files as a browser's tabs (components/ui/page-tabs.tsx): glyph, middle-cut name and ×. Arrows move between them. */
 function FileTabs({ files, active }: { files: ViewerFile[]; active: ViewerFile }) {
   const show = useNav((s) => s.showFile);
   const close = useNav((s) => s.closeFile);
@@ -144,11 +146,9 @@ function FileTabs({ files, active }: { files: ViewerFile[]; active: ViewerFile }
     requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
   };
   return (
-    <div
+    <PageTabList
       ref={listRef}
-      role="tablist"
       aria-label="Open files"
-      className="app-no-drag scroll-quiet flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden"
       onKeyDown={(e) => {
         if (e.key === "ArrowRight") step(1);
         else if (e.key === "ArrowLeft") step(-1);
@@ -161,74 +161,54 @@ function FileTabs({ files, active }: { files: ViewerFile[]; active: ViewerFile }
         const on = key === activeKey;
         const name = nameOf(f.path);
         return (
-          <ContextMenu key={key}>
-            <ContextMenuTrigger
-              render={<div />}
-              role="tab"
-              tabIndex={on ? 0 : -1}
-              aria-selected={on}
-              aria-label={name}
-              title={f.path}
-              data-file={key}
-              onClick={() => show(f)}
-              onAuxClick={(e) => {
-                if (e.button === 1) close(f);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  show(f);
-                } else if (e.key === "Delete" || e.key === "Backspace") close(f);
-              }}
-              className={cn(
-                "group/ftab flex h-7 max-w-56 min-w-16 shrink-0 cursor-default select-none items-center gap-1.5 rounded-md pr-1 pl-2 text-sm outline-none transition-colors animate-in fade-in duration-150 focus-visible:ring-2 focus-visible:ring-ring",
-                on ? "bg-row-selected text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
-              )}
-            >
-              <FileIcon kind={kindOfName(name)} name={name} className="size-3.5" />
-              <MiddleTruncate value={name} className="min-w-0 flex-1 [&>span]:whitespace-pre" />
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-label={`Close ${name}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  close(f);
-                }}
-                className={cn(
-                  "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-[opacity,background-color,color] hover:bg-foreground/8 hover:text-foreground",
-                  on ? "opacity-100" : "opacity-0 group-hover/ftab:opacity-100",
-                )}
-              >
-                <Icon icon={icons.close} className="size-3" />
-              </button>
-            </ContextMenuTrigger>
-            <ContextMenuPopup>
-              <ContextMenuItem onClick={() => close(f)}>
-                <Icon icon={icons.close} />
-                Close
-              </ContextMenuItem>
-              <ContextMenuItem className="ps-7" disabled={files.length < 2} onClick={() => closeOthers(f)}>
-                Close others
-              </ContextMenuItem>
-              <ContextMenuItem className="ps-7" onClick={closeAll}>Close all</ContextMenuItem>
-              <ContextMenuSeparator />
-              <ContextMenuItem
-                onClick={() =>
-                  navigator.clipboard.writeText(f.path).then(
-                    () => toast.success("Copied"),
-                    () => toast.error("Couldn’t copy the path", "The clipboard isn’t available right now. Try again."),
-                  )
-                }
-              >
-                <Icon icon={icons.copy} />
-                Copy path
-              </ContextMenuItem>
-            </ContextMenuPopup>
-          </ContextMenu>
+          <PageTab
+            key={key}
+            active={on}
+            aria-label={name}
+            title={f.path}
+            data-file={key}
+            className="animate-in fade-in duration-150"
+            onClick={() => show(f)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                show(f);
+              } else if (e.key === "Delete" || e.key === "Backspace") close(f);
+            }}
+            icon={<FileIcon kind={kindOfName(name)} name={name} />}
+            label={<MiddleTruncate value={name} className="min-w-0 flex-1 [&>span]:whitespace-pre" />}
+            closeLabel={`Close ${name}`}
+            onClose={() => close(f)}
+            menu={
+              <>
+                <ContextMenuItem onClick={() => close(f)}>
+                  <Icon icon={icons.close} />
+                  Close
+                </ContextMenuItem>
+                <ContextMenuItem className="ps-7" disabled={files.length < 2} onClick={() => closeOthers(f)}>
+                  Close others
+                </ContextMenuItem>
+                <ContextMenuItem className="ps-7" onClick={closeAll}>
+                  Close all
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  onClick={() =>
+                    navigator.clipboard.writeText(f.path).then(
+                      () => toast.success("Copied"),
+                      () => toast.error("Couldn’t copy the path", "The clipboard isn’t available right now. Try again."),
+                    )
+                  }
+                >
+                  <Icon icon={icons.copy} />
+                  Copy path
+                </ContextMenuItem>
+              </>
+            }
+          />
         );
       })}
-    </div>
+    </PageTabList>
   );
 }
 

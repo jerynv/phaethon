@@ -19,3 +19,35 @@ export function BrandMark({ className, label }: { className?: string; label?: st
     </svg>
   );
 }
+
+/**
+ * "Phaethon" with the mark as its P: the mark at the cap height of 18 px
+ * Inter (13 px of glyph in its 14 px box), then "haethon" on the same
+ * baseline, in the weight that matches the mark's strokes. While the name
+ * shows, pass `relative top-px` in `markClassName` to seat the glyph's foot on
+ * the baseline.
+ */
+export function BrandWordmark({
+  className,
+  markClassName,
+  nameClassName,
+  showName = true,
+}: {
+  className?: string;
+  markClassName?: string;
+  /** For hiding the name when there's no room (a container query), leaving the mark. */
+  nameClassName?: string;
+  showName?: boolean;
+}) {
+  return (
+    <span role="img" aria-label="Phaethon" className={cn("inline-flex shrink-0 select-none items-baseline", className)}>
+      {/* The glyph's foot sits a pixel above its box's bottom: next to the name it drops onto the text's baseline. */}
+      <BrandMark className={cn("size-3.5", markClassName)} />
+      {showName ? (
+        <span aria-hidden className={cn("-ml-px font-semibold text-foreground text-xl leading-none tracking-title", nameClassName)}>
+          haethon
+        </span>
+      ) : null}
+    </span>
+  );
+}

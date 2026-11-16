@@ -158,7 +158,7 @@ export function resolve(space: string, visible: Visible, rel: string): Source {
 }
 
 /** One imported course a space can make cards from, and which standard parts it has. */
-export type CourseSource = { name: string; folder: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };
+export type CourseSource = { name: string; folder: string; code?: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };
 
 export function courses(visible: Visible): CourseSource[] {
   const out: CourseSource[] = [];
@@ -172,6 +172,7 @@ export function courses(visible: Visible): CourseSource[] {
     out.push({
       name: seen.state.name.trim() === "" ? folderOf(seen) : seen.state.name,
       folder: `courses/${folderOf(seen)}`,
+      ...(seen.state.code?.trim() ? { code: seen.state.code.trim() } : {}),
       syllabus: can(seen, "syllabus") && plain("syllabus.md"),
       assignments: can(seen, "assignments") && plain("assignments.md"),
       files: can(seen, "files") && plain("files"),

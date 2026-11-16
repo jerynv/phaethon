@@ -149,7 +149,8 @@ export type QuizOptions = {
   context?: string;
 };
 
-export type CourseSource = { name: string; folder: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };
+/** `code` is the course site's code ("MTH 214"), when it has one. */
+export type CourseSource = { name: string; folder: string; code?: string; syllabus: boolean; assignments: boolean; files: boolean; readings: boolean };
 
 export type ExamScope = {
   title: string;

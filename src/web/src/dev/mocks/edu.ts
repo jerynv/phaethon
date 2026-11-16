@@ -123,7 +123,7 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
   ? {}
   : {
       "study/decks/Sets and functions.md": {
-        title: "Sets and functions",
+        title: "MTH 214 Sets and functions",
         course: "Logic and Discrete Math",
         sources: [`${CS101}/files/Course notes chapter 2.pdf`, `${CS101}/syllabus.md`],
         cards: [
@@ -136,7 +136,7 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
         ],
       },
       "study/decks/Logic and proofs.md": {
-        title: "Logic and proofs",
+        title: "MTH 214: Logic and proofs",
         course: "Logic and Discrete Math",
         sources: [`${CS101}/modules.md`],
         cards: [
@@ -145,8 +145,19 @@ const decks: Record<string, { title: string; course?: string; sources: string[];
           { front: "What does a proof by contradiction assume?", back: "That the statement is false, then derives a contradiction.", confidence: 4, due: now0 + 2 * DAY },
         ],
       },
+      "study/decks/Relations.md": {
+        title: "Logic and Discrete Math — Relations",
+        course: "Logic and Discrete Math",
+        sources: [`${CS101}/modules.md`],
+        cards: [
+          { front: "What makes a relation on $A$ reflexive?", back: "Every $a \\in A$ is related to itself: $(a, a) \\in R$." },
+          { front: "A relation that is reflexive, symmetric and transitive is an {{equivalence relation}}.", back: "" },
+          { front: "What is a partial order?", back: "A relation that is reflexive, antisymmetric and transitive." },
+          { front: "What is the transitive closure of $R$?", back: "The smallest transitive relation that contains $R$." },
+        ],
+      },
       "study/decks/Integration techniques.md": {
-        title: "Integration techniques",
+        title: "MTH 162 Integration techniques",
         course: "Calculus II",
         sources: [`${CALC}/files/Section 7.1.pdf`],
         cards: [
@@ -253,17 +264,37 @@ const quizzes: Record<string, { title: string; course?: string; sources: string[
   ? {}
   : {
       "study/quizzes/Test 1 practice.json": {
-        title: "Test 1 practice",
+        title: "MTH 214 Test 1 practice",
         course: "Logic and Discrete Math",
         sources: [CS101],
         created: now0 - 2 * DAY,
         questions: test1,
         grounding,
-        lastScore: 0.6,
+        lastScore: 0.68,
         lastTaken: now0 - DAY,
       },
+      "study/quizzes/Induction drill.json": {
+        title: "MTH 214 – Induction drill",
+        course: "Logic and Discrete Math",
+        sources: [CS101],
+        created: now0 - 3 * 3600_000,
+        questions: [
+          { id: "i1", kind: "choice", prompt: "What does the inductive step of a proof by induction show?", choices: ["$P(k) \\to P(k + 1)$", "$P(1)$", "$P(k)$ for every $k$"], answer: "$P(k) \\to P(k + 1)$", explanation: "The step carries the statement from one case to the next.", source: `${CS101}/modules.md` },
+          { id: "i2", kind: "truefalse", prompt: "Strong induction may assume $P(1), \\dots, P(k)$ to prove $P(k + 1)$.", choices: ["true", "false"], answer: "true", explanation: "That is what makes it strong." },
+          { id: "i3", kind: "truefalse", prompt: "A base case is optional when the inductive step holds.", choices: ["true", "false"], answer: "false", explanation: "Without a base case nothing gets started." },
+        ],
+      },
+      "study/quizzes/Sets quiz.json": {
+        title: "MTH214: Sets and functions quiz",
+        course: "Logic and Discrete Math",
+        sources: [CS101],
+        created: now0 - 4 * DAY,
+        questions: test1.slice(0, 2).concat(test1.slice(3, 4)),
+        lastScore: 0.33,
+        lastTaken: now0 - 3 * DAY,
+      },
       "study/quizzes/Series and sequences.json": {
-        title: "Series and sequences",
+        title: "MTH 162 Series and sequences",
         course: "Calculus II",
         sources: [CALC],
         created: now0 - 5 * DAY,
@@ -585,7 +616,7 @@ export default {
     spaceOk(args);
     return courseInfos()
       .filter((c) => (access[String(args.space)]?.[c.key]?.length ?? 0) > 0)
-      .map((c) => ({ name: c.name, folder: c.folder, syllabus: true, assignments: true, files: true, readings: c.courseId !== "103" }));
+      .map((c) => ({ name: c.name, folder: c.folder, ...(c.code ? { code: c.code } : {}), syllabus: true, assignments: true, files: true, readings: c.courseId !== "103" }));
   },
   study_overview: async (args: Args) => {
     spaceOk(args);

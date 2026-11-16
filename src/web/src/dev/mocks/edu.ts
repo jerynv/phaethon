@@ -27,13 +27,23 @@ const spaces = [
 // ---- Course sites ----
 
 const ALL = ["overview", "syllabus", "assignments", "announcements", "files", "grades"];
-const lmsCourseList = [
-  { id: "101", name: "Logic and Discrete Math", code: "MTH 214", term: "Fall 2026", current: true },
-  { id: "102", name: "Calculus II", code: "MTH 162", term: "Fall 2026", current: true },
-  { id: "103", name: "Mind and Behavior", code: "PSY 105", term: "Fall 2026", current: true },
-  { id: "104", name: "Beginning Spanish", code: "SPN 101", term: "Fall 2026", current: true },
-  { id: "90", name: "Programming Foundations", code: "CMP 110", term: "Spring 2026", current: false },
-  { id: "91", name: "Writing Studio", code: "WRT 120", term: "Spring 2026", current: false },
+// Names arrive the way a registrar stores them (term prefix, capitals, CRN); `folder` is what an import names the course's folder.
+const lmsCourseList: { id: string; name: string; code?: string; term?: string; current: boolean; folder: string }[] = [
+  { id: "101", name: "FA26: LOGIC AND DISCRETE MATH: 40211", code: "FA26-NF-MTH-214-001", term: "Fall 2026", current: true, folder: "Logic and Discrete Math" },
+  { id: "102", name: "FA26: CALCULUS II - SEC 002: 40388", code: "FA26-NF-MTH-162-002", term: "Fall 2026", current: true, folder: "Calculus II" },
+  { id: "103", name: "FA26: MIND AND BEHAVIOR: 41502", code: "FA26-NF-PSY-105-001", term: "Fall 2026", current: true, folder: "Mind and Behavior" },
+  { id: "104", name: "FA26: BEGINNING SPANISH I: 41977", code: "FA26-NF-SPN-101-003", term: "Fall 2026", current: true, folder: "Beginning Spanish I" },
+  { id: "105", name: "FA26: INTRO PLACEHOLDER STUDIES: 42010", code: "FA26-NF-PLC-100-001", term: "Fall 2026", current: true, folder: "Intro Placeholder Studies" },
+  { id: "106", name: "FA26: WEB DESIGN WITH HTML AND CSS: 42288", code: "FA26-NF-CMP-140-001", term: "Fall 2026", current: true, folder: "Web Design with HTML and CSS" },
+  { id: "90", name: "SP26: PROGRAMMING FOUNDATIONS: 30112", code: "SP26-NF-CMP-110-001", term: "Spring 2026", current: false, folder: "Programming Foundations" },
+  { id: "91", name: "SP26: WRITING STUDIO: 30440", code: "SP26-NF-WRT-120-002", term: "Spring 2026", current: false, folder: "Writing Studio" },
+  { id: "92", name: "SP26: GENERAL CHEMISTRY I LAB: 30871", code: "SP26-NF-CHM-111L-004", term: "Spring 2026", current: false, folder: "General Chemistry I Lab" },
+  { id: "93", name: "SP26: US HISTORY SINCE 1877: 31004", code: "SP26-NF-HIS-202-001", term: "Spring 2026", current: false, folder: "US History Since 1877" },
+  { id: "94", name: "SP26: PLACEHOLDER ETHICS: 31266", code: "SP26-NF-PHL-130-001", term: "Spring 2026", current: false, folder: "Placeholder Ethics" },
+  { id: "95", name: "FA25: INTRO TO STATISTICS: 20333", code: "FA25-NF-MTH-120-005", term: "Fall 2025", current: false, folder: "Intro to Statistics" },
+  { id: "96", name: "FA25: PUBLIC SPEAKING: 20519", code: "FA25-NF-COM-101-002", term: "Fall 2025", current: false, folder: "Public Speaking" },
+  { id: "97", name: "FA25: FIRST-YEAR SEMINAR: 20077", code: "FA25-NF-FYS-100-011", term: "Fall 2025", current: false, folder: "First-Year Seminar" },
+  { id: "98", name: "SU25: SAMPLE ART APPRECIATION: 10650", code: "SU25-NF-ART-105-001", term: "Summer 2025", current: false, folder: "Sample Art Appreciation" },
 ];
 const schools = [
   { name: "Northfield State University", address: "https://canvas.northfield.example" },
@@ -51,13 +61,13 @@ const connections: { id: string; kind: string; address: string; schoolName?: str
         schoolName: "Northfield State University",
         signedIn: scenario !== "signedout",
         lastSync: Date.now() - 3 * DAY,
-        courses: ["101", "102", "103"],
+        courses: ["101", "102", "103", "105", "106", "90", "92", "93", "94", "95", "96", "97", "98"],
       },
     ];
 const access: Record<string, Record<string, string[]>> = empty
   ? {}
   : {
-      school: { "c1/101": [...ALL], "c1/102": [...ALL], "c1/103": ["overview", "syllabus", "assignments", "announcements", "files"] },
+      school: { "c1/101": [...ALL], "c1/102": [...ALL], "c1/103": ["overview", "syllabus", "assignments", "announcements", "files"], "c1/105": [...ALL], "c1/106": [...ALL] },
       work: {},
     };
 const material = {
@@ -80,7 +90,7 @@ function courseInfos() {
   return connections
     .flatMap((c) =>
       c.courses.map((id) => {
-        const x = lmsCourseList.find((k) => k.id === id) ?? { name: id, code: undefined, term: undefined };
+        const x = lmsCourseList.find((k) => k.id === id) ?? { name: id, code: undefined, term: undefined, folder: id };
         return {
           key: `${c.id}/${id}`,
           connection: c.id,
@@ -88,7 +98,7 @@ function courseInfos() {
           name: x.name,
           ...(x.code ? { code: x.code } : {}),
           ...(x.term ? { term: x.term } : {}),
-          folder: `courses/${x.name}`,
+          folder: `courses/${x.folder}`,
           ...(material[id] ? { material: material[id] } : {}),
         };
       }),
@@ -502,7 +512,7 @@ export default {
     const c = connections.find((x) => x.id === args.connection);
     if (!c) throw "That course site isn’t connected.";
     if (!c.signedIn) throw "You’ve been signed out of your course site. Sign in again to continue.";
-    return lmsCourseList.map((x) => ({ ...x, imported: c.courses.includes(x.id), ...(x.id === "104" && c.courses.length ? { partial: true } : {}) }));
+    return lmsCourseList.map(({ folder: _, ...x }) => ({ ...x, imported: c.courses.includes(x.id), ...(x.id === "104" && c.courses.length ? { partial: true } : {}) }));
   },
   lms_import: async (args: Args) => {
     const send = streamTo(args.onEvent);
@@ -513,7 +523,8 @@ export default {
     importCancel = () => (cancelled = true);
     const late: (() => void)[] = [];
     for (const id of ids) {
-      const name = lmsCourseList.find((x) => x.id === id)?.name ?? id;
+      const course = lmsCourseList.find((x) => x.id === id);
+      const name = course?.name ?? id;
       const steps: [string, number, number][] = [["reading", 0, 1], ["reading", 1, 1], ["files", 0, 12], ["files", 5, 12], ["files", 12, 12], ["readings", 0, 2], ["readings", 2, 2], ["writing", 0, 1]];
       for (const [step, done, total] of steps) {
         await sleep(350);
@@ -530,7 +541,7 @@ export default {
         c.courses.push(id);
         for (const s of args.spaces as string[]) (access[s] ??= {})[`${c.id}/${id}`] = [...ALL];
       }
-      const event = { type: "course", course: id, folder: `courses/${name}`, files: 12 + (Number(id) % 7), readings: Number(id) % 4, links: 5, skipped: id === "103" ? ["Announcements: the site didn’t answer.", "File “Quiz 3 key.pdf”: locked for now"] : [], ...(material[id] ? { material: material[id] } : {}) };
+      const event = { type: "course", course: id, folder: `courses/${course?.folder ?? id}`, files: 12 + (Number(id) % 7), readings: Number(id) % 4, links: 5, skipped: id === "103" ? ["Announcements: the site didn’t answer.", "File “Quiz 3 key.pdf”: locked for now"] : [], ...(material[id] ? { material: material[id] } : {}) };
       // The last course's event is big; it lands after the command has returned, as Tauri did with 8 KB+ messages.
       if (id === ids[ids.length - 1]) late.push(() => send(event));
       else send(event);

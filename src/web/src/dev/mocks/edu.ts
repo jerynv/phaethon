@@ -19,9 +19,24 @@ function spaceOk(args: Args) {
   if (!spaces.some((s) => s.id === args.space)) throw `space "${String(args.space)}" does not exist in this vault`;
 }
 
+/** More spaces than fit in a column each, so the access list shows its scale (Settings › Courses). Shared with settings-agents' list. */
+export const MORE_SPACES = [
+  { id: "study-group", name: "Study group", description: "", hue: 200, educationEnabled: true, lastUsed: null },
+  { id: "lab", name: "Lab notebook", description: "", hue: 110, educationEnabled: false, lastUsed: null },
+  { id: "thesis", name: "Senior thesis", description: "Reading notes and drafts", hue: 320, educationEnabled: false, lastUsed: null },
+  { id: "internship", name: "Internship", description: "", hue: 60, educationEnabled: false, lastUsed: null },
+  { id: "robotics", name: "Robotics club", description: "", hue: 285, educationEnabled: false, lastUsed: null },
+  { id: "travel", name: "Travel", description: "", hue: 175, educationEnabled: false, lastUsed: null },
+  { id: "reading", name: "Reading list", description: "", hue: 30, educationEnabled: false, lastUsed: null },
+  { id: "language", name: "Language exchange", description: "", hue: 345, educationEnabled: false, lastUsed: null },
+  { id: "side", name: "Side projects", description: "", hue: 90, educationEnabled: false, lastUsed: null },
+];
+
 const spaces = [
   { id: "school", name: "School", description: "Classes this term", hue: 250, educationEnabled: true, lastUsed: Date.now() },
   { id: "work", name: "Work", description: "Lab job", hue: 150, educationEnabled: true, lastUsed: Date.now() - DAY },
+  { id: "personal", name: "Personal", description: "", hue: 20, educationEnabled: false, lastUsed: null },
+  ...MORE_SPACES,
 ];
 
 // ---- Course sites ----
@@ -45,6 +60,27 @@ const lmsCourseList: { id: string; name: string; code?: string; term?: string; c
   { id: "97", name: "FA25: FIRST-YEAR SEMINAR: 20077", code: "FA25-NF-FYS-100-011", term: "Fall 2025", current: false, folder: "First-Year Seminar" },
   { id: "98", name: "SU25: SAMPLE ART APPRECIATION: 10650", code: "SU25-NF-ART-105-001", term: "Summer 2025", current: false, folder: "Sample Art Appreciation" },
 ];
+/** A second school's courses, named the way course sites send them (term, code and section in capitals). */
+const ridgewayCourses = [
+  ["r1", "FA26 BIO-1406-003 GENERAL BIOLOGY I"],
+  ["r2", "FA26 BIO-1106-021 GENERAL BIOLOGY LAB I"],
+  ["r3", "FA26 CHM-1311-002 INTRO TO CHEMISTRY II"],
+  ["r4", "FA26 ENG-1302-014 COMPOSITION AND RHETORIC II"],
+  ["r5", "FA26 HIS-2301-012 WORLD HISTORY OF THE AMERICAS"],
+  ["r6", "FA26 PHY-2425-001 UNIVERSITY PHYSICS I"],
+  ["r7", "FA26 STA-2381-005 STATISTICS FOR THE SCIENCES"],
+  ["r8", "FA26 ART-1316-002 DRAWING STUDIO (Sec 02)"],
+  ["r9", "FA26 ECO-2302-004 PRINCIPLES OF MICROECONOMICS"],
+  ["r10", "FA26 PSY-2314-010 LIFESPAN DEVELOPMENT"],
+  ["r11", "FA26 MUS-1306-001 MUSIC APPRECIATION"],
+  ["r12", "FA26 GEO-1403-003 PHYSICAL GEOGRAPHY"],
+  ["r13", "SP26 CS-1428-002 FOUNDATIONS OF COMPUTER SCIENCE I"],
+  ["r14", "SP26 MAT-2413-006 CALCULUS I"],
+  ["r15", "SP26 PHI-2306-001 INTRODUCTION TO ETHICS"],
+  ["r16", "SP26 SPN-1412-008 BEGINNING SPANISH II"],
+  ["r17", "SU26 KIN-1164-030 HEALTH AND WELLNESS CRN 48213"],
+].map(([id, name]) => ({ id, name, folder: name, code: name.split(" ")[1], term: name.startsWith("FA") ? "Fall 2026" : name.startsWith("SP") ? "Spring 2026" : "Summer 2026", current: name.startsWith("FA") }));
+const catalogOf = (connection: string) => (connection === "c2" ? ridgewayCourses : lmsCourseList);
 const schools = [
   { name: "Northfield State University", address: "https://canvas.northfield.example" },
   { name: "Northfield State, Lakeview campus", address: "https://canvas.northfield.example" },
@@ -63,12 +99,37 @@ const connections: { id: string; kind: string; address: string; schoolName?: str
         lastSync: Date.now() - 3 * DAY,
         courses: ["101", "102", "103", "105", "106", "90", "92", "93", "94", "95", "96", "97", "98"],
       },
+      {
+        id: "c2",
+        kind: "brightspace",
+        address: "https://ridgeway.example",
+        schoolName: "Ridgeway College",
+        signedIn: true,
+        lastSync: Date.now() - DAY,
+        courses: ridgewayCourses.map((c) => c.id),
+      },
     ];
 const access: Record<string, Record<string, string[]>> = empty
   ? {}
   : {
-      school: { "c1/101": [...ALL], "c1/102": [...ALL], "c1/103": ["overview", "syllabus", "assignments", "announcements", "files"], "c1/105": [...ALL], "c1/106": [...ALL] },
-      work: {},
+      school: {
+        "c1/101": [...ALL],
+        "c1/102": [...ALL],
+        "c1/103": ["overview", "syllabus", "assignments", "announcements", "files"],
+        "c1/105": [...ALL],
+        "c1/106": [...ALL],
+        ...Object.fromEntries(["r1", "r2", "r3", "r4", "r5", "r6", "r7", "r13", "r14", "r15", "r16"].map((id) => [`c2/${id}`, [...ALL]])),
+        "c2/r8": ["overview", "syllabus", "assignments"],
+      },
+      work: { "c2/r7": [...ALL], "c2/r9": [...ALL] },
+      "study-group": { "c1/101": [...ALL], "c2/r1": [...ALL], "c2/r3": [...ALL], "c2/r6": [...ALL], "c2/r7": [...ALL], "c2/r14": [...ALL] },
+      lab: { "c2/r1": [...ALL], "c2/r2": [...ALL], "c2/r3": ["files"] },
+      thesis: { "c2/r5": [...ALL] },
+      internship: { "c2/r1": [...ALL], "c2/r9": [...ALL] },
+      robotics: { "c2/r6": [...ALL], "c2/r13": [...ALL] },
+      reading: { "c2/r5": [...ALL], "c2/r7": [...ALL], "c2/r15": [...ALL] },
+      language: { "c1/104": [...ALL], "c2/r16": [...ALL] },
+      side: { "c2/r7": [...ALL], "c2/r13": [...ALL] },
     };
 const material = {
   "101": {
@@ -90,7 +151,7 @@ function courseInfos() {
   return connections
     .flatMap((c) =>
       c.courses.map((id) => {
-        const x = lmsCourseList.find((k) => k.id === id) ?? { name: id, code: undefined, term: undefined, folder: id };
+        const x = catalogOf(c.id).find((k) => k.id === id) ?? { name: id, code: undefined, term: undefined, folder: id };
         return {
           key: `${c.id}/${id}`,
           connection: c.id,
@@ -512,7 +573,7 @@ export default {
     const c = connections.find((x) => x.id === args.connection);
     if (!c) throw "That course site isn’t connected.";
     if (!c.signedIn) throw "You’ve been signed out of your course site. Sign in again to continue.";
-    return lmsCourseList.map(({ folder: _, ...x }) => ({ ...x, imported: c.courses.includes(x.id), ...(x.id === "104" && c.courses.length ? { partial: true } : {}) }));
+    return catalogOf(c.id).map(({ folder: _, ...x }) => ({ ...x, imported: c.courses.includes(x.id), ...(x.id === "104" && c.courses.length ? { partial: true } : {}) }));
   },
   lms_import: async (args: Args) => {
     const send = streamTo(args.onEvent);
@@ -523,7 +584,7 @@ export default {
     importCancel = () => (cancelled = true);
     const late: (() => void)[] = [];
     for (const id of ids) {
-      const course = lmsCourseList.find((x) => x.id === id);
+      const course = catalogOf(c.id).find((x) => x.id === id);
       const name = course?.name ?? id;
       const steps: [string, number, number][] = [["reading", 0, 1], ["reading", 1, 1], ["files", 0, 12], ["files", 5, 12], ["files", 12, 12], ["readings", 0, 2], ["readings", 2, 2], ["writing", 0, 1]];
       for (const [step, done, total] of steps) {

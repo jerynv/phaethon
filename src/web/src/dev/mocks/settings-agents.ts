@@ -14,6 +14,7 @@
  * Keys are never stored here beyond "has one".
  */
 import shell from "./shell";
+import { MORE_SPACES } from "./edu";
 
 type Args = Record<string, unknown>;
 type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "together" | "mistral" | "deepseek" | "xai" | "ollama" | "lmstudio" | "custom";
@@ -80,6 +81,7 @@ const SPACES = [
   { id: "school", name: "School", description: "Courses, deadlines, study notes", hue: 250, educationEnabled: true, lastUsed: Date.now() - 60_000 },
   { id: "work", name: "Work", description: "Lab job and projects", hue: 150, educationEnabled: false, lastUsed: Date.now() - 3_600_000 },
   { id: "personal", name: "Personal", description: "", hue: 20, educationEnabled: false, lastUsed: null },
+  ...MORE_SPACES.map((s) => ({ ...s })),
 ];
 const spaceModel: Record<string, string> = {};
 const cliModel: Record<string, Partial<Record<string, string>>> = {};

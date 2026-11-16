@@ -70,7 +70,8 @@ describe("shortCourseName, more registrar shapes", () => {
   });
 
   it("keeps a course code that looks nothing like a term", () => {
-    expect(shortCourseName("XYZ 214: PLACEHOLDER THEORY")).toBe("XYZ 214: Placeholder Theory");
+    // A leading course code goes too: the code is on the course, and a name says it once.
+    expect(shortCourseName("XYZ 214: PLACEHOLDER THEORY")).toBe("Placeholder Theory");
     expect(shortCourseName("XYZ214 PLACEHOLDER THEORY")).toBe("XYZ214 Placeholder Theory");
   });
 

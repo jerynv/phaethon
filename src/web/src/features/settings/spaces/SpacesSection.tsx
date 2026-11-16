@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { useDelayed } from "@/hooks/use-delayed";
+import { SpaceCourses } from "@/features/courses/components/SpaceCourses";
 import { cn } from "@/lib/utils";
 import {
   bindWorkspace,
@@ -220,6 +221,7 @@ function IdentityGroup({ space }: { space: SpaceView }) {
         onCheckedChange={(on) => void quick("edu", { educationEnabled: on })}
         below={busy !== "hue" && error ? <FieldError>{error}</FieldError> : undefined}
       />
+      {space.educationEnabled ? <SpaceCourses space={space.id} name={space.name} /> : null}
     </SettingsGroup>
   );
 }

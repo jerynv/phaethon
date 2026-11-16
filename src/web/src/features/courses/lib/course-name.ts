@@ -6,8 +6,11 @@
  * Pure.
  */
 
-/** "FA26: ", "XX99 - ", "202610: ", "Fall 2026: ": a term before the name. */
-const TERM_PREFIX = [/^(?=[A-Z0-9]*\d)[A-Z0-9]{2,8}\s*[:\-–—|]\s+/i, /^(fall|spring|summer|winter|autumn)\s+\d{2,4}\s*[:\-–—|]\s*/i];
+const TERM = String.raw`(?:(?:FA|SP|SU|WI|SM|F|S|W)\s?'?\d{2}(?:\d{2})?|\d{4}\s?(?:FA|SP|SU|WI|SM|F|S|W)|(?:Fall|Spring|Summer|Winter|Autumn)\s+\d{2,4}|\d{4}\s+(?:Fall|Spring|Summer|Winter|Autumn)|\d{6})`;
+/** "FA26: ", "FA26 ", "XX99 - ", "2026FA-", "202610_", "Fall 2026: ": a term before the name. */
+const TERM_PREFIX = [new RegExp(String.raw`^\[?${TERM}\]?(?:\s*[-:–—_.|/]\s*|\s+)`, "i"), /^(?=[A-Z0-9]*\d)[A-Z0-9]{2,8}\s*[:\-–—|]\s+/i];
+/** "MTH-214-01 ", "BIOL 1406.003 - ", "HIS_2301_012 ": a course code before the name (capitals only, so ordinary words stay; a one-word code like "CS101" reads as part of the name and stays). */
+const CODE_PREFIX = /^[A-Z]{2,5}[\s\-_]\d{3,4}[A-Z]?(?:[\s\-_.]\d{1,4}[A-Z]?)*(?:\s*[-:–—|]\s*|\s+)(?=[A-Za-z])/;
 
 /** ": 1234", " - SEC 002", " (01)", ", section B", " (All Sections)": a section or CRN after the name (not the end of "1865-1945"). */
 const SECTION_SUFFIX = [
@@ -15,7 +18,17 @@ const SECTION_SUFFIX = [
   /\s*\(\s*all\s+sections?\s*\)$/i,
   /\s*[:\-–—|,]?\s*\b(sec|sect|section)\.?\s*[A-Z0-9]{1,5}$/i,
   /\s*[([]\s*(?:(?:sec|sect|section)\.?\s*)?[A-Z]?\d{1,5}[A-Z]?\s*[)\]]$/i,
+  // " CRN 48213", " Lec 2", " (Lecture 1)"
+  /\s*[([]?\b(?:CRN|Lec(?:ture)?)\s*#?\s*[A-Z]?\d+[A-Z]?[)\]]?$/i,
+  // A bare five-digit CRN at the end.
+  /\s+\d{5}$/,
+  // A term or a course code at the end: " - FA26", " MTH-214-01".
+  new RegExp(String.raw`(?:\s*[-–—:|,]\s*|\s+)[([]?${TERM}[)\]]?$`, "i"),
+  // Only an unmistakable code ("MTH-214-01", "BIO 1406.003"), so "Since 1877" stays.
+  /(?:\s*[-–—:|,]\s*|\s+)[A-Z]{2,5}(?:[\-_]\d{3,4}[A-Z]?(?:[\s\-_.]\d{1,4}[A-Z]?)*|\s?\d{3,4}[A-Z]?(?:[\-_.]\d{1,4}[A-Z]?)+)$/,
 ];
+/** What is left is only a course code: nothing readable to show instead of the raw name. */
+const CODE_ONLY = /^[A-Z]{2,5}[\s\-_]?\d{3,4}[A-Z]?(?:[\s\-_.]\d{1,4}[A-Z]?)*$/;
 
 const SMALL = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "into", "of", "on", "or", "per", "the", "to", "via", "vs", "with"]);
 const ROMAN = /^(?=[IVX])X{0,3}(IX|IV|V?I{0,3})$/;
@@ -51,13 +64,14 @@ export function shortCourseName(raw: string): string {
   const original = raw.trim().replace(/\s+/g, " ");
   let name = original;
   for (const re of TERM_PREFIX) name = name.replace(re, "");
+  name = name.replace(CODE_PREFIX, "");
   for (let changed = true; changed; ) {
     const before = name;
     for (const re of SECTION_SUFFIX) name = name.replace(re, "");
     changed = name !== before && name.length > 0;
   }
-  name = name.trim();
-  if (!/[a-z]/i.test(name)) return original;
+  name = name.replace(/^[\s\-:–—_.|]+|[\s\-:–—_.|,]+$/g, "").trim();
+  if (!/[a-z]{2}/i.test(name) || CODE_ONLY.test(name)) return original;
   return titleCaseName(name);
 }
 

@@ -394,7 +394,8 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "102",
-      course: "Calculus II",
+      // Names as course sites send them (term code, capitals, section); the page shows them short.
+      course: "XX99: CALCULUS II: 1234",
       folder: "courses/Calculus II",
       updated: Date.now() - 2 * 3600_000,
       current: { percent: 78.6, letter: "C+" },
@@ -420,7 +421,7 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "101",
-      course: "Logic and Discrete Math",
+      course: "XX99: LOGIC AND DISCRETE MATH (All Sections)",
       folder: CS101,
       updated: Date.now() - 2 * 3600_000,
       current: { percent: 91.25, letter: "A-", points: 146, possible: 160 },
@@ -439,7 +440,7 @@ function gradeData() {
     {
       connection: "c1",
       courseId: "103",
-      course: "Mind and Behavior",
+      course: "XX99: INTRO PLACEHOLDER STUDIES: 1234",
       folder: "courses/Mind and Behavior",
       updated: Date.now() - 2 * 3600_000,
       current: {},

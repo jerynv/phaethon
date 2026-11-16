@@ -269,8 +269,8 @@ export function Sidebar() {
           </SidebarMenuButton>
         </div>
       ) : null}
-      <SidebarFooter className="gap-0.5">
-        <UpdatePill />
+      <UpdatePill />
+      <SidebarFooter>
         <SidebarMenuButton isActive={settingsOpen} aria-keyshortcuts={keysFor("settings").aria} onClick={() => openSettings()} className="group/settings">
           <Icon icon={icons.settings} />
           <span className="flex-1">Settings</span>

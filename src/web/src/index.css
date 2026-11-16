@@ -16,6 +16,13 @@
   --sidebar-width: 15.5rem;
   --titlebar-height: 3rem;
   /*
+   * A bottom bar beside the sidebar (the sidebar's footer, a list pane's count
+   * footer): border-box, so it counts its 1 px hairline on top, then 44 px for
+   * a 28 px row with 8 px either side. Every such bar uses this height so the
+   * hairlines and rows line up across the columns.
+   */
+  --footer-height: 2.8125rem;
+  /*
    * Room for macOS's traffic lights at the title bar's left end: the 54 px
    * group (three 14 px buttons, 6 px apart) placed 17 px from the window's
    * edge (trafficLightPosition in src/desktop/main.ts), and the same 17 px

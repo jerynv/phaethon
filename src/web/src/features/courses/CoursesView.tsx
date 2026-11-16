@@ -120,8 +120,10 @@ export function CoursesView({ space }: { space: SpaceView }) {
             <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2" data-testid="course-list">
               <CourseTree space={space.id} groups={groups} query={query} openKey={open?.key} onOpen={setOpenKey} {...actions} />
             </div>
-            <div className="flex h-11 shrink-0 items-center justify-end gap-1.5 border-t px-4 text-subtle-foreground text-xs tabular-nums">
-              {plural(courses.length, "course")} <span aria-hidden>·</span> {plural(connections.data?.length ?? 0, "site")}
+            <div className="flex h-(--footer-height) shrink-0 items-center border-t px-4 text-subtle-foreground text-xs tabular-nums" data-testid="course-count">
+              <span className="truncate">
+                {plural(courses.length, "course")} <span aria-hidden>·</span> {plural(connections.data?.length ?? 0, "site")}
+              </span>
             </div>
           </aside>
           <div className="flex min-w-0 flex-1 flex-col">

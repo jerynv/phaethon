@@ -160,8 +160,9 @@ export function SidebarHeader({ className, ...props }: React.ComponentProps<"div
   return <div className={cn("flex shrink-0 flex-col gap-1", className)} data-slot="sidebar-header" {...props} />;
 }
 
+/** One row under a hairline, `--footer-height` tall like every bottom bar beside the sidebar. */
 export function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex shrink-0 flex-col gap-1 border-t p-2", className)} data-slot="sidebar-footer" {...props} />;
+  return <div className={cn("flex h-(--footer-height) shrink-0 flex-col justify-center border-t px-2", className)} data-slot="sidebar-footer" {...props} />;
 }
 
 /** The scrolling middle. `scrollRef` is the scrolling element (for a windowed list); `fade="end"` fades only the bottom edge, under a sticky top row. */

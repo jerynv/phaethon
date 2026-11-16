@@ -222,7 +222,7 @@ test("grades: what needs attention comes before the full tables, in order", asyn
   await table.getByRole("button", { name: "Score" }).click();
   await table.getByRole("button", { name: "Score" }).click();
   await expect(table.locator("tbody tr").first()).toContainText("Set never handed in");
-  await page.getByRole("textbox", { name: "Filter assignments" }).fill("tomorrow");
+  await page.getByRole("searchbox", { name: "Filter assignments" }).fill("tomorrow");
   await expect(table.locator("tbody tr")).toHaveCount(1);
   await table.getByRole("button", { name: COURSE }).click();
   await expect(table.locator("table")).toHaveCount(0);

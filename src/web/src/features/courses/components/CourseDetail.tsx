@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "motion/react";
+import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNav } from "@/app/store";
 import { cleanMessage, SurfaceError } from "@/components/errors";
@@ -9,7 +10,6 @@ import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { Spinner } from "@/components/ui/spinner";
@@ -228,10 +228,15 @@ function Files({ space, content, error, hidden, onSettings }: { space: string } 
             ))}
           </TabsList>
         </Tabs>
-        <div className="relative w-48">
-          <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
-          <Input size="sm" value={query} placeholder="Filter" aria-label="Filter content" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
-        </div>
+        <SearchField
+          className="w-48"
+          value={query}
+          placeholder="Filter"
+          aria-label="Filter content"
+          onChange={(e) => setQuery(e.target.value)}
+          onClear={() => setQuery("")}
+          trailing={query ? <SearchFieldAction aria-label="Clear filter" onClick={() => setQuery("")}><Icon icon={icons.close} /></SearchFieldAction> : null}
+        />
       </div>
       {!entries.length ? (
         <p className="px-1 text-muted-foreground text-sm">Nothing matches “{query.trim()}”.</p>

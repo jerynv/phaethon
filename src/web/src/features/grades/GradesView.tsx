@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
+import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { Header } from "@/app/Header";
@@ -652,10 +653,15 @@ function AllTables({ courses, fresh, now, title = false }: { courses: CourseGrad
         ) : (
           <h2 className="mr-auto font-medium text-base tracking-title">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
         )}
-        <div className="relative w-56 max-sm:w-full">
-          <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
-          <Input size="sm" value={query} placeholder="Filter assignments" aria-label="Filter assignments" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
-        </div>
+        <SearchField
+          className="w-56 max-sm:w-full"
+          value={query}
+          placeholder="Filter assignments"
+          aria-label="Filter assignments"
+          onChange={(e) => setQuery(e.target.value)}
+          onClear={() => setQuery("")}
+          trailing={query ? <SearchFieldAction aria-label="Clear filter" onClick={() => setQuery("")}><Icon icon={icons.close} /></SearchFieldAction> : null}
+        />
         <Tabs value={status} onValueChange={setStatus}>
 <TabsList aria-label="Show">
           {STATUS.map((s) => (

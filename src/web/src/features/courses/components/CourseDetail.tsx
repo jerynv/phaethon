@@ -8,7 +8,7 @@ import { SkeletonRows } from "@/components/skeletons";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -16,7 +16,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { ToggleRow } from "@/components/ui/toggle-row";
 import { FileIcon } from "@/features/viewer/FileIcon";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
@@ -24,10 +23,9 @@ import { lmsCourseContent } from "../api";
 import { fileGroups, skippedGroups } from "../lib/content";
 import { stepText } from "../lib/import-run";
 import { connectionName, formatBytes, plural, whenText } from "../lib/sites";
-import { COURSE_PARTS, type CourseContent, type CourseContentEntry, type CourseInfo, type CoursePart, type LmsConnection } from "../lib/types";
+import type { CourseContent, CourseContentEntry, CourseInfo, LmsConnection } from "../lib/types";
 import { partsOf, useCourses } from "../store";
-
-export type DetailTab = "overview" | "files" | "settings";
+import { CourseSettingsDialog } from "./CourseSettingsDialog";
 
 const SECTIONS: { kind: CourseContentEntry["kind"][]; label: string; icon: IconData }[] = [
   { kind: ["overview", "page"], label: "Pages", icon: icons.read },
@@ -35,28 +33,17 @@ const SECTIONS: { kind: CourseContentEntry["kind"][]; label: string; icon: IconD
   { kind: ["assignment"], label: "Assignments", icon: icons.quiz },
 ];
 
-const PART_HINTS: Record<CoursePart, string> = {
-  overview: "The course’s home page",
-  syllabus: "The syllabus and course policies",
-  assignments: "Assignments, instructions and due dates",
-  announcements: "Announcements and the files they attach",
-  files: "Lecture notes, readings and other files",
-  grades: "Scores and the grade book",
-};
-
 type SiteActions = { onImport: (c: LmsConnection) => void; onSignIn: (c: LmsConnection) => void; onDisconnect: (c: LmsConnection) => void; busy: boolean };
 
 /**
- * One course (refs 7274, 02a1, dc42): a breadcrumb row with the pane toggle
- * and its site's actions, then underline tabs for its sections. Overview: an art card with the course's
- * numbers. Files: its content in grouped lists to open in the viewer.
- * Settings: what this space sees of it.
+ * One course (refs 7274, 02a1, dc42) as one page: a breadcrumb row with the
+ * pane toggle, Import and a `…` menu (Course settings, the site's sign-in),
+ * then a card with the course's term and numbers, then its content in grouped
+ * lists to open in the viewer.
  */
 export function CourseDetail({
   space,
   course,
-  tab,
-  onTab,
   pane,
   onPane,
   connection,
@@ -65,13 +52,14 @@ export function CourseDetail({
   onSignIn,
   onDisconnect,
   busy,
-}: { space: string; course: CourseInfo; tab: DetailTab; onTab: (t: DetailTab) => void; pane: boolean; onPane: () => void; connection: LmsConnection | null; run: ReactNode } & SiteActions) {
+}: { space: string; course: CourseInfo; pane: boolean; onPane: () => void; connection: LmsConnection | null; run: ReactNode } & SiteActions) {
   const parts = useCourses((s) => partsOf(s.access.data, space, course.key));
   const [content, setContent] = useState<CourseContent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const partsKey = parts.join(",");
   const reduce = useReducedMotion();
+  const [settings, setSettings] = useState(false);
 
   useEffect(() => {
     if (!partsKey) return;
@@ -89,7 +77,7 @@ export function CourseDetail({
     };
   }, [space, course.key, partsKey, tick]);
 
-  const state = { content: parts.length ? content : null, error, retry: () => setTick((n) => n + 1), hidden: parts.length === 0 };
+  const state = { content: parts.length ? content : null, error, retry: () => setTick((n) => n + 1), hidden: parts.length === 0, onSettings: () => setSettings(true) };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -125,103 +113,80 @@ export function CourseDetail({
             </Button>
           )
         ) : null}
-        {connection ? (
-          <Menu>
-            <MenuTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label={`${connectionName(connection)} actions`} />}>
-              <Icon icon={icons.more} />
-            </MenuTrigger>
-            <MenuPopup align="end">
-              <MenuItem onClick={() => onSignIn(connection)}>
-                <Icon icon={icons.signIn} />
-                Sign in again
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem variant="destructive" onClick={() => onDisconnect(connection)}>
-                <Icon icon={icons.disconnected} />
-                Disconnect
-              </MenuItem>
-            </MenuPopup>
-          </Menu>
-        ) : null}
-      </div>
-      <div className="shrink-0 px-6">
-        <Tabs value={tab} onValueChange={(v) => onTab(v as DetailTab)}>
-          <TabsList aria-label="Course section" className="w-full">
-            <TabsTab value="overview">Overview</TabsTab>
-            <TabsTab value="files">Files</TabsTab>
-            <TabsTab value="settings">Settings</TabsTab>
-          </TabsList>
-        </Tabs>
+        <Menu>
+          <MenuTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Course actions" />}>
+            <Icon icon={icons.more} />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuItem onClick={() => setSettings(true)}>
+              <Icon icon={icons.settings} />
+              Course settings
+            </MenuItem>
+            {connection ? (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={() => onSignIn(connection)}>
+                  <Icon icon={icons.signIn} />
+                  Sign in again
+                </MenuItem>
+                <MenuItem variant="destructive" onClick={() => onDisconnect(connection)}>
+                  <Icon icon={icons.disconnected} />
+                  Disconnect {connectionName(connection)}
+                </MenuItem>
+              </>
+            ) : null}
+          </MenuPopup>
+        </Menu>
       </div>
       <div className="page-scroll min-h-0 flex-1">
         <motion.div
-          key={tab}
           initial={reduce ? false : { opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
           className="mx-auto flex w-full max-w-(--page-max-width) flex-col gap-6 px-8 pt-8 pb-16"
         >
           {run}
-          {tab === "overview" ? <Overview space={space} course={course} {...state} /> : tab === "files" ? <Files space={space} {...state} /> : <Settings space={space} course={course} />}
+          <Overview course={course} {...state} />
+          <Files space={space} {...state} />
+          {content?.skipped?.length && !state.hidden ? <Skipped notes={content.skipped} /> : null}
         </motion.div>
       </div>
+      <CourseSettingsDialog space={space} course={course} open={settings} onOpenChange={setSettings} />
     </div>
   );
 }
 
-type ContentState = { content: CourseContent | null; error: string | null; retry: () => void; hidden: boolean };
+type ContentState = { content: CourseContent | null; error: string | null; retry: () => void; hidden: boolean; onSettings: () => void };
 
-function Overview({ space, course, content, error, retry, hidden }: { space: string; course: CourseInfo } & ContentState) {
-  const meta = [course.code, course.term, content?.updated ? `Updated ${whenText(content.updated)}` : null].filter(Boolean).join(" · ");
+/** The course's term and sign-in state, and its numbers. The breadcrumb already names it. */
+function Overview({ course, content, error, retry, hidden }: { course: CourseInfo } & ContentState) {
+  const meta = [course.term, content?.updated ? `Updated ${whenText(content.updated)}` : null].filter(Boolean).join(" · ");
   const n = (kinds: CourseContentEntry["kind"][]) => (content ? content.entries.filter((e) => kinds.includes(e.kind)).length : "–");
   const bytes = content?.entries.reduce((s, e) => s + (e.bytes ?? 0), 0) ?? 0;
+  if (hidden) return null;
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">
-            <Truncate>{course.name}</Truncate>
-          </CardTitle>
-          {meta ? <CardDescription className="truncate">{meta}</CardDescription> : null}
+    <Card>
+      <CardContent className="@container">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2" data-testid="course-meta">
           <SiteState course={course} />
-        </CardHeader>
-        <CardContent className="@container">
-          {hidden ? (
-            <p className="rounded-xl border border-border/70 bg-well px-4 py-3 text-muted-foreground text-sm">This space can’t see this course. Turn on a part in Settings to browse it here.</p>
-          ) : error ? (
-            <SurfaceError title="Couldn’t load this course" message={error} onRetry={retry} />
-          ) : (
-            <StatGrid>
-              <StatTile label="Files" value={n(["file"])} hint={content ? formatBytes(bytes) : undefined} />
-              <StatTile label="Pages" value={n(["overview", "page"])} />
-              <StatTile label="Modules" value={n(["module"])} />
-              <StatTile label="Assignments" value={n(["assignment"])} />
-            </StatGrid>
-          )}
-        </CardContent>
-      </Card>
-      {content && !hidden ? <Recent space={space} entries={content.entries} /> : null}
-      {content?.skipped?.length && !hidden ? <Skipped notes={content.skipped} /> : null}
-    </>
+          {meta ? <p className="min-w-0 truncate text-muted-foreground text-xs tabular-nums">{meta}</p> : null}
+        </div>
+        {error ? (
+          <SurfaceError title="Couldn’t load this course" message={error} onRetry={retry} />
+        ) : (
+          <StatGrid>
+            <StatTile label="Files" value={n(["file"])} hint={content ? formatBytes(bytes) : undefined} />
+            <StatTile label="Pages" value={n(["overview", "page"])} />
+            <StatTile label="Modules" value={n(["module"])} />
+            <StatTile label="Assignments" value={n(["assignment"])} />
+          </StatGrid>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-/** A few of the course's files to open straight away. */
-function Recent({ space, entries }: { space: string; entries: CourseContentEntry[] }) {
-  const openFile = useNav((s) => s.openFile);
-  const viewing = useNav((s) => s.viewer);
-  const files = entries.filter((e) => e.kind === "file").slice(0, 5);
-  if (!files.length) return null;
-  return (
-    <EntryGroup label="Files" count={entries.filter((e) => e.kind === "file").length}>
-      {files.map((e, i) => (
-        <EntryRow key={`${e.path}#${i}`} entry={e} selected={viewing?.space === space && viewing.path === e.path} onOpen={() => openFile(space, e.path)} />
-      ))}
-    </EntryGroup>
-  );
-}
-
-function Files({ space, content, error, retry, hidden }: { space: string } & ContentState) {
+function Files({ space, content, error, hidden, onSettings }: { space: string } & ContentState) {
   const openFile = useNav((s) => s.openFile);
   const viewing = useNav((s) => s.viewer);
   const [query, setQuery] = useState("");
@@ -233,12 +198,21 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
     return q ? all.filter((e) => e.title.toLowerCase().includes(q) || e.path.toLowerCase().includes(q)) : all;
   }, [content, query]);
 
-  if (hidden) return <Quiet>This space can’t see this course. Turn on a part in Settings to browse it here.</Quiet>;
-  if (error) return <SurfaceError title="Couldn’t load this course" message={error} onRetry={retry} />;
+  if (hidden)
+    return (
+      <Quiet>
+        <p>This space can’t see this course.</p>
+        <Button size="sm" variant="outline" onClick={onSettings}>
+          <Icon icon={icons.settings} />
+          Course settings
+        </Button>
+      </Quiet>
+    );
+  if (error) return null;
   if (!content) return showSkeleton ? <div className="rounded-xl border bg-well p-1.5"><SkeletonRows count={6} withIcon /></div> : null;
   if (!content.entries.length) return <Quiet>Nothing was imported for the parts this space can see.</Quiet>;
   return (
-    <div className="flex flex-col gap-6">
+    <section className="flex flex-col gap-6" aria-label="Course content">
       <div className="flex items-center gap-3">
         <h2 className="flex-1 font-medium text-base tracking-title">
           Content <span className="font-normal text-muted-foreground tabular-nums">{content.entries.length}</span>
@@ -290,42 +264,12 @@ function Files({ space, content, error, retry, hidden }: { space: string } & Con
           {content.truncated ? <p className="px-1 text-muted-foreground text-xs">Showing the first {plural(content.entries.length, "item")}.</p> : null}
         </>
       )}
-    </div>
+    </section>
   );
 }
 
 function Quiet({ children }: { children: ReactNode }) {
-  return <div className="rounded-xl border border-dashed px-4 py-10 text-center text-muted-foreground text-sm">{children}</div>;
-}
-
-/** What this space sees of the course: all of it at once, or part by part. */
-function Settings({ space, course }: { space: string; course: CourseInfo }) {
-  const parts = useCourses((s) => partsOf(s.access.data, space, course.key));
-  const setParts = useCourses((s) => s.setParts);
-  const all = COURSE_PARTS.map((p) => p.part);
-  const set = (part: CoursePart, on: boolean) => void setParts(space, course.key, all.filter((p) => (p === part ? on : parts.includes(p))));
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>What this space sees</CardTitle>
-      </CardHeader>
-      <CardContent className="gap-0">
-        <ToggleRow
-          title="Show in this space"
-          description={parts.length === 0 ? "Hidden here" : parts.length === all.length ? "Every part" : `${parts.length} of ${all.length} parts`}
-          checked={parts.length > 0}
-          onCheckedChange={(v) => void setParts(space, course.key, v ? all : [])}
-          className="border-b pt-0"
-        />
-        <h4 className="mt-5 mb-1 text-subtle-foreground text-xs">Parts</h4>
-        <div className="flex flex-col divide-y" aria-label="Parts this space can see">
-          {COURSE_PARTS.map((p) => (
-            <ToggleRow key={p.part} title={p.label} description={PART_HINTS[p.part]} checked={parts.includes(p.part)} onCheckedChange={(v) => set(p.part, v)} />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-10 text-center text-muted-foreground text-sm">{children}</div>;
 }
 
 function EntryGroup({ label, icon, count, children, testId }: { label: string; icon?: IconData; count: number; children: ReactNode; testId?: string }) {
@@ -409,7 +353,7 @@ function SiteState({ course }: { course: CourseInfo }) {
   if (!conn) return null;
   const active = run?.status === "running" && mine && !mine.result && !mine.failed;
   return (
-    <div className="flex flex-wrap items-center gap-2 pt-2 text-xs" data-testid="course-site-state">
+    <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="course-site-state">
       <Badge variant={conn.signedIn ? "success" : "warning"} size="lg">
         {conn.signedIn ? "Signed in" : "Signed out"}
       </Badge>

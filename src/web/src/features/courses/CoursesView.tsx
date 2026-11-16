@@ -15,7 +15,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
 import { ArtEmpty } from "./components/ArtEmpty";
-import { CourseDetail, type DetailTab } from "./components/CourseDetail";
+import { CourseDetail } from "./components/CourseDetail";
 import { ConnectDialog } from "./components/ConnectDialog";
 import { DisconnectDialog } from "./components/DisconnectDialog";
 import { ImportDialog } from "./components/ImportDialog";
@@ -29,8 +29,8 @@ import { partsOf, useCourses } from "./store";
  * The Courses page of a space with study tools (docs/UI-REBUILD.md › Screens
  * › Courses; refs 7274, 02a1, 8bdf): on the left the course sites as folders
  * holding their courses (the pane folds away from the breadcrumb); on the
- * right the chosen course, under a breadcrumb with its site's actions and
- * underline tabs for Overview · Files · Settings.
+ * right the chosen course as one page, under a breadcrumb with its site's
+ * actions and a `…` menu holding the course's settings.
  */
 export function CoursesView({ space }: { space: SpaceView }) {
   const load = useCourses((s) => s.load);
@@ -38,7 +38,6 @@ export function CoursesView({ space }: { space: SpaceView }) {
   const access = useCourses((s) => s.access);
   const run = useCourses((s) => s.run);
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const [tab, setTab] = useState<DetailTab>("overview");
   const [query, setQuery] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [pane, setPane] = useState(true);
@@ -191,8 +190,6 @@ export function CoursesView({ space }: { space: SpaceView }) {
                 key={open.key}
                 space={space.id}
                 course={open}
-                tab={tab}
-                onTab={setTab}
                 pane={pane}
                 onPane={() => setPane((p) => !p)}
                 connection={connections.data?.find((c) => c.id === open.connection) ?? null}

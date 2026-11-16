@@ -5,7 +5,7 @@ import { tempHome } from "../../../../tests/harness.ts";
 import { cancel, turnKey } from "../../core/runs.ts";
 import { load } from "../../core/thread.ts";
 import { CODEX_MISSING_MESSAGE } from "../cli.ts";
-import { answerServerRequest, appServerArgs, appServerArgsFull, CodexItems, commandLabel, DISABLED_FEATURES } from "../codex.ts";
+import { answerServerRequest, appServerArgs, appServerArgsFull, CodexItems, DISABLED_FEATURES } from "../codex.ts";
 import { HISTORY_INTRO } from "../prompt.ts";
 import { readCliSession, writeCliSession } from "../session.ts";
 import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor, THREAD } from "./helpers.ts";
@@ -42,9 +42,15 @@ describe("Codex app-server arguments", () => {
     expect(full).toContain("project_doc_max_bytes=0");
   });
 
-  it("label commands without the shell and show paths as in the space", () => {
-    expect(commandLabel("/bin/zsh -lc 'cat /vault/spaces/school/notes.md'", "/vault/spaces/school", [])).toBe("Running cat notes.md");
-    expect(commandLabel("ls", "/vault/spaces/school", [])).toBe("Running ls");
+  it("label and record commands without the shell, with paths as in the space", () => {
+    const items = new CodexItems("/vault/spaces/school", []);
+    const started = items.started({ type: "commandExecution", id: "k1", command: "/bin/zsh -lc 'cat /vault/spaces/school/notes.md'", status: "inProgress" });
+    expect(started).toEqual([
+      { kind: "tool", label: "Running cat notes.md" },
+      { kind: "toolStart", id: "codex:k1", category: "command", label: "Running command", target: "cat notes.md" },
+    ]);
+    // Older Codex versions send the argv.
+    expect(items.started({ type: "commandExecution", id: "k2", command: ["bash", "-lc", "rg -n injective"] }).at(-1)).toMatchObject({ target: "rg -n injective" });
   });
 
   it("decline every approval in a walled turn and never handle credentials", () => {
@@ -98,7 +104,7 @@ describe("Codex conversations", () => {
     ]);
     const saved = load("school", THREAD).at(-1)!.content.filter((b) => b.type === "phaethon_record");
     expect(saved).toEqual([
-      { type: "phaethon_record", kind: "tool", id: "codex:call_1", category: "command", label: "Running command", status: "failed", detail: "private output" },
+      { type: "phaethon_record", kind: "tool", id: "codex:call_1", category: "command", label: "Running command", target: "cat notes.md", status: "failed", detail: "private output" },
       { type: "phaethon_record", kind: "tool", id: "codex:ws_1", category: "search", label: "Searching", status: "success" },
     ]);
     expect(await waitFor(() => !alive(Number(log.text("pid-1"))))).toBe(true);

@@ -3,7 +3,7 @@ import type { AgentEvent } from "../../shared/agent.ts";
 import type { Outcome } from "./cli.ts";
 import { abortion, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { readLines, sleep, stopGroup } from "./process.ts";
-import { categoryOf, place, ToolEvents, type Granted } from "./tools.ts";
+import { categoryOf, commandLabel, commandLine, place, ToolEvents, type Granted } from "./tools.ts";
 
 /**
  * Claude Code: the official `claude` the person signed in to, run once per
@@ -73,6 +73,8 @@ function toolLabel(block: Record<string, unknown>, base: string, granted: Grante
       return `Searching files for “${s("pattern")}”`;
     case "Glob":
       return `Finding files matching ${s("pattern")}`;
+    case "Bash":
+      return commandLabel(commandLine(input, base, granted));
     case "":
       return "Using a tool";
     default:

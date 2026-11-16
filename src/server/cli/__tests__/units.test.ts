@@ -9,7 +9,7 @@ import { cliOfBackend, isValidCliModel, lastLine, loginCommand, notLoggedInMessa
 import { JsonRpcPeer, RpcError } from "../jsonrpc.ts";
 import { transcript } from "../prompt.ts";
 import { clearSession, readCliSession, sessionUuid, writeCliSession } from "../session.ts";
-import { place, shownPath, ToolLog, toolStartEvent } from "../tools.ts";
+import { commandLabel, commandLine, place, shownPath, ToolLog, toolStartEvent } from "../tools.ts";
 import { PassThrough } from "node:stream";
 
 describe("tool records", () => {
@@ -35,6 +35,42 @@ describe("tool records", () => {
     expect(place("Reading", "/vault/spaces/work/calendar/oct.md", "/vault/spaces/school", granted)).toBe("Reading work/calendar/oct.md");
     expect(shownPath("/vault/spaces/school", "/vault/spaces/school", granted).shown).toBe(".");
     expect(shownPath("/vault/spaces/schoolwork/x", "/vault/spaces/school", []).shown).toBe("/vault/spaces/schoolwork/x");
+  });
+});
+
+describe("command lines", () => {
+  const base = "/vault/spaces/school";
+  it("come from each agent's own input shape, without the shell they were wrapped in", () => {
+    // Claude Code's Bash and Gemini CLI's run_shell_command: { command: string }.
+    expect(commandLine({ command: "git status --short", description: "Show changes" }, base, [])).toBe("git status --short");
+    // Codex: a string wrapped in a login shell, or an argv list.
+    expect(commandLine({ command: "/bin/bash -lc 'cat /vault/spaces/school/notes.md'" }, base, [])).toBe("cat notes.md");
+    expect(commandLine({ command: ["/bin/zsh", "-lc", "ls -la"] }, base, [])).toBe("ls -la");
+    expect(commandLine({ command: ["rg", "-n", "two words", "notes"] }, base, [])).toBe("rg -n 'two words' notes");
+    expect(commandLine({ cmd: "pnpm test" }, base, [])).toBe("pnpm test");
+    // Other shells and quoting.
+    expect(commandLine({ command: "bash -l -c \"echo \\\"hi\\\"\"" }, base, [])).toBe('echo "hi"');
+    expect(commandLine({ command: "sh -c 'echo it'\\''s'" }, base, [])).toBe("echo it's");
+    expect(commandLine({ command: "pwsh -NoProfile -Command Get-ChildItem" }, base, [])).toBe("Get-ChildItem");
+    // Not a shell running a script: kept as it is.
+    expect(commandLine({ command: "python -c 'print(1)'" }, base, [])).toBe("python -c 'print(1)'");
+    expect(commandLine({ command: "bash build.sh" }, base, [])).toBe("bash build.sh");
+    // A script over several lines keeps its line breaks.
+    expect(commandLine({ command: "bash -lc 'cd /vault/spaces/school\nls'" }, base, [])).toBe("cd .\nls");
+    // Paths in a granted folder read by its name; others stay.
+    expect(commandLine({ command: "cat /vault/spaces/work/calendar/oct.md /etc/hosts" }, base, [{ label: "work/calendar", path: "/vault/spaces/work/calendar" }])).toBe("cat work/calendar/oct.md /etc/hosts");
+    expect(commandLine({ description: "no command here" }, base, [])).toBeUndefined();
+    expect(commandLine({ command: "   " }, base, [])).toBeUndefined();
+  });
+
+  it("are a command step's target and status line, never the word 'command'", () => {
+    const log = new ToolLog();
+    const events: AgentEvent[] = [];
+    log.emit(toolStartEvent("cmd-1", "command", { command: "ls notes" }, base, []), (e) => events.push(e));
+    log.emit({ kind: "toolEnd", id: "cmd-1", status: "success", detail: "week6.md" }, (e) => events.push(e));
+    expect(log.records).toEqual([{ kind: "tool", id: "cmd-1", category: "command", label: "Running command", target: "ls notes", status: "success", detail: "week6.md" }]);
+    expect(commandLabel("ls  notes\n| head")).toBe("Running ls notes | head");
+    expect(commandLabel(undefined)).toBe("Running a command");
   });
 });
 

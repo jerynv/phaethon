@@ -6,7 +6,7 @@ import { tempHome } from "../../../../tests/harness.ts";
 import { cancel, turnKey } from "../../core/runs.ts";
 import { load } from "../../core/thread.ts";
 import { INELIGIBLE_MESSAGE, OWN_SETTINGS_MESSAGE } from "../cli.ts";
-import { acpArgs, acpArgsFull, geminiPrompt, permissionDecision, policyFile } from "../gemini.ts";
+import { acpArgs, acpArgsFull, GeminiUpdates, geminiPrompt, permissionDecision, policyFile } from "../gemini.ts";
 import { HISTORY_INTRO } from "../prompt.ts";
 import { readCliSession, writeCliSession } from "../session.ts";
 import { alive, errors, FakeLog, fakeBin, request, send, setup, shown, waitFor, THREAD } from "./helpers.ts";
@@ -55,6 +55,21 @@ describe("Gemini CLI arguments", () => {
     expect(permissionDecision({ kind: "edit", locations: [{ path: path.join(school, "a.md") }] }, roots, false)).toBe("deny");
     expect(permissionDecision({ kind: "execute" }, roots, false)).toBe("deny");
     expect(permissionDecision({ kind: "execute" }, roots, true)).toBe("allow");
+  });
+});
+
+describe("Gemini CLI tool updates", () => {
+  it("show the command a shell step ran, from its input or else its title", () => {
+    const u = new GeminiUpdates("/vault/spaces/school", []);
+    expect(u.update({ sessionUpdate: "tool_call", toolCallId: "s1", kind: "execute", title: "ls notes [current working directory /vault/spaces/school] (List notes)", rawInput: { command: "ls /vault/spaces/school/notes", description: "List notes" } })).toEqual([
+      { kind: "tool", label: "Running ls notes" },
+      { kind: "toolStart", id: "gemini:s1", category: "command", label: "Running command", target: "ls notes" },
+    ]);
+    expect(u.update({ sessionUpdate: "tool_call", toolCallId: "s2", kind: "execute", title: "git log -3 [in src] (Recent commits)" }).at(-1)).toMatchObject({ target: "git log -3" });
+    expect(u.update({ sessionUpdate: "tool_call_update", toolCallId: "s1", status: "completed", content: [{ type: "content", content: { type: "text", text: "week6.md\n" } }] })).toEqual([{ kind: "toolEnd", id: "gemini:s1", status: "success", detail: "week6.md" }]);
+    // What a read printed never enters the conversation.
+    u.update({ sessionUpdate: "tool_call", toolCallId: "r1", kind: "read", rawInput: { path: "/vault/spaces/school/notes.md" } });
+    expect(u.update({ sessionUpdate: "tool_call_update", toolCallId: "r1", status: "completed", content: [{ type: "content", content: { type: "text", text: "secret" } }] })).toEqual([{ kind: "toolEnd", id: "gemini:r1", status: "success" }]);
   });
 });
 

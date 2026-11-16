@@ -6,8 +6,9 @@ import type { Record_ } from "../core/thread.ts";
 /**
  * What a CLI's tool use becomes in Phaethon: a status line, a start/end pair
  * and, once finished, a record in the conversation. The tool's category, a
- * generic label, a shown path, its status and, for a command, the first part
- * of its output (behind "Show output") are kept; never raw tool arguments.
+ * generic label, a shown path, its status and, for a command, the command line
+ * it ran (without the shell it was wrapped in, paths as in the space) and the
+ * first part of its output are kept; never other raw tool arguments.
  */
 
 export type Granted = { label: string; path: string }[];
@@ -31,6 +32,21 @@ export function outputText(text: string): string {
   for (const ch of text) {
     if (ch !== "\n" && ch !== "\t" && /\p{Cc}/u.test(ch)) continue;
     if (n++ >= 4000) {
+      out += "…";
+      break;
+    }
+    out += ch;
+  }
+  return out.trim();
+}
+
+/** A command line as kept: up to 2000 characters, line breaks kept, other control characters dropped. */
+export function commandText(text: string): string {
+  let out = "";
+  let n = 0;
+  for (const ch of text) {
+    if (ch !== "\n" && /\p{Cc}/u.test(ch)) continue;
+    if (n++ >= 2000) {
       out += "…";
       break;
     }
@@ -98,9 +114,83 @@ export function place(verb: string, p: string, base: string, granted: Granted): 
   return inGrant ? `${verb} ${shown}` : `${verb} file ${shown}`;
 }
 
+const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell", "cmd"]);
+// A shell's options before its script flag (`-l`, `-NoProfile`, `/d /s`), then the flag itself (`-c`, `-lc`, `-Command`, `/c`).
+const SHELL_OPTION = /^(?:-[a-z]+|\/[dsq])$/i;
+const SCRIPT_FLAG = /^(?:-[a-z]*c|-command|\/c)$/i;
+
+function programName(word: string): string {
+  return (word.split(/[\\/]/).pop() ?? word).replace(/\.exe$/i, "").toLowerCase();
+}
+
+/** `'it'\''s'` → `it's`, `"say \"hi\""` → `say "hi"`; anything else as is. */
+function unquote(script: string): string {
+  const s = script.trim();
+  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'") && !s.slice(1, -1).replaceAll("'\\''", "").includes("'")) return s.slice(1, -1).replaceAll("'\\''", "'");
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"') && !/(^|[^\\])"/.test(s.slice(1, -1))) return s.slice(1, -1).replace(/\\(["\\$`])/g, "$1");
+  return s;
+}
+
+/** `/bin/zsh -lc 'cat notes.md'` → `cat notes.md`; a line that isn't a shell running a script stays as it is. */
+function withoutShell(line: string): string {
+  const s = line.trim();
+  const re = /\S+/g;
+  const words: string[] = [];
+  let end = 0;
+  for (let m = re.exec(s); m && words.length < 8; m = re.exec(s)) {
+    words.push(m[0]);
+    end = re.lastIndex;
+    if (words.length > 1 && SCRIPT_FLAG.test(m[0])) break;
+  }
+  const flag = words.at(-1) ?? "";
+  if (words.length < 2 || !SHELLS.has(programName(words[0]!)) || !SCRIPT_FLAG.test(flag) || !words.slice(1, -1).every((w) => SHELL_OPTION.test(w))) return s;
+  const script = s.slice(end).trim();
+  return script ? unquote(script) : s;
+}
+
+/** `["bash", "-lc", "ls"]` → `ls`; any other argv joined, quoting the words that need it. */
+function argvLine(words: string[]): string {
+  if (words.length >= 3 && SHELLS.has(programName(words[0]!))) {
+    const flag = words.findIndex((w, i) => i > 0 && SCRIPT_FLAG.test(w));
+    if (flag === words.length - 2 && words.slice(1, flag).every((w) => SHELL_OPTION.test(w))) return words[flag + 1]!;
+  }
+  return words.map((w) => (/^[\w@%+=:,./-]+$/.test(w) ? w : `'${w.replaceAll("'", "'\\''")}'`)).join(" ");
+}
+
+/** "Running cat notes.md": a command step's status line ("Running a command" when it names none). */
+export function commandLabel(command: string | undefined): string {
+  const line = (command ?? "").replace(/\s+/g, " ").trim();
+  return line ? `Running ${[...line].slice(0, 120).join("")}` : "Running a command";
+}
+
+/**
+ * The command line a coding agent ran, as the person would read it: Claude
+ * Code's and Gemini CLI's `command`, Codex's `command` (a string, or the argv
+ * list older versions send), or a `cmd`, without the shell it was wrapped in
+ * and with paths in the space shown as they are there. Undefined when the
+ * input names no command.
+ */
+export function commandLine(input: unknown, base: string, granted: Granted): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const o = input as Record<string, unknown>;
+  let line: string | undefined;
+  for (const key of ["command", "cmd", "commandLine", "argv"]) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim()) line = withoutShell(v);
+    else if (Array.isArray(v) && v.length && v.every((w) => typeof w === "string")) line = argvLine(v as string[]);
+    if (line) break;
+  }
+  if (!line) return undefined;
+  // Paths in the space, or in a granted folder, read as they do there.
+  const shown = line.replace(/(^|[\s'"=(])(\/[^\s'"`;|&<>()]+)/g, (_, lead: string, p: string) => lead + shownPath(p, base, granted).shown);
+  return commandText(shown) || undefined;
+}
+
 export function toolStartEvent(id: string, category: ToolCategory, input: unknown, base: string, granted: Granted): AgentEvent {
   let target: string | undefined;
-  if (category !== "command" && input && typeof input === "object") {
+  if (category === "command") {
+    target = commandLine(input, base, granted);
+  } else if (input && typeof input === "object") {
     const o = input as Record<string, unknown>;
     for (const key of ["file_path", "absolute_path", "dir_path", "path"]) {
       const v = o[key];
@@ -162,7 +252,7 @@ export class ToolLog {
     if (event.kind === "toolStart") {
       if (!this.#active.has(event.id)) {
         const entry: { category: ToolCategory; label: string; target?: string } = { category: event.category, label: shortText(event.label) };
-        if (event.target !== undefined) entry.target = shortText(event.target);
+        if (event.target !== undefined) entry.target = event.category === "command" ? commandText(event.target) : shortText(event.target);
         this.#active.set(event.id, entry);
       }
     } else if (event.kind === "toolEnd") {

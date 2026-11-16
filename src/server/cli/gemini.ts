@@ -10,7 +10,7 @@ import type { Outcome } from "./cli.ts";
 import { abortion, finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { JsonRpcPeer, RpcError } from "./jsonrpc.ts";
 import { sleep, stopGroup } from "./process.ts";
-import { place, shownPath, ToolEvents, type Granted } from "./tools.ts";
+import { commandLabel, commandLine, place, shownPath, ToolEvents, type Granted } from "./tools.ts";
 
 /**
  * Gemini CLI through the Agent Client Protocol (`gemini --acp`), one agent
@@ -99,7 +99,20 @@ export function invocation(ctx: DriveContext): Invocation {
 
 // ---- Permission policy (after T3's clientPolicy.ts) ----
 
-type ToolCall = { toolCallId?: unknown; title?: unknown; kind?: unknown; status?: unknown; locations?: unknown; rawInput?: unknown };
+type ToolCall = { toolCallId?: unknown; title?: unknown; kind?: unknown; status?: unknown; locations?: unknown; rawInput?: unknown; content?: unknown };
+
+/** The text a tool call reports back (ACP `content` blocks): what a command printed. */
+function contentText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((c) => {
+      const inner = (c as { type?: unknown; content?: { type?: unknown; text?: unknown } } | null)?.content;
+      return (c as { type?: unknown } | null)?.type === "content" && inner?.type === "text" && typeof inner.text === "string" ? inner.text : "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
 
 const READ_KINDS = new Set(["read", "search", "think"]);
 
@@ -180,7 +193,7 @@ export class GeminiUpdates {
         if (typeof input.pattern === "string") return `Searching files for “${input.pattern}”`;
         return file ? `Listing ${shownPath(file, this.base, this.granted).shown}` : "Searching files";
       case "command":
-        return "Running a command";
+        return commandLabel(commandLine(this.#command(call), this.base, this.granted));
       case "write":
         return file ? place("Changing", file, this.base, this.granted) : "Changing files";
       default:
@@ -188,10 +201,20 @@ export class GeminiUpdates {
     }
   }
 
+  /** What a shell step ran: its `command`, else the title Gemini CLI gives it ("ls -la [in src] (List files)") without the folder and the note. */
+  #command(call: ToolCall): { command?: unknown } {
+    const input = (call.rawInput && typeof call.rawInput === "object" ? call.rawInput : {}) as Record<string, unknown>;
+    if (typeof input.command === "string" && input.command.trim()) return { command: input.command };
+    const title = typeof call.title === "string" ? call.title : "";
+    return { command: title.replace(/\s+\[(?:in|current working directory) [^\]]*\](?:\s+\([^)]*\))?\s*$/, "") };
+  }
+
   #end(call: ToolCall): AgentEvent[] {
     const status: ToolStatus | null = call.status === "completed" ? "success" : call.status === "failed" ? "failed" : null;
     if (!status) return [];
-    return this.#tools.end(String(call.toolCallId ?? ""), status, status === "failed" ? "Tool reported an error" : undefined);
+    // What a command printed, for its output; ToolEvents keeps it only for commands.
+    const printed = contentText(call.content);
+    return this.#tools.end(String(call.toolCallId ?? ""), status, printed || (status === "failed" ? "Tool reported an error" : undefined));
   }
 
   update(u: Record<string, unknown>): AgentEvent[] {
@@ -212,7 +235,7 @@ export class GeminiUpdates {
         const input = (call.rawInput && typeof call.rawInput === "object" ? call.rawInput : {}) as Record<string, unknown>;
         const file = locationsOf(call)[0] ?? (["file_path", "absolute_path", "dir_path", "path"].map((k) => input[k]).find((v) => typeof v === "string" && v) as string | undefined);
         this.#afterTool = true;
-        const target = file ? { path: file } : input;
+        const target = category === "command" ? this.#command(call) : file ? { path: file } : input;
         return [...this.#tools.start(String(call.toolCallId ?? ""), category, target, this.#label(call, category, file)), ...this.#end(call)];
       }
       case "tool_call_update":

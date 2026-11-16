@@ -7,7 +7,7 @@ import type { Outcome } from "./cli.ts";
 import { abortion, finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { JsonRpcPeer, RpcError } from "./jsonrpc.ts";
 import { sleep, stopGroup } from "./process.ts";
-import { shownPath, ToolEvents, type Granted } from "./tools.ts";
+import { commandLabel, commandLine, ToolEvents, type Granted } from "./tools.ts";
 
 /**
  * Codex through `codex app-server` (JSON-RPC over stdio), one server per
@@ -93,26 +93,6 @@ export function invocation(ctx: DriveContext): Invocation {
   return { args: appServerArgs([ctx.workingDir, ...ctx.dirs, ...ownDirs(ctx.bin)]) };
 }
 
-/** "Running cat notes.md": the command without the shell Codex wraps it in, paths shown as in the space. */
-export function commandLabel(command: string, base: string, granted: Granted): string {
-  let inner = command;
-  for (const sep of [" -lc ", " -c "]) {
-    const at = command.indexOf(sep);
-    if (at >= 0) {
-      inner = command
-        .slice(at + sep.length)
-        .trim()
-        .replace(/^['"]+|['"]+$/g, "");
-      break;
-    }
-  }
-  const shown = inner
-    .split(" ")
-    .map((w) => (w.startsWith("/") ? shownPath(w, base, granted).shown : w))
-    .join(" ");
-  return `Running ${[...shown].slice(0, 120).join("")}`;
-}
-
 type Item = Record<string, unknown> & { type?: unknown; id?: unknown };
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -156,7 +136,7 @@ export class CodexItems {
     const id = str(item.id);
     switch (item.type) {
       case "commandExecution":
-        return this.#tools.start(id, "command", item, commandLabel(str(item.command), this.base, this.granted));
+        return this.#tools.start(id, "command", item, commandLabel(commandLine(item, this.base, this.granted)));
       case "webSearch":
         return this.#tools.start(id, "search", item, `Searching the web for “${str(item.query)}”`);
       case "mcpToolCall":

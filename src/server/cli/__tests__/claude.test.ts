@@ -99,6 +99,17 @@ describe("Claude Code stream", () => {
     expect(p.feed(result)).toEqual([]);
   });
 
+  it("shows the command a Bash step ran, and its output", () => {
+    const p = new ClaudeParser("/vault/spaces/school");
+    const start = '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"bash-1","name":"Bash","input":{"command":"ls /vault/spaces/school/notes","description":"List notes"}}]}}';
+    expect(p.feed(start)).toEqual([
+      { kind: "tool", label: "Running ls notes" },
+      { kind: "toolStart", id: "claude:bash-1", category: "command", label: "Running command", target: "ls notes" },
+    ]);
+    const result = '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"bash-1","content":"week6.md"}]}}';
+    expect(p.feed(result)).toEqual([{ kind: "toolEnd", id: "claude:bash-1", status: "success", detail: "week6.md" }]);
+  });
+
   it("falls back to the result text, and reads errors and garbage", () => {
     expect(feed(['{"type":"result","subtype":"success","is_error":false,"result":"hi"}']).events).toEqual([{ kind: "text", delta: "hi" }]);
     const bad = feed(["not json", '{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}']);

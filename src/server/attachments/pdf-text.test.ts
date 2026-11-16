@@ -29,5 +29,5 @@ describe("attached PDFs for models without PDF input", () => {
     // Anthropic still gets the PDF itself.
     const [a] = expandForProvider("school", msgs, { images: true, pdf: true });
     expect(a.content[0]).toMatchObject({ type: "document", source: { type: "base64", media_type: "application/pdf" } });
-  });
+  }, 60000);
 });

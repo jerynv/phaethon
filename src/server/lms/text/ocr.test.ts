@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { find, run } from "./engine.ts";
 import { supervise } from "./ocr.ts";
@@ -23,11 +26,23 @@ describe.skipIf(process.platform === "win32")("text recognition supervisor (port
   });
 
   it("a stop kills the recogniser at once", async () => {
+    // Stop once page 1 is out (the child leaves a marker after printing it), not after a fixed delay that a busy machine can outrun.
+    const marker = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-ocr-stop-")), "page1");
     const stop = new AbortController();
-    setTimeout(() => stop.abort(), 200);
-    const started = Date.now();
-    const r = await supervise(sh(`echo '{"page":1,"text":"one"}'; sleep 30; echo '{"page":2,"text":"two"}'`), [1, 2], 60000, 600000, stop.signal);
-    expect(Date.now() - started).toBeLessThan(5000);
+    let stoppedAt = 0;
+    const watch = setInterval(() => {
+      if (!fs.existsSync(marker)) return;
+      clearInterval(watch);
+      setTimeout(() => {
+        stoppedAt = Date.now();
+        stop.abort();
+      }, 50);
+    }, 20);
+    const r = await supervise(sh(`echo '{"page":1,"text":"one"}'; : > '${marker}'; sleep 30; echo '{"page":2,"text":"two"}'`), [1, 2], 60000, 600000, stop.signal);
+    clearInterval(watch);
+    fs.rmSync(path.dirname(marker), { recursive: true, force: true });
+    expect(stoppedAt).toBeGreaterThan(0);
+    expect(Date.now() - stoppedAt).toBeLessThan(5000);
     expect(r.get(1)).toEqual({ text: "one" });
     expect(r.get(2)).toEqual({ failed: "the import was cancelled" });
   });

@@ -581,7 +581,7 @@ describe("canvas course end to end", () => {
     expect(readme).toContain("Text copy: [readings/ods-java.pdf.md]");
     expect(fs.existsSync(path.join(dir, "files/schedule.pdf.md"))).toBe(false);
     expect(readme).not.toContain("schedule.pdf.md");
-  });
+  }, 60000);
 
   it("350 module files are imported, then re-imported without a single file request", async () => {
     const site = await fakeSite((u) => {

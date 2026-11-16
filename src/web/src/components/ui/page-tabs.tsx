@@ -37,13 +37,29 @@ export const pageTabStripClassName =
 export function PageTabList({ className, children, ref, ...props }: React.ComponentProps<"div">) {
   const own = React.useRef<HTMLDivElement | null>(null);
   // When the strip narrows (a window or sidebar resize, a tab opening), the active tab stays in view.
+  // While it overflows, the edge with more tabs past it fades out, so a cut-off tab reads as "more this way".
   React.useEffect(() => {
     const el = own.current;
     if (!el) return;
-    const keep = () => el.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const edges = () => {
+      const more = el.scrollWidth - el.clientWidth;
+      el.toggleAttribute("data-more-start", more > 1 && el.scrollLeft > 1);
+      el.toggleAttribute("data-more-end", more > 1 && el.scrollLeft < more - 1);
+    };
+    const keep = () => {
+      el.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      edges();
+    };
     const observer = new ResizeObserver(keep);
     observer.observe(el);
-    return () => observer.disconnect();
+    const mutations = new MutationObserver(edges);
+    mutations.observe(el, { childList: true });
+    el.addEventListener("scroll", edges, { passive: true });
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+      el.removeEventListener("scroll", edges);
+    };
   }, []);
   return (
     <div
@@ -54,7 +70,11 @@ export function PageTabList({ className, children, ref, ...props }: React.Compon
         if (typeof ref === "function") ref(el);
         else if (ref) ref.current = el;
       }}
-      className={cn("app-no-drag scroll-quiet flex h-7 min-w-0 shrink scroll-px-2 items-center self-center overflow-x-auto overflow-y-hidden px-2", className)}
+      className={cn(
+        "app-no-drag scroll-quiet flex h-7 min-w-0 shrink scroll-px-2 items-center self-center overflow-x-auto overflow-y-hidden px-2",
+        "[--fade:2rem] data-more-end:mask-r-from-[calc(100%-var(--fade))] data-more-start:mask-l-from-[calc(100%-var(--fade))]",
+        className,
+      )}
     >
       {children}
     </div>

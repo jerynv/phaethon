@@ -5,7 +5,7 @@ import { SurfaceError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
@@ -102,20 +102,30 @@ export function CoursesView({ space }: { space: SpaceView }) {
       ) : (
         <div className="flex min-h-0 flex-1">
           <aside className={cn("flex w-70 shrink-0 flex-col border-r", !pane && open && "hidden")} aria-label="Courses">
-            <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-              <h2 className="flex-1 font-medium text-lg tracking-title">Courses</h2>
-              <Tooltip>
-                <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
-                  <Icon icon={icons.add} />
-                </TooltipTrigger>
-                <TooltipPopup>Connect a course site</TooltipPopup>
-              </Tooltip>
-            </div>
-            <div className="flex flex-col gap-3 px-4 pb-3">
-              <div className="relative">
-                <Icon icon={icons.search} className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-2.5 z-10 size-3.5 text-muted-foreground" />
-                <Input size="sm" value={query} placeholder="Search courses" aria-label="Search courses" className="*:data-[slot=input]:ps-8" onChange={(e) => setQuery(e.target.value)} />
+            <div className="flex shrink-0 flex-col gap-(--pane-row-gap) px-2 pt-(--pane-top) pb-2">
+              <div className="flex h-(--pane-row-height) items-center gap-2 pl-2">
+                <h2 className="flex-1 font-medium text-lg tracking-title">Courses</h2>
+                <Tooltip>
+                  <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
+                    <Icon icon={icons.add} />
+                  </TooltipTrigger>
+                  <TooltipPopup>Connect a course site</TooltipPopup>
+                </Tooltip>
               </div>
+              <SearchField
+                value={query}
+                placeholder="Search courses"
+                aria-label="Search courses"
+                onChange={(e) => setQuery(e.target.value)}
+                onClear={() => setQuery("")}
+                trailing={
+                  query ? (
+                    <SearchFieldAction aria-label="Clear search" onClick={() => setQuery("")}>
+                      <Icon icon={icons.close} />
+                    </SearchFieldAction>
+                  ) : null
+                }
+              />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 py-2" data-testid="course-list">
               <CourseTree space={space.id} groups={groups} query={query} openKey={open?.key} onOpen={setOpenKey} {...actions} />
@@ -173,13 +183,19 @@ export function CoursesView({ space }: { space: SpaceView }) {
 function CoursesSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 motion-safe:animate-skeleton" aria-hidden>
-      <div className="flex w-70 shrink-0 flex-col gap-3 border-r p-4">
-        <Skeleton className="h-4 w-24 animate-none" />
-        <Skeleton className="h-7 w-full animate-none rounded-lg" />
-        <Skeleton className="h-7 w-full animate-none rounded-lg" />
-        {["70%", "58%", "64%", "46%"].map((w) => (
-          <Skeleton key={w} className="h-3 animate-none" style={{ width: w }} />
-        ))}
+      <div className="flex w-70 shrink-0 flex-col border-r">
+        <div className="flex flex-col gap-(--pane-row-gap) px-2 pt-(--pane-top) pb-2">
+          <div className="flex h-(--pane-row-height) items-center pl-2">
+            <Skeleton className="h-4 w-24 animate-none" />
+          </div>
+          <Skeleton className="h-(--search-field-height) w-full animate-none rounded-lg" />
+        </div>
+        <div className="flex flex-col gap-3 px-4 pt-3">
+          <Skeleton className="h-7 w-full animate-none rounded-lg" />
+          {["70%", "58%", "64%", "46%"].map((w) => (
+            <Skeleton key={w} className="h-3 animate-none" style={{ width: w }} />
+          ))}
+        </div>
       </div>
       <div className="flex flex-1 flex-col gap-4 p-8">
         <Skeleton className="h-3 w-48 animate-none" />

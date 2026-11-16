@@ -114,11 +114,11 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
   const markers = useMarkers(section);
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
   return (
-    <nav aria-label="Settings" className="flex w-64 shrink-0 flex-col overflow-y-auto border-r px-3 py-3 max-[1180px]:w-52">
+    <nav aria-label="Settings" className="flex w-64 shrink-0 flex-col overflow-y-auto border-r px-3 pt-(--pane-top) pb-3 max-[1180px]:w-52">
       <button
         type="button"
         onClick={close}
-        className="group flex h-7 items-center gap-2 rounded-md px-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+        className="group flex h-(--pane-row-height) shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
       >
         <Icon icon={icons.arrowLeft} className="size-4" />
         Back

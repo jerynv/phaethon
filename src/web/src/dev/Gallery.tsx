@@ -6,6 +6,7 @@ import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
 import { KeyAction, KeyActions } from "@/components/ui/key-actions";
+import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { BarLegend, StackedBar } from "@/components/ui/stacked-bar";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { Step, StepList, ThoughtToggle, ToolSummary } from "@/components/ui/step-list";
@@ -83,6 +84,7 @@ function Welcome() {
 function Panel() {
   const [range, setRange] = useState("1w");
   const [mode, setMode] = useState("pending");
+  const [search, setSearch] = useState("");
   const [t1, setT1] = useState(true);
   const [t2, setT2] = useState(false);
   const [thought, setThought] = useState(true);
@@ -104,6 +106,30 @@ function Panel() {
           <Button variant="outline" size="icon-sm" aria-label="More">
             <Icon icon={icons.more} />
           </Button>
+        </div>
+      </Section>
+      <Section title="Search field">
+        <div className="flex max-w-72 flex-col gap-3">
+          <SearchField
+            aria-label="Search"
+            placeholder="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onClear={() => setSearch("")}
+            trailing={
+              search ? (
+                <SearchFieldAction aria-label="Clear search" onClick={() => setSearch("")}>
+                  <Icon icon={icons.close} />
+                </SearchFieldAction>
+              ) : (
+                <SearchFieldAction tabIndex={-1} aria-label="Search everything">
+                  <span>⌘</span>
+                  <span>K</span>
+                </SearchFieldAction>
+              )
+            }
+          />
+          <SearchField aria-label="Search courses" placeholder="Search courses" defaultValue="calc" />
         </div>
       </Section>
       <Section title="Tabs and segmented controls">

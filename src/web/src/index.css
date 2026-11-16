@@ -23,6 +23,16 @@
    */
   --footer-height: 2.8125rem;
   /*
+   * The rows at the top of a column beside the title bar (the sidebar, the
+   * Courses list, Settings' nav), so the columns read as one grid: content
+   * starts --pane-top under the bar, a --pane-row-height title row (the space
+   * switcher, "Courses"), --pane-row-gap, then the search field.
+   */
+  --pane-top: 0.5rem;
+  --pane-row-height: 2rem;
+  --pane-row-gap: 0.375rem;
+  --search-field-height: 1.75rem;
+  /*
    * Room for macOS's traffic lights at the title bar's left end: the 54 px
    * group (three 14 px buttons, 6 px apart) placed 17 px from the window's
    * edge (trafficLightPosition in src/desktop/main.ts), and the same 17 px

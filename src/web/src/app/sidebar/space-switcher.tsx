@@ -92,7 +92,7 @@ export function SpaceSwitcher({ onNewSpace, onDown }: { onNewSpace: () => void; 
                   onDown();
                 }
               }}
-              className="group/switcher flex h-8 w-full min-w-0 items-center gap-2 rounded-md pr-1.5 pl-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-accent"
+              className="group/switcher flex h-(--pane-row-height) w-full min-w-0 items-center gap-2 rounded-md pr-1.5 pl-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-accent"
             />
           }
         >

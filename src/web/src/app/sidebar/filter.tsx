@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Ref } from "react";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
-import { SidebarMenuAction } from "@/components/ui/sidebar";
+import { SearchField, SearchFieldAction } from "@/components/ui/search-field";
 import { Spinner } from "@/components/ui/spinner";
 import { errorText } from "@/lib/core";
 import { api } from "../api";
@@ -116,62 +116,45 @@ export function FilterField({
   const setPalette = useNav((s) => s.setPalette);
   const { keys, aria } = keysFor("search");
   return (
-    <div className="group/filter relative flex h-7 min-w-0 flex-1 items-center rounded-lg border bg-well transition-colors hover:border-border-strong has-focus-visible:border-ring/60 has-focus-visible:bg-background">
-      <Icon icon={icons.search} className="pointer-events-none absolute left-2 size-4 text-subtle-foreground" />
-      <input
-        ref={inputRef}
-        type="text"
-        role="searchbox"
-        aria-label="Search chats"
-        aria-keyshortcuts={aria}
-        placeholder="Search"
-        autoComplete="off"
-        spellCheck={false}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            if (!value) return;
-            e.preventDefault();
-            e.stopPropagation();
-            onChange("");
-          } else if (e.key === "ArrowDown") {
-            e.preventDefault();
-            onDown();
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            onUp();
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            onEnter();
-          }
-        }}
-        className="h-full w-full min-w-0 rounded-lg bg-transparent pr-12 pl-7.5 text-sm text-foreground outline-none placeholder:text-subtle-foreground"
-      />
-      <span className="absolute right-1 flex items-center">
-        {value ? (
+    <SearchField
+      className="flex-1"
+      ref={inputRef}
+      aria-label="Search chats"
+      aria-keyshortcuts={aria}
+      placeholder="Search"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClear={() => onChange("")}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          onDown();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          onUp();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          onEnter();
+        }
+      }}
+      trailing={
+        value ? (
           busy ? (
-            <Spinner size="xs" className="mr-1 text-subtle-foreground" />
+            <Spinner size="xs" className="mx-1 text-subtle-foreground" />
           ) : (
-            <SidebarMenuAction aria-label="Clear search" onClick={() => onChange("")}>
+            <SearchFieldAction aria-label="Clear search" onClick={() => onChange("")}>
               <Icon icon={icons.close} />
-            </SidebarMenuAction>
+            </SearchFieldAction>
           )
         ) : (
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Search everything"
-            onClick={() => setPalette(true)}
-            className="flex h-5 items-center gap-0.5 rounded-sm px-1 text-subtle-foreground text-xs tabular-nums transition-colors hover:bg-foreground/6 hover:text-muted-foreground"
-          >
+          <SearchFieldAction tabIndex={-1} aria-label="Search everything" onClick={() => setPalette(true)}>
             {keys.map((k) => (
               <span key={k}>{k}</span>
             ))}
-          </button>
-        )}
-      </span>
-    </div>
+          </SearchFieldAction>
+        )
+      }
+    />
   );
 }
 

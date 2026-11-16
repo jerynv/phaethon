@@ -222,7 +222,7 @@ export function Sidebar() {
   return (
     <Panel aria-label="Spaces and conversations" role="navigation">
       <SidebarRail />
-      <div ref={panelRef} className="flex shrink-0 flex-col gap-1.5 px-2 pt-2">
+      <div ref={panelRef} className="flex shrink-0 flex-col gap-(--pane-row-gap) px-2 pt-(--pane-top)">
         {list.length ? (
           <SpaceSwitcher onNewSpace={() => setCreating(true)} onDown={() => filterRef.current?.focus()} />
         ) : spaces.data ? (
@@ -231,7 +231,7 @@ export function Sidebar() {
             <span className="flex-1">New space</span>
           </SidebarMenuButton>
         ) : (
-          <SidebarMenuSkeleton icon className="h-8" />
+          <SidebarMenuSkeleton icon className="h-(--pane-row-height)" />
         )}
         <div className="flex items-center gap-1">
           <FilterField

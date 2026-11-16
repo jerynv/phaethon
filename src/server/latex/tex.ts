@@ -5,6 +5,8 @@
  * included (the UI and tests match on them).
  */
 
+import HOUSE_STYLE from "./phaethon.sty";
+
 /** The longest source compiled or saved, in UTF-8 bytes. */
 export const MAX_SOURCE = 512 * 1024;
 /** The largest PDF read back. */
@@ -21,6 +23,15 @@ export const MAX_RUNS = 3;
 export const MAX_LOG = 48 * 1024;
 /** Cached PDFs kept; the oldest go first. */
 export const MAX_CACHED = 200;
+
+/** The house style's file name, written beside each document compiled or saved. Not `report`: TeX ships an unrelated report.sty. */
+export const STYLE_FILE = "phaethon.sty";
+export { HOUSE_STYLE };
+
+/** Whether `source` loads the house style. */
+export function usesHouseStyle(source: string): boolean {
+  return /\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\bphaethon\b[^}]*\}/.test(source);
+}
 
 export const INSTALL_HINT =
   "To see LaTeX documents here, install a TeX distribution: MacTeX on a Mac (tug.org/mactex), " +
@@ -46,15 +57,17 @@ export function kindBin(kind: Kind): string {
 export type Engine = { kind: Kind; path: string };
 
 /**
- * The engine for `source`: pdfLaTeX for most documents, XeLaTeX or LuaLaTeX
- * when it loads system fonts, LuaLaTeX when it runs Lua; then whatever is installed.
+ * The engine for `source`. Documents use XeLaTeX first, as the house style is
+ * set for it, then LuaLaTeX, pdfLaTeX and Tectonic. A ```tikz figure (`figure`)
+ * uses pdfLaTeX first, the quickest to start, unless it loads system fonts.
+ * Anything that runs Lua needs LuaLaTeX. Then whatever is installed.
  */
-export function choose(engines: readonly Engine[], source: string): Engine | undefined {
+export function choose(engines: readonly Engine[], source: string, figure = false): Engine | undefined {
   const has = (s: string) => source.includes(s);
   let order: Kind[];
   if (has("\\directlua") || has("{luacode")) order = ["lualatex", "tectonic"];
-  else if (has("{fontspec}") || has("{unicode-math}") || has("{polyglossia}") || has("\\setmainfont")) order = ["xelatex", "lualatex", "tectonic"];
-  else order = ["pdflatex", "xelatex", "lualatex", "tectonic"];
+  else if (figure && !(has("{fontspec}") || has("{unicode-math}") || has("{polyglossia}") || has("\\setmainfont"))) order = ["pdflatex", "xelatex", "lualatex", "tectonic"];
+  else order = ["xelatex", "lualatex", "pdflatex", "tectonic"];
   for (const kind of [...order, ...KINDS]) {
     const found = engines.find((e) => e.kind === kind);
     if (found) return found;
@@ -80,22 +93,33 @@ const FIGURE_TAIL =
   "\\else\\pagewidth=\\dimexpr\\wd0+8pt\\relax\\pageheight=\\dimexpr\\ht0+\\dp0+8pt\\relax\\fi\n" +
   "\\hoffset=-1in \\voffset=-1in\n\\shipout\\vbox{\\kern4pt\\hbox{\\kern4pt\\box0\\kern4pt}\\kern4pt}\n\\end{document}\n";
 
+/** The house style's TikZ block (libraries and named styles), line by line, so a figure draws like a document. */
+export const HOUSE_TIKZ: readonly string[] = (() => {
+  const lines = rustLines(HOUSE_STYLE);
+  const start = lines.findIndex((l) => l.startsWith("\\RequirePackage{tikz}"));
+  const end = lines.findIndex((l, i) => i > start && l.startsWith("% ----"));
+  return lines.slice(start, end).filter((l) => l.trim() !== "");
+})();
+
+/** Packages a figure gets when its body uses them, and environments that are a picture of their own. */
+const FIGURE_PACKAGES: Array<{ marks: string[]; line: string; picture?: string }> = [
+  { marks: ["\\begin{axis}", "pgfplots", "\\addplot", "{semilogxaxis}", "{semilogyaxis}", "{loglogaxis}", "{polaraxis}"], line: "\\usepackage{pgfplots}\\pgfplotsset{compat=1.18}" },
+  { marks: ["\\begin{forest}"], line: "\\usepackage{forest}", picture: "\\begin{forest}" },
+  { marks: ["\\begin{tikzcd}"], line: "\\usepackage{tikz-cd}", picture: "\\begin{tikzcd}" },
+  { marks: ["\\begin{circuitikz}"], line: "\\usepackage{circuitikz}", picture: "\\begin{circuitikz}" },
+  { marks: ["\\tdplotsetmaincoords"], line: "\\usepackage{tikz-3dplot}" },
+];
+
 /**
  * A figure's body as a document whose one page is the figure, cropped with a
- * small margin. Package lines move to the preamble and leave a blank line, so
+ * small margin, with the house style's TikZ libraries and styles (`box`,
+ * `lbl`, `hl`…). Package lines move to the preamble and leave a blank line, so
  * line numbers still match. Returns the document and how many lines precede
  * the body's first line.
  */
 export function figureDocument(body: string): { doc: string; before: number } {
-  const preamble = [
-    "\\documentclass{article}",
-    "\\usepackage{amsmath,amssymb}",
-    "\\usepackage{tikz}",
-    "\\usetikzlibrary{arrows.meta,calc,positioning,decorations.pathreplacing,shapes.geometric,patterns,angles,quotes,backgrounds,fit}",
-  ];
-  if (["\\begin{axis}", "pgfplots", "\\addplot", "{semilogxaxis}", "{loglogaxis}", "{polaraxis}"].some((s) => body.includes(s))) {
-    preamble.push("\\usepackage{pgfplots}\\pgfplotsset{compat=1.18}");
-  }
+  const preamble = ["\\documentclass{article}", "\\usepackage{amsmath,amssymb}", ...HOUSE_TIKZ];
+  for (const p of FIGURE_PACKAGES) if (p.marks.some((s) => body.includes(s))) preamble.push(p.line);
   const lines: string[] = [];
   for (const line of rustLines(body)) {
     const t = line.trimStart();
@@ -107,7 +131,8 @@ export function figureDocument(body: string): { doc: string; before: number } {
     }
   }
   const joined = lines.join("\n");
-  const wrapped = !joined.includes("\\begin{tikzpicture}");
+  const pictures = ["\\begin{tikzpicture}", ...FIGURE_PACKAGES.flatMap((p) => (p.picture ? [p.picture] : []))];
+  const wrapped = !pictures.some((p) => joined.includes(p));
   preamble.push("\\pagestyle{empty}", "\\begin{document}", "\\setbox0=\\hbox{%");
   if (wrapped) preamble.push("\\begin{tikzpicture}");
   const before = preamble.length;
@@ -178,6 +203,66 @@ export function needsRerun(log: string, source: string): boolean {
     log.includes("Rerun LaTeX") ||
     (["\\tableofcontents", "\\listoffigures", "\\listoftables", "\\pageref", "LastPage"].some((s) => source.includes(s)) && !log.includes("(rerun not needed)"))
   );
+}
+
+/** The most warnings a compile reports. */
+export const MAX_WARNINGS = 4;
+
+function listed(items: Set<string>, max = 4): string {
+  const all = [...items];
+  return all.slice(0, max).join(", ") + (all.length > max ? ` and ${all.length - max} more` : "");
+}
+
+/**
+ * What a PDF that did compile may still get wrong, from its last log, in plain
+ * words: characters the font lacks, unknown commands, references and citations
+ * that print as ??, and lines more than 1 pt into the margin. `offset` lines
+ * before the source's first line are taken off line numbers.
+ */
+export function parseWarnings(log: string, offset: number): string[] {
+  const missing = new Set<string>();
+  let missingUnnamed = false;
+  let undefinedCs = false;
+  const refs = new Set<string>();
+  const cites = new Set<string>();
+  let overfull = 0;
+  let widest = 0;
+  let widestLine: number | null = null;
+  for (const l of rustLines(log)) {
+    let m: RegExpExecArray | null;
+    if ((m = /^Missing character: There is no (.+?) (?:\(U\+[0-9A-Fa-f]+\) )?in font /.exec(l))) {
+      // pdfTeX writes bytes outside ASCII as ^^xx; those are counted but not named.
+      if (m[1].includes("^^")) missingUnnamed = true;
+      else missing.add(m[1]);
+    } else if (l.includes("Undefined control sequence")) {
+      undefinedCs = true;
+    } else if ((m = /Warning: Reference [`'‘](.+?)['’] on page \S+ undefined/.exec(l))) {
+      refs.add(m[1]);
+    } else if ((m = /Warning: Citation [`'‘](.+?)['’] on page \S+ undefined/.exec(l))) {
+      cites.add(m[1]);
+    } else if ((m = /^Overfull \\hbox \((\d+(?:\.\d+)?)pt too wide\)(?:.*? at lines? (\d+))?/.exec(l))) {
+      const pt = Number(m[1]);
+      if (!(pt > 1)) continue;
+      overfull++;
+      if (pt > widest) {
+        widest = pt;
+        const n = m[2] === undefined ? NaN : Number(m[2]);
+        widestLine = Number.isSafeInteger(n) && n > offset ? n - offset : null;
+      }
+    }
+  }
+  const out: string[] = [];
+  if (missing.size > 0) out.push(`Some characters aren’t in the font, so they print as blanks: ${listed(missing)}.`);
+  else if (missingUnnamed) out.push("Some characters aren’t in the font, so they print as blanks.");
+  if (undefinedCs) out.push("LaTeX met a command it doesn’t know, so part of the page may be missing.");
+  if (refs.size > 0) out.push(`References with no matching \\label print as ??: ${listed(refs)}.`);
+  if (cites.size > 0) out.push(`Citations with no matching bibliography entry print as ?: ${listed(cites)}.`);
+  if (overfull > 0) {
+    const at = widestLine !== null ? ` (line ${widestLine})` : "";
+    const pt = Math.round(widest * 10) / 10;
+    out.push(overfull === 1 ? `A line runs ${pt} pt into the margin${at}.` : `${overfull} lines run into the margin, the widest by ${pt} pt${at}.`);
+  }
+  return out.slice(0, MAX_WARNINGS);
 }
 
 /** The end of a log (where the error is), at most MAX_LOG bytes, starting on a character boundary. */

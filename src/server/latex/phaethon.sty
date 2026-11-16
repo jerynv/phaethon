@@ -1,0 +1,116 @@
+% phaethon.sty: the house style for LaTeX documents written in Phaethon.
+% Phaethon writes it beside every document it compiles or saves, so this works with no install:
+%   \documentclass[11pt]{article}
+%   \usepackage{phaethon}
+%   \reporttitle{Title}{Author}{\today}
+%   \begin{document}\makereporttitle ... \end{document}
+% Symbols always go inside math mode ($\in$, $\subseteq$): the text font has no math glyphs.
+% XeLaTeX or LuaLaTeX: Times New Roman, else TeX Gyre Termes, else Latin Modern; STIX Two Math.
+% pdfLaTeX: newtx, else STIX Two, else TeX Gyre Termes text with Latin Modern math, else Latin Modern.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{phaethon}[2026/11/15 Phaethon house style]
+
+% ---- page + fonts ----
+\RequirePackage{iftex}
+\RequirePackage[letterpaper,margin=1in]{geometry}
+\RequirePackage{amsmath,mathtools}
+\iftutex
+  \RequirePackage{fontspec}
+  % Files that ship with TeX are found by file name; a missing font name sends TeX looking for a
+  % metric file of that name, so names are only tried where no file covers them.
+  \IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{%
+    \IfFontExistsTF{texgyretermes-regular.otf}{%
+      \setmainfont{texgyretermes}[Extension=.otf,UprightFont=*-regular,BoldFont=*-bold,
+        ItalicFont=*-italic,BoldItalicFont=*-bolditalic]}{}}
+  \RequirePackage{unicode-math}
+  \IfFontExistsTF{STIXTwoMath-Regular.otf}{%
+    \setmathfont{STIXTwoMath-Regular.otf}%
+    \setmathfont[version=bold,FakeBold=2]{STIXTwoMath-Regular.otf}}{%
+    \IfFontExistsTF{STIX Two Math}{%
+      \setmathfont{STIX Two Math}%
+      \setmathfont[version=bold,FakeBold=2]{STIX Two Math}}{}}
+  \IfFileExists{/System/Library/Fonts/Menlo.ttc}{\setmonofont{Menlo}[Scale=0.85]}{%
+    \IfFontExistsTF{DejaVuSansMono.ttf}{%
+      \setmonofont{DejaVuSansMono}[Extension=.ttf,Scale=0.85,BoldFont=*-Bold,
+        ItalicFont=*-Oblique,BoldItalicFont=*-BoldOblique]}{%
+      \IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}[Scale=0.85]}{}}}
+\else
+  % Only packages that ship their own fonts: mathptmx is left out, as psnfss can be installed
+  % without the Times fonts it needs.
+  \RequirePackage[T1]{fontenc}
+  \RequirePackage{lmodern}
+  \IfFileExists{newtxmath.sty}{\RequirePackage{newtxtext}\RequirePackage{newtxmath}}{%
+    \IfFileExists{stix2.sty}{\RequirePackage{stix2}}{%
+      \IfFileExists{tgtermes.sty}{\RequirePackage{tgtermes}}{}%
+      \RequirePackage{amssymb}}}
+\fi
+\RequirePackage{microtype}
+\frenchspacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\linespread{1.05}
+
+% ---- headings: numbered, bold ----
+\RequirePackage{titlesec}
+\titleformat{\section}{\normalfont\fontsize{13}{15}\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\fontsize{11.5}{14}\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\bfseries\itshape}{\thesubsubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.4em}{0.6em}
+\titlespacing*{\subsection}{0pt}{1.1em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.9em}{0.3em}
+
+% ---- tables: booktabs, wrapping columns ----
+\RequirePackage{booktabs,array,tabularx,longtable}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\renewcommand{\arraystretch}{1.15}
+
+% ---- lists, captions, code ----
+\RequirePackage{enumitem}
+\setlist{nosep,leftmargin=1.4em,topsep=0.3em}
+\RequirePackage[font=small,labelfont=bf,skip=4pt]{caption}
+\RequirePackage{float,needspace}
+\RequirePackage{listings}
+\lstset{basicstyle=\ttfamily\small,columns=fullflexible,keepspaces=true,
+  breaklines=true,frame=none,xleftmargin=1em,upquote=true,showstringspaces=false}
+
+% ---- monochrome callouts ----
+\RequirePackage{xcolor}
+\RequirePackage[framemethod=default]{mdframed}
+\newmdenv[topline=false,bottomline=false,rightline=false,linewidth=1.2pt,
+  innerleftmargin=7pt,innerrightmargin=4pt,innertopmargin=3pt,innerbottommargin=3pt,
+  skipabove=0.5em,skipbelow=0.5em]{notebox}
+\newmdenv[linewidth=0.5pt,innerleftmargin=6pt,innerrightmargin=6pt,
+  innertopmargin=4pt,innerbottommargin=4pt,skipabove=0.5em,skipbelow=0.5em]{panel}
+
+% ---- TikZ: black-on-white house style ----
+% (Phaethon copies this block, up to the next rule, into the page around a ```tikz figure.)
+\RequirePackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.multipart,calc,fit,
+  backgrounds,trees,matrix,decorations.pathreplacing,patterns,angles,quotes}
+\tikzset{
+  >={Stealth[length=2.2mm]},
+  every picture/.style={line width=0.6pt},
+  box/.style={draw,rectangle,align=center,inner sep=4pt,minimum height=1.6em,font=\small},
+  softbox/.style={draw,rectangle,rounded corners=2pt,align=center,inner sep=4pt,font=\small},
+  vert/.style={draw,circle,minimum size=1.7em,inner sep=1pt,font=\small},
+  goal/.style={vert,double,double distance=1pt},
+  lbl/.style={font=\footnotesize,fill=white,inner sep=1.5pt},
+  pruned/.style={dashed,gray},
+  hl/.style={line width=1.4pt},
+  memcell/.style={draw,rectangle,minimum height=1.5em,minimum width=3.6em,font=\ttfamily\footnotesize,inner sep=2pt},
+}
+
+% ---- page numbers at the foot, centred ----
+\pagestyle{plain}
+
+% ---- centred title block ----
+\newcommand{\@rtitle}{}\newcommand{\@rauthor}{}\newcommand{\@rdate}{}
+\newcommand{\reporttitle}[3]{\renewcommand{\@rtitle}{#1}\renewcommand{\@rauthor}{#2}\renewcommand{\@rdate}{#3}}
+\newcommand{\makereporttitle}{%
+  \begin{center}
+    {\fontsize{17}{20}\bfseries\@rtitle\par}\vspace{0.4em}
+    {\@rauthor\par}{\@rdate\par}
+  \end{center}\vspace{1.0em}}
+
+\RequirePackage[hidelinks]{hyperref}
+\endinput

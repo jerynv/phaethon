@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { CodeBlock, CopyButton } from "./CodeBlock";
 
 type Outcome =
-  | { status: "ok"; id: string; engine: string }
+  | { status: "ok"; id: string; engine: string; warnings?: string[] }
   | { status: "failed"; message: string; line: number | null; log: string }
   | { status: "noEngine"; message: string }
   | { status: "unavailable"; message: string };

@@ -6,9 +6,25 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { call, tempHome } from "../../../tests/harness.ts";
 import { ensureVault, spacesRoot } from "../core/vault.ts";
-import { cachePut, cachedPdf, compileCached, engines, resetFailures, save, tryCompile, workingBwrap } from "./compile.ts";
+import { cachePut, cachedPdf, cachedWarnings, compileCached, engines, resetFailures, save, texDirs, texLiveBins, tryCompile, workingBwrap } from "./compile.ts";
 import { NO_SANDBOX_LINUX, NO_SANDBOX_WINDOWS, ULIMIT_BLOCK, bwrapArgs, limitWrapper, runPlan, sandboxProfile, sbStr, texEnv, type Probe } from "./sandbox.ts";
-import { KINDS, cacheId, choose, figureDocument, isCacheId, logTail, needsRerun, parseError, slug, type Engine } from "./tex.ts";
+import {
+  HOUSE_STYLE,
+  HOUSE_TIKZ,
+  KINDS,
+  STYLE_FILE,
+  cacheId,
+  choose,
+  figureDocument,
+  isCacheId,
+  logTail,
+  needsRerun,
+  parseError,
+  parseWarnings,
+  slug,
+  usesHouseStyle,
+  type Engine,
+} from "./tex.ts";
 import "./commands.ts";
 
 const env = tempHome("phaethon-latex-");
@@ -21,14 +37,47 @@ function tmp(name: string): string {
 }
 
 describe("engines and figures", () => {
-  it("chooses pdflatex unless the document needs another", () => {
+  it("chooses XeLaTeX, LuaLaTeX, pdfLaTeX, Tectonic for documents and pdfLaTeX first for figures", () => {
     const all: Engine[] = KINDS.map((kind) => ({ kind, path: kind }));
-    expect(choose(all, "\\documentclass{article}")!.kind).toBe("pdflatex");
+    const without = (...gone: string[]) => all.filter((e) => !gone.includes(e.kind));
+    const doc = "\\documentclass{article}\\usepackage{phaethon}";
+    expect(choose(all, doc)!.kind).toBe("xelatex");
+    expect(choose(without("xelatex"), doc)!.kind).toBe("lualatex");
+    expect(choose(without("xelatex", "lualatex"), doc)!.kind).toBe("pdflatex");
+    expect(choose(without("xelatex", "lualatex", "pdflatex"), doc)!.kind).toBe("tectonic");
     expect(choose(all, "\\usepackage{fontspec}")!.kind).toBe("xelatex");
-    expect(choose(all, "\\usepackage{unicode-math}")!.kind).toBe("xelatex");
     expect(choose(all, "\\directlua{x=1}")!.kind).toBe("lualatex");
-    expect(choose([{ kind: "xelatex", path: "xelatex" }], "plain")!.kind).toBe("xelatex");
+    expect(choose(all, "\\begin{luacode}x\\end{luacode}", true)!.kind).toBe("lualatex");
+    expect(choose(without("lualatex"), "\\directlua{x=1}")!.kind).toBe("tectonic");
+    expect(choose(all, "\\draw (0,0) -- (1,1);", true)!.kind).toBe("pdflatex");
+    expect(choose(without("pdflatex"), "\\draw (0,0) -- (1,1);", true)!.kind).toBe("xelatex");
+    expect(choose(all, "\\usepackage{fontspec}\\draw (0,0);", true)!.kind).toBe("xelatex");
+    // The status line names the engine documents get.
+    expect(choose(all, "")!.kind).toBe("xelatex");
+    expect(choose([{ kind: "pdflatex", path: "pdflatex" }], "plain")!.kind).toBe("pdflatex");
     expect(choose([], "x")).toBeUndefined();
+  });
+
+  it("looks for a TeX Live installed in the home folder", () => {
+    const root = path.join(env.home, ".local/texlive/2099/bin/x86_64-linux");
+    fs.mkdirSync(root, { recursive: true });
+    try {
+      expect(texDirs()).toContain(root);
+    } finally {
+      fs.rmSync(path.join(env.home, ".local/texlive"), { recursive: true });
+    }
+  });
+
+  it("ships a house style that is the skill's look without anyone's name", () => {
+    expect(STYLE_FILE).toBe("phaethon.sty");
+    expect(HOUSE_STYLE).toContain("\\ProvidesPackage{phaethon}");
+    for (const part of ["letterpaper,margin=1in", "Times New Roman", "texgyretermes", "STIXTwoMath-Regular.otf", "\\iftutex", "newtxmath", "tgtermes", "booktabs", "\\newcolumntype{L}", "{notebox}", "{panel}", "\\newcommand{\\reporttitle}[3]", "\\newcommand{\\makereporttitle}", "[hidelinks]{hyperref}"]) {
+      expect(HOUSE_STYLE).toContain(part);
+    }
+    expect(HOUSE_STYLE).not.toMatch(/jeryn|vicari|\/Users\/|\/home\//i);
+    expect(usesHouseStyle("\\documentclass{article}\n\\usepackage{phaethon}")).toBe(true);
+    expect(usesHouseStyle("\\usepackage[x]{amsmath,phaethon}")).toBe(true);
+    expect(usesHouseStyle("\\usepackage{phaethonx}\\usepackage{report}")).toBe(false);
   });
 
   it("puts errors in plain words with their line", () => {
@@ -70,6 +119,73 @@ describe("engines and figures", () => {
     expect(doc).toContain("\\begin{tikzpicture}\n\\draw (0,0) circle (1);\n\\end{tikzpicture}");
     ({ doc } = figureDocument("\\begin{tikzpicture}\\begin{axis}\\addplot{x};\\end{axis}\\end{tikzpicture}"));
     expect(doc).toContain("\\usepackage{pgfplots}");
+  });
+
+  it("gives figures the house style's TikZ libraries and named styles", () => {
+    const tikz = HOUSE_TIKZ.join("\n");
+    expect(HOUSE_TIKZ[0]).toBe("\\RequirePackage{tikz}");
+    for (const style of ["box", "softbox", "vert", "goal", "lbl", "pruned", "hl", "memcell"]) expect(tikz).toContain(`${style}/.style=`);
+    for (const lib of ["arrows.meta", "positioning", "shapes.multipart", "trees", "matrix", "decorations.pathreplacing"]) expect(tikz).toContain(lib);
+    // Copied whole from the .sty, so the two can't drift apart.
+    expect(HOUSE_STYLE).toContain(tikz);
+    const body = "\\usetikzlibrary{automata}\n\\node[box] (a) {A};\n\\node[vert, right=1cm of a] (b) {b};\n\\draw[->,hl] (a) -- node[lbl,above] {x} (b);";
+    const { doc, before } = figureDocument(body);
+    const lines = doc.split("\n");
+    expect(lines.slice(0, before)).toEqual(expect.arrayContaining([...HOUSE_TIKZ, "\\usetikzlibrary{automata}"]));
+    // Each body line keeps its number after `before`, so errors point at the right line.
+    expect(lines[before]).toBe("");
+    expect(lines[before + 1]).toBe("\\node[box] (a) {A};");
+    expect(lines[before + 3]).toContain("node[lbl,above]");
+    expect(lines[before - 1]).toBe("\\begin{tikzpicture}");
+    expect(parseError("! Undefined control sequence.\nl." + (before + 2) + " \\node[vert, right=1cm of a] (b) {\\bogus}", before).line).toBe(2);
+  });
+
+  it("loads forest, tikz-cd and circuitikz for figures that use them, without a tikzpicture around them", () => {
+    let { doc, before } = figureDocument("\\begin{forest}\n[root [a] [b]]\n\\end{forest}");
+    expect(doc).toContain("\\usepackage{forest}");
+    expect(doc).not.toContain("\\begin{tikzpicture}");
+    expect(doc.split("\n")[before]).toBe("\\begin{forest}");
+    ({ doc } = figureDocument("\\begin{tikzcd}\nA \\arrow[r] & B\n\\end{tikzcd}"));
+    expect(doc).toContain("\\usepackage{tikz-cd}");
+    expect(doc).not.toContain("\\begin{tikzpicture}");
+    ({ doc } = figureDocument("\\begin{circuitikz}\\draw (0,0) to[R] (2,0);\\end{circuitikz}"));
+    expect(doc).toContain("\\usepackage{circuitikz}");
+    ({ doc } = figureDocument("\\draw (0,0) -- (1,0);"));
+    for (const p of ["forest", "tikz-cd", "circuitikz", "pgfplots"]) expect(doc).not.toContain(`\\usepackage{${p}}`);
+  });
+
+  it("reads what a compiled PDF still gets wrong from its log", () => {
+    const log = [
+      "Missing character: There is no ∈ (U+2208) in font [lmroman10-regular]:mapping=tex-text;!",
+      "Missing character: There is no ∈ (U+2208) in font [lmroman10-regular]:mapping=tex-text;!",
+      "Missing character: There is no ⊆ in font cmr10!",
+      "LaTeX Warning: Reference `fig:flow' on page 1 undefined on input line 12.",
+      "LaTeX Warning: Citation `knuth84' on page 2 undefined on input line 30.",
+      "Overfull \\hbox (0.4pt too wide) in paragraph at lines 3--4",
+      "Overfull \\hbox (12.3456pt too wide) in paragraph at lines 20--22",
+      "Overfull \\hbox (5.0pt too wide) detected at line 40",
+      "LaTeX Warning: There were undefined references.",
+    ].join("\n");
+    expect(parseWarnings(log, 0)).toEqual([
+      "Some characters aren’t in the font, so they print as blanks: ∈, ⊆.",
+      "References with no matching \\label print as ??: fig:flow.",
+      "Citations with no matching bibliography entry print as ?: knuth84.",
+      "2 lines run into the margin, the widest by 12.3 pt (line 20).",
+    ]);
+    expect(parseWarnings("Overfull \\hbox (3pt too wide) in paragraph at lines 30--31", 25)).toEqual(["A line runs 3 pt into the margin (line 5)."]);
+    expect(parseWarnings("Overfull \\hbox (0.9pt too wide) in paragraph at lines 3--4\nUnderfull \\hbox (badness 10000)", 0)).toEqual([]);
+    expect(parseWarnings("Missing character: There is no ^^e2 in font cmr10!", 0)).toEqual(["Some characters aren’t in the font, so they print as blanks."]);
+    expect(parseWarnings("! Undefined control sequence.\nl.3 \\foo", 0)[0]).toContain("doesn’t know");
+    // At most a few, the margin last.
+    const many = log + "\nUndefined control sequence";
+    expect(parseWarnings(many, 0).length).toBe(4);
+    expect(parseWarnings("", 0)).toEqual([]);
+  });
+
+  it("reruns a document whose references or contents aren't settled yet", () => {
+    // What LaTeX writes on the first run of a document with \\label and \\ref.
+    expect(needsRerun("LaTeX Warning: Reference `t' on page 1 undefined on input line 9.\nLaTeX Warning: There were undefined references.\nLaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.", "\\ref{t}")).toBe(true);
+    expect(needsRerun("Package rerunfilecheck Warning: File `doc.out' has changed.\n(rerunfilecheck)                Rerun to get outlines right", "")).toBe(true);
   });
 
   it("reruns only when the log or the source asks", () => {
@@ -122,6 +238,21 @@ describe("cache", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it("keeps a PDF's warnings beside it and returns them from the cache", async () => {
+    const dir = tmp("warn-cache");
+    const engine: Engine = { kind: "xelatex", path: "/nonexistent/xelatex" };
+    const source = "\\documentclass{article}\\begin{document}x\\end{document}";
+    const id = cacheId("xelatex", false, source);
+    cachePut(dir, id, Buffer.from("%PDF"), ["A line runs 3 pt into the margin (line 5)."]);
+    expect(cachedWarnings(dir, id)).toEqual(["A line runs 3 pt into the margin (line 5)."]);
+    expect(await compileCached(dir, [engine], source, false, 60_000)).toEqual({ status: "ok", id, engine: "XeLaTeX", warnings: ["A line runs 3 pt into the margin (line 5)."] });
+    // A clean recompile clears them.
+    cachePut(dir, id, Buffer.from("%PDF"), []);
+    expect(cachedWarnings(dir, id)).toEqual([]);
+    expect(fs.readdirSync(dir).sort()).toEqual([`${id}.pdf`]);
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("without an engine says how to install one and runs nothing", async () => {
     const out = await compileCached(tmp("none"), [], "\\documentclass{article}", false, 60_000);
     expect(out.status).toBe("noEngine");
@@ -135,6 +266,26 @@ describe("save", () => {
     expect(slug("../../etc", "document")).toBe("etc");
     expect(slug("…", "figure")).toBe("figure");
     expect(slug("a".repeat(200), "d").length).toBeLessThanOrEqual(60);
+  });
+
+  it("puts the house style beside a saved document that loads it, never over one already there", () => {
+    const space = tmp("save-style");
+    const doc = "\\documentclass[11pt]{article}\n\\usepackage{phaethon}\n\\begin{document}x\\end{document}";
+    save(space, "\\documentclass{article}\\begin{document}x\\end{document}", null, "plain", false);
+    expect(fs.existsSync(path.join(space, "documents", STYLE_FILE))).toBe(false);
+    expect(save(space, doc, null, "Notes", false)).toEqual({ tex: "documents/notes.tex", pdf: null, note: null });
+    expect(fs.readFileSync(path.join(space, "documents", STYLE_FILE), "utf8")).toBe(HOUSE_STYLE);
+    fs.writeFileSync(path.join(space, "documents", STYLE_FILE), "% mine");
+    save(space, doc, null, "Notes", false);
+    expect(fs.readFileSync(path.join(space, "documents", STYLE_FILE), "utf8")).toBe("% mine");
+    // A link where the style would go is left alone, and nothing is written through it.
+    const space2 = tmp("save-style-link");
+    const outside = path.join(tmp("save-style-out"), "x.sty");
+    fs.mkdirSync(path.join(space2, "documents"));
+    symlink(outside, path.join(space2, "documents", STYLE_FILE));
+    expect(save(space2, doc, null, "Notes", false).tex).toBe("documents/notes.tex");
+    expect(fs.existsSync(outside)).toBe(false);
+    for (const d of [space, space2, path.dirname(outside)]) fs.rmSync(d, { recursive: true });
   });
 
   it("never overwrites and stays in the space", () => {
@@ -182,6 +333,8 @@ describe("walls, as arguments", () => {
     const tectonic = sandboxProfile("/w", { kind: "tectonic", path: "/opt/homebrew/bin/tectonic" }, { vars: [] }, { real: (x) => x, userHome: "/Users/u" })!;
     expect(tectonic).toContain('(subpath "/opt/homebrew")');
     expect(tectonic).toContain('(allow file-write* (subpath "/w") (subpath "/Users/u/Library/Caches/Tectonic")');
+    const homeTl = sandboxProfile("/w", { kind: "xelatex", path: "/Users/u/.local/texlive/2026/bin/universal-darwin/xelatex" }, { vars: [] }, { real: (x) => x, userHome: "/Users/u", exists: (x) => x === "/Users/u/.local/texlive/2026/texmf-dist" })!;
+    expect(homeTl).toContain('(allow file-read* (subpath "/w") (subpath "/Users/u/.local/texlive/2026/bin/universal-darwin") (subpath "/Users/u/.local/texlive/2026") (subpath "/Users/u/Library/Fonts"))');
     expect(sbStr('/a"b')).toBeNull();
     expect(sbStr("/a\\b")).toBeNull();
     expect(sandboxProfile('/w"', engine, home, { real: (x) => x, userHome: null })).toBeNull();
@@ -283,6 +436,14 @@ describe.skipIf(!walled)("walls, with a fake engine", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it("finds the house style beside the document", async () => {
+    const dir = tmp("fake-style");
+    const log = await failureLog(fake(dir, "ls > doc.log; cat phaethon.sty >> doc.log; exit 1"));
+    expect(log.split("\n").slice(0, 3)).toEqual(["doc.log", "doc.tex", "phaethon.sty"]);
+    expect(log).toContain("\\ProvidesPackage{phaethon}");
+    fs.rmSync(dir, { recursive: true });
+  });
+
   it("can't read outside its folder or write anywhere else", async () => {
     const dir = tmp("fake-walls");
     const secret = path.join(tmp("secret"), "secret.txt");
@@ -321,7 +482,45 @@ describe.skipIf(!walled)("walls, with a fake engine", () => {
 
 // ---- Real TeX, when this machine has it ----
 
-const tex = walled ? engines().filter((e) => e.kind !== "tectonic") : [];
+// The tests' home folder is a throwaway one, so a TeX Live in the real home is named here.
+const tex = walled ? engines(texLiveBins(path.join(os.homedir(), ".local/texlive"))).filter((e) => e.kind !== "tectonic") : [];
+
+const HOUSE_DOC = String.raw`\documentclass[11pt]{article}
+\usepackage{phaethon}
+\reporttitle{Placeholder Notes}{A. Student}{November 2026}
+\begin{document}
+\makereporttitle
+\section{Summary}
+For $x \in A \subseteq B$, Table~\ref{t} lists the values and Figure~\ref{f} the flow.
+\begin{align}
+  f(x) &= \int_0^x e^{-t^2}\,dt \\
+  \operatorname{erf}(x) &= \frac{2}{\sqrt{\pi}}\, f(x)
+\end{align}
+\begin{table}[H]\centering
+\begin{tabularx}{\linewidth}{L r}
+\toprule Item & Value \\ \midrule
+A description long enough that it has to wrap onto a second line inside the column & 12 \\
+\bottomrule
+\end{tabularx}
+\caption{Values.}\label{t}
+\end{table}
+\needspace{6\baselineskip}
+\begin{figure}[H]\centering
+\begin{tikzpicture}
+  \node[box] (a) {Input};
+  \node[softbox, right=12mm of a] (b) {Step};
+  \node[goal, right=12mm of b] (c) {$g$};
+  \draw[->] (a) -- node[lbl, above] {read} (b);
+  \draw[->, hl] (b) -- (c);
+\end{tikzpicture}
+\caption{The flow from input to goal.}\label{f}
+\end{figure}
+\begin{notebox}A note.\end{notebox}
+\begin{lstlisting}[language=Python]
+def f(x): return x
+\end{lstlisting}
+\end{document}
+`;
 
 describe.skipIf(tex.length === 0)("walls, with real TeX", () => {
   for (const engine of tex) {
@@ -329,7 +528,7 @@ describe.skipIf(tex.length === 0)("walls, with real TeX", () => {
 
     it(`${engine.kind}: absolute paths and shell escape reach nothing`, async () => {
       const marker = path.join(os.tmpdir(), `phaethon-write18-${process.pid}`);
-      const r = await tryCompile(engine, probeDoc(`\\IfFileExists{/etc/passwd}{SEEN}{UNSEEN}\\immediate\\write18{touch ${marker}}\\typeout{PROBE-\\IfFileExists{/etc/hosts}{SEEN}{UNSEEN}}`), false, 30_000);
+      const r = await tryCompile(engine, probeDoc(`\\IfFileExists{/etc/passwd}{SEEN}{UNSEEN}\\immediate\\write18{touch ${marker}}\\IfFileExists{/etc/hosts}{\\typeout{PROBE-SEEN}}{\\typeout{PROBE-UNSEEN}}`), false, 30_000);
       if ("pdf" in r || r.failure.kind !== "error") throw new Error(JSON.stringify(r));
       expect(r.failure.log).toContain("PROBE-UNSEEN");
       expect(fs.existsSync(marker)).toBe(false);
@@ -344,6 +543,17 @@ describe.skipIf(tex.length === 0)("walls, with real TeX", () => {
       expect(fs.existsSync(`/tmp/phaethon-out-${process.pid}.tex`)).toBe(false);
     });
 
+    it(`${engine.kind}: a house-style document with a figure, a table, math and references typesets cleanly`, async () => {
+      const r = await tryCompile(engine, HOUSE_DOC, false, 60_000);
+      if (!("pdf" in r)) throw new Error(JSON.stringify(r.failure));
+      expect(r.pdf.subarray(0, 4).toString()).toBe("%PDF");
+      // No warnings: the fonts have every glyph, and the second run settled \\ref.
+      expect(r.warnings).toEqual([]);
+      const broken = await tryCompile(engine, HOUSE_DOC.replace("Table~\\ref{t}", "Table~\\ref{nowhere}"), false, 60_000);
+      if (!("pdf" in broken)) throw new Error(JSON.stringify(broken.failure));
+      expect(broken.warnings).toEqual(["References with no matching \\label print as ??: nowhere."]);
+    }, 120_000);
+
     it(`${engine.kind}: an endless loop is stopped at the deadline`, async () => {
       const t = Date.now();
       const r = await tryCompile(engine, "\\documentclass{article}\\begin{document}\\def\\x{\\x}\\x\\end{document}", false, 4000);
@@ -351,6 +561,12 @@ describe.skipIf(tex.length === 0)("walls, with real TeX", () => {
       expect(Date.now() - t).toBeLessThan(15_000);
     });
   }
+
+  it("a figure drawn with the house styles compiles", async () => {
+    resetFailures();
+    const out = await compileCached(tmp("real-fig"), tex, "\\node[box] (a) {A};\n\\node[goal, right=12mm of a] (b) {B};\n\\draw[->,hl] (a) -- node[lbl,above] {x} (b);\n\\node[memcell, below=of a] {0x10};", true, 60_000);
+    expect(out).toMatchObject({ status: "ok", warnings: [] });
+  }, 60_000);
 
   it("a figure and a document compile to PDFs, the second time from the cache", async () => {
     resetFailures();

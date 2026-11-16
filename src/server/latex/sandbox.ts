@@ -46,12 +46,18 @@ export function sbStr(p: string): string | null {
 }
 
 /** The macOS sandbox profile for one compile in `work` (null when a required path can't be quoted). */
-export function sandboxProfile(work: string, engine: Engine, home: TexHome, probe: Pick<Probe, "real" | "userHome">): string | null {
+export function sandboxProfile(work: string, engine: Engine, home: TexHome, probe: Pick<Probe, "real" | "userHome"> & Partial<Pick<Probe, "exists">>): string | null {
   const engineDir = path.dirname(probe.real(engine.path));
   const workS = sbStr(work);
   const engineS = sbStr(engineDir);
   if (!workS || !engineS) return null;
   const readOk = [workS, engineS];
+  // A TeX Live installed in the home folder (`~/.local/texlive/<year>/bin/<platform>`) reads its tree from <year>.
+  const root = path.dirname(path.dirname(engineDir));
+  if (probe.userHome && probe.exists && isWithin(root, probe.userHome) && root !== probe.userHome && probe.exists(path.join(root, "texmf-dist"))) {
+    const rootS = sbStr(root);
+    if (rootS) readOk.push(rootS);
+  }
   for (const [, p] of home.vars) {
     const s = sbStr(probe.real(p));
     if (s) readOk.push(s);

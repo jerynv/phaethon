@@ -9,10 +9,13 @@ import { runPlan, sandboxRefusal, type Probe, type TexHome } from "./sandbox.ts"
 import {
   KINDS,
   MAX_CACHED,
+  MAX_WARNINGS,
   MAX_PDF,
   MAX_RUNS,
   MAX_SOURCE,
   NO_TEX,
+  STYLE_FILE,
+  HOUSE_STYLE,
   cacheId,
   choose,
   figureDocument,
@@ -23,7 +26,9 @@ import {
   logTail,
   needsRerun,
   parseError,
+  parseWarnings,
   slug,
+  usesHouseStyle,
   type Engine,
 } from "./tex.ts";
 
@@ -49,13 +54,13 @@ export function findOnPath(name: string, extra: string[]): string | undefined {
   return undefined;
 }
 
-/** Where TeX is installed but not on PATH for an app opened from Finder. */
-export function texDirs(): string[] {
-  const dirs = ["/Library/TeX/texbin"];
+/** `<root>/<year>/bin/<platform>` for each TeX Live under `root`, newest first. */
+export function texLiveBins(root: string): string[] {
+  const dirs: string[] = [];
   try {
     const years = fs
-      .readdirSync("/usr/local/texlive")
-      .map((y) => path.join("/usr/local/texlive", y, "bin"))
+      .readdirSync(root)
+      .map((y) => path.join(root, y, "bin"))
       .filter((p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory())
       .sort()
       .reverse();
@@ -68,15 +73,21 @@ export function texDirs(): string[] {
   } catch {
     // No TeX Live there.
   }
+  return dirs;
+}
+
+/** Where TeX is installed but not on PATH for an app opened from Finder, or for a TeX Live installed as the user. */
+export function texDirs(): string[] {
   const home = homeDir();
+  const dirs = ["/Library/TeX/texbin", ...texLiveBins("/usr/local/texlive"), ...texLiveBins(path.join(home, ".local/texlive"))];
   for (const d of [".local/bin", ".bun/bin", ".npm-global/bin", ".volta/bin"]) dirs.push(path.join(home, d));
   dirs.push("/opt/homebrew/bin", "/usr/local/bin", path.join(home, ".cargo/bin"), "/usr/bin");
   return dirs;
 }
 
-/** Every engine on this computer, in the order they are preferred. */
-export function engines(): Engine[] {
-  const extra = texDirs();
+/** Every engine on this computer (looking in `more` folders last), in the order they are preferred. */
+export function engines(more: string[] = []): Engine[] {
+  const extra = [...texDirs(), ...more];
   const found: Engine[] = [];
   for (const kind of KINDS) {
     const p = findOnPath(kindBin(kind), extra);
@@ -211,8 +222,14 @@ function readLog(work: string): string {
   }
 }
 
-/** Compile `source` (a document, or with `figure` a figure's body) with `engine` inside the walls; the PDF's bytes. */
-export async function compile(engine: Engine, source: string, figure: boolean, timeoutMs: number): Promise<Buffer> {
+/** A PDF that compiled, and what its log says may still be wrong with it. */
+export type Compiled = { pdf: Buffer; warnings: string[] };
+
+/**
+ * Compile `source` (a document, or with `figure` a figure's body) with `engine`
+ * inside the walls. The house style is written beside it, so `\usepackage{phaethon}` works.
+ */
+export async function compile(engine: Engine, source: string, figure: boolean, timeoutMs: number): Promise<Compiled> {
   if (Buffer.byteLength(source, "utf8") > MAX_SOURCE) throw setup(`This document is longer than Phaethon compiles (${MAX_SOURCE / 1024} KB at most).`);
   // Checked before any folder or kpsewhich run: an OS without walls does no work at all.
   const bwrap = workingBwrap();
@@ -228,6 +245,7 @@ export async function compile(engine: Engine, source: string, figure: boolean, t
   try {
     try {
       fs.writeFileSync(path.join(work, "doc.tex"), doc);
+      fs.writeFileSync(path.join(work, STYLE_FILE), HOUSE_STYLE);
     } catch (e) {
       throw setup(`Phaethon couldn’t write the document to compile: ${(e as Error).message}`);
     }
@@ -252,7 +270,7 @@ export async function compile(engine: Engine, source: string, figure: boolean, t
     }
     if (size > MAX_PDF) throw setup(`The PDF is larger than Phaethon shows (${MAX_PDF / 1024 / 1024} MB at most).`);
     try {
-      return fs.readFileSync(pdf);
+      return { pdf: fs.readFileSync(pdf), warnings: parseWarnings(readLog(work), offset) };
     } catch (e) {
       throw setup(`Phaethon couldn’t read the PDF: ${(e as Error).message}`);
     }
@@ -262,9 +280,9 @@ export async function compile(engine: Engine, source: string, figure: boolean, t
 }
 
 /** The failure a compile ended with, or null for a PDF. */
-export async function tryCompile(engine: Engine, source: string, figure: boolean, timeoutMs: number): Promise<{ pdf: Buffer } | { failure: Failure }> {
+export async function tryCompile(engine: Engine, source: string, figure: boolean, timeoutMs: number): Promise<Compiled | { failure: Failure }> {
   try {
-    return { pdf: await compile(engine, source, figure, timeoutMs) };
+    return await compile(engine, source, figure, timeoutMs);
   } catch (e) {
     if (e instanceof Fail) return { failure: e.failure };
     throw e;
@@ -299,7 +317,22 @@ export function cachedPdf(cache: string, id: string): string | undefined {
   return fs.statSync(p, { throwIfNoEntry: false })?.isFile() ? p : undefined;
 }
 
-export function cachePut(cache: string, id: string, pdf: Uint8Array): void {
+/** A cached PDF's warnings (a `<id>.warnings.json` beside it, kept only when there are some). */
+function warningsPath(cache: string, id: string): string {
+  return path.join(cache, `${id}.warnings.json`);
+}
+
+export function cachedWarnings(cache: string, id: string): string[] {
+  if (!isCacheId(id)) return [];
+  try {
+    const list: unknown = JSON.parse(fs.readFileSync(warningsPath(cache, id), "utf8"));
+    return Array.isArray(list) ? list.filter((w): w is string => typeof w === "string").slice(0, MAX_WARNINGS) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function cachePut(cache: string, id: string, pdf: Uint8Array, warnings: readonly string[] = []): void {
   try {
     fs.mkdirSync(cache, { recursive: true });
   } catch {
@@ -307,6 +340,9 @@ export function cachePut(cache: string, id: string, pdf: Uint8Array): void {
   }
   const tmp = path.join(cache, `${id}.part`);
   try {
+    // Before the PDF, so a PDF in the cache always has its warnings beside it.
+    if (warnings.length > 0) fs.writeFileSync(warningsPath(cache, id), JSON.stringify(warnings));
+    else fs.rmSync(warningsPath(cache, id), { force: true });
     fs.writeFileSync(tmp, pdf);
     fs.renameSync(tmp, path.join(cache, `${id}.pdf`));
   } catch {
@@ -321,15 +357,18 @@ export function cachePut(cache: string, id: string, pdf: Uint8Array): void {
         return { p, t: fs.statSync(p).mtimeMs };
       })
       .sort((a, b) => a.t - b.t || (a.p < b.p ? -1 : 1));
-    for (const { p } of files.slice(0, Math.max(0, files.length - MAX_CACHED))) fs.rmSync(p, { force: true });
+    for (const { p } of files.slice(0, Math.max(0, files.length - MAX_CACHED))) {
+      fs.rmSync(p, { force: true });
+      fs.rmSync(p.replace(/\.pdf$/, ".warnings.json"), { force: true });
+    }
   } catch {
     // Pruning is best effort.
   }
 }
 
-/** How a compile came out, for the renderer (tagged by `status`). */
+/** How a compile came out, for the renderer (tagged by `status`). `warnings`: problems a PDF that did compile may still have, in plain words. */
 export type Outcome =
-  | { status: "ok"; id: string; engine: string }
+  | { status: "ok"; id: string; engine: string; warnings: string[] }
   | { status: "failed"; message: string; line: number | null; log: string }
   | { status: "noEngine"; message: string }
   | { status: "unavailable"; message: string };
@@ -344,20 +383,20 @@ export function resetFailures(): void {
 }
 
 export async function compileCached(cache: string, found: readonly Engine[], source: string, figure: boolean, timeoutMs: number): Promise<Outcome> {
-  const engine = choose(found, source);
+  const engine = choose(found, source, figure && !isDocument(source));
   if (!engine) return { status: "noEngine", message: NO_TEX };
   const id = cacheId(engine.kind, figure, source);
-  const ok: Outcome = { status: "ok", id, engine: kindName(engine.kind) };
-  if (cachedPdf(cache, id)) return ok;
+  const ok = (warnings: string[]): Outcome => ({ status: "ok", id, engine: kindName(engine.kind), warnings });
+  if (cachedPdf(cache, id)) return ok(cachedWarnings(cache, id));
   const failed = failures.get(id);
   if (failed) return failed;
   const mine = turn.then(async (): Promise<Outcome> => {
-    if (cachedPdf(cache, id)) return ok;
+    if (cachedPdf(cache, id)) return ok(cachedWarnings(cache, id));
     const result = await tryCompile(engine, source, figure, timeoutMs);
     if ("pdf" in result) {
-      cachePut(cache, id, result.pdf);
+      cachePut(cache, id, result.pdf, result.warnings);
       if (!cachedPdf(cache, id)) return { status: "unavailable", message: "Phaethon couldn’t keep the PDF it made." };
-      return ok;
+      return ok(result.warnings);
     }
     const f = result.failure;
     if (f.kind === "setup") return { status: "unavailable", message: f.message };
@@ -385,9 +424,27 @@ export type Saved = { tex: string; pdf: string | null; note: string | null };
 const OUTSIDE = "The space’s documents folder can’t be used: it leads outside the space.";
 
 /**
+ * Puts the house style in `documents/` beside a saved document that loads it,
+ * so the .tex still compiles there. A file already there (perhaps edited) is kept.
+ */
+function saveStyle(space: string): void {
+  try {
+    const fd = fs.openSync(resolveIn(space, `documents/${STYLE_FILE}`, false), "wx");
+    try {
+      fs.writeSync(fd, HOUSE_STYLE);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    // Already there, or not writable: the document itself is saved either way.
+  }
+}
+
+/**
  * Writes `source` (and its PDF) into `documents/` in the space as `<slug>.tex`
  * and `<slug>.pdf`, choosing `<slug>-2` and on when either name is taken:
- * nothing is ever overwritten.
+ * nothing is ever overwritten. A document that loads the house style gets
+ * `documents/phaethon.sty` beside it when that isn't there yet.
  */
 export function save(space: string, source: string, pdf: Uint8Array | null, title: string, figure: boolean): Saved {
   if (Buffer.byteLength(source, "utf8") > MAX_SOURCE) throw new Error("This document is too long to save from here.");
@@ -424,6 +481,7 @@ export function save(space: string, source: string, pdf: Uint8Array | null, titl
     } finally {
       fs.closeSync(fd);
     }
+    if (usesHouseStyle(source)) saveStyle(space);
     if (!pdf) return { tex: texRel, pdf: null, note: null };
     let pfd: number;
     try {

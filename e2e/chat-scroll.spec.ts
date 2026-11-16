@@ -64,7 +64,7 @@ function seed(home: string) {
 async function startRecording(page: Page) {
   await page.evaluate((sel) => {
     const w = window as unknown as { __frames: unknown[]; __stopFrames: () => void };
-    const frames: { t: number; dist: number; turns: number; lastY: number | null; last: string }[] = [];
+    const frames: { t: number; dist: number; turns: number; lastY: number | null; last: string; hidden: boolean }[] = [];
     w.__frames = frames;
     let box: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
@@ -81,6 +81,11 @@ async function startRecording(page: Page) {
         turns: turns.length,
         lastY: lastTurn ? lastTurn.getBoundingClientRect().top - box.getBoundingClientRect().top : null,
         last: lastTurn?.textContent?.trim().slice(0, 40) ?? "",
+        // Held unseen (a first open waiting for its last screen to finish drawing).
+        hidden: (() => {
+          for (let n: HTMLElement | null = lastTurn ?? null; n && n !== box; n = n.parentElement) if (n.style.opacity === "0") return true;
+          return false;
+        })(),
       };
     };
     let on = true;
@@ -113,7 +118,7 @@ async function startRecording(page: Page) {
 
 async function stopRecording(page: Page) {
   return page.evaluate(() => {
-    const w = window as unknown as { __frames: { t: number; dist: number; turns: number; lastY: number | null; last: string }[]; __stopFrames: () => void };
+    const w = window as unknown as { __frames: { t: number; dist: number; turns: number; lastY: number | null; last: string; hidden: boolean }[]; __stopFrames: () => void };
     w.__stopFrames();
     return w.__frames;
   });
@@ -155,13 +160,13 @@ test("a very long conversation opens at its end, holds still, and keeps a reader
   await expect(page.locator(`${BOX} [data-turn]`)).toHaveCount(TURNS, { timeout: 30_000 });
   await page.waitForTimeout(1500);
   const frames = await stopRecording(page);
-  const shown = frames.filter((f) => f.last.startsWith(`Placeholder question ${TURNS}`));
+  const shown = frames.filter((f) => f.last.startsWith(`Placeholder question ${TURNS}`) && !f.hidden);
   expect(shown.length).toBeGreaterThan(10);
   // Every painted frame of it, from the first, is at the end: no visible scroll to get there.
   expect(Math.max(...shown.map((f) => f.dist))).toBeLessThanOrEqual(2);
-  // Once laid out, nothing moves: the last turn holds its place on screen through the final second.
-  const settled = shown.filter((f) => f.t > shown.at(-1)!.t - 1000);
-  const ys = settled.map((f) => f.lastY!);
+  // Nothing moves from the first visible frame on: the diagram ending the last reply finished drawing
+  // before the conversation was shown, and older turns mounting above don't shift the last one.
+  const ys = shown.map((f) => f.lastY!);
   expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(1);
 
   // Scroll up to read, leave for the other conversation, come back: the same turn in the same place.

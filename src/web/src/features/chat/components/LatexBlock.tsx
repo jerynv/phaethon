@@ -132,7 +132,7 @@ export function LatexBlock({ source, space, streaming }: { source: string; space
         <pre className="md-code-body"><code>{source}</code></pre>
       ) : outcome === null ? (
         <div className="p-3">
-          <Skeleton className="h-48 w-full rounded-md" />
+          <Skeleton data-pending="" className="h-48 w-full rounded-md" />
         </div>
       ) : outcome.status === "ok" ? (
         <PdfPages id={outcome.id} />

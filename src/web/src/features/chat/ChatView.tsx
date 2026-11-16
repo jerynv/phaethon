@@ -19,6 +19,7 @@ import { useCatalog } from "./catalog";
 import { Composer, type EditTarget } from "./components/Composer";
 import { HistoryRail, type RailItem } from "./components/HistoryRail";
 import { AssistantMessage, UserMessage } from "./components/Messages";
+import { warmMermaid } from "./components/MermaidBlock";
 import { Welcome } from "./components/Welcome";
 import { isLimit, LimitCard } from "./components/LimitCard";
 import { firstMounted, type Mounted, mountedAll, widen } from "./lib/scroll";
@@ -88,6 +89,8 @@ export function ChatView({ space }: { space: SpaceView }) {
     void load(space.id, thread);
   }, [space.id, thread, load]);
   useEffect(() => void loadCatalog(), [loadCatalog]);
+  // The diagram library loads while idle, so a chat opening on a diagram draws it before it is shown.
+  useEffect(() => warmMermaid(), []);
 
   const last = chat.messages[chat.messages.length - 1];
   const empty = chat.messages.length === 0 && (thread === DRAFT || chat.status === "ready");
@@ -111,18 +114,19 @@ export function ChatView({ space }: { space: SpaceView }) {
   const from = Math.min(win?.from ?? 0, count);
   const to = win?.to == null ? count : Math.min(win.to, count);
   const complete = !win || mountedAll(win);
-  // A hidden page waits: the rest mounts when it is shown again.
+  const scroll = useTimelineScroll(key, !empty && !failed && chat.messages.length > 0, sentKey);
+  // A hidden page waits: the rest mounts when it is shown again. So does a first open whose last screen
+  // is still drawing (a diagram): it gets the frames first, and is shown once it has landed.
   const onScreen = useViewActive();
   useEffect(() => {
-    if (complete || !onScreen) return;
+    if (complete || !onScreen || scroll.revealing) return;
     const id = requestAnimationFrame(() => startTransition(() => setMount((m) => (m.key === key && m.win ? { key, win: widen(m.win, count) } : m))));
     return () => cancelAnimationFrame(id);
-  }, [key, from, to, complete, onScreen, count]);
+  }, [key, from, to, complete, onScreen, count, scroll.revealing]);
   const mountAll = () => {
     if (!complete) flushSync(() => setMount({ key, win: { from: 0, to: null } }));
   };
 
-  const scroll = useTimelineScroll(key, !empty && !failed && chat.messages.length > 0, sentKey);
   const showSkeleton = useDelayed(chat.status === "loading" && chat.messages.length === 0);
   const spaceName = useCallback((id: string) => spaces.find((s) => s.id === id)?.name ?? id, [spaces]);
   const lastUserIndex = [...chat.messages].reverse().find((m) => m.role === "user")?.index;

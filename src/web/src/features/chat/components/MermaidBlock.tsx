@@ -8,6 +8,26 @@ let mermaid: Promise<typeof import("mermaid")> | null = null;
 const drawn = new Map<string, string>();
 const themeOf = () => (document.documentElement.classList.contains("dark") ? "dark" : "neutral");
 
+/**
+ * Loads the diagram library ahead of the first diagram, while nothing else is
+ * happening: loading it on demand takes long enough that a chat opening with
+ * a diagram on its last screen would wait on it.
+ */
+export function warmMermaid(): () => void {
+  if (mermaid) return () => {};
+  // The library and its flowchart (the usual diagram), which it loads separately on first use.
+  const load = () => {
+    mermaid ??= import("mermaid");
+    void mermaid.then(({ default: m }) => m.parse("flowchart LR\n  a --> b").catch(() => {})).catch(() => {});
+  };
+  if ("requestIdleCallback" in window) {
+    const id = window.requestIdleCallback(load, { timeout: 4000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const t = setTimeout(load, 1500);
+  return () => clearTimeout(t);
+}
+
 /** A diagram drawn once its code has finished arriving; its source stays one click away if it can't be drawn. */
 export function MermaidBlock({ code, streaming }: { code: string; streaming: boolean }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, "");
@@ -43,7 +63,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
       </div>
     );
   }
-  if (!svg) return <Skeleton className="my-3 h-40 w-full rounded-lg" />;
+  if (!svg) return <Skeleton data-pending="" className="my-3 h-40 w-full rounded-lg" />;
   return (
     <figure className="group/mermaid relative my-3 overflow-x-auto rounded-lg border bg-card p-4">
       <div className="flex justify-center [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: svg }} />

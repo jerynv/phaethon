@@ -28,6 +28,25 @@ export function heldPlace(key: string): Extract<Place, { pinned: false }> | null
 const UP_KEYS = new Set(["ArrowUp", "PageUp", "Home"]);
 const EDITABLE = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
 const GLIDE_TIMEOUT_MS = 900;
+/** The longest a first open waits, unseen, for what is drawing on its last screen. */
+export const REVEAL_WAIT_MS = 600;
+
+/**
+ * Whether anything on the last screen of `content` is still drawing: a diagram
+ * or LaTeX placeholder (`data-pending`), or an image still loading. Those grow
+ * when they finish, which would push the text up on a first open.
+ */
+function drawingOnScreen(el: HTMLElement, content: HTMLElement): boolean {
+  const top = el.getBoundingClientRect().top;
+  const bottom = top + el.clientHeight;
+  const near = (n: Element) => {
+    const r = n.getBoundingClientRect();
+    return r.bottom > top && r.top < bottom;
+  };
+  for (const n of content.querySelectorAll("[data-pending]")) if (near(n)) return true;
+  for (const img of content.querySelectorAll("img")) if (!img.complete && near(img)) return true;
+  return false;
+}
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -50,6 +69,8 @@ export function useTimelineScroll(key: string, ready: boolean, sentKey: string |
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const [away, setAway] = useState(false);
+  /** A first open held unseen while its last screen finishes drawing. */
+  const [revealing, setRevealing] = useState(false);
   const st = useRef({
     key,
     pinned: true,
@@ -60,6 +81,8 @@ export function useTimelineScroll(key: string, ready: boolean, sentKey: string |
     lastHeight: 0,
     glide: null as Glide | null,
     glideTimer: 0 as ReturnType<typeof setTimeout> | 0,
+    /** The frame loop holding a first open unseen while its last screen draws. */
+    reveal: 0,
   }).current;
 
   const shown = (el: HTMLElement) => el.clientHeight > 0;
@@ -180,6 +203,9 @@ export function useTimelineScroll(key: string, ready: boolean, sentKey: string |
   }, []);
 
   // A conversation opens where it was left (its end the first time), before the first paint.
+  // If something on that screen is still drawing (a diagram, a LaTeX preview, an image), it would
+  // push the text when it lands, so the messages stay unseen until it has (at most REVEAL_WAIT_MS),
+  // inside the page's own fade, and appear already settled.
   useLayoutEffect(() => {
     st.key = key;
     stopGlide();
@@ -188,7 +214,35 @@ export function useTimelineScroll(key: string, ready: boolean, sentKey: string |
     st.held = p && !p.pinned ? { key: p.key, offset: p.offset } : null;
     setAway(!st.pinned);
     const el = box.current;
-    if (el && ready) settle(el);
+    const inner = content.current;
+    if (!el || !ready) return;
+    settle(el);
+    if (!inner || !shown(el) || !drawingOnScreen(el, inner)) return;
+    inner.style.opacity = "0";
+    setRevealing(true);
+    const start = performance.now();
+    let lastHeight = -1;
+    let still = 0;
+    const tick = () => {
+      settle(el);
+      still = el.scrollHeight === lastHeight ? still + 1 : 0;
+      lastHeight = el.scrollHeight;
+      const done = (!drawingOnScreen(el, inner) && still >= 2) || performance.now() - start > REVEAL_WAIT_MS;
+      if (!done) {
+        st.reveal = requestAnimationFrame(tick);
+        return;
+      }
+      st.reveal = 0;
+      inner.style.opacity = "";
+      setRevealing(false);
+    };
+    st.reveal = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(st.reveal);
+      st.reveal = 0;
+      inner.style.opacity = "";
+      setRevealing(false);
+    };
   }, [key, ready]);
 
   // Sending a message goes to the end (a new one in this conversation; coming back to a conversation
@@ -254,5 +308,5 @@ export function useTimelineScroll(key: string, ready: boolean, sentKey: string |
     box.current?.scrollBy({ top: deltaY });
   };
 
-  return { box: attach, boxRef: box, content, away, toEnd, jumpTo, wheel };
+  return { box: attach, boxRef: box, content, away, revealing, toEnd, jumpTo, wheel };
 }

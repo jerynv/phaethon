@@ -18,7 +18,7 @@ import { BarLegend, StackedBar } from "@/components/ui/stacked-bar";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArtEmpty } from "@/features/courses/components/ArtEmpty";
-import { shortCourseName } from "@/features/courses/lib/names";
+import { shortCourseName } from "@/features/courses/lib/course-name";
 import { AutoHeight, EASE } from "@/features/study/components/motion";
 import { JobBar } from "@/features/study/components/parts";
 import { usePrefs } from "@/features/settings/prefs";

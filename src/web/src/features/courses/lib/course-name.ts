@@ -9,9 +9,10 @@
 /** "FA26: ", "XX99 - ", "202610: ", "Fall 2026: ": a term before the name. */
 const TERM_PREFIX = [/^(?=[A-Z0-9]*\d)[A-Z0-9]{2,8}\s*[:\-–—|]\s+/i, /^(fall|spring|summer|winter|autumn)\s+\d{2,4}\s*[:\-–—|]\s*/i];
 
-/** ": 1234", " - SEC 002", " (01)", ", section B": a section or CRN after the name. */
+/** ": 1234", " - SEC 002", " (01)", ", section B", " (All Sections)": a section or CRN after the name (not the end of "1865-1945"). */
 const SECTION_SUFFIX = [
-  /\s*[:\-–—|,]\s*\d{3,6}$/,
+  /(?:\s*[:|,]\s*|\s+[\-–—]\s*)\d{3,6}$/,
+  /\s*\(\s*all\s+sections?\s*\)$/i,
   /\s*[:\-–—|,]?\s*\b(sec|sect|section)\.?\s*[A-Z0-9]{1,5}$/i,
   /\s*[([]\s*(?:(?:sec|sect|section)\.?\s*)?[A-Z]?\d{1,5}[A-Z]?\s*[)\]]$/i,
 ];
@@ -26,9 +27,11 @@ function staysUpper(word: string) {
   return ROMAN.test(word) || ACRONYMS.has(word) || /\d/.test(word) || !/[AEIOUY]/.test(word);
 }
 
-function titleWord(word: string, first: boolean) {
+function titleWord(word: string, first: boolean, next: string | undefined) {
   const bare = word.replace(/[^A-Z0-9]/g, "");
   if (bare && staysUpper(bare) && /^[^A-Za-z]*[A-Z0-9]+[^A-Za-z]*$/.test(word)) return word;
+  // A subject code before its number ("XYZ 214") stays as it is.
+  if (bare.length > 0 && bare.length <= 4 && /^[A-Z]+$/.test(bare) && next && /^\d/.test(next)) return word;
   const lower = word.toLowerCase();
   if (!first && SMALL.has(lower)) return lower;
   // "FIRST-YEAR" → "First-Year", "WOMEN'S" → "Women's".
@@ -40,7 +43,7 @@ export function titleCaseName(name: string): string {
   if (/[a-z]/.test(name) || !/[A-Z]/.test(name)) return name;
   const words = name.split(" ");
   // A small word is capitalised at the start and after a colon or dash ("Physics: An Introduction").
-  return words.map((w, i) => titleWord(w, i === 0 || /[:\-–—]$/.test(words[i - 1] ?? ""))).join(" ");
+  return words.map((w, i) => titleWord(w, i === 0 || /[:\-–—]$/.test(words[i - 1] ?? ""), words[i + 1])).join(" ");
 }
 
 /** "XX99: INTRO PLACEHOLDER STUDIES: 1234" → "Intro Placeholder Studies". Falls back to the raw name when no words would be left. */

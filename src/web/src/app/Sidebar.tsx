@@ -6,6 +6,7 @@ import { toast } from "@/components/toast";
 import { AlertDialog, AlertDialogClose, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogPopup, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Sidebar as Panel,
@@ -176,27 +177,29 @@ function ViewNav() {
   const retap = useNav((s) => s.retapView);
   if (!space?.educationEnabled) return null;
   return (
-    <SidebarMenu aria-label="Views" className="mt-1.5">
-      {VIEWS.filter((v) => v.edu).map((v) => {
-        const i = VIEWS.findIndex((x) => x.id === v.id);
-        const active = !settings && view === v.id;
-        return (
-          <SidebarMenuItem key={v.id}>
-            <SidebarMenuButton
-              isActive={active}
-              aria-current={active ? "page" : undefined}
-              aria-keyshortcuts={viewKeys(i).aria}
-              onClick={() => (active ? retap(v.id as View) : setView(v.id as View))}
-              className="group/view"
-            >
-              <Icon icon={v.icon} />
-              <span className="flex-1">{v.label}</span>
-              <Keys keys={viewKeys(i).keys} className="opacity-0 transition-opacity group-hover/view:opacity-100" />
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        );
-      })}
-    </SidebarMenu>
+    <RowHighlightGroup className="mt-1.5">
+      <SidebarMenu aria-label="Views">
+        {VIEWS.filter((v) => v.edu).map((v) => {
+          const i = VIEWS.findIndex((x) => x.id === v.id);
+          const active = !settings && view === v.id;
+          return (
+            <SidebarMenuItem key={v.id}>
+              <SidebarMenuButton
+                isActive={active}
+                aria-current={active ? "page" : undefined}
+                aria-keyshortcuts={viewKeys(i).aria}
+                onClick={() => (active ? retap(v.id as View) : setView(v.id as View))}
+                className="group/view"
+              >
+                <Icon icon={v.icon} />
+                <span className="flex-1">{v.label}</span>
+                <Keys keys={viewKeys(i).keys} className="opacity-0 transition-opacity group-hover/view:opacity-100" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
+      </SidebarMenu>
+    </RowHighlightGroup>
   );
 }
 

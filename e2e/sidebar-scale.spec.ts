@@ -223,3 +223,74 @@ test("1500 conversations: a first click opens a cut title, pages keep coming, an
   await expect(focused).toHaveAttribute("data-nav-row", "");
   await expect(focused).toHaveAccessibleName(onScreen[2]!.name);
 });
+
+test("the selected fill glides between rows on screen, and never moves on its own while scrolling or filtering", async ({ page }) => {
+  core = await startCore({ setup: (home) => seed(home, "school", "School", 300, "Placeholder") });
+  await core.open(page);
+  const sidebar = nav(page);
+  const n = (i: number) => sidebar.getByRole("button", { name: new RegExp(`^Placeholder chat ${i} `) });
+  await expect(n(299)).toHaveAttribute("aria-current", "page");
+  await expect(sidebar.locator("[data-entering]")).toHaveCount(0);
+  const fill = sidebar.locator("[data-slot=sidebar-spaces] > [data-slot=row-highlight]");
+  // The fill's offset from its row, every time it is set, until `stop()`: a glide sets a non-zero offset that springs back to 0.
+  const watch = () =>
+    fill.evaluate((h) => {
+      const seen: string[] = [];
+      const mo = new MutationObserver(() => seen.push((h.firstElementChild as HTMLElement).style.transform));
+      mo.observe(h.firstElementChild!, { attributes: true, attributeFilter: ["style"] });
+      (window as unknown as { stopWatch: () => string[] }).stopWatch = () => (mo.disconnect(), seen);
+    });
+  const stop = () => page.evaluate(() => (window as unknown as { stopWatch: () => string[] }).stopWatch());
+  const moved = (seen: string[]) => seen.some((t) => /translateY\(-?[1-9]/.test(t));
+  const under = async (row: Locator) => {
+    const [a, b] = await Promise.all([fill.locator("> *").boundingBox(), row.boundingBox()]);
+    return !!a && !!b && Math.abs(a.y - b.y) < 1 && Math.abs(a.height - b.height) < 1;
+  };
+  await expect.poll(() => under(n(299))).toBe(true);
+  // A glide has settled once its offset is cleared.
+  const settled = () => expect.poll(() => fill.evaluate((h) => (h.firstElementChild as HTMLElement).style.transform)).toBe("none");
+
+  // A row on screen: the fill glides over to it and settles under it.
+  await watch();
+  await n(295).click();
+  await expect.poll(() => under(n(295))).toBe(true);
+  expect(moved(await stop())).toBe(true);
+  await expect(n(295)).toHaveAttribute("aria-current", "page");
+  await expect(n(299)).not.toHaveAttribute("aria-current");
+  await settled();
+
+  // Scrolling: the fill rides in the content with its row and is never animated.
+  await watch();
+  for (let i = 0; i < 20; i++) {
+    await scroller(page).evaluate((el) => el.scrollBy(0, 120));
+    await page.waitForTimeout(30);
+  }
+  await scroller(page).evaluate((el) => (el.scrollTop = 0));
+  await page.waitForTimeout(100);
+  expect(await stop()).toEqual([]);
+  await expect.poll(() => under(n(295))).toBe(true);
+
+  // The old row scrolled out of view: the next one is selected in place, no glide in from off screen.
+  await scroller(page).evaluate((el) => (el.scrollTop = 1200));
+  await page.waitForTimeout(200);
+  const far = sidebar.locator("[data-nav-row][aria-label^='Placeholder chat']").filter({ hasNotText: /chat 29[0-9] / });
+  const target = far.nth(Math.floor((await far.count()) / 2));
+  await watch();
+  await target.click();
+  await expect(target).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => under(target)).toBe(true);
+  expect(moved(await stop())).toBe(false);
+
+  // Filtering swaps the list; the fill follows its row there without gliding.
+  await scroller(page).evaluate((el) => (el.scrollTop = 0));
+  await n(296).click();
+  await expect.poll(() => under(n(296))).toBe(true);
+  await watch();
+  const filter = sidebar.getByRole("searchbox", { name: "Search chats" });
+  await filter.fill("Placeholderq296x");
+  await expect(n(295)).toHaveCount(0);
+  await expect.poll(() => under(n(296))).toBe(true);
+  await filter.press("Escape");
+  await expect.poll(() => under(n(296))).toBe(true);
+  expect(moved(await stop())).toBe(false);
+});

@@ -4,6 +4,7 @@ import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { RowGlideContext } from "./row-highlight";
 import { ScrollArea } from "./scroll-area";
 import { Skeleton } from "./skeleton";
 
@@ -212,7 +213,7 @@ export function SidebarMenuItem({ className, ...props }: React.ComponentProps<"l
 }
 
 export const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md text-left outline-hidden transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-60 data-[active=true]:bg-row-selected data-[active=true]:text-foreground [&>svg]:shrink-0 [&>svg]:text-icon-muted",
+  "peer/menu-button flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md text-left outline-hidden transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-60 data-[active=true]:bg-row-selected data-[active=true]:text-foreground data-glide:data-[active=true]:bg-transparent data-glide:data-[active=true]:hover:bg-transparent [&>svg]:shrink-0 [&>svg]:text-icon-muted",
   {
     variants: {
       size: {
@@ -228,18 +229,26 @@ export const sidebarMenuButtonVariants = cva(
   },
 );
 
+/**
+ * A 28 px row. `isActive` marks the selected one; inside a `RowHighlightGroup`
+ * (or with `glide`) the list draws that fill as one highlight that glides
+ * between rows (components/ui/row-highlight.tsx) instead of the row's own.
+ */
 export function SidebarMenuButton({
   isActive = false,
+  glide,
   size,
   tone,
   className,
   render,
   ...props
-}: useRender.ComponentProps<"button"> & { isActive?: boolean } & VariantProps<typeof sidebarMenuButtonVariants>) {
+}: useRender.ComponentProps<"button"> & { isActive?: boolean; glide?: boolean } & VariantProps<typeof sidebarMenuButtonVariants>) {
+  const inGroup = React.use(RowGlideContext);
   const defaults = {
     type: "button" as const,
     className: cn(sidebarMenuButtonVariants({ size, tone }), className),
     "data-active": isActive || undefined,
+    "data-glide": (glide ?? inGroup) || undefined,
     "data-slot": "sidebar-menu-button",
   };
   return useRender({

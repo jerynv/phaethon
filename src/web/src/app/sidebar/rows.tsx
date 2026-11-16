@@ -230,6 +230,8 @@ function ThreadRowItem({ itemKey, space, thread, active, renaming, menuOpen }: R
     <div className="group/menu-item relative" data-slot="sidebar-menu-item" data-keep={menuOpen || undefined}>
       <SidebarMenuButton
         isActive={active}
+        // The list draws the selected fill as one highlight gliding between rows (SpacesList).
+        glide
         aria-current={active ? "page" : undefined}
         aria-label={state ? `${thread.title}, ${ROW_LABELS[state]}` : thread.title}
         data-nav-row=""

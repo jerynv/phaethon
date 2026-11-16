@@ -5,6 +5,7 @@ import { RowError } from "@/components/errors";
 import { TruncateTips } from "@/components/truncate";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Menu, MenuItem, MenuPopup, MenuSeparator } from "@/components/ui/menu";
+import { RowHighlight } from "@/components/ui/row-highlight";
 import { SidebarContent, SidebarMenuSkeleton } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import type { SpaceView } from "../api";
@@ -617,6 +618,9 @@ export function SpacesList({
     if (it.kind !== "label") list.push(it);
   }
   const chatOn = (space: string) => activeSpace === space && !settingsOpen && view === "chat";
+  // The open conversation's row, for the one selected fill that glides between rows (it sits in the scrolling content, so scrolling never moves it).
+  const selectedAt = target ? layout.index.get(target) : undefined;
+  const selected = selectedAt !== undefined && items[selectedAt]?.kind === "row" ? items[selectedAt]! : null;
   // The rows rendered now, as ghosts-to-be should they be deleted before the next render.
   const rowsNow = new Map<string, Ghost>();
 
@@ -638,7 +642,7 @@ export function SpacesList({
         <ContextMenu open={contextFor !== null} onOpenChange={(o) => setContextFor(o ? contextTarget.current : null)}>
           <ContextMenuTrigger
             render={<div />}
-            className="relative w-full"
+            className="relative isolate w-full"
             style={{ height: layout.size }}
             data-slot="sidebar-spaces"
             data-instant={instant || undefined}
@@ -655,6 +659,14 @@ export function SpacesList({
               contextTarget.current = i !== undefined && (items[i]!.kind === "row" || items[i]!.kind === "space") ? key : null;
             }}
           >
+            <RowHighlight
+              id={selected ? target : null}
+              box={selected ? { top: selected.start, height: ROW - 1 } : null}
+              instant={instant || entering}
+              slide
+              data-enter=""
+              style={selected ? ({ "--i": enterStep(selected.start) } as CSSProperties) : undefined}
+            />
             {[...shown.keys()]
               .sort((a, b) => a - b)
               .map((si) => {
@@ -694,8 +706,10 @@ export function SpacesList({
                                     data-enter=""
                                     data-next={nextAt ?? ""}
                                     style={{ "--i": enterStep(b.start) } as CSSProperties}
-                                    className={cn("sticky z-10 flex h-7 items-center bg-sidebar pl-8 text-subtle-foreground text-xs", single ? "top-0" : "top-7")}
+                                    className={cn("sticky z-10 flex h-7 items-center pl-8 text-subtle-foreground text-xs", single ? "top-0" : "top-7")}
                                   >
+                                    {/* Opaque only while stuck over rows: in place, the gliding selected fill passes under the label's text. */}
+                                    <span data-slot="sidebar-group-sticky-fill" className="absolute inset-0 -z-10 bg-sidebar" />
                                     <span data-slot="sidebar-group-sticky-text">{b.label}</span>
                                     {/* Stuck over rows, a short masked edge hides the cut-off text under it. */}
                                     <span data-slot="sidebar-group-sticky-edge" className="pointer-events-none absolute inset-x-0 top-full h-3 bg-sidebar mask-b-from-40%" />

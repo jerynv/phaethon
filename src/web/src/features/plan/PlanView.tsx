@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
+import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -256,8 +257,11 @@ function SideRow({ selected, onClick, lead, label, trail }: { selected?: boolean
     <button
       type="button"
       aria-pressed={selected}
+      // The group's one highlight draws the selected fill and glides it between rows.
+      data-glide=""
+      data-active={selected || undefined}
       onClick={onClick}
-      className={cn("flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "bg-row-selected hover:bg-row-selected")}
+      className={cn("flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selected && "hover:bg-transparent")}
     >
       <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">{lead}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -298,22 +302,26 @@ function Filters({
       {/* Narrow pages filter from the bar above the agenda instead. */}
       <div className="flex flex-col @max-3xl/page:hidden">
         <SideLabel>Show</SideLabel>
-        {SHOW.map((s) => (
-          <SideRow key={s.value} selected={filter.show === s.value} onClick={() => onFilter({ ...filter, show: s.value })} lead={<Icon icon={s.icon} className="size-4" />} label={s.label} trail={c[s.value] || ""} />
-        ))}
+        <RowHighlightGroup className="flex flex-col">
+          {SHOW.map((s) => (
+            <SideRow key={s.value} selected={filter.show === s.value} onClick={() => onFilter({ ...filter, show: s.value })} lead={<Icon icon={s.icon} className="size-4" />} label={s.label} trail={c[s.value] || ""} />
+          ))}
+        </RowHighlightGroup>
         {colors.size ? (
           <>
             <SideLabel>Courses</SideLabel>
-            {[...colors].map(([name, color]) => (
-              <SideRow
-                key={name}
-                selected={filter.course === name}
-                onClick={() => onFilter({ ...filter, course: filter.course === name ? null : name })}
-                lead={<span className="size-2 rounded-full" style={{ backgroundColor: color }} />}
-                label={name}
-                trail={c.courses.get(name) ?? ""}
-              />
-            ))}
+            <RowHighlightGroup className="flex flex-col">
+              {[...colors].map(([name, color]) => (
+                <SideRow
+                  key={name}
+                  selected={filter.course === name}
+                  onClick={() => onFilter({ ...filter, course: filter.course === name ? null : name })}
+                  lead={<span className="size-2 rounded-full" style={{ backgroundColor: color }} />}
+                  label={name}
+                  trail={c.courses.get(name) ?? ""}
+                />
+              ))}
+            </RowHighlightGroup>
           </>
         ) : null}
       </div>

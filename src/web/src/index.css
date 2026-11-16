@@ -871,11 +871,19 @@
   [data-slot="sidebar-group-sticky"] {
     container-type: scroll-state;
   }
-  [data-slot="sidebar-group-sticky-edge"] {
+  /* Its fill too, so the selected row's highlight shows through a label it glides past. */
+  [data-slot="sidebar-group-sticky-edge"],
+  [data-slot="sidebar-group-sticky-fill"] {
     visibility: hidden;
   }
   @container scroll-state(stuck: top) {
-    [data-slot="sidebar-group-sticky-edge"] {
+    [data-slot="sidebar-group-sticky-edge"],
+    [data-slot="sidebar-group-sticky-fill"] {
+      visibility: visible;
+    }
+  }
+  @supports not (container-type: scroll-state) {
+    [data-slot="sidebar-group-sticky-fill"] {
       visibility: visible;
     }
   }

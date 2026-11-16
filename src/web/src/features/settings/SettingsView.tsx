@@ -6,6 +6,7 @@ import { type SettingsSection, useNav } from "@/app/store";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Kbd } from "@/components/ui/kbd";
+import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { cn } from "@/lib/utils";
 import { AboutSection } from "./AboutSection";
 import { cliStatuses } from "./agents/api";
@@ -124,31 +125,34 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
         Back
         <Kbd className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">Esc</Kbd>
       </button>
-      {groups.map((g) => (
-        <div key={g} className="mt-4 flex flex-col gap-px">
-          <h2 className="flex h-7 items-center px-2 text-subtle-foreground text-xs">{g}</h2>
-          {SECTIONS.filter((s) => s.group === g).map((s) => {
-            const active = s.id === section;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                aria-current={active ? "page" : undefined}
-                onClick={() => (active ? onReset() : open(s.id))}
-                className={cn(
-                  "relative isolate flex h-7 items-center gap-2 rounded-md px-2 text-sm transition-colors",
-                  active ? "text-foreground" : "text-foreground hover:bg-accent",
-                )}
-              >
-                {active ? <motion.span layoutId="settings-nav" transition={{ type: "spring", stiffness: 480, damping: 38 }} className="absolute inset-0 -z-10 rounded-md bg-row-selected" /> : null}
-                <Icon icon={s.icon} className={cn("size-4", active ? "text-foreground" : "text-muted-foreground")} />
-                {s.label}
-                <MarkerView m={markers[s.id]} />
-              </button>
-            );
-          })}
-        </div>
-      ))}
+      <RowHighlightGroup className="flex flex-col">
+        {groups.map((g) => (
+          <div key={g} className="mt-4 flex flex-col gap-px">
+            <h2 className="flex h-7 items-center px-2 text-subtle-foreground text-xs">{g}</h2>
+            {SECTIONS.filter((s) => s.group === g).map((s) => {
+              const active = s.id === section;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  data-glide=""
+                  data-active={active || undefined}
+                  onClick={() => (active ? onReset() : open(s.id))}
+                  className={cn(
+                    "flex h-7 items-center gap-2 rounded-md px-2 text-sm transition-colors",
+                    active ? "text-foreground" : "text-foreground hover:bg-accent",
+                  )}
+                >
+                  <Icon icon={s.icon} className={cn("size-4", active ? "text-foreground" : "text-muted-foreground")} />
+                  {s.label}
+                  <MarkerView m={markers[s.id]} />
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </RowHighlightGroup>
     </nav>
   );
 }

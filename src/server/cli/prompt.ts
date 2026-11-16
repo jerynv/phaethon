@@ -4,6 +4,10 @@ import type { Block, Message } from "../core/thread.ts";
 import { studyPromptForCli } from "../study/prompt.ts";
 import { toUi } from "../threads/store.ts";
 import { FULL_ACCESS_NOTE } from "./cli.ts";
+import { profilesForPrompt } from "../memory/profile.ts";
+import { memoryPromptSection, type TurnContext } from "../memory/prompt.ts";
+import { emailBlockPrompt } from "../mail/block.ts";
+import { mailEnabledFor } from "../mail/access.ts";
 
 /** Said to a fresh session before a conversation it never saw. */
 export const HISTORY_INTRO =
@@ -25,6 +29,12 @@ export function transcript(msgs: Message[]): string {
   // Move forward to a character boundary (skip UTF-8 continuation bytes).
   while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
   return `[The start of the conversation is left out.]\n\n${bytes.subarray(start).toString("utf8")}`;
+}
+
+/** The latest message and the user's message before it, for picking memories. */
+export function cliTurn(prompt: string, msgs: Message[]): TurnContext {
+  const prev = [...toUi(msgs)].reverse().find((m) => m.role === "user" && m.text.trim());
+  return { text: prompt, ...(prev ? { recent: prev.text } : {}) };
 }
 
 /** What the CLI is asked: the new message, after the conversation so far when the session starts fresh on one that has messages. */
@@ -54,8 +64,17 @@ export function attachmentNote(attachments: Block[], spaceDir: string, external:
  * workspace block for an outside project folder and the full-access note in
  * front.
  */
-export function systemText(o: { space: string; spaceDir: string; workingDir: string; fullAccess: boolean }): string {
+export function systemText(o: { space: string; spaceDir: string; workingDir: string; fullAccess: boolean; turn?: TurnContext }): string {
   const parts = [REASONING_PROMPT, RICH_OUTPUT_PROMPT, appGuideCliSection()];
+  // Who the user is, and only the memories this message touches (the CLI has no memory tools; the daily review keeps memory current).
+  for (const f of [() => profilesForPrompt(o.space), () => memoryPromptSection(o.space, o.turn, { cli: true }), () => (mailEnabledFor(o.space) ? undefined : emailBlockPrompt(o.space))]) {
+    try {
+      const t = f();
+      if (t) parts.push(t);
+    } catch {
+      // memory is a nicety for a CLI turn
+    }
+  }
   const study = studyPromptForCli(o.space);
   if (study) parts.push(study);
   const tutor = tutorModeSection(o.space);

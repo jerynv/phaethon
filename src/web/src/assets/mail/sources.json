@@ -1,0 +1,9 @@
+{
+  "assets": [
+    { "name": "gmail", "url": "https://api.iconify.design/logos/google-gmail.svg", "license": "CC0-1.0", "from": "SVG Logos by Gil Barbara (https://github.com/gilbarbara/logos)" },
+    { "name": "yahoo", "url": "https://api.iconify.design/logos/yahoo.svg", "license": "CC0-1.0", "from": "SVG Logos by Gil Barbara (https://github.com/gilbarbara/logos)" },
+    { "name": "exchange", "url": "https://api.iconify.design/logos/microsoft-icon.svg", "license": "CC0-1.0", "from": "SVG Logos by Gil Barbara (https://github.com/gilbarbara/logos)" },
+    { "name": "outlook", "url": "https://api.iconify.design/thesvg-color/microsoft-outlook.svg", "license": "MIT", "from": "theSVG (https://github.com/glincker/thesvg)" },
+    { "name": "icloud", "url": "https://api.iconify.design/thesvg-color/icloud.svg", "license": "MIT", "from": "theSVG (https://github.com/glincker/thesvg)" }
+  ]
+}

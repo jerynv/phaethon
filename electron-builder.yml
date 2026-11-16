@@ -53,6 +53,11 @@ mac:
   # comes from build/brand/mark.png via scripts/brand/build-icons.py.
   icon: icon.icon
   hardenedRuntime: true
+  # The defaults plus Apple Events, which Mail & connectors use (src/server/mail).
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSAppleEventsUsageDescription: Phaethon uses the Mail app (or Outlook) to read and send email from the accounts you added there, only for the spaces you choose.
   # zip is what the updater installs on macOS; dmg is for people.
   target:
     - target: dmg

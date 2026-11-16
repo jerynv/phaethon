@@ -56,7 +56,7 @@ export function PlanView({ space }: { space: SpaceView }) {
     const decks: Record<string, string[]> = {};
     for (const d of overview?.decks ?? []) if (d.course) (decks[d.course] ??= []).push(d.title);
     return { courses: up.courses, items: up.items, exams, state, decks };
-  }, [space.id]);
+  }, [space.id], "plan:data");
   const skeleton = useDelayed(data.loading && !data.data);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState<Filter>({ show: "all", course: null });

@@ -347,6 +347,16 @@ export function recordText(r: UiRecord, spaceName: (id: string) => string = (id)
       return `Question: ${r.question}`;
     case "progress":
       return r.text;
+    case "memory":
+      return r.action === "closed" ? `Done: ${r.text}${r.outcome ? `, ${r.outcome}` : ""}` : `${r.action === "updated" ? "Updated memory" : "Remembered"}: ${r.text}`;
+    case "person":
+      return `${r.action === "created" ? "Added to people" : "Updated"}: ${r.name}`;
+    case "profile":
+      return `Added to ${r.scope === "vault" ? "your" : "this space’s"} profile: ${r.text}`;
+    case "mailDraft":
+      return r.intent === "send" ? "An email is ready to send" : "An email draft is ready";
+    case "schedule":
+      return `Suggested schedule: ${r.title}, ${r.when}`;
   }
 }
 

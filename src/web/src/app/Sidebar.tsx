@@ -168,18 +168,18 @@ function NewChatButton() {
 
 const NO_SPACE_LIST: SpaceView[] = [];
 
-/** The active space's pages (Study, Grades, Plan, Courses) as rows under the filter, the same rows as everywhere else. */
+/** The active space's pages (Files, and Study, Grades, Plan, Courses where study tools are on) as rows under the filter, the same rows as everywhere else. */
 function ViewNav() {
   const space = useActiveSpace();
   const view = useNav((s) => s.view);
   const settings = useNav((s) => s.settings !== null);
   const setView = useNav((s) => s.setView);
   const retap = useNav((s) => s.retapView);
-  if (!space?.educationEnabled) return null;
+  if (!space) return null;
   return (
     <RowHighlightGroup className="mt-1.5">
       <SidebarMenu aria-label="Views">
-        {VIEWS.filter((v) => v.edu).map((v) => {
+        {VIEWS.filter((v) => v.id !== "chat" && (!v.edu || space.educationEnabled)).map((v) => {
           const i = VIEWS.findIndex((x) => x.id === v.id);
           const active = !settings && view === v.id;
           return (

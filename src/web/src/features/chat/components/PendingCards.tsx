@@ -25,6 +25,7 @@ import type { Remember } from "../api";
 import { diffCounts, diffLines, foldDiff } from "../lib/diff";
 import { useChats } from "../store";
 import { Markdown } from "./Markdown";
+import { isLifeRecord, LifeRecordView } from "./LifeCards";
 import type { PendingAccess, PendingApproval, PendingQuestion } from "../lib/timeline";
 
 /**
@@ -353,8 +354,9 @@ function Line({ icon, children }: { icon: IconData; children: React.ReactNode })
 }
 
 /** Saved records that aren't tool steps: one quiet line each, the lesson plan as a small path. */
-export function RecordLine({ record, spaceName }: { record: Exclude<UiRecord, { kind: "tool" }>; spaceName: (id: string) => string }) {
+export function RecordLine({ record, spaceName, space }: { record: Exclude<UiRecord, { kind: "tool" }>; spaceName: (id: string) => string; space?: string }) {
   const openSettings = useNav((s) => s.openSettings);
+  if (isLifeRecord(record)) return space ? <LifeRecordView record={record} space={space} /> : null;
   switch (record.kind) {
     case "lessonPlan":
       return (

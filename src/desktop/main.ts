@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, protocol, session, shell } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { HostOp } from "../shared/host.ts";
+import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
+import { createTray } from "./tray.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
 import { updateCheck, updateDownload, updateInstall } from "./updater.ts";
 import { keepWindowState, loadWindowState } from "./window-state.ts";
@@ -26,6 +27,12 @@ protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: 
 // Sign-in cookies are copied to the core's own keychain entry, so the browser profile can do without.
 if (process.platform === "darwin") app.commandLine.appendSwitch("use-mock-keychain");
 
+// Skia Graphite (Chromium's Metal rasterizer on macOS) draws vector paths with multisampling: an icon's
+// curves and the active tab's corners came out in about 7 grey levels, stepped instead of smooth.
+// Ganesh, still GPU rasterization, antialiases them analytically (100+ levels, as text is).
+// Measured by screenshotting the real window over CDP with and without the switch.
+app.commandLine.appendSwitch("disable-features", "SkiaGraphite");
+
 // Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
 if (captureTo) app.setPath("userData", process.env.PHAETHON_CAPTURE_PROFILE || fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-capture-")));
@@ -39,6 +46,15 @@ let core: CoreProcess | undefined;
 let mainWindow: BrowserWindow | undefined;
 const signInWindows = new Map<number, BrowserWindow>();
 let quitting = false;
+/** The menu-bar icon and what the core last said it should show (and how Phaethon runs in the background). */
+let tray: ReturnType<typeof createTray> | undefined;
+let trayState: TrayState | undefined;
+/** Notifications on screen, kept so their click handler isn't collected. */
+const shownNotes = new Set<Notification>();
+/** Started at login: no window until asked for. */
+// macOS says whether it launched the app at login; Windows and Linux pass the flag set below.
+const startHidden = () => process.argv.includes("--hidden") || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin);
+const keepRunning = () => (trayState?.keepRunning ?? true) && !captureTo && !!tray;
 
 function csp(): string {
   return [
@@ -169,9 +185,9 @@ function createMainWindow(): BrowserWindow {
     // The web --background colour (src/web/src/index.css), so the first frame matches.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#1a1a1a" : "#ffffff",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // The buttons are 14 px across: y = 48 / 2 - 7 centres them on the 48 px title bar, and x is the
-    // same 17 px from the window's left edge, as macOS does in a toolbar window. The web side leaves
-    // 17 + 54 + 17 px for them (--traffic-light-inset in src/web/src/index.css).
+    // The buttons are 14 px across: y = 24 - 7 centres them on the title bar's line (--titlebar-line,
+    // 24 px down the 40 px bar), and x is the same 17 px from the window's left edge, as macOS does in a
+    // toolbar window. The web side leaves 17 + 54 + 17 px for them (--traffic-light-inset in src/web/src/index.css).
     ...(process.platform === "darwin" ? { trafficLightPosition: { x: 17, y: 17 } } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -348,7 +364,74 @@ async function handle(op: HostOp): Promise<unknown> {
       return null;
     case "snapshot":
       return snapshot();
+    case "notify":
+      return { shown: showNotification(op.notification) };
+    case "trayState":
+      applyTrayState(op.state);
+      return null;
   }
+}
+
+/** A system notification; clicking it opens what it's about. One marked whenAway waits out a focused window. */
+function showNotification(n: AppNotification): boolean {
+  if (!Notification.isSupported()) return false;
+  if (n.whenAway && BrowserWindow.getFocusedWindow()) return false;
+  const note = new Notification({ title: n.title, body: n.body, silent: n.silent ?? false });
+  shownNotes.add(note);
+  note.on("click", () => openApp(n.target));
+  note.on("close", () => shownNotes.delete(note));
+  note.show();
+  if (process.env.PHAETHON_TRAY_LOG) console.error(`[tray] notification shown: ${JSON.stringify({ kind: n.kind, title: n.title })}`);
+  return true;
+}
+
+function applyTrayState(state: TrayState): void {
+  const before = trayState;
+  trayState = state;
+  tray?.update(state);
+  if (process.env.PHAETHON_TRAY_LOG) console.error(`[tray] state: ${JSON.stringify({ running: state.running, sending: state.sending.length, automations: state.automations.on, recent: state.recent.length, unseen: state.unseen, keepRunning: state.keepRunning })}`);
+  // Start at login, in the menu bar only (packaged builds: a dev build would register Electron itself).
+  if (app.isPackaged && before?.openAtLogin !== state.openAtLogin) app.setLoginItemSettings({ openAtLogin: state.openAtLogin, args: ["--hidden"] });
+  // A window closed while a reply was being written was only hidden; once nothing runs, it goes (and its memory with it).
+  if (state.running === 0 && mainWindow && !mainWindow.isVisible() && hiddenForReply) {
+    hiddenForReply = false;
+    mainWindow.destroy();
+  }
+}
+
+let hiddenForReply = false;
+
+/** Shows the window (making one if it was closed), then whatever `target` names. */
+function openApp(target?: AppTarget): void {
+  if (captureTo) return;
+  if (!mainWindow) {
+    mainWindow = createMainWindow();
+    watchMainWindow(mainWindow);
+  }
+  if (process.platform === "darwin") void app.dock?.show();
+  bringBack();
+  if (target) core?.emit({ kind: "openTarget", target });
+}
+
+/**
+ * Closing the window keeps Phaethon in the menu bar (unless the person turned
+ * that off): the window is destroyed, so its memory goes with it, and only the
+ * small main process and the core stay. A window closed while a reply is being
+ * written is hidden until the reply ends, so the reply isn't cut off.
+ */
+function watchMainWindow(window: BrowserWindow): void {
+  window.on("close", (event) => {
+    if (quitting || !keepRunning()) return;
+    if ((trayState?.running ?? 0) > 0) {
+      event.preventDefault();
+      hiddenForReply = true;
+      window.hide();
+      if (process.platform === "darwin") app.dock?.hide();
+    }
+  });
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = undefined;
+  });
 }
 
 // The renderer asks for a connection; it gets a MessagePort straight to the core. Only the main
@@ -359,7 +442,9 @@ ipcMain.on("phaethon:connect", (event) => {
 });
 
 function bringBack(): void {
-  if (!mainWindow || captureTo) return;
+  if (captureTo) return;
+  if (!mainWindow) return openApp();
+  hiddenForReply = false;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -388,12 +473,30 @@ app.whenReady().then(async () => {
     },
   });
   serveApp();
-  mainWindow = createMainWindow();
-  mainWindow.on("closed", () => (mainWindow = undefined));
-  if (captureTo) void capture(mainWindow);
+  if (!captureTo)
+    tray = createTray({
+      open: openApp,
+      action: (action) => {
+        if (process.env.PHAETHON_TRAY_LOG) console.error(`[tray] action: ${JSON.stringify(action)}`);
+        core?.emit({ kind: "trayAction", action });
+      },
+      quit: () => app.quit(),
+    });
+  if (!captureTo && startHidden()) {
+    if (process.platform === "darwin") app.dock?.hide();
+  } else {
+    mainWindow = createMainWindow();
+    watchMainWindow(mainWindow);
+    if (captureTo) void capture(mainWindow);
+  }
 });
 
 app.on("window-all-closed", () => {
+  // Phaethon stays in the menu bar to run reminders, automations and timed sends; the Dock icon goes with the window.
+  if (keepRunning()) {
+    if (process.platform === "darwin") app.dock?.hide();
+    return;
+  }
   app.quit();
 });
 

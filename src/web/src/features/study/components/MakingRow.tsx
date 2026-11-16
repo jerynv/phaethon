@@ -31,7 +31,7 @@ export function MakingRow({ job, showTitle = true, className }: { job: MakeJob; 
           {showTitle ? <Truncate className="text-sm">{job.title}</Truncate> : null}
           <span className={cn("block truncate text-xs", stopping ? "text-muted-foreground" : "text-shimmer")}>{stopping ? "Stopping…" : (stage?.detail ?? stage?.label ?? (quiz ? "Making your quiz…" : "Making your cards…"))}</span>
         </span>
-        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">{clock}</span>
+        <span className="shrink-0 text-muted-foreground text-xs type-live">{clock}</span>
         <Button size="xs" variant="ghost-muted" disabled={stopping} onClick={() => void useMakeJobs.getState().stop(job.id)}>
           Stop
         </Button>

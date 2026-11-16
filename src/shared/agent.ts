@@ -37,7 +37,17 @@ export type UiRecord =
   | { kind: "lessonPlan"; id: string; goal: string; map: string; nodes: { id: string; label: string }[] }
   | { kind: "check"; id: string; question: string; answered?: boolean; correct?: boolean; confidence?: number }
   /** A progress note the model wrote between tool calls (saved so a reload shows what was streamed). */
-  | { kind: "progress"; text: string };
+  | { kind: "progress"; text: string }
+  /** Something the agent remembered, changed or closed on the front burner (Undo dismisses it). */
+  | { kind: "memory"; action: "saved" | "updated" | "closed"; id: string; text: string; memoryKind: string; scope: "space" | "vault"; when?: number; until?: number; status?: string; outcome?: string }
+  /** A person card the agent made or added to. */
+  | { kind: "person"; action: "created" | "updated"; id: string; name: string; detail?: string }
+  /** A line the agent added to a profile. */
+  | { kind: "profile"; scope: "vault" | "space"; text: string }
+  /** An email draft; the card reads its live state from the outbox. */
+  | { kind: "mailDraft"; id: string; intent: "draft" | "send" }
+  /** A schedule the agent suggested; off until the person turns it on. */
+  | { kind: "schedule"; id: string; title: string; when: string };
 
 export type QuestionRole = "probe" | "predict" | "check";
 

@@ -24,7 +24,7 @@ export function LmsMark({ kind, className }: { kind: LmsKind; className?: string
 }
 
 export function SiteMark({ connection, className }: { connection: Pick<LmsConnection, "id" | "kind">; className?: string }) {
-  const icon = useLoad(() => lmsSiteIcon(connection.id).catch(() => ({ dataUrl: null })), [connection.id]);
+  const icon = useLoad(() => lmsSiteIcon(connection.id).catch(() => ({ dataUrl: null })), [connection.id], "lms:icon");
   if (icon.data?.dataUrl) return <img alt="" aria-hidden src={icon.data.dataUrl} className={cn("size-4 shrink-0 rounded-[22%] object-cover", className)} draggable={false} />;
   return <LmsMark kind={connection.kind} className={className} />;
 }

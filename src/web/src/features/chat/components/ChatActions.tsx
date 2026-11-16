@@ -21,6 +21,10 @@ const SECTION: Partial<Record<ChatActionId, SettingsSection>> = {
   "settings-accessibility": "appearance",
   "settings-spaces": "spaces",
   "settings-courses": "courses",
+  "settings-memory": "memory",
+  "settings-people": "people",
+  "settings-mail": "mail",
+  "settings-automations": "automations",
   "settings-about": "about",
 };
 
@@ -30,6 +34,10 @@ function icon(id: ChatActionId) {
   if (id === "show-folder") return <Icon icon={icons.folderOpen} />;
   if (id === "import-courses") return <Icon icon={icons.courses} />;
   if (id === "new-space") return <Icon icon={icons.add} />;
+  if (id === "settings-memory") return <Icon icon={icons.memory} />;
+  if (id === "settings-people") return <Icon icon={icons.people} />;
+  if (id === "settings-mail") return <Icon icon={icons.mail} />;
+  if (id === "settings-automations") return <Icon icon={icons.automation} />;
   return <Icon icon={icons.settings} />;
 }
 

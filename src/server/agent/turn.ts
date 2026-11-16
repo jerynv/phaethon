@@ -15,7 +15,8 @@ import { fullyVisibleCourseDirs } from "../lms/access.ts";
 import { touchSpace } from "../spaces/meta.ts";
 import { workingDirFor } from "../workspace/workspace.ts";
 import { forSpace, providerFor } from "../providers/build.ts";
-import { keptAttachments as keptFrom } from "../threads/store.ts";
+import { keptAttachments as keptFrom, threadSummaryIn, toUi } from "../threads/store.ts";
+import { notifyLater } from "../background/background.ts";
 import { parseRef } from "../providers/presets.ts";
 import { effectivePick, parsePick, savePick, type ModelPick } from "../threads/pick.ts";
 import { cleanAnswer, healedCall } from "./lesson.ts";
@@ -70,6 +71,18 @@ async function ownTurn(space: string, thread: string, events: Channel<AgentEvent
     return;
   }
   await runOwnTurn({ space, thread, provider, events, run, mode, effort: pick.effort });
+}
+
+/** A reply finished: a notification with its start, shown only while no Phaethon window has focus. */
+function replyDone(space: string, thread: string): void {
+  try {
+    const last = toUi(load(space, thread)).at(-1);
+    if (!last || last.role !== "assistant" || !last.text.trim()) return;
+    const title = threadSummaryIn(spaceDir(space), thread)?.title || "Phaethon replied";
+    notifyLater({ kind: "reply", title, body: last.text.replace(/[#*_`>|]/g, "").replace(/\s+/g, " ").trim().slice(0, 180), whenAway: true, target: { kind: "thread", space, thread } });
+  } catch {
+    // a notification is a nicety
+  }
 }
 
 /** When the window that started a turn goes away, the turn stops (nothing could answer its questions). */
@@ -196,6 +209,7 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     } catch {
       // the space may have gone
     }
+    if (!run.abort.signal.aborted) replyDone(space, thread);
   }
   end();
 }

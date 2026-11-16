@@ -213,7 +213,7 @@ function ToolSummary({
         </span>
         <span className={cn("min-w-0 truncate text-sm", running && "text-shimmer")}>{summary}</span>
         <Icon icon={icons.chevronRight} className={cn("size-3 shrink-0 text-subtle-foreground transition-transform duration-200", open && "rotate-90")} />
-        {duration ? <span className="ml-auto shrink-0 type-meta">{duration}</span> : null}
+        {duration ? <span className="ml-auto shrink-0 type-meta type-live">{duration}</span> : null}
       </button>
       {children ? <Collapse open={open}>{children}</Collapse> : null}
     </div>

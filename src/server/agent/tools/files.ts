@@ -10,12 +10,16 @@ import { filterCourseText, resolveCoursePath, visibleCourses } from "../../lms/a
 import { renderPdfPage } from "../../lms/text/pages.ts";
 import { listAttempts, loadAttempt } from "../../study/attempts.ts";
 import { search as runSearch, type Root } from "./search.ts";
+import { excludedFolder, excludedRefusal, exclusionsFor, type Exclusions } from "../../files/settings.ts";
 
 /**
  * The file tools: every path is checked lexically and then against the real
  * filesystem. `@<space>/…` reaches another space only through a grant (saved
  * grants are re-read for every call, so a revoke is immediate) and only for
  * reading. `courses/…` is the vault's imported courses this space may see.
+ * Folders a space's Files settings exclude (`files/settings.ts`) are refused
+ * by every tool, in this space and through a grant, by name and by real path;
+ * listings leave them out (saying how many) and searches skip them.
  */
 
 export const MAX_LIST = 500;
@@ -49,7 +53,30 @@ export function isCoursesPath(rel: string): boolean {
 
 export function resolveLocal(ctx: ToolCtx, rel: string, mustExist: boolean): { real: string; course: boolean } {
   if (isCoursesPath(rel)) return { real: resolveCoursePath(ctx.space, cleanRel(rel).join("/"), mustExist), course: true };
-  return { real: resolveIn(ctx.root, rel, mustExist), course: false };
+  const real = resolveIn(ctx.root, rel, mustExist);
+  guard(exclusionsFor(ctx.space, ctx.root), rel, cleanRel(rel), real);
+  return { real, course: false };
+}
+
+/** Refuses a path in an excluded folder. */
+function guard(ex: Exclusions, shown: string, parts: string[], real?: string): void {
+  const folder = excludedFolder(ex, parts, real);
+  if (folder) throw excludedRefusal(shown, folder);
+}
+
+/** A folder's listing without the excluded folders in it, and a line saying how many were left out. */
+function withoutExcluded(names: string[], ex: Exclusions, parentParts: string[], parentReal: string): string[] {
+  if (!ex.excluded.length) return names;
+  let left = 0;
+  const kept = names.filter((n) => {
+    const name = n.replace(/\/$/, "");
+    if (excludedFolder(ex, [...parentParts, name], path.join(parentReal, name))) {
+      left++;
+      return false;
+    }
+    return true;
+  });
+  return left ? [...kept, `(${left} folder${left === 1 ? "" : "s"} left out: the user keeps ${left === 1 ? "it" : "them"} from Phaethon's agent)`] : kept;
 }
 
 export type OtherPlace = { real: string; otherRoot: string; clean: string };
@@ -79,6 +106,7 @@ export function resolveOther(ctx: ToolCtx, other: string, rel: string): OtherPla
   }
   const real = resolveInOther(dir, other, clean, true);
   if (!isWithin(real, granted)) throw new Refusal(`"@${other}/${rel}" leads outside the part of the ${other} space you have access to`);
+  guard(exclusionsFor(other, dir), `@${other}/${rel}`, parts, real);
   return { real, otherRoot: realpath(dir), clean };
 }
 
@@ -125,11 +153,13 @@ export function listFiles(ctx: ToolCtx, p: string): string {
   const t = target(ctx.space, p);
   if (t.kind === "other") {
     const place = resolveOther(ctx, t.space, t.rel);
-    return formatList(listDir(place.real, p));
+    return formatList(withoutExcluded(listDir(place.real, p), exclusionsFor(t.space, spaceDir(t.space)), cleanRel(place.clean), place.real));
   }
   const parts = cleanRel(t.rel);
+  const ex = exclusionsFor(ctx.space, ctx.root);
   if (!parts.length) {
-    const names = listDir(resolveIn(ctx.root, "", true), t.rel).filter((n) => n.replace(/\/$/, "").toLowerCase() !== "courses");
+    const rootReal = resolveIn(ctx.root, "", true);
+    const names = withoutExcluded(listDir(rootReal, t.rel).filter((n) => n.replace(/\/$/, "").toLowerCase() !== "courses"), ex, [], rootReal);
     if (visibleCourses(ctx.space).length) names.push("courses/");
     return formatList(names);
   }
@@ -147,7 +177,9 @@ export function listFiles(ctx: ToolCtx, p: string): string {
     });
     return formatList(names);
   }
-  return formatList(listDir(resolveIn(ctx.root, t.rel, true), t.rel));
+  const real = resolveIn(ctx.root, t.rel, true);
+  guard(ex, t.rel, parts, real);
+  return formatList(withoutExcluded(listDir(real, t.rel), ex, parts, real));
 }
 
 function readText(real: string, rel: string): string {
@@ -218,7 +250,9 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
     const place = resolveOther(ctx, t.space, t.rel);
     const prefix = `@${t.space}/${place.clean ? `${place.clean}/` : ""}`;
     if (!fs.statSync(place.real).isDirectory()) throw new Refusal(`"${p}" is a file, not a folder`);
-    return runSearch([{ dir: place.real, prefix }], query);
+    const otherEx = exclusionsFor(t.space, spaceDir(t.space));
+    const base = cleanRel(place.clean);
+    return runSearch([{ dir: place.real, prefix, skip: skipper(otherEx, base, place.real) }], query);
   }
   const parts = cleanRel(t.rel);
   const courseRoot = (folder: string): Root | undefined => {
@@ -244,7 +278,8 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
   };
   if (!parts.length) {
     // Whole space: the space's own files (its real courses folder hidden), then the visible courses.
-    const roots: Root[] = [{ dir: resolveIn(ctx.root, "", true), prefix: "", skipRootCourses: true }];
+    const rootReal = resolveIn(ctx.root, "", true);
+    const roots: Root[] = [{ dir: rootReal, prefix: "", skipRootCourses: true, skip: skipper(exclusionsFor(ctx.space, ctx.root), [], rootReal) }];
     for (const c of visibleCourses(ctx.space)) {
       const r = courseRoot(c.folder);
       if (r) roots.push(r);
@@ -264,8 +299,16 @@ export function searchFiles(ctx: ToolCtx, query: string, p: string): string {
     return runSearch([{ ...r!, dir, prefix: `courses/${folder}/${sub}/`, allow: (rel) => r!.allow!(`${sub}/${rel}`), filter: (rel, text) => r!.filter!(`${sub}/${rel}`, text) }], query);
   }
   const real = resolveIn(ctx.root, t.rel, true);
+  const ex = exclusionsFor(ctx.space, ctx.root);
+  guard(ex, t.rel, parts, real);
   if (!fs.statSync(real).isDirectory()) throw new Refusal(`"${t.rel}" is a file, not a folder`);
-  return runSearch([{ dir: real, prefix: `${parts.join("/")}/` }], query);
+  return runSearch([{ dir: real, prefix: `${parts.join("/")}/`, skip: skipper(ex, parts, real) }], query);
+}
+
+/** A search's folder filter: true for a folder (relative to the searched one) that is excluded. */
+function skipper(ex: Exclusions, base: string[], baseReal: string): ((rel: string) => boolean) | undefined {
+  if (!ex.excluded.length) return undefined;
+  return (rel) => !!excludedFolder(ex, [...base, ...rel.split("/")], path.join(baseReal, ...rel.split("/")));
 }
 
 export type WritePlan = { real: string; rel: string; action: "create" | "replace"; before: string | null; summary: string; detail: string; truncated: boolean };
@@ -296,6 +339,7 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
   const parts = cleanRel(rel0);
   if (!parts.length) throw new Refusal("path must name a file");
   const real = resolveIn(ctx.root, rel0, false);
+  guard(exclusionsFor(ctx.space, ctx.root), rel0, parts, real);
   const rel = parts.join("/");
   let action: "create" | "replace" = "create";
   let before: string | null = null;
@@ -333,6 +377,7 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
 /** Writes after approval, re-checking the path (it may have changed while the user decided). */
 export function runWrite(ctx: ToolCtx, plan: WritePlan, contents: string): string {
   const real = resolveIn(ctx.root, plan.rel, false);
+  guard(exclusionsFor(ctx.space, ctx.root), plan.rel, cleanRel(plan.rel), real);
   try {
     fs.mkdirSync(path.dirname(real), { recursive: true });
   } catch (e) {

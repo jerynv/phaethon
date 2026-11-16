@@ -23,7 +23,7 @@ function Keys({ keys }: { keys: string[] }) {
 }
 
 function shortcuts(): { label: string; keys: string[] }[] {
-  const lastView = viewKeys(4).keys;
+  const lastView = viewKeys(5).keys;
   const firstView = viewKeys(0).keys;
   return [
     { label: "New chat", keys: keysFor("newChat").keys },
@@ -31,14 +31,14 @@ function shortcuts(): { label: string; keys: string[] }[] {
     { label: "Show or hide the sidebar", keys: keysFor("sidebar").keys },
     { label: "Open or close settings", keys: keysFor("settings").keys },
     { label: "Go to space 1–9", keys: [...spaceKeys(0).keys.slice(0, -1), "1–9"] },
-    { label: "Switch view (Chat, Study, Grades, Plan, Courses)", keys: [...firstView.slice(0, -1), `${firstView.at(-1)}–${lastView.at(-1)}`] },
+    { label: "Switch view (Chat, Files, Study, Grades, Plan, Courses)", keys: [...firstView.slice(0, -1), `${firstView.at(-1)}–${lastView.at(-1)}`] },
     { label: "Move between sidebar, page and composer", keys: ["F6"] },
     { label: "Close settings, dialogs and menus", keys: ["Esc"] },
   ];
 }
 
 export function GeneralSection() {
-  const settings = useLoad(() => api.settings());
+  const settings = useLoad(() => api.settings(), [], "settings:vault");
   const technical = usePrefs((s) => s.technicalDetails);
   const setTechnical = usePrefs((s) => s.setTechnicalDetails);
   return (

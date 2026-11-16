@@ -29,7 +29,7 @@ const PARTS: { part: Part; label: string }[] = [
  */
 export function SourcePicker({ space, sources, chosen, onChange }: { space: string; sources: CourseSource[]; chosen: Set<string>; onChange: (next: Set<string>) => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>(() => (sources.length === 1 ? { [sources[0]!.folder]: true } : {}));
-  const access = useLoad(() => courseAccessGet(space), [space]);
+  const access = useLoad(() => courseAccessGet(space), [space], "courses:access");
   const keyOf = (folder: string) => access.data?.courses.find((c) => c.folder === folder)?.key;
 
   return (
@@ -104,7 +104,7 @@ function PartRow({ label, checked, indeterminate, onToggle, trailing, depth = 1 
 function FilesPart({ space, folder, courseKey, chosen, onChange }: { space: string; folder: string; courseKey?: string; chosen: Set<string>; onChange: (s: Set<string>) => void }) {
   const [open, setOpen] = useState(false);
   const whole = partPath(folder, "files");
-  const content = useLoad<CourseContentEntry[] | null>(() => (open && courseKey ? lmsCourseContent(space, courseKey).then((c) => c.entries.filter((e) => e.kind === "file")) : Promise.resolve(null)), [open, courseKey, space]);
+  const content = useLoad<CourseContentEntry[] | null>(() => (open && courseKey ? lmsCourseContent(space, courseKey).then((c) => c.entries.filter((e) => e.kind === "file")) : Promise.resolve(null)), [open, courseKey, space], "lms:courseFiles");
   const files = content.data ?? [];
   const picked = files.filter((f) => chosen.has(f.path)).length;
   const checked = chosen.has(whole);

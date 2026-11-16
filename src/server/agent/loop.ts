@@ -60,6 +60,8 @@ import {
   type ToolCtx,
 } from "./tools/files.ts";
 import { tutorMode } from "./tutor.ts";
+import { LIFE_TOOL_NAMES, lifeDetail, lifeLabel, lifeTarget, lifeToolNamed, lifeTools, runLifeTool } from "./tools/life.ts";
+import type { TurnContext } from "../memory/prompt.ts";
 
 /**
  * Phaethon's own agent turn: the user's message, then up to MAX_STEPS model
@@ -86,7 +88,26 @@ export type OwnTurn = {
   mode: TurnMode;
   /** The conversation's chosen effort; the vault's hand-edited `effort` when absent. */
   effort?: string | null;
+  /** A scheduled run with nobody watching: writes, access requests, shortcuts and sends are refused. */
+  unattended?: boolean;
 };
+
+/** The user's latest message and the one before it, as text, for picking memories. */
+export function turnContext(msgs: Message[]): TurnContext | undefined {
+  const texts: string[] = [];
+  for (let i = msgs.length - 1; i >= 0 && texts.length < 2; i--) {
+    const m = msgs[i]!;
+    if (m.role !== "user") continue;
+    const t = m.content
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => String(b.text))
+      .join("\n")
+      .trim();
+    if (t) texts.push(t);
+  }
+  if (!texts.length) return undefined;
+  return { text: texts[0]!, ...(texts[1] ? { recent: texts[1] } : {}) };
+}
 
 const CODES: Record<ProviderError["kind"], ErrorCode> = {
   auth: "apiKey",
@@ -142,8 +163,8 @@ function denied(msgs: Message[], space: string, p: string): boolean {
   return records(msgs).some((r) => (r.kind === "access" && r.answer === "deny" && r.space === space && covers(r.path, p)) || (r.kind === "deniedEarlier" && r.space === space && covers(r.path, p)));
 }
 
-/** Tools whose call the user sees as a card rather than a work-log step. */
-const LESSON_CARDS = new Set(["check", "explain_back", "plan_lesson"]);
+/** Tools whose call the user sees as a card or its own line rather than a work-log step. */
+const LESSON_CARDS = new Set(["check", "explain_back", "plan_lesson", "remember", "update_memory", "update_person", "note_profile", "draft_email", "schedule_task"]);
 
 export async function runOwnTurn(t: OwnTurn): Promise<void> {
   const { space, thread, provider, events, run } = t;
@@ -236,8 +257,8 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
   const storage = (message: string) => emit({ kind: "error", code: "storage", message });
 
   // Built once per turn (see prompt.ts).
-  const system = systemPrompt(space, { claude: provider.isClaude, mode });
-  const tools = toolDefs({ claude: provider.isClaude, lesson: mode !== "normal" });
+  const system = systemPrompt(space, { claude: provider.isClaude, mode, turn: turnContext(msgs) });
+  const tools = [...toolDefs({ claude: provider.isClaude, lesson: mode !== "normal" }), ...lifeTools(space, { unattended: t.unattended })];
   const offered = new Set(tools.map((x) => x.name));
   const effort = effortFor(turnKind(mode, msgs), t.effort ?? readSettings().effort);
   let anyText = false;
@@ -369,8 +390,8 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
       }
 
       const wasCancelled = signal.aborted;
-      const act = activity(name);
-      const shownTarget = activityTarget(use.input, ctx.root);
+      const act = LIFE_TOOL_NAMES.has(name) ? lifeLabel(name, use.input) : activity(name);
+      const shownTarget = LIFE_TOOL_NAMES.has(name) ? lifeTarget(name, use.input) : activityTarget(use.input, ctx.root);
       // Lesson tools appear as their own card (question, plan), not as a step in the work log.
       const logged = !LESSON_CARDS.has(name);
       if (!wasCancelled && logged) emit({ kind: "toolStart", id: activityId, category: act.category, label: act.label, ...(shownTarget ? { target: shownTarget } : {}) });
@@ -402,7 +423,9 @@ async function steps(t: OwnTurn, msgs: Message[], ctx: ToolCtx, mode: ReturnType
       }
       if (outcome.block) results.push(outcome.block);
       if (!wasCancelled && logged) {
-        const detail = outcome.status === "failed" ? "Tool reported an error" : undefined;
+        // Phaethon's own tools say what they found (or what went wrong); a file tool's result stays out of the log.
+        const said = outcome.block && typeof outcome.block.content === "string" ? outcome.block.content : "";
+        const detail = LIFE_TOOL_NAMES.has(name) && said ? lifeDetail(name, said.replace(/^Not run: /, "")) : outcome.status === "failed" ? "Tool reported an error" : undefined;
         emit({ kind: "toolEnd", id: activityId, status: outcome.status, ...(detail ? { detail } : {}) });
         addRecord({ kind: "tool", id: activityId, category: act.category as ToolCategory, label: clip(act.label), status: outcome.status, ...(shownTarget ? { target: shownTarget } : {}), ...(detail ? { detail } : {}) });
       }
@@ -495,6 +518,21 @@ async function runOne(o: One): Promise<Outcome> {
     }
   }
 
+  if (LIFE_TOOL_NAMES.has(name)) {
+    if (!o.offered.has(name)) return fail(`Not run: ${name} isn’t available in this space right now.`);
+    const ldef = lifeToolNamed(name, ctx.space);
+    const linput = ldef ? healInput(use.input, ldef.input_schema) : use.input;
+    emit({ kind: "tool", label: lifeLabel(name, linput).status });
+    try {
+      const r = await runLifeTool(name, linput, { space: ctx.space, thread: t.thread, signal, unattended: t.unattended });
+      for (const rec of r.records) o.addRecord(rec);
+      return ok(r.text);
+    } catch (e) {
+      if (signal.aborted && messageOf(e) === "cancelled") return { block: result(STOPPED, true), status: "cancelled" };
+      return fail(`Not run: ${messageOf(e)}.`);
+    }
+  }
+
   const parsed = parseCall(name, input);
   if (!parsed.ok) return fail(`Not run: ${parsed.error}.`);
   const call = parsed.call;
@@ -560,6 +598,7 @@ async function writeFlow(o: One, call: Call): Promise<Outcome> {
   } catch (e) {
     return { block: result(`Not run: ${messageOf(e)}.`, true), status: "failed" };
   }
+  if (t.unattended) return { block: result("Not run: this is a scheduled run with nobody there to approve a write. Put what you would write in your reply instead.", true), status: "failed" };
   // Allowed for this conversation or its whole space: no question; the walls above still apply.
   const standing = writesAllowed(t.space, t.thread);
   if (standing) {
@@ -606,6 +645,7 @@ async function accessFlow(o: One, call: Call): Promise<Outcome> {
     return { block: result(`Not asked: ${messageOf(e)}.`, true), status: "failed" };
   }
   const readHint = `Read it with paths starting "@${other}/${p}".`;
+  if (t.unattended && !isCovered(ctx, other, p)) return { block: result("Not asked: this is a scheduled run with nobody there to answer. Work without it.", true), status: "failed" };
   if (isCovered(ctx, other, p)) return { block: result(`This space can already read @${other}/${p}. ${readHint}`, false), status: "success" };
   if (denied(msgs, other, p)) {
     return {

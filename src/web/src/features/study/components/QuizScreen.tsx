@@ -65,7 +65,7 @@ type Stage = "take" | "check" | "results";
  * and a retake of the misses.
  */
 export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; path: string; onBack: () => void; open: (s: StudyScreen) => void }) {
-  const quiz = useLoad(() => studyQuiz(space.id, path), [space.id, path]);
+  const quiz = useLoad(() => studyQuiz(space.id, path), [space.id, path], "study:quiz");
   const skeleton = useDelayed(quiz.loading && !quiz.data);
   const q = quiz.data;
   const [answers, setAnswers] = useState<Answers>({});
@@ -257,12 +257,14 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
               <div className="flex h-8 items-center gap-3">
                 <span className="text-muted-foreground text-sm">
                   Question{" "}
-                  <span className="text-foreground tabular-nums" data-testid="quiz-position">
+                  <span className="text-foreground type-live" data-testid="quiz-position">
                     {stage === "take" && current ? `${at + 1} of ${total}` : `${total} of ${total}`}
                   </span>
                 </span>
                 {only ? <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary text-xs">Retaking misses</span> : null}
-                <span className="ml-auto text-muted-foreground text-sm tabular-nums">{answered} answered</span>
+                <span className="ml-auto text-muted-foreground text-sm">
+                  <span className="type-live">{answered}</span> answered
+                </span>
                 <Button size="icon-sm" variant="ghost-muted" aria-label="Close quiz" className="-mr-1.5" onClick={onBack}>
                   <Icon icon={icons.close} />
                 </Button>
@@ -616,7 +618,7 @@ function Results({
             <div className="flex flex-col gap-1">
               <h2 className="type-title">{headline(share)}</h2>
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <CountUp value={Math.round(share * 100)} className="type-hero" />
+                <CountUp value={Math.round(share * 100)} className="type-hero type-live" />
                 <span className="text-base text-muted-foreground tabular-nums">
                   {pointsText(points)} of {total} right{ungraded ? ` · ${ungraded} not graded` : ""}
                 </span>

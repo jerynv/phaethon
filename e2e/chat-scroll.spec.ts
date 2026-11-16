@@ -185,10 +185,10 @@ test("a very long conversation opens at its end, holds still, and keeps a reader
   await page.waitForTimeout(500);
   expect(Math.abs((await placeOf(page, reading.text)) - reading.y)).toBeLessThanOrEqual(1);
 
-  // A kept-alive tab: Settings opens over it, and coming back finds the place exactly.
+  // A kept-alive tab: Settings opens over it (not as a tab), and Esc comes back to the place exactly.
   await page.getByRole("button", { name: /^Settings/ }).first().click();
   await expect(page.locator('[data-page="settings"]:not([data-inactive])')).toBeVisible();
-  await page.getByRole("tab", { name: /Long placeholder conversation/ }).click();
+  await page.keyboard.press("Escape");
   await expect(page.locator(BOX)).toBeVisible();
   expect(Math.abs((await placeOf(page, reading.text)) - reading.y)).toBeLessThanOrEqual(1);
 

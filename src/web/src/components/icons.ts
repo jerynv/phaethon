@@ -116,6 +116,21 @@ import {
   WifiDisconnected01Icon,
   Wrench01Icon,
   Xls01Icon,
+  Brain01Icon,
+  UserMultipleIcon,
+  UserIcon,
+  Mail01Icon,
+  MailSend01Icon,
+  MailOpen01Icon,
+  TimeScheduleIcon,
+  Linkedin01Icon,
+  GoogleIcon,
+  AppleIcon,
+  MicrosoftIcon,
+  PauseIcon,
+  Calendar01Icon,
+  Archive02Icon,
+  ShieldUserIcon,
 } from "@hugeicons/core-free-icons";
 
 export const icons = {
@@ -250,6 +265,24 @@ export const icons = {
   sent: SentIcon,
   like: ThumbsUpIcon,
   dislike: ThumbsDownIcon,
+
+  // Memory, people, mail, automations (docs/MEMORY-MAIL-AUTOMATIONS.md)
+  memory: Brain01Icon,
+  people: UserMultipleIcon,
+  person: UserIcon,
+  mail: Mail01Icon,
+  mailSend: MailSend01Icon,
+  mailOpen: MailOpen01Icon,
+  automation: TimeScheduleIcon,
+  event: Calendar01Icon,
+  archive: Archive02Icon,
+  privacy: ShieldUserIcon,
+  pause: PauseIcon,
+  // Brand marks: only to say which account or site something belongs to.
+  linkedin: Linkedin01Icon,
+  google: GoogleIcon,
+  apple: AppleIcon,
+  microsoft: MicrosoftIcon,
 } as const;
 
 export type IconName = keyof typeof icons;

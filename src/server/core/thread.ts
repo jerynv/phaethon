@@ -45,9 +45,15 @@ export type Record_ =
   // New in the TypeScript core: lesson tools (see src/server/agent).
   | { kind: "lessonPlan"; id: string; goal: string; map: string; nodes: { id: string; label: string }[] }
   | { kind: "check"; id: string; question: string; answered?: boolean; correct?: boolean; confidence?: number }
-  | { kind: "progress"; text: string };
+  | { kind: "progress"; text: string }
+  // Memory, people, mail and schedules (see docs/MEMORY-MAIL-AUTOMATIONS.md).
+  | { kind: "memory"; action: "saved" | "updated" | "closed"; id: string; text: string; memoryKind: string; scope: "space" | "vault"; when?: number; until?: number; status?: string; outcome?: string }
+  | { kind: "person"; action: "created" | "updated"; id: string; name: string; detail?: string }
+  | { kind: "profile"; scope: "vault" | "space"; text: string }
+  | { kind: "mailDraft"; id: string; intent: "draft" | "send" }
+  | { kind: "schedule"; id: string; title: string; when: string };
 
-export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stopped", "deniedEarlier", "imported", "lessonPlan", "check", "progress"]);
+export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stopped", "deniedEarlier", "imported", "lessonPlan", "check", "progress", "memory", "person", "profile", "mailDraft", "schedule"]);
 /** Records kept on disk but never shown. */
 export const HIDDEN_RECORDS = new Set(["deniedEarlier", "imported"]);
 

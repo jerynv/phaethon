@@ -300,7 +300,7 @@ export const drive: Driver = async (gc, ctx, emit) => {
         peer.request("initialize", {
           protocolVersion: ACP_PROTOCOL_VERSION,
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-          clientInfo: { name: "phaethon", version: process.env.PHAETHON_VERSION ?? "0.2.0" },
+          clientInfo: { name: "phaethon", version: process.env.PHAETHON_VERSION ?? "0.3.0" },
         }),
       );
     } catch (e) {
@@ -309,12 +309,15 @@ export const drive: Driver = async (gc, ctx, emit) => {
     if (init === "abort") return await stop();
     if (init === "ended") return incomplete();
     const canLoad = (init as { agentCapabilities?: { loadSession?: unknown } } | undefined)?.agentCapabilities?.loadSession === true;
+    // Phaethon's tools over local MCP, when the agent takes an HTTP server.
+    const httpMcp = (init as { agentCapabilities?: { mcpCapabilities?: { http?: unknown } } } | undefined)?.agentCapabilities?.mcpCapabilities?.http === true;
+    const mcpServers = ctx.mcp && httpMcp ? [{ type: "http", name: "phaethon", url: ctx.mcp.url, headers: [{ name: "Authorization", value: `Bearer ${ctx.mcp.token}` }] }] : [];
 
     if (ctx.resume) {
       // An agent that can't load sessions can't resume this one: start afresh with the conversation as text.
       if (!canLoad) return { kind: "failed", message: "Error resuming session: this Gemini CLI can’t load earlier sessions.", stale: true };
       try {
-        const loaded = await step(peer.request("session/load", { sessionId: ctx.resume, cwd: ctx.workingDir, mcpServers: [] }));
+        const loaded = await step(peer.request("session/load", { sessionId: ctx.resume, cwd: ctx.workingDir, mcpServers }));
         if (loaded === "abort") return await stop();
         if (loaded === "ended") return incomplete();
       } catch (e) {
@@ -325,7 +328,7 @@ export const drive: Driver = async (gc, ctx, emit) => {
     } else {
       let created: unknown;
       try {
-        created = await step(peer.request("session/new", { cwd: ctx.workingDir, mcpServers: [] }));
+        created = await step(peer.request("session/new", { cwd: ctx.workingDir, mcpServers }));
       } catch (e) {
         return { kind: "failed", message: rpcText(e), notLoggedIn: isAuthError(e) };
       }

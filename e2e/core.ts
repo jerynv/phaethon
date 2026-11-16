@@ -23,7 +23,7 @@ export type Core = {
 
 const root = path.resolve(import.meta.dirname, "..");
 
-export async function startCore(options: { script?: object; setup?: (home: string) => void } = {}): Promise<Core> {
+export async function startCore(options: { script?: object; setup?: (home: string) => void; env?: Record<string, string> } = {}): Promise<Core> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-e2e-"));
   let scriptFile: string | undefined;
   if (options.script) {
@@ -44,6 +44,8 @@ export async function startCore(options: { script?: object; setup?: (home: strin
       PHAETHON_CLAUDE_BIN: path.join(home, "no-claude"),
       PHAETHON_CODEX_BIN: path.join(home, "no-codex"),
       PHAETHON_GEMINI_BIN: path.join(home, "no-gemini"),
+      // "__HOME__" in a value stands for this core's throwaway home.
+      ...Object.fromEntries(Object.entries(options.env ?? {}).map(([k, v]) => [k, v.replaceAll("__HOME__", home)])),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -101,4 +103,11 @@ export async function switchSpace(page: Page, name: string): Promise<void> {
 export async function openNewSpace(page: Page): Promise<void> {
   await page.getByRole("button", { name: /^Space: / }).click();
   await page.getByRole("menuitem", { name: "New space" }).click();
+}
+
+/** Opens Settings from the sidebar and goes to `section` (Settings isn't a tab). */
+export async function openSettings(page: Page, section: string): Promise<void> {
+  await page.locator("[aria-keyshortcuts]").filter({ hasText: /^Settings/ }).first().click();
+  // A section's row may carry a count or a status dot after its name ("Spaces 3").
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: new RegExp(`^${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( |$)`) }).click();
 }

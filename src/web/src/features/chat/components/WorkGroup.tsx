@@ -114,7 +114,7 @@ export function ProgressLine({ text, since, category, technical, waiting = false
           </motion.span>
         </AnimatePresence>
         {technical ? <span className="min-w-0 truncate font-mono text-subtle-foreground text-xs">{technical}</span> : null}
-        {since ? <span className="ml-auto shrink-0 type-meta">{elapsedText(ms)}</span> : null}
+        {since ? <span className="ml-auto shrink-0 type-meta type-live">{elapsedText(ms)}</span> : null}
       </div>
       <Patience hint={patienceHint(ms, category)} className="pl-7.5" />
     </div>
@@ -239,7 +239,9 @@ export function WorkGroup({
               );
             }
             // A command saved before its line was kept shows only that it ran, and what it printed.
-            const detail = (t.category === "command" || technical) && t.detail && t.detail !== "Tool reported an error" ? <StepDetail text={t.detail} /> : null;
+            // What a step found is always there to open (Phaethon's tools, searches); raw file contents only with technical details on.
+            const telling = t.category === "command" || t.category === "other" || t.category === "search" || technical;
+            const detail = telling && t.detail && t.detail !== "Tool reported an error" ? <StepDetail text={t.detail} /> : null;
             return (
               <WorkLogRow
                 key={t.id}
@@ -250,8 +252,8 @@ export function WorkGroup({
                     <span className={cn("shrink-0", active && "text-shimmer")}>{stepLabel(t, technical, spaceName)}</span>
                     {isFile ? (
                       <FileChip space={space} path={t.target!} className="h-6 min-w-0 rounded-md text-muted-foreground hover:text-foreground" />
-                    ) : technical && t.target ? (
-                      <span className="min-w-0 truncate font-mono text-subtle-foreground text-xs">{t.target}</span>
+                    ) : t.target && (technical || t.category === "other" || t.category === "search") ? (
+                      <span className={cn("min-w-0 truncate text-subtle-foreground", technical ? "font-mono text-xs" : "text-sm")}>{t.target}</span>
                     ) : null}
                     {!technical && t.status === "failed" ? <span className="min-w-0 truncate text-destructive-foreground text-xs">didn’t work, carried on without it</span> : null}
                   </>

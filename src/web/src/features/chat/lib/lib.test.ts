@@ -22,7 +22,8 @@ describe("chat actions", () => {
     expect(actionLabel("show-folder", "File Explorer")).toBe("Show in File Explorer");
     expect(CHAT_ACTION_IDS).toEqual([
       "add-files", "add-folder", "attach-files", "show-folder", "import-courses", "new-space",
-      "settings-assistant", "settings-appearance", "settings-accessibility", "settings-spaces", "settings-courses", "settings-about",
+      "settings-assistant", "settings-appearance", "settings-accessibility", "settings-spaces", "settings-courses",
+      "settings-memory", "settings-people", "settings-mail", "settings-automations", "settings-about",
     ]);
     expect(SETTINGS_SECTION["settings-accessibility"]).toBe("appearance");
     expect(fileManagerName("MacIntel")).toBe("Finder");

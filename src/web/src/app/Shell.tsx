@@ -3,7 +3,7 @@ import { type ComponentType, lazy, type ReactNode, Suspense, useEffect, useLayou
 import { DotMatrix } from "@/components/art";
 import { toast } from "@/components/toast";
 import { ChatView } from "@/features/chat/ChatView";
-import { errorText } from "@/lib/core";
+import { Channel, errorText, invoke } from "@/lib/core";
 import { cn } from "@/lib/utils";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import type { SpaceView } from "./api";
@@ -11,8 +11,11 @@ import { CommandPalette } from "./CommandPalette";
 import { AppHeader, HeaderSlots, ViewActive } from "./Header";
 import { matchShortcut } from "./shortcuts";
 import { Sidebar } from "./Sidebar";
-import { useNav, type View } from "./store";
+import { type SettingsSection, useNav, type View } from "./store";
 import { VIEWS } from "./views";
+import type { AppTarget } from "#shared/host.ts";
+
+type AppEvent = { kind: "open"; target: AppTarget } | { kind: "notification" };
 import { EmptySpaces } from "./EmptySpaces";
 
 const StudyView = lazy(() => import("@/features/study/StudyView").then((m) => ({ default: m.StudyView })));
@@ -22,15 +25,68 @@ const CoursesView = lazy(() => import("@/features/courses/CoursesView").then((m)
 const SettingsView = lazy(() => import("@/features/settings/SettingsView").then((m) => ({ default: m.SettingsView })));
 const FileViewer = lazy(() => import("@/features/viewer/FileViewer").then((m) => ({ default: m.FileViewer })));
 
+const FilesView = lazy(() => import("@/features/files/FilesView").then((m) => ({ default: m.FilesView })));
+
 const PAGES: Record<Exclude<View, "chat">, ComponentType<{ space: SpaceView }>> = {
+  files: FilesView,
   study: StudyView,
   grades: GradesView,
   plan: PlanView,
   courses: CoursesView,
 };
 
+/** True when something layered and on screen (dialog, popover, menu, listbox) should take Esc itself. Pages kept alive behind hold hidden ones. */
+function layerOpen(): boolean {
+  return [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')].some(
+    (el) => !el.closest("[data-inactive]") && el.checkVisibility({ visibilityProperty: true }),
+  );
+}
+
+/**
+ * Esc leaves Settings, from the moment it opens (Settings itself loads on
+ * demand, so the shell listens for it). A field takes Esc first (it loses
+ * focus), and so does any open menu or dialog.
+ */
+function useEscLeavesSettings() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || useNav.getState().settings === null || layerOpen()) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+        t.blur();
+        return;
+      }
+      e.preventDefault();
+      useNav.getState().closeSettings();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+/**
+ * The core's app-wide events for this window: a notification or a menu-bar
+ * item that opens something lands here (a conversation, a page, Settings).
+ */
+function useAppEvents() {
+  useEffect(() => {
+    const ch = new Channel<AppEvent>((e) => {
+      if (e.kind !== "open") return;
+      const nav = useNav.getState();
+      const t = e.target;
+      if (t.kind === "thread") void nav.openThread(t.space, t.thread).catch(() => {});
+      else if (t.kind === "settings") nav.openSettings(t.section as SettingsSection);
+      else if (t.kind === "space") nav.selectSpace(t.space, t.view as View | undefined);
+    });
+    void invoke("app_events", { onEvent: ch }).catch(() => {});
+    return () => ch.close();
+  }, []);
+}
+
 /** App-wide keys (app/shortcuts.ts). */
 function useShortcuts() {
+  useEscLeavesSettings();
+  useAppEvents();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const m = matchShortcut(e);
@@ -120,7 +176,8 @@ function Main() {
   const tabs = useNav((s) => s.tabs);
   const active = useNav((s) => s.activeTab);
   const spaces = useNav((s) => s.spaces);
-  if (spaces.data && spaces.data.length === 0 && !tabs.some((t) => t.kind === "settings")) return <EmptySpaces />;
+  const settings = useNav((s) => s.settings !== null);
+  if (spaces.data && spaces.data.length === 0 && !settings) return <EmptySpaces />;
   const current = tabs.find((t) => t.id === active);
   // One chat pane per space with a chat tab: it shows whichever of the space's conversations the active tab names.
   const chatSpaces = [...new Set(tabs.filter((t) => t.kind === "chat").map((t) => (t as { space: string }).space))];
@@ -130,7 +187,7 @@ function Main() {
         const space = spaces.data?.find((x) => x.id === id);
         if (!space) return null;
         return (
-          <Pane key={`chat:${id}`} name="chat" active={current?.kind === "chat" && current.space === id}>
+          <Pane key={`chat:${id}`} name="chat" active={!settings && current?.kind === "chat" && current.space === id}>
             <ChatView space={space} />
           </Pane>
         );
@@ -141,15 +198,15 @@ function Main() {
         if (!space) return null;
         const Page = PAGES[t.view];
         return (
-          <Pane key={t.id} name={t.view} active={t.id === active}>
+          <Pane key={t.id} name={t.view} active={!settings && t.id === active}>
             <Suspense fallback={<div className="flex-1" />}>
               <Page space={space} />
             </Suspense>
           </Pane>
         );
       })}
-      {tabs.some((t) => t.kind === "settings") ? (
-        <Pane name="settings" active={current?.kind === "settings"}>
+      {settings ? (
+        <Pane name="settings" active>
           <Suspense fallback={<div className="flex-1" />}>
             <SettingsView />
           </Suspense>

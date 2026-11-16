@@ -79,7 +79,7 @@ function UsageBar({ w }: { w: UsageWindow }) {
 }
 
 function Usage({ id }: { id: string }) {
-  const usage = useLoad(() => instanceUsage(id), [id]);
+  const usage = useLoad(() => instanceUsage(id), [id], "agents:usage");
   const waiting = useDelayed(usage.loading && !usage.data);
   if (usage.error && !usage.data) return <RowError className="h-5" message="Couldn’t load usage" onRetry={() => void usage.reload()} />;
   if (!usage.data) {
@@ -373,7 +373,7 @@ export function AgentsSection() {
   const state = useLoad<Data>(async () => {
     const [clis, instances] = await Promise.all([cliStatuses(), listInstances()]);
     return { clis, instances };
-  });
+  }, [], "agents:status");
   const [rechecking, setRechecking] = useState(false);
   const [open, setOpen] = useState<CliId | null>(null);
   const refresh = async () => {

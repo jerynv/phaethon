@@ -36,7 +36,8 @@ export function matchShortcut(e: KeyboardEvent): ShortcutMatch | null {
     if (e.shiftKey) return null;
     if (e.key === "ArrowRight") return { id: "cycleTab", direction: 1 };
     if (e.key === "ArrowLeft") return { id: "cycleTab", direction: -1 };
-    const n = digit(e, 5);
+    // Chat, Files, Study, Grades, Plan, Courses (app/views.tsx).
+    const n = digit(e, 6);
     return n ? { id: "view", index: n - 1 } : null;
   }
   if (e.shiftKey) {
@@ -74,7 +75,7 @@ export function keysFor(id: "newChat" | "search" | "sidebar" | "settings" | "clo
   }
 }
 
-/** Views are ⌥⌘1–5 on a Mac and Ctrl+Alt+1–5 elsewhere. */
+/** Views are ⌥⌘1–6 on a Mac and Ctrl+Alt+1–6 elsewhere. */
 export function viewKeys(index: number): { keys: string[]; aria: string } {
   const n = index + 1;
   return isMac() ? { keys: ["⌥", "⌘", String(n)], aria: `Alt+Meta+${n}` } : { keys: ["Ctrl", "Alt", String(n)], aria: `Control+Alt+${n}` };

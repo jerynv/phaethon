@@ -160,8 +160,8 @@ export function MakeDialog({
   }, [open, draft.course, sources.data]);
 
   const course = sources.data?.find((s) => s.folder === draft.course);
-  const scope = useLoad(() => (open && draft.course ? studyScope(space, draft.course, pick.pick) : Promise.resolve(null)), [open, space, draft.course]);
-  const planned = useLoad(() => (open ? planExamsGet(space).catch(() => []) : Promise.resolve([])), [open, space]);
+  const scope = useLoad(() => (open && draft.course ? studyScope(space, draft.course, pick.pick) : Promise.resolve(null)), [open, space, draft.course, pick.pick], "study:scope");
+  const planned = useLoad(() => (open ? planExamsGet(space).catch(() => []) : Promise.resolve([])), [open, space], "plan:exams");
   const options: ExamOption[] = useMemo(
     () => (course ? examOptions({ name: course.name, folder: course.folder }, scope.data ?? null, planned.data ?? []) : []),
     [course, scope.data, planned.data],
@@ -1039,7 +1039,7 @@ function RunView({ progress, fraction, started, quiz, course, exam, stopping }: 
     <div className="flex flex-col gap-4 pb-2" aria-live="polite" data-testid="make-progress">
       <div className="flex items-center gap-3">
         <span className={cn("min-w-0 flex-1 truncate text-base", !stopping && "text-shimmer")}>{stopping ? "Stopping…" : quiz ? "Making your quiz…" : "Making your cards…"}</span>
-        <span className="shrink-0 text-muted-foreground text-sm tabular-nums">{`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</span>
+        <span className="shrink-0 text-muted-foreground text-sm type-live">{`${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`}</span>
       </div>
       <div className="relative h-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(fraction * 100)}>
         <div className="h-full rounded-full bg-ink transition-[width] duration-500 ease-(--ease-out-soft)" style={{ width: `${Math.max(2, fraction * 100)}%` }} />

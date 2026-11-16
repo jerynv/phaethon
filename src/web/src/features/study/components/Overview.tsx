@@ -35,8 +35,8 @@ import { Page, StudyText } from "./parts";
  * never repeat the course (grouped by it when the space has several).
  */
 export function Overview({ space, open }: { space: SpaceView; open: (s: StudyScreen) => void }) {
-  const overview = useLoad(() => studyOverview(space.id), [space.id]);
-  const sources = useLoad(() => studySources(space.id), [space.id]);
+  const overview = useLoad(() => studyOverview(space.id), [space.id], "study:overview");
+  const sources = useLoad(() => studySources(space.id), [space.id], "study:sources");
   const [make, setMake] = useState<"deck" | "quiz" | null>(null);
   const [lastMake, setLastMake] = useState<"deck" | "quiz">("deck");
   const [remove, setRemove] = useState<{ path: string; title: string; kind: "deck" | "quiz" } | null>(null);

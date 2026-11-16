@@ -47,7 +47,7 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
         </div>
         {running ? (
           <>
-            <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+            <span className="shrink-0 text-muted-foreground text-xs type-live">
               {finished}/{run.courses.length}
             </span>
             <Button size="sm" variant="outline" onClick={() => void cancel()} disabled={run.cancelling} className="min-w-16">

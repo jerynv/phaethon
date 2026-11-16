@@ -96,7 +96,7 @@ describe("a turn over HTTP", () => {
 
     const first = srv.seen[0].json;
     expect(first.system.map((b: { text: string }) => b.text).join("\n")).toContain("Keep it short.");
-    expect(first.tools.map((t: { name: string }) => t.name)).toEqual(["list_files", "read_file", "read_page", "search_files", "write_file", "request_access", "app_guide", "study_attempt", "send_to_user"]);
+    expect(first.tools.map((t: { name: string }) => t.name)).toEqual(["list_files", "read_file", "read_page", "search_files", "write_file", "request_access", "app_guide", "study_attempt", "send_to_user", "recall", "person", "remember", "update_memory", "update_person", "note_profile", "schedule_task"]);
     expect(first.output_config).toEqual({ effort: "medium" });
     const second = srv.seen[1].json.messages;
     expect(second[1].content[1].input.path).toBe("plans/week.md");
@@ -300,7 +300,7 @@ describe("lessons", () => {
     ]);
     const planEvents = await send({ prompt: "teach me derivatives" });
     expect(srv.seen[0].json.output_config).toEqual({ effort: "high" });
-    expect(srv.seen[0].json.tools.map((t: { name: string }) => t.name).slice(8)).toEqual(["send_to_user", "plan_lesson", "check", "explain_back"]);
+    expect(srv.seen[0].json.tools.map((t: { name: string }) => t.name).slice(8, 12)).toEqual(["send_to_user", "plan_lesson", "check", "explain_back"]);
     expect(srv.seen[0].json.system[1].text).toContain("# Tutor mode: Quiz me");
     expect(srv.seen[1].json.messages[2].content[0]).toMatchObject({ is_error: true });
     expect(srv.seen[1].json.messages[2].content[0].content).toMatch(/^Not run: The map has a cycle through a, b/);

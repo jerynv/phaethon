@@ -1,3 +1,4 @@
+import type { ToolHost } from "./phaethon-tools.ts";
 import type { AgentEvent } from "../../shared/agent.ts";
 import type { Run } from "../core/runs.ts";
 import type { CliId, Outcome } from "./cli.ts";
@@ -28,6 +29,10 @@ export type DriveContext = {
   /** Labels for paths in other spaces' granted folders. */
   granted: Granted;
   run: Run;
+  /** Phaethon's own tools for this turn (memory, people, mail…), when the agent can take them. */
+  tools?: ToolHost;
+  /** The same tools over local MCP for Claude Code and Gemini CLI: the address, the turn's token, and Claude's config file. */
+  mcp?: { url: string; token: string; configFile: string };
 };
 
 /** How a CLI is launched for one turn. Throwing an Error gives a `cli` error and nothing is sent. */

@@ -76,7 +76,9 @@ test("a narrow window floats the sidebar over the page, and choosing something p
   const bar = page.getByRole("navigation", { name: "Settings" }).filter({ visible: true });
   await bar.getByRole("button", { name: /General/ }).click();
   await page.getByRole("menuitem", { name: /Appearance/ }).click();
-  await expect(page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
+  // Settings isn't a tab: its title takes the strip's place.
+  await expect(page.locator('[data-slot="settings-title"]')).toContainText("Appearance");
+  await expect(page.getByRole("tablist", { name: "Open pages" })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: /Appearance/ })).toBeVisible();
 
   // A wide window docks it again, where it was.
@@ -100,7 +102,7 @@ test("no page puts a control past the window's edge, from the smallest window up
   core = await startCore();
   await core.open(page);
   await studySpace(page);
-  const views = ["Chat", "Study", "Grades", "Plan", "Courses"];
+  const views = ["Chat", "Files", "Study", "Grades", "Plan", "Courses"];
   for (const [width, height] of [
     [380, 480],
     [560, 600],

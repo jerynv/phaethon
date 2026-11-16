@@ -12,7 +12,7 @@ import { Cancelled } from "./types.ts";
  * to. Bodies are read only when asked, with a cap.
  */
 
-export const USER_AGENT = `Phaethon/${process.env.PHAETHON_VERSION ?? "0.2.0"}`;
+export const USER_AGENT = `Phaethon/${process.env.PHAETHON_VERSION ?? "0.3.0"}`;
 
 export type RequestOptions = {
   method?: "GET" | "POST";

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { api } from "@/app/api";
-import { Header } from "@/app/Header";
+import { HeaderTitle } from "@/app/Header";
 import { type SettingsSection, useNav } from "@/app/store";
 import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -22,6 +22,11 @@ import { SpacesSection } from "./spaces/SpacesSection";
 import { type Crumb, CrumbContext } from "./ui";
 
 const CourseSettings = lazy(() => import("@/features/courses/CourseSettings").then((m) => ({ default: m.CourseSettings })));
+const NotificationsSection = lazy(() => import("./NotificationsSection").then((m) => ({ default: m.NotificationsSection })));
+const MemorySection = lazy(() => import("./life/MemorySection").then((m) => ({ default: m.MemorySection })));
+const PeopleSection = lazy(() => import("./life/PeopleSection").then((m) => ({ default: m.PeopleSection })));
+const MailSection = lazy(() => import("./life/MailSection").then((m) => ({ default: m.MailSection })));
+const AutomationsSection = lazy(() => import("./life/AutomationsSection").then((m) => ({ default: m.AutomationsSection })));
 
 /**
  * Settings is a page inside the shell (docs/UI-REBUILD.md › Settings, after
@@ -34,34 +39,17 @@ const CourseSettings = lazy(() => import("@/features/courses/CourseSettings").th
 export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; group: string }[] = [
   { id: "general", label: "General", icon: icons.mode, group: "Preferences" },
   { id: "appearance", label: "Appearance", icon: icons.appearance, group: "Preferences" },
+  { id: "notifications", label: "Notifications", icon: icons.notifications, group: "Preferences" },
   { id: "providers", label: "Providers", icon: icons.model, group: "Models" },
   { id: "agents", label: "Coding agents", icon: icons.terminal, group: "Models" },
   { id: "spaces", label: "Spaces", icon: icons.deck, group: "Workspace" },
   { id: "courses", label: "Courses", icon: icons.courses, group: "Workspace" },
+  { id: "memory", label: "Memory", icon: icons.memory, group: "You" },
+  { id: "people", label: "People", icon: icons.people, group: "You" },
+  { id: "mail", label: "Mail & connectors", icon: icons.mail, group: "You" },
+  { id: "automations", label: "Automations", icon: icons.automation, group: "You" },
   { id: "about", label: "About", icon: icons.info, group: "Phaethon" },
 ];
-
-/** True when something layered (dialog, popover, menu, listbox) is open and should take Esc itself. */
-function layerOpen(): boolean {
-  return !!document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]');
-}
-
-function useEscToClose(close: () => void) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || layerOpen()) return;
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
-        t.blur();
-        return;
-      }
-      e.preventDefault();
-      close();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [close]);
-}
 
 type Marker = { kind: "dot"; tone: "success" | "warning" | "info"; label: string } | { kind: "count"; text: string };
 
@@ -218,6 +206,23 @@ function Body({ section }: { section: SettingsSection }) {
           <CourseSettings />
         </Suspense>
       );
+    case "notifications":
+      return (
+        <Suspense fallback={null}>
+          <NotificationsSection />
+        </Suspense>
+      );
+    case "memory":
+    case "people":
+    case "mail":
+    case "automations": {
+      const S = { memory: MemorySection, people: PeopleSection, mail: MailSection, automations: AutomationsSection }[section];
+      return (
+        <Suspense fallback={null}>
+          <S />
+        </Suspense>
+      );
+    }
     case "appearance":
       return <AppearanceSection />;
     case "about":
@@ -227,14 +232,13 @@ function Body({ section }: { section: SettingsSection }) {
 
 export function SettingsView() {
   const section = useNav((s) => s.settings) ?? "general";
-  const close = useNav((s) => s.closeSettings);
   const [crumb, setCrumb] = useState<Crumb>(null);
   // Clicking the section you are in brings back its root view (a space's detail closes).
   const [reset, setReset] = useState(0);
-  useEscToClose(close);
   const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   const title = (
     <span className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+      <Icon icon={icons.settings} className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 truncate text-muted-foreground">Settings</span>
       <span className="text-subtle-foreground">/</span>
       {crumb ? (
@@ -252,7 +256,7 @@ export function SettingsView() {
   );
   return (
     <div className="@container/settings flex min-h-0 flex-1">
-      <Header title={title} />
+      <HeaderTitle>{title}</HeaderTitle>
       <Nav section={section} onReset={() => setReset((n) => n + 1)} />
       <div className="page-scroll relative min-h-0 flex-1">
         <motion.div

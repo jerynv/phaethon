@@ -67,7 +67,7 @@ const name = (c: CourseGradeView) => shortCourseName(c.course);
  * try on what's open.
  */
 export function GradesView({ space }: { space: SpaceView }) {
-  const grades = useLoad(() => lmsGrades(space.id), [space.id]);
+  const grades = useLoad(() => lmsGrades(space.id), [space.id], "grades");
   const skeleton = useDelayed(grades.loading && !grades.data);
   const [seen] = useState(() => loadSeen(space.id));
   const [refresh, setRefresh] = useState<Refresh | null>(null);

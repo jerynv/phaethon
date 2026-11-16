@@ -435,7 +435,7 @@ function AddProvider({ settings, shown, onAdd }: { settings: Settings; shown: Se
 }
 
 export function ProvidersSection() {
-  const state = useLoad(getSettings);
+  const state = useLoad(getSettings, [], "settings:providers");
   const [pending, setPending] = useState<ProviderId[]>([]);
   const [open, setOpen] = useState<ProviderId | null>(null);
   const reload = async () => {

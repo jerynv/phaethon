@@ -69,6 +69,12 @@ export function ActionLabel({ children }: { children: ReactNode }) {
   return <span className="@max-xl/header:sr-only">{children}</span>;
 }
 
+/** A page's title in the title bar, for a page that isn't a tab (Settings): shown in place of the tabs. */
+export function HeaderTitle({ children }: { children: ReactNode }) {
+  const slots = useContext(SlotContext);
+  return slots.title ? createPortal(children, slots.title) : null;
+}
+
 /** Provides the slots the title bar's `Header` portals into. */
 export function HeaderSlots({ children }: { children: (bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }) => ReactNode }) {
   const [title, setTitle] = useState<HTMLElement | null>(null);
@@ -109,9 +115,8 @@ export function HeaderIconButton({ label, keys, onClick, children }: { label: st
 
 /** What a tab shows: its glyph and name. A conversation's name is its title once the list has it. */
 function useTabLabel(tab: OpenTab): { icon: (typeof icons)[keyof typeof icons]; label: string; space?: string } {
-  const spaceName = useNav((s) => (tab.kind === "settings" ? undefined : s.spaces.data?.find((x) => x.id === tab.space)?.name));
+  const spaceName = useNav((s) => s.spaces.data?.find((x) => x.id === tab.space)?.name);
   const title = useNav((s) => (tab.kind === "chat" && tab.thread !== DRAFT ? s.threads[tab.space]?.data?.find((t) => t.id === tab.thread)?.title : undefined));
-  if (tab.kind === "settings") return { icon: icons.settings, label: "Settings" };
   if (tab.kind === "view") return { icon: VIEWS.find((v) => v.id === tab.view)!.icon, label: VIEWS.find((v) => v.id === tab.view)!.label, space: spaceName };
   return { icon: tab.thread === DRAFT ? icons.newChat : icons.chat, label: tab.thread === DRAFT ? "New chat" : (title ?? "Conversation"), space: spaceName };
 }
@@ -226,6 +231,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
   const toggle = useNav((s) => s.toggleSidebar);
   const newChat = useNav((s) => s.newChat);
   const setPalette = useNav((s) => s.setPalette);
+  const settingsOpen = useNav((s) => s.settings !== null);
   const startChat = () => {
     if (space) void newChat(space.id).catch((e) => toast.error("Couldn’t start a new chat", errorText(e)));
   };
@@ -242,7 +248,7 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
       <div
         data-slot="titlebar-lead"
         className={cn(
-          "relative z-10 flex shrink-0 items-center gap-1 transition-[min-width,max-width,background-color] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
+          "relative z-10 flex shrink-0 items-center gap-1 pt-(--titlebar-skew) transition-[min-width,max-width,background-color] duration-200 ease-drawer group-data-[resizing=true]/sidebar-wrapper:transition-none",
           isMac() ? "pl-(--traffic-light-inset)" : "pl-4",
           sidebarOpen ? "@container/lead min-w-(--sidebar-width) max-w-(--sidebar-width) border-r bg-sidebar pr-1.75" : "min-w-0 max-w-none pr-0",
         )}
@@ -259,11 +265,13 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
           </HeaderIconButton>
         ) : null}
       </div>
-      {/* Everything here is centred on the bar's middle line, the line the wordmark and the toggle sit on. */}
+      {/* Everything here is centred on the bar's line (--titlebar-line), the line the wordmark and the toggle sit on. */}
       <div className="flex min-w-0 flex-1 items-center">
-        <TabStrip />
-        {space ? (
-          <div className="flex shrink-0 items-center">
+        {/* Settings isn't a tab: while it's open its title takes the tabs' place; Back or Esc returns to the tab you were on. */}
+        <div ref={bind.title} hidden={!settingsOpen} className="app-no-drag flex h-full min-w-0 items-center gap-1 pt-(--titlebar-skew) pl-2 text-sm" data-slot="settings-title" />
+        {settingsOpen ? null : <TabStrip />}
+        {space && !settingsOpen ? (
+          <div className="flex h-full shrink-0 items-center pt-(--titlebar-skew)">
             <Tooltip>
               <TooltipTrigger render={<PageTabNew label="New chat" onClick={startChat} className="-ml-1" />} />
               <TooltipPopup side="bottom">
@@ -280,12 +288,11 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
           </div>
         ) : null}
         <div className="h-full min-w-4 flex-1" />
-        <div ref={bind.title} hidden />
         {/*
           A fixed share of the bar for the page's actions, so pages with more or fewer of them never resize the tabs.
           In a narrow bar the share goes, so the tabs keep room for at least one.
         */}
-        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-full shrink-0 items-center justify-end gap-1 pr-3 @3xl/header:min-w-56" />
+        <div ref={bind.actions} data-slot="header-actions" className="app-no-drag flex h-full shrink-0 items-center justify-end gap-1 pt-(--titlebar-skew) pr-3 @3xl/header:min-w-56" />
       </div>
     </header>
   );

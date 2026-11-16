@@ -3,6 +3,10 @@ import path from "node:path";
 import { isValidSpaceId, spacesRoot, vaultRoot } from "../core/vault.ts";
 import { grantsFor } from "../grants/grants.ts";
 import { memoryForPrompt } from "../memory/memory.ts";
+import { profilesForPrompt } from "../memory/profile.ts";
+import { memoryPromptSection, type TurnContext } from "../memory/prompt.ts";
+import { emailBlockPrompt } from "../mail/block.ts";
+import { mailEnabledFor } from "../mail/access.ts";
 import { courseIndexForPrompt } from "../lms/access.ts";
 import { scopePromptSection, studyPromptSection, STUDY_CHAT_PROMPT } from "../study/prompt.ts";
 import { appGuidePromptSection } from "./app-guide.ts";
@@ -90,13 +94,17 @@ const safe = (f: () => string | null | undefined) => {
   }
 };
 
-/** Everything about this space, in a fixed order. */
-export function volatilePrompt(space: string, mode: TutorMode): string {
+/** Everything about this space, in a fixed order. `turn` (the user's latest message) picks which memories come along. */
+export function volatilePrompt(space: string, mode: TutorMode, turn?: TurnContext): string {
   return join([
     `This space is called "${space}".`,
     otherSpacesSection(space),
     manualSection(),
+    safe(() => profilesForPrompt(space)),
     safe(() => memoryForPrompt(space)),
+    safe(() => memoryPromptSection(space, turn)),
+    // With a mail account the draft_email tool does this; without one, the block still gives an email card (and a way to set mail up).
+    safe(() => (mailEnabledFor(space) ? undefined : emailBlockPrompt(space))),
     safe(() => courseIndexForPrompt(space)),
     safe(() => scopePromptSection(space)),
     safe(() => studyPromptSection(space)),
@@ -104,8 +112,8 @@ export function volatilePrompt(space: string, mode: TutorMode): string {
   ]);
 }
 
-export function systemPrompt(space: string, opts: { claude: boolean; mode: TutorMode }): { stable: string; volatile: string } {
-  return { stable: stablePrompt(opts.claude), volatile: volatilePrompt(space, opts.mode) };
+export function systemPrompt(space: string, opts: { claude: boolean; mode: TutorMode; turn?: TurnContext }): { stable: string; volatile: string } {
+  return { stable: stablePrompt(opts.claude), volatile: volatilePrompt(space, opts.mode, opts.turn) };
 }
 
 /** For CLI backends' `--append-system-prompt`: what the chat renders, plus anything else they need. */

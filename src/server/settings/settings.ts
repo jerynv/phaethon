@@ -37,6 +37,14 @@ export type VaultSettings = {
   lastModel?: unknown;
   /** Raw JSON: space id → when the person let Phaethon write files in that space without asking (grants/writes.ts). */
   allowWrites?: unknown;
+  /** Raw JSON: memory settings, checked by `parseMemorySettings` (memory/items.ts). */
+  memory?: unknown;
+  /** Raw JSON: which spaces get a daily digest and when (jobs/builtin.ts). */
+  digest?: unknown;
+  /** Raw JSON: notification settings (background/background.ts). */
+  notifications?: unknown;
+  /** Raw JSON: running in the menu bar, at login, automations paused (background/background.ts). */
+  background?: unknown;
 };
 
 export const DEFAULT_SETTINGS: Readonly<VaultSettings> = Object.freeze({
@@ -62,7 +70,7 @@ function optString(value: unknown): string | null | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance", "lastModel", "allowWrites"] as const;
+const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance", "lastModel", "allowWrites", "memory", "digest", "notifications", "background"] as const;
 
 /** Every setting, with defaults for missing or wrongly typed fields. Never throws. */
 export function readSettings(): VaultSettings {

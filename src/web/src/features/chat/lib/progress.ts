@@ -32,7 +32,8 @@ export function friendlyStep(step: Step, spaceName?: string): string {
       return f ? `Looking through ${f}` : `Looking through ${files}`;
     }
     case "search":
-      return `Searching ${files}`;
+      // Phaethon's own searches (memory, mail) name themselves; a file search says where.
+      return step.label && !/^search(ing)?$/i.test(step.label.trim()) ? step.label : `Searching ${files}`;
     case "write":
       return step.target ? `Writing ${prettyName(step.target)}` : "Writing a file";
     case "command": {

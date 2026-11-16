@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { LiveFigures } from "@/components/live-figures";
 import { api, type InstallEvent, type UpdateView } from "@/app/api";
 import { ClampedText, FieldError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -29,7 +30,9 @@ function Progress({ ev }: { ev: InstallEvent }) {
       <div className="flex items-center justify-between text-muted-foreground text-xs" role="status">
         <span>{ev.kind === "downloading" ? "Downloading" : ev.kind === "installing" ? "Installing" : "Restarting Phaethon"}</span>
         {ev.kind === "downloading" ? (
-          <span className="tabular-nums">{ev.total ? `${mb(ev.received)} / ${mb(ev.total)} MB` : `${mb(ev.received)} MB`}</span>
+          <span>
+            <LiveFigures text={ev.total ? `${mb(ev.received)} / ${mb(ev.total)} MB` : `${mb(ev.received)} MB`} />
+          </span>
         ) : null}
       </div>
     </div>
@@ -151,8 +154,8 @@ function VersionSkeleton() {
 }
 
 export function AboutSection() {
-  const info = useLoad(() => api.coreInfo());
-  const update = useLoad(() => api.updateState());
+  const info = useLoad(() => api.coreInfo(), [], "about:core");
+  const update = useLoad(() => api.updateState(), [], "about:update");
   return (
     <SettingsGroup>
       <Row label="Version">

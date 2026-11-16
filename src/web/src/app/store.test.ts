@@ -50,19 +50,34 @@ describe("closing tabs", () => {
     expect(nav().closedTabs[0]).toEqual({ kind: "chat", space: SPACE, thread: "t1" });
   });
 
-  it("closing the last page or settings tab leaves a new chat", () => {
+  it("closing the last page leaves a new chat", () => {
     nav().openTab({ kind: "view", space: SPACE, view: "study" });
     nav().closeTab(nav().tabs[0]!.id);
     expect(nav().tabs.map((t) => t.id)).toEqual([draftId]);
     expect(nav().settings).toBeNull();
+  });
 
-    nav().openSettings();
-    nav().closeTab(draftId);
-    expect(nav().tabs.map((t) => t.id)).toEqual(["settings"]);
-    nav().closeTab("settings");
-    expect(nav().tabs.map((t) => t.id)).toEqual([draftId]);
+  it("Settings isn't a tab: it opens over the tabs, leaves them as they were, and any tab brings you back", () => {
+    void nav().openThread(SPACE, "t1", { fresh: true });
+    const before = nav().tabs.map((t) => t.id);
+    const active = nav().activeTab;
+    nav().openSettings("memory");
+    expect(nav().settings).toBe("memory");
+    expect(nav().tabs.map((t) => t.id)).toEqual(before);
+    expect(nav().activeTab).toBe(active);
+    nav().openSettings("people");
+    expect(nav().settings).toBe("people");
+    nav().closeSettings();
     expect(nav().settings).toBeNull();
-    expect(nav().activeSpace).toBe(SPACE);
+    expect(nav().activeTab).toBe(active);
+    // Choosing a tab (or opening a page) while Settings is open leaves it.
+    nav().openSettings();
+    nav().activateTab(active!);
+    expect(nav().settings).toBeNull();
+    nav().openSettings();
+    nav().setView("files");
+    expect(nav().settings).toBeNull();
+    expect(nav().tabs.some((t) => t.kind === "view" && t.view === "files")).toBe(true);
   });
 
   it("a lone new chat can't be closed: closing it is a no-op that records nothing", () => {

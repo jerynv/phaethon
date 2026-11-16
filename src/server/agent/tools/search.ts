@@ -49,7 +49,15 @@ export function parseQuery(raw: string): Query {
 }
 
 /** A tree to search: files are re-checked by `allow` before reading (courses). */
-export type Root = { dir: string; prefix: string; skipRootCourses?: boolean; allow?: (rel: string) => string | undefined; filter?: (rel: string, text: string) => string };
+export type Root = {
+  dir: string;
+  prefix: string;
+  skipRootCourses?: boolean;
+  allow?: (rel: string) => string | undefined;
+  filter?: (rel: string, text: string) => string;
+  /** Folders (relative to `dir`) never entered: the space's excluded folders. */
+  skip?: (rel: string) => boolean;
+};
 
 type Hit = { path: string; line: number; score: number; text: string };
 
@@ -185,6 +193,7 @@ function walk(root: Root, q: Query, budget: Budget, hits: Hit[]): void {
       if (st.isDirectory()) {
         if (name === ".phaethon") continue;
         if (entry.depth === 0 && root.skipRootCourses && name.toLowerCase() === "courses") continue;
+        if (root.skip?.(rel)) continue;
         children.push({ abs, rel, depth: entry.depth + 1, dir: true });
       } else if (st.isFile() && st.size <= MAX_SEARCH_FILE) {
         children.push({ abs, rel, depth: entry.depth + 1, dir: false });

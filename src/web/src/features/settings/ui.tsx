@@ -1,5 +1,6 @@
 import type * as React from "react";
-import { createContext, type DependencyList, type ReactNode, use, useCallback, useEffect, useId, useRef, useState } from "react";
+import { createContext, type DependencyList, type ReactNode, use, useEffect, useId, useState } from "react";
+import { useQuery, type QueryKey } from "@/lib/query";
 import { SkeletonCard } from "@/components/skeletons";
 import { SurfaceError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -196,44 +197,17 @@ export function Status({ tone, children, className }: { tone: "ready" | "warning
 
 export type Loaded<T> = { data: T | undefined; error: string | null; loading: boolean; reload: () => Promise<void>; setData: (d: T) => void };
 
-/** What each loader last returned, so a section comes back as it was and only refreshes quietly. */
-const remembered = new Map<string, unknown>();
-
 /**
- * Runs `fn` on mount (and when deps change); keeps the last data while
- * reloading, and across visits: the same loader shows its last answer at once
- * and refreshes it in the background.
+ * Runs `fn` on mount (and when deps change) through the shared cache
+ * (lib/query.ts): with a `key`, a section that comes back shows its last
+ * answer at once and refreshes quietly, and every section reading the same
+ * key shares it. Without one, the cache is this component's own.
  */
-export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList = []): Loaded<T> {
-  const key = `${fn.toString()}|${JSON.stringify(deps)}`;
-  const [data, setDataState] = useState<T | undefined>(() => remembered.get(key) as T | undefined);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!remembered.has(key));
-  const seq = useRef(0);
-  const setData = useCallback(
-    (d: T) => {
-      remembered.set(key, d);
-      setDataState(d);
-    },
-    [key],
-  );
-  const reload = useCallback(async () => {
-    const n = ++seq.current;
-    if (!remembered.has(key)) setLoading(true);
-    setError(null);
-    try {
-      const d = await fn();
-      if (n === seq.current) setData(d);
-    } catch (e) {
-      if (n === seq.current) setError(cleanMessage(e));
-    } finally {
-      if (n === seq.current) setLoading(false);
-    }
-  }, deps);
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-  return { data, error, loading, reload, setData };
+export function useLoad<T>(fn: () => Promise<T>, deps: DependencyList = [], key?: QueryKey): Loaded<T> {
+  const own = useId();
+  const k: unknown[] = key === undefined ? ["settings:own", own] : typeof key === "string" ? [key] : [...key];
+  const q = useQuery<T>([...k, ...deps], fn);
+  return { data: q.data, error: q.error ? cleanMessage(q.error) : null, loading: q.loading, reload: q.reload, setData: q.setData as (d: T) => void };
 }
 
 /**

@@ -20,6 +20,8 @@ import { ChatActions } from "./ChatActions";
 import { LatexBlock } from "./LatexBlock";
 import { MermaidBlock } from "./MermaidBlock";
 import { StudyBlock } from "./StudyBlock";
+import { EMAIL_FENCE } from "../lib/chat-actions";
+import { EmailBlock } from "./EmailCard";
 
 /**
  * Assistant prose. Long words break, wide things (code, tables, display
@@ -150,6 +152,7 @@ function makeComponents(ctx: Ctx): Components {
       if (lang === "latex" || lang === "tex") return <LatexBlock source={text} space={ctx.space} streaming={ctx.streaming} />;
       if (lang === STUDY_FENCE) return <StudyBlock code={text} space={ctx.space} streaming={ctx.streaming} messageKey={ctx.messageKey} />;
       if (lang === ACTIONS_FENCE) return <ChatActions code={text} space={ctx.space} />;
+      if (lang === EMAIL_FENCE) return <EmailBlock code={text} space={ctx.space} streaming={ctx.streaming} />;
       return <CodeBlock code={text} lang={lang} />;
     },
     a: ({ href, children }) => {

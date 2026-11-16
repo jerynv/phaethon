@@ -332,7 +332,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                   </p>
                 );
               case "record":
-                return <RecordLine key={s.key} record={s.record} spaceName={spaceName} />;
+                return <RecordLine key={s.key} record={s.record} spaceName={spaceName} space={space} />;
             }
           })}
         </div>

@@ -34,7 +34,7 @@ const CELL =
  * front stays the same.
  */
 export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; path: string | null; onBack: () => void; open: (s: StudyScreen) => void }) {
-  const deck = useLoad<DeckView | null>(() => (path ? studyDeck(space.id, path) : Promise.resolve(null)), [space.id, path]);
+  const deck = useLoad<DeckView | null>(() => (path ? studyDeck(space.id, path) : Promise.resolve(null)), [space.id, path], "study:deck");
   const skeleton = useDelayed(deck.loading && !deck.data && !!path);
   const [title, setTitle] = useState("");
   const [rows, setRows] = useState<Row[]>([]);

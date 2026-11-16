@@ -16,7 +16,16 @@
   --radius: 0.625rem;
   --control-radius: 0.625rem;
   --sidebar-width: 15.5rem;
-  --titlebar-height: 3rem;
+  /*
+   * The title bar: everything in it (traffic lights, wordmark, toggle, tab
+   * labels, +, page actions) is centred on --titlebar-line, 24 px from its top,
+   * and the 28 px tab row ends 2 px above its bottom edge (10 + 28 + 2 = 40).
+   * A control centred in the bar's height moves down by --titlebar-skew to sit
+   * on that line.
+   */
+  --titlebar-height: 2.5rem;
+  --titlebar-line: 1.5rem;
+  --titlebar-skew: calc(2 * var(--titlebar-line) - var(--titlebar-height));
   /*
    * A bottom bar beside the sidebar (the sidebar's footer, a list pane's count
    * footer): border-box, so it counts its 1 px hairline on top, then 44 px for
@@ -112,6 +121,9 @@
   --tooltip-foreground: var(--ink-foreground);
   /* A space's dot (components/space-avatar.tsx). */
   --space-dot: 62% 0.13;
+  /* A mail account's mark tile (components/mail-mark.tsx): lightness and chroma; the hue is the provider's. */
+  --mark-surface: 95% 0.03;
+  --mark-ink: 48% 0.15;
   --dot-matrix: oklch(23% 0 0 / 9%);
   /* Art sits a little dimmer in dark mode (components/art.tsx). */
   --art-veil: oklch(100% 0 0 / 0%);
@@ -211,6 +223,8 @@
   --tooltip: oklch(32% 0 0);
   --tooltip-foreground: oklch(95.5% 0 0);
   --space-dot: 70% 0.12;
+  --mark-surface: 32% 0.05;
+  --mark-ink: 85% 0.09;
   --dot-matrix: oklch(100% 0 0 / 7%);
   --art-veil: oklch(21.8% 0 0 / 38%);
   --art-veil-strip: oklch(21.8% 0 0 / 19%);
@@ -480,6 +494,18 @@
 @utility type-meta {
   @apply text-xs text-subtle-foreground tabular-nums;
 }
+/*
+ * A number that changes while it's on screen (a countdown, an elapsed time, a
+ * running count, a score counting up): monospaced, so ticking digits never
+ * move the text around them. Add it to the role the text already has; it sets
+ * only the family and fixed-width figures. components/live-figures.tsx sets
+ * just the digits of a sentence this way.
+ */
+@utility type-live {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
 
 /* Popovers and menus: flat, one hairline, a soft drop in light mode only. */
 /* A page that scrolls: the scrollbar lane is reserved on both edges so the column stays centred. */
@@ -507,6 +533,11 @@
 
 @utility space-dot {
   background: oklch(var(--space-dot) var(--hue));
+}
+
+@utility mail-mark {
+  background: oklch(var(--mark-surface) var(--mark-hue));
+  color: oklch(var(--mark-ink) var(--mark-hue));
 }
 
 @utility dialog-backdrop {

@@ -37,7 +37,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   const question = questionBefore(chat.messages.map((m) => ({ key: m.key, role: m.role, text: m.role === "user" ? m.text : undefined })), messageKey);
   const block = read.state === "ok" ? read.block : null;
   const asked = useRef<string | null>(null);
-  const sources = useLoad<CourseSource[]>(() => studySources(space), [space]);
+  const sources = useLoad<CourseSource[]>(() => studySources(space), [space], "study:sources");
   const courses = useMemo(() => (sources.data ?? []).map((s) => s.folder), [sources.data]);
   const draft = useMemo(() => (plan && sources.data ? draftFromPlan(plan, courses, question) : undefined), [plan, sources.data, courses, question]);
   const pick = useStudyPick(space, true);

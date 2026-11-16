@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { useDelayed } from "@/hooks/use-delayed";
 import { SpaceCourses } from "@/features/courses/components/SpaceCourses";
+import { FilesGroup } from "@/features/files/FilesSettings";
 import { cn } from "@/lib/utils";
 import {
   bindWorkspace,
@@ -35,7 +36,8 @@ import { ConfirmDialog, EmptyRow, Loader, Row, SettingsGroup, SwitchRow, useCrum
 /**
  * Settings › Spaces: the list of spaces, and per space its name,
  * description, colour and study tools; the folder coding agents work in;
- * full access; which other spaces it reads or is read by; and export.
+ * full access; which other spaces it reads or is read by; and its files
+ * (what the Files view shows, folders kept from Phaethon's agent, export).
  */
 
 const refreshSpaces = () => useNav.getState().loadSpaces();
@@ -227,8 +229,8 @@ function IdentityGroup({ space }: { space: SpaceView }) {
 }
 
 function AgentsGroup({ space }: { space: SpaceView }) {
-  const ws = useLoad(() => getWorkspace(space.id), [space.id]);
-  const fa = useLoad(fullAccessList);
+  const ws = useLoad(() => getWorkspace(space.id), [space.id], "spaces:workspace");
+  const fa = useLoad(fullAccessList, [], "spaces:fullAccess");
   const [busy, setBusy] = useState<"choose" | "clear" | "access" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
@@ -321,7 +323,7 @@ function AgentsGroup({ space }: { space: SpaceView }) {
 }
 
 function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] }) {
-  const grants = useLoad(() => listGrants(space.id), [space.id]);
+  const grants = useLoad(() => listGrants(space.id), [space.id], "spaces:grants");
   const nameOf = (id: string) => spaces.find((s) => s.id === id)?.name ?? id;
   const hueOf = (id: string) => spaces.find((s) => s.id === id)?.hue ?? 0;
   const revoke = async (id: string, what: string) => {
@@ -391,7 +393,7 @@ function GrantsGroup({ space, spaces }: { space: SpaceView; spaces: SpaceView[] 
 }
 
 function WritesGroup({ space }: { space: SpaceView }) {
-  const perms = useLoad(() => api.writePermissions(space.id), [space.id]);
+  const perms = useLoad(() => api.writePermissions(space.id), [space.id], "spaces:writes");
   const revoke = async (what: string, change: { thread?: string; scope: "conversation" | "space" }) => {
     try {
       await api.setWritePermission({ space: space.id, ...change, allow: false });
@@ -455,7 +457,7 @@ function ExportGroup({ space }: { space: SpaceView }) {
     }
   };
   return (
-    <SettingsGroup label="Files">
+    <FilesGroup space={space}>
       <Row label="Export space" description="A zip of its files, conversations and memory.">
         <Button size="xs" variant="outline" onClick={() => void run()} pending={busy}>
           Export…
@@ -466,7 +468,7 @@ function ExportGroup({ space }: { space: SpaceView }) {
           Show
         </AsyncButton>
       </Row>
-    </SettingsGroup>
+    </FilesGroup>
   );
 }
 

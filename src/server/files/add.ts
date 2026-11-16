@@ -116,7 +116,7 @@ function taken(p: string): boolean {
 }
 
 /** `name`, or `stem n.ext` (folders keep their whole name), the first one nothing occupies. */
-function freeName(dir: string, name: string, isDir: boolean): string {
+export function freeName(dir: string, name: string, isDir: boolean): string {
   if (!taken(path.join(dir, name))) return name;
   const i = name.lastIndexOf(".");
   const [stem, ext] = i > 0 && !isDir ? [name.slice(0, i), name.slice(i)] : [name, ""];
@@ -137,7 +137,7 @@ async function copyTree(src: string, inside: string[], dest: string): Promise<vo
 }
 
 /** The space's `files/` folder, made if missing; refused when it is a link or not a folder inside the space. */
-function filesFolder(spaceDir: string): string {
+export function filesFolder(spaceDir: string): string {
   const dir = path.join(spaceDir, FOLDER);
   try {
     const st = lstatOrNull(dir);

@@ -1,8 +1,13 @@
 import fs from "node:fs";
-import type { AgentEvent, ErrorCode } from "../../shared/agent.ts";
+import os from "node:os";
+import path from "node:path";
+import { log as coreLog } from "../log.ts";
+import type { AgentEvent, ErrorCode, UiRecord } from "../../shared/agent.ts";
 import type { Channel } from "../rpc/channel.ts";
 import { claim, release, turnKey, type Run } from "../core/runs.ts";
-import { load, recordBlock, save, stamped, userMessage, type Block, type Message } from "../core/thread.ts";
+import { load, recordBlock, save, stamped, userMessage, type Block, type Message, type Record_ } from "../core/thread.ts";
+import { toolHost, type ToolHost } from "./phaethon-tools.ts";
+import { openTurnTools } from "./mcp-http.ts";
 import { realpath } from "../core/fsx.ts";
 import { cutAt } from "../threads/store.ts";
 import { BUSY_MESSAGE, CLI, cliName, INELIGIBLE_MESSAGE, isValidCliModel, lastLine, notLoggedInMessage, OWN_SETTINGS_MESSAGE, REASONING_UNSUPPORTED, stderrSummary, validReasoning, type CliId, type Outcome } from "./cli.ts";
@@ -12,7 +17,7 @@ import { finishChild, type DriveContext, type Driver, type Invocation } from "./
 import * as gemini from "./gemini.ts";
 import { binary, cliCommand, sessionTag } from "./instances.ts";
 import { isExecutable, spawnInGroup, stopGroup, type GroupChild } from "./process.ts";
-import { attachmentNote, cliPrompt, systemText } from "./prompt.ts";
+import { attachmentNote, cliPrompt, cliTurn, systemText } from "./prompt.ts";
 import { getReasoning } from "./reasoning.ts";
 import { clearSession, readCliSession, writeCliSession } from "./session.ts";
 import { ToolLog, type Granted } from "./tools.ts";
@@ -165,7 +170,7 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
   const ask = req.prompt + attachmentNote(req.attachments, req.spaceDir, external);
   const tag = sessionTag(cli, req.configDir);
   let resume = readCliSession(req.spaceDir, req.thread, tag);
-  const mode = systemText({ space: req.space, spaceDir: req.spaceDir, workingDir, fullAccess: req.fullAccess });
+  const mode = systemText({ space: req.space, spaceDir: req.spaceDir, workingDir, fullAccess: req.fullAccess, turn: cliTurn(req.prompt, msgs) });
   const dirs = req.addDirs.map((d) => d.path);
   if (external && !req.fullAccess && !dirs.includes(req.spaceDir)) dirs.push(req.spaceDir);
   const granted: Granted = [...req.addDirs];
@@ -181,8 +186,22 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
   let stopped = false;
   let failed = false;
   let session: string | null = null;
+  // What Phaethon's tools did in this turn (a memory saved, a person added, an email card), shown now and saved with the reply.
+  const lifeRecords: Record_[] = [];
+  const tools = toolHost({
+    space: req.space,
+    thread: req.thread,
+    signal: run.abort.signal,
+    onRecord: (r) => {
+      lifeRecords.push(r);
+      emit({ kind: "record", record: r as UiRecord });
+    },
+  });
+  // Claude Code and Gemini CLI reach the same tools over local MCP, open for this turn only.
+  const mcp = cli === "codex" ? undefined : await openMcpForTurn(tools).catch((e) => (coreLog.warn("Phaethon's tools couldn't be offered over MCP", { error: String(e) }), undefined));
+  try {
   for (;;) {
-    const ctx = { space: req.space, spaceDir: req.spaceDir, workingDir, prompt: cliPrompt(ask, msgs, resume === null), mode, resume, model, reasoning, dirs, granted, fullAccess: req.fullAccess, run };
+    const ctx = { space: req.space, spaceDir: req.spaceDir, workingDir, prompt: cliPrompt(ask, msgs, resume === null), mode, resume, model, reasoning, dirs, granted, fullAccess: req.fullAccess, run, tools, ...(mcp ? { mcp: mcp.info } : {}) };
     const attempt = await drive(req, ctx, emit, send, state);
     if (attempt.kind === "stale") {
       // The session is gone (deleted, or made elsewhere): start afresh, with the conversation so far.
@@ -199,6 +218,9 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
     } else failed = true;
     break;
   }
+  } finally {
+    mcp?.close();
+  }
 
   log.close(stopped ? "cancelled" : failed ? "failed" : "incomplete", emit);
   msgs.push(user);
@@ -206,7 +228,7 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
   const text = state.text.trimEnd();
   if (text.trim()) content.push({ type: "text", text });
   if (stopped) content.push(recordBlock({ kind: "stopped" }));
-  content.push(...log.records.map((r) => recordBlock(r)));
+  content.push(...log.records.map((r) => recordBlock(r)), ...lifeRecords.map((r) => recordBlock(r)));
   if (content.length) msgs.push(stamped({ role: "assistant", content }));
   try {
     save(req.space, req.thread, msgs);
@@ -218,6 +240,21 @@ async function turn(req: CliTurnRequest, emit: (e: AgentEvent) => void, run: Run
     emit({ kind: "cancelled" });
   }
   return session;
+}
+
+/** Opens the turn's MCP endpoint and writes Claude Code's config for it to a private file (never argv). */
+async function openMcpForTurn(tools: ToolHost): Promise<{ info: { url: string; token: string; configFile: string }; close: () => void }> {
+  const t = await openTurnTools(tools);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-mcp-"));
+  const configFile = path.join(dir, "mcp.json");
+  fs.writeFileSync(configFile, JSON.stringify({ mcpServers: { phaethon: { type: "http", url: t.url, headers: { Authorization: `Bearer ${t.token}` } } } }), { mode: 0o600 });
+  return {
+    info: { url: t.url, token: t.token, configFile },
+    close: () => {
+      t.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
 }
 
 /** One run of the CLI. Errors are emitted here. */

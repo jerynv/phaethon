@@ -21,6 +21,11 @@ export function turnKey(space: string, thread: string): string {
 }
 
 /** The conversations of `space` replying right now. */
+/** How many replies are being written right now, in every space. */
+export function runCount(): number {
+  return runs.size;
+}
+
 export function runningIn(space: string): string[] {
   const prefix = `${space}\0`;
   const out: string[] = [];

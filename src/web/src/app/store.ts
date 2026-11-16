@@ -12,18 +12,19 @@ import { mergeRefresh } from "./sidebar/paging";
  * when it is first sent (features/chat/store.ts).
  */
 
-export type View = "chat" | "study" | "grades" | "plan" | "courses";
-export type SettingsSection = "general" | "providers" | "agents" | "spaces" | "courses" | "appearance" | "about";
+export type View = "chat" | "files" | "study" | "grades" | "plan" | "courses";
+export type SettingsSection = "general" | "notifications" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
 
 /**
  * What an open tab shows. Several can be open at once, like a browser's; the
  * active one decides the derived `activeSpace`, `view`, `open` and `settings`
  * fields below, which the pages read as before.
  */
-export type Tab = { kind: "chat"; space: string; thread: string } | { kind: "view"; space: string; view: Exclude<View, "chat"> } | { kind: "settings"; section: SettingsSection };
+/** Settings isn't a tab: it is its own place (`settings`), and leaving it goes back to the tab you were on. */
+export type Tab = { kind: "chat"; space: string; thread: string } | { kind: "view"; space: string; view: Exclude<View, "chat"> };
 /** An open tab. A tab opened by a plain click is a preview: the next plain click reuses it. It is kept once it has something worth keeping (a sent message, a double-click, ⌘-click). */
 export type OpenTab = Tab & { id: string; kept: boolean };
-export const tabId = (t: Tab): string => (t.kind === "chat" ? `chat:${t.space}/${t.thread}` : t.kind === "view" ? `view:${t.space}/${t.view}` : "settings");
+export const tabId = (t: Tab): string => (t.kind === "chat" ? `chat:${t.space}/${t.thread}` : `view:${t.space}/${t.view}`);
 
 /** The thread key of a space's unsent new chat. Never sent to the core. */
 export const DRAFT = "new";
@@ -209,8 +210,7 @@ export const useNav = create<Nav>((set, get) => {
   const saveTabs = () => writeJson(TABS, { tabs: get().tabs, active: get().activeTab });
   /** The derived fields follow the active tab. */
   const apply = (tab: Tab) => {
-    if (tab.kind === "settings") set({ settings: tab.section, paletteOpen: false });
-    else {
+    {
       // A new-chat tab opened before the space's list arrived doesn't choose for the space: the list's newest conversation does (loadThreads).
       const undecided = tab.kind === "chat" && tab.thread === DRAFT && !get().threads[tab.space]?.data;
       if (tab.kind === "chat" && get().open[tab.space] !== tab.thread && !undecided) setOpen(tab.space, tab.thread);
@@ -223,7 +223,6 @@ export const useNav = create<Nav>((set, get) => {
       seen();
     }
   };
-  const activeTabOf = () => get().tabs.find((t) => t.id === get().activeTab);
   /** Replaces the tabs and makes `id` the active one. */
   const commit = (tabs: OpenTab[], id: string) => {
     const space = get().activeSpace;
@@ -278,7 +277,7 @@ export const useNav = create<Nav>((set, get) => {
       const tabs = get().tabs;
       const found = tabs.find((t) => t.id === id);
       if (found) {
-        const next = opts.keep && !found.kept ? tabs.map((t) => (t.id === id ? { ...t, kept: true } : t)) : tabs.map((t) => (t.id === id && t.kind === "settings" && tab.kind === "settings" ? { ...t, section: tab.section } : t));
+        const next = opts.keep && !found.kept ? tabs.map((t) => (t.id === id ? { ...t, kept: true } : t)) : tabs;
         commit(next, id);
         return;
       }
@@ -379,7 +378,8 @@ export const useNav = create<Nav>((set, get) => {
         set({ spaces: { data: list, loading: false }, activeSpace: pick });
         if (!get().tabs.length) {
           const saved = readJson<{ tabs: OpenTab[]; active: string | null }>(TABS, { tabs: [], active: null });
-          const ok = (t: OpenTab) => t.kind === "settings" || list.some((s) => s.id === t.space && (t.kind === "chat" || s.educationEnabled));
+          // A settings tab saved by an older version is dropped: Settings is no longer a tab.
+          const ok = (t: OpenTab) => (t.kind === "chat" || t.kind === "view") && list.some((s) => s.id === t.space && (t.kind === "chat" || t.view === "files" || s.educationEnabled));
           const tabs = saved.tabs.filter(ok);
           const active = tabs.find((t) => t.id === saved.active)?.id ?? tabs[0]?.id;
           if (tabs.length && active) commit(tabs, active);
@@ -396,7 +396,9 @@ export const useNav = create<Nav>((set, get) => {
 
     selectSpace(id, view) {
       const space = get().spaces.data?.find((s) => s.id === id);
-      const next = view ?? (space?.educationEnabled ? get().view : "chat");
+      // Files is in every space; the study views only where study tools are on.
+      const was = get().view;
+      const next = view ?? (was === "chat" || was === "files" || space?.educationEnabled ? was : "chat");
       get().openTab(next === "chat" ? chatTab(id) : { kind: "view", space: id, view: next });
     },
 
@@ -606,11 +608,10 @@ export const useNav = create<Nav>((set, get) => {
     },
 
     openSettings(section = "general") {
-      get().openTab({ kind: "settings", section });
+      set({ settings: section, paletteOpen: false, peek: false });
     },
     closeSettings() {
-      const tab = activeTabOf();
-      if (tab?.kind === "settings") get().closeTab(tab.id);
+      if (get().settings !== null) set({ settings: null });
     },
     setPalette(open, query = "") {
       set({ paletteOpen: open, paletteQuery: open ? query : "", ...(open ? { peek: false } : {}) });

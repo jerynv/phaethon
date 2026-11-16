@@ -2,6 +2,7 @@ import path from "node:path";
 import type { AgentEvent, ToolCategory, ToolStatus } from "../../shared/agent.ts";
 import { isWithin } from "../core/fsx.ts";
 import type { Record_ } from "../core/thread.ts";
+import { phaethonTool, presentTool, toolResultDetail } from "./phaethon-tools.ts";
 
 /**
  * What a CLI's tool use becomes in Phaethon: a status line, a start/end pair
@@ -206,10 +207,23 @@ export function toolStartEvent(id: string, category: ToolCategory, input: unknow
 }
 
 /** Pairs a CLI's tool starts and ends by id, once each. */
+/** A tool's arguments in one short line, for a step that isn't a file or a command ("query: meeting · days: 30"). */
+export function argsSummary(input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return typeof input === "string" && input.trim() ? shortText(input) : undefined;
+  const bits = Object.entries(input as Record<string, unknown>)
+    .filter(([, v]) => v !== null && v !== undefined && v !== "" && typeof v !== "object")
+    .slice(0, 4)
+    .map(([k, v]) => `${k}: ${String(v)}`);
+  return bits.length ? shortText(bits.join(" · ")) : undefined;
+}
+
 export class ToolEvents {
   #seen = new Set<string>();
   #finished = new Set<string>();
   #category = new Map<string, ToolCategory>();
+  /** Phaethon's own tools by step id (their result is Phaethon's to show). */
+  #phaethon = new Map<string, string>();
+  #hidden = new Set<string>();
   #next = 0;
 
   constructor(
@@ -227,14 +241,44 @@ export class ToolEvents {
     return [{ kind: "tool", label }, toolStartEvent(id, category, input, this.base, this.granted)];
   }
 
+  /**
+   * A tool known by name (an MCP tool, a Codex dynamic tool): one of
+   * Phaethon's shows what it was about and is left out when it has its own
+   * line or card; another shows its name and arguments.
+   */
+  startNamed(raw: string, name: string, input: unknown): AgentEvent[] {
+    const short = raw ? shortText(raw) : `unpaired-${++this.#next}`;
+    const id = `${this.cli}:${short}`;
+    if (this.#seen.has(id)) return [];
+    this.#seen.add(id);
+    const tool = phaethonTool(name);
+    if (tool) {
+      const shown = presentTool(tool, input);
+      this.#phaethon.set(id, tool);
+      if (shown.hidden) {
+        this.#hidden.add(id);
+        return [];
+      }
+      this.#category.set(id, shown.category);
+      return [{ kind: "tool", label: shown.label }, { kind: "toolStart", id, category: shown.category, label: shown.label, ...(shown.target ? { target: shown.target } : {}) }];
+    }
+    this.#category.set(id, "other");
+    const label = name ? `Using ${name}` : "Using a tool";
+    const target = argsSummary(input);
+    return [{ kind: "tool", label }, { kind: "toolStart", id, category: "other", label: shortText(label), ...(target ? { target } : {}) }];
+  }
+
   end(raw: string, status: ToolStatus, detail?: string): AgentEvent[] {
     const id = `${this.cli}:${shortText(raw)}`;
     if (!this.#seen.has(id) || this.#finished.has(id)) return [];
     this.#finished.add(id);
+    if (this.#hidden.has(id)) return [];
     const event: AgentEvent = { kind: "toolEnd", id, status };
-    // Only a command's output is shown; what a tool read (a file's contents) never enters the conversation.
-    const keep = detail !== undefined && (this.#category.get(id) === "command" || detail === ERROR_NOTE);
-    if (keep) event.detail = outputText(detail!);
+    const tool = this.#phaethon.get(id);
+    // A command's output, what one of Phaethon's tools found, or another tool's answer is shown; what a file tool read never is.
+    const category = this.#category.get(id);
+    if (detail !== undefined && tool) event.detail = toolResultDetail(tool, detail);
+    else if (detail !== undefined && (category === "command" || category === "other" || detail === ERROR_NOTE)) event.detail = outputText(detail);
     else if (detail !== undefined && status === "failed") event.detail = ERROR_NOTE;
     return [event];
   }

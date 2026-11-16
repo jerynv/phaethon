@@ -73,9 +73,13 @@ test("closing every tab leaves one new chat on the welcome, which has no close",
   await composer(page).fill("Hello");
   await page.keyboard.press("Enter");
   await expect(page.locator('[data-role="assistant"]').last()).toContainText("Sure.");
+  // Settings opens without a tab of its own, and Esc goes back to the tabs as they were.
   await page.keyboard.press("ControlOrMeta+Comma");
+  await expect(page.locator('[data-slot="settings-title"]')).toContainText("Settings");
+  await expect(page.getByRole("tablist", { name: "Open pages" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   const strip = page.getByRole("tablist", { name: "Open pages" });
-  await expect(strip.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
+  await expect(strip.getByRole("tab", { name: "Hello" })).toHaveAttribute("aria-selected", "true");
 
   const closes = strip.getByRole("button", { name: /^Close / });
   for (let i = 0; i < 10 && (await closes.count()) > 0; i++) await closes.first().click({ force: true });
@@ -194,4 +198,17 @@ test("typing goes into the message box without clicking it first, and a card's k
   await page.getByRole("button", { name: "New chat" }).first().focus();
   await page.keyboard.type("yes");
   await expect(box).toHaveValue("yes");
+});
+
+test("Esc leaves Settings even pressed the instant it opens, before Settings has loaded", async ({ page }) => {
+  core = await startCore();
+  await core.open(page);
+  // Opening Settings and pressing Esc in the same task: Settings' own code hasn't arrived yet.
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: ",", code: "Comma", metaKey: true, ctrlKey: !navigator.platform.includes("Mac"), bubbles: true, cancelable: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(300);
+  await expect(page.locator('[data-page="settings"]')).toHaveCount(0);
+  await expect(page.getByRole("tablist", { name: "Open pages" })).toBeVisible();
 });

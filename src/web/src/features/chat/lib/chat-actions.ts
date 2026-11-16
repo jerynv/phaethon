@@ -6,6 +6,8 @@
  */
 
 export const ACTIONS_FENCE = "phaethon-actions";
+/** An email any backend can write; drawn as the email card (core: mail/block.ts). */
+export const EMAIL_FENCE = "phaethon-email";
 
 /** Must equal the core's app-guide ACTIONS, in the same order. */
 export const CHAT_ACTION_IDS = [
@@ -20,18 +22,26 @@ export const CHAT_ACTION_IDS = [
   "settings-accessibility",
   "settings-spaces",
   "settings-courses",
+  "settings-memory",
+  "settings-people",
+  "settings-mail",
+  "settings-automations",
   "settings-about",
 ] as const;
 
 export type ChatActionId = (typeof CHAT_ACTION_IDS)[number];
 
 /** Settings sections (useNav's SettingsSection) by action id. Accessibility lives with Appearance. */
-export const SETTINGS_SECTION: Partial<Record<ChatActionId, "assistant" | "appearance" | "spaces" | "courses" | "about">> = {
+export const SETTINGS_SECTION: Partial<Record<ChatActionId, "assistant" | "appearance" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "about">> = {
   "settings-assistant": "assistant",
   "settings-appearance": "appearance",
   "settings-accessibility": "appearance",
   "settings-spaces": "spaces",
   "settings-courses": "courses",
+  "settings-memory": "memory",
+  "settings-people": "people",
+  "settings-mail": "mail",
+  "settings-automations": "automations",
   "settings-about": "about",
 };
 
@@ -58,6 +68,14 @@ export function actionLabel(id: ChatActionId, fileManager: string): string {
       return "Settings: Spaces";
     case "settings-courses":
       return "Settings: Courses";
+    case "settings-memory":
+      return "Settings: Memory";
+    case "settings-people":
+      return "Settings: People";
+    case "settings-mail":
+      return "Settings: Mail & connectors";
+    case "settings-automations":
+      return "Settings: Automations";
     case "settings-about":
       return "Settings: About";
   }

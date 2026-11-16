@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { LiveFigures } from "@/components/live-figures";
 import { useState } from "react";
 import type { ErrorCode } from "#shared/agent.ts";
 import { ClampedText } from "@/components/errors";
@@ -61,8 +62,8 @@ export function LimitCard({
     >
       <div className="flex items-center gap-2 text-base">
         <Icon icon={code === "rateLimit" ? icons.time : icons.warning} className="size-4.5 text-foreground" />
-        <span className="min-w-0 truncate tabular-nums" aria-live="polite">
-          {title}
+        <span className="min-w-0 truncate" aria-live="polite">
+          <LiveFigures text={title} />
         </span>
       </div>
       <p className="text-muted-foreground text-sm">{SENTENCE[code as ErrorCode] ?? "Try again in a moment."}</p>

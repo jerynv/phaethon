@@ -20,9 +20,11 @@ test("the sidebar shows one space at a time, chosen from the switcher", async ({
   await expect(page.getByRole("menuitem", { name: /^Work/ })).toBeVisible();
   await page.keyboard.press("Escape");
   await switchSpace(page, "Work");
-  // Only the space on show is listed, and spaces without study tools list no pages.
+  // Only the space on show is listed, and a space without study tools lists only Files.
   await expect(nav.getByRole("list", { name: "School conversations" })).toHaveCount(0);
-  await expect(page.getByRole("list", { name: "Views" })).toHaveCount(0);
+  const views = page.getByRole("list", { name: "Views" }).getByRole("button");
+  await expect(views).toHaveCount(1);
+  await expect(views).toContainText("Files");
   await switchSpace(page, "School");
   await expect(page.getByRole("tablist", { name: "Open pages" }).getByRole("tab", { selected: true })).toBeVisible();
 });

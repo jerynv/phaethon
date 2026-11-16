@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AccessAnswer, AgentEvent, LessonAnswer } from "#shared/agent.ts";
 import { chatKey, DRAFT, openOf, useNav, useOpenThread } from "@/app/store";
 import { Channel, errorText, onCoreStatus } from "@/lib/core";
+import { invalidate } from "@/lib/query";
 import * as chat from "./api";
 import { applyEvent, continueReply, fromUi, mergeSaved, needsYou, newKey, startReply, type Attachment, type AssistantMessage, type Message } from "./lib/timeline";
 
@@ -83,7 +84,13 @@ export const useChats = create<Chats>((set, get) => {
     });
 
   /** Applies an event to the reply being written (the conversation's last message). */
-  const onEvent = (key: string) => (e: AgentEvent) =>
+  const onEvent = (key: string) => (e: AgentEvent) => {
+    if (e.kind === "record") {
+      // The agent changed something another screen may have cached.
+      if (e.record.kind === "memory" || e.record.kind === "profile") invalidate("memory:");
+      else if (e.record.kind === "person") invalidate("people:");
+      else if (e.record.kind === "schedule") invalidate("jobs:");
+    }
     patch(key, (c) => {
       const last = c.messages[c.messages.length - 1];
       if (!last || last.role !== "assistant") return {};
@@ -91,6 +98,7 @@ export const useChats = create<Chats>((set, get) => {
       const done = e.kind === "end";
       return { messages: [...c.messages.slice(0, -1), next], ...(done ? { running: false, startedAt: undefined } : {}) };
     });
+  };
 
   /** After a turn: positions from the saved file, the sidebar's row, and the unread mark. */
   const settle = async (space: string, thread: string) => {

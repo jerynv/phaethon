@@ -1,6 +1,7 @@
 /** Typed calls for Study (the old Tauri commands, one to one). */
 import { Channel, invoke } from "@/lib/core";
 
+import { shortCourseName } from "../courses/lib/course-name";
 import { untilTerminal, type StreamEnd } from "../courses/lib/stream";
 import type { ModelPick } from "@/features/chat/api";
 import type {
@@ -18,7 +19,8 @@ import type {
   StudyOverview,
 } from "./lib/types";
 
-export const studySources = (space: string) => invoke<CourseSource[]>("study_sources", { space });
+/** The courses Study can draw on, named as people read them ("XX99: INTRO PLACEHOLDER STUDIES: 1234" → "Intro Placeholder Studies"). */
+export const studySources = async (space: string) => (await invoke<CourseSource[]>("study_sources", { space })).map((s) => ({ ...s, name: shortCourseName(s.name) }));
 export const studyOverview = (space: string) => invoke<StudyOverview>("study_overview", { space });
 export const studyDeck = (space: string, path: string) => invoke<DeckView>("study_deck", { space, path });
 export const studyDeckSave = (space: string, path: string | null, title: string, cards: CardInput[]) =>

@@ -136,7 +136,7 @@ export function DeckEditor({ space, path, onBack, open }: { space: SpaceView; pa
                 <input
                   aria-label="Deck name"
                   placeholder="Deck name"
-                  className="w-full bg-transparent font-medium text-foreground text-lg tracking-title outline-none placeholder:text-subtle-foreground"
+                  className="w-full bg-transparent type-title outline-none placeholder:text-subtle-foreground"
                   value={title}
                   maxLength={120}
                   autoFocus={!path}

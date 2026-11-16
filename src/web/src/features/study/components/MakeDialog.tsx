@@ -235,7 +235,7 @@ export function MakeDialog({
         <form onSubmit={onSubmit} className="contents">
           <DialogHeader className="gap-4 p-6 pr-6 pb-4">
             <div className="flex items-start gap-3">
-              <DialogTitle className="min-w-0 flex-1 font-medium text-base tracking-title">{label}</DialogTitle>
+              <DialogTitle className="min-w-0 flex-1">{label}</DialogTitle>
               <DialogClose render={<Button size="icon-sm" variant="ghost-muted" aria-label="Close" className="-mt-1 -mr-2" />}>
                 <Icon icon={icons.close} />
               </DialogClose>
@@ -1096,7 +1096,7 @@ function DoneView({ done, quiz }: { done: Done; quiz: boolean }) {
   return (
     <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: EASE }} className="flex flex-col gap-4 pb-2">
       <div>
-        <p className="font-medium text-base tabular-nums tracking-title">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
+        <p className="type-heading tabular-nums">{quiz ? `Made a quiz of ${plural(made, "question")}` : `Made ${plural(made, "card")}`}</p>
         {g?.exam ? <p className="mt-0.5 text-muted-foreground text-sm [overflow-wrap:anywhere]">{`For ${g.exam}${g.scope ? `: ${g.scope}` : ""}.`}</p> : null}
       </div>
       <Card variant="well" className="gap-0 px-4 py-2">

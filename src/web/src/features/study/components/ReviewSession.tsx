@@ -223,7 +223,7 @@ function EndCard({ title, line, children, list }: { title: string; line: string;
       <Card>
         <div className="flex flex-col gap-5 p-6">
           <div className="text-center">
-            <h2 className="font-medium text-base tracking-title">{title}</h2>
+            <h2 className="type-heading">{title}</h2>
             <p className="mt-1 text-muted-foreground text-sm tabular-nums">{line}</p>
           </div>
           {list}

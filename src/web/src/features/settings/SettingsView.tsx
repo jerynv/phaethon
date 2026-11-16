@@ -128,7 +128,7 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
       <RowHighlightGroup className="flex flex-col">
         {groups.map((g) => (
           <div key={g} className="mt-4 flex flex-col gap-px">
-            <h2 className="flex h-7 items-center px-2 text-subtle-foreground text-xs">{g}</h2>
+            <h2 className="flex h-7 items-center px-2 type-label">{g}</h2>
             {SECTIONS.filter((s) => s.group === g).map((s) => {
               const active = s.id === section;
               return (

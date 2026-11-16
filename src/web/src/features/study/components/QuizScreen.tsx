@@ -431,7 +431,7 @@ function QuestionView({
             {flagged ? "Flagged" : "Flag"}
           </Button>
         </div>
-        <StudyText text={question.prompt} space={space} id={`q-${question.id}`} className="text-foreground [&_.markdown]:text-xl [&_.markdown]:tracking-title" />
+        <StudyText text={question.prompt} space={space} id={`q-${question.id}`} className="text-foreground [&_.markdown]:text-xl" />
       </div>
 
       {!typed ? (
@@ -614,9 +614,9 @@ function Results({
           {reviewing ? <JobBar value={job.fraction} className="z-10" /> : null}
           <div className="flex flex-col gap-5 p-6">
             <div className="flex flex-col gap-1">
-              <h2 className="font-medium text-lg tracking-title">{headline(share)}</h2>
+              <h2 className="type-title">{headline(share)}</h2>
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <CountUp value={Math.round(share * 100)} className="font-medium text-3xl text-foreground tabular-nums tracking-hero" />
+                <CountUp value={Math.round(share * 100)} className="type-hero" />
                 <span className="text-base text-muted-foreground tabular-nums">
                   {pointsText(points)} of {total} right{ungraded ? ` · ${ungraded} not graded` : ""}
                 </span>
@@ -682,7 +682,7 @@ function Results({
 
       {topics.length > 1 || (topics.length === 1 && topics[0]!.topic !== "Other") ? (
         <section className="flex flex-col gap-3" data-testid="quiz-topics">
-          <h3 className="font-medium text-base tracking-title">By topic</h3>
+          <h3 className="type-heading">By topic</h3>
           <Card className="gap-0 px-5 py-2">
             {topics.map((t, i) => {
               const p = t.percent ?? 0;
@@ -711,7 +711,7 @@ function Results({
 
       {items.length ? (
         <section className="flex flex-col gap-3" data-testid="quiz-review">
-          <h3 className="font-medium text-base tracking-title">What to go over</h3>
+          <h3 className="type-heading">What to go over</h3>
           <div className="flex flex-col gap-3">
             {items.map((it) => {
               const question = quiz.questions.find((x) => x.id === it.id)!;

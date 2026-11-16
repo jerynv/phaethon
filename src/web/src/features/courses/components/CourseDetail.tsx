@@ -214,7 +214,7 @@ function Files({ space, content, error, hidden, onSettings }: { space: string } 
   return (
     <section className="flex flex-col gap-6" aria-label="Course content">
       <div className="flex items-center gap-3">
-        <h2 className="flex-1 font-medium text-base tracking-title">
+        <h2 className="flex-1 type-heading">
           Content <span className="font-normal text-muted-foreground tabular-nums">{content.entries.length}</span>
         </h2>
         <Tabs value={kind} onValueChange={(v: string) => setKind(v)}>

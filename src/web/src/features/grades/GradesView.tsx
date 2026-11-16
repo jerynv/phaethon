@@ -297,7 +297,7 @@ function TermOverview({ courses, refreshing, onPick, onAll }: { courses: CourseG
     <section data-testid="grades-courses" className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-6">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h1 id="grades-title" tabIndex={-1} className="font-medium text-lg tracking-title outline-none">
+          <h1 id="grades-title" tabIndex={-1} className="type-title outline-none">
             Grades
           </h1>
           <p className="text-muted-foreground text-sm tabular-nums">
@@ -313,7 +313,7 @@ function TermOverview({ courses, refreshing, onPick, onAll }: { courses: CourseG
             <Tooltip>
               <TooltipTrigger render={<div className="flex shrink-0 flex-col items-end tabular-nums" data-testid="grades-gpa" />}>
                 <span className="flex items-baseline gap-1">
-                  <span className="font-medium text-3xl tracking-hero">{gpaText(gpa.gpa)}</span>
+                  <span className="type-hero">{gpaText(gpa.gpa)}</span>
                   <span className="text-muted-foreground text-sm">/ {gpaText(scaleMax(scale))}</span>
                 </span>
                 <span className="text-muted-foreground text-xs">GPA · {gpa.counted === courses.length ? "this term" : `${gpa.counted} of ${courses.length} courses`}</span>
@@ -366,7 +366,7 @@ function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; 
     <Card data-testid="grades-courses">
       <div className="flex items-start gap-4 px-5 pt-5 pb-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h1 id="grades-title" tabIndex={-1} className="flex min-w-0 items-center gap-1.5 font-medium text-lg tracking-title outline-none">
+          <h1 id="grades-title" tabIndex={-1} className="flex min-w-0 items-center gap-1.5 type-title outline-none">
             <Truncate className="min-w-0">{name(course)}</Truncate>
           </h1>
           <CardDescription className="flex items-center gap-2 tabular-nums">
@@ -377,7 +377,7 @@ function CourseOverview({ course, now, refreshing }: { course: CourseGradeView; 
         {h.percent != null ? (
           <div className="flex shrink-0 flex-col items-end gap-0.5">
             <span className="flex items-baseline gap-1.5 tabular-nums">
-              <span className="font-medium text-3xl text-foreground tracking-hero">{pct(h.percent)}</span>
+              <span className="type-hero">{pct(h.percent)}</span>
               {h.letter ? <span className="text-lg text-muted-foreground">{h.letter}</span> : null}
             </span>
             {h.trend && (up || down) ? (
@@ -481,7 +481,7 @@ function TrendChart({ points, current }: { points: SeriesPoint[]; current: numbe
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-baseline gap-2 tabular-nums">
-        <span className="font-medium text-2xl text-foreground tracking-heading">{pct(current ?? last.percent)}</span>
+        <span className="type-stat">{pct(current ?? last.percent)}</span>
         <span className={cn("text-xs", flat ? "text-muted-foreground" : delta > 0 ? "text-success-foreground" : "text-destructive-foreground")}>
           {flat ? "No change" : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)}`} since {shortDate(t0)}
         </span>
@@ -647,11 +647,11 @@ function AllTables({ courses, fresh, now, title = false }: { courses: CourseGrad
     <section className="flex flex-col gap-3" aria-label="All grades">
       <div className="flex flex-wrap items-center gap-2">
         {title ? (
-          <h1 id="grades-title" tabIndex={-1} className="mr-auto font-medium text-lg tracking-title outline-none">
+          <h1 id="grades-title" tabIndex={-1} className="mr-auto type-title outline-none">
             All grades
           </h1>
         ) : (
-          <h2 className="mr-auto font-medium text-base tracking-title">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
+          <h2 className="mr-auto type-heading">{courses.length > 1 ? "All grades" : "Assignments"}</h2>
         )}
         <SearchField
           className="w-56 max-sm:w-full"

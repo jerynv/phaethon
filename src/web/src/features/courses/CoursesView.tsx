@@ -104,7 +104,7 @@ export function CoursesView({ space }: { space: SpaceView }) {
           <aside className={cn("flex w-70 shrink-0 flex-col border-r", !pane && open && "hidden")} aria-label="Courses">
             <div className="flex shrink-0 flex-col gap-(--pane-row-gap) px-2 pt-(--pane-top) pb-2">
               <div className="flex h-(--pane-row-height) items-center gap-2 pl-2">
-                <h2 className="flex-1 font-medium text-lg tracking-title">Courses</h2>
+                <h2 className="flex-1 type-title">Courses</h2>
                 <Tooltip>
                   <TooltipTrigger render={<Button size="icon-sm" variant="ghost-muted" aria-label="Connect a course site" onClick={() => setConnect(true)} />}>
                     <Icon icon={icons.add} />

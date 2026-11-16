@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import * as React from "react";
-import { Icon, type IconData } from "@/components/icon";
+import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { cn } from "@/lib/utils";
 import { Spinner } from "./spinner";
@@ -15,14 +15,11 @@ import { Spinner } from "./spinner";
  *   </StepList>
  *
  *   <ToolSummary summary="18 tools, edited 5 files, ran 2 commands" duration="6m 12s" open onOpenChange>
- *     <StepList open variant="icon">
- *       <Step icon={icons.terminal} tag="script">Running command</Step>
- *       <Step icon={icons.done}>Done</Step>
- *     </StepList>
+ *     <WorkLogList>…</WorkLogList>   (components/ui/work-log.tsx)
  *   </ToolSummary>
  *
- * Steps hang off a 1 px rail with dot bullets (or icons); the running step
- * spins, a failed one turns red. Lists open and close with a height spring.
+ * Steps hang off a 1 px rail with dot bullets; the running step spins, a
+ * failed one turns red. Lists open and close with a height spring.
  */
 
 /** "6m 12s", "12s", "1h 4m". */
@@ -109,26 +106,19 @@ function ThoughtToggle({
   );
 }
 
-type ListVariant = "dot" | "icon";
-const ListCtx = React.createContext<ListVariant>("dot");
-
 /** The steps, on a rail. `open` animates the list in and out. */
-function StepList({ open = true, variant = "dot", className, children }: { open?: boolean; variant?: ListVariant; className?: string; children: React.ReactNode }) {
+function StepList({ open = true, className, children }: { open?: boolean; className?: string; children: React.ReactNode }) {
   return (
     <Collapse open={open}>
-      <ListCtx value={variant}>
-        <ol data-slot="step-list" data-variant={variant} className={cn("flex flex-col py-1.5", variant === "dot" ? "pl-1" : "pt-0", className)}>
-          {children}
-        </ol>
-      </ListCtx>
+      <ol data-slot="step-list" className={cn("flex flex-col py-1.5 pl-1", className)}>
+        {children}
+      </ol>
     </Collapse>
   );
 }
 
 function Step({
   state = "done",
-  icon,
-  tag,
   meta,
   children,
   detail,
@@ -138,10 +128,6 @@ function Step({
   state?: StepState;
   /** Let long text wrap onto more lines (reasoning in words) instead of truncating to one. */
   wrap?: boolean;
-  /** In an `icon` list: the tool's glyph. */
-  icon?: IconData;
-  /** A small grey chip on the right ("script", "file"). */
-  tag?: React.ReactNode;
   /** Trailing muted text (a time, a count). */
   meta?: React.ReactNode;
   children: React.ReactNode;
@@ -149,12 +135,9 @@ function Step({
   detail?: React.ReactNode;
   className?: string;
 }) {
-  const variant = React.use(ListCtx);
   const marker =
     state === "active" ? (
-      <Spinner size={variant === "icon" ? "md" : "xs"} className="text-muted-foreground" />
-    ) : variant === "icon" && icon ? (
-      <Icon icon={icon} className={cn("size-4.5", state === "failed" ? "text-destructive-foreground" : "text-muted-foreground")} />
+      <Spinner size="xs" className="text-muted-foreground" />
     ) : (
       <span className={cn("size-1.5 rounded-full", state === "failed" ? "bg-destructive" : state === "pending" ? "border border-subtle-foreground" : "bg-subtle-foreground")} />
     );
@@ -172,26 +155,23 @@ function Step({
       <span
         aria-hidden
         className={cn(
-          "absolute top-0 bottom-0 left-2.5 w-px -translate-x-1/2 bg-border group-last/step:bottom-auto group-only/step:hidden",
-          variant === "icon" ? "group-first/step:top-5 group-last/step:h-5" : "group-first/step:top-4 group-last/step:h-4",
+          "absolute top-0 bottom-0 left-2.5 w-px -translate-x-1/2 bg-border group-first/step:top-4 group-last/step:bottom-auto group-last/step:h-4 group-only/step:hidden",
         )}
       />
       <div className={cn("flex gap-3", wrap ? "items-start" : "items-center")}>
-        <span className={cn("relative z-10 flex w-5 shrink-0 items-center justify-center", variant === "icon" ? "h-10" : "h-8")}>
+        <span className="relative z-10 flex h-8 w-5 shrink-0 items-center justify-center">
           <span className="flex bg-background py-1">{marker}</span>
         </span>
         <span
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2",
-            variant === "icon" ? "text-base text-foreground" : "text-muted-foreground text-sm",
-            wrap ? (variant === "icon" ? "min-h-10 py-2.5" : "min-h-8 py-1.5") : variant === "icon" ? "h-10" : "h-8",
+            "flex min-w-0 flex-1 items-center gap-2 text-muted-foreground text-sm",
+            wrap ? "min-h-8 py-1.5" : "h-8",
             state === "pending" && "text-subtle-foreground",
           )}
         >
           {/* The shimmer paints plain text only; a step that passes its own elements (a label and a file chip) shimmers its label itself. */}
           <span className={cn("min-w-0 flex-1", wrap ? "wrap-anywhere" : "truncate", state === "active" && typeof children === "string" && "text-shimmer")}>{children}</span>
           {meta ? <span className="shrink-0 text-subtle-foreground text-xs tabular-nums">{meta}</span> : null}
-          {tag ? <span className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-muted-foreground text-xs">{tag}</span> : null}
         </span>
       </div>
       {detail ? <div className="relative z-10 pb-2 pl-8">{detail}</div> : null}
@@ -226,14 +206,14 @@ function ToolSummary({
         type="button"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
-        className="group/summary flex h-9 items-center gap-3 rounded-lg text-left text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group/summary flex h-8 items-center gap-2 rounded-lg px-0.5 text-left text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex w-5 justify-center">
-          {lead ?? (running ? <Spinner size="md" className="text-muted-foreground" /> : <Icon icon={icons.step} className="size-4.5 text-foreground" />)}
+        <span className="flex w-5 shrink-0 justify-center">
+          {lead ?? (running ? <Spinner size="sm" className="text-subtle-foreground" /> : <Icon icon={icons.step} className="size-4 text-subtle-foreground transition-colors group-hover/summary:text-muted-foreground" />)}
         </span>
-        <span className={cn("min-w-0 truncate text-base", running && "text-shimmer")}>{summary}</span>
-        <Icon icon={icons.chevronDown} className={cn("size-4 text-muted-foreground transition-transform duration-200 group-hover/summary:text-foreground", !open && "-rotate-90")} />
-        {duration ? <span className="ml-auto shrink-0 text-muted-foreground text-sm tabular-nums">{duration}</span> : null}
+        <span className={cn("min-w-0 truncate text-sm", running && "text-shimmer")}>{summary}</span>
+        <Icon icon={icons.chevronRight} className={cn("size-3 shrink-0 text-subtle-foreground transition-transform duration-200", open && "rotate-90")} />
+        {duration ? <span className="ml-auto shrink-0 text-subtle-foreground text-xs tabular-nums">{duration}</span> : null}
       </button>
       {children ? <Collapse open={open}>{children}</Collapse> : null}
     </div>

@@ -9,6 +9,9 @@ changes Phaethon's own license.
 Files whose first line reads "Adapted from T3 Code (https://github.com/pingdotgg/t3code)"
 contain code copied or adapted from T3 Code (mostly the UI primitives in
 `src/web/src/components/ui/`, which T3 Code distributes under the license below).
+`src/web/src/components/ui/work-log.tsx` follows T3 Code's chat work log rows
+(`apps/web/src/components/chat/WorkLog.tsx`, `TimelineWorkEntryRow.tsx` and
+`ShellCommandBlock.tsx`).
 
 ```
 MIT License

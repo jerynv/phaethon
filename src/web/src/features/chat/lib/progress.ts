@@ -35,8 +35,10 @@ export function friendlyStep(step: Step, spaceName?: string): string {
       return `Searching ${files}`;
     case "write":
       return step.target ? `Writing ${prettyName(step.target)}` : "Writing a file";
-    case "command":
-      return "Working on your computer";
+    case "command": {
+      const line = step.target?.replace(/\s+/g, " ").trim();
+      return line ? `Running ${line}` : "Working on your computer";
+    }
     case "other":
       if (/^using tool$/i.test(step.label)) return step.target ? `Using ${prettyName(step.target)}` : "Working on it";
       return step.label;

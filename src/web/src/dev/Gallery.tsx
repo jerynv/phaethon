@@ -9,6 +9,7 @@ import { KeyAction, KeyActions } from "@/components/ui/key-actions";
 import { BarLegend, StackedBar } from "@/components/ui/stacked-bar";
 import { StatGrid, StatTile } from "@/components/ui/stat-tile";
 import { Step, StepList, ThoughtToggle, ToolSummary } from "@/components/ui/step-list";
+import { WorkLogCommand, WorkLogCommandBody, WorkLogDetails, WorkLogList, WorkLogRow } from "@/components/ui/work-log";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { ToggleRow } from "@/components/ui/toggle-row";
 
@@ -86,6 +87,7 @@ function Panel() {
   const [t2, setT2] = useState(false);
   const [thought, setThought] = useState(true);
   const [tools, setTools] = useState(true);
+  const [command, setCommand] = useState(true);
   return (
     <div className="grid grid-cols-2 gap-8">
       <Section title="Buttons">
@@ -241,18 +243,16 @@ function Panel() {
       <Section title="Tool summary">
         <div className="rounded-card border bg-background p-5">
           <ToolSummary summary="18 tools, edited 5 files, ran 2 commands" duration="6m 12s" open={tools} onOpenChange={setTools}>
-            <StepList variant="icon">
-              <Step icon={icons.terminal} tag="script">
-                Running command
-              </Step>
-              <Step icon={icons.task} tag="file">
-                Task update
-              </Step>
-              <Step icon={icons.terminal} detail={<pre className="rounded-xl border bg-code p-3 font-mono text-xs">{'{ "status": "completed" }'}</pre>}>
-                Running command
-              </Step>
-              <Step icon={icons.done}>Done</Step>
-            </StepList>
+            <WorkLogList>
+              <WorkLogRow icon={icons.read} label="Read week 6 notes" />
+              <WorkLogRow icon={icons.terminal} label={<WorkLogCommand command="rg -n injective notes" />} expanded={command} onExpandedChange={setCommand}>
+                <WorkLogDetails>
+                  <WorkLogCommandBody command="rg -n injective notes" output={"notes/week6.md:3:- Injective: f(a) = f(b) implies a = b.\nnotes/week6.md:9:- Is the composition of two injections injective? (Yes.)"} />
+                </WorkLogDetails>
+              </WorkLogRow>
+              <WorkLogRow icon={icons.terminal} state="failed" label={<WorkLogCommand command="pnpm test --run" />} onExpandedChange={() => {}} />
+              <WorkLogRow icon={icons.terminal} state="active" label={<WorkLogCommand command="latexmk -xelatex summary.tex" active />} />
+            </WorkLogList>
           </ToolSummary>
         </div>
       </Section>

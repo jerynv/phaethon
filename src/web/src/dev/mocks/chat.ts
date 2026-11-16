@@ -11,8 +11,10 @@
  *   "settings"       buttons (phaethon-actions)
  *   "error"/"rate"   a failed reply (no API key / rate limit)
  *   "slow"           a long reply, slow enough to stop
+ *   "run"/"build"    a coding agent's turn: commands that print, one that fails
  * `#mock&thread=pending` loads a conversation that ends with an unanswered question;
- * `&thread=empty` an empty one; `&thread=long` a long one.
+ * `&thread=empty` an empty one; `&thread=long` a long one; `&thread=agent` a
+ * coding agent's turn with the commands it ran.
  */
 import { zipSync, strToU8 } from "fflate";
 
@@ -155,6 +157,34 @@ const PENDING: UiMessage[] = [
   },
 ];
 
+const AGENT_REPLY = "The summary builds. `latexmk` needed a second pass for the cross-references, and one test of the flashcard export was failing because the deck file had a trailing blank line; I left the deck alone and noted it below.\n\n- **summary.pdf** is in `notes/` (3 pages).\n- `pnpm test` passes except `export trims blank lines`.";
+
+/** A coding agent's commands, as they are saved: the command line, and what it printed. */
+const AGENT_RECORDS: UiMessage["records"] = [
+  { kind: "tool", id: "a1", category: "list", label: "Listing files", target: "notes", status: "success" },
+  { kind: "tool", id: "a2", category: "command", label: "Running command", target: "git status --short", status: "success", detail: " M notes/week6.md\n?? notes/summary.tex" },
+  { kind: "tool", id: "a3", category: "read", label: "Reading file", target: "notes/week6.md", status: "success" },
+  {
+    kind: "tool",
+    id: "a4",
+    category: "command",
+    label: "Running command",
+    target: "cd notes && latexmk -xelatex -interaction=nonstopmode -halt-on-error summary.tex && latexmk -c",
+    status: "success",
+    detail: "Rc files read:\n  NONE\nLatexmk: This is Latexmk, John Collins, 7 Apr. 2026. Version 4.86.\nLatexmk: applying rule 'xelatex'...\nRule 'xelatex':  Reasons for rerun\nChanged files or newly in use/created:\n  summary.aux\n\nOutput written on summary.xdv (3 pages, 41208 bytes).\nLatexmk: All targets (summary.pdf) are up-to-date",
+  },
+  { kind: "tool", id: "a5", category: "command", label: "Running command", target: "rg -n \"injective\" notes", status: "success", detail: "notes/week6.md:3:- Injective: f(a) = f(b) implies a = b.\nnotes/week6.md:9:- Is the composition of two injections injective? (Yes.)" },
+  { kind: "tool", id: "a6", category: "command", label: "Running command", target: "pnpm test --run export", status: "failed", detail: "FAIL  export.test.ts > export trims blank lines\nAssertionError: expected 'Front\\n\\n' to be 'Front'\n\nTest Files  1 failed (1)\n     Tests  1 failed | 11 passed (12)" },
+  { kind: "tool", id: "a7", category: "command", label: "Running command", target: "ls notes", status: "success" },
+  { kind: "tool", id: "a8", category: "command", label: "Running command", status: "success", detail: "summary.pdf\nsummary.tex\nweek6.md" },
+  { kind: "tool", id: "a9", category: "write", label: "Changing file", target: "notes/summary.tex", status: "success" },
+];
+
+const AGENT: UiMessage[] = [
+  { role: "user", text: "Build my week 6 summary as a PDF and run the tests.", attachments: [], index: 0, records: [], at: now - 900_000 },
+  { role: "assistant", text: AGENT_REPLY, attachments: [], index: 1, records: AGENT_RECORDS, at: now - 880_000 },
+];
+
 function longThread(): UiMessage[] {
   const out: UiMessage[] = [];
   for (let i = 0; i < 8; i++) {
@@ -166,7 +196,7 @@ function longThread(): UiMessage[] {
 
 /** Saved conversations by `space/thread`; the shell mock's newest school conversation has the full script. */
 const threads: Record<string, UiMessage[]> = {
-  "school/1762800000000": hash.get("thread") === "pending" ? PENDING : hash.get("thread") === "empty" ? [] : hash.get("thread") === "long" ? longThread() : SAVED,
+  "school/1762800000000": hash.get("thread") === "pending" ? PENDING : hash.get("thread") === "empty" ? [] : hash.get("thread") === "long" ? longThread() : hash.get("thread") === "agent" ? AGENT : SAVED,
 };
 
 /** A conversation the shell mock lists but this file has no script for: its two listed lines. */
@@ -302,6 +332,21 @@ async function run(args: Record<string, unknown>) {
     const reply = ok ? "Saved. The notes now use math notation and end with the composition rule." : "Nothing was changed. Tell me what you’d like different and I’ll try again.";
     await say(ch, turn, reply);
     return end(ch, space, turn, saveTurn(space, prompt, `I’ll tidy the definitions and add the composition rule.\n\n${reply}`, [{ kind: "approval", path: "notes/week6.md", action: "replace", allowed: ok }], replaceFrom));
+  }
+
+  if (p.includes("run") || p.includes("build")) {
+    const records: UiMessage["records"] = [];
+    for (const r of AGENT_RECORDS) {
+      if (r.kind !== "tool" || turn.cancelled) continue;
+      ch.send({ kind: "toolStart", id: r.id, category: r.category, label: r.label, target: r.target } satisfies AgentEvent);
+      ch.send({ kind: "tool", label: r.category === "command" && r.target ? `Running ${r.target}` : r.label } satisfies AgentEvent);
+      await sleep(r.id === "a4" ? 2600 : 500);
+      ch.send({ kind: "toolEnd", id: r.id, status: r.status === "running" ? "success" : r.status, detail: r.detail } satisfies AgentEvent);
+      ch.send({ kind: "record", record: r } satisfies AgentEvent);
+      records.push(r);
+    }
+    await say(ch, turn, AGENT_REPLY);
+    return end(ch, space, turn, saveTurn(space, prompt, AGENT_REPLY, records, replaceFrom));
   }
 
   if (p.includes("calendar")) {

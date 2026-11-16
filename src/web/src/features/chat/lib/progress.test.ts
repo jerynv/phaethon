@@ -15,6 +15,7 @@ describe("friendly progress", () => {
     expect(friendlyStep({ category: "search", label: "Searching" }, "Work")).toBe("Searching your Work files");
     expect(friendlyStep({ category: "write", label: "Changing file", target: "summary.md" })).toBe("Writing summary");
     expect(friendlyStep({ category: "command", label: "Running command" })).toBe("Working on your computer");
+    expect(friendlyStep({ category: "command", label: "Running command", target: "git status\n  --short" })).toBe("Running git status --short");
     expect(friendlyStep({ category: "other", label: "Using tool", target: "calendar" })).toBe("Using calendar");
     expect(friendlyStep({ category: "other", label: "Planning the lesson" })).toBe("Planning the lesson");
   });

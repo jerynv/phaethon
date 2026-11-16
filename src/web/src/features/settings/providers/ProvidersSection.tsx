@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, Field, Intro, Loader, Row, Status, useLoad, Well } from "../ui";
+import { ConfirmDialog, Field, Loader, Row, RowDetail, SettingsGroup, Status, useLoad } from "../ui";
 import {
   checkApiKey,
   clearApiKey,
@@ -96,25 +96,26 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
 
   if (!editing) {
     return (
-      <Field label="API key" hint={outcome?.kind === "no-credit" ? <span className="text-warning-foreground">{outcomeText(outcome, p)}</span> : undefined}>
-        <Well>
-          <Icon icon={icons.key} className="size-4 text-muted-foreground" />
-          <span aria-hidden className="text-muted-foreground tracking-tight">••••••••</span>
-          <Status tone="ready" className="ml-1">
-            Saved
-          </Status>
-          <span className="flex-1" />
-          <Button size="xs" variant="ghost" onClick={() => setReplacing(true)}>
-            Replace
-          </Button>
-          <Button size="xs" variant="ghost-destructive" onClick={() => setConfirm(true)} pending={busy === "remove"}>
-            Remove
-          </Button>
-        </Well>
+      <Row
+        label="API key"
+        description={
+          <span className="flex items-center gap-2">
+            <span aria-hidden className="tracking-tight">••••••••</span>
+            <Status tone="ready">Saved</Status>
+          </span>
+        }
+        below={outcome?.kind === "no-credit" ? <p className="text-warning-foreground text-xs">{outcomeText(outcome, p)}</p> : undefined}
+      >
+        <Button size="xs" variant="ghost" onClick={() => setReplacing(true)}>
+          Replace
+        </Button>
+        <Button size="xs" variant="ghost-destructive" onClick={() => setConfirm(true)} pending={busy === "remove"}>
+          Remove
+        </Button>
         <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Remove your ${p.name} key?`} confirm="Remove key" destructive onConfirm={() => void remove()}>
           <p>Phaethon deletes it from this computer’s keychain. Conversations that use {p.name} stop answering until you add a key again.</p>
         </ConfirmDialog>
-      </Field>
+      </Row>
     );
   }
 
@@ -125,7 +126,7 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
       htmlFor={id}
       aside={
         p.keysUrl ? (
-          <a href={p.keysUrl} target="_blank" rel="noreferrer noopener" className="text-primary text-sm hover:underline">
+          <a href={p.keysUrl} target="_blank" rel="noreferrer noopener" className="text-primary text-xs hover:underline">
             Get a key at {host(p.keysUrl)}
           </a>
         ) : p.key === "optional" ? (
@@ -148,6 +149,7 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
           spellCheck={false}
           value={value}
           aria-invalid={problem ? true : undefined}
+          size="sm"
           placeholder={p.keyPrefix ? `${p.keyPrefix}…` : "Paste your key"}
           onChange={(e) => {
             setValue(e.target.value);
@@ -157,7 +159,7 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
         />
         {replacing ? (
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={() => {
               setReplacing(false);
@@ -168,7 +170,7 @@ function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: bool
             Cancel
           </Button>
         ) : null}
-        <Button type="submit" size="sm" disabled={busy !== null && busy !== "check"} pending={busy === "check"}>
+        <Button type="submit" size="xs" disabled={busy !== null && busy !== "check"} pending={busy === "check"}>
           Check and save
         </Button>
       </form>
@@ -225,6 +227,7 @@ function UrlRow({ p, onChanged }: { p: ProviderInfo; onChanged: () => Promise<vo
           spellCheck={false}
           autoComplete="off"
           aria-invalid={error ? true : undefined}
+          size="sm"
           placeholder={p.defaultBaseUrl || "https://example.com/v1"}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -233,11 +236,11 @@ function UrlRow({ p, onChanged }: { p: ProviderInfo; onChanged: () => Promise<vo
           className="font-mono"
         />
         {dirty ? (
-          <Button type="submit" size="sm" pending={busy}>
+          <Button type="submit" size="xs" pending={busy}>
             Save
           </Button>
         ) : p.defaultBaseUrl && p.baseUrl !== p.defaultBaseUrl ? (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void save(null)}>
+          <Button size="xs" variant="ghost" disabled={busy} onClick={() => void save(null)}>
             Reset
           </Button>
         ) : null}
@@ -361,36 +364,38 @@ function ProviderRow({
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className="flex h-12 w-full min-w-0 items-center gap-3 px-4 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="flex h-10 w-full min-w-0 items-center gap-3 px-3 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <ProviderIcon id={p.id} className="size-4.5 shrink-0" />
+        <ProviderIcon id={p.id} className="size-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
         {model && !open ? <span className="hidden max-w-48 truncate text-muted-foreground text-xs sm:block">{readableModel(model)}</span> : null}
         {p.id === settings.provider ? <span className="shrink-0 text-subtle-foreground text-xs">Default</span> : null}
-        <Status tone={st.tone} className="shrink-0 text-xs">
+        <Status tone={st.tone} className="shrink-0">
           {st.text}
         </Status>
         <Icon icon={icons.chevronDown} className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", !open && "-rotate-90")} />
       </button>
       {open ? (
-        <div className="flex flex-col gap-4 border-t px-4 pt-4 pb-4">
+        <RowDetail>
           {p.editableBase ? <UrlRow p={p} onChanged={onChanged} /> : null}
           {p.key !== "none" ? <KeyRow p={p} autoFocus={isNew && !p.editableBase} onChanged={onChanged} /> : null}
-          <div className="flex flex-col">
-            {p.local ? <ServerRow p={p} server={server} onCheck={() => void check()} /> : null}
-            <ModelRow p={p} settings={settings} onChanged={onChanged} />
-          </div>
+          {p.local ? <ServerRow p={p} server={server} onCheck={() => void check()} /> : null}
+          <ModelRow p={p} settings={settings} onChanged={onChanged} />
           {onCancel && !added ? (
-            <Button size="xs" variant="ghost-muted" className="self-end" onClick={onCancel}>
-              Cancel
-            </Button>
+            <div className="flex justify-end px-3 py-1.5">
+              <Button size="xs" variant="ghost-muted" onClick={onCancel}>
+                Cancel
+              </Button>
+            </div>
           ) : removable ? (
-            <Button size="xs" variant="ghost-destructive" className="self-end" onClick={() => setConfirm(true)}>
-              <Icon icon={icons.delete} />
-              Remove {p.name}
-            </Button>
+            <div className="flex justify-end px-3 py-1.5">
+              <Button size="xs" variant="ghost-destructive" onClick={() => setConfirm(true)}>
+                <Icon icon={icons.delete} />
+                Remove {p.name}
+              </Button>
+            </div>
           ) : null}
-        </div>
+        </RowDetail>
       ) : null}
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Remove ${p.name}?`} confirm="Remove" destructive onConfirm={() => void remove()}>
         <p>{p.hasKey ? "Its key is deleted from this computer’s keychain, and its" : "Its"} model and address go back to the defaults. Chats that use it stop answering until you add it again.</p>
@@ -405,7 +410,7 @@ function AddProvider({ settings, shown, onAdd }: { settings: Settings; shown: Se
   const groups = PRESET_GROUPS.map((g) => ({ label: g.label, items: left.filter(g.test) })).filter((g) => g.items.length);
   return (
     <Menu>
-      <MenuTrigger render={<Button size="sm" variant="outline" />}>
+      <MenuTrigger render={<Button size="xs" variant="ghost" />}>
         <Icon icon={icons.add} />
         Add provider
       </MenuTrigger>
@@ -445,7 +450,7 @@ export function ProvidersSection() {
     setOpen(id);
   };
   return (
-    <Loader state={state} errorTitle="Couldn’t read your providers" skeleton={<SkeletonCard rows={4} />}>
+    <Loader state={state} errorTitle="Couldn’t read your providers" skeleton={<SkeletonCard rows={4} className="rounded-card" />}>
       {(settings) => {
         const added = addedProviders(settings);
         const shownIds = new Set<ProviderId>(added.map((p) => p.id));
@@ -453,12 +458,11 @@ export function ProvidersSection() {
         for (const p of extra) shownIds.add(p.id);
         const list = [...added, ...extra];
         return (
-          <>
-            <Intro action={<AddProvider settings={settings} shown={shownIds} onAdd={add} />}>Phaethon’s own agent answers with these.</Intro>
+          <SettingsGroup label="For Phaethon’s own agent" action={<AddProvider settings={settings} shown={shownIds} onAdd={add} />} data-testid="providers-list">
             {list.length === 0 ? (
-              <EmptyState palette="dawn" seed="providers" title="No providers yet" description="Add one to chat with Phaethon’s own agent." className="max-w-none" />
+              <EmptyState compact palette="dawn" seed="providers" title="No providers yet" description="Add one to chat with Phaethon’s own agent." className="px-3" />
             ) : (
-              <div className="divide-y overflow-hidden rounded-card border bg-card" data-testid="providers-list">
+              <>
                 {list.map((p) => (
                   <ProviderRow
                     key={p.id}
@@ -471,9 +475,9 @@ export function ProvidersSection() {
                     onCancel={pending.includes(p.id) ? () => setPending((xs) => xs.filter((x) => x !== p.id)) : undefined}
                   />
                 ))}
-              </div>
+              </>
             )}
-          </>
+          </SettingsGroup>
         );
       }}
     </Loader>

@@ -1,27 +1,22 @@
 import { api } from "@/app/api";
 import { keysFor, spaceKeys, viewKeys } from "@/app/shortcuts";
-import { Icon } from "@/components/icon";
-import { icons } from "@/components/icons";
-import { SkeletonCard } from "@/components/skeletons";
+import { SkeletonRows } from "@/components/skeletons";
 import { StartTruncate } from "@/components/truncate";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { ToggleRow } from "@/components/ui/toggle-row";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { LETTER_ORDER, pointsOf } from "@/features/grades/lib/gpa";
 import { usePrefs } from "./prefs";
-import { CopyButton, Loader, Row, SettingsCard, useLoad } from "./ui";
+import { CopyButton, Loader, Row, SettingsGroup, SwitchRow, useLoad } from "./ui";
 
 /** Settings › General: where the vault is, how replies read, and the keyboard shortcuts. */
 
 function Keys({ keys }: { keys: string[] }) {
   return (
-    <KbdGroup className="gap-1">
+    <KbdGroup>
       {keys.map((k) => (
-        <Kbd key={k} variant="keycap">
-          {k}
-        </Kbd>
+        <Kbd key={k}>{k}</Kbd>
       ))}
     </KbdGroup>
   );
@@ -48,50 +43,39 @@ export function GeneralSection() {
   const setTechnical = usePrefs((s) => s.setTechnicalDetails);
   return (
     <>
-      <Loader state={settings} errorTitle="Couldn’t read your settings" skeleton={<SkeletonCard rows={1} />}>
-        {(s) => (
-          <SettingsCard
-            icon={<Icon icon={icons.folder} />}
-            title="Phaethon folder"
-            description={s.vaultPath ? <StartTruncate value={s.vaultPath} className="font-mono text-xs" /> : "Not chosen yet"}
-            action={s.vaultPath ? <CopyButton text={s.vaultPath} label="Copy path" /> : null}
-          />
-        )}
-      </Loader>
+      <SettingsGroup>
+        <Loader state={settings} errorTitle="Couldn’t read your settings" skeleton={<SkeletonRows count={1} className="px-3 py-2" />}>
+          {(s) => (
+            <Row label="Phaethon folder">
+              {s.vaultPath ? (
+                <>
+                  <StartTruncate value={s.vaultPath} className="max-w-80 font-mono text-muted-foreground text-xs" />
+                  <CopyButton text={s.vaultPath} label="Copy path" />
+                </>
+              ) : (
+                <span className="text-muted-foreground text-xs">Not chosen yet</span>
+              )}
+            </Row>
+          )}
+        </Loader>
+        <SwitchRow label="Show technical details" description="Tool names, paths and output under each step." checked={technical} onCheckedChange={setTechnical} />
+        <GradeScaleRow />
+      </SettingsGroup>
 
-      <SettingsCard icon={<Icon icon={icons.chat} />} title="Chat">
-        <div className="flex flex-col">
-          <ToggleRow
-            title="Show technical details"
-            description="Tool names, paths and output under each step."
-            checked={technical}
-            onCheckedChange={setTechnical}
-          />
-        </div>
-      </SettingsCard>
-
-      <SettingsCard icon={<Icon icon={icons.grades} />} title="Grades">
-        <GradeScaleRows />
-      </SettingsCard>
-
-      <SettingsCard icon={<Icon icon={icons.command} />} title="Keyboard shortcuts">
-        <ul className="-mt-2 flex flex-col">
-          {shortcuts().map((s) => (
-            <li key={s.label} className="flex h-10 items-center justify-between gap-4 text-sm">
-              <span className="min-w-0 truncate">{s.label}</span>
-              <span className="shrink-0">
-                <Keys keys={s.keys} />
-              </span>
-            </li>
-          ))}
-        </ul>
-      </SettingsCard>
+      <SettingsGroup label="Keyboard shortcuts">
+        {shortcuts().map((s) => (
+          <div key={s.label} className="flex h-8 min-w-0 items-center justify-between gap-4 px-3 text-sm">
+            <span className="min-w-0 truncate">{s.label}</span>
+            <Keys keys={s.keys} />
+          </div>
+        ))}
+      </SettingsGroup>
     </>
   );
 }
 
 /** How letters count towards the GPA on the Grades page: the standard 4.0 scale, or points per letter. */
-function GradeScaleRows() {
+function GradeScaleRow() {
   const scale = usePrefs((s) => s.gradeScale);
   const setScale = usePrefs((s) => s.setGradeScale);
   const points = pointsOf(scale);
@@ -104,34 +88,37 @@ function GradeScaleRows() {
     setDrafts((d) => ({ ...d, [letter]: "" }));
   };
   return (
-    <div className="flex flex-col gap-3">
-      <Row label="Grade points" description={scale.kind === "custom" ? "Your own points per letter." : "A = 4.0, A− = 3.7, B+ = 3.3…"}>
-        <Tabs value={scale.kind} onValueChange={(v) => setScale(v === "custom" ? { kind: "custom", points: {} } : { kind: "standard" })}>
-          <TabsList size="sm" aria-label="Grade scale">
-            <TabsTab value="standard">4.0</TabsTab>
-            <TabsTab value="custom">Custom</TabsTab>
-          </TabsList>
-        </Tabs>
-      </Row>
-      {scale.kind === "custom" ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2" aria-label="Points per letter">
-          {LETTER_ORDER.map((letter) => (
-            <label key={letter} className="flex items-center gap-2 text-sm">
-              <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{letter}</span>
-              <Input
-                size="sm"
-                inputMode="decimal"
-                aria-label={`Points for ${letter}`}
-                value={drafts[letter] || String(points[letter] ?? "")}
-                onChange={(e) => setDrafts((d) => ({ ...d, [letter]: e.target.value }))}
-                onBlur={(e) => commit(letter, e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && commit(letter, (e.target as HTMLInputElement).value)}
-                className="[&_input]:tabular-nums"
-              />
-            </label>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <Row
+      label="Grade points"
+      description={scale.kind === "custom" ? undefined : "A = 4.0, A− = 3.7, B+ = 3.3…"}
+      below={
+        scale.kind === "custom" ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-x-3 gap-y-1.5 pb-1" aria-label="Points per letter">
+            {LETTER_ORDER.map((letter) => (
+              <label key={letter} className="flex items-center gap-2 text-sm">
+                <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{letter}</span>
+                <Input
+                  size="sm"
+                  inputMode="decimal"
+                  aria-label={`Points for ${letter}`}
+                  value={drafts[letter] || String(points[letter] ?? "")}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [letter]: e.target.value }))}
+                  onBlur={(e) => commit(letter, e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && commit(letter, (e.target as HTMLInputElement).value)}
+                  className="[&_input]:tabular-nums"
+                />
+              </label>
+            ))}
+          </div>
+        ) : undefined
+      }
+    >
+      <Tabs value={scale.kind} onValueChange={(v) => setScale(v === "custom" ? { kind: "custom", points: {} } : { kind: "standard" })}>
+        <TabsList size="sm" aria-label="Grade scale">
+          <TabsTab value="standard">4.0</TabsTab>
+          <TabsTab value="custom">Custom</TabsTab>
+        </TabsList>
+      </Tabs>
+    </Row>
   );
 }

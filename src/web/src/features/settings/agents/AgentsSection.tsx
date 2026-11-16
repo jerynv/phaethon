@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, CopyButton, Loader, Row, Status, useLoad, Well } from "../ui";
+import { ConfirmDialog, CopyButton, Loader, Row, RowDetail, SettingsGroup, Status, useLoad } from "../ui";
 import {
   CLI_IDS,
   CLI_INFO,
@@ -153,7 +153,6 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
 
   return (
     <Row
-      className="min-h-10 py-1.5"
       label={
         <span className="flex min-w-0 items-center gap-2">
           <Truncate className="min-w-0">{i.config.name}</Truncate>
@@ -163,7 +162,7 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
             </Badge>
           ) : null}
           {i.readOnly && !/system/i.test(i.config.name) ? <span className="shrink-0 font-normal text-subtle-foreground text-xs">System</span> : null}
-          <Status tone={status.tone} className="min-w-0 text-xs">
+          <Status tone={status.tone} className="min-w-0">
             <Truncate className="min-w-0">{status.text}</Truncate>
           </Status>
         </span>
@@ -231,10 +230,12 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   const id = `new-account-${cli}`;
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="flex h-8 w-fit items-center gap-2 rounded-md text-primary text-sm transition-opacity hover:opacity-80">
-        <Icon icon={icons.add} className="size-4" />
-        Add account
-      </button>
+      <div className="flex h-9 items-center px-3">
+        <button type="button" onClick={() => setOpen(true)} className="flex h-7 w-fit items-center gap-1.5 rounded-md text-primary text-sm transition-opacity hover:opacity-80">
+          <Icon icon={icons.add} className="size-4" />
+          Add account
+        </button>
+      </div>
     );
   }
   const submit = async () => {
@@ -267,9 +268,9 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
               void submit();
             }}
           >
-            <Input id={id} autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
+            <Input id={id} size="sm" autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
             <Button
-              size="sm"
+              size="xs"
               variant="ghost"
               onClick={() => {
                 setOpen(false);
@@ -278,7 +279,7 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" pending={busy}>
+            <Button type="submit" size="xs" pending={busy}>
               Add
             </Button>
           </form>
@@ -320,17 +321,17 @@ function CliRow({
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className="flex h-12 w-full min-w-0 items-center gap-3 px-4 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="flex h-10 w-full min-w-0 items-center gap-3 px-3 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <ProviderIcon id={cli} className="size-4.5 shrink-0" />
+        <ProviderIcon id={cli} className="size-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-sm">{info.name}</span>
         {installed && mine.length > 1 && cur && cur.config.name !== info.name && !open ? <span className="hidden max-w-40 truncate text-muted-foreground text-xs sm:block">{cur.config.name}</span> : null}
         {st ? (
-          <Status tone={st.tone} className="max-w-56 shrink-0 text-xs">
+          <Status tone={st.tone} className="max-w-56 shrink-0">
             <Truncate className="min-w-0">{st.text}</Truncate>
           </Status>
         ) : (
-          <Status tone={installed ? "ready" : "neutral"} className="shrink-0 text-xs">
+          <Status tone={installed ? "ready" : "neutral"} className="shrink-0">
             {installed ? "Installed" : "Not installed"}
           </Status>
         )}
@@ -339,34 +340,28 @@ function CliRow({
       <AnimatePresence initial={false}>
         {open ? (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
-            <div className="flex flex-col gap-1 border-t px-4 pt-2 pb-3">
+            <RowDetail>
               {!installed ? (
-                <div className="flex flex-col gap-2 pt-2">
-                  <Well>
-                    <Icon icon={icons.terminal} className="size-4 text-muted-foreground" />
-                    <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-1 font-mono text-xs">{info.install}</code>
-                    <CopyButton text={info.install} label="Copy command" />
-                  </Well>
-                  <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking} className="self-end">
+                <Row label="Install" description={<code className="block overflow-x-auto whitespace-nowrap font-mono">{info.install}</code>}>
+                  <CopyButton text={info.install} label="Copy command" />
+                  <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
                     {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
                     {rechecking ? "Checking…" : "Check again"}
                   </Button>
-                </div>
+                </Row>
               ) : (
                 <>
-                  <div className="flex flex-col divide-y">
-                    <AnimatePresence initial={false}>
-                      {mine.map((i) => (
-                        <motion.div key={i.config.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}>
-                          <InstanceRow i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  </div>
+                  <AnimatePresence initial={false}>
+                    {mine.map((i) => (
+                      <motion.div key={i.config.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}>
+                        <InstanceRow i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                   <AddAccount cli={cli} onChanged={onChanged} />
                 </>
               )}
-            </div>
+            </RowDetail>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -395,11 +390,11 @@ export function AgentsSection() {
     setRechecking(false);
   };
   return (
-    <Loader state={state} errorTitle="Couldn’t check the coding agents" skeleton={<SkeletonCard rows={4} />}>
+    <Loader state={state} errorTitle="Couldn’t check the coding agents" skeleton={<SkeletonCard rows={4} className="rounded-card" />}>
       {({ clis, instances }) => {
         const others = clis.filter((c) => !c.supported || !(CLI_IDS as readonly string[]).includes(c.id));
         return (
-          <div className="divide-y overflow-hidden rounded-card border bg-card" data-testid="agents-list">
+          <SettingsGroup data-testid="agents-list">
             {CLI_IDS.map((cli) => (
               <CliRow
                 key={cli}
@@ -414,14 +409,14 @@ export function AgentsSection() {
               />
             ))}
             {others.map((c) => (
-              <div key={c.id} className="flex h-12 items-center gap-3 px-4 text-muted-foreground">
-                <ProviderIcon id={c.id} className="size-4.5 shrink-0 opacity-60" />
+              <div key={c.id} className="flex h-10 items-center gap-3 px-3 text-muted-foreground">
+                <ProviderIcon id={c.id} className="size-4 shrink-0 opacity-60" />
                 <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
                 <span className="shrink-0 text-subtle-foreground text-xs">Not supported yet</span>
                 <span aria-hidden className="size-4 shrink-0" />
               </div>
             ))}
-          </div>
+          </SettingsGroup>
         );
       }}
     </Loader>

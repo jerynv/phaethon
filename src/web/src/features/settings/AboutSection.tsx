@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type InstallEvent, type UpdateView } from "@/app/api";
-import { BrandMark } from "@/components/brand-mark";
 import { ClampedText, FieldError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -10,7 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { Channel, invoke } from "@/lib/core";
 import { relativeTime } from "@/lib/platform";
-import { CardBlock, Row, SettingsCard, Status, useLoad } from "./ui";
+import { Row, SettingsGroup, Status, useLoad } from "./ui";
 
 /** Settings › About: the version, updates (check, then install with a progress bar), and licenses. */
 
@@ -19,7 +18,7 @@ const mb = (n: number) => (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1);
 function Progress({ ev }: { ev: InstallEvent }) {
   const pct = ev.kind === "downloading" && ev.total ? Math.min(100, (ev.received / ev.total) * 100) : null;
   return (
-    <div className="flex flex-col gap-1.5 pb-1">
+    <div className="flex flex-col gap-1.5 px-3 pb-2.5">
       <div className="relative h-0.5 overflow-hidden rounded-full bg-muted">
         {pct !== null ? (
           <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${pct}%` }} />
@@ -147,21 +146,19 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
 
 function VersionSkeleton() {
   const show = useDelayed(true);
-  if (!show) return <span className="h-4" />;
-  return <Skeleton className="h-3 w-24" />;
+  if (!show) return <span className="inline-block h-3 w-16" />;
+  return <Skeleton className="inline-block h-3 w-16" />;
 }
 
 export function AboutSection() {
   const info = useLoad(() => api.coreInfo());
   const update = useLoad(() => api.updateState());
   return (
-    <SettingsCard
-      icon={<BrandMark />}
-      title="Phaethon"
-      description={
-        <span className="tabular-nums">
+    <SettingsGroup>
+      <Row label="Version">
+        <span className="text-muted-foreground text-sm tabular-nums">
           {info.data ? (
-            `Version ${info.data.version}`
+            info.data.version
           ) : info.error ? (
             <span className="inline-flex items-center gap-1.5">
               Couldn’t read the version.
@@ -173,36 +170,33 @@ export function AboutSection() {
             <VersionSkeleton />
           )}
         </span>
-      }
-    >
-      <CardBlock>
-        {update.data ? (
-          <UpdateRow initial={update.data} />
-        ) : update.error ? (
-          <Row label="Updates" description={<Status tone="error">Couldn’t read the update status</Status>} below={<FieldError>{update.error}</FieldError>}>
-            <Button size="xs" variant="outline" onClick={() => void update.reload()} disabled={update.loading} className="min-w-20">
-              {update.loading ? <Spinner /> : <Icon icon={icons.retry} />}
-              Retry
-            </Button>
-          </Row>
-        ) : (
-          <UpdateSkeleton />
-        )}
-        <Row label="License" description="MIT">
-          <a href="https://github.com/jerynv/phaethon/blob/main/LICENSE" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-primary text-sm hover:underline">
-            View on GitHub
-            <Icon icon={icons.external} className="size-3.5" />
-          </a>
+      </Row>
+      {update.data ? (
+        <UpdateRow initial={update.data} />
+      ) : update.error ? (
+        <Row label="Updates" description={<Status tone="error">Couldn’t read the update status</Status>} below={<FieldError>{update.error}</FieldError>}>
+          <Button size="xs" variant="outline" onClick={() => void update.reload()} disabled={update.loading} className="min-w-20">
+            {update.loading ? <Spinner /> : <Icon icon={icons.retry} />}
+            Retry
+          </Button>
         </Row>
-      </CardBlock>
-    </SettingsCard>
+      ) : (
+        <UpdateSkeleton />
+      )}
+      <Row label="License">
+        <a href="https://github.com/jerynv/phaethon/blob/main/LICENSE" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-primary text-sm hover:underline">
+          MIT
+          <Icon icon={icons.external} className="size-3.5" />
+        </a>
+      </Row>
+    </SettingsGroup>
   );
 }
 
 function UpdateSkeleton() {
   const show = useDelayed(true);
   return (
-    <div className="flex min-h-11 items-center gap-4 py-1 motion-safe:animate-skeleton" aria-hidden>
+    <div className="flex min-h-10 items-center gap-4 px-3 py-2 motion-safe:animate-skeleton" aria-hidden>
       {show ? (
         <>
           <div className="flex flex-1 flex-col gap-1.5">

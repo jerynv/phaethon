@@ -211,7 +211,7 @@ export function SettingsView() {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" }}
-          className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-4 px-8 pt-12 pb-16"
+          className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-6 px-8 pt-8 pb-12"
         >
           <CrumbContext value={setCrumb}>
             <Body section={section} />

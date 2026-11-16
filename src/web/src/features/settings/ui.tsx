@@ -1,4 +1,5 @@
-import { createContext, type DependencyList, type ReactNode, use, useCallback, useEffect, useRef, useState } from "react";
+import type * as React from "react";
+import { createContext, type DependencyList, type ReactNode, use, useCallback, useEffect, useId, useRef, useState } from "react";
 import { SkeletonCard } from "@/components/skeletons";
 import { SurfaceError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -14,117 +15,57 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
 
 /**
  * The pieces every settings section is built from (docs/UI-REBUILD.md ›
- * Settings, after e0fb and 9e25):
+ * Settings): plain and dense, like a desktop app's preferences.
  *
- * - `SettingsCard`: a white card with a 40 px tile, a title and one line,
- *   then the card's fields. `CardBlock` starts a new part of a card under a
- *   full-width hairline ("Triggers" / "Skills").
- * - `Field`: a label above its control, with a hint or an error under it.
- * - `Row`: a setting as a sentence, title and description on the left and
- *   the control on the right (a switch row is `ToggleRow` from the
- *   primitives).
+ * - `SettingsGroup`: a small label above one bordered list of rows, with an
+ *   optional action on the label's right and a footnote under the list. A
+ *   section page is a stack of these; it's the only container in settings.
+ * - `Row`: one setting on one line, label on the left and its control on the
+ *   right; a short description under the label only when it says something
+ *   the user can't see. `SwitchRow` is a `Row` whose control is a switch.
+ * - `Field`: a row whose control needs the full width (a key, an address):
+ *   the label above it, a hint or an error under it.
  * - `useLoad` + `Loader`: a skeleton after 150 ms, a surface error with Retry.
  */
 
-/** The 40 px square that leads a card: a hairline, a soft shadow, the glyph or brand mark inside. */
-
-export function SettingsCard({
-  icon,
-  title,
-  description,
-  action,
-  media,
-  children,
-  className,
-  id,
-}: {
-  icon?: ReactNode;
-  title: ReactNode;
-  description?: ReactNode;
-  /** Top-right: a menu, a badge, an add button. */
-  action?: ReactNode;
-  /** Art across the top. */
-  media?: ReactNode;
-  children?: ReactNode;
-  className?: string;
-  id?: string;
-}) {
-  return (
-    <section id={id} data-slot="settings-card" className={cn("overflow-hidden rounded-card border bg-card", className)}>
-      {media ? <div className="[--art-veil:var(--art-veil-strip)]">{media}</div> : null}
-      <header className="flex items-center gap-4 p-5">
-        {icon ? <span aria-hidden className="flex size-6 shrink-0 items-center justify-center text-foreground [&_svg]:size-5 [&_img]:size-6">{icon}</span> : null}
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="truncate font-medium text-base tracking-title">{title}</h2>
-          {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}
-        </div>
-        {action ? <div className="flex shrink-0 items-center gap-1.5">{action}</div> : null}
-      </header>
-      {children ? <div className="flex flex-col gap-5 px-5 pb-5">{children}</div> : null}
-    </section>
-  );
-}
-
-/** A new part of a card under a full-width hairline, with an optional heading and action. */
-export function CardBlock({ title, action, children, className }: { title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <div className={cn("-mx-5 flex flex-col gap-2 border-t px-5 pt-5", className)}>
-      {title || action ? (
-        <div className="flex min-h-7 items-center justify-between gap-3">
-          {title ? <h3 className="font-medium text-sm">{title}</h3> : <span />}
-          {action}
-        </div>
-      ) : null}
-      {children}
-    </div>
-  );
-}
-
-/** A label above its control; a hint or an error below. */
-export function Field({
+export function SettingsGroup({
   label,
-  htmlFor,
-  aside,
-  hint,
+  action,
+  note,
   children,
   className,
+  listClassName,
+  ...rest
 }: {
-  label: ReactNode;
-  htmlFor?: string;
-  /** Right of the label: a link ("Get a key"), a status. */
-  aside?: ReactNode;
-  hint?: ReactNode;
+  label?: ReactNode;
+  /** Right of the label: an add button. */
+  action?: ReactNode;
+  /** Under the list: one line the rows can't say themselves. */
+  note?: ReactNode;
   children: ReactNode;
   className?: string;
-}) {
-  const Label = htmlFor ? "label" : "div";
+  listClassName?: string;
+} & Omit<React.ComponentProps<"section">, "children">) {
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
-      <div className="flex min-h-5 items-center justify-between gap-3">
-        <Label htmlFor={htmlFor} className="text-muted-foreground text-sm">
-          {label}
-        </Label>
-        {aside}
+    <section data-slot="settings-group" className={cn("flex flex-col gap-1.5", className)} {...rest}>
+      {label || action ? (
+        <div className="flex min-h-6 items-end justify-between gap-3 px-1">
+          {label ? <h2 className="min-w-0 truncate text-subtle-foreground text-xs">{label}</h2> : <span />}
+          {action ? <div className="flex shrink-0 items-center gap-1">{action}</div> : null}
+        </div>
+      ) : null}
+      <div data-slot="settings-list" className={cn("divide-y overflow-hidden rounded-card border bg-card", listClassName)}>
+        {children}
       </div>
-      {children}
-      {hint ? <div className="text-muted-foreground text-xs">{hint}</div> : null}
-    </div>
-  );
-}
-
-/** A section's lead-in above its cards: one muted line and an action on the right. */
-export function Intro({ children, action }: { children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="flex min-h-8 items-center justify-between gap-3 px-1">
-      <p className="min-w-0 text-muted-foreground text-sm">{children}</p>
-      {action}
-    </div>
+      {note ? <p className="px-1 text-muted-foreground text-xs">{note}</p> : null}
+    </section>
   );
 }
 
@@ -146,13 +87,13 @@ export function Row({
 }) {
   const Label = htmlFor ? "label" : "div";
   return (
-    <div data-slot="settings-row" className={cn("flex min-h-11 flex-col justify-center gap-2 py-1", className)}>
+    <div data-slot="settings-row" className={cn("flex min-h-10 flex-col justify-center gap-1.5 px-3 py-2", className)}>
       <div className="flex min-w-0 items-center gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <Label htmlFor={htmlFor} className="text-foreground text-sm">
+          <Label htmlFor={htmlFor} className={cn("text-foreground text-sm", htmlFor && "cursor-pointer")}>
             {label}
           </Label>
-          {description ? <div className="min-w-0 text-muted-foreground text-sm">{description}</div> : null}
+          {description ? <div className="min-w-0 text-muted-foreground text-xs">{description}</div> : null}
         </div>
         {children ? <div className="flex shrink-0 items-center gap-1.5">{children}</div> : null}
       </div>
@@ -161,15 +102,82 @@ export function Row({
   );
 }
 
-/** A grey inset line holding a value and its actions: a saved key, a path, a command. */
-export function Well({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("flex min-h-9 min-w-0 items-center gap-2 rounded-lg border bg-well py-1 pr-1 pl-3 text-sm", className)}>{children}</div>;
+/** A setting that is on or off; the label flips it too. `pending` holds the new state while it saves. */
+export function SwitchRow({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+  pending,
+  below,
+}: {
+  label: ReactNode;
+  description?: ReactNode;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  pending?: boolean;
+  below?: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <Row label={label} description={description} htmlFor={id} below={below} className={cn(disabled && "opacity-60")}>
+      <Switch id={id} checked={checked} onCheckedChange={(v) => onCheckedChange(v)} disabled={disabled || pending} aria-busy={pending || undefined} />
+    </Row>
+  );
+}
+
+/** A label above a full-width control; a hint or an error below. */
+export function Field({
+  label,
+  htmlFor,
+  aside,
+  hint,
+  children,
+  className,
+}: {
+  label: ReactNode;
+  htmlFor?: string;
+  /** Right of the label: a link ("Get a key"), a status. */
+  aside?: ReactNode;
+  hint?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  const Label = htmlFor ? "label" : "div";
+  return (
+    <div data-slot="settings-field" className={cn("flex flex-col gap-1.5 px-3 py-2.5", className)}>
+      <div className="flex min-h-5 items-center justify-between gap-3">
+        <Label htmlFor={htmlFor} className="text-foreground text-sm">
+          {label}
+        </Label>
+        {aside}
+      </div>
+      {children}
+      {hint ? <div className="text-muted-foreground text-xs">{hint}</div> : null}
+    </div>
+  );
+}
+
+/** A list's only line when it has nothing in it. */
+export function EmptyRow({ children }: { children: ReactNode }) {
+  return <p className="flex min-h-10 items-center px-3 py-2 text-muted-foreground text-sm">{children}</p>;
+}
+
+/** What a list row opens: its own rows under a hairline, indented to the row's name. */
+export function RowDetail({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("border-t", className)}>
+      <div className="ml-7 divide-y">{children}</div>
+    </div>
+  );
 }
 
 /** A status dot and its word. */
 export function Status({ tone, children, className }: { tone: "ready" | "warning" | "neutral" | "error" | "busy"; children: ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground text-sm", className)}>
+    <span className={cn("inline-flex min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground text-xs", className)}>
       <span
         className={cn(
           "size-1.5 shrink-0 rounded-full",
@@ -245,7 +253,7 @@ export function Loader<T>({
   const waiting = useDelayed(state.loading && state.data === undefined);
   if (state.data !== undefined) return <>{children(state.data)}</>;
   if (state.error) return <SurfaceError title={errorTitle} message={state.error} onRetry={() => void state.reload()} />;
-  if (waiting) return <>{skeleton ?? <SkeletonCard rows={3} />}</>;
+  if (waiting) return <>{skeleton ?? <SkeletonCard rows={3} className="rounded-card" />}</>;
   return null;
 }
 

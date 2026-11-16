@@ -4,9 +4,9 @@ import { Icon, type IconData } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { type ThemeChoice, useTheme } from "@/app/theme";
 import { cn } from "@/lib/utils";
-import { SettingsCard } from "./ui";
+import { SettingsGroup } from "./ui";
 
-/** Settings › Appearance: System, Light or Dark as three cards, each with a small wireframe of the app. */
+/** Settings › Appearance: System, Light or Dark as three choices, each with a small wireframe of the app. */
 
 const CHOICES: { id: ThemeChoice; label: string; icon: IconData }[] = [
   { id: "system", label: "System", icon: icons.system },
@@ -57,8 +57,8 @@ export function AppearanceSection() {
     void set(c).catch((e) => setError(`Couldn’t save the theme: ${cleanMessage(e)}`));
   };
   return (
-    <SettingsCard icon={<Icon icon={icons.appearance} />} title="Theme">
-      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-3">
+    <SettingsGroup label="Theme">
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-2 p-3">
         {CHOICES.map((c) => {
           const on = c.id === choice;
           return (
@@ -69,14 +69,14 @@ export function AppearanceSection() {
               aria-checked={on}
               onClick={() => pick(c.id)}
               className={cn(
-                "group flex flex-col overflow-hidden rounded-xl border bg-card text-left outline-none transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring",
+                "group flex flex-col overflow-hidden rounded-lg border bg-card text-left outline-none transition-[border-color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ring",
                 on ? "border-primary ring-1 ring-primary" : "hover:border-border-strong",
               )}
             >
-              <span className="block aspect-[16/10] w-full overflow-hidden">
+              <span className="block aspect-[16/9] w-full overflow-hidden">
                 <Preview choice={c.id} />
               </span>
-              <span className="flex h-9 items-center gap-2 border-t bg-well px-3 text-sm">
+              <span className="flex h-8 items-center gap-2 border-t bg-well px-2.5 text-sm">
                 <Icon icon={c.icon} className={cn("size-4", on ? "text-primary" : "text-muted-foreground")} />
                 <span className="flex-1">{c.label}</span>
                 <span
@@ -90,7 +90,11 @@ export function AppearanceSection() {
           );
         })}
       </div>
-      <FieldError>{error}</FieldError>
-    </SettingsCard>
+      {error ? (
+        <div className="px-3 py-2">
+          <FieldError>{error}</FieldError>
+        </div>
+      ) : null}
+    </SettingsGroup>
   );
 }

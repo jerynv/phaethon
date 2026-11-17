@@ -91,6 +91,12 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
       for (const e of list.getEntries()) long += e.duration;
     });
     obs.observe({ type: "longtask", buffered: false });
+    // The page's own work per frame (script, style, layout), which a busy runner's slow vsync doesn't inflate.
+    let slow = 0;
+    const loaf = new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) if (e.duration >= 66) slow++;
+    });
+    loaf.observe({ type: "long-animation-frame", buffered: false });
     let last = performance.now();
     const steps = Math.ceil((el.scrollHeight - el.clientHeight) / 140);
     for (let i = 0; i < steps; i++) {
@@ -102,14 +108,17 @@ test("1500 conversations: windowed rows, pages on scroll, a filter, and search t
       maxRows = Math.max(maxRows, el.querySelectorAll("[data-slot=sidebar-spaces] li[data-item-key]").length);
     }
     obs.disconnect();
+    loaf.disconnect();
     frames.sort((a, b) => a - b);
-    return { steps, median: frames[Math.floor(frames.length / 2)]!, p95: frames[Math.floor(frames.length * 0.95)]!, max: frames[frames.length - 1]!, maxRows, long };
+    return { steps, median: frames[Math.floor(frames.length / 2)]!, p95: frames[Math.floor(frames.length * 0.95)]!, max: frames[frames.length - 1]!, maxRows, long, slow, measured: PerformanceObserver.supportedEntryTypes.includes("long-animation-frame") };
   });
   console.log(`sidebar scroll: ${JSON.stringify(perf)}`);
   expect(perf.steps).toBeGreaterThan(30);
   expect(perf.maxRows).toBeLessThan(80);
-  // No frame near a long task: under four frames at the 95th percentile, and hardly any main-thread task over 50 ms.
-  expect(perf.p95).toBeLessThan(66);
+  // Each frame's own work stays under four frames' worth for 95% of frames, and hardly any main-thread task runs over 50 ms.
+  // (Measured inside the page, not as time between frames: a busy CI runner stretches those with no work from the app.)
+  expect(perf.measured).toBe(true);
+  expect(perf.slow).toBeLessThanOrEqual(Math.floor(perf.steps * 0.05));
   expect(perf.long).toBeLessThan(150);
 
   // The filter narrows to matching titles, loaded or not (the core finds the rest), and Escape clears it.

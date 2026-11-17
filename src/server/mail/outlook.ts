@@ -75,6 +75,7 @@ function run() {
   for (const a of args.to) msg.toRecipients.push(O.ToRecipient({ emailAddress: { address: a } }));
   for (const a of args.cc) msg.ccRecipients.push(O.CcRecipient({ emailAddress: { address: a } }));
   for (const a of args.bcc) msg.bccRecipients.push(O.BccRecipient({ emailAddress: { address: a } }));
+  for (const f of args.attachments || []) O.make({ new: "attachment", at: msg, withProperties: { file: Path(f) } });
   if (args.open) { msg.open(); O.activate(); return JSON.stringify({ ok: "opened" }); }
   msg.send();
   return JSON.stringify({ ok: "sent" });
@@ -127,3 +128,6 @@ export class Outlook implements MailConnector {
     await this.#script(COMPOSE, { ...m, open: true, account: m.account.replace(/^outlook:/, "") });
   }
 }
+
+/** The JXA scripts, for tests that compile and inspect them. */
+export const _scripts = { COMPOSE };

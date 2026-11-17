@@ -212,6 +212,30 @@ describe("mail through the agent loop", () => {
     await call("mail_draft_stop", { space: "work", id: sending.id });
     expect(readDraft("work", sending.id).status).toBe("draft");
   });
+
+  it("attaches files from the space to a draft, and refuses one outside it", async () => {
+    fs.mkdirSync(path.join(spaceDir("work"), "files"), { recursive: true });
+    fs.writeFileSync(path.join(spaceDir("work"), "files", "essay.pdf"), "%PDF-1.4");
+    const srv = await anthropic([
+      anthropicReply(
+        [
+          { type: "tool_use", id: "toolu_a", name: "draft_email", input: { to: ["dana@corp.com"], subject: "My essay", body: "Hi Dana,\n\nAttached.\n\nJeryn", attachments: ["files/essay.pdf"], intent: "draft" } },
+          { type: "tool_use", id: "toolu_b", name: "draft_email", input: { to: ["dana@corp.com"], subject: "Hosts", body: "…", attachments: ["/etc/hosts"], intent: "draft" } },
+        ],
+        "tool_use",
+      ),
+      anthropicReply([{ type: "text", text: "Ready." }]),
+    ]);
+    const events = await send("email Dana my essay");
+    const offered = (srv.seen[0]!.json.tools as { name: string; input_schema: { properties: Record<string, unknown> } }[]).find((t) => t.name === "draft_email")!;
+    expect(offered.input_schema.properties).toHaveProperty("attachments");
+    const drafts = events.filter((e) => e.kind === "record" && e.record.kind === "mailDraft").map((e) => (e as { record: { id: string } }).record);
+    expect(drafts).toHaveLength(1);
+    expect(readDraft("work", drafts[0]!.id).attachments).toEqual([{ path: "files/essay.pdf", name: "essay.pdf", size: 8 }]);
+    const results = JSON.stringify(srv.seen[1]!.json.messages.at(-1));
+    expect(results).toContain("Attached: essay.pdf.");
+    expect(results).toContain("must be a path inside this space");
+  });
 });
 
 describe("unattended runs", () => {

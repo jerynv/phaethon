@@ -7,6 +7,7 @@ import { Refusal, messageOf } from "../rpc/registry.ts";
 import { log } from "../log.ts";
 import { notifyLater } from "../background/background.ts";
 import { findByEmail, logInteraction, newPerson } from "../people/people.ts";
+import { resolveLocal } from "../agent/tools/files.ts";
 import { accountsFor, appOf, connector, readMailSettings, resolveAccount, senderFor } from "./access.ts";
 import { addressOf, isAddress, nameOf, type MailProvider, type Outgoing } from "./types.ts";
 
@@ -53,13 +54,21 @@ export type Draft = {
   missing?: string[];
   /** Names known for recipients' addresses ("Name <address>", or a name the card asked an address for). */
   names?: Record<string, string>;
+  /** Files from the space that go with it, found again (and checked again) when it's sent. */
+  attachments?: DraftAttachment[];
 };
 
-export type DraftFields = { account?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; body: string; replyTo?: string };
+/** `path` is the file's place in the space, as the agent's file tools name it ("files/essay.pdf"). */
+export type DraftAttachment = { path: string; name: string; size: number };
+
+export type DraftFields = { account?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; body: string; replyTo?: string; attachments?: string[] };
 
 const isDraftId = (id: unknown): id is string => typeof id === "string" && /^d_[a-z0-9]{6,32}$/.test(id);
 const MAX_BODY = 100_000;
 const MAX_RECIPIENTS = 50;
+const MAX_ATTACHMENTS = 10;
+/** Together; most mail services refuse a message much over 20–25 MB. */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 /** The undo window when the person presses Send themselves. */
 export const MANUAL_DELAY_SECONDS = 5;
 
@@ -138,6 +147,31 @@ function checkFields(f: DraftFields): { to: string[]; cc: string[]; bcc: string[
   return { to, cc, bcc, subject, body };
 }
 
+/** Where an attached file really is: inside the space, under the same rules as the agent's file tools (course access, excluded folders, never Phaethon's own state). */
+function attachmentFile(space: string, rel: string): string {
+  return resolveLocal({ space, root: spaceDir(space), once: [] }, rel, true).real;
+}
+
+/**
+ * Files to attach, by their place in the space: each must be a file there,
+ * at most ten of them and 20 MB together. Repeats are dropped.
+ */
+export function checkAttachments(space: string, paths: readonly string[] | undefined): DraftAttachment[] {
+  const wanted = [...new Set((paths ?? []).map((p) => String(p).trim().replace(/^\.\//, "")).filter(Boolean))];
+  if (wanted.length > MAX_ATTACHMENTS) throw new Refusal(`Attach at most ${MAX_ATTACHMENTS} files to one email.`);
+  const out: DraftAttachment[] = [];
+  let total = 0;
+  for (const rel of wanted) {
+    const real = attachmentFile(space, rel);
+    const st = fs.statSync(real);
+    if (!st.isFile()) throw new Refusal(`"${rel}" is a folder; attach the files in it instead`);
+    total += st.size;
+    if (total > MAX_ATTACHMENT_BYTES) throw new Refusal(`Those files are over ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB together, more than most mail services accept. Attach fewer, or share a link instead`);
+    out.push({ path: rel, name: path.basename(real), size: st.size });
+  }
+  return out;
+}
+
 // ---- Timers -------------------------------------------------------------------
 
 const timers = new Map<string, NodeJS.Timeout>();
@@ -178,8 +212,16 @@ async function fire(space: string, id: string): Promise<void> {
   await deliver(d);
 }
 
+/** What the mail app is given. Attachments are found again now: a file moved or deleted since stops the send with its name. */
 function outgoing(d: Draft): Outgoing {
-  return { account: d.account, sender: d.sender, to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body, ...(d.replyTo ? { replyTo: d.replyTo } : {}) };
+  const attachments = (d.attachments ?? []).map((a) => {
+    try {
+      return attachmentFile(d.space, a.path);
+    } catch {
+      throw new Refusal(`“${a.name}” isn’t at ${a.path} anymore, so the message wasn’t sent. Remove it or put it back, then send again.`);
+    }
+  });
+  return { account: d.account, sender: d.sender, to: d.to, cc: d.cc, bcc: d.bcc, subject: d.subject, body: d.body, ...(d.replyTo ? { replyTo: d.replyTo } : {}), ...(attachments.length ? { attachments } : {}) };
 }
 
 async function deliver(d: Draft): Promise<Draft> {
@@ -248,6 +290,7 @@ async function recordSent(d: Draft): Promise<string[]> {
 export function createDraft(space: string, f: DraftFields, opts: { intent: "draft" | "send"; thread?: string; unattended?: boolean; key?: string; missing?: string[]; names?: Record<string, string> }): Draft {
   const account = resolveAccount(space, f.account);
   const fields = checkFields(f);
+  const attachments = checkAttachments(space, f.attachments);
   const settings = readMailSettings();
   const now = Date.now();
   const id = `d_${now.toString(36)}${randomBytes(4).toString("hex")}`;
@@ -271,6 +314,7 @@ export function createDraft(space: string, f: DraftFields, opts: { intent: "draf
     ...(opts.intent === "send" && !canSend
       ? { note: opts.unattended ? "Written while you were away, so it waits for you." : !addressed ? "Add who it goes to, then send." : "Sending is turned off in Settings › Mail." }
       : {}),
+    ...(attachments.length ? { attachments } : {}),
     ...(opts.key ? { key: opts.key } : {}),
     ...(opts.missing?.length ? { missing: opts.missing } : {}),
     ...(() => {
@@ -296,6 +340,7 @@ export function updateDraft(space: string, id: string, patch: Partial<DraftField
     account = { key: a.key, name: a.name, provider: a.provider, sender: senderFor(a) };
   }
   const fields = checkFields({ to: patch.to ?? d.to, cc: patch.cc ?? d.cc, bcc: patch.bcc ?? d.bcc, subject: patch.subject ?? d.subject, body: patch.body ?? d.body, replyTo: d.replyTo });
+  const attachments = patch.attachments === undefined ? d.attachments : checkAttachments(space, patch.attachments);
   const missing = fields.to.length ? [] : (d.missing ?? []);
   // An address typed while a name was missing is that person's address.
   const names = { ...(d.names ?? {}), ...namesIn([patch.to, patch.cc, patch.bcc]) };
@@ -303,7 +348,7 @@ export function updateDraft(space: string, id: string, patch: Partial<DraftField
   (d.missing ?? []).forEach((n, i) => {
     if (fresh[i]) names[fresh[i]!] = n;
   });
-  return save({ ...d, ...fields, ...(missing.length ? { missing } : { missing: undefined }), ...(Object.keys(names).length ? { names } : {}), account: account.key, accountName: account.name, provider: account.provider, sender: account.sender, status: "draft", sendAt: undefined, note: d.status === "scheduled" ? "Paused while you edit." : fields.to.length && d.note?.startsWith("Add who") ? undefined : d.note, error: undefined, review: d.review && patch.body === undefined && patch.subject === undefined ? d.review : undefined });
+  return save({ ...d, ...fields, attachments: attachments?.length ? attachments : undefined, ...(missing.length ? { missing } : { missing: undefined }), ...(Object.keys(names).length ? { names } : {}), account: account.key, accountName: account.name, provider: account.provider, sender: account.sender, status: "draft", sendAt: undefined, note: d.status === "scheduled" ? "Paused while you edit." : fields.to.length && d.note?.startsWith("Add who") ? undefined : d.note, error: undefined, review: d.review && patch.body === undefined && patch.subject === undefined ? d.review : undefined });
 }
 
 /** Starts (or restarts) the countdown; 0 sends now. */

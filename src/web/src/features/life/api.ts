@@ -146,8 +146,11 @@ export type Draft = {
   review?: { tone: string; summary: string; issues: string[]; at: number };
   key?: string;
   missing?: string[];
+  /** Files from the space that go with it; `path` opens in the viewer. */
+  attachments?: { path: string; name: string; size: number }[];
 };
-export type DraftPatch = Partial<Pick<Draft, "account" | "to" | "cc" | "bcc" | "subject" | "body">>;
+/** `attachments`: the files to keep or add, by their place in the space. */
+export type DraftPatch = Partial<Pick<Draft, "account" | "to" | "cc" | "bcc" | "subject" | "body">> & { attachments?: string[] };
 
 export const getDraft = (space: string, id: string) => invoke<Draft>("mail_draft_get", { space, id });
 export const draftForBlock = (space: string, code: string, thread?: string) => invoke<Draft>("mail_draft_for_block", { space, code, ...(thread ? { thread } : {}) });

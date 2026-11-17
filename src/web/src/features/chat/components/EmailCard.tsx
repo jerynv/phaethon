@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useNav, useOpenThread } from "@/app/store";
-import { copyText } from "@/components/file-chip";
+import { copyText, FileChip } from "@/components/file-chip";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { MailMark, appLabel } from "@/components/mail-mark";
@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { errorText } from "@/lib/core";
 import { fetchQuery, getQueryData, setQueryData } from "@/lib/query";
 import { cn } from "@/lib/utils";
+import { formatBytes } from "@/features/chat/lib/attachments";
 import {
   accountsFor,
   discardDraft,
@@ -401,6 +402,36 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
             <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-anywhere">{d.body}</p>
           )}
         </div>
+
+        {d.attachments?.length ? (
+          <div role="group" aria-label="Attachments" className="flex min-w-0 flex-wrap items-center gap-1.5 border-t px-4 py-2.5" data-slot="draft-attachments">
+            {d.attachments.map((a) => (
+              <span key={a.path} className="inline-flex max-w-full min-w-0 items-center gap-0.5">
+                {/* Opens in Phaethon's viewer, so what goes out can be checked first. */}
+                <FileChip
+                  space={space}
+                  path={a.path}
+                  label={
+                    <>
+                      {a.name} <span className="text-subtle-foreground">{formatBytes(a.size)}</span>
+                    </>
+                  }
+                />
+                {editable ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${a.name}`}
+                    disabled={!!busy}
+                    onClick={() => void save({ attachments: d.attachments!.filter((x) => x.path !== a.path).map((x) => x.path) })}
+                    className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                  >
+                    <Icon icon={icons.close} className="size-3.5" />
+                  </button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         {d.review && editable ? (
           <div className="flex flex-col gap-1 border-t px-4 py-2.5 text-xs" data-slot="draft-review">

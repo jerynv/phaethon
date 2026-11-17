@@ -36,6 +36,8 @@ describe("email blocks", () => {
   it("parses leniently and refuses an empty one", () => {
     expect(parseEmailBlock('{"to":"a@b.co, c@d.co","subject":"S","body":"B"}').to).toEqual(["a@b.co", "c@d.co"]);
     expect(() => parseEmailBlock("{}")).toThrow(/no subject or message/);
+    expect(parseEmailBlock('{"to":["a@b.co"],"subject":"S","body":"B","attachments":["files/essay.pdf"]}').attachments).toEqual(["files/essay.pdf"]);
+    expect(parseEmailBlock('{"to":["a@b.co"],"subject":"S","body":"B"}').attachments).toEqual([]);
     expect(() => parseEmailBlock("not json")).toThrow(/valid JSON/);
   });
 

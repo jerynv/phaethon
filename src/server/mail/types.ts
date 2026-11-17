@@ -59,6 +59,8 @@ export type Outgoing = {
   body: string;
   /** A message to reply to (its ref). */
   replyTo?: string;
+  /** Files to attach, as absolute paths already checked to be inside the space. */
+  attachments?: string[];
 };
 
 export interface MailConnector {

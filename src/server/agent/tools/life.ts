@@ -178,6 +178,11 @@ export const DRAFT_EMAIL: ToolDef = {
       subject: { type: "string" },
       body: { type: "string", description: "Plain text, with the greeting and sign-off." },
       reply_to: { type: "string", description: "The ref of a message (from mail_search) this replies to." },
+      attachments: {
+        type: "array",
+        items: { type: "string" },
+        description: "Files in this space to attach, by path as the file tools show them (\"files/essay.pdf\"); at most 10, 20 MB together. The user sees each on the card and can open or remove it before it sends.",
+      },
       intent: { type: "string", enum: ["draft", "send"] },
     },
     required: ["to", "subject", "body", "intent"],
@@ -587,16 +592,18 @@ function draftEmail(ctx: LifeCtx, i: Record<string, unknown>): LifeResult {
       subject: typeof i.subject === "string" ? i.subject : "",
       body: typeof i.body === "string" ? i.body : "",
       ...(typeof i.reply_to === "string" && i.reply_to ? { replyTo: i.reply_to } : {}),
+      attachments: strs(i.attachments),
     },
     { intent, thread: ctx.thread, unattended: ctx.unattended },
   );
   const delay = readMailSettings().sendDelaySeconds;
+  const attached = d.attachments?.length ? ` Attached: ${d.attachments.map((a) => a.name).join(", ")}.` : "";
   const text =
-    d.status === "scheduled"
+    (d.status === "scheduled"
       ? `Shown to the user as a card from ${d.sender}. It will send in ${delay} seconds unless they stop or edit it. Don't say it was sent; say it's on its way unless they stop it.`
       : intent === "send"
         ? `Shown to the user as a draft from ${d.sender}; ${d.note ?? "it won't send by itself"}. Tell them it's ready for them to send.`
-        : `Shown to the user as a draft from ${d.sender}. It won't be sent unless they send it.`;
+        : `Shown to the user as a draft from ${d.sender}. It won't be sent unless they send it.`) + attached;
   return { text, records: [{ kind: "mailDraft", id: d.id, intent }] };
 }
 

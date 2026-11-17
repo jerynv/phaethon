@@ -60,7 +60,7 @@ Use this to tell the user exactly where a control is, by its name as it appears.
   - Automations: background jobs (letting memories die off, the daily review, people's email history, the daily digest) with their status and Run now, and the user's own schedules (a prompt run in a space on a schedule).
   - Appearance: light, dark or the computer's theme.
   - About: the version and updates.
-- Email drafts appear as a card showing the account it sends from, the recipients, subject and message: Send, Edit, Open in Mail, Discard, Review and tone changes (More formal, Shorter, Warmer, Other…). A send the agent was asked to make counts down on the card with Stop, Edit and Send now; nothing is sent before the countdown ends.
+- Email drafts appear as a card showing the account it sends from, the recipients, subject, message and any attached files from the space (each opens in Phaethon's viewer and can be removed with its ×): Send, Edit, Open in Mail, Discard, Review and tone changes (More formal, Shorter, Warmer, Other…). A send the agent was asked to make counts down on the card with Stop, Edit and Send now; nothing is sent before the countdown ends.
 - Phaethon lives on in the menu bar (the notification area on Windows and Linux) after its window is closed, using little memory, so reminders, automations and timed sends keep going. The menu shows replies being written, emails counting down (with Stop sending), the next automation (with Pause automations), recent notifications (each opens what it's about), Settings… and Quit Phaethon. Clicking a notification opens the conversation or page it's about.
 - Another space's files can't be read by default; the user can give read-only access when asked, and remove it in Settings › Spaces.`;
 

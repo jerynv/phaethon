@@ -3,11 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { tempHome } from "../../../tests/harness.ts";
-import { ensureVault } from "../core/vault.ts";
+import { ensureVault, spaceDir } from "../core/vault.ts";
 import { newPerson, readPerson } from "../people/people.ts";
 import { setConnectors, updateMailSettings, resolveAccount } from "./access.ts";
 import { FakeMail } from "./fake.ts";
-import { createDraft, disarmAll, discardDraft, readDraft, recoverOutbox, sendDraft, stopSend, updateDraft } from "./outbox.ts";
+import { checkAttachments, createDraft, disarmAll, discardDraft, MAX_ATTACHMENT_BYTES, openDraft, readDraft, recoverOutbox, sendDraft, stopSend, updateDraft } from "./outbox.ts";
 import { decodeRef, encodeRef, guessProvider, pickMailbox } from "./types.ts";
 
 const env = tempHome();
@@ -147,5 +147,78 @@ describe("types", () => {
     expect(guessProvider("unknown", ["me@iu.edu"], "Exchange")).toBe("exchange");
     expect(guessProvider("imap", ["me@iu.edu"], "IU")).toBe("school");
     expect(guessProvider("unknown", ["me@corp.com"], "Exchange")).toBe("exchange");
+  });
+});
+
+describe("attachments", () => {
+  const put = (rel: string, content: string | number) => {
+    const full = path.join(spaceDir("work"), rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    if (typeof content === "number") {
+      fs.writeFileSync(full, "");
+      fs.truncateSync(full, content);
+    } else fs.writeFileSync(full, content);
+    return full;
+  };
+
+  it("attaches files from the space, and sends them with the message from where they are now", async () => {
+    const essay = put("files/essay.pdf", "%PDF-1.4 essay");
+    put("files/notes.md", "# notes");
+    const d = createDraft("work", { ...fields, attachments: ["files/essay.pdf", "./files/notes.md", "files/essay.pdf"] }, { intent: "draft" });
+    expect(d.attachments).toEqual([
+      { path: "files/essay.pdf", name: "essay.pdf", size: 14 },
+      { path: "files/notes.md", name: "notes.md", size: 7 },
+    ]);
+    await sendDraft("work", d.id, 0);
+    expect(readDraft("work", d.id).status).toBe("sent");
+    expect(sent().at(-1).attachments).toEqual([fs.realpathSync(essay), fs.realpathSync(path.join(spaceDir("work"), "files/notes.md"))]);
+  });
+
+  it("goes into the compose window too, and a message without files has no attachments field", async () => {
+    put("files/essay.pdf", "%PDF");
+    const opened = () => fs.readFileSync(`${file}.opened.jsonl`, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    await openDraft("work", createDraft("work", { ...fields, attachments: ["files/essay.pdf"] }, { intent: "draft" }).id);
+    expect(opened().at(-1).attachments).toHaveLength(1);
+    await sendDraft("work", createDraft("work", fields, { intent: "draft" }).id, 0);
+    expect(sent().at(-1)).not.toHaveProperty("attachments");
+    fs.rmSync(`${file}.opened.jsonl`, { force: true });
+  });
+
+  it("refuses anything that isn't a file inside this space", () => {
+    put("files/a.txt", "a");
+    fs.mkdirSync(path.join(spaceDir("school"), "files"), { recursive: true });
+    fs.writeFileSync(path.join(spaceDir("school"), "files", "grades.txt"), "A");
+    expect(() => checkAttachments("work", ["/etc/hosts"])).toThrow(/must be a path inside this space/);
+    expect(() => checkAttachments("work", ["../school/files/grades.txt"])).toThrow(/must be a path inside this space/);
+    expect(() => checkAttachments("work", [".phaethon/outbox"])).toThrow(/Phaethon's own state/);
+    expect(() => checkAttachments("work", ["files/missing.pdf"])).toThrow(/does not exist/);
+    expect(() => checkAttachments("work", ["files"])).toThrow(/is a folder; attach the files in it instead/);
+    if (process.platform !== "win32") {
+      fs.symlinkSync(path.join(spaceDir("school"), "files", "grades.txt"), path.join(spaceDir("work"), "files", "sneaky.txt"));
+      expect(() => checkAttachments("work", ["files/sneaky.txt"])).toThrow(/leads outside this space/);
+    }
+    // A refused attachment makes no draft.
+    expect(() => createDraft("work", { ...fields, attachments: ["/etc/hosts"] }, { intent: "send" })).toThrow();
+  });
+
+  it("keeps to ten files and 20 MB together", () => {
+    const many = Array.from({ length: 11 }, (_, n) => (put(`files/many/${n}.txt`, "x"), `files/many/${n}.txt`));
+    expect(() => checkAttachments("work", many)).toThrow("Attach at most 10 files to one email.");
+    put("files/big-1.bin", MAX_ATTACHMENT_BYTES - 10);
+    put("files/big-2.bin", 20);
+    expect(checkAttachments("work", ["files/big-1.bin"])).toHaveLength(1);
+    expect(() => checkAttachments("work", ["files/big-1.bin", "files/big-2.bin"])).toThrow(/over 20 MB together/);
+  });
+
+  it("can be removed on the card, and a file gone by the time it sends stops the send with its name", async () => {
+    put("files/essay.pdf", "%PDF");
+    put("files/slides.pdf", "%PDF");
+    const d = createDraft("work", { ...fields, attachments: ["files/essay.pdf", "files/slides.pdf"] }, { intent: "draft" });
+    expect(updateDraft("work", d.id, { attachments: ["files/slides.pdf"] }).attachments?.map((a) => a.name)).toEqual(["slides.pdf"]);
+    expect(updateDraft("work", d.id, { subject: "Still here" }).attachments?.map((a) => a.name)).toEqual(["slides.pdf"]);
+    fs.rmSync(path.join(spaceDir("work"), "files", "slides.pdf"));
+    const failed = await sendDraft("work", d.id, 0);
+    expect(failed).toMatchObject({ status: "failed", error: "“slides.pdf” isn’t at files/slides.pdf anymore, so the message wasn’t sent. Remove it or put it back, then send again." });
+    expect(updateDraft("work", d.id, { attachments: [] }).attachments).toBeUndefined();
   });
 });

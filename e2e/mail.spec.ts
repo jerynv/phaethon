@@ -209,3 +209,49 @@ test("the countdown's digits are monospaced, so the line never shifts as they ti
   expect(seen.size).toBeGreaterThan(2);
   expect(new Set([...seen.values()].map((w) => w.toFixed(2))).size).toBe(1);
 });
+
+test("an email can carry files from the space: each opens in the viewer before it goes, and can be taken off", async ({ page }) => {
+  let mailFile = "";
+  core = await startCore({
+    setup: (home) => {
+      mailFile = setupMail(home);
+      const files = path.join(home, "Phaethon", "default", "spaces", "school", "files");
+      fs.mkdirSync(files, { recursive: true });
+      fs.writeFileSync(path.join(files, "essay-notes.md"), "# Essay notes\n\nThe thesis, in one line.\n");
+      fs.writeFileSync(path.join(files, "draft-old.txt"), "an older draft");
+    },
+    env: { PHAETHON_FAKE_MAIL: "__HOME__/fake-mail.json" },
+    script: {
+      claude: true,
+      steps: [
+        { tools: [{ name: "draft_email", id: "d1", input: { to: ["dana@iu.edu"], subject: "My essay notes", body: "Hi Dana,\n\nNotes attached.\n\nJeryn", attachments: ["files/essay-notes.md", "files/draft-old.txt"], intent: "draft" } }] },
+        { text: "It's ready for you to send." },
+      ],
+    },
+  });
+  await core.open(page);
+  await composer(page).fill("Email Dana my essay notes");
+  await page.keyboard.press("Enter");
+
+  const card = page.locator('[data-slot="mail-draft"]');
+  const attached = card.getByRole("group", { name: "Attachments" });
+  await expect(attached.getByRole("button", { name: /^essay-notes\.md/ })).toBeVisible();
+  await expect(attached.getByRole("button", { name: /^draft-old\.txt/ })).toBeVisible();
+
+  // The file opens in Phaethon's own viewer.
+  await attached.getByRole("button", { name: /^essay-notes\.md/ }).click();
+  await expect(page.getByRole("heading", { name: "Essay notes" })).toBeVisible();
+  await expect(page.getByText("The thesis, in one line.")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Taken off the card, it's off the email.
+  await attached.getByRole("button", { name: "Remove draft-old.txt" }).click();
+  await expect(attached.getByRole("button", { name: /^draft-old\.txt/ })).toHaveCount(0);
+
+  await card.getByRole("button", { name: "Send to Dana Reyes" }).click();
+  await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/^Sent/, { timeout: 15_000 });
+  const sent = sentLines(mailFile);
+  expect(sent).toHaveLength(1);
+  expect(sent[0].attachments).toHaveLength(1);
+  expect(sent[0].attachments[0]).toMatch(/essay-notes\.md$/);
+});

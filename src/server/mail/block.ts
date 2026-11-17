@@ -16,7 +16,7 @@ import { addressOf, isAddress } from "./types.ts";
 
 export const EMAIL_FENCE = "phaethon-email";
 
-export type EmailBlock = { to: string[]; cc: string[]; bcc: string[]; subject: string; body: string; account?: string; send: boolean };
+export type EmailBlock = { to: string[]; cc: string[]; bcc: string[]; subject: string; body: string; account?: string; send: boolean; attachments: string[] };
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v : typeof v === "string" ? v.split(/[,;]/) : []).filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean).slice(0, 50);
 
@@ -32,7 +32,7 @@ export function parseEmailBlock(code: string): EmailBlock {
   const body = typeof o.body === "string" ? o.body : "";
   const subject = typeof o.subject === "string" ? o.subject : "";
   if (!body.trim() && !subject.trim()) throw new Refusal("That email block has no subject or message.");
-  return { to: list(o.to), cc: list(o.cc), bcc: list(o.bcc), subject, body, ...(typeof o.account === "string" && o.account.trim() ? { account: o.account.trim() } : {}), send: o.send === true };
+  return { to: list(o.to), cc: list(o.cc), bcc: list(o.bcc), subject, body, ...(typeof o.account === "string" && o.account.trim() ? { account: o.account.trim() } : {}), send: o.send === true, attachments: list(o.attachments).slice(0, 10) };
 }
 
 export const blockKey = (code: string) => createHash("sha256").update(code.trim()).digest("hex").slice(0, 24);
@@ -69,7 +69,7 @@ export function draftForBlock(space: string, code: string, thread?: string): Dra
   if (!account && accountsFor(space).length > 1) account = accountsFor(space)[0]!.key;
   return createDraft(
     space,
-    { ...(account ? { account } : {}), to: to.addresses, cc: cc.addresses, bcc: bcc.addresses, subject: b.subject, body: b.body },
+    { ...(account ? { account } : {}), to: to.addresses, cc: cc.addresses, bcc: bcc.addresses, subject: b.subject, body: b.body, attachments: b.attachments },
     { intent: b.send && readMailSettings().allowSend ? "send" : "draft", key, missing: [...to.missing, ...cc.missing, ...bcc.missing], names, ...(thread ? { thread } : {}) },
   );
 }
@@ -93,5 +93,5 @@ When the user asks you to write, draft, reply to or send an email, don't write t
 {"to": ["Dana Reyes"], "cc": [], "subject": "Running late", "body": "Hi Dana,\\n\\nI'm running about 15 minutes late.\\n\\nThanks,\\nJeryn", "send": false}
 \`\`\`
 
-The app shows it as an email card the user can edit, with Send and Open in Mail. ${where} "to" takes addresses or names; a name is looked up in the user's people, and the card asks for any address it can't find, so never invent one. The body is plain text with the greeting and sign-off, in the user's voice. Set "send": true only when the user asked you to send it: the card then counts down and sends unless they stop it, so say it will go unless they stop it, never that it was sent. One block per email.`;
+The app shows it as an email card the user can edit, with Send and Open in Mail. ${where} "to" takes addresses or names; a name is looked up in the user's people, and the card asks for any address it can't find, so never invent one. The body is plain text with the greeting and sign-off, in the user's voice. To attach files from this space, add "attachments" with their paths as the file tools show them (["files/essay.pdf"]; at most 10, 20 MB together); the user can open each one on the card before it sends. Set "send": true only when the user asked you to send it: the card then counts down and sends unless they stop it, so say it will go unless they stop it, never that it was sent. One block per email.`;
 }

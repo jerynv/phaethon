@@ -93,7 +93,11 @@ function run() {
   if (!args.replyTo) for (const a of args.to) msg.toRecipients.push(Mail.Recipient({ address: a }));
   for (const a of args.cc) msg.ccRecipients.push(Mail.CcRecipient({ address: a }));
   for (const a of args.bcc) msg.bccRecipients.push(Mail.BccRecipient({ address: a }));
+  // After the text is set (setting content afterwards would drop them); Mail needs a moment to take files before it sends.
+  const files = args.attachments || [];
+  for (const f of files) msg.content.attachments.push(Mail.Attachment({ fileName: Path(f) }));
   if (args.open) { msg.visible = true; Mail.activate(); return JSON.stringify({ ok: "opened" }); }
+  if (files.length) delay(Math.min(5, 1 + files.length * 0.5));
   const sent = msg.send();
   return JSON.stringify({ ok: sent === false ? "notSent" : "sent" });
 }`;

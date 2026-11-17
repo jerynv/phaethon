@@ -59,8 +59,13 @@ test("the view tabs stay in one place on every page, and the chat survives a pag
 test("settings opens inside the shell and Esc goes back", async ({ page }) => {
   core = await startCore();
   await core.open(page);
-  await page.keyboard.press("ControlOrMeta+Comma");
-  await expect(page.getByRole("navigation", { name: "Settings" })).toBeVisible();
+  // On a slow runner the first press can land before the shell's shortcuts listen. ⌘, toggles, so press again only
+  // while Settings is still closed (the title slot shows as soon as it opens, before its page has loaded).
+  await expect(composer(page)).toBeVisible();
+  await expect(async () => {
+    if (await page.locator('[data-slot="settings-title"]').isHidden()) await page.keyboard.press("ControlOrMeta+Comma");
+    await expect(page.getByRole("navigation", { name: "Settings" })).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 20_000 });
   await expect(page.getByRole("navigation", { name: "Spaces and conversations" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("navigation", { name: "Settings" })).toHaveCount(0);

@@ -23,10 +23,10 @@ body {
   }
 }
 
-/* The hero shader (src/shader.ts): how far dark mode darkens it towards the page. */
+/* The hero shader (src/shader.ts): how far it fades towards the page, so the headline over it stays easy to read. */
 :root {
-  --shader-veil: 0;
+  --shader-veil: 0.45;
 }
 .dark {
-  --shader-veil: 0.42;
+  --shader-veil: 0.7;
 }

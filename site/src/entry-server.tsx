@@ -1,7 +1,10 @@
 import { renderToString } from "react-dom/server";
 import type { Snapshot } from "./github.ts";
-import { Page } from "./page.tsx";
+import type { Route } from "./layout.tsx";
+import { App } from "./routes.tsx";
 
-export function render(snap: Snapshot): string {
-  return renderToString(<Page built={snap} />);
+export { routeFor, routes } from "./routes.tsx";
+
+export function render(route: Route, snap: Snapshot): string {
+  return renderToString(<App route={route} built={snap} />);
 }

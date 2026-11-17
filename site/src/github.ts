@@ -1,8 +1,8 @@
 /**
- * Everything the page says about the project's state, read from GitHub's
- * public API: the latest published release and its installers, the last CI
- * run on main, the last commit, stars and open issues. The build reads it once
- * (vite.config.ts) so the page is right with no script; the browser reads it
+ * Everything the site says about the project's state, read from GitHub's
+ * public API: recent releases (the latest with its installers), recent CI runs
+ * and commits on main, stars and open issues. The build reads it once
+ * (vite.config.ts) so every page is right with no script; the browser reads it
  * again on load so it never goes stale between deploys.
  */
 
@@ -15,7 +15,7 @@ export type Platform = "mac" | "windows" | "linux";
 
 export type Installer = {
   platform: Platform;
-  /** "Apple silicon", "Intel", "Installer", "AppImage", "Debian / Ubuntu". */
+  /** "Apple silicon", "Intel", "Windows 10, 11", "Debian, Ubuntu", "Any distribution". */
   label: string;
   /** ".dmg", ".exe", … */
   kind: string;
@@ -24,10 +24,22 @@ export type Installer = {
   size: number;
 };
 
+export type BuildState = "passing" | "failing" | "running";
+export type Release = { version: string; url: string; published: string; prerelease: boolean };
+export type Run = { state: BuildState; url: string; at: string; sha: string };
+export type Commit = { sha: string; message: string; url: string; at: string };
+
 export type Snapshot = {
-  release: { version: string; url: string; published: string; installers: Installer[] } | null;
-  build: { state: "passing" | "failing" | "running"; url: string; at: string } | null;
-  commit: { sha: string; message: string; url: string; at: string } | null;
+  /** The latest full release, with its installers. */
+  release: (Release & { installers: Installer[] }) | null;
+  /** Newest first, prereleases included. */
+  releases: Release[];
+  /** CI on main, newest first; `build` is the newest. */
+  runs: Run[];
+  build: Run | null;
+  /** Commits on main, newest first; `commit` is the newest. */
+  commits: Commit[];
+  commit: Commit | null;
   stars: number | null;
   issues: number | null;
   fetched: string;
@@ -38,8 +50,8 @@ type Asset = { name: string; browser_download_url: string; size: number };
 const kinds: { test: RegExp; platform: Platform; label: string; kind: string; arch: string }[] = [
   { test: /-mac-arm64\.dmg$/, platform: "mac", label: "Apple silicon", kind: ".dmg", arch: "arm64" },
   { test: /-mac-x64\.dmg$/, platform: "mac", label: "Intel", kind: ".dmg", arch: "x64" },
-  { test: /-win-x64\.exe$/, platform: "windows", label: "Installer", kind: ".exe", arch: "x64" },
-  { test: /\.AppImage$/, platform: "linux", label: "AppImage", kind: ".AppImage", arch: "x86_64" },
+  { test: /-win-x64\.exe$/, platform: "windows", label: "Windows 10, 11", kind: ".exe", arch: "x64" },
+  { test: /\.AppImage$/, platform: "linux", label: "Any distribution", kind: ".AppImage", arch: "x86_64" },
   { test: /\.deb$/, platform: "linux", label: "Debian, Ubuntu", kind: ".deb", arch: "amd64" },
 ];
 
@@ -62,31 +74,34 @@ async function get<T>(path: string): Promise<T | null> {
 }
 
 export async function snapshot(): Promise<Snapshot> {
-  type Release = { tag_name: string; html_url: string; published_at: string; assets: Asset[] };
-  type Runs = { workflow_runs: { status: string; conclusion: string | null; html_url: string; updated_at: string }[] };
-  type Commit = { sha: string; html_url: string; commit: { message: string; committer: { date: string } } };
+  type ApiRelease = { tag_name: string; html_url: string; published_at: string; draft: boolean; prerelease: boolean; assets: Asset[] };
+  type Runs = { workflow_runs: { status: string; conclusion: string | null; html_url: string; updated_at: string; head_sha: string }[] };
+  type ApiCommit = { sha: string; html_url: string; commit: { message: string; committer: { date: string } } };
   type Repo = { stargazers_count: number };
   type Search = { total_count: number };
-  const [release, runs, commit, repo, issues] = await Promise.all([
-    get<Release>("/releases/latest"),
-    get<Runs>("/actions/workflows/ci.yml/runs?branch=main&per_page=6"),
-    get<Commit>("/commits/main"),
+  const [releases, runs, commits, repo, issues] = await Promise.all([
+    get<ApiRelease[]>("/releases?per_page=8"),
+    get<Runs>("/actions/workflows/ci.yml/runs?branch=main&per_page=20"),
+    get<ApiCommit[]>("/commits?sha=main&per_page=10"),
     get<Repo>(""),
     // The repo's open_issues_count counts pull requests too.
     get<Search>(`https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${REPO} type:issue state:open`)}&per_page=1`),
   ]);
+  const published = (releases ?? []).filter((r) => !r.draft);
+  const latest = published.find((r) => !r.prerelease);
+  const release = (r: ApiRelease): Release => ({ version: r.tag_name.replace(/^v/, ""), url: r.html_url, published: r.published_at, prerelease: r.prerelease });
   // A cancelled run was superseded by a newer push; it says nothing about the build.
-  const run = runs?.workflow_runs.find((r) => r.conclusion !== "cancelled" && r.conclusion !== "skipped");
+  const ran = (runs?.workflow_runs ?? [])
+    .filter((r) => r.conclusion !== "cancelled" && r.conclusion !== "skipped")
+    .map((r): Run => ({ state: r.status !== "completed" ? "running" : r.conclusion === "success" ? "passing" : "failing", url: r.html_url, at: r.updated_at, sha: r.head_sha }));
+  const changes = (commits ?? []).map((c): Commit => ({ sha: c.sha, message: c.commit.message.split("\n")[0]!, url: c.html_url, at: c.commit.committer.date }));
   return {
-    release: release
-      ? { version: release.tag_name.replace(/^v/, ""), url: release.html_url, published: release.published_at, installers: installers(release.assets) }
-      : null,
-    build: run
-      ? { state: run.status !== "completed" ? "running" : run.conclusion === "success" ? "passing" : "failing", url: run.html_url, at: run.updated_at }
-      : null,
-    commit: commit
-      ? { sha: commit.sha.slice(0, 7), message: commit.commit.message.split("\n")[0]!, url: commit.html_url, at: commit.commit.committer.date }
-      : null,
+    release: latest ? { ...release(latest), installers: installers(latest.assets) } : null,
+    releases: published.map(release),
+    runs: ran,
+    build: ran[0] ?? null,
+    commits: changes,
+    commit: changes[0] ?? null,
     stars: repo?.stargazers_count ?? null,
     issues: issues?.total_count ?? null,
     fetched: new Date().toISOString(),
@@ -97,7 +112,10 @@ export async function snapshot(): Promise<Snapshot> {
 export function merge(base: Snapshot, live: Snapshot): Snapshot {
   return {
     release: live.release ?? base.release,
+    releases: live.releases.length ? live.releases : base.releases,
+    runs: live.runs.length ? live.runs : base.runs,
     build: live.build ?? base.build,
+    commits: live.commits.length ? live.commits : base.commits,
     commit: live.commit ?? base.commit,
     stars: live.stars ?? base.stars,
     issues: live.issues ?? base.issues,

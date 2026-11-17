@@ -1,5 +1,5 @@
-// The social preview (site/public/og.jpg): the live page's stage art and app
-// shot, recomposed at 1200x630 with the headline. Serve a build first:
+// The social preview (site/public/og.jpg): the live page's hero art and app
+// window, recomposed at 1200x630 with the headline. Serve a build first:
 //   pnpm site:build && pnpm exec vite preview --config site/vite.config.ts --port 5181
 //   node site/scripts/og.mjs [url]   (then: sips -s format jpeg site/public/og.png --out site/public/og.jpg)
 import path from "node:path";
@@ -14,14 +14,16 @@ await page.evaluate(() => {
   const art = document.querySelector("[data-stage]");
   const card = document.createElement("div");
   card.style.cssText = "position:fixed;inset:0;z-index:999;background:var(--background)";
-  art.style.cssText = "position:absolute;inset:0;aspect-ratio:auto;border-radius:0;border:0";
-  art.querySelector("[data-window]").style.cssText = "left:46%;top:16%;width:86%";
+  art.style.cssText = "position:absolute;inset:0;height:auto;mask-image:none;z-index:auto";
+  const win = document.querySelector("[data-window]");
+  win.style.cssText = "position:absolute;left:46%;top:16%;width:86%;margin:0;border-radius:12px 0 0 0";
+  art.append(win);
   const text = document.createElement("div");
   text.style.cssText = "position:absolute;z-index:2;left:64px;top:64px;bottom:64px;width:440px;display:flex;flex-direction:column;justify-content:space-between";
   const mark = document.querySelector("header a").cloneNode(true);
   mark.style.cssText = "zoom:1.7;align-self:flex-start";
   const h = document.createElement("h1");
-  h.textContent = "A desktop workspace for the AI you choose.";
+  h.textContent = "The AI you choose, in a workspace you own.";
   h.style.cssText = "margin:0;font-size:54px;font-weight:500;line-height:1.04;letter-spacing:-0.04em;color:var(--foreground);text-wrap:balance";
   const foot = document.createElement("p");
   foot.textContent = "Open source · macOS, Windows, Linux · phaethon.app";

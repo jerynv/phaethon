@@ -1,7 +1,9 @@
 import { hydrateRoot } from "react-dom/client";
 import type { Snapshot } from "./github.ts";
-import { Page } from "./page.tsx";
+import type { Route } from "./layout.tsx";
+import { App } from "./routes.tsx";
 import "./site.css";
 
+const root = document.getElementById("root")!;
 const built = JSON.parse(document.getElementById("snapshot")?.textContent || "null") as Snapshot;
-hydrateRoot(document.getElementById("root")!, <Page built={built} />);
+hydrateRoot(root, <App route={root.dataset.route as Route} built={built} />);

@@ -71,7 +71,8 @@ describe("sign-in", () => {
     expect(await call("agent_cli_sign_in_cancel", { cli: "gemini" })).toBe(true);
     expect(await pending).toEqual({ status: "cancelled", message: "Signing in to Gemini CLI was stopped." });
     expect(Date.now() - started).toBeLessThan(3000);
-    expect(alive(Number(log.text(`pid-${n}`)))).toBe(false);
+    // Gone within a moment: a killed process is a zombie until it's reaped, and macOS answers kill(0) for one.
+    expect(await waitFor(() => !alive(Number(log.text(`pid-${n}`))), 2000)).toBe(true);
     expect(cancel(runKey("gemini"))).toBe(false);
     delete process.env.FAKE_SIGN_IN;
   });

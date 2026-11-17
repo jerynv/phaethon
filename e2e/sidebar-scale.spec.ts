@@ -27,11 +27,13 @@ function seed(home: string, space: string, name: string, count: number, tag: str
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(state, "space.json"), JSON.stringify({ name }));
   const now = Date.now();
+  // The newest is a few minutes old but always today, so "Today" exists even in a run just after midnight.
+  const newest = Math.max(now - 5 * 60_000, new Date(now).setHours(0, 0, 0, 0));
   for (let i = 0; i < count; i++) {
     const file = path.join(dir, `${1_600_000_000_000 + i}.json`);
     // A unique word per conversation, so search and the filter can find exactly one.
     fs.writeFileSync(file, JSON.stringify([{ role: "user", content: [{ type: "text", text: `${tag} chat ${i} ${tag}q${i}x` }] }]));
-    const t = new Date(now - 5 * 60_000 - (count - 1 - i) * 7 * HOUR);
+    const t = new Date(newest - (count - 1 - i) * 7 * HOUR);
     fs.utimesSync(file, t, t);
   }
 }

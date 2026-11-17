@@ -182,8 +182,8 @@ export function commandLine(input: unknown, base: string, granted: Granted): str
     if (line) break;
   }
   if (!line) return undefined;
-  // Paths in the space, or in a granted folder, read as they do there.
-  const shown = line.replace(/(^|[\s'"=(])(\/[^\s'"`;|&<>()]+)/g, (_, lead: string, p: string) => lead + shownPath(p, base, granted).shown);
+  // Paths in the space, or in a granted folder, read as they do there: `/vault/…`, or `C:\vault\…` on Windows.
+  const shown = line.replace(/(^|[\s'"=(])(\/[^\s'"`;|&<>()]+|[A-Za-z]:[\\/][^\s'"`;|&<>()]+)/g, (_, lead: string, p: string) => lead + shownPath(p, base, granted).shown);
   return commandText(shown) || undefined;
 }
 

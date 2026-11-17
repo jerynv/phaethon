@@ -53,8 +53,12 @@ export function isCoursesPath(rel: string): boolean {
 
 export function resolveLocal(ctx: ToolCtx, rel: string, mustExist: boolean): { real: string; course: boolean } {
   if (isCoursesPath(rel)) return { real: resolveCoursePath(ctx.space, cleanRel(rel).join("/"), mustExist), course: true };
+  const ex = exclusionsFor(ctx.space, ctx.root);
+  // By name first, so an excluded folder is refused in any case before anything says whether a path in it exists
+  // (on a case-sensitive disk "Private/diary.md" doesn't, but it still names the excluded "private").
+  guard(ex, rel, cleanRel(rel));
   const real = resolveIn(ctx.root, rel, mustExist);
-  guard(exclusionsFor(ctx.space, ctx.root), rel, cleanRel(rel), real);
+  guard(ex, rel, cleanRel(rel), real);
   return { real, course: false };
 }
 

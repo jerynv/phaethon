@@ -1,0 +1,2 @@
+# The LaTeX house style is written beside documents as is: LF everywhere.
+*.sty text eol=lf

@@ -5,7 +5,7 @@
  * included (the UI and tests match on them).
  */
 
-import HOUSE_STYLE from "./phaethon.sty";
+import HOUSE_STYLE_FILE from "./phaethon.sty";
 
 /** The longest source compiled or saved, in UTF-8 bytes. */
 export const MAX_SOURCE = 512 * 1024;
@@ -26,7 +26,8 @@ export const MAX_CACHED = 200;
 
 /** The house style's file name, written beside each document compiled or saved. Not `report`: TeX ships an unrelated report.sty. */
 export const STYLE_FILE = "phaethon.sty";
-export { HOUSE_STYLE };
+/** The house style's text, with LF line ends even where git checked the .sty out with CRLF (Windows). */
+export const HOUSE_STYLE: string = HOUSE_STYLE_FILE.replace(/\r\n/g, "\n");
 
 /** Whether `source` loads the house style. */
 export function usesHouseStyle(source: string): boolean {

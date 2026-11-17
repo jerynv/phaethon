@@ -193,6 +193,7 @@ const CLI_CATALOG: Record<string, { models: unknown[]; defaultModel?: string; no
   gemini: { models: [{ id: "auto", name: "Auto" }, { id: "pro", name: "Pro" }, { id: "flash", name: "Flash" }, { id: "flash-lite", name: "Flash-Lite" }] },
 };
 
+const installs = new Map<string, () => void>();
 const signIns = new Map<string, () => void>();
 
 function instanceViews() {
@@ -404,6 +405,26 @@ const handlers: Record<string, (args: Args) => unknown> = {
     if (cancelled) return { status: "cancelled", message: i.config.cli === "claude" ? "Sign-in stopped." : `Signing in to ${i.config.name} was stopped.` };
     Object.assign(i.state, { loggedIn: true, account: i.config.cli === "claude" ? "student.work@example.com" : null, plan: i.config.cli === "claude" ? "Pro" : null });
     return { status: "signedIn", message: i.config.cli === "claude" ? "Signed in to Claude Code." : `Signed in to ${i.config.name} for this Phaethon folder.` };
+  },
+  async agent_cli_install({ cli }) {
+    const id = String(cli) as keyof typeof installed;
+    if (id !== "claude" && id !== "codex") return { status: "unsupported", message: "Gemini CLI has no installer Phaethon can run. Install it with npm, then check again." };
+    const name = id === "claude" ? "Claude Code" : "Codex";
+    if (installed[id]) return { status: "installed", message: `${name} is already installed.` };
+    const cancelled = await new Promise<boolean>((resolve) => {
+      installs.set(id, () => resolve(true));
+      setTimeout(() => resolve(false), 2500);
+    });
+    installs.delete(id);
+    if (cancelled) return { status: "cancelled", message: `Installing ${name} was stopped.` };
+    installed[id] = true;
+    for (const i of instances) if (i.config.cli === id) i.state.installed = true;
+    return { status: "installed", message: `${name} is installed.` };
+  },
+  async agent_cli_install_cancel({ cli }) {
+    const stop = installs.get(String(cli));
+    stop?.();
+    return !!stop;
   },
   async agent_instance_sign_in_cancel({ id }) {
     const stop = signIns.get(String(id));

@@ -17,7 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleRow } from "@/components/ui/toggle-row";
-import { cancelInstanceSignIn, CLI_IDS, type CliStatus, cliStatuses, listInstances, signInInstance } from "@/features/settings/agents/api";
+import { cancelInstanceSignIn, CLI_IDS, CLI_INFO, type CliId, type CliStatus, cliStatuses, listInstances, signInInstance } from "@/features/settings/agents/api";
+import { canInstall, useCliInstall } from "@/features/settings/agents/install";
 import { currentInstance } from "@/features/settings/agents/logic";
 import { type Backend, checkApiKey, getSettings, type ProviderId, type ProviderInfo, setApiKey, setBackend, setProvider, type Settings } from "@/features/settings/providers/api";
 import { canSaveUnchecked, checkAndSave, isSaved, type KeyOutcome, outcomeText } from "@/features/settings/providers/logic";
@@ -411,12 +412,13 @@ function AgentList({ chosen, onUse }: { chosen: string | null; onUse: (backend: 
 
   const load = () => {
     setError(null);
-    cliStatuses().then(
+    return cliStatuses().then(
       (c) => setClis(c.filter((x) => (CLI_IDS as readonly string[]).includes(x.id) && x.supported)),
       (e) => setError(cleanMessage(e)),
     );
   };
-  useEffect(load, []);
+  useEffect(() => void load(), []);
+  const setup = useCliInstall(() => load());
 
   const use = async (c: CliStatus) => {
     const backend = `${c.id}-cli` as Backend;
@@ -432,13 +434,13 @@ function AgentList({ chosen, onUse }: { chosen: string | null; onUse: (backend: 
     }
   };
 
-  const signIn = async (c: CliStatus) => {
+  const signIn = async (c: CliStatus, sso = false) => {
     setRowError(null);
     try {
       const inst = currentInstance(await listInstances(), c.id);
       if (!inst) throw new Error(`Phaethon couldn’t find ${c.name}.`);
       setSigningIn({ cli: c.id, instance: inst.config.id });
-      const r = await signInInstance(inst.config.id);
+      const r = await signInInstance(inst.config.id, { sso });
       setSigningIn(null);
       if (r.status === "signedIn") {
         setClis((list) => list?.map((x) => (x.id === c.id ? { ...x, loggedIn: true } : x)) ?? null);
@@ -454,19 +456,37 @@ function AgentList({ chosen, onUse }: { chosen: string | null; onUse: (backend: 
 
   if (error) return <RowError message="Couldn’t check for coding agents." onRetry={load} />;
   if (!clis) return showSkeleton ? <SkeletonRows count={3} withIcon /> : <div className="h-24" />;
-  if (!clis.some((c) => c.installed)) return <p className="text-muted-foreground text-xs">None is installed on this computer. Settings › Coding agents shows how to install one.</p>;
 
   return (
     <div className="-mx-1 flex flex-col gap-0.5">
+      {!clis.some((c) => c.installed) ? (
+        <p className="px-1 pb-2 text-muted-foreground text-xs">None is installed yet. Phaethon can install Claude Code or Codex with the installer Anthropic and OpenAI publish, then you sign in with your own Claude or ChatGPT account.</p>
+      ) : null}
       {clis.map((c) => {
         const on = chosen === `${c.id}-cli`;
         const waiting = signingIn?.cli === c.id;
+        const installing = setup.installing === c.id;
+        const error = rowError?.cli === c.id ? rowError.text : setup.error?.cli === c.id ? setup.error.text : null;
         return (
           <div key={c.id}>
             <div className="flex h-9 items-center gap-2.5 rounded-md px-1">
               <ProviderIcon id={c.id} />
-              <span className={cn("min-w-0 flex-1 truncate text-sm", !c.installed && "text-muted-foreground")}>{c.name}</span>
-              {!c.installed ? (
+              <span className={cn("min-w-0 flex-1 truncate text-sm", !c.installed && !installing && "text-muted-foreground")}>{c.name}</span>
+              {installing ? (
+                <>
+                  <span role="status" className="flex items-center gap-1.5 text-muted-foreground text-xs">
+                    <Spinner size="xs" />
+                    Installing…
+                  </span>
+                  <Button size="xs" variant="ghost" onClick={() => setup.cancel(c.id as CliId)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : !c.installed && canInstall(c.id) ? (
+                <Button size="xs" variant="outline" disabled={!!setup.installing} onClick={() => void setup.install(c.id as CliId)} aria-label={`Install ${c.name} from ${CLI_INFO[c.id as CliId].installer}`}>
+                  Install
+                </Button>
+              ) : !c.installed ? (
                 <span className="text-muted-foreground text-xs">Not installed</span>
               ) : on ? (
                 <span className="flex items-center gap-1 text-success-foreground text-xs">
@@ -493,7 +513,12 @@ function AgentList({ chosen, onUse }: { chosen: string | null; onUse: (backend: 
                 </Button>
               )}
             </div>
-            {rowError?.cli === c.id ? <FieldError className="px-1 pb-1.5 pl-7.5">{rowError.text}</FieldError> : null}
+            {c.id === "claude" && c.installed && c.loggedIn === false && !waiting && !on ? (
+              <button type="button" disabled={!!signingIn} onClick={() => void signIn(c, true)} className="mb-1 ml-7.5 text-left text-muted-foreground text-xs underline decoration-border-strong underline-offset-2 hover:text-foreground disabled:opacity-50">
+                My school or work signs me in (SSO)
+              </button>
+            ) : null}
+            {error ? <FieldError className="px-1 pb-1.5 pl-7.5">{error}</FieldError> : null}
           </div>
         );
       })}

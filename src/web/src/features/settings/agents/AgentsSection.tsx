@@ -33,6 +33,7 @@ import {
   signOutInstance,
   type UsageWindow,
 } from "./api";
+import { canInstall, useCliInstall } from "./install";
 import { currentInstance, instanceStatus } from "./logic";
 
 /**
@@ -109,11 +110,11 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
   const status = instanceStatus(i);
   const builtIn = i.config.id === i.config.cli;
 
-  const signIn = async () => {
+  const signIn = async (sso = false) => {
     setSigning(true);
     setError(null);
     try {
-      const r = await signInInstance(i.config.id);
+      const r = await signInInstance(i.config.id, { sso });
       if (r.status === "signedIn") {
         toast.success(r.message);
         await onChanged();
@@ -185,9 +186,16 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
           </Button>
         </>
       ) : canSignIn ? (
-        <Button size="xs" variant={i.loggedIn === false ? "default" : "outline"} onClick={() => void signIn()}>
-          Sign in
-        </Button>
+        <>
+          {i.config.cli === "claude" ? (
+            <Button size="xs" variant="ghost" onClick={() => void signIn(true)} aria-label="Sign in with school or work SSO">
+              Use SSO
+            </Button>
+          ) : null}
+          <Button size="xs" variant={i.loggedIn === false ? "default" : "outline"} onClick={() => void signIn()}>
+            Sign in
+          </Button>
+        </>
       ) : null}
       {many && !current && i.installed ? (
         <Button size="xs" variant="outline" pending={busy === "use"} onClick={() => void act("use")}>
@@ -315,6 +323,7 @@ function CliRow({
   const mine = instances.filter((i) => i.config.cli === cli);
   const cur = currentInstance(instances, cli);
   const st = installed && cur ? instanceStatus(cur) : null;
+  const setup = useCliInstall(() => onChanged());
   return (
     <div data-agent={cli}>
       <button
@@ -342,13 +351,38 @@ function CliRow({
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
             <RowDetail>
               {!installed ? (
-                <Row label="Install" description={<code className="block overflow-x-auto whitespace-nowrap font-mono">{info.install}</code>}>
-                  <CopyButton text={info.install} label="Copy command" />
-                  <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
-                    {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
-                    {rechecking ? "Checking…" : "Check again"}
-                  </Button>
-                </Row>
+                <>
+                  {canInstall(cli) ? (
+                    <Row
+                      label="Install"
+                      description={`With the installer ${info.company} publishes on ${info.installer}. It takes a few minutes.`}
+                      below={setup.error?.cli === cli ? <FieldError>{setup.error.text}</FieldError> : null}
+                    >
+                      {setup.installing === cli ? (
+                        <>
+                          <span role="status" className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
+                            <Spinner size="sm" />
+                            Installing…
+                          </span>
+                          <Button size="xs" variant="ghost" onClick={() => setup.cancel(cli)}>
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button size="xs" disabled={!!setup.installing} onClick={() => void setup.install(cli)} aria-label={`Install ${info.name}`}>
+                          Install
+                        </Button>
+                      )}
+                    </Row>
+                  ) : null}
+                  <Row label={canInstall(cli) ? "Or in a terminal" : "Install"} description={<code className="block overflow-x-auto whitespace-nowrap font-mono">{info.install}</code>}>
+                    <CopyButton text={info.install} label="Copy command" />
+                    <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
+                      {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
+                      {rechecking ? "Checking…" : "Check again"}
+                    </Button>
+                  </Row>
+                </>
               ) : (
                 <>
                   <AnimatePresence initial={false}>

@@ -12,7 +12,8 @@ import { claudeHome, importConversations, importOnce, offered } from "./import.t
 import * as instances from "./instances.ts";
 import { listModels } from "./models.ts";
 import { commonBinDirs, findBinary, findOnPath, isExecutable } from "./process.ts";
-import { claudeSignIn, instanceRunKey, runKey, signIn } from "./signin.ts";
+import { installCli, installRunKey } from "./install.ts";
+import { claudeSignIn, instanceRunKey, runKey, signIn, signInEmail } from "./signin.ts";
 
 /** Bringing in conversations adds new ones only, so it runs beside replies; only one import per space at a time. */
 const importKey = (space: string) => `\0import:${space}`;
@@ -82,11 +83,25 @@ commands({
     return null;
   },
 
-  agent_instance_sign_in: async ({ id }: { id: unknown }) => {
+  /** The CLI's official installer (install.ts); resolves when it finishes or is stopped. */
+  agent_cli_install: ({ cli }: { cli: unknown }) => installCli(cliArg(cli, "Unknown coding agent.")),
+
+  agent_cli_install_cancel: ({ cli }: { cli: unknown }) => (isCliId(cli) ? cancel(installRunKey(cli)) : false),
+
+  /** `sso` (Claude Code only): through the school's or company's own login page; `email` fills it in. */
+  agent_instance_sign_in: async ({ id, sso, email }: { id: unknown; sso?: unknown; email?: unknown }) => {
     const instance = instances.find(String(id));
     const home = instances.requireHome(instance);
     const cli = instances.cliOf(instance.cli);
-    if (cli === "claude") return claudeSignIn(home, instance.id);
+    if (cli === "claude") {
+      let address: string | undefined;
+      try {
+        address = signInEmail(email);
+      } catch (e) {
+        throw new Refusal((e as Error).message);
+      }
+      return claudeSignIn(home, instance.id, { sso: sso === true, email: address });
+    }
     if (!home) throw new Refusal("Assistant home is unavailable.");
     return signIn(cli, home);
   },

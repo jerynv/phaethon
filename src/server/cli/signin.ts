@@ -71,14 +71,34 @@ async function runSignIn(cmd: CliCommand, args: string[], run: Run, consent: str
   return { kind: "exited", said, success: exit.code === 0 };
 }
 
+/**
+ * How a Claude Code sign-in starts. `sso` asks Claude Code for its single
+ * sign-on flow (`--sso`): claude.ai sends the person to their school's or
+ * company's own login page, so it's the school that lets them in, to their
+ * own Claude account. `email`, if given, is filled in on that page.
+ */
+export type ClaudeSignInOptions = { sso?: boolean; email?: string };
+
+/** A plausible email address that can't be read as a flag; anything else is refused. */
+export function signInEmail(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const email = String(value).trim();
+  if (email.length > 254 || !/^[^\s@-][^\s@]*@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("That doesn’t look like an email address.");
+  return email;
+}
+
+export function claudeLoginArgs(opts: ClaudeSignInOptions = {}): string[] {
+  return ["auth", "login", ...(opts.sso ? ["--sso"] : []), ...(opts.email ? ["--email", opts.email] : [])];
+}
+
 /** Claude Code's own browser sign-in (`claude auth login`) with the instance's config folder. */
-export async function claudeSignIn(dir: string | null, instance: string): Promise<SignInOutcome> {
+export async function claudeSignIn(dir: string | null, instance: string, opts: ClaudeSignInOptions = {}): Promise<SignInOutcome> {
   const bin = binary("claude", dir);
   if (!bin) return outcome("missing", CLI.claude.missing);
   const run = claim(instanceRunKey(instance));
   if (!run) return outcome("busy", "Sign-in is already running.");
   try {
-    const ended = await runSignIn(cliCommand("claude", bin, os.tmpdir(), dir), ["auth", "login"], run, null);
+    const ended = await runSignIn(cliCommand("claude", bin, os.tmpdir(), dir), claudeLoginArgs(opts), run, null);
     switch (ended.kind) {
       case "cancelled":
         return outcome("cancelled", "Sign-in stopped.");

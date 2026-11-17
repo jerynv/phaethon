@@ -60,8 +60,16 @@ export const saveInstance = (instance: InstanceConfig) => invoke<InstanceConfig>
 export const selectInstance = (id: string) => invoke<void>("agent_instance_select", { id });
 export const removeInstance = (id: string) => invoke<void>("agent_instance_remove", { id });
 /** Runs the CLI's own sign-in (it opens the browser itself); resolves when the person finishes or cancels. */
-export const signInInstance = (id: string) => invoke<SignInOutcome>("agent_instance_sign_in", { id });
+/**
+ * `sso` (Claude Code): sign in through the school's or company's own login page
+ * (Claude Code's `--sso`), for accounts a school or employer manages.
+ */
+export const signInInstance = (id: string, opts: { sso?: boolean } = {}) => invoke<SignInOutcome>("agent_instance_sign_in", { id, ...opts });
 export const cancelInstanceSignIn = (id: string) => invoke<boolean>("agent_instance_sign_in_cancel", { id });
+export type InstallOutcome = { status: "installed" | "failed" | "cancelled" | "busy" | "unsupported"; message: string };
+/** Runs the maker's own installer (claude.ai/install.sh, chatgpt.com/codex/install.sh); resolves when it finishes or is stopped. */
+export const installCli = (cli: CliId) => invoke<InstallOutcome>("agent_cli_install", { cli });
+export const cancelCliInstall = (cli: CliId) => invoke<boolean>("agent_cli_install_cancel", { cli });
 export const signOutInstance = (id: string) => invoke<void>("agent_instance_sign_out", { id });
 export const instanceUsage = (id: string) => invoke<Usage>("agent_instance_usage", { id });
 export const instanceModels = (id: string) => invoke<CliModels>("agent_instance_models", { id });
@@ -84,17 +92,19 @@ export const chooseWorkspace = () => invoke<WorkspaceChoice | null>("workspace_c
 export const bindWorkspace = (id: string, token: string) => invoke<WorkspaceView>("space_workspace_bind", { id, token });
 export const clearWorkspace = (id: string) => invoke<WorkspaceView>("space_workspace_clear", { id });
 
-/** Each CLI's name, maker, install command and docs. */
-export const CLI_INFO: Readonly<Record<CliId, { name: string; company: string; install: string; docs: string }>> = {
+/** Each CLI's name, maker, install command, the site Phaethon's own install comes from (when it has one), and docs. */
+export const CLI_INFO: Readonly<Record<CliId, { name: string; company: string; install: string; installer?: string; docs: string }>> = {
   claude: {
     name: "Claude Code",
     company: "Anthropic",
+    installer: "claude.ai",
     install: "npm install -g @anthropic-ai/claude-code",
     docs: "https://docs.anthropic.com/en/docs/claude-code/setup",
   },
   codex: {
     name: "Codex",
     company: "OpenAI",
+    installer: "chatgpt.com",
     install: "npm install -g @openai/codex",
     docs: "https://developers.openai.com/codex/cli",
   },

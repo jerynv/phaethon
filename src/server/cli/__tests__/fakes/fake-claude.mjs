@@ -16,7 +16,11 @@ const out = (v) => process.stdout.write(JSON.stringify(v) + "\n");
 
 if (args[0] === "auth") {
   fs.appendFileSync(path.join(dir, "auth.log"), JSON.stringify({ args, configDir: process.env.CLAUDE_CONFIG_DIR ?? null }) + "\n");
-  if (args[1] === "status") out({ loggedIn: process.env.FAKE_LOGGED_IN !== "0", email: "student@example.edu", subscriptionType: "max" });
+  // FAKE_LOGIN_SETS=1: signed out until `auth login` runs, as a fresh install is.
+  const marker = path.join(dir, "signed-in");
+  if (args[1] === "login" && process.env.FAKE_LOGIN_SETS === "1") fs.writeFileSync(marker, "");
+  const loggedIn = process.env.FAKE_LOGIN_SETS === "1" ? fs.existsSync(marker) : process.env.FAKE_LOGGED_IN !== "0";
+  if (args[1] === "status") out({ loggedIn, email: "student@example.edu", subscriptionType: "max" });
   if (args[1] === "login" && process.env.FAKE_LOGIN_HANG === "1") setInterval(() => {}, 1000);
   else process.exit(0);
 } else if (args[0] === "--version") {

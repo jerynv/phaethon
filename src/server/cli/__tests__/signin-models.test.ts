@@ -93,6 +93,14 @@ describe("sign-in", () => {
     await expect(call("agent_instance_sign_in", { id: "nope" })).rejects.toThrow("Assistant instance not found.");
   });
 
+  it("signs in to Claude Code through a school's own login page when asked", async () => {
+    fs.rmSync(path.join(log.dir, "auth.log"), { force: true });
+    expect(await call("agent_instance_sign_in", { id: "claude-work", sso: true, email: "sam@school.edu" })).toEqual({ status: "signedIn", message: "Signed in to Claude Code." });
+    const first = JSON.parse(log.text("auth.log").trim().split("\n")[0]!);
+    expect(first.args).toEqual(["auth", "login", "--sso", "--email", "sam@school.edu"]);
+    await expect(call("agent_instance_sign_in", { id: "claude-work", sso: true, email: "--console" })).rejects.toThrow("That doesn’t look like an email address.");
+  });
+
   it("reads Gemini CLI's words", () => {
     expect(geminiOutcome("x IneligibleTierError y")).toEqual({ status: "notSignedIn", message: INELIGIBLE_MESSAGE });
     expect(geminiOutcome("Error authenticating: FatalAuthenticationError: Error: Token expired\n").message).toBe("Gemini CLI didn’t finish signing in: Error: Token expired");

@@ -37,6 +37,8 @@ export function commonBinDirs(): string[] {
   if (process.platform === "win32") {
     const appData = process.env.APPDATA;
     if (appData) dirs.push(path.join(appData, "npm"));
+    // Codex's own Windows installer (chatgpt.com/codex/install.ps1).
+    if (process.env.LOCALAPPDATA) dirs.push(path.join(process.env.LOCALAPPDATA, "Programs", "OpenAI", "Codex", "bin"));
     if (process.env.ProgramFiles) dirs.push(path.join(process.env.ProgramFiles, "nodejs"));
     return dirs;
   }

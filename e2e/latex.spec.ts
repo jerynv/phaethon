@@ -95,3 +95,44 @@ test("a LaTeX document in a reply compiles to a PDF, and shows again at once", a
   expect(await page.locator("[data-pending]").count()).toBe(0);
   expect(Math.abs((await again.boundingBox())!.height - height)).toBeLessThanOrEqual(2);
 });
+
+/** A figure as the model writes it: a ```tikz fence with one tikzpicture in the house styles, no document around it. */
+const FIGURE = String.raw`\begin{tikzpicture}[node distance=8mm and 10mm]
+\node[box] (input) {$x=a v_1+b v_2$};
+\node[box, right=of input] (coords) {$[x]_P=\begin{pmatrix}a\\b\end{pmatrix}$};
+\node[box, right=of coords] (diag) {$D[x]_P=\begin{pmatrix}3a\\b\end{pmatrix}$};
+\draw[->] (input) -- node[lbl] {$P^{-1}$} (coords);
+\draw[->] (coords) -- node[lbl] {$D$} (diag);
+\node[softbox, below=14mm of coords] (bad) {$C e_1=2e_1,\quad C e_2=e_1+2e_2$};
+\end{tikzpicture}`;
+
+test("a ```tikz figure in a reply is drawn as a picture, not shown as code", async ({ page }) => {
+  test.setTimeout(150_000);
+  const saved = process.env.PATH;
+  // With TeX it must draw; without it (CI) it must still be the figure's own block, which says so, never a plain code block.
+  if (bin && walls) process.env.PATH = `${bin}${path.delimiter}${saved ?? ""}`;
+  try {
+    core = await startCore({ script: { claude: true, steps: [{ text: `Here is the picture.\n\n\`\`\`tikz\n${FIGURE}\n\`\`\`\n\nThe top row is diagonalization.` }] } });
+  } finally {
+    process.env.PATH = saved;
+  }
+  await core.open(page);
+  await page.getByRole("textbox", { name: "Message" }).fill("Show me diagonalization");
+  await page.keyboard.press("Enter");
+  const reply = page.locator('[data-role="assistant"]').last();
+  await expect(reply.getByText("The top row is diagonalization.")).toBeVisible();
+  if (bin && walls) {
+    await expect(reply.locator("canvas").first()).toBeVisible({ timeout: 120_000 });
+    await expect(reply.getByText(/Didn’t compile|No TeX on this computer|Can’t compile here/)).toHaveCount(0);
+    const dark = await reply.locator("canvas").first().evaluate((c: HTMLCanvasElement) => {
+      const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i]! < 128) n++;
+      return n;
+    });
+    expect(dark).toBeGreaterThan(200);
+  } else {
+    // Drawn (TeX found in its usual place) or the figure block saying there's no TeX: either way not a plain code block.
+    await expect(reply.locator("canvas").or(reply.getByText(/No TeX on this computer|Can’t compile here/)).first()).toBeVisible({ timeout: 120_000 });
+  }
+});

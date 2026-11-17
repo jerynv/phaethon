@@ -149,7 +149,8 @@ function makeComponents(ctx: Ctx): Components {
         return <code className="md-inline-code">{children}</code>;
       }
       if (lang === "mermaid") return <MermaidBlock code={text} streaming={ctx.streaming} />;
-      if (lang === "latex" || lang === "tex") return <LatexBlock source={text} space={ctx.space} streaming={ctx.streaming} />;
+      // ```tikz is what the system prompt asks figures to be written in (prompts/60-rich-output.md); a bare picture compiles as a figure.
+      if (lang === "latex" || lang === "tex" || lang === "tikz") return <LatexBlock source={text} space={ctx.space} streaming={ctx.streaming} />;
       if (lang === STUDY_FENCE) return <StudyBlock code={text} space={ctx.space} streaming={ctx.streaming} messageKey={ctx.messageKey} />;
       if (lang === ACTIONS_FENCE) return <ChatActions code={text} space={ctx.space} />;
       if (lang === EMAIL_FENCE) return <EmailBlock code={text} space={ctx.space} streaming={ctx.streaming} />;

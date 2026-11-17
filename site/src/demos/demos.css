@@ -1,0 +1,428 @@
+/* The demos' compositions. Scoped under each stage's class; the shared look is in ../stage/look.css. */
+
+.ph-look .dm-win {
+  position: absolute;
+  box-shadow: var(--ss-shadow-hero);
+}
+/* Turns are 14px apart; a closed Collapse takes no room, so its gap travels inside it and opens with it. */
+.ph-look .dm-thread {
+  display: flex;
+  flex-direction: column;
+}
+.ph-look .dm-thread > * + :not(.ss-collapse),
+.ph-look .dm-thread > * + .ss-collapse > .ss-collapse__inner > * {
+  margin-top: 14px;
+}
+.ph-look .dm-past {
+  display: grid;
+  gap: 8px;
+}
+.ph-look .dm-past__q {
+  justify-self: end;
+}
+.ph-look .dm-row-end {
+  display: flex;
+  justify-content: flex-end;
+}
+.ph-look .dm-strong {
+  font-weight: 500;
+}
+
+/* Spaces: corner bleed, the window off the right and the bottom. */
+.dm-spaces .dm-win {
+  left: 40px;
+  top: 40px;
+  width: 760px;
+  height: 470px;
+}
+.dm-spaces .dm-thread {
+  width: 404px;
+  padding: 26px 0 0 28px;
+}
+.dm-spaces .ss-stage[data-layout="compact"] .dm-win {
+  left: 16px;
+  top: 16px;
+  width: 400px;
+}
+.dm-spaces .ss-stage[data-layout="compact"] .dm-thread {
+  width: 306px;
+  padding: 18px 0 0 20px;
+}
+.dm-spaces .ss-stage[data-layout="compact"] .dm-past {
+  display: none;
+}
+
+/* Approval: the same corner bleed, the card the story. */
+.dm-approve .dm-win {
+  left: 40px;
+  top: 40px;
+  width: 760px;
+  height: 470px;
+}
+/* Pinned to its foot, a gutter above the stage's edge: earlier turns go up and out of the window. */
+.dm-approve .dm-thread {
+  justify-content: flex-end;
+  width: 540px;
+  height: 334px;
+  padding: 0 0 0 32px;
+  /* Cut only at the top, where earlier turns leave, and faded there so nothing is sliced; a card rising from below is never cut by the thread's foot. */
+  clip-path: inset(0 -40px -80px -40px);
+  mask-image: linear-gradient(to bottom, transparent, #000 56px);
+}
+.dm-approve .ss-stage[data-layout="compact"] .dm-win {
+  left: 16px;
+  top: 16px;
+  width: 400px;
+}
+.dm-approve .ss-stage[data-layout="compact"] .dm-thread {
+  width: 306px;
+  height: 288px;
+  padding: 0 0 0 20px;
+}
+.ph-look .dm-add {
+  color: var(--success-foreground, oklch(52% 0.14 150));
+}
+.ph-look .dm-del {
+  color: var(--error-foreground, oklch(55% 0.19 25));
+}
+.ph-look .dm-diff {
+  gap: 0;
+  padding: 12px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+.ph-look .dm-diff__line {
+  padding: 0 12px;
+  white-space: pre;
+}
+.ph-look .dm-diff__line[data-add] {
+  background: color-mix(in srgb, var(--success, oklch(65% 0.15 150)) 10%, transparent);
+  color: var(--success-foreground, oklch(52% 0.14 150));
+}
+.ph-look .dm-diff__sign {
+  display: inline-block;
+  width: 8px;
+  margin-right: 8px;
+  opacity: 0.6;
+}
+.ph-look .dm-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Models: the composer whole at the foot of the crop, its picker opening up from the model button. */
+.dm-models .dm-win {
+  left: 40px;
+  top: 40px;
+  width: 760px;
+  height: 470px;
+}
+.dm-models .ss-window__body {
+  position: relative;
+}
+.dm-models .dm-thread {
+  width: 470px;
+  padding: 26px 0 0 32px;
+}
+.dm-models .dm-composer {
+  position: absolute;
+  top: 232px;
+  left: 28px;
+  width: 560px;
+}
+.dm-models .ss-stage[data-layout="compact"] .dm-win {
+  left: 16px;
+  top: 16px;
+  width: 400px;
+}
+.dm-models .ss-stage[data-layout="compact"] .dm-thread {
+  width: 306px;
+  padding: 18px 0 0 20px;
+}
+.dm-models .ss-stage[data-layout="compact"] .dm-composer {
+  top: 190px;
+  left: 16px;
+  width: 310px;
+}
+.ph-look .dm-composer {
+  display: grid;
+  gap: 18px;
+  padding: 14px 12px 10px 16px;
+  border-radius: 16px;
+  background: var(--background);
+  box-shadow: 0 0 0 1px var(--border), 0 4px 16px -8px oklch(30% 0.05 260 / 0.15);
+}
+.ph-look .dm-composer__input {
+  position: relative;
+  height: 22px;
+  font-size: 14px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+/* The placeholder sits under the text and leaves on the first character, as a field's does; neither moves the other. */
+.ph-look .dm-composer__ph {
+  position: absolute;
+  inset: 0;
+  color: var(--muted-foreground);
+  transition: opacity 0.12s ease;
+}
+.ph-look .dm-composer__ph[data-off] {
+  opacity: 0;
+}
+.ph-look .dm-composer__text {
+  color: var(--foreground);
+}
+.ph-look .dm-composer__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ph-look .dm-composer__spacer {
+  flex: 1;
+}
+.ph-look .dm-composer__icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+.ph-look .dm-logo {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.ph-look .dm-chip {
+  will-change: transform;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+.ph-look .dm-chip[data-hover],
+.ph-look .dm-chip[data-open] {
+  background: var(--accent);
+}
+.ph-look .dm-send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 40%, var(--background));
+  color: var(--primary-foreground);
+  transition: background-color 0.2s ease;
+}
+.ph-look .dm-send[data-on] {
+  background: var(--primary);
+}
+.ph-look .dm-send svg {
+  width: 16px;
+  height: 16px;
+}
+.ph-look .dm-picker {
+  position: absolute;
+  right: 40px;
+  bottom: calc(100% + 8px);
+  display: flex;
+  width: 300px;
+  padding: 0;
+  overflow: hidden;
+  --ss-popover-bg: var(--popover);
+  --ss-popover-shadow: var(--ss-shadow-float);
+  border-radius: 14px;
+}
+.ph-look .dm-picker__rail {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 4px;
+  width: 44px;
+  padding: 8px 0;
+  border-right: 1px solid var(--border);
+  background: var(--well);
+}
+.ph-look .dm-picker__all,
+.ph-look .dm-picker__railbtn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.ph-look .dm-picker__all[data-on] {
+  background: var(--accent);
+}
+.ph-look .dm-picker__all svg {
+  width: 16px;
+  height: 16px;
+  color: var(--foreground);
+}
+.ph-look .dm-picker__list {
+  flex: 1;
+  min-width: 0;
+  padding: 6px;
+}
+.ph-look .dm-picker__head {
+  padding: 8px 8px 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+.ph-look .dm-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ph-look .dm-picker__row[data-hover] {
+  background: var(--accent);
+}
+.ph-look .dm-picker__name {
+  flex: 1;
+  min-width: 0;
+}
+.ph-look .dm-picker__tick {
+  width: 14px;
+  height: 14px;
+  color: var(--primary);
+  opacity: 0;
+  scale: 0.6;
+  transition: opacity 0.18s ease, scale 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ph-look .dm-picker__row[data-on] .dm-picker__tick {
+  opacity: 1;
+  scale: 1;
+}
+.dm-models .ss-stage[data-layout="compact"] .dm-picker {
+  right: 0;
+  width: 272px;
+}
+
+/* Vault: the folder whole across, off the bottom; the open file straddling its right edge, over the dates. */
+.dm-vault .dm-win {
+  left: 40px;
+  top: 40px;
+  width: 470px;
+  height: 470px;
+}
+.dm-vault .ss-window__body {
+  background: var(--background);
+}
+/* Off the bottom like the window, a gutter from the right. */
+.dm-vault .dm-note {
+  position: absolute;
+  left: 400px;
+  top: 220px;
+  width: 240px;
+  height: 280px;
+}
+.dm-vault .ss-stage[data-layout="compact"] .dm-win {
+  left: 16px;
+  top: 16px;
+  width: 380px;
+}
+.dm-vault .ss-stage[data-layout="compact"] .dm-note {
+  left: 152px;
+  top: 196px;
+  width: 190px;
+}
+.ph-look .dm-vault__list {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.ph-look .dm-vault__cols {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+.ph-look .dm-vault__cols > :first-child {
+  padding-left: 20px;
+}
+.ph-look .dm-vault__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding-right: 10px;
+  border-radius: 7px;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+.ph-look .dm-vault__row[data-on] {
+  background: var(--accent);
+}
+.ph-look .dm-vault__row .ss-bar {
+  margin-left: auto;
+  width: 120px;
+}
+.ph-look .dm-vault__disclosure {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+.ph-look .dm-vault__folder {
+  flex: none;
+  color: oklch(68% 0.13 240);
+  fill: oklch(80% 0.08 240 / 0.55);
+}
+.ph-look .dm-vault__file {
+  flex: none;
+  color: var(--muted-foreground);
+}
+.ph-look .dm-vault__name {
+  flex: 1;
+  min-width: 0;
+}
+.ph-look .dm-note {
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--ss-shadow-satellite);
+}
+.ph-look .dm-note__title {
+  margin: 0 14px;
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-align: center;
+}
+.ph-look .dm-note__body {
+  display: grid;
+  padding: 14px;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre;
+}
+.ph-look .dm-note__h {
+  color: var(--info-foreground);
+}
+.ph-look .dm-past__gap {
+  margin-top: 10px;
+}
+.ph-look .dm-note__body .ss-bar {
+  margin-block: 7px;
+}

@@ -23,14 +23,14 @@ export function StatusPage({ snap, now }: Live) {
             <Badge variant="warning" size="lg">
               Pre-alpha
             </Badge>
-            Fine to try. Not yet for data you can't lose.
+            Early and changing fast. Fine to try, not yet for anything you can’t lose.
           </span>
         </PageHead>
         <ul aria-label="At a glance" className="mt-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Tile label="Latest release" href={release?.url ?? `${REPO_URL}/releases`} hint={release ? <Time iso={release.published} now={now} /> : null}>
             {release ? `v${release.version}` : "None yet"}
           </Tile>
-          <Tile label="Build on main" href={build?.url ?? `${REPO_URL}/actions`} hint={build ? <Time iso={build.at} now={now} /> : null}>
+          <Tile label="Latest checks" href={build?.url ?? `${REPO_URL}/actions`} hint={build ? <Time iso={build.at} now={now} /> : null}>
             {build ? (
               <span className="inline-flex items-center gap-2.5">
                 <span aria-hidden className={cn("size-2 rounded-full", buildDot[build.state])} />
@@ -52,7 +52,7 @@ export function StatusPage({ snap, now }: Live) {
       <Container className="grid gap-x-12 gap-y-16 pb-20 sm:pb-28 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section aria-labelledby="changes-title" className="min-w-0">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <SectionTitle id="changes-title">Changes on main</SectionTitle>
+            <SectionTitle id="changes-title">Recent changes</SectionTitle>
             {runs.length ? <BuildStrip runs={runs} /> : null}
           </div>
           <Card render={<ol />} className="mt-6 divide-y">
@@ -127,8 +127,8 @@ export function StatusPage({ snap, now }: Live) {
 }
 
 const roadmap = [
-  { lane: "Next", items: ["Signed and notarized builds", "An alpha with disabled testers", "Sync conflicts you can see and resolve"] },
-  { lane: "Later", items: ["Your phone, served by your desktop over Tailscale", "An optional hosted sync relay", "Hosted model credits, for when you'd rather not bring a key"] },
+  { lane: "Next", items: ["Installers Apple and Microsoft have verified, so no security warnings", "An early alpha, tested by disabled people from the start", "When two computers change the same file, both versions shown so you can choose"] },
+  { lane: "Later", items: ["Phaethon on your phone, served privately by your own computer", "Optional sync through our servers, for people without iCloud or git", "AI credits from us, if you’d rather not set up your own key"] },
 ];
 
 function Tile({ label, href, hint, children }: { label: string; href: string; hint: ReactNode; children: ReactNode }) {
@@ -136,7 +136,7 @@ function Tile({ label, href, hint, children }: { label: string; href: string; hi
     <li>
       <a href={href} className="flex h-full flex-col gap-1 rounded-xl border border-border/70 bg-well px-4 py-3.5 outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring">
         <span className="text-muted-foreground text-sm">{label}</span>
-        <span className="type-stat">{children}</span>
+        <span className="type-stat whitespace-nowrap max-sm:text-xl">{children}</span>
         {hint ? <span className="text-muted-foreground text-xs tabular-nums">{hint}</span> : null}
       </a>
     </li>
@@ -150,7 +150,7 @@ function BuildStrip({ runs }: { runs: Run[] }) {
   return (
     <div className="flex items-center gap-3">
       <span className="text-muted-foreground text-xs tabular-nums">
-        {passed} of the last {shown.length} builds passed
+        {passed} of the last {shown.length} check runs passed
       </span>
       <span aria-hidden className="flex h-5 items-stretch gap-[3px]">
         {shown.map((r) => (

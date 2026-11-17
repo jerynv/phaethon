@@ -1,0 +1,286 @@
+/*
+ * Phaethon's look for the stageshow kit (site/src/stage/kit, MIT, see its
+ * LICENSE): the kit's tokens pointed at the app's own (src/web/src/index.css),
+ * so every demo draws in the app's type, greys and blue and follows the page
+ * into dark mode with it. Unlayered, so it outranks the kit's @layer.
+ */
+.ph-look .ss-stage {
+  --ss-canvas: var(--background);
+  --ss-surface: var(--background);
+  --ss-chrome: var(--background);
+  --ss-raised: var(--card);
+  --ss-well: var(--well);
+  --ss-line: var(--border);
+  --ss-line-faint: color-mix(in srgb, var(--border) 60%, transparent);
+  --ss-text-strong: var(--foreground);
+  --ss-text: var(--muted-foreground);
+  --ss-text-faint: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  --ss-icon: var(--muted-foreground);
+  --ss-accent: var(--primary);
+  --ss-accent-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --ss-accent-text: var(--primary);
+  --ss-font: var(--font-sans);
+  --ss-mono: var(--font-mono);
+  --ss-radius-sm: 6px;
+  --ss-radius-md: 10px;
+  --ss-radius-lg: 12px;
+  --ss-radius-window: 12px;
+  --ss-shadow-hero: 0 0 0 1px oklch(30% 0.05 260 / 0.08), 0 30px 60px -18px oklch(30% 0.08 260 / 0.35), 0 12px 24px -12px oklch(30% 0.05 260 / 0.18);
+  --ss-shadow-satellite: 0 0 0 1px oklch(30% 0.05 260 / 0.07), 0 16px 32px -10px oklch(30% 0.08 260 / 0.3), 0 4px 10px -4px oklch(30% 0.05 260 / 0.12);
+  --ss-shadow-float: 0 0 0 1px oklch(0% 0 0 / 0.07), 0 8px 24px -6px oklch(30% 0.05 260 / 0.22);
+
+  font-family: var(--font-sans);
+}
+
+/* The ground: the hero's blue, quietly, so the demos read as one set under it. The placeholder wears it too, before the stage mounts. */
+.ph-look {
+  --ph-ground:
+    radial-gradient(70% 90% at 0% 0%, oklch(90% 0.05 254 / 0.9), transparent 70%),
+    radial-gradient(60% 80% at 100% 100%, oklch(88% 0.06 240 / 0.7), transparent 70%),
+    oklch(95.5% 0.022 254);
+}
+.dark .ph-look {
+  --ph-ground:
+    radial-gradient(70% 90% at 0% 0%, oklch(32% 0.11 256 / 0.9), transparent 70%),
+    radial-gradient(60% 80% at 100% 100%, oklch(28% 0.09 245 / 0.8), transparent 70%),
+    oklch(19% 0.035 262);
+}
+.ph-look .ss-stage,
+.ph-look .ph-frame__ground {
+  overflow: hidden;
+  background: var(--ph-ground);
+  border-radius: 16px;
+}
+.ph-frame__box {
+  aspect-ratio: var(--w) / var(--h);
+}
+.ph-frame__ground {
+  height: 100%;
+}
+/* The stages' compact designs take over below 560 px (their compact.below). */
+@container (width < 560px) {
+  .ph-frame__box {
+    aspect-ratio: var(--cw) / var(--ch);
+  }
+}
+
+.dark .ph-look .ss-stage {
+  --ss-ink-1: rgba(255, 255, 255, 0.05);
+  --ss-ink-2: rgba(255, 255, 255, 0.07);
+  --ss-ink-3: rgba(255, 255, 255, 0.1);
+  --ss-ink-4: rgba(255, 255, 255, 0.13);
+  --ss-ink-5: rgba(255, 255, 255, 0.2);
+  --ss-fill: #313134;
+  --ss-icon-faint: #4a4a50;
+  --ss-success-text: oklch(78% 0.15 150);
+  --ss-danger-text: oklch(72% 0.17 25);
+  --ss-shadow-hero: 0 0 0 1px oklch(100% 0 0 / 0.09), 0 30px 60px -14px oklch(0% 0 0 / 0.7);
+  --ss-shadow-satellite: 0 0 0 1px oklch(100% 0 0 / 0.1), 0 16px 32px -10px oklch(0% 0 0 / 0.65);
+  --ss-shadow-float: 0 0 0 1px oklch(100% 0 0 / 0.1), 0 10px 28px -6px oklch(0% 0 0 / 0.6);
+  --ss-shadow-window: 0 0 0 1px oklch(100% 0 0 / 0.08), 0 4px 16px oklch(0% 0 0 / 0.4);
+}
+
+/* The app's blue status line and keyed choices, shared by the demos' cards. */
+.ph-look .ph-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--border), 0 1px 2px oklch(0% 0 0 / 0.04);
+}
+.ph-look .ph-card__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 1px 6px 0;
+  min-width: 0;
+}
+.ph-look .ph-disc {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.ph-look .ph-disc svg {
+  width: 12px;
+  height: 12px;
+}
+.ph-look .ph-card__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--primary);
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ph-look .ph-card__meta {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ph-look .ph-well {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ph-look .ph-keys {
+  display: flex;
+  gap: 4px;
+  padding: 0 2px;
+}
+.ph-look .ph-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px 0 6px;
+  border-radius: 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+.ph-look .ph-key[data-hover],
+.ph-look .ph-key[data-primary] {
+  background: var(--accent);
+}
+.ph-look .ph-key[data-pressed] {
+  background: color-mix(in srgb, var(--accent) 70%, var(--foreground) 8%);
+}
+.ph-look .ph-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--keycap, var(--background));
+  box-shadow: 0 0 0 1px var(--border), 0 1px 0 var(--border);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+/* A turn the person sent: the app's ink pill. */
+.ph-look .ph-bubble {
+  will-change: transform;
+  justify-self: end;
+  max-width: 78%;
+  padding: 8px 14px;
+  border-radius: 18px;
+  background: var(--ink);
+  color: var(--ink-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.ph-look .ph-answer {
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.6;
+}
+/* What a card leaves in the thread once it's answered. */
+.ph-look .ph-record {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.ph-look .ph-record svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/* The app's sidebar (src/web/src/app/sidebar), at the window's scale. */
+.ph-look .ph-side {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 44px 10px 12px;
+  color: var(--foreground);
+  font-size: 13px;
+}
+.ph-look .ph-side svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted-foreground);
+}
+.ph-look .ph-side__space,
+.ph-look .ph-side__row,
+.ph-look .ph-side__chat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ph-look .ph-side__space {
+  margin-bottom: 4px;
+}
+.ph-look .ph-side__dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-inline: 3.5px;
+  border-radius: 999px;
+  background: var(--primary);
+}
+.ph-look .ph-side__name {
+  flex: 1;
+}
+.ph-look .ph-side .ph-side__chev {
+  width: 14px;
+  height: 14px;
+}
+.ph-look .ph-side__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted-foreground);
+}
+.ph-look .ph-side__label {
+  padding: 14px 8px 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.ph-look .ph-side__chat[data-on] {
+  background: var(--accent);
+}
+.ph-look .ph-side__ring {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-inline: 4.5px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.25px var(--muted-foreground);
+  opacity: 0.7;
+}
+.ph-look .ph-side__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

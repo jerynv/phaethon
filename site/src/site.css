@@ -56,3 +56,55 @@ body {
     radial-gradient(70% 60% at 60% 85%, var(--art-hero-dark-2), transparent 70%),
     var(--art-hero-dark-0);
 }
+
+/* Scroll reveal (src/reveal.ts): a short rise out of a soft blur, eased to rest. */
+[data-reveal="pending"] {
+  opacity: 0;
+  translate: 0 16px;
+  filter: blur(4px);
+}
+[data-reveal="in"] {
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    translate 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: calc(var(--i, 0) * 70ms);
+}
+
+/* The hero's window settles as it scrolls into full view, where the browser can tie motion to scrolling. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .hero-window {
+      animation: hero-window linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 45%;
+    }
+  }
+}
+@keyframes hero-window {
+  from {
+    transform: perspective(1600px) rotateX(9deg) scale(0.94);
+    transform-origin: 50% 0%;
+  }
+  to {
+    transform: none;
+    transform-origin: 50% 0%;
+  }
+}
+
+/*
+ * Until Inter arrives (it's preloaded, see vite.config.ts), a local Arial (or
+ * its metric twin, Liberation Sans) scaled to Inter's widths and line metrics,
+ * so the swap doesn't rewrap or shift the text.
+ */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+@theme {
+  --font-sans: "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}

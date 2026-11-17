@@ -93,10 +93,14 @@ function PlatformSection({ platform, files }: { platform: Platform; files: Insta
 const notes: Partial<Record<Platform, ReactNode>> = {
   mac: (
     <>
-      Not notarized yet. The first time, choose <b className="font-medium text-foreground">Open Anyway</b> in System Settings › Privacy &amp; Security.
+      Apple hasn’t checked this build yet (it isn’t notarized), so macOS will stop it the first time. Choose <b className="font-medium text-foreground">Open Anyway</b> in System Settings › Privacy &amp; Security.
     </>
   ),
-  windows: "Not signed yet, so SmartScreen may ask once.",
+  windows: (
+    <>
+      It isn’t signed yet, so Windows may warn you once. Choose <b className="font-medium text-foreground">More info</b>, then <b className="font-medium text-foreground">Run anyway</b>.
+    </>
+  ),
 };
 
 const cardLink =
@@ -124,8 +128,8 @@ function InstallerCard({ file }: { file: Installer }) {
 }
 
 const ways = [
-  { title: "Run it from source", body: "With Node 22 and pnpm. It opens the app with live reload.", lines: [`git clone ${REPO_URL}`, "cd phaethon && pnpm install", "pnpm dev"] },
-  { title: "Make your own installer", body: "Builds the installer for the computer you're on, into release/.", lines: ["pnpm dist"] },
+  { title: "Run it from source", body: "Needs Node 22 and pnpm. It opens the app and reloads as you edit.", lines: [`git clone ${REPO_URL}`, "cd phaethon && pnpm install", "pnpm dev"] },
+  { title: "Make your own installer", body: "Builds an installer for the computer you’re on, into release/.", lines: ["pnpm dist"] },
 ];
 
 function FromSource() {
@@ -134,8 +138,9 @@ function FromSource() {
       <Container className="max-w-4xl pb-20 sm:pb-28">
         <h2 id="source-title" className={platformHeading}>
           <Icon icon={SourceCodeIcon} className="size-5" />
-          From source
+          Build it yourself
         </h2>
+        <p className="mt-2 text-muted-foreground text-sm">For developers: run Phaethon straight from its code, or make your own installer.</p>
         <div className="mt-4 grid gap-3 lg:grid-cols-[2fr_1fr]">
           {ways.map((w) => (
             <Card key={w.title} className="gap-3.5 p-5">

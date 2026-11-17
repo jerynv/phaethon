@@ -93,9 +93,33 @@ function prerender(): Plugin {
   };
 }
 
+/**
+ * Preloads the Latin cut of Inter (and, on the download page, JetBrains Mono
+ * for its commands) from the built assets, so the text is set in its own
+ * face from the first paint instead of reflowing when the font arrives.
+ */
+function preloadFonts(): Plugin {
+  return {
+    name: "phaethon-preload-fonts",
+    transformIndexHtml: {
+      order: "post",
+      handler(html, ctx) {
+        if (!ctx.bundle) return html;
+        const files = Object.keys(ctx.bundle);
+        const want = [/\/inter-latin-opsz-normal-[\w-]+\.woff2$/, ...(path.basename(ctx.filename) === "download.html" ? [/\/jetbrains-mono-latin-wght-normal-[\w-]+\.woff2$/] : [])];
+        const links = want
+          .map((re) => files.find((f) => re.test(`/${f}`)))
+          .filter((f): f is string => !!f)
+          .map((f) => `<link rel="preload" as="font" type="font/woff2" href="/${f}" crossorigin />`);
+        return html.replace("<meta charset=\"utf-8\" />", (m) => [m, ...links].join("\n    "));
+      },
+    },
+  };
+}
+
 export default defineConfig({
   root,
-  plugins: [react(), tailwindcss(), prerender()],
+  plugins: [react(), tailwindcss(), prerender(), preloadFonts()],
   resolve: { alias },
   build: {
     rollupOptions: { input: ["index.html", "download.html", "status.html"].map((f) => path.resolve(root, f)) },

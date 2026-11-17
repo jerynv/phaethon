@@ -6,16 +6,18 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { platformName, size, when } from "../format.ts";
-import { REPO_URL, RELEASES_URL, type Platform, type Snapshot } from "../github.ts";
+import { REPO_URL, RELEASES_URL, type BuildState, type Platform, type Snapshot } from "../github.ts";
 import { Container, PLATFORMS, type Live } from "../layout.tsx";
 import { PlatformLogo } from "../logos.tsx";
 import { mountShader } from "../shader.ts";
-import { buildWord } from "./status.tsx";
+import { Chapters, WorksWith } from "./chapters.tsx";
 
 export function HomePage({ snap, platform, now }: Live) {
   return (
     <>
       <Hero snap={snap} platform={platform} />
+      <WorksWith />
+      <Chapters />
       <Facts />
       <Onward snap={snap} now={now} />
     </>
@@ -41,7 +43,7 @@ function Hero({ snap, platform }: { snap: Snapshot; platform: Platform }) {
           The AI you choose, in a workspace you own.
         </h1>
         <p className="mt-6 max-w-2xl text-pretty text-[1.0625rem] text-foreground/85 leading-relaxed sm:text-[1.1875rem]">
-          Phaethon is an open-source desktop app for Claude, GPT, local models and the coding agents you already use. Each part of your life gets its own space, in plain files on your computer.
+          Phaethon is a free app for your computer that puts your AI in one place. Use Claude, GPT or a model that runs on your own machine, and give each part of your life its own space, saved as files you keep.
         </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <DownloadButton snap={snap} platform={platform} />
@@ -128,7 +130,7 @@ function DownloadButton({ snap, platform }: { snap: Snapshot; platform: Platform
  */
 function AppWindow() {
   return (
-    <figure data-window className="relative mx-auto w-[175%] max-w-none overflow-hidden rounded-[max(0.75cqw,8px)] bg-background shadow-[0_40px_80px_-32px_oklch(30%_0.05_260/0.35),0_12px_24px_-12px_oklch(30%_0.05_260/0.2)] ring-1 ring-black/8 [container-type:inline-size] sm:w-full dark:shadow-[0_40px_80px_-24px_oklch(0%_0_0/0.7)] dark:ring-white/10">
+    <figure data-window className="hero-window relative mx-auto w-[175%] max-w-none overflow-hidden rounded-[max(0.75cqw,8px)] bg-background shadow-[0_40px_80px_-32px_oklch(30%_0.05_260/0.35),0_12px_24px_-12px_oklch(30%_0.05_260/0.2)] ring-1 ring-black/8 [container-type:inline-size] sm:w-full dark:shadow-[0_40px_80px_-24px_oklch(0%_0_0/0.7)] dark:ring-white/10">
       <picture>
         <source srcSet="/shots/chat-dark.webp" media="(prefers-color-scheme: dark)" />
         <img
@@ -149,18 +151,18 @@ function AppWindow() {
 }
 
 const facts = [
-  { title: "Plain files", body: "A vault is a folder on your computer. Back it up or sync it with iCloud Drive, git or Syncthing." },
-  { title: "Walled-off spaces", body: "An agent in your school space can't read your work space, and it asks before it changes a file." },
-  { title: "Accessible", body: "Everything works from the keyboard and with a screen reader, and motion stops when you turn it off." },
+  { title: "Open source", body: "The code is public under the MIT license, so anyone can read what it does, change it or build it themselves." },
+  { title: "Keys stay with you", body: "An API key is the code a provider gives you to use its AI. Phaethon keeps yours in your computer’s password store, never in your files." },
+  { title: "Accessible", body: "Everything works from the keyboard and with a screen reader, the software that reads the screen aloud. Motion stops when you turn it off." },
 ];
 
 function Facts() {
   return (
     <Container className="pb-16 sm:pb-24">
-      <h2 className="sr-only">What it is</h2>
+      <h2 className="sr-only">Also</h2>
       <div className="grid gap-x-10 gap-y-8 sm:grid-cols-3">
-        {facts.map((f) => (
-          <div key={f.title} className="border-t pt-5">
+        {facts.map((f, i) => (
+          <div key={f.title} data-reveal="" style={{ ["--i" as string]: i }} className="border-t pt-5">
             <h3 className="font-medium text-[0.9375rem] text-foreground">{f.title}</h3>
             <p className="mt-1.5 text-pretty text-[0.9375rem] text-muted-foreground leading-relaxed">{f.body}</p>
           </div>
@@ -169,6 +171,9 @@ function Facts() {
     </Container>
   );
 }
+
+/** How the latest automated checks on the code went, as the end of a sentence. */
+const checksSay: Record<BuildState, string> = { passing: "passes its automated checks", failing: "is failing its automated checks", running: "is being checked now" };
 
 /** Where to go from here: every download, and where the project stands. */
 function Onward({ snap, now }: { snap: Snapshot; now?: number }) {
@@ -183,7 +188,7 @@ function Onward({ snap, now }: { snap: Snapshot; now?: number }) {
     {
       href: "/status",
       title: "Status",
-      body: `Pre-alpha.${build ? ` The build on main is ${buildWord[build.state].toLowerCase()}` : ""}${build && commit ? `, and the last change was ${now ? "" : "on "}${when(commit.at, now)}.` : build ? "." : ""}`,
+      body: `Pre-alpha: early and changing fast.${build ? ` The latest code ${checksSay[build.state]}` : ""}${build && commit ? `, and the last change was ${now ? "" : "on "}${when(commit.at, now)}.` : build ? "." : ""}`,
       cta: "Status and roadmap",
     },
   ];

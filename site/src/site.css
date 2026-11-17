@@ -23,10 +23,36 @@ body {
   }
 }
 
-/* The hero shader (src/shader.ts): how far it fades towards the page, so the headline over it stays easy to read. */
+/*
+ * The hero's art (src/shader.ts reads --art-hero-* and, in dark mode,
+ * --art-hero-dark-*): the app's blue (--primary, hue 254), airy in light mode
+ * and deep on near-black in dark. Light enough, or dark enough, that the
+ * headline over it keeps its contrast.
+ */
 :root {
-  --shader-veil: 0.45;
+  --art-hero-0: oklch(89% 0.055 254);
+  --art-hero-1: oklch(77% 0.12 254);
+  --art-hero-2: oklch(84% 0.08 238);
+  --art-hero-3: oklch(72% 0.15 258);
+  --art-hero-4: oklch(94% 0.03 250);
+  --art-hero-dark-0: oklch(17% 0.035 262);
+  --art-hero-dark-1: oklch(40% 0.16 256);
+  --art-hero-dark-2: oklch(25% 0.07 258);
+  --art-hero-dark-3: oklch(47% 0.18 254);
+  --art-hero-dark-4: oklch(21% 0.05 250);
 }
-.dark {
-  --shader-veil: 0.7;
+/* Without WebGL: the same colours, still. */
+.hero-art {
+  background:
+    radial-gradient(60% 70% at 18% 30%, var(--art-hero-3), transparent 70%),
+    radial-gradient(50% 60% at 82% 20%, var(--art-hero-1), transparent 70%),
+    radial-gradient(70% 60% at 60% 85%, var(--art-hero-2), transparent 70%),
+    var(--art-hero-0);
+}
+.dark .hero-art {
+  background:
+    radial-gradient(60% 70% at 18% 30%, var(--art-hero-dark-3), transparent 70%),
+    radial-gradient(50% 60% at 82% 20%, var(--art-hero-dark-1), transparent 70%),
+    radial-gradient(70% 60% at 60% 85%, var(--art-hero-dark-2), transparent 70%),
+    var(--art-hero-dark-0);
 }

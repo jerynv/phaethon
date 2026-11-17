@@ -3,8 +3,8 @@
 Three React pages built from the app's own components, tokens and fonts (`@/` is
 `src/web/src`), prerendered at build time and hydrated in the browser:
 
-- `/` (`src/pages/home.tsx`): the hero, with a small WebGL shader (`src/shader.ts`)
-  over the app's CSS mesh behind the app's window.
+- `/` (`src/pages/home.tsx`): the hero, with a small WebGL shader (`src/shader.ts`) in
+  the app's blue behind the app's window.
 - `/download` (`src/pages/download.tsx`): every installer by platform, and how to
   run or build it from source.
 - `/status` (`src/pages/status.tsx`): the latest release and build, recent changes

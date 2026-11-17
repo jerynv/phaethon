@@ -1,11 +1,13 @@
-import { ArrowUpRight01Icon, Download01Icon, SourceCodeIcon } from "@hugeicons/core-free-icons";
+import { ArrowUpRight01Icon, Copy01Icon, Download01Icon, SourceCodeIcon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/icon";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { platformName, size } from "../format.ts";
 import { REPO_URL, RELEASES_URL, type Installer, type Platform } from "../github.ts";
-import { Container, PageHead, PLATFORMS, platformIcon, textLink, Time, type Live } from "../layout.tsx";
+import { Container, PageHead, PLATFORMS, textLink, Time, type Live } from "../layout.tsx";
+import { PlatformLogo } from "../logos.tsx";
 
 /** Every installer, by platform, then two ways to build it yourself. */
 export function DownloadPage({ snap, now }: Live) {
@@ -55,7 +57,7 @@ function PlatformSection({ platform, files }: { platform: Platform; files: Insta
   return (
     <section id={platform} aria-labelledby={`${platform}-title`} className="scroll-mt-20">
       <h2 id={`${platform}-title`} className={platformHeading}>
-        <Icon icon={platformIcon[platform]} className="size-5" />
+        <PlatformLogo platform={platform} className="size-5" />
         {platformName[platform]}
       </h2>
       <ul className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -136,10 +138,10 @@ function FromSource() {
         </h2>
         <div className="mt-4 grid gap-3 lg:grid-cols-[2fr_1fr]">
           {ways.map((w) => (
-            <Card key={w.title} className="gap-5 p-6">
-              <div className="flex flex-col gap-1.5">
-                <h3 className="type-title">{w.title}</h3>
-                <p className="text-pretty text-[0.9375rem] text-muted-foreground">{w.body}</p>
+            <Card key={w.title} className="gap-3.5 p-5">
+              <div className="flex flex-col gap-1">
+                <h3 className="type-heading">{w.title}</h3>
+                <p className="text-pretty text-muted-foreground text-sm">{w.body}</p>
               </div>
               <Command lines={w.lines} />
             </Card>
@@ -150,7 +152,7 @@ function FromSource() {
   );
 }
 
-/** Shell lines with a prompt each, and a Copy button that copies them without the prompts. */
+/** Shell lines with a prompt each, and a button that copies them without the prompts. */
 export function Command({ lines }: { lines: string[] }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -163,11 +165,11 @@ export function Command({ lines }: { lines: string[] }) {
     setTimeout(() => setCopied(false), 1600);
   };
   return (
-    <div className="flex items-start gap-3 rounded-xl border bg-well py-3 pr-2 pl-4">
-      <pre className="min-w-0 flex-1 rounded-sm py-1 font-mono text-[0.8125rem] text-foreground leading-6 ">
+    <div className="relative rounded-lg border bg-well">
+      <pre className="py-2.5 pr-11 pl-3.5 font-mono text-[0.8125rem] text-foreground leading-[1.65]">
         {lines.map((l) => (
-          <span key={l} className="block whitespace-pre-wrap break-all pl-[2ch] -indent-[2ch]">
-            <span aria-hidden className="select-none text-primary">
+          <span key={l} className="block whitespace-pre-wrap pl-[2ch] -indent-[2ch] [overflow-wrap:anywhere]">
+            <span aria-hidden className="select-none text-muted-foreground">
               ${" "}
             </span>
             {l}
@@ -177,9 +179,10 @@ export function Command({ lines }: { lines: string[] }) {
       <button
         type="button"
         onClick={() => void copy()}
-        className="shrink-0 rounded-md px-2 py-1 text-muted-foreground text-xs outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={copied ? "Copied" : lines.length > 1 ? "Copy commands" : "Copy command"}
+        className={cn(buttonVariants({ variant: "ghost", size: "icon-xs", shape: "rect" }), "absolute top-2 right-2 text-muted-foreground hover:text-foreground")}
       >
-        {copied ? "Copied" : "Copy"}
+        <Icon icon={copied ? Tick02Icon : Copy01Icon} />
       </button>
       <span role="status" className="sr-only">
         {copied ? "Copied" : ""}

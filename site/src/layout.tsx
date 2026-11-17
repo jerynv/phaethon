@@ -1,6 +1,5 @@
 // Glyphs by name rather than through the app's icon map (components/icons.ts), which would bundle all of them; same glyphs.
-import { AppleIcon, ComputerTerminal01Icon, GithubIcon, WindowsNewIcon } from "@hugeicons/core-free-icons";
-import type { IconSvgElement } from "@hugeicons/react";
+import { GithubIcon } from "@hugeicons/core-free-icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { BrandMark, BrandWordmark } from "@/components/brand-mark";
 import { Icon } from "@/components/icon";
@@ -9,7 +8,6 @@ import { cn } from "@/lib/utils";
 import { detectPlatform, when } from "./format.ts";
 import { merge, REPO_URL, snapshot, type Platform, type Snapshot } from "./github.ts";
 
-export const platformIcon: Record<Platform, IconSvgElement> = { mac: AppleIcon, windows: WindowsNewIcon, linux: ComputerTerminal01Icon };
 export const PLATFORMS = ["mac", "windows", "linux"] as const;
 const CACHE = "phaethon.snapshot.2";
 

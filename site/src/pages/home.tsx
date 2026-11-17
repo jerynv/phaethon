@@ -1,14 +1,14 @@
 import { Menu } from "@base-ui/react/menu";
 import { ArrowDown01Icon, ArrowRight02Icon, GithubIcon } from "@hugeicons/core-free-icons";
 import { useEffect, useRef, useState } from "react";
-import { ArtCanvas } from "@/components/art";
 import { Icon } from "@/components/icon";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { platformName, size, when } from "../format.ts";
 import { REPO_URL, RELEASES_URL, type Platform, type Snapshot } from "../github.ts";
-import { Container, PLATFORMS, platformIcon, type Live } from "../layout.tsx";
+import { Container, PLATFORMS, type Live } from "../layout.tsx";
+import { PlatformLogo } from "../logos.tsx";
 import { mountShader } from "../shader.ts";
 import { buildWord } from "./status.tsx";
 
@@ -27,20 +27,20 @@ function Hero({ snap, platform }: { snap: Snapshot; platform: Platform }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [live, setLive] = useState(false);
-  useEffect(() => mountShader(host.current!, canvas.current!, { palette: "dawn", darkPalette: "lilac", seed: 3, onLive: setLive }), []);
+  useEffect(() => mountShader(host.current!, canvas.current!, { palette: "hero", darkPalette: "hero-dark", seed: 3, onLive: setLive }), []);
   const files = snap.release?.installers.filter((i) => i.platform === platform) ?? [];
   const first = files[0];
   return (
     <section aria-labelledby="hero-title" className="relative isolate overflow-hidden pt-14">
       <div ref={host} data-stage aria-hidden className="absolute inset-x-0 top-0 -z-10 h-[78%] [mask-image:linear-gradient(to_bottom,#000_50%,transparent)] sm:h-[72%]">
-        <ArtCanvas palette="dawn" seed="stage" grain="subtle" className="absolute inset-0" />
+        <div className="hero-art absolute inset-0" />
         <canvas ref={canvas} className={cn("absolute inset-0 size-full opacity-0 transition-opacity duration-700", live && "opacity-100")} />
       </div>
       <Container className="flex flex-col items-center pt-16 text-center sm:pt-28">
         <h1 id="hero-title" className="max-w-4xl text-balance font-medium text-[clamp(2.5rem,1.3rem+4vw,4.5rem)] text-foreground leading-[1.02] tracking-[-0.04em]">
           The AI you choose, in a workspace you own.
         </h1>
-        <p className="mt-6 max-w-2xl text-pretty text-[1.0625rem] text-foreground/75 leading-relaxed dark:text-foreground/85 sm:text-[1.1875rem]">
+        <p className="mt-6 max-w-2xl text-pretty text-[1.0625rem] text-foreground/85 leading-relaxed sm:text-[1.1875rem]">
           Phaethon is an open-source desktop app for Claude, GPT, local models and the coding agents you already use. Each part of your life gets its own space, in plain files on your computer.
         </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -50,7 +50,7 @@ function Hero({ snap, platform }: { snap: Snapshot; platform: Platform }) {
             View source
           </a>
         </div>
-        <p className="mt-4 h-4 text-foreground/70 text-xs dark:text-foreground/80 tabular-nums">
+        <p className="mt-4 h-4 text-foreground/80 text-xs tabular-nums">
           {first && snap.release ? (
             <>
               v{snap.release.version} · {platform === "linux" ? first.kind : first.label} · {size(first.size)}
@@ -75,7 +75,7 @@ function DownloadButton({ snap, platform }: { snap: Snapshot; platform: Platform
   return (
     <div className="inline-flex">
       <a href={first?.url ?? "/download"} className={cn(primary, "rounded-r-none pr-3.5 before:rounded-r-none")}>
-        <Icon icon={platformIcon[platform]} />
+        <PlatformLogo platform={platform} className="size-4" />
         Download for {platformName[platform]}
       </a>
       <Menu.Root>
@@ -90,7 +90,10 @@ function DownloadButton({ snap, platform }: { snap: Snapshot; platform: Platform
                 if (!files.length) return null;
                 return (
                   <Menu.Group key={p}>
-                    <Menu.GroupLabel className="flex items-center gap-1.5 px-2 pt-2 pb-1 font-medium text-muted-foreground text-xs">{platformName[p]}</Menu.GroupLabel>
+                    <Menu.GroupLabel className="flex items-center gap-1.5 px-2 pt-2 pb-1 font-medium text-muted-foreground text-xs">
+                      <PlatformLogo platform={p} className="size-3" />
+                      {platformName[p]}
+                    </Menu.GroupLabel>
                     {files.map((f) => (
                       <Menu.LinkItem key={f.url} href={f.url} className={menuItem}>
                         {f.label}

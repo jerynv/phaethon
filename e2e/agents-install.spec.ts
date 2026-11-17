@@ -52,7 +52,14 @@ test("with no coding agent installed, onboarding installs Claude Code and signs 
   expect(fs.existsSync(path.join(core.home, ".local", "bin", win ? "claude.cmd" : "claude"))).toBe(true);
 
   await page.getByRole("button", { name: "My school or work signs me in (SSO)" }).click();
-  await expect(page.getByText("In use")).toBeVisible({ timeout: 30_000 });
+  try {
+    await expect(page.getByText("In use")).toBeVisible({ timeout: 30_000 });
+  } catch (e) {
+    // What the core and the fake CLI saw, for a failure on another platform.
+    const auth = path.join(core.home, "fake", "auth.log");
+    console.log(`core log:\n${core.log()}\nauth.log:\n${fs.existsSync(auth) ? fs.readFileSync(auth, "utf8") : "(none)"}`);
+    throw e;
+  }
   const logins = fs
     .readFileSync(path.join(core.home, "fake", "auth.log"), "utf8")
     .trim()

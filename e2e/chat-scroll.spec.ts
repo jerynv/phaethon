@@ -124,6 +124,18 @@ async function stopRecording(page: Page) {
   });
 }
 
+/** Resolves once the conversation's scroll position has held still for 300 ms. */
+async function settled(page: Page) {
+  let last = -1;
+  let still = 0;
+  for (let i = 0; i < 100 && still < 3; i++) {
+    const y = await page.evaluate((sel) => document.querySelector<HTMLElement>(sel)!.scrollTop, BOX);
+    still = y === last ? still + 1 : 0;
+    last = y;
+    await page.waitForTimeout(100);
+  }
+}
+
 /** The first user turn whose top is on screen, and where it sits. */
 function readingPlace(page: Page) {
   return page.evaluate((sel) => {
@@ -172,7 +184,8 @@ test("a very long conversation opens at its end, holds still, and keeps a reader
   // Scroll up to read, leave for the other conversation, come back: the same turn in the same place.
   await page.mouse.move(760, 400);
   for (let i = 0; i < 20; i++) await page.mouse.wheel(0, -600);
-  await page.waitForTimeout(800);
+  // Measure once the wheel has finished scrolling (a slow runner is still moving after a fixed wait).
+  await settled(page);
   const reading = await readingPlace(page);
   await sidebar.getByRole("button", { name: /^Short placeholder conversation/ }).click();
   await expect(page.getByText("A short reply.")).toBeVisible();

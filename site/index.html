@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phaethon</title>
+    <meta name="description" content="An open-source desktop app for the AI you choose, with each part of your life in its own space of plain files. For macOS, Windows and Linux." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1c1c1c" />
+    <link rel="icon" href="/icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="canonical" href="https://phaethon.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://phaethon.app/" />
+    <meta property="og:title" content="Phaethon" />
+    <meta property="og:description" content="An open-source desktop app for the AI you choose, with each part of your life in its own space of plain files." />
+    <meta property="og:image" content="https://phaethon.app/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" as="image" href="/shots/chat-light.webp" media="(prefers-color-scheme: light)" />
+    <link rel="preload" as="image" href="/shots/chat-dark.webp" media="(prefers-color-scheme: dark)" />
+    <!-- Before first paint, so a dark-mode visitor never sees the light page. -->
+    <script src="/theme.js"></script>
+  </head>
+  <body>
+    <div id="root"><!--app--></div>
+    <script type="application/json" id="snapshot"><!--snapshot--></script>
+    <script type="module" src="/src/entry-client.tsx"></script>
+  </body>
+</html>

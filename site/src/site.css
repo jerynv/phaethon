@@ -1,0 +1,32 @@
+/* The app's tokens, type, fonts and component styles, so the page is drawn from the same system. */
+@import "../../src/web/src/index.css";
+@source "./";
+@source "../../src/web/src/components";
+
+/* The app is a fixed window that scrolls inside; a page scrolls as a whole. Unlayered, so it outranks the app's base layer. */
+html,
+body,
+#root {
+  height: auto;
+  overflow: visible;
+}
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+body {
+  overscroll-behavior: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* The hero shader (src/shader.ts): how far dark mode darkens it towards the page. */
+:root {
+  --shader-veil: 0;
+}
+.dark {
+  --shader-veil: 0.42;
+}

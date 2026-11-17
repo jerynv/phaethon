@@ -1,0 +1,14 @@
+// phaethon.app on Cloudflare: a Worker that only serves the static build in
+// ./dist (`pnpm site:build`, then `pnpm site:deploy`). No server code runs.
+{
+  "name": "phaethon-site",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "drop-trailing-slash"
+  },
+  "routes": [
+    { "pattern": "phaethon.app", "custom_domain": true },
+    { "pattern": "www.phaethon.app", "custom_domain": true }
+  ]
+}

@@ -512,6 +512,29 @@
 @utility page-scroll {
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
+  @apply scroll-fade-top;
+}
+/*
+ * Content scrolled up under the title bar fades out over its top 1.25rem
+ * instead of being cut off at the bar's edge (and under the active tab, which
+ * reaches down to the page). Scroll-linked: nothing fades at rest, and the
+ * fade eases in over the first 2rem scrolled.
+ */
+@property --scroll-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes scroll-fade-in {
+  to {
+    --scroll-fade: 1.25rem;
+  }
+}
+@utility scroll-fade-top {
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--scroll-fade));
+  animation: scroll-fade-in linear both;
+  animation-timeline: scroll(self);
+  animation-range: 0 2rem;
 }
 /* Scrolls without a scrollbar (the chat; its history rail stands in). */
 @utility scroll-quiet {
@@ -591,7 +614,8 @@
 @utility render-near-view {
   content-visibility: auto;
   contain-intrinsic-size: auto 12rem;
-  overflow-clip-margin: 1rem;
+  /* Its paint is clipped this far outside its box: an older reply's 28 px action row hangs below it on hover. */
+  overflow-clip-margin: 2.25rem;
 }
 
 /* Drag regions for the frameless title bar (macOS). */

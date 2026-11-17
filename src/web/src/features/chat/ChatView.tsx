@@ -189,7 +189,7 @@ export function ChatView({ space }: { space: SpaceView }) {
         </div>
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={scroll.box} data-slot="chat-scroll" className="scroll-quiet relative min-h-0 flex-1 overflow-x-hidden">
+          <div ref={scroll.box} data-slot="chat-scroll" className="scroll-quiet scroll-fade-top relative min-h-0 flex-1 overflow-x-hidden">
           {showSkeleton ? (
             <div className="[overflow-anchor:none]">
               <SkeletonTurns />

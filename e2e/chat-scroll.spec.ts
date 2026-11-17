@@ -17,6 +17,8 @@ test.afterEach(async () => {
 });
 
 const TURNS = 300;
+/** features/chat/timeline-scroll.ts: the longest a first open stays unseen while its last screen draws. */
+const REVEAL_WAIT_MS = 600;
 const nav = (page: Page) => page.getByRole("navigation", { name: "Spaces and conversations" });
 const BOX = '[data-page="chat"]:not([data-inactive]) [data-slot="chat-scroll"]';
 const prose = "Each step is small enough to check on its own, and says why it follows before the next one starts. ";
@@ -64,7 +66,7 @@ function seed(home: string) {
 async function startRecording(page: Page) {
   await page.evaluate((sel) => {
     const w = window as unknown as { __frames: unknown[]; __stopFrames: () => void };
-    const frames: { t: number; dist: number; turns: number; lastY: number | null; last: string; hidden: boolean }[] = [];
+    const frames: { t: number; dist: number; turns: number; lastY: number | null; last: string; hidden: boolean; drawing: boolean }[] = [];
     w.__frames = frames;
     let box: HTMLElement | null = null;
     let ro: ResizeObserver | null = null;
@@ -86,6 +88,12 @@ async function startRecording(page: Page) {
           for (let n: HTMLElement | null = lastTurn ?? null; n && n !== box; n = n.parentElement) if (n.style.opacity === "0") return true;
           return false;
         })(),
+        // Something on screen still drawing (a diagram's placeholder), as the app checks before it shows a conversation.
+        drawing: [...box.querySelectorAll("[data-pending]")].some((n) => {
+          const r = n.getBoundingClientRect();
+          const b = box!.getBoundingClientRect();
+          return r.bottom > b.top && r.top < b.bottom;
+        }),
       };
     };
     let on = true;
@@ -118,7 +126,7 @@ async function startRecording(page: Page) {
 
 async function stopRecording(page: Page) {
   return page.evaluate(() => {
-    const w = window as unknown as { __frames: { t: number; dist: number; turns: number; lastY: number | null; last: string; hidden: boolean }[]; __stopFrames: () => void };
+    const w = window as unknown as { __frames: { t: number; dist: number; turns: number; lastY: number | null; last: string; hidden: boolean; drawing: boolean }[]; __stopFrames: () => void };
     w.__stopFrames();
     return w.__frames;
   });
@@ -178,7 +186,12 @@ test("a very long conversation opens at its end, holds still, and keeps a reader
   expect(Math.max(...shown.map((f) => f.dist))).toBeLessThanOrEqual(2);
   // Nothing moves from the first visible frame on: the diagram ending the last reply finished drawing
   // before the conversation was shown, and older turns mounting above don't shift the last one.
-  const ys = shown.map((f) => f.lastY!);
+  // The app waits for it at most REVEAL_WAIT_MS (features/chat/timeline-scroll.ts); on a runner too slow
+  // to load and draw it in that time, it must at least have waited that long before showing anything,
+  // and nothing moves once it has drawn.
+  if (shown[0]!.drawing) expect(shown[0]!.t).toBeGreaterThanOrEqual(REVEAL_WAIT_MS);
+  const ys = shown.filter((f) => !f.drawing).map((f) => f.lastY!);
+  expect(ys.length).toBeGreaterThan(10);
   expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(1);
 
   // Scroll up to read, leave for the other conversation, come back: the same turn in the same place.

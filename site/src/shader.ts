@@ -108,7 +108,8 @@ function compile(gl: WebGLRenderingContext, type: number, source: string): WebGL
   return s;
 }
 
-export type ShaderOptions = { palette: string; darkPalette?: string; seed: number; onLive: () => void };
+/** `onLive(true)` after the first frame; `onLive(false)` if the GPU drops the context, so the CSS mesh shows again. */
+export type ShaderOptions = { palette: string; darkPalette?: string; seed: number; onLive: (live: boolean) => void };
 
 /** Starts the art on `canvas`, sized to `host`; returns a function that stops it. Without WebGL it does nothing. */
 export function mountShader(host: HTMLElement, canvas: HTMLCanvasElement, { palette, darkPalette, seed, onLive }: ShaderOptions): () => void {
@@ -167,23 +168,24 @@ export function mountShader(host: HTMLElement, canvas: HTMLCanvasElement, { pale
   let frame = 0;
   let live = false;
   const draw = (now: number) => {
+    if (dead) return;
     gl.uniform1f(uTime, (now - start) / 1000);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (!live) {
       live = true;
-      onLive();
+      onLive(true);
     }
   };
   const tick = (now: number) => {
     raf = 0;
-    if (!visible || document.hidden || reducedMotion.matches) return;
+    if (dead || !visible || document.hidden || reducedMotion.matches) return;
     // Every other frame: the motion is slow enough that 30 fps reads as smooth.
     if (frame++ % 2 === 0) draw(now);
     raf = requestAnimationFrame(tick);
   };
   const run = () => {
     if (reducedMotion.matches) draw(start + 12000);
-    else if (visible && !document.hidden && !raf) raf = requestAnimationFrame(tick);
+    else if (!dead && visible && !document.hidden && !raf) raf = requestAnimationFrame(tick);
   };
 
   const sized = new ResizeObserver(() => {
@@ -200,7 +202,12 @@ export function mountShader(host: HTMLElement, canvas: HTMLCanvasElement, { pale
     applyTheme();
     draw(performance.now());
   };
-  const lost = (e: Event) => e.preventDefault();
+  let dead = false;
+  const lost = () => {
+    dead = true;
+    cancelAnimationFrame(raf);
+    onLive(false);
+  };
   document.addEventListener("visibilitychange", run);
   reducedMotion.addEventListener("change", run);
   darkScheme.addEventListener("change", retheme);

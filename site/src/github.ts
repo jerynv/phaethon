@@ -54,7 +54,7 @@ export function installers(assets: Asset[]): Installer[] {
 
 async function get<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${API}${path}`, { headers: { Accept: "application/vnd.github+json" } });
+    const res = await fetch(path.startsWith("https:") ? path : `${API}${path}`, { headers: { Accept: "application/vnd.github+json" } });
     return res.ok ? ((await res.json()) as T) : null;
   } catch {
     return null;
@@ -65,12 +65,15 @@ export async function snapshot(): Promise<Snapshot> {
   type Release = { tag_name: string; html_url: string; published_at: string; assets: Asset[] };
   type Runs = { workflow_runs: { status: string; conclusion: string | null; html_url: string; updated_at: string }[] };
   type Commit = { sha: string; html_url: string; commit: { message: string; committer: { date: string } } };
-  type Repo = { stargazers_count: number; open_issues_count: number };
-  const [release, runs, commit, repo] = await Promise.all([
+  type Repo = { stargazers_count: number };
+  type Search = { total_count: number };
+  const [release, runs, commit, repo, issues] = await Promise.all([
     get<Release>("/releases/latest"),
     get<Runs>("/actions/workflows/ci.yml/runs?branch=main&per_page=6"),
     get<Commit>("/commits/main"),
     get<Repo>(""),
+    // The repo's open_issues_count counts pull requests too.
+    get<Search>(`https://api.github.com/search/issues?q=${encodeURIComponent(`repo:${REPO} type:issue state:open`)}&per_page=1`),
   ]);
   // A cancelled run was superseded by a newer push; it says nothing about the build.
   const run = runs?.workflow_runs.find((r) => r.conclusion !== "cancelled" && r.conclusion !== "skipped");
@@ -85,7 +88,7 @@ export async function snapshot(): Promise<Snapshot> {
       ? { sha: commit.sha.slice(0, 7), message: commit.commit.message.split("\n")[0]!, url: commit.html_url, at: commit.commit.committer.date }
       : null,
     stars: repo?.stargazers_count ?? null,
-    issues: repo?.open_issues_count ?? null,
+    issues: issues?.total_count ?? null,
     fetched: new Date().toISOString(),
   };
 }

@@ -165,7 +165,7 @@ function Stage() {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [live, setLive] = useState(false);
-  useEffect(() => mountShader(host.current!, canvas.current!, { palette: "dawn", darkPalette: "lilac", seed: 3, onLive: () => setLive(true) }), []);
+  useEffect(() => mountShader(host.current!, canvas.current!, { palette: "dawn", darkPalette: "lilac", seed: 3, onLive: setLive }), []);
   return (
     <Container>
       <div ref={host} data-stage className="relative aspect-[5/4] overflow-hidden rounded-panel border sm:aspect-[16/9]">

@@ -46,9 +46,10 @@ function prerender(): Plugin {
       try {
         const { render } = (await server.ssrLoadModule("/src/entry-server.tsx")) as { render: Render };
         return html
-          .replace("<!--app-->", render(snap))
+          // Callbacks, so a "$" in a commit message is text, not a replacement pattern.
+          .replace("<!--app-->", () => render(snap!))
           // Safe inside <script type="application/json">: no "</" can close it early.
-          .replace("<!--snapshot-->", JSON.stringify(snap).replace(/</g, "\\u003c"));
+          .replace("<!--snapshot-->", () => JSON.stringify(snap).replace(/</g, "\\u003c"));
       } finally {
         if (!dev) await server.close();
       }

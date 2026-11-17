@@ -346,7 +346,9 @@ export async function views(): Promise<InstanceView[]> {
     } catch {
       homeOk = false;
     }
-    const installed = homeOk && binary(cli, dir) !== null;
+    // Only a CLI that's really there: probing a path with nothing at it can wait out every probe's timeout (Windows).
+    const found = homeOk ? binary(cli, dir) : null;
+    const installed = found !== null && isExecutable(found);
     const acct = installed ? await account(cli, dir) : { loggedIn: null, email: null, plan: null };
     const readOnly = isSystemId(config.id);
     const system = readOnly || (cli === "claude" && config.id === cli && !settings.isolateClaudeConfig);

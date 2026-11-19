@@ -93,7 +93,7 @@ function PlatformSection({ platform, files }: { platform: Platform; files: Insta
 const notes: Partial<Record<Platform, ReactNode>> = {
   mac: (
     <>
-      Apple hasn’t checked this build yet (it isn’t notarized), so macOS will stop it the first time. Choose <b className="font-medium text-foreground">Open Anyway</b> in System Settings › Privacy &amp; Security.
+      Apple has checked this app for malicious software. The first time you open it, macOS asks whether to open an app from the internet: choose <b className="font-medium text-foreground">Open</b>.
     </>
   ),
   windows: (

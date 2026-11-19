@@ -168,7 +168,7 @@ function Dashboard({ email, onSignOut }: { email: string; onSignOut: () => void 
       {busy ? <p role="status" className="text-sm text-muted-foreground">Loading telemetry…</p> : null}
       {overview ? <>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{CATEGORIES.map((c) => <button key={c} onClick={() => setCategory(category === c ? "" : c)} aria-pressed={category === c} className="rounded-card border bg-card p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary"><span className="text-xs text-muted-foreground">{LABELS[c]}</span><span className="mt-2 block text-2xl font-medium tabular-nums">{format.format(overview.totals[c] ?? 0)}</span></button>)}</div>
-        <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr]"><Activity points={overview.days} /><Breakdown title="Events" rows={overview.events.map((e) => ({ name: e.event, count: e.count }))} /><Breakdown title="Turn outcomes" rows={overview.outcomes.map((e) => ({ name: e.outcome, count: e.count }))} /></div>
+        <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr]"><Activity points={overview.days} /><Breakdown title="Events" rows={overview.events.map((e) => ({ name: e.event, count: e.count }))} /><Breakdown title="Attempt outcomes" rows={overview.outcomes.map((e) => ({ name: e.outcome, count: e.count }))} /></div>
       </> : null}
       <section className="min-w-0">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-medium">Event explorer</h2><Button size="sm" variant="outline" pending={exporting} onClick={() => void exportData()}>Export NDJSON</Button></div>

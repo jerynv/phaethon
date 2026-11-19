@@ -69,6 +69,9 @@ test("first run walks through to the app, keeping the vault's spaces", async ({ 
   // A fresh vault already has School and Work, so the last step offers them.
   await expect(page.getByRole("heading", { level: 1, name: "Your spaces" })).toBeVisible();
   await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Your privacy choices" })).toBeVisible();
+  for (const choice of ["Anonymous usage", "Diagnostics", "Testing reports", "Chat traces"]) await page.getByRole("switch", { name: choice, exact: true }).uncheck();
+  await page.getByRole("button", { name: "Save privacy choices" }).click();
   // The finish step sums up what was set up, then Explore opens the app.
   await expect(page.getByRole("heading", { level: 1, name: "You’re all set" })).toBeVisible();
   await expect(page.getByText("Answers with", { exact: false })).toHaveCount(0);

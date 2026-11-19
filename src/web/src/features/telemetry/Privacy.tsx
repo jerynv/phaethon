@@ -20,7 +20,7 @@ export function PrivacyChoices({ choices, onChange, disabled }: { choices: Telem
         {row("usage", "Anonymous usage", "App opens, views, and action counts. No chat text, names, or file paths.")}
       </SettingsGroup>
       <SettingsGroup label="Help improve Phaethon" note="Reports and chat text are redacted on this device for common secrets, email addresses, and home paths. Redaction cannot guarantee anonymity; names and other identifying details may remain.">
-        {row("diagnostics", "Diagnostics", "Assistant type, reply duration, step count, and whether a turn completed.")}
+        {row("diagnostics", "Diagnostics", "Assistant type, duration, step count, and outcome of each reply attempt, including automatic retries.")}
         {row("reports", "Testing reports", "Reports you choose to write, review, and send from Privacy settings.")}
         {row("traces", "Chat traces", "Text from new prompts and completed replies, including coding agents. Excludes tool arguments, tool results, and system prompts.")}
       </SettingsGroup>
@@ -91,14 +91,15 @@ function UsageObserver() {
 export function PrivacySection() {
   const state = useLoad(api.telemetry);
   const [busy, setBusy] = useState(false);
+  const [pendingChoices, setPendingChoices] = useState<TelemetryChoices | null>(null);
   const [error, setError] = useState<string | null>(null);
   const save = (choices: TelemetryChoices) => {
-    setBusy(true); setError(null);
-    api.saveTelemetry(choices).then((s) => state.setData(s), (error) => { setError(cleanMessage(error)); void state.reload(); }).finally(() => setBusy(false));
+    setBusy(true); setPendingChoices(choices); setError(null);
+    api.saveTelemetry(choices).then((s) => state.setData(s), async (error) => { setError(cleanMessage(error)); await state.reload(); }).finally(() => { setBusy(false); setPendingChoices(null); });
   };
   return <Loader state={state} errorTitle="Couldn’t read privacy settings">{(s) => (
     <>
-      <PrivacyChoices choices={choicesOf(s)} onChange={save} disabled={busy} />
+      <PrivacyChoices choices={pendingChoices ?? choicesOf(s)} onChange={save} disabled={busy} />
       {error ? <FieldError>{error}</FieldError> : null}
       {!s.collectorConfigured ? <p className="text-muted-foreground text-xs">No telemetry collector is configured for this build. Nothing is sent.</p> : null}
       {s.reports ? <ReportForm collectorConfigured={s.collectorConfigured} /> : null}

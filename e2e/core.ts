@@ -13,7 +13,7 @@ export type Core = {
   home: string;
   url: string;
   /** Opens the app in `page` and waits for the shell (first-run setup skipped unless `onboarding`). */
-  open(page: Page, options?: { onboarding?: boolean }): Promise<void>;
+  open(page: Page, options?: { onboarding?: boolean; privacy?: boolean }): Promise<void>;
   /** Requests the fake provider received (system prompt, effort, tools). */
   requests(): Array<Record<string, unknown>>;
   /** What the core wrote to stderr. */
@@ -68,9 +68,16 @@ export async function startCore(options: { script?: object; setup?: (home: strin
     home,
     url,
     async open(page, opts = {}) {
+      // Ordinary shell tests explicitly decline telemetry. Privacy tests exercise
+      // the real first-choice gate instead; no runtime bypass exists in the app.
+      const consentFile = path.join(home, "appdata", "telemetry-consent.json");
+      if (!opts.onboarding && !opts.privacy && !fs.existsSync(consentFile)) {
+        fs.mkdirSync(path.dirname(consentFile), { recursive: true });
+        fs.writeFileSync(consentFile, JSON.stringify({ v: 1, configured: true, usage: false, diagnostics: false, reports: false, traces: false }));
+      }
       if (!opts.onboarding) await page.addInitScript(() => localStorage.setItem("phaethon.onboarded", "1"));
       await page.goto(`${url}#token=${ready.token}`);
-      if (opts.onboarding) await page.getByRole("heading", { level: 1 }).first().waitFor();
+      if (opts.onboarding || opts.privacy) await page.getByRole("heading", { level: 1 }).first().waitFor();
       else await page.getByRole("navigation").first().waitFor();
     },
     requests() {

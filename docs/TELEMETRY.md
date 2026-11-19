@@ -39,7 +39,9 @@ be necessary for the application to work.
 
 Usage measures event counts, not unique people, because envelopes contain no
 stable identity. Diagnostics exclude raw errors, prompts, paths, provider URLs,
-and custom model names. Reports are submitted explicitly. Traces contain only
+and custom model names. The `turn_completed` diagnostic describes a backend
+attempt; automatic fallback can create several attempts for one chat send.
+The console labels these as attempt outcomes. Reports are submitted explicitly. Traces contain only
 newly shared user/assistant turn text, excluding tools and system prompts.
 Redaction removes common identifiers and credentials but cannot remove all
 personal information from arbitrary prose.

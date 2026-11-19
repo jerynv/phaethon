@@ -27,5 +27,6 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 }
 
 export function eventName(name: string): string {
+  if (name === "turn_completed") return "Reply attempt finished";
   return name.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 }

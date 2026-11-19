@@ -167,11 +167,11 @@ export function EmptyRow({ children }: { children: ReactNode }) {
   return <p className="flex min-h-10 items-center px-3 py-2 text-muted-foreground text-sm">{children}</p>;
 }
 
-/** What a list row opens: its own rows under a hairline, indented to the row's name. */
+/** What a list row opens: its own rows on a faint well under a hairline, full width so nested dividers line up with the list's own. */
 export function RowDetail({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("border-t", className)}>
-      <div className="ml-7 divide-y">{children}</div>
+    <div data-slot="row-detail" className={cn("divide-y border-t bg-well", className)}>
+      {children}
     </div>
   );
 }

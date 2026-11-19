@@ -8,6 +8,7 @@ import { Shell } from "./Shell";
 import { useNav } from "./store";
 import { useApplyTheme, useTheme } from "./theme";
 import { Onboarding } from "@/features/onboarding/Onboarding";
+import { UpdateDialogs } from "@/features/updates/UpdateDialogs";
 
 const ONBOARDED = "phaethon.onboarded";
 
@@ -48,7 +49,10 @@ export function App() {
               }}
             />
           ) : (
-            <Shell />
+            <>
+              <Shell />
+              <UpdateDialogs />
+            </>
           )}
         </ToastProvider>
       </TooltipProvider>

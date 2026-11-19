@@ -62,13 +62,24 @@ test("each conversation keeps its own model and effort", async ({ page }) => {
   expect(picks()).toEqual(["claude-haiku-5-5", "claude-opus-5-5"]);
 });
 
-test("coding agents are in the same picker and say what they need", async ({ page }) => {
+test("unready coding agents stay out of the primary list and tuck into setup", async ({ page }) => {
+  core = await startCore({ script: { claude: true, repeatLast: true, steps: [{ text: "Okay." }] } });
+  await core.open(page);
+  await page.getByTestId("model-picker").click();
+  // With only Anthropic ready, uninstalled coding agents don't clutter the main list or rail.
+  await expect(page.getByRole("tablist", { name: "Providers" })).toHaveCount(0);
+  await expect(page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: /Codex/ })).toHaveCount(0);
+  const setupToggle = page.getByRole("button", { name: /^Set up another/ });
+  await expect(setupToggle).toBeVisible();
+  await setupToggle.click();
+  await expect(page.getByRole("button", { name: /Claude Code.*Not installed/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Codex.*Not installed/ })).toBeVisible();
+});
+
+test("empty picker guides users to connect a provider or coding agent when none are ready", async ({ page }) => {
   core = await startCore();
   await core.open(page);
   await page.getByTestId("model-picker").click();
-  const rail = page.getByRole("tablist", { name: "Providers" });
-  await expect(rail.getByRole("tab", { name: /Claude Code · Not installed/ })).toBeVisible();
-  await expect(rail.getByRole("tab", { name: /Codex · Not installed/ })).toBeVisible();
-  await rail.getByRole("tab", { name: /Codex/ }).click();
-  await expect(page.getByRole("button", { name: "Not installed · Set up" })).toBeVisible();
+  await expect(page.getByText("No AI model is connected yet")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Set up AI models" })).toBeVisible();
 });

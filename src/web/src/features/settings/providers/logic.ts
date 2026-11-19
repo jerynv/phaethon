@@ -7,6 +7,7 @@ import type { KeyProblem, ModelInfo, ProviderId, ProviderInfo, Settings } from "
 export const PROVIDER_IDS: readonly ProviderId[] = [
   "anthropic",
   "openai",
+  "google",
   "openrouter",
   "groq",
   "together",
@@ -41,18 +42,60 @@ export function splitRef(ref: string): { provider: ProviderId; model: string } {
   return { provider: "anthropic", model: ref };
 }
 
-/** "claude-opus-5-5" → "Claude Opus 5.5", for an id no list has named yet. */
+const titleWord = (w: string) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w);
+
+/**
+ * Turns common raw model slugs into friendly human names when a provider list
+ * hasn't named them yet:
+ * - "claude-opus-5-5" → "Claude Opus 5.5"
+ * - "gemini-2.5-pro" → "Gemini 2.5 Pro"
+ * - "gemini-2.5-flash-lite" → "Gemini 2.5 Flash-Lite"
+ * - "gpt-4o-mini" → "GPT-4o Mini"
+ * - "gpt-5" → "GPT-5"
+ */
 export function readableModel(id: string): string {
-  const m = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
-  if (!m) return id;
-  const family = m[1][0].toUpperCase() + m[1].slice(1);
-  return `Claude ${family} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (claude) {
+    return `Claude ${titleWord(claude[1])} ${claude[2]}${claude[3] ? `.${claude[3]}` : ""}`;
+  }
+  // Strip trailing dated snapshots like -2025-05-06, -20250506, -05-06, -001, -latest, or -exp(-03-25)
+  const trimmed = id.replace(/-(?:20\d{2}-\d{2}-\d{2}|20\d{6}|\d{2}-\d{2}|00\d|latest|exp(?:-\d{2}-\d{2})?)$/i, "");
+  const gemini = /^gemini-(\d+(?:\.\d+)?)(?:-([a-z0-9-]+))?$/i.exec(trimmed);
+  if (gemini) {
+    const ver = gemini[1];
+    const rest = gemini[2];
+    if (!rest) return `Gemini ${ver}`;
+    const tokens = rest.split("-").filter(Boolean);
+    const words: string[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].toLowerCase() === "flash" && tokens[i + 1]?.toLowerCase() === "lite") {
+        words.push("Flash-Lite");
+        i++;
+      } else {
+        words.push(titleWord(tokens[i]));
+      }
+    }
+    return `Gemini ${ver} ${words.join(" ")}`;
+  }
+  const gpt = /^gpt-(\d+(?:\.\d+)?[a-z]?)(?:-([a-z0-9-]+))?$/i.exec(trimmed);
+  if (gpt) {
+    const ver = gpt[1].replace(/[A-Z]/g, (c) => c.toLowerCase());
+    const rest = gpt[2];
+    if (!rest) return `GPT-${ver}`;
+    const words = rest.split("-").filter(Boolean).map(titleWord);
+    return `GPT-${ver} ${words.join(" ")}`;
+  }
+  const oSeries = /^(o\d+)(?:-(mini|pro|high|preview))$/i.exec(trimmed);
+  if (oSeries) {
+    return `${oSeries[1].toLowerCase()} ${titleWord(oSeries[2])}`;
+  }
+  return id;
 }
 
 /** The name a list gives a model (by id or alias), else a readable id. */
 export function modelLabel(id: string, models: readonly ModelInfo[] | undefined): string {
   const found = models?.find((m) => m.id === id || m.aliases?.includes(id));
-  return found?.name ?? readableModel(id);
+  return found?.name && found.name !== found.id ? found.name : readableModel(id);
 }
 
 /** The model chosen for a provider: Anthropic always has one. */
@@ -85,13 +128,6 @@ export function providerNeed(p: ProviderInfo, settings: Pick<Settings, "model">)
   if (!providerModel(p, settings)) return { field: "model", text: "Choose a model." };
   return null;
 }
-
-/** The groups in the Add provider picker. */
-export const PRESET_GROUPS: { label: string; test: (p: ProviderInfo) => boolean }[] = [
-  { label: "Services", test: (p) => !p.local && p.id !== "custom" },
-  { label: "On this computer", test: (p) => p.local },
-  { label: "Custom", test: (p) => p.id === "custom" },
-];
 
 /** The result of Check and save. */
 export type KeyOutcome =

@@ -10,6 +10,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { Channel, invoke } from "@/lib/core";
 import { relativeTime } from "@/lib/platform";
+import { openUpdateDialog, rememberForWhatsNew, syncUpdateView } from "@/features/updates/UpdateDialogs";
+import { UPDATE_COPY } from "@/features/updates/copy";
 import { Row, SettingsGroup, Status, useLoad } from "./ui";
 
 /** Settings › About: the version, updates (check, then install with a progress bar), and licenses. */
@@ -20,7 +22,14 @@ function Progress({ ev }: { ev: InstallEvent }) {
   const pct = ev.kind === "downloading" && ev.total ? Math.min(100, (ev.received / ev.total) * 100) : null;
   return (
     <div className="flex flex-col gap-1.5 px-3 pb-2.5">
-      <div className="relative h-0.5 overflow-hidden rounded-full bg-muted">
+      <div
+        role="progressbar"
+        aria-label="Update progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct !== null ? Math.round(pct) : undefined}
+        className="relative h-0.5 overflow-hidden rounded-full bg-muted"
+      >
         {pct !== null ? (
           <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${pct}%` }} />
         ) : (
@@ -28,7 +37,7 @@ function Progress({ ev }: { ev: InstallEvent }) {
         )}
       </div>
       <div className="flex items-center justify-between text-muted-foreground text-xs" role="status">
-        <span>{ev.kind === "downloading" ? "Downloading" : ev.kind === "installing" ? "Installing" : "Restarting Phaethon"}</span>
+        <span>{ev.kind === "downloading" ? "Downloading update…" : ev.kind === "installing" ? "Installing update…" : "Restarting Phaethon…"}</span>
         {ev.kind === "downloading" ? (
           <span>
             <LiveFigures text={ev.total ? `${mb(ev.received)} / ${mb(ev.total)} MB` : `${mb(ev.received)} MB`} />
@@ -52,7 +61,9 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
     setChecking(true);
     setCheckError(null);
     try {
-      setView(await api.updateCheck());
+      const next = await api.updateCheck();
+      setView(next);
+      syncUpdateView(next);
     } catch (e) {
       setCheckError(cleanMessage(e));
     } finally {
@@ -63,12 +74,14 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
   const startInstall = async () => {
     setInstallError(null);
     setInstall({ kind: "downloading", received: 0, total: null });
+    rememberForWhatsNew(view, true);
     channel.current?.close();
     const ch = new Channel<InstallEvent>((ev) => setInstall(ev));
     channel.current = ch;
     try {
       await invoke("update_install", { onEvent: ch });
     } catch (e) {
+      rememberForWhatsNew(view, false);
       setInstall(null);
       setInstallError(cleanMessage(e));
     } finally {
@@ -86,7 +99,12 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
   );
 
   if (s.state === "notSetUp") {
-    return <Row label="Updates" description={<span className="[overflow-wrap:anywhere]">Not set up for this build. {s.reason}</span>} />;
+    return (
+      <Row
+        label="Updates"
+        description={<span className="[overflow-wrap:anywhere]">Automatic updates aren’t available for this build.{s.reason ? ` ${s.reason}` : ""}</span>}
+      />
+    );
   }
 
   if (s.state === "available") {
@@ -102,13 +120,16 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
           }
           below={installError ? <FieldError>Couldn’t install the update: {installError}</FieldError> : undefined}
         >
+          <Button size="xs" variant="ghost" onClick={() => openUpdateDialog(view)} disabled={install !== null}>
+            {UPDATE_COPY.about.seeNotes}
+          </Button>
           {view.canInstall ? (
             <Button size="xs" onClick={() => void startInstall()} disabled={install !== null} className="min-w-32">
               {install ? <Spinner /> : null}
               {install ? "Installing…" : installError ? "Try again" : "Install and restart"}
             </Button>
           ) : (
-            <span className="text-muted-foreground text-xs">Download it from the releases page</span>
+            <span className="text-muted-foreground text-xs">Download from the releases page</span>
           )}
         </Row>
         {install ? <Progress ev={install} /> : null}
@@ -121,7 +142,7 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
     return (
       <Row
         label="Updates"
-        description={<Status tone="error">{s.state === "error" && s.during === "launch" ? "The check after launch failed" : "Couldn’t check for updates"}</Status>}
+        description={<Status tone="error">{s.state === "error" && s.during === "launch" ? "Automatic update check failed" : "Couldn’t check for updates"}</Status>}
         below={<FieldError>{message}</FieldError>}
       >
         <Button size="xs" variant="outline" onClick={() => void check()} disabled={busy} className="min-w-28">
@@ -141,7 +162,7 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
   }
 
   return (
-    <Row label="Updates" description={busy ? "Looking for a newer version" : "Not checked since Phaethon started"}>
+    <Row label="Updates" description={busy ? "Checking for updates…" : "Not checked yet"}>
       {checkButton("Check for updates")}
     </Row>
   );
@@ -165,7 +186,7 @@ export function AboutSection() {
           ) : info.error ? (
             <span className="inline-flex items-center gap-1.5">
               Couldn’t read the version.
-              <button type="button" className="font-medium text-foreground hover:underline" onClick={() => void info.reload()}>
+              <button type="button" className="rounded-sm font-medium text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void info.reload()}>
                 Retry
               </button>
             </span>
@@ -187,8 +208,14 @@ export function AboutSection() {
         <UpdateSkeleton />
       )}
       <Row label="License">
-        <a href="https://github.com/jerynv/phaethon/blob/main/LICENSE" target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-primary text-sm hover:underline">
+        <a
+          href="https://github.com/jerynv/phaethon/blob/main/LICENSE"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-1 rounded-sm text-primary text-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
           MIT
+          <span className="sr-only"> license (opens in new tab)</span>
           <Icon icon={icons.external} className="size-3.5" />
         </a>
       </Row>

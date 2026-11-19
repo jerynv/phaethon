@@ -1,63 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useViewActive } from "@/app/Header";
-import { useNav } from "@/app/store";
+import { type SettingsSection, type SettingsTarget, useNav } from "@/app/store";
+import { RowError } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { ProviderIcon } from "@/components/provider-icon";
-import { RowError } from "@/components/errors";
 import { SkeletonRows } from "@/components/skeletons";
 import { Truncate } from "@/components/truncate";
+import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ModelPick } from "../api";
-import { EFFORT_LABEL, findModel, groupIdOf, pickName, useCatalog, type CatalogGroup, type CatalogModel } from "../catalog";
+import { EFFORT_LABEL, findModel, groupIdOf, pickName, targetForGroup, useCatalog, type CatalogGroup, type CatalogModel } from "../catalog";
 import { EffortGlyph } from "./EffortGlyph";
 
-/**
- * A model's rough tier from its family name ("haiku", "mini" → light; "sonnet", "flash" → middle; "opus",
- * "pro" → top), drawn as the references' ten-bar meter (ref 8386). Only a hint for choosing: providers publish
- * no comparable number, so an unknown family shows no meter rather than a guess.
- */
-export function modelTier(name: string): number | null {
-  const n = name.toLowerCase();
-  if (/\b(haiku|nano|mini|lite|small|tiny|8b|7b|3b)\b|flash-lite|flash lite/.test(n)) return 4;
-  if (/\b(opus|ultra|large|max)\b|\bpro\b|gpt-5(?![.\d]*[- ]?(mini|nano))|\bo3\b|grok-4/.test(n)) return 9;
-  if (/\b(sonnet|flash|medium|mixtral)\b|gpt-4/.test(n)) return 7;
+/** A quiet hint badge for model rows, only when the model's family name makes it genuinely useful. */
+function modelBadge(m: CatalogModel): string | null {
+  if (m.model === null) return "Default";
+  const n = m.name.toLowerCase();
+  if (/\b(haiku|nano|mini|lite|flash|small|tiny)\b|flash-lite/.test(n)) return "Fast";
+  if (/\b(opus|ultra|max)\b|\bpro\b/.test(n)) return "Pro";
   return null;
 }
 
-/** Each provider's meter takes the chart hue nearest its brand; monochrome brands use ink. */
-const TINT: Record<string, string> = {
-  anthropic: "bg-chart-2",
-  claude: "bg-chart-2",
-  "claude-cli": "bg-chart-2",
-  gemini: "bg-chart-3",
-  "gemini-cli": "bg-chart-3",
-  mistral: "bg-chart-1",
-  deepseek: "bg-chart-3",
-  groq: "bg-chart-2",
-  together: "bg-chart-6",
-  openrouter: "bg-chart-6",
-  lmstudio: "bg-chart-6",
-};
-
-function TierMeter({ tier, group }: { tier: number; group: string }) {
-  const on = TINT[group] ?? "bg-foreground";
-  return (
-    <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
-      {Array.from({ length: 10 }, (_, i) => (
-        <span key={i} className={cn("h-3.5 w-0.75 rounded-full", i < tier ? on : "bg-foreground/8")} />
-      ))}
-    </span>
-  );
-}
-
 /**
- * The composer's model picker, after T3 Code's: a provider rail on the left,
- * search on top, model rows (logo · name · check). Coding agents sit in the
- * same rail. The choice belongs to this conversation.
+ * The composer's model picker: only connected, ready providers and signed-in
+ * coding agents appear in the switcher. A provider rail appears when 2+
+ * providers are ready; unconfigured providers tuck into a quiet footer section.
  */
 
 const sameModel = (a: ModelPick, b: Pick<CatalogModel, "backend" | "model">) => a.backend === b.backend && a.model === b.model;
@@ -66,12 +37,13 @@ const sameModel = (a: ModelPick, b: Pick<CatalogModel, "backend" | "model">) => 
 export const OPEN_MODEL_PICKER = "phaethon:open-model-picker";
 
 export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPick: (p: ModelPick) => void; disabled?: boolean }) {
-  const { groups, status, error, load, loadModels } = useCatalog();
+  const { groups, status, error, autoFallback, load, loadModels } = useCatalog();
   const openSettings = useNav((s) => s.openSettings);
   const [open, setOpen] = useState(false);
   const [rail, setRail] = useState<string>("all");
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(0);
+  const [showUnready, setShowUnready] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => void load(), [load]);
@@ -86,19 +58,32 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
     if (!open) return;
     setQuery("");
     setRail("all");
-    for (const g of useCatalog.getState().groups) if (!g.need || g.backend === "phaethon") void loadModels(g.id);
+    setShowUnready(false);
+    for (const g of useCatalog.getState().groups) if (g.ready) void loadModels(g.id);
   }, [open, loadModels]);
 
-  const shownGroups = rail === "all" ? groups : groups.filter((g) => g.id === rail);
+  const readyGroups = useMemo(() => groups.filter((g) => g.ready), [groups]);
+  const unreadyGroups = useMemo(() => groups.filter((g) => !g.ready), [groups]);
+  const showRail = readyGroups.length >= 2;
+  const activeRail = rail === "all" || readyGroups.some((g) => g.id === rail) ? rail : "all";
+
+  const shownGroups = activeRail === "all" ? readyGroups : readyGroups.filter((g) => g.id === activeRail);
   const q = query.trim().toLowerCase();
   const rows = useMemo(
     () =>
       shownGroups.flatMap((g) =>
-        g.models.filter((m) => !q || m.name.toLowerCase().includes(q) || (m.model ?? "").toLowerCase().includes(q) || g.name.toLowerCase().includes(q)).map((m) => ({ g, m })),
+        g.models
+          .filter((m) => !q || m.name.toLowerCase().includes(q) || (m.model ?? "").toLowerCase().includes(q) || g.name.toLowerCase().includes(q))
+          .map((m) => ({ g, m })),
       ),
     [shownGroups, q],
   );
-  useEffect(() => setHi(0), [q, rail]);
+  useEffect(() => setHi(0), [q, activeRail]);
+
+  const goSettings = (section: SettingsSection = "models", target?: SettingsTarget) => {
+    setOpen(false);
+    openSettings(section, target);
+  };
 
   const choose = (m: CatalogModel) => {
     const keep = sameModel(pick, m) ? pick.effort : null;
@@ -120,7 +105,9 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
   };
 
   const current = groups.find((g) => g.id === groupIdOf(pick));
+  const currentUnready = !!current && !current.ready;
   const name = pickName(groups, pick);
+  const empty = status === "ready" && readyGroups.length === 0;
 
   return (
     <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
@@ -131,68 +118,160 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
       >
         <ProviderIcon id={groupIdOf(pick)} className="size-3.5" />
         <span className="min-w-0 truncate">{name}</span>
-        {current?.need ? <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-label={current.need} /> : null}
+        {currentUnready ? <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-label={current.need ?? "Not ready"} /> : null}
         <Icon icon={icons.chevronDown} className="size-3.5 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="end" padding="none" className="w-120 max-w-(--viewport-max-width) rounded-xl" initialFocus={() => document.getElementById("model-search") as HTMLElement}>
-        <div className="flex h-96 max-h-(--available-height) min-h-0">
-          <div className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r bg-well py-2" role="tablist" aria-label="Providers">
-            <RailButton active={rail === "all"} label="All models" onClick={() => setRail("all")}>
-              <Icon icon={icons.apps} className="size-4 text-muted-foreground" />
-            </RailButton>
-            <div className="my-1 h-px w-6 bg-border" />
-            {groups.map((g) => (
-              <RailButton
-                key={g.id}
-                active={rail === g.id}
-                label={g.need ? `${g.name} · ${g.need}` : g.name}
-                dim={!!g.need}
-                onClick={() => {
-                  setRail(g.id);
-                  void loadModels(g.id);
-                }}
-              >
-                <ProviderIcon id={g.id} />
-              </RailButton>
-            ))}
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-              <Icon icon={icons.search} className="size-4 shrink-0 text-subtle-foreground" />
-              <input
-                id="model-search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onKey}
-                placeholder="Search models"
-                className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
-                autoComplete="off"
-                spellCheck={false}
-              />
+      <PopoverPopup
+        side="top"
+        align="end"
+        padding="none"
+        className={cn("max-w-(--viewport-max-width) overflow-hidden rounded-xl", showRail ? "w-116" : "w-88")}
+        initialFocus={() => (document.getElementById("model-search") as HTMLElement | null) ?? undefined}
+      >
+        {empty ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-7 text-center">
+            <span className="flex size-10 items-center justify-center rounded-xl border bg-well text-muted-foreground">
+              <Icon icon={icons.model} className="size-5" />
+            </span>
+            <div className="flex flex-col gap-1">
+              <p className="font-medium text-foreground text-sm">No AI model is connected yet</p>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Connect a subscription you already pay for, paste an API key, or use a local model.
+              </p>
             </div>
-            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5" role="listbox" aria-label="Models">
-              {status === "loading" && groups.length === 0 ? <SkeletonRows count={6} withIcon /> : null}
-              {status === "error" ? <RowError className="h-8 px-2" message={error ?? "Couldn’t load models"} onRetry={() => void load(true)} /> : null}
-              {shownGroups.map((g) => (
-                <GroupRows key={g.id} group={g} pick={pick} rows={rows} hi={hi} setHi={setHi} choose={choose} showHeader={rail === "all"} query={q} onSetup={() => openSettings(g.needAction ?? "providers")} onRetry={() => void loadModels(g.id)} />
-              ))}
-              {status === "ready" && rows.length === 0 && q ? <p className="px-2 py-6 text-center text-muted-foreground text-xs">No model matches “{query.trim()}”.</p> : null}
-            </div>
-            <div className="flex h-10 shrink-0 items-center justify-between border-t px-4 text-muted-foreground text-xs">
-              <span>For this conversation</span>
-              <button type="button" className="inline-flex items-center gap-1.5 hover:text-foreground" onClick={() => openSettings("providers")}>
-                <Icon icon={icons.settings} className="size-3.5" />
-                Providers
-              </button>
+            <div className="mt-1 flex w-full flex-col gap-2">
+              <Button size="sm" className="w-full" onClick={() => goSettings("models")}>
+                Set up AI models
+              </Button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex h-96 max-h-(--available-height) min-h-0">
+            {showRail ? (
+              <div className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r bg-well py-2" role="tablist" aria-label="Providers">
+                <RailButton active={activeRail === "all"} label="All connected models" onClick={() => setRail("all")}>
+                  <Icon icon={icons.apps} className="size-4 text-muted-foreground" />
+                </RailButton>
+                <div className="my-1 h-px w-6 bg-border" />
+                {readyGroups.map((g) => (
+                  <RailButton
+                    key={g.id}
+                    active={activeRail === g.id}
+                    label={g.name}
+                    onClick={() => {
+                      setRail(g.id);
+                      void loadModels(g.id);
+                    }}
+                  >
+                    <ProviderIcon id={g.id} />
+                  </RailButton>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3.5">
+                <Icon icon={icons.search} className="size-3.5 shrink-0 text-subtle-foreground" />
+                <input
+                  id="model-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onKey}
+                  placeholder="Search models…"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              {currentUnready ? (
+                <div className="flex items-start gap-2 border-b bg-warning/8 px-3.5 py-2 text-warning-foreground text-xs">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" />
+                  <p className="min-w-0 flex-1 leading-relaxed">
+                    Current model isn’t ready — choose a connected model below or{" "}
+                    <button
+                      type="button"
+                      onClick={() => goSettings("models", targetForGroup(current.id))}
+                      className="font-medium underline underline-offset-2 hover:opacity-80"
+                    >
+                      finish setup
+                    </button>
+                    .
+                  </p>
+                </div>
+              ) : null}
+              <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5" role="listbox" aria-label="Models">
+                {status === "loading" && readyGroups.length === 0 ? <SkeletonRows count={5} withIcon /> : null}
+                {status === "error" ? <RowError className="h-8 px-2" message={error ?? "Couldn’t load models"} onRetry={() => void load(true)} /> : null}
+                {shownGroups.map((g) => (
+                  <GroupRows
+                    key={g.id}
+                    group={g}
+                    pick={pick}
+                    rows={rows}
+                    hi={hi}
+                    setHi={setHi}
+                    choose={choose}
+                    showHeader={activeRail === "all"}
+                    query={q}
+                    onRetry={() => void loadModels(g.id)}
+                  />
+                ))}
+                {status === "ready" && rows.length === 0 && q ? (
+                  <p className="px-3 py-6 text-center text-muted-foreground text-xs">No model matches “{query.trim()}”.</p>
+                ) : null}
+              </div>
+              {unreadyGroups.length > 0 ? (
+                <div className="shrink-0 border-t">
+                  <button
+                    type="button"
+                    aria-expanded={showUnready}
+                    onClick={() => setShowUnready((v) => !v)}
+                    className="flex h-8 w-full items-center justify-between gap-2 px-3.5 text-muted-foreground text-xs transition-colors hover:bg-accent/50 hover:text-foreground"
+                  >
+                    <span>Set up another ({unreadyGroups.length})</span>
+                    <Icon icon={icons.chevronDown} className={cn("size-3.5 transition-transform duration-150", !showUnready && "-rotate-90")} />
+                  </button>
+                  {showUnready ? (
+                    <div className="max-h-32 overflow-y-auto border-t bg-well/40 p-1">
+                      {unreadyGroups.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => goSettings("models", targetForGroup(g.id))}
+                          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs transition-colors hover:bg-accent"
+                        >
+                          <ProviderIcon id={g.id} className="size-3.5 opacity-60" />
+                          <span className="min-w-0 flex-1 truncate text-foreground/85">{g.name}</span>
+                          <span className="shrink-0 text-subtle-foreground">{g.need}</span>
+                          <Icon icon={icons.chevronRight} className="size-3 shrink-0 text-muted-foreground" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-t bg-well/30 px-3 text-muted-foreground text-xs">
+                <button
+                  type="button"
+                  onClick={() => goSettings("models")}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <span className={cn("size-1.5 rounded-full", autoFallback ? "bg-success" : "bg-subtle-foreground/50")} />
+                  {autoFallback ? "Auto-fallback on" : "Auto-fallback off"}
+                </button>
+                <button type="button" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => goSettings("models")}>
+                  <Icon icon={icons.settings} className="size-3.5" />
+                  Manage models
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </PopoverPopup>
     </Popover>
   );
 }
 
-function RailButton({ active, label, onClick, children, dim }: { active: boolean; label: string; onClick: () => void; children: React.ReactNode; dim?: boolean }) {
+function RailButton({ active, label, onClick, children }: { active: boolean; label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -203,7 +282,10 @@ function RailButton({ active, label, onClick, children, dim }: { active: boolean
             aria-selected={active}
             aria-label={label}
             onClick={onClick}
-            className={cn("relative inline-flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-accent", active && "bg-background dark:bg-accent", dim && "opacity-55")}
+            className={cn(
+              "relative inline-flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-accent",
+              active && "bg-background shadow-2xs ring-1 ring-border/70 dark:bg-accent",
+            )}
           />
         }
       >
@@ -223,7 +305,6 @@ function GroupRows({
   choose,
   showHeader,
   query,
-  onSetup,
   onRetry,
 }: {
   group: CatalogGroup;
@@ -234,21 +315,15 @@ function GroupRows({
   choose: (m: CatalogModel) => void;
   showHeader: boolean;
   query: string;
-  onSetup: () => void;
   onRetry: () => void;
 }) {
   const mine = rows.map((r, i) => ({ ...r, i })).filter((r) => r.g.id === group.id);
   if (query && mine.length === 0) return null;
   return (
     <div className="pb-1">
-      {showHeader || group.need ? (
-        <div className="flex h-8 items-center gap-2 px-2.5">
-          {showHeader ? <span className="type-label">{group.name}</span> : null}
-          {group.need ? (
-            <button type="button" onClick={onSetup} className="ml-auto inline-flex items-center gap-1 rounded-sm px-1 text-warning-foreground text-xs hover:underline">
-              {group.need} · Set up
-            </button>
-          ) : null}
+      {showHeader ? (
+        <div className="flex h-7 items-center px-2.5">
+          <span className="type-label">{group.name}</span>
         </div>
       ) : null}
       {group.status === "loading" && mine.length === 0 ? <SkeletonRows count={3} withIcon /> : null}
@@ -256,7 +331,7 @@ function GroupRows({
       {group.status === "ready" && group.models.length === 0 ? <p className="px-2.5 py-1.5 text-muted-foreground text-xs">{group.note ?? "No models listed."}</p> : null}
       {mine.map(({ m, i }) => {
         const selected = sameModel(pick, m);
-        const tier = m.model ? modelTier(m.name) : null;
+        const badge = modelBadge(m);
         return (
           <div
             key={`${m.backend}:${m.model}`}
@@ -266,11 +341,15 @@ function GroupRows({
             data-highlighted={i === hi || undefined}
             onMouseMove={() => setHi(i)}
             onClick={() => choose(m)}
-            className="flex h-9 cursor-pointer items-center gap-3 rounded-lg px-2.5 text-sm data-highlighted:bg-accent"
+            className="flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors data-highlighted:bg-accent"
           >
             <ProviderIcon id={group.id} />
-            <Truncate className="flex-1">{m.name}</Truncate>
-            {tier ? <TierMeter tier={tier} group={group.id} /> : null}
+            <Truncate className={cn("flex-1", selected && "font-medium")}>{m.name}</Truncate>
+            {badge ? (
+              <span aria-hidden className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 font-medium text-2xs text-muted-foreground">
+                {badge}
+              </span>
+            ) : null}
             <Icon icon={icons.check} className={cn("size-4 shrink-0 text-primary", selected ? "opacity-100" : "opacity-0")} />
           </div>
         );
@@ -294,7 +373,7 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
             <PopoverTrigger
               disabled={disabled}
               aria-label={`Reasoning: ${EFFORT_LABEL[level] ?? level}`}
-              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent sm:size-6"
+              className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 data-popup-open:bg-accent"
             />
           }
         >
@@ -316,13 +395,13 @@ export function EffortPicker({ pick, onPick, disabled }: { pick: ModelPick; onPi
             }}
           >
             <TabsList aria-label="Reasoning">
-            {model.efforts.map((e) => (
-              <TabsTab key={e} value={e}>
-                {EFFORT_LABEL[e] ?? e}
-              </TabsTab>
-            ))}
-          </TabsList>
-</Tabs>
+              {model.efforts.map((e) => (
+                <TabsTab key={e} value={e}>
+                  {EFFORT_LABEL[e] ?? e}
+                </TabsTab>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
       </PopoverPopup>
     </Popover>

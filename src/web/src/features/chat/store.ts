@@ -92,11 +92,13 @@ export const useChats = create<Chats>((set, get) => {
       else if (e.record.kind === "schedule") invalidate("jobs:");
     }
     patch(key, (c) => {
+      const switched = e.kind === "modelSwitch" ? { pick: { pick: e.to, saved: true }, pickError: undefined } : {};
       const last = c.messages[c.messages.length - 1];
-      if (!last || last.role !== "assistant") return {};
+      if (!last || last.role !== "assistant") return switched;
       const next = applyEvent(last, e);
       const done = e.kind === "end";
-      return { messages: [...c.messages.slice(0, -1), next], ...(done ? { running: false, startedAt: undefined } : {}) };
+      if (next === last && !done) return switched;
+      return { ...switched, messages: [...c.messages.slice(0, -1), next], ...(done ? { running: false, startedAt: undefined } : {}) };
     });
   };
 

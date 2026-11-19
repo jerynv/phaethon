@@ -16,7 +16,7 @@ import { useCoreStatus } from "@/hooks/use-core-status";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
 import { tutorModeSet, tutorModesList, type ModelPick, type TutorMode, type Upload } from "../api";
-import { groupIdOf, useCatalog } from "../catalog";
+import { groupIdOf, targetForGroup, useCatalog } from "../catalog";
 import { admit, formatBytes, MAX_FILES, mediaTypeOf, toBase64 } from "../lib/attachments";
 import type { Attachment } from "../lib/timeline";
 import { useChats, useSpaceChat } from "../store";
@@ -292,10 +292,11 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
   const pick = chat.pick?.pick;
   const setPick = (p: ModelPick) => void chats().setPick(space.id, p).catch((e) => toast.error("Couldn’t change the model", errorText(e)));
   const group = pick ? groups.find((g) => g.id === groupIdOf(pick)) : undefined;
+  const hasReady = groups.some((g) => g.ready);
   const loadModels = useCatalog((s) => s.loadModels);
   // The current model's reasoning levels come from its provider's list, so load that one now.
   useEffect(() => {
-    if (group && !group.need) void loadModels(group.id);
+    if (group?.ready) void loadModels(group.id);
   }, [group, loadModels]);
   const busy = chat.running;
   const canSend = !busy && status === "open" && (text.trim().length > 0 || files.length > 0 || kept.length > 0);
@@ -442,7 +443,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
           </Tooltip>
           <input ref={picker} type="file" multiple hidden onChange={(e) => (add([...(e.target.files ?? [])]), (e.target.value = ""))} />
           {space.educationEnabled ? <TutorPicker mode={tutor.mode} setMode={(m) => tutor.setMode(m)} disabled={busy} /> : null}
-          <div className="ml-auto flex min-w-0 items-center gap-0.5">
+          <div className="ml-auto flex min-w-0 items-center gap-1">
             {pick ? (
               <>
                 <ModelPicker pick={pick} onPick={setPick} disabled={busy} />
@@ -451,7 +452,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
             ) : (
               <span className="h-7 w-28 animate-skeleton rounded-lg bg-muted" />
             )}
-            <span className="w-1" />
+            <span className="w-0.5" />
             <AnimatePresence mode="popLayout" initial={false}>
               {busy ? (
                 <motion.span key="stop" initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.6, opacity: 0 }} transition={{ type: "spring", duration: 0.25, bounce: 0.3 }} className="inline-flex">
@@ -484,13 +485,18 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
         </div>
       </div>
       {problem ? <FieldError className="px-1">{problem}</FieldError> : null}
-      {group?.need && !problem ? (
+      {group && !group.ready && !problem ? (
         <p className="flex items-center gap-1.5 px-1 text-warning-foreground text-xs">
-          <span className="size-1.5 rounded-full bg-warning" />
+          <span className="size-1.5 shrink-0 rounded-full bg-warning" />
           <span className="min-w-0 truncate">
             {group.name} · {group.need}
           </span>
-          <button type="button" className="shrink-0 font-medium underline-offset-2 hover:underline" onClick={() => openSettings(group.needAction ?? "providers")}>
+          {hasReady ? (
+            <button type="button" className="shrink-0 font-medium underline-offset-2 hover:underline" onClick={() => window.dispatchEvent(new Event(OPEN_MODEL_PICKER))}>
+              Switch model
+            </button>
+          ) : null}
+          <button type="button" className="shrink-0 font-medium underline-offset-2 hover:underline" onClick={() => openSettings("models", targetForGroup(group.id))}>
             Set up
           </button>
         </p>

@@ -41,7 +41,7 @@ export async function clisInfo(): Promise<CliInfo[]> {
     const bin = found && isExecutable(found) ? found : null;
     let loggedIn: boolean | null = null;
     if (bin && cli === "codex") loggedIn = await instances.codexLoggedIn(bin, dir);
-    else if (bin && cli === "claude") loggedIn = (await instances.account(cli, dir)).loggedIn;
+    else if (bin && (cli === "claude" || cli === "gemini")) loggedIn = (await instances.account(cli, dir)).loggedIn;
     out.push({ id: cli, name: cliName(cli), installed: bin !== null, loggedIn, loginCommand: loginCommand(cli, dir), supported: true, ownHome: CLI[cli].ownHome });
   }
   const home = homeDir();

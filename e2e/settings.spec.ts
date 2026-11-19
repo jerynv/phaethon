@@ -39,13 +39,36 @@ test("a key in the wrong format is refused under the field and never saved", asy
   core = await startCore();
   await core.open(page);
   await openSettings(page);
-  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: /^Providers/ }).click();
-  // Nothing is set up yet, so Anthropic is added from the menu; its row opens on its key field.
-  await page.getByRole("button", { name: "Add provider" }).click();
-  await page.getByRole("menuitem", { name: "Anthropic" }).click();
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: /^AI & Models/ }).click();
+  // Expand Claude and switch to the API key tab.
+  await page.getByTestId("models-brands").getByRole("button", { name: /^Claude/ }).click();
+  await page.getByRole("tab", { name: /^API key/ }).click();
   const key = page.getByPlaceholder("sk-ant-…");
   await key.fill("not-a-key");
   await page.getByRole("button", { name: "Check and save" }).click();
   await expect(page.getByRole("alert").first()).toBeVisible();
   await expect(page.getByText("Saved", { exact: true })).toHaveCount(0);
+});
+
+test("AI & Models lists every service without a menu, and a row opens in place to set it up", async ({ page }) => {
+  core = await startCore();
+  await core.open(page);
+  await openSettings(page);
+  await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: /^AI & Models/ }).click();
+  // Every service is a visible row: the big three, more services, local models and a custom server.
+  for (const [group, names] of [
+    ["models-brands", ["Claude", "ChatGPT", "Google Gemini"]],
+    ["models-cloud", ["OpenRouter", "Groq", "Together AI", "Mistral", "DeepSeek", "xAI"]],
+    ["models-local", ["Ollama", "LM Studio"]],
+    ["models-custom", ["Your own server"]],
+  ] as const) {
+    for (const name of names) await expect(page.getByTestId(group).getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: /^Add (service|provider)/ })).toHaveCount(0);
+  // A service that isn't set up says so, and opens to its key.
+  const groq = page.getByTestId("models-cloud").getByRole("button", { name: /^Groq/ });
+  await expect(groq).toContainText("Set up");
+  await groq.click();
+  await expect(groq).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByPlaceholder(/gsk_|Paste your key/)).toBeVisible();
 });

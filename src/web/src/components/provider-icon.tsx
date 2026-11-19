@@ -27,6 +27,7 @@ const MARKS: Record<string, { src: string; mono?: boolean; dark?: string }> = {
   openai: { src: openai, mono: true },
   "codex-cli": { src: openai, mono: true },
   codex: { src: openai, mono: true },
+  google: { src: gemini },
   "gemini-cli": { src: gemini },
   gemini: { src: gemini },
   openrouter: { src: openrouterLight, dark: openrouterDark },

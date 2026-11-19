@@ -51,9 +51,10 @@ export type Record_ =
   | { kind: "person"; action: "created" | "updated"; id: string; name: string; detail?: string }
   | { kind: "profile"; scope: "vault" | "space"; text: string }
   | { kind: "mailDraft"; id: string; intent: "draft" | "send" }
-  | { kind: "schedule"; id: string; title: string; when: string };
+  | { kind: "schedule"; id: string; title: string; when: string }
+  | { kind: "handoff"; from: string; to: string; reason: string };
 
-export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stopped", "deniedEarlier", "imported", "lessonPlan", "check", "progress", "memory", "person", "profile", "mailDraft", "schedule"]);
+export const RECORD_KINDS = new Set(["tool", "approval", "access", "read", "stopped", "deniedEarlier", "imported", "lessonPlan", "check", "progress", "memory", "person", "profile", "mailDraft", "schedule", "handoff"]);
 /** Records kept on disk but never shown. */
 export const HIDDEN_RECORDS = new Set(["deniedEarlier", "imported"]);
 

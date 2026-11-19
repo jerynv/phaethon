@@ -120,7 +120,7 @@ test("no page puts a control past the window's edge, from the smallest window up
       await check(view);
     }
     await page.keyboard.press("ControlOrMeta+Comma");
-    for (const section of ["General", "Providers", "Spaces", "Appearance"]) {
+    for (const section of ["General", "AI & Models", "Spaces", "Appearance", "About"]) {
       await settingsSection(page, section);
       await check(`Settings › ${section}`);
     }

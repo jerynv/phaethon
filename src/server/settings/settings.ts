@@ -43,6 +43,8 @@ export type VaultSettings = {
   digest?: unknown;
   /** Raw JSON: notification settings (background/background.ts). */
   notifications?: unknown;
+  /** Automatically hand off a failed turn to another ready model before any reply text streams. */
+  autoFallback: boolean;
   /** Raw JSON: running in the menu bar, at login, automations paused (background/background.ts). */
   background?: unknown;
 };
@@ -53,6 +55,7 @@ export const DEFAULT_SETTINGS: Readonly<VaultSettings> = Object.freeze({
   model: null,
   effort: null,
   provider: null,
+  autoFallback: true,
 });
 
 export function settingsFile(): string {
@@ -92,6 +95,7 @@ export function readSettings(): VaultSettings {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return out;
   const o = doc as Record<string, unknown>;
   if (typeof o.isolateClaudeConfig === "boolean") out.isolateClaudeConfig = o.isolateClaudeConfig;
+  if (typeof o.autoFallback === "boolean") out.autoFallback = o.autoFallback;
   out.backend = parseBackend(o.backend) ?? DEFAULT_SETTINGS.backend;
   for (const key of ["model", "effort", "provider"] as const) out[key] = optString(o[key]) ?? null;
   // serde's Option<Value> reads JSON null as absent.

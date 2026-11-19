@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { claim, release, type Run } from "../core/runs.ts";
-import { CLI, cliName, INELIGIBLE_MESSAGE, stderrSummary, type CliId } from "./cli.ts";
+import { CLI, cliName, INELIGIBLE_MESSAGE, isGeminiIneligible, stderrSummary, type CliId } from "./cli.ts";
 import { abortion } from "./drive.ts";
 import { baseArgs, policyFile } from "./gemini.ts";
 import { account, binary, cliCommand, codexLoggedIn, type CliCommand } from "./instances.ts";
@@ -183,7 +183,7 @@ export function prepareGeminiHome(home: string): void {
 
 /** What Gemini CLI's words at the end of a sign-in mean. */
 export function geminiOutcome(said: string): SignInOutcome {
-  if (said.includes("IneligibleTierError")) return outcome("notSignedIn", INELIGIBLE_MESSAGE);
+  if (isGeminiIneligible(said)) return outcome("notSignedIn", INELIGIBLE_MESSAGE);
   const line = said.split(/\r?\n/).find((l) => l.includes("Error authenticating"));
   if (line !== undefined) {
     let why = line.trim();

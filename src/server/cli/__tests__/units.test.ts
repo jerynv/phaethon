@@ -10,6 +10,7 @@ import { JsonRpcPeer, RpcError } from "../jsonrpc.ts";
 import { transcript } from "../prompt.ts";
 import { clearSession, readCliSession, sessionUuid, writeCliSession } from "../session.ts";
 import { commandLabel, commandLine, place, shownPath, ToolLog, toolStartEvent } from "../tools.ts";
+import { classifyCliError } from "../turn.ts";
 import { PassThrough } from "node:stream";
 
 describe("tool records", () => {
@@ -93,7 +94,7 @@ describe("plain helpers", () => {
     expect(notLoggedInMessage("claude", null)).toBe(NOT_LOGGED_IN_MESSAGE);
     for (const cli of ["codex", "gemini"] as const) {
       const said = notLoggedInMessage(cli, "/x/default-codex");
-      expect(said).toMatch(/isn’t signed in for this Phaethon folder.*Settings › Coding agents/);
+      expect(said).toMatch(/isn’t signed in for this Phaethon folder.*Settings › AI & Models/);
       expect(said).not.toContain("/x/");
     }
     expect(notLoggedInMessage("claude", "/x/default")).toBe(NOT_LOGGED_IN_MESSAGE);
@@ -131,6 +132,32 @@ describe("plain helpers", () => {
     expect(t.startsWith("[The start of the conversation is left out.]\n\n")).toBe(true);
     expect(t.endsWith("é\n\n")).toBe(true);
     expect(transcript(msgs.slice(0, 1))).toBe("User: [attached: a.pdf] hi\n\n");
+  });
+
+  it("budget multi-turn handoffs to ~48 KB while keeping the opening request and newest turns", () => {
+    const msgs: Message[] = [
+      { role: "user", content: [{ type: "text", text: "OPENING_GOAL: explain Maxwell equations" }] },
+      { role: "assistant", content: [{ type: "text", text: "first reply " + "a".repeat(20_000) }] },
+      { role: "user", content: [{ type: "text", text: "MIDDLE_TURN: " + "b".repeat(25_000) }] },
+      { role: "assistant", content: [{ type: "text", text: "middle reply " + "c".repeat(25_000) }] },
+      { role: "user", content: [{ type: "text", text: "RECENT_QUESTION: what about Faraday?" }] },
+      { role: "assistant", content: [{ type: "text", text: "RECENT_ANSWER: curl E = -dB/dt" }] },
+    ];
+    const t = transcript(msgs);
+    expect(Buffer.byteLength(t, "utf8")).toBeLessThanOrEqual(49_000);
+    expect(t).toContain("OPENING_GOAL: explain Maxwell equations");
+    expect(t).toContain("[Earlier turns in the middle of the conversation were left out.]");
+    expect(t).not.toContain("MIDDLE_TURN");
+    expect(t).toContain("RECENT_QUESTION: what about Faraday?");
+    expect(t).toContain("RECENT_ANSWER: curl E = -dB/dt");
+  });
+
+  it("classify CLI connectivity, rate limit, and availability errors", () => {
+    expect(classifyCliError("Gemini CLI timed out while connecting to Google.", "")).toBe("network");
+    expect(classifyCliError("fetch failed: ECONNREFUSED 127.0.0.1:443", "")).toBe("network");
+    expect(classifyCliError("HTTP 429 RESOURCE_EXHAUSTED quota exceeded", "")).toBe("rateLimit");
+    expect(classifyCliError("503 Service Unavailable: backend overloaded", "")).toBe("unavailable");
+    expect(classifyCliError("unexpected flag", "plain stderr")).toBe("cli");
   });
 });
 

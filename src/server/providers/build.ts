@@ -110,6 +110,8 @@ function hasKey(id: string): boolean {
  */
 export function providerSettingsView(settings: VaultSettings = readSettings()) {
   const keyed = new Set(keyedIds());
+  const current = chosen(settings);
+  const fake = Boolean(fakeScriptPath());
   const providers: ProviderView[] = PRESETS.map((p) => {
     let base = "";
     let baseOk = true;
@@ -132,10 +134,9 @@ export function providerSettingsView(settings: VaultSettings = readSettings()) {
       model,
       keysUrl: p.keysUrl,
       keyPrefix: p.keyPrefix,
-      ready: baseOk && (p.key !== "required" || k),
+      ready: baseOk && (p.key !== "required" || k || (fake && p.id === current.id)),
     };
   });
-  const current = chosen(settings);
   const view = providers.find((v) => v.id === current.id)!;
   return {
     hasAnthropicKey: providers.find((v) => v.id === "anthropic")!.hasKey,

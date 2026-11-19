@@ -60,7 +60,7 @@ export function actionLabel(id: ChatActionId, fileManager: string): string {
     case "new-space":
       return "New space…";
     case "settings-assistant":
-      return "Settings: Providers";
+      return "Settings: AI & Models";
     case "settings-appearance":
     case "settings-accessibility":
       return "Settings: Appearance";

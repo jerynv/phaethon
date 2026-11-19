@@ -243,7 +243,7 @@ Where art goes: **empty states and onboarding only.** The dot field (`DotMatrix`
 | search | Search01 | Lucide Search, Phosphor MagnifyingGlass |
 | sidebar | SidebarLeft | Lucide PanelLeft |
 | newChat | PencilEdit02 | Lucide SquarePen |
-| notifications | Notification03 | — |
+| notifications | Notification01 | — |
 | welcome | WavingHand01 | — |
 | apps | DashboardCircleAdd | Lucide LayoutGrid |
 | command | Command | — |
@@ -269,7 +269,7 @@ Where art goes: **empty states and onboarding only.** The dot field (`DotMatrix`
 | edit | PencilEdit01 | Lucide Pencil, Phosphor PencilSimpleLine |
 | rename | NoteEdit | Lucide PencilLine, Phosphor NotePencil |
 | delete | Delete02 | Lucide Trash2 |
-| retry | Refresh | Lucide RotateCw, Phosphor ArrowClockwise |
+| retry | Refresh01 | Lucide RotateCw, Phosphor ArrowClockwise |
 | undo | ArrowTurnBackward | Lucide RotateCcw, Phosphor ArrowCounterClockwise |
 | reload / sync | Refresh01 / ArrowReloadHorizontal | — |
 | download / upload | Download01 / Upload04 | Lucide Download |

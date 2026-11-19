@@ -12,12 +12,11 @@ import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { cn } from "@/lib/utils";
 import { AboutSection } from "./AboutSection";
 import { cliStatuses } from "./agents/api";
-import { AgentsSection } from "./agents/AgentsSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { GeneralSection } from "./GeneralSection";
-import { getSettings } from "./providers/api";
+import { ModelsSection } from "./models/ModelsSection";
+import { getSettings, SETTINGS_CHANGED_EVENT } from "./providers/api";
 import { addedProviders, providerNeed } from "./providers/logic";
-import { ProvidersSection } from "./providers/ProvidersSection";
 import { SpacesSection } from "./spaces/SpacesSection";
 import { type Crumb, CrumbContext } from "./ui";
 
@@ -40,8 +39,7 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; gro
   { id: "general", label: "General", icon: icons.mode, group: "Preferences" },
   { id: "appearance", label: "Appearance", icon: icons.appearance, group: "Preferences" },
   { id: "notifications", label: "Notifications", icon: icons.notifications, group: "Preferences" },
-  { id: "providers", label: "Providers", icon: icons.model, group: "Models" },
-  { id: "agents", label: "Coding agents", icon: icons.terminal, group: "Models" },
+  { id: "models", label: "AI & Models", icon: icons.model, group: "Models" },
   { id: "spaces", label: "Spaces", icon: icons.deck, group: "Workspace" },
   { id: "courses", label: "Courses", icon: icons.courses, group: "Workspace" },
   { id: "memory", label: "Memory", icon: icons.memory, group: "You" },
@@ -55,27 +53,33 @@ type Marker = { kind: "dot"; tone: "success" | "warning" | "info"; label: string
 
 /**
  * The right-hand markers of the section list, like e0fb's channel dots:
- * whether a provider can answer, whether a coding agent is signed in, how many
- * spaces there are, whether an update is waiting. Read again whenever the
- * section changes, so a key saved a moment ago turns its dot green.
+ * whether any AI model (provider or subscription) is ready, how many spaces
+ * there are, whether an update is waiting. Read again whenever the section
+ * or model settings change, so a key saved or sign-in completed turns its dot green.
  */
 function useMarkers(section: SettingsSection): Partial<Record<SettingsSection, Marker>> {
   const spaces = useNav((s) => s.spaces.data);
   const [markers, setMarkers] = useState<Partial<Record<SettingsSection, Marker>>>({});
+  const [rev, setRev] = useState(0);
+  useEffect(() => {
+    const onChanged = () => setRev((n) => n + 1);
+    window.addEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, onChanged);
+  }, []);
   useEffect(() => {
     let live = true;
     const put = (id: SettingsSection, m: Marker | undefined) => live && setMarkers((ms) => ({ ...ms, [id]: m }));
-    getSettings().then(
-      (s) => {
-        const ready = s.providerReady || addedProviders(s).some((p) => !providerNeed(p, s));
-        put("providers", ready ? { kind: "dot", tone: "success", label: "A provider is ready" } : { kind: "dot", tone: "warning", label: "No provider is ready" });
-      },
-      () => put("providers", undefined),
-    );
-    cliStatuses().then(
-      (c) => put("agents", c.some((x) => x.installed && x.loggedIn === true) ? { kind: "dot", tone: "success", label: "A coding agent is signed in" } : undefined),
-      () => put("agents", undefined),
-    );
+    Promise.all([getSettings().catch(() => null), cliStatuses().catch(() => null)]).then(([s, c]) => {
+      if (!s && !c) return put("models", undefined);
+      const providerReady = !!s && (s.providerReady || addedProviders(s).some((p) => !providerNeed(p, s)));
+      const agentReady = !!c && c.some((x) => x.installed && x.loggedIn === true);
+      put(
+        "models",
+        providerReady || agentReady
+          ? { kind: "dot", tone: "success", label: "An AI model is ready" }
+          : { kind: "dot", tone: "warning", label: "Set up an AI model" },
+      );
+    });
     api.updateState().then(
       (u) => put("about", u.status.state === "available" ? { kind: "dot", tone: "info", label: "An update is available" } : undefined),
       () => put("about", undefined),
@@ -83,7 +87,7 @@ function useMarkers(section: SettingsSection): Partial<Record<SettingsSection, M
     return () => {
       live = false;
     };
-  }, [section]);
+  }, [section, rev]);
   return { ...markers, spaces: spaces?.length ? { kind: "count", text: String(spaces.length) } : undefined };
 }
 
@@ -109,39 +113,46 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
       <button
         type="button"
         onClick={close}
-        className="group flex h-(--pane-row-height) shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground"
+        className="group flex h-(--pane-row-height) shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground text-sm outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Icon icon={icons.arrowLeft} className="size-4" />
         Back
-        <Kbd className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">Esc</Kbd>
+        <Kbd aria-hidden="true" className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+          Esc
+        </Kbd>
       </button>
       <RowHighlightGroup className="flex flex-col">
-        {groups.map((g) => (
-          <div key={g} className="mt-4 flex flex-col gap-px">
-            <h2 className="flex h-7 items-center px-2 type-label">{g}</h2>
-            {SECTIONS.filter((s) => s.group === g).map((s) => {
-              const active = s.id === section;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  aria-current={active ? "page" : undefined}
-                  data-glide=""
-                  data-active={active || undefined}
-                  onClick={() => (active ? onReset() : open(s.id))}
-                  className={cn(
-                    "flex h-7 items-center gap-2 rounded-md px-2 text-sm transition-colors",
-                    active ? "text-foreground" : "text-foreground hover:bg-accent",
-                  )}
-                >
-                  <Icon icon={s.icon} className={cn("size-4", active ? "text-foreground" : "text-muted-foreground")} />
-                  {s.label}
-                  <MarkerView m={markers[s.id]} />
-                </button>
-              );
-            })}
-          </div>
-        ))}
+        {groups.map((g) => {
+          const groupId = `settings-group-${g.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+          return (
+            <div key={g} role="group" aria-labelledby={groupId} className="mt-4 flex flex-col gap-px">
+              <h2 id={groupId} className="flex h-7 items-center px-2 type-label">
+                {g}
+              </h2>
+              {SECTIONS.filter((s) => s.group === g).map((s) => {
+                const active = s.id === section;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    aria-current={active ? "page" : undefined}
+                    data-glide=""
+                    data-active={active || undefined}
+                    onClick={() => (active ? onReset() : open(s.id))}
+                    className={cn(
+                      "flex h-7 items-center gap-2 rounded-md px-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                      active ? "text-foreground" : "text-foreground hover:bg-accent",
+                    )}
+                  >
+                    <Icon icon={s.icon} className={cn("size-4", active ? "text-foreground" : "text-muted-foreground")} />
+                    {s.label}
+                    <MarkerView m={markers[s.id]} />
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
       </RowHighlightGroup>
     </nav>
   );
@@ -194,10 +205,10 @@ function Body({ section }: { section: SettingsSection }) {
   switch (section) {
     case "general":
       return <GeneralSection />;
+    case "models":
     case "providers":
-      return <ProvidersSection />;
     case "agents":
-      return <AgentsSection />;
+      return <ModelsSection />;
     case "spaces":
       return <SpacesSection />;
     case "courses":
@@ -231,28 +242,47 @@ function Body({ section }: { section: SettingsSection }) {
 }
 
 export function SettingsView() {
-  const section = useNav((s) => s.settings) ?? "general";
+  const rawSection = useNav((s) => s.settings) ?? "general";
+  const section: SettingsSection = rawSection === "providers" || rawSection === "agents" ? "models" : rawSection;
   const [crumb, setCrumb] = useState<Crumb>(null);
   // Clicking the section you are in brings back its root view (a space's detail closes).
   const [reset, setReset] = useState(0);
   const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   const title = (
-    <span className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
-      <Icon icon={icons.settings} className="size-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate text-muted-foreground">Settings</span>
-      <span className="text-subtle-foreground">/</span>
-      {crumb ? (
-        <>
-          <button type="button" onClick={crumb.onBack} className="shrink-0 text-muted-foreground transition-colors hover:text-foreground">
-            {meta.label}
-          </button>
-          <span className="text-subtle-foreground">/</span>
-          <span className="max-w-48 shrink-0 truncate font-medium">{crumb.label}</span>
-        </>
-      ) : (
-        <h1 className="shrink-0 truncate font-medium">{meta.label}</h1>
-      )}
-    </span>
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center">
+      <ol className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+        <li className="flex min-w-0 items-center gap-1.5">
+          <Icon icon={icons.settings} className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate text-muted-foreground">Settings</span>
+        </li>
+        <li aria-hidden="true" className="select-none text-subtle-foreground">
+          /
+        </li>
+        {crumb ? (
+          <>
+            <li className="flex shrink-0 items-center">
+              <button
+                type="button"
+                onClick={crumb.onBack}
+                className="rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {meta.label}
+              </button>
+            </li>
+            <li aria-hidden="true" className="select-none text-subtle-foreground">
+              /
+            </li>
+            <li aria-current="page" className="min-w-0 max-w-48">
+              <h1 className="truncate font-medium">{crumb.label}</h1>
+            </li>
+          </>
+        ) : (
+          <li aria-current="page" className="min-w-0">
+            <h1 className="truncate font-medium">{meta.label}</h1>
+          </li>
+        )}
+      </ol>
+    </nav>
   );
   return (
     <div className="@container/settings flex min-h-0 flex-1">

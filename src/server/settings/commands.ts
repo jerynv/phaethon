@@ -38,6 +38,7 @@ commands({
     const providers = await providerPart(s);
     return {
       backend: s.backend,
+      autoFallback: s.autoFallback,
       ...providers,
       appearance: s.appearance !== undefined && isValidAppearance(s.appearance) ? s.appearance : {},
       vaultPath: vaultRoot(),
@@ -64,6 +65,16 @@ commands({
     if (!chosen) throw new Refusal("That isn’t an assistant Phaethon knows.");
     try {
       setSetting("backend", chosen);
+    } catch (e) {
+      throw new Refusal(`Could not save the setting: ${messageOf(e)}`);
+    }
+    return null;
+  },
+
+  settings_set_auto_fallback: ({ enabled }: { enabled: unknown }) => {
+    if (typeof enabled !== "boolean") throw new Refusal("Auto-fallback must be enabled or disabled.");
+    try {
+      setSetting("autoFallback", enabled);
     } catch (e) {
       throw new Refusal(`Could not save the setting: ${messageOf(e)}`);
     }

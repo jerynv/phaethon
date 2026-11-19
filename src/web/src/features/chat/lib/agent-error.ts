@@ -16,36 +16,36 @@ export function describeAgentError(code: ErrorCode | "ipc", retryAfterSecs?: num
     case "noApiKey":
       return { title: "This model needs an API key", tone: "warning", action: { label: "Add a key", kind: "providers" } };
     case "apiKey":
-      return { title: "The API key was refused", tone: "error", action: { label: "Check the key", kind: "providers" } };
+      return { title: "Your API key wasn’t accepted", tone: "error", action: { label: "Check key", kind: "providers" } };
     case "billing":
-      return { title: "The provider account needs credit", tone: "warning", action: { label: "Open providers", kind: "providers" } };
+      return { title: "Your provider account is out of credit", tone: "warning", action: { label: "Open AI & Models", kind: "providers" } };
     case "rateLimit":
       return { title: retryAfterSecs ? `Rate limited · try again in ${retryAfterSecs}s` : "Rate limited", tone: "warning", action: { label: "Retry", kind: "retry" } };
     case "unavailable":
-      return { title: "The provider is unavailable right now", tone: "warning", action: { label: "Retry", kind: "retry" } };
+      return { title: "This provider is temporarily unavailable", tone: "warning", action: { label: "Retry", kind: "retry" } };
     case "network":
-      return { title: "Couldn’t reach the provider", tone: "error", action: { label: "Retry", kind: "retry" } };
+      return { title: "Couldn’t connect to the provider", tone: "error", action: { label: "Retry", kind: "retry" } };
     case "missingCli":
-      return { title: "The coding agent isn’t installed", tone: "warning", action: { label: "Open coding agents", kind: "agents" } };
+      return { title: "This coding agent isn’t installed yet", tone: "warning", action: { label: "Open AI & Models", kind: "agents" } };
     case "notLoggedIn":
-      return { title: "The coding agent isn’t signed in", tone: "warning", action: { label: "Open coding agents", kind: "agents" } };
+      return { title: "Sign in to this coding agent to continue", tone: "warning", action: { label: "Open AI & Models", kind: "agents" } };
     case "cli":
-      return { title: "The coding agent stopped", tone: "error", action: { label: "Retry", kind: "retry" } };
+      return { title: "The coding agent stopped unexpectedly", tone: "error", action: { label: "Retry", kind: "retry" } };
     case "busy":
-      return { title: "Still answering the previous message", tone: "warning", action: null };
+      return { title: "Still finishing the previous reply", tone: "warning", action: null };
     case "declined":
-      return { title: "The model declined to answer", tone: "warning", action: { label: "Retry", kind: "retry" } };
+      return { title: "The model couldn’t answer this request", tone: "warning", action: { label: "Retry", kind: "retry" } };
     case "storage":
-      return { title: "Couldn’t save the conversation", tone: "error", action: null };
+      return { title: "Couldn’t save this conversation", tone: "error", action: null };
     case "attachment":
-      return { title: "An attachment couldn’t be used", tone: "error", action: null };
+      return { title: "One of your attachments couldn’t be read", tone: "error", action: null };
     case "invalidSpace":
-      return { title: "This space can’t be used", tone: "error", action: null };
+      return { title: "Couldn’t open this space", tone: "error", action: null };
     case "badRequest":
-      return { title: "The provider refused the request", tone: "error", action: { label: "Retry", kind: "retry" } };
+      return { title: "The request couldn’t be sent", tone: "error", action: { label: "Retry", kind: "retry" } };
     case "ipc":
-      return { title: "Lost the connection to Phaethon’s core", tone: "error", action: { label: "Retry", kind: "retry" } };
+      return { title: "Lost connection to Phaethon", tone: "error", action: { label: "Retry", kind: "retry" } };
     default:
-      return { title: "The reply failed", tone: "error", action: { label: "Retry", kind: "retry" } };
+      return { title: "Something went wrong while replying", tone: "error", action: { label: "Retry", kind: "retry" } };
   }
 }

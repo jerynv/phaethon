@@ -13,22 +13,68 @@ import { mailEnabledFor } from "../mail/access.ts";
 export const HISTORY_INTRO =
   'This conversation began before this session, so you haven\'t seen it. Here it is so far, as plain text ("Phaethon" is you). Carry on from it.';
 
-const TRANSCRIPT_CAP = 120_000;
+const TRANSCRIPT_CAP = 48_000;
+const OPENING_CAP = 4_000;
 
-/** The conversation as plain text: `User:`/`Phaethon:` lines, the last 120 000 bytes when longer. */
+function trimToUtf8BoundaryEnd(buf: Buffer, maxBytes: number): string {
+  if (buf.length <= maxBytes) return buf.toString("utf8");
+  let start = buf.length - maxBytes;
+  // Move forward to a character boundary (skip UTF-8 continuation bytes).
+  while (start < buf.length && (buf[start] & 0xc0) === 0x80) start++;
+  return buf.subarray(start).toString("utf8");
+}
+
+function trimToUtf8BoundaryStart(buf: Buffer, maxBytes: number): string {
+  if (buf.length <= maxBytes) return buf.toString("utf8");
+  let end = maxBytes;
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end--;
+  return buf.subarray(0, end).toString("utf8");
+}
+
+/**
+ * The conversation as plain text: `User:`/`Phaethon:` lines. Short conversations
+ * stay completely intact; long multi-turn conversations preserve the opening
+ * request plus as many recent turns as fit within ~48 000 bytes so another
+ * provider never hits context limits during a handoff.
+ */
 export function transcript(msgs: Message[]): string {
-  let out = "";
-  for (const m of toUi(msgs)) {
+  const entries = toUi(msgs).map((m) => {
     const who = m.role === "user" ? "User" : "Phaethon";
     const files = m.attachments.length ? ` [attached: ${m.attachments.map((a) => a.name).join(", ")}]` : "";
-    out += `${who}:${files} ${m.text.trim()}\n\n`;
-  }
+    return `${who}:${files} ${m.text.trim()}\n\n`;
+  });
+  const out = entries.join("");
   const bytes = Buffer.from(out, "utf8");
   if (bytes.length <= TRANSCRIPT_CAP) return out;
-  let start = bytes.length - TRANSCRIPT_CAP;
-  // Move forward to a character boundary (skip UTF-8 continuation bytes).
-  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
-  return `[The start of the conversation is left out.]\n\n${bytes.subarray(start).toString("utf8")}`;
+  if (entries.length >= 3) {
+    const openingRaw = entries[0]!;
+    const openingBuf = Buffer.from(openingRaw, "utf8");
+    const opening =
+      openingBuf.length <= OPENING_CAP
+        ? openingRaw
+        : `${trimToUtf8BoundaryStart(openingBuf, OPENING_CAP).trimEnd()}…\n\n`;
+    const gap = "[Earlier turns in the middle of the conversation were left out.]\n\n";
+    const budget = TRANSCRIPT_CAP - Buffer.byteLength(opening, "utf8") - Buffer.byteLength(gap, "utf8");
+    if (budget > 0) {
+      const kept: string[] = [];
+      let used = 0;
+      for (let i = entries.length - 1; i >= 1; i--) {
+        const entry = entries[i]!;
+        const len = Buffer.byteLength(entry, "utf8");
+        if (used + len <= budget) {
+          kept.unshift(entry);
+          used += len;
+        } else if (kept.length === 0) {
+          kept.unshift(trimToUtf8BoundaryEnd(Buffer.from(entry, "utf8"), budget));
+          break;
+        } else {
+          break;
+        }
+      }
+      return `${opening}${gap}${kept.join("")}`;
+    }
+  }
+  return `[The start of the conversation is left out.]\n\n${trimToUtf8BoundaryEnd(bytes, TRANSCRIPT_CAP)}`;
 }
 
 /** The latest message and the user's message before it, for picking memories. */

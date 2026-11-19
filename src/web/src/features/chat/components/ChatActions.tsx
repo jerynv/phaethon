@@ -16,7 +16,7 @@ export const FILL_EVENT = "phaethon:composer-fill";
 export type FillDetail = { draftKey: string; text: string };
 
 const SECTION: Partial<Record<ChatActionId, SettingsSection>> = {
-  "settings-assistant": "providers",
+  "settings-assistant": "models",
   "settings-appearance": "appearance",
   "settings-accessibility": "appearance",
   "settings-spaces": "spaces",

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProviderInfo, Settings } from "./api";
-import { addedProviders, canSaveUnchecked, checkAndSave, isAdded, isValidModelFor, matchModels, outcomeText, providerNeed, readableModel, splitRef, toRef } from "./logic";
+import { addedProviders, canSaveUnchecked, checkAndSave, isAdded, isValidModelFor, matchModels, modelLabel, outcomeText, PROVIDER_IDS, providerNeed, readableModel, splitRef, toRef } from "./logic";
 
 const base: ProviderInfo = {
   id: "openai",
@@ -20,11 +20,16 @@ const base: ProviderInfo = {
 const p = (over: Partial<ProviderInfo>): ProviderInfo => ({ ...base, ...over });
 
 describe("model references", () => {
+  it("lists Anthropic, OpenAI, and Google Gemini as the top three presets", () => {
+    expect(PROVIDER_IDS.slice(0, 3)).toEqual(["anthropic", "openai", "google"]);
+  });
   it("saves Anthropic plain and others as provider:model", () => {
     expect(toRef("anthropic", "claude-opus-5-5")).toBe("claude-opus-5-5");
+    expect(toRef("google", "gemini-2.5-pro")).toBe("google:gemini-2.5-pro");
     expect(toRef("openrouter", "openai/gpt-5")).toBe("openrouter:openai/gpt-5");
   });
   it("splits on a known provider head only", () => {
+    expect(splitRef("google:gemini-2.5-pro")).toEqual({ provider: "google", model: "gemini-2.5-pro" });
     expect(splitRef("openrouter:openai/gpt-5")).toEqual({ provider: "openrouter", model: "openai/gpt-5" });
     expect(splitRef("ollama:llama3.2:3b")).toEqual({ provider: "ollama", model: "llama3.2:3b" });
     expect(splitRef("claude-haiku-5-5")).toEqual({ provider: "anthropic", model: "claude-haiku-5-5" });
@@ -34,15 +39,27 @@ describe("model references", () => {
     expect(isValidModelFor("anthropic", "claude-opus-5-5")).toBe(true);
     expect(isValidModelFor("anthropic", "gpt-5")).toBe(false);
     expect(isValidModelFor("openai", "gpt-5")).toBe(true);
+    expect(isValidModelFor("google", "gemini-2.5-pro")).toBe(true);
     expect(isValidModelFor("openai", "../x")).toBe(false);
     expect(isValidModelFor("openai", "-x")).toBe(false);
     expect(isValidModelFor("openai", "has space")).toBe(false);
   });
-  it("reads Claude ids", () => {
+  it("reads Claude, Google Gemini, and OpenAI ids into friendly names", () => {
     expect(readableModel("claude-opus-5-5")).toBe("Claude Opus 5.5");
     expect(readableModel("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
     expect(readableModel("claude-opus-5")).toBe("Claude Opus 5");
-    expect(readableModel("gpt-5")).toBe("gpt-5");
+    expect(readableModel("gemini-2.5-pro")).toBe("Gemini 2.5 Pro");
+    expect(readableModel("gemini-2.5-flash")).toBe("Gemini 2.5 Flash");
+    expect(readableModel("gemini-2.5-flash-lite")).toBe("Gemini 2.5 Flash-Lite");
+    expect(readableModel("gemini-3-pro")).toBe("Gemini 3 Pro");
+    expect(readableModel("gemini-2.5-pro-preview-05-06")).toBe("Gemini 2.5 Pro Preview");
+    expect(readableModel("gpt-5")).toBe("GPT-5");
+    expect(readableModel("gpt-4o")).toBe("GPT-4o");
+    expect(readableModel("gpt-4o-mini")).toBe("GPT-4o Mini");
+    expect(readableModel("gpt-5.5-mini")).toBe("GPT-5.5 Mini");
+    expect(readableModel("o3-mini")).toBe("o3 Mini");
+    expect(readableModel("llama3.2:3b")).toBe("llama3.2:3b");
+    expect(modelLabel("gpt-5", [{ id: "gpt-5", name: "gpt-5" }])).toBe("GPT-5");
   });
 });
 

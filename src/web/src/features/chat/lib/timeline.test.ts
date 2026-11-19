@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AgentEvent, UiMessage } from "#shared/agent.ts";
-import { applyEvent, continueReply, fromUi, mergeSaved, needsYou, replyText, segments, startReply, workSummary, type AssistantMessage } from "./timeline.ts";
+import { applyEvent, continueReply, fromUi, mergeSaved, needsYou, recordText, replyText, segments, startReply, workSummary, type AssistantMessage } from "./timeline.ts";
 
 const run = (events: AgentEvent[], from: AssistantMessage = startReply()) => events.reduce((m, e) => applyEvent(m, e, 1000), from);
 
@@ -79,6 +79,31 @@ describe("a streamed reply", () => {
     const m = run([{ kind: "thinking", delta: "Let me " }, { kind: "thinking", delta: "see." }, { kind: "text", delta: "Done." }]);
     expect(m.parts[0]).toEqual({ type: "thinking", text: "Let me see." });
   });
+
+  test("automatic modelSwitch and handoff record flow cleanly without failing the reply", () => {
+    const handoff = { kind: "handoff" as const, from: "Claude Opus 5.5", to: "Gemini 2.5 Pro", reason: "hit its rate limit" };
+    const m = run([
+      {
+        kind: "modelSwitch",
+        from: { backend: "phaethon", model: "claude-opus-5-5" },
+        to: { backend: "phaethon", model: "google:gemini-2.5-pro", effort: null },
+        fromLabel: "Claude Opus 5.5",
+        toLabel: "Gemini 2.5 Pro",
+        reason: "hit its rate limit",
+      },
+      { kind: "record", record: handoff },
+      { kind: "record", record: handoff },
+      { kind: "text", delta: "Here is your answer." },
+      { kind: "end", sessionId: null },
+    ]);
+    expect(m.status).toBe("done");
+    expect(m.error).toBeUndefined();
+    expect(replyText(m)).toBe("Here is your answer.");
+    const segs = segments(m.parts);
+    expect(segs.map((s) => s.type)).toEqual(["record", "text"]);
+    expect(segs[0].type === "record" && segs[0].record).toEqual(handoff);
+    expect(recordText(handoff)).toBe("Switched to Gemini 2.5 Pro automatically: Claude Opus 5.5 hit its rate limit");
+  });
 });
 
 describe("the saved conversation", () => {
@@ -97,10 +122,23 @@ describe("the saved conversation", () => {
     },
   ];
 
-  test("loads with tool work first, then words, then receipts", () => {
+  test("loads with handoffs and tool work first, then words, then receipts", () => {
     const [u, a] = fromUi(saved);
     expect(u.role === "user" && u.attachments[0].path).toBe("files/a.png");
     expect(a.role === "assistant" && a.parts.map((p) => (p.type === "record" ? p.record.kind : p.type))).toEqual(["tool", "text", "approval"]);
+    const withHandoff = fromUi([
+      {
+        role: "assistant",
+        text: "Continued smoothly.",
+        attachments: [],
+        index: 0,
+        records: [
+          { kind: "tool", id: "t", category: "read", label: "Reading file", status: "success" },
+          { kind: "handoff", from: "Claude Opus 5.5", to: "GPT-5", reason: "was unavailable" },
+        ],
+      },
+    ]);
+    expect(withHandoff[0].role === "assistant" && withHandoff[0].parts.map((p) => (p.type === "record" ? p.record.kind : p.type))).toEqual(["handoff", "tool", "text"]);
   });
 
   test("after a turn the live messages get the saved positions", () => {

@@ -1,5 +1,5 @@
 /**
- * Dev-only fake core for Settings › Assistant and Settings › Coding agents.
+ * Dev-only fake core for Settings › Assistant and Settings › AI & Models.
  * Stateful, so flows can be clicked through. Pick a starting state with
  * `scenario=` in the URL hash (`#mock&scenario=fresh`):
  *  - configured (default): Anthropic default with a key, OpenRouter and Ollama
@@ -17,7 +17,7 @@ import shell from "./shell";
 import { MORE_SPACES } from "./edu";
 
 type Args = Record<string, unknown>;
-type ProviderId = "anthropic" | "openai" | "openrouter" | "groq" | "together" | "mistral" | "deepseek" | "xai" | "ollama" | "lmstudio" | "custom";
+type ProviderId = "anthropic" | "openai" | "google" | "openrouter" | "groq" | "together" | "mistral" | "deepseek" | "xai" | "ollama" | "lmstudio" | "custom";
 
 const scenario = new URLSearchParams(location.hash.slice(1)).get("scenario") ?? "configured";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -25,6 +25,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const PRESETS: { id: ProviderId; name: string; base: string; key: "required" | "optional" | "none"; local: boolean; editableBase: boolean; keysUrl: string; keyPrefix: string }[] = [
   { id: "anthropic", name: "Anthropic", base: "https://api.anthropic.com", key: "required", local: false, editableBase: false, keysUrl: "https://console.anthropic.com/settings/keys", keyPrefix: "sk-ant-" },
   { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1", key: "required", local: false, editableBase: false, keysUrl: "https://platform.openai.com/api-keys", keyPrefix: "" },
+  { id: "google", name: "Google Gemini", base: "https://generativelanguage.googleapis.com/v1beta/openai", key: "required", local: false, editableBase: false, keysUrl: "https://aistudio.google.com/apikey", keyPrefix: "AIza" },
   { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1", key: "required", local: false, editableBase: false, keysUrl: "https://openrouter.ai/settings/keys", keyPrefix: "sk-or-" },
   { id: "groq", name: "Groq", base: "https://api.groq.com/openai/v1", key: "required", local: false, editableBase: false, keysUrl: "https://console.groq.com/keys", keyPrefix: "gsk_" },
   { id: "together", name: "Together AI", base: "https://api.together.xyz/v1", key: "required", local: false, editableBase: false, keysUrl: "https://api.together.ai/settings/api-keys", keyPrefix: "" },
@@ -69,6 +70,7 @@ const settings = {
   backend: "phaethon" as string,
   provider: "anthropic" as ProviderId,
   anthropicModel: null as string | null,
+  autoFallback: true,
   active: {} as Record<string, string>,
 };
 
@@ -164,6 +166,7 @@ function settingsView() {
     defaultModel,
     providerReady: chosen.ready && !!chosen.model,
     providers,
+    autoFallback: settings.autoFallback,
     appearance: {},
     vaultPath: "/Users/student/Phaethon/default",
     version: "0.2.0",
@@ -229,6 +232,9 @@ const handlers: Record<string, (args: Args) => unknown> = {
   async settings_set_provider({ provider }) {
     settings.provider = provider as ProviderId;
   },
+  async settings_set_auto_fallback({ enabled }) {
+    settings.autoFallback = Boolean(enabled);
+  },
   async settings_set_model({ model }) {
     settings.anthropicModel = (model as string | null) ?? null;
   },
@@ -272,6 +278,11 @@ const handlers: Record<string, (args: Args) => unknown> = {
       { id: "gpt-5.5", name: "gpt-5.5" },
       { id: "gpt-5.5-mini", name: "gpt-5.5-mini" },
       { id: "o5", name: "o5" },
+    ];
+    if (provider === "google") return [
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", sees: "yes" },
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", sees: "yes" },
+      { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash-Lite", sees: "yes" },
     ];
     throw `${PRESETS.find((p) => p.id === provider)?.name} didn’t send its model list. Type the model’s name instead.`;
   },

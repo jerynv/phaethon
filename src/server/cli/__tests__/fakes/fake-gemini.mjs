@@ -103,11 +103,18 @@ if (args.includes("text")) {
       }
       switch (msg.method) {
         case "initialize":
+          if (process.env.FAKE_GEMINI_HANG === "initialize") break;
           send({ id: msg.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: process.env.FAKE_NO_LOAD !== "1" }, authMethods: [{ id: "oauth-personal", name: "Log in with Google" }] } });
           break;
         case "session/new":
-          if (process.env.FAKE_LOGGED_IN === "0") send({ id: msg.id, error: { code: -32000, message: "Authentication required" } });
-          else send({ id: msg.id, result: { sessionId } });
+          if (process.env.FAKE_GEMINI_HANG === "session/new") break;
+          if (process.env.FAKE_GEMINI_ANTIGRAVITY === "1") {
+            send({ id: msg.id, error: { code: -32000, message: "This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products: https://antigravity.google" } });
+          } else if (process.env.FAKE_LOGGED_IN === "0") {
+            send({ id: msg.id, error: { code: -32000, message: "Authentication required" } });
+          } else {
+            send({ id: msg.id, result: { sessionId } });
+          }
           break;
         case "session/load":
           if (process.env.FAKE_LOGGED_IN === "0") send({ id: msg.id, error: { code: -32000, message: "Authentication required" } });

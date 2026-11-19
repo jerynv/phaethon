@@ -14,7 +14,7 @@ import { CopyButton, Loader, Row, SettingsGroup, SwitchRow, useLoad } from "./ui
 
 function Keys({ keys }: { keys: string[] }) {
   return (
-    <KbdGroup>
+    <KbdGroup className="shrink-0">
       {keys.map((k) => (
         <Kbd key={k}>{k}</Kbd>
       ))}
@@ -32,8 +32,8 @@ function shortcuts(): { label: string; keys: string[] }[] {
     { label: "Open or close settings", keys: keysFor("settings").keys },
     { label: "Go to space 1–9", keys: [...spaceKeys(0).keys.slice(0, -1), "1–9"] },
     { label: "Switch view (Chat, Files, Study, Grades, Plan, Courses)", keys: [...firstView.slice(0, -1), `${firstView.at(-1)}–${lastView.at(-1)}`] },
-    { label: "Move between sidebar, page and composer", keys: ["F6"] },
-    { label: "Close settings, dialogs and menus", keys: ["Esc"] },
+    { label: "Move between sidebar, page, and message box", keys: ["F6"] },
+    { label: "Close settings, dialogs, and menus", keys: ["Esc"] },
   ];
 }
 
@@ -46,7 +46,7 @@ export function GeneralSection() {
       <SettingsGroup>
         <Loader state={settings} errorTitle="Couldn’t read your settings" skeleton={<SkeletonRows count={1} className="px-3 py-2" />}>
           {(s) => (
-            <Row label="Phaethon folder">
+            <Row label="Phaethon folder" description="Where your spaces, notes, and conversations are stored.">
               {s.vaultPath ? (
                 <>
                   <StartTruncate value={s.vaultPath} className="max-w-80 font-mono text-muted-foreground text-xs" />
@@ -58,7 +58,7 @@ export function GeneralSection() {
             </Row>
           )}
         </Loader>
-        <SwitchRow label="Show technical details" description="Tool names, paths and output under each step." checked={technical} onCheckedChange={setTechnical} />
+        <SwitchRow label="Show technical details" description="Show tool names, file paths, and raw output under each step." checked={technical} onCheckedChange={setTechnical} />
         <GradeScaleRow />
       </SettingsGroup>
 
@@ -85,15 +85,15 @@ function GradeScaleRow() {
     const next = { ...(scale.kind === "custom" ? scale.points : {}) };
     if (Number.isFinite(n) && n >= 0 && n <= 20) next[letter] = Math.round(n * 100) / 100;
     setScale({ kind: "custom", points: next });
-    setDrafts((d) => ({ ...d, [letter]: "" }));
+    setDrafts(({ [letter]: _, ...rest }) => rest);
   };
   return (
     <Row
-      label="Grade points"
-      description={scale.kind === "custom" ? undefined : "A = 4.0, A− = 3.7, B+ = 3.3…"}
+      label="Grade scale"
+      description={scale.kind === "custom" ? "Points per letter used to calculate your GPA." : "Standard 4.0 scale (A = 4.0, A− = 3.7, B+ = 3.3…)"}
       below={
         scale.kind === "custom" ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-x-3 gap-y-1.5 pb-1" aria-label="Points per letter">
+          <div role="group" aria-label="Points per letter" className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-x-3 gap-y-1.5 pb-1">
             {LETTER_ORDER.map((letter) => (
               <label key={letter} className="flex items-center gap-2 text-sm">
                 <span className="w-5 shrink-0 text-muted-foreground tabular-nums">{letter}</span>
@@ -101,7 +101,7 @@ function GradeScaleRow() {
                   size="sm"
                   inputMode="decimal"
                   aria-label={`Points for ${letter}`}
-                  value={drafts[letter] || String(points[letter] ?? "")}
+                  value={drafts[letter] ?? String(points[letter] ?? "")}
                   onChange={(e) => setDrafts((d) => ({ ...d, [letter]: e.target.value }))}
                   onBlur={(e) => commit(letter, e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && commit(letter, (e.target as HTMLInputElement).value)}

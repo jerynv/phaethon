@@ -24,6 +24,8 @@ export type CatalogGroup = {
   id: string;
   name: string;
   backend: Backend;
+  /** True when this provider or coding agent is ready to answer right now (`need === null`). */
+  ready: boolean;
   /** What still has to happen before it can answer, or null when ready. */
   need: string | null;
   needAction?: "providers" | "agents";
@@ -37,6 +39,8 @@ type Catalog = {
   status: "idle" | "loading" | "ready" | "error";
   error?: string;
   settings?: Settings;
+  /** Whether automatic model fallback is enabled (defaults to true). */
+  autoFallback: boolean;
   groups: CatalogGroup[];
   load(force?: boolean): Promise<void>;
   loadModels(groupId: string): Promise<void>;
@@ -45,11 +49,13 @@ type Catalog = {
 const OWN_EFFORTS = ["low", "medium", "high"];
 const CLI_BACKEND = { claude: "claude-cli", codex: "codex-cli", gemini: "gemini-cli" } as const;
 
+const displayModelName = (id: string, name?: string) => (name && name !== id ? name : readableModel(id));
+
 function ownModels(provider: ProviderId, list: ModelInfo[]): CatalogModel[] {
   return list.map((m) => ({
     backend: "phaethon",
     model: toRef(provider, m.id),
-    name: m.name || readableModel(m.id),
+    name: displayModelName(m.id, m.name),
     efforts: provider === "anthropic" ? OWN_EFFORTS : (m.reasoningEfforts ?? []).filter((e) => OWN_EFFORTS.includes(e)),
     defaultEffort: provider === "anthropic" ? "medium" : m.defaultReasoningEffort,
   }));
@@ -60,7 +66,7 @@ function cliModels(cli: "claude" | "codex" | "gemini", catalog: CliModels): Cata
   const rows: CatalogModel[] = catalog.models.map((m) => ({
     backend,
     model: m.id,
-    name: m.name || m.id,
+    name: displayModelName(m.id, m.name),
     efforts: m.reasoningEfforts ?? [],
     defaultEffort: m.defaultReasoningEffort,
   }));
@@ -73,6 +79,7 @@ let generation = 0;
 
 export const useCatalog = create<Catalog>((set, get) => ({
   status: "idle",
+  autoFallback: true,
   groups: [],
 
   async load(force = false) {
@@ -83,40 +90,60 @@ export const useCatalog = create<Catalog>((set, get) => ({
       const [settings, clis] = await Promise.all([getSettings(), invoke<CliStatus[]>("agent_clis_status").catch(() => [] as CliStatus[])]);
       if (current !== generation) return;
       const prev = new Map(get().groups.map((g) => [g.id, g]));
+      const activeGroupId = settings.backend === "phaethon" ? settings.provider : settings.backend;
+
       const own: CatalogGroup[] = settings.providers
         .filter((p) => isAdded(p) || p.id === settings.provider || p.id === "anthropic")
-        .sort((a, b) => Number(b.id === settings.provider) - Number(a.id === settings.provider))
         .map((p) => {
           const old = prev.get(p.id);
           const chosen = providerModel(p, settings);
+          const need = p.ready
+            ? null
+            : p.editableBase && !p.baseUrl
+              ? "Needs a server address"
+              : p.key === "required" && !p.hasKey
+                ? "Needs an API key"
+                : "Not set up";
           return {
             id: p.id,
             name: p.name,
             backend: "phaethon" as Backend,
-            need: p.ready ? null : p.key === "required" && !p.hasKey ? "Needs an API key" : "Not set up",
+            ready: need === null,
+            need,
             needAction: "providers" as const,
             status: old && !force ? old.status : "idle",
             error: old?.error,
             models: old && !force ? old.models : chosen ? ownModels(p.id, [{ id: chosen, name: readableModel(chosen) }]) : [],
           };
         });
+
       const agents: CatalogGroup[] = clis
         .filter((c): c is CliStatus & { id: "claude" | "codex" | "gemini" } => c.id !== "opencode" && c.supported)
         .map((c) => {
           const id = CLI_BACKEND[c.id];
           const old = prev.get(id);
+          const need = !c.installed ? "Not installed" : c.loggedIn === true ? null : "Not signed in";
           return {
             id,
             name: CLI_INFO[c.id].name,
             backend: id,
-            need: !c.installed ? "Not installed" : c.loggedIn === false ? "Not signed in" : null,
+            ready: need === null,
+            need,
             needAction: "agents" as const,
             status: old && !force ? old.status : "idle",
             error: old?.error,
             models: old && !force ? old.models : [],
           };
         });
-      set({ status: "ready", settings, groups: [...own, ...agents] });
+
+      const groups = [...own, ...agents].sort((a, b) => {
+        if (a.ready !== b.ready) return a.ready ? -1 : 1;
+        if (a.id === activeGroupId) return -1;
+        if (b.id === activeGroupId) return 1;
+        return 0;
+      });
+
+      set({ status: "ready", settings, autoFallback: settings.autoFallback ?? true, groups });
     } catch (e) {
       if (current === generation) set({ status: "error", error: errorText(e) });
     }
@@ -163,13 +190,33 @@ export function findModel(groups: CatalogGroup[], pick: ModelPick): CatalogModel
   return groups.find((g) => g.id === groupIdOf(pick))?.models.find((m) => m.model === pick.model);
 }
 
-/** A pick's model as words: "Claude Opus 5.5", "gpt-5.5", "Claude Code default". */
+/** A pick's model as words: "Claude Opus 5.5", "GPT-5.5", "Claude Code default". */
 export function pickName(groups: CatalogGroup[], pick: ModelPick): string {
   const found = findModel(groups, pick);
   if (found) return found.name;
   if (pick.backend === "phaethon") return pick.model ? readableModel(splitRef(pick.model).model) : "Default model";
   const cli = pick.backend.slice(0, -4) as "claude" | "codex" | "gemini";
-  return pick.model ?? `${CLI_INFO[cli].name} default`;
+  return pick.model ? readableModel(pick.model) : `${CLI_INFO[cli].name} default`;
+}
+
+/** Maps a catalog group id to a Settings › AI & Models deep-link target. */
+export function targetForGroup(groupId: string): { brand: string; mode: "subscription" | "api" } {
+  switch (groupId) {
+    case "claude-cli":
+      return { brand: "claude", mode: "subscription" };
+    case "anthropic":
+      return { brand: "claude", mode: "api" };
+    case "codex-cli":
+      return { brand: "openai", mode: "subscription" };
+    case "openai":
+      return { brand: "openai", mode: "api" };
+    case "gemini-cli":
+      return { brand: "google", mode: "subscription" };
+    case "google":
+      return { brand: "google", mode: "api" };
+    default:
+      return { brand: groupId, mode: "api" };
+  }
 }
 
 export const EFFORT_LABEL: Record<string, string> = {

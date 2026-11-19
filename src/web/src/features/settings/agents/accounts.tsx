@@ -1,12 +1,8 @@
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { useState } from "react";
-import { useCatalog } from "@/features/chat/catalog";
-import { invalidate } from "@/lib/query";
 import { FieldError, RowError, cleanMessage } from "@/components/errors";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
-import { ProviderIcon } from "@/components/provider-icon";
-import { SkeletonCard } from "@/components/skeletons";
 import { toast } from "@/components/toast";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
@@ -17,17 +13,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
-import { ConfirmDialog, CopyButton, Loader, Row, RowDetail, SettingsGroup, Status, useLoad } from "../ui";
+import { ConfirmDialog, Row, Status, useLoad } from "../ui";
 import {
-  CLI_IDS,
   CLI_INFO,
   type CliId,
-  type CliStatus,
   cancelInstanceSignIn,
-  cliStatuses,
   type InstanceView,
   instanceUsage,
-  listInstances,
   removeInstance,
   saveInstance,
   selectInstance,
@@ -35,18 +27,14 @@ import {
   signOutInstance,
   type UsageWindow,
 } from "./api";
-import { canInstall, useCliInstall } from "./install";
-import { currentInstance, instanceStatus } from "./logic";
+import { instanceStatus } from "./logic";
 
 /**
- * Settings › Coding agents: Claude Code, Codex and Gemini CLI. Whether each
- * is installed (with the install command when it isn't), its accounts
- * (instances) with sign-in state and usage limits, and adding, choosing or
- * removing an account. Signing in runs the CLI's own login; Phaethon never
- * sees the credentials.
+ * A coding agent's accounts, as Settings › AI & Models shows them under a
+ * plan (Claude Code, Codex, Gemini CLI): each account with its sign-in state
+ * and usage limits, and adding, choosing or removing one. Signing in runs the
+ * CLI's own login; Phaethon never sees the credentials.
  */
-
-type Data = { clis: CliStatus[]; instances: InstanceView[] };
 
 /** "2 h", "3 d": how long until a usage window resets. */
 function resetsIn(at: string | number | null): string | null {
@@ -65,9 +53,16 @@ function UsageBar({ w }: { w: UsageWindow }) {
   const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)));
   const reset = resetsIn(w.resetsAt);
   return (
-    <div className="grid grid-cols-[4rem_1fr_4rem_5.5rem] items-center gap-3 text-xs">
+    <div className="grid grid-cols-[4.5rem_1fr_4.5rem_6.5rem] items-center gap-3 text-xs">
       <span className="truncate text-muted-foreground">{w.label}</span>
-      <div className="h-1 overflow-hidden rounded-full bg-muted">
+      <div
+        role="progressbar"
+        aria-label={w.label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        className="h-1 overflow-hidden rounded-full bg-muted"
+      >
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
@@ -118,7 +113,7 @@ function Usage({ id }: { id: string }) {
   );
 }
 
-function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current: boolean; many: boolean; onChanged: () => Promise<void> }) {
+export function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current: boolean; many: boolean; onChanged: () => Promise<void> }) {
   const [signing, setSigning] = useState(false);
   const [busy, setBusy] = useState<"use" | "out" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -240,13 +235,13 @@ function InstanceRow({ i, current, many, onChanged }: { i: InstanceView; current
         </Menu>
       ) : null}
       <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={`Remove ${i.config.name}?`} confirm="Remove" destructive onConfirm={() => void remove()}>
-        <p>Phaethon forgets this account and its sign-in folder. Chats that use it switch to {CLI_INFO[i.config.cli].name}’s main account.</p>
+        <p>Phaethon will sign out and remove this account. Any conversations using it will switch to {CLI_INFO[i.config.cli].name}’s default account.</p>
       </ConfirmDialog>
     </Row>
   );
 }
 
-function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<void> }) {
+export function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -255,7 +250,11 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   if (!open) {
     return (
       <div className="flex h-9 items-center px-3">
-        <button type="button" onClick={() => setOpen(true)} className="flex h-7 w-fit items-center gap-1.5 rounded-md text-primary text-sm transition-opacity hover:opacity-80">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex h-7 w-fit items-center gap-1.5 rounded-md text-primary text-sm outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <Icon icon={icons.add} className="size-4" />
           Add account
         </button>
@@ -264,7 +263,7 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   }
   const submit = async () => {
     const n = name.trim();
-    if (!n) return setError("Give the account a name, like Work or Personal.");
+    if (!n) return setError("Enter a name for this account, like Work or Personal.");
     setBusy(true);
     setError(null);
     try {
@@ -281,7 +280,7 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
   };
   return (
     <Row
-      label="New account"
+      label="Account name"
       htmlFor={id}
       below={
         <div className="flex flex-col gap-1.5">
@@ -292,7 +291,7 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
               void submit();
             }}
           >
-            <Input id={id} size="sm" autoFocus value={name} maxLength={80} placeholder="Work" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
+            <Input id={id} size="sm" autoFocus value={name} maxLength={80} placeholder="e.g. Work or Personal" aria-invalid={error ? true : undefined} onChange={(e) => setName(e.target.value)} />
             <Button
               size="xs"
               variant="ghost"
@@ -311,172 +310,5 @@ function AddAccount({ cli, onChanged }: { cli: CliId; onChanged: () => Promise<v
         </div>
       }
     />
-  );
-}
-
-/** One coding agent in the list: its glyph, name, the account in use and its state on one row; install steps or its accounts open under it. */
-function CliRow({
-  cli,
-  status,
-  instances,
-  open,
-  onToggle,
-  onChanged,
-  onRecheck,
-  rechecking,
-}: {
-  cli: CliId;
-  status: CliStatus | undefined;
-  instances: InstanceView[];
-  open: boolean;
-  onToggle: () => void;
-  onChanged: () => Promise<void>;
-  onRecheck: () => void;
-  rechecking: boolean;
-}) {
-  const info = CLI_INFO[cli];
-  const installed = status?.installed ?? instances.some((i) => i.installed);
-  const mine = instances.filter((i) => i.config.cli === cli);
-  const cur = currentInstance(instances, cli);
-  const st = installed && cur ? instanceStatus(cur) : null;
-  const setup = useCliInstall(() => onChanged());
-  return (
-    <div data-agent={cli}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="flex h-10 w-full min-w-0 items-center gap-3 px-3 text-left outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      >
-        <ProviderIcon id={cli} className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm">{info.name}</span>
-        {installed && mine.length > 1 && cur && cur.config.name !== info.name && !open ? <span className="hidden max-w-40 truncate text-muted-foreground text-xs sm:block">{cur.config.name}</span> : null}
-        {st ? (
-          <Status tone={st.tone} className="max-w-56 shrink-0">
-            <Truncate className="min-w-0">{st.text}</Truncate>
-          </Status>
-        ) : (
-          <Status tone={installed ? "ready" : "neutral"} className="shrink-0">
-            {installed ? "Installed" : "Not installed"}
-          </Status>
-        )}
-        <Icon icon={icons.chevronDown} className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", !open && "-rotate-90")} />
-      </button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
-            <RowDetail>
-              {!installed ? (
-                <>
-                  {canInstall(cli) ? (
-                    <Row
-                      label="Install"
-                      description={`With the installer ${info.company} publishes on ${info.installer}. It takes a few minutes.`}
-                      below={setup.error?.cli === cli ? <FieldError>{setup.error.text}</FieldError> : null}
-                    >
-                      {setup.installing === cli ? (
-                        <>
-                          <span role="status" className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
-                            <Spinner size="sm" />
-                            Installing…
-                          </span>
-                          <Button size="xs" variant="ghost" onClick={() => setup.cancel(cli)}>
-                            Cancel
-                          </Button>
-                        </>
-                      ) : (
-                        <Button size="xs" disabled={!!setup.installing} onClick={() => void setup.install(cli)} aria-label={`Install ${info.name}`}>
-                          Install
-                        </Button>
-                      )}
-                    </Row>
-                  ) : null}
-                  <Row label={canInstall(cli) ? "Or in a terminal" : "Install"} description={<code className="block overflow-x-auto whitespace-nowrap font-mono">{info.install}</code>}>
-                    <CopyButton text={info.install} label="Copy command" />
-                    <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
-                      {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
-                      {rechecking ? "Checking…" : "Check again"}
-                    </Button>
-                  </Row>
-                </>
-              ) : (
-                <>
-                  <AnimatePresence initial={false}>
-                    {mine.map((i) => (
-                      <motion.div key={i.config.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.18 }}>
-                        <InstanceRow i={i} current={cur?.config.id === i.config.id} many={mine.length > 1} onChanged={onChanged} />
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                  <AddAccount cli={cli} onChanged={onChanged} />
-                  <Row label="Models and usage">
-                    <Button size="xs" variant="outline" onClick={onRecheck} disabled={rechecking}>
-                      {rechecking ? <Spinner /> : <Icon icon={icons.retry} />}
-                      {rechecking ? "Refreshing…" : "Refresh"}
-                    </Button>
-                  </Row>
-                </>
-              )}
-            </RowDetail>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-export function AgentsSection() {
-  const state = useLoad<Data>(async () => {
-    const [clis, instances] = await Promise.all([cliStatuses(), listInstances()]);
-    return { clis, instances };
-  }, [], "agents:status");
-  const [rechecking, setRechecking] = useState(false);
-  const [open, setOpen] = useState<CliId | null>(null);
-  const refresh = async () => {
-    try {
-      const [clis, instances] = await Promise.all([cliStatuses(), listInstances()]);
-      state.setData({ clis, instances });
-      invalidate("agents:usage");
-      await useCatalog.getState().load(true);
-    } catch (e) {
-      toast.error("Couldn’t refresh coding agents", cleanMessage(e));
-    }
-  };
-  const recheck = async () => {
-    setRechecking(true);
-    await refresh();
-    setRechecking(false);
-  };
-  return (
-    <Loader state={state} errorTitle="Couldn’t check the coding agents" skeleton={<SkeletonCard rows={4} className="rounded-card" />}>
-      {({ clis, instances }) => {
-        const others = clis.filter((c) => !c.supported || !(CLI_IDS as readonly string[]).includes(c.id));
-        return (
-          <SettingsGroup data-testid="agents-list">
-            {CLI_IDS.map((cli) => (
-              <CliRow
-                key={cli}
-                cli={cli}
-                status={clis.find((c) => c.id === cli)}
-                instances={instances}
-                open={open === cli}
-                onToggle={() => setOpen((o) => (o === cli ? null : cli))}
-                onChanged={refresh}
-                onRecheck={() => void recheck()}
-                rechecking={rechecking}
-              />
-            ))}
-            {others.map((c) => (
-              <div key={c.id} className="flex h-10 items-center gap-3 px-3 text-muted-foreground">
-                <ProviderIcon id={c.id} className="size-4 shrink-0 opacity-60" />
-                <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
-                <span className="shrink-0 text-subtle-foreground text-xs">Not supported yet</span>
-                <span aria-hidden className="size-4 shrink-0" />
-              </div>
-            ))}
-          </SettingsGroup>
-        );
-      }}
-    </Loader>
   );
 }

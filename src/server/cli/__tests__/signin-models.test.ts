@@ -103,6 +103,7 @@ describe("sign-in", () => {
 
   it("reads Gemini CLI's words", () => {
     expect(geminiOutcome("x IneligibleTierError y")).toEqual({ status: "notSignedIn", message: INELIGIBLE_MESSAGE });
+    expect(geminiOutcome("This client is no longer supported for Gemini Code Assist for individuals. Migrate to https://antigravity.google")).toEqual({ status: "notSignedIn", message: INELIGIBLE_MESSAGE });
     expect(geminiOutcome("Error authenticating: FatalAuthenticationError: Error: Token expired\n").message).toBe("Gemini CLI didn’t finish signing in: Error: Token expired");
     expect(geminiOutcome("Error authenticating: Error: Token expired\n").message).toBe("Gemini CLI didn’t finish signing in: Token expired");
     expect(geminiOutcome("No input provided via stdin.").status).toBe("signedIn");
@@ -196,8 +197,15 @@ describe("status", () => {
     expect(info.map((i) => i.id)).toEqual(["claude", "codex", "gemini", "opencode"]);
     expect(info[0]).toMatchObject({ installed: true, loggedIn: true, loginCommand: "claude", ownHome: false });
     expect(info[1]).toMatchObject({ installed: true, loggedIn: true, ownHome: true, loginCommand: `CODEX_HOME="${path.join(env.appData, "claude-config", "default-codex")}" codex login` });
-    expect(info[2]).toMatchObject({ installed: true, loggedIn: null });
+    expect(info[2]).toMatchObject({ installed: true, loggedIn: false });
     expect(info[3]).toMatchObject({ name: "OpenCode", supported: false, loginCommand: "opencode auth login" });
     expect(await call("claude_cli_status")).toEqual({ installed: true, path: process.env.PHAETHON_CLAUDE_BIN });
+    // Presence of oauth_creds.json marks Gemini CLI as signed in without reading the file.
+    const geminiDir = path.join(env.appData, "claude-config", "default-gemini", ".gemini");
+    fs.mkdirSync(geminiDir, { recursive: true });
+    fs.writeFileSync(path.join(geminiDir, "oauth_creds.json"), "{}");
+    const after = await call<{ id: string; loggedIn: boolean | null }[]>("agent_clis_status");
+    expect(after[2]).toMatchObject({ id: "gemini", loggedIn: true });
+    fs.rmSync(path.join(geminiDir, "oauth_creds.json"));
   });
 });

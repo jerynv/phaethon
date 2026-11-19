@@ -6,7 +6,7 @@ import { call, tempHome } from "../../../../tests/harness.ts";
 import { ensureVault, vaultStateDir } from "../../core/vault.ts";
 import { readSettings, updateSettings } from "../../settings/settings.ts";
 import "../commands.ts";
-import { account, cliCommand, configDirFor, home, launch, list, parseUsage, remove, requireHome, save, select, selected, sessionTag, usage, validate, type Instance } from "../instances.ts";
+import { account, cliCommand, configDirFor, geminiLoggedIn, home, launch, list, parseUsage, remove, requireHome, save, select, selected, sessionTag, usage, validate, type Instance } from "../instances.ts";
 import { statusOf } from "../commands.ts";
 import { wallBreakingArg } from "../walls.ts";
 import { errors, FakeLog, fakeBin, request, send, THREAD } from "./helpers.ts";
@@ -124,6 +124,43 @@ describe("instances", () => {
     expect(JSON.parse(JSON.stringify(statusOf(null)))).toEqual({ installed: false });
     expect(statusOf(env.home).installed).toBe(false);
   });
+
+  it("detects Gemini CLI sign-in from credential file presence or built-in env keys only", () => {
+    const dir = path.join(env.home, "gemini-auth-check");
+    fs.mkdirSync(path.join(dir, ".gemini"), { recursive: true });
+    const prevGemini = process.env.GEMINI_API_KEY;
+    const prevGoogle = process.env.GOOGLE_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    try {
+      expect(geminiLoggedIn(dir, true)).toBe(false);
+      expect(geminiLoggedIn(dir, false)).toBe(false);
+
+      process.env.GEMINI_API_KEY = "AIza-test";
+      expect(geminiLoggedIn(dir, true)).toBe(true);
+      expect(geminiLoggedIn(dir, false)).toBe(false);
+      delete process.env.GEMINI_API_KEY;
+
+      process.env.GOOGLE_API_KEY = "AIza-test-google";
+      expect(geminiLoggedIn(dir, true)).toBe(true);
+      expect(geminiLoggedIn(dir, false)).toBe(false);
+      delete process.env.GOOGLE_API_KEY;
+
+      fs.writeFileSync(path.join(dir, ".gemini", "oauth_creds.json"), "{}");
+      expect(geminiLoggedIn(dir, true)).toBe(true);
+      expect(geminiLoggedIn(dir, false)).toBe(true);
+      fs.rmSync(path.join(dir, ".gemini", "oauth_creds.json"));
+
+      fs.writeFileSync(path.join(dir, ".gemini", "google_accounts.json"), "{}");
+      expect(geminiLoggedIn(dir, false)).toBe(true);
+    } finally {
+      if (prevGemini === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prevGemini;
+      if (prevGoogle === undefined) delete process.env.GOOGLE_API_KEY;
+      else process.env.GOOGLE_API_KEY = prevGoogle;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("usage", () => {
@@ -203,7 +240,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     const dir = home(saved)!;
     const walled = await send(request("claude", "school", "hi", { configDir: dir }));
     expect(errors(walled)).toEqual([
-      { code: "cli", message: "This connection’s launch arguments could let Claude Code change files or reach beyond the space, so nothing was sent: --dangerously-skip-permissions. Remove them in Settings › Coding agents, or turn on full access for this space." },
+      { code: "cli", message: "This connection’s launch arguments could let Claude Code change files or reach beyond the space, so nothing was sent: --dangerously-skip-permissions. Remove them in Settings › AI & Models, or turn on full access for this space." },
     ]);
     expect(log.runs()).toBe(0);
     const full = await send(request("claude", "school", "hi", { configDir: dir, fullAccess: true }));

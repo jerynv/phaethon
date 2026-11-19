@@ -13,6 +13,7 @@ export const cliOfBackend = (b: Backend): CliId | null => (isCliBackend(b) ? (b.
 export type ProviderId =
   | "anthropic"
   | "openai"
+  | "google"
   | "openrouter"
   | "groq"
   | "together"
@@ -49,6 +50,8 @@ export type Settings = {
   defaultModel: string | null;
   providerReady: boolean;
   providers: ProviderInfo[];
+  /** Automatically fall back to another ready model when the current one fails or is unreachable (defaults to true). */
+  autoFallback?: boolean;
   appearance: unknown;
   vaultPath: string;
   version: string;
@@ -74,7 +77,7 @@ export type SpaceView = { id: string; name: string; description: string; hue: nu
  * the settings again when they hear it. Same name as before the rewrite.
  */
 export const SETTINGS_CHANGED_EVENT = "phaethon:settings-changed";
-export type SettingsChangedDetail = { what: "backend" | "key" | "model" | "provider" };
+export type SettingsChangedDetail = { what: "backend" | "key" | "model" | "provider" | "autoFallback" };
 
 function announce<T>(what: SettingsChangedDetail["what"], p: Promise<T>): Promise<T> {
   return p.then((v) => {
@@ -86,6 +89,8 @@ function announce<T>(what: SettingsChangedDetail["what"], p: Promise<T>): Promis
 export const getSettings = () => invoke<Settings>("settings_get");
 export const setBackend = (backend: Backend) => announce("backend", invoke<void>("settings_set_backend", { backend }));
 export const setProvider = (provider: ProviderId) => announce("provider", invoke<void>("settings_set_provider", { provider }));
+export const setAutoFallback = (enabled: boolean) =>
+  announce("autoFallback", invoke<void>("settings_set_auto_fallback", { enabled }));
 /** The Anthropic model; null goes back to the recommended one. */
 export const setAnthropicModel = (model: string | null) => announce("model", invoke<void>("settings_set_model", { model }));
 /** Another provider's model; null clears it. */

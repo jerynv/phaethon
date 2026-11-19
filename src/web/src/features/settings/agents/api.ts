@@ -1,5 +1,5 @@
 /**
- * Typed calls for Settings › Coding agents: CLI status, the CLI's own sign-in,
+ * Typed calls for Settings › AI & Models: CLI status, the CLI's own sign-in,
  * instances (named homes), model catalogs and reasoning, the space's
  * workspace folder, full access and grants between spaces (research
  * core-head §1.2, §1.5; cli.md §2, §5, §8, §9). Phaethon never handles a

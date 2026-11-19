@@ -47,7 +47,9 @@ export type UiRecord =
   /** An email draft; the card reads its live state from the outbox. */
   | { kind: "mailDraft"; id: string; intent: "draft" | "send" }
   /** A schedule the agent suggested; off until the person turns it on. */
-  | { kind: "schedule"; id: string; title: string; when: string };
+  | { kind: "schedule"; id: string; title: string; when: string }
+  /** A calm note shown when Phaethon automatically handed the turn to another ready model. */
+  | { kind: "handoff"; from: string; to: string; reason: string };
 
 export type QuestionRole = "probe" | "predict" | "check";
 
@@ -96,7 +98,16 @@ export type AgentEvent =
   | { kind: "thinking"; delta: string }
   // New: lesson tools. The turn ends after a question; the answer arrives through `lesson_answer`.
   | { kind: "check"; question: CheckQuestion }
-  | { kind: "explainBack"; question: ExplainBackQuestion };
+  | { kind: "explainBack"; question: ExplainBackQuestion }
+  // Automatic model fallback: notifies the renderer that the conversation switched to a working model.
+  | {
+      kind: "modelSwitch";
+      from: { backend: string; model: string | null };
+      to: { backend: "phaethon" | "claude-cli" | "codex-cli" | "gemini-cli"; model: string | null; effort: string | null };
+      fromLabel: string;
+      toLabel: string;
+      reason: string;
+    };
 
 /** A message as `thread_load` returns it. */
 export type UiMessage = {

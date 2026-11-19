@@ -10,7 +10,7 @@ import { toolHost, type ToolHost } from "./phaethon-tools.ts";
 import { openTurnTools } from "./mcp-http.ts";
 import { realpath } from "../core/fsx.ts";
 import { cutAt } from "../threads/store.ts";
-import { BUSY_MESSAGE, CLI, cliName, INELIGIBLE_MESSAGE, isValidCliModel, lastLine, notLoggedInMessage, OWN_SETTINGS_MESSAGE, REASONING_UNSUPPORTED, stderrSummary, validReasoning, type CliId, type Outcome } from "./cli.ts";
+import { BUSY_MESSAGE, CLI, cliName, INELIGIBLE_MESSAGE, isGeminiIneligible, isValidCliModel, lastLine, notLoggedInMessage, OWN_SETTINGS_MESSAGE, REASONING_UNSUPPORTED, stderrSummary, validReasoning, type CliId, type Outcome } from "./cli.ts";
 import * as claude from "./claude.ts";
 import * as codex from "./codex.ts";
 import { finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
@@ -59,6 +59,21 @@ type Attempt = { kind: "notStarted" } | { kind: "done"; sessionId: string | null
 
 const error = (code: ErrorCode, message: string): AgentEvent => ({ kind: "error", code, message });
 
+/** Classifies non-auth CLI failures into connectivity, rate-limit, availability, or generic CLI codes. */
+export function classifyCliError(detail: string, stderr = ""): ErrorCode {
+  const text = `${detail}\n${stderr}`;
+  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|fetch failed|\bnetwork\b|timed out while connecting|socket hang up|unable to connect/i.test(text)) {
+    return "network";
+  }
+  if (/\b429\b|RESOURCE_EXHAUSTED|rate[ _-]?limit|quota exceeded|too many requests/i.test(text)) {
+    return "rateLimit";
+  }
+  if (/\b(?:502|503|504)\b|\bUNAVAILABLE\b|overloaded|service unavailable/i.test(text)) {
+    return "unavailable";
+  }
+  return "cli";
+}
+
 /** The folder the CLI runs in, checked: a real folder, not a link, and (for a bound project) where it was approved. */
 function workingDirectory(req: CliTurnRequest): string {
   const dir = req.workingDir ?? req.spaceDir;
@@ -99,6 +114,20 @@ export async function runCliTurnClaimed(req: CliTurnRequest, events: Channel<Age
 }
 
 /**
+ * Runs the body of a CLI turn without releasing `run` or sending `end`.
+ * Callers that manage turn lifecycle (such as automatic fallback in `agentSend`)
+ * use this so `run` stays claimed across fallback attempts.
+ */
+export async function runCliTurnBody(req: CliTurnRequest, events: Channel<AgentEvent>, run: Run): Promise<string | null> {
+  try {
+    return await turn(req, (e) => events.send(e), run);
+  } catch (e) {
+    events.send(error("cli", e instanceof Error ? e.message : String(e)));
+    return null;
+  }
+}
+
+/**
  * One turn of a CLI in a conversation the caller has claimed (`run`): run the
  * CLI (once more, afresh, if the session it was to resume is gone), record the
  * turn in the conversation the way Phaethon's own loop does, release the run, and
@@ -108,10 +137,7 @@ export async function runCliTurnClaimed(req: CliTurnRequest, events: Channel<Age
 export async function runCliTurn(req: CliTurnRequest, events: Channel<AgentEvent>, run: Run): Promise<void> {
   let session: string | null = null;
   try {
-    session = await turn(req, (e) => events.send(e), run);
-  } catch (e) {
-    events.send(error("cli", e instanceof Error ? e.message : String(e)));
-    session = null;
+    session = await runCliTurnBody(req, events, run);
   } finally {
     // Released before `end`, so the next message never finds the conversation busy.
     release(run);
@@ -339,6 +365,10 @@ async function drive(
     return { kind: "done", sessionId: outcome.sessionId };
   }
   const meta = CLI[cli];
+  if (cli === "gemini" && ((outcome.kind === "failed" && outcome.ineligible) || isGeminiIneligible(outcome.message) || isGeminiIneligible(stderr))) {
+    emit(error("cli", INELIGIBLE_MESSAGE));
+    return { kind: "failed" };
+  }
   const loggedOut = () => emit(error("notLoggedIn", notLoggedInMessage(cli, configDir)));
   if (outcome.kind === "failed" && (outcome.notLoggedIn || meta.notLoggedIn(outcome.message) || meta.notLoggedIn(stderr))) {
     loggedOut();
@@ -354,12 +384,12 @@ async function drive(
     // Gone after it had begun answering (unlikely): start afresh next time.
     clearSession(req.spaceDir, req.thread);
     emit(error("cli", `${name} lost this conversation’s earlier session. Send your message again to carry on in a new one.`));
+  } else if (cli === "gemini" && (isGeminiIneligible(detail) || isGeminiIneligible(stderr))) {
+    emit(error("cli", INELIGIBLE_MESSAGE));
   } else if (meta.notLoggedIn(detail) || meta.notLoggedIn(stderr)) {
     loggedOut();
-  } else if (cli === "gemini" && detail.includes("IneligibleTierError")) {
-    emit(error("cli", INELIGIBLE_MESSAGE));
   } else {
-    emit(error("cli", detail));
+    emit(error(classifyCliError(detail, stderr), detail));
   }
   return { kind: "failed" };
 }

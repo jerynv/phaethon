@@ -239,8 +239,13 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
     <header
       data-slot="app-header"
       data-sidebar={sidebarOpen ? "open" : "closed"}
-      // Settings has no tabs, so no tab strip either: the bar is the page's colour with no hairline, and the breadcrumbs sit on it.
-      className={cn("group/header app-drag @container/header relative flex h-(--titlebar-height) shrink-0 items-stretch", settingsOpen ? "bg-background" : pageTabStripClassName)}
+      // Settings has no tabs, so no tab strip either: the bar stays the page's colour with a bottom hairline separating the breadcrumbs from Settings below.
+      className={cn(
+        "group/header app-drag @container/header relative flex h-(--titlebar-height) shrink-0 items-stretch",
+        settingsOpen
+          ? "bg-background after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border"
+          : pageTabStripClassName,
+      )}
     >
       {/*
         The sidebar's column: its width (min-width animates with the sidebar's slide and follows a drag at once),
@@ -268,8 +273,8 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
       </div>
       {/* Everything here is centred on the bar's line (--titlebar-line), the line the wordmark and the toggle sit on. */}
       <div className="flex min-w-0 flex-1 items-center">
-        {/* Settings isn't a tab: while it's open its breadcrumbs take the tabs' place on a plain bar; Back or Esc returns to the tab you were on. */}
-        <div ref={bind.title} hidden={!settingsOpen} className="app-no-drag flex h-full min-w-0 items-center gap-1 pt-(--titlebar-skew) pl-2 text-sm" data-slot="settings-title" />
+        {/* Settings isn't a tab: while it's open its breadcrumbs take the tabs' place, aligned with the Settings nav buttons below; Back or Esc returns to the tab you were on. */}
+        <div ref={bind.title} hidden={!settingsOpen} className="app-no-drag flex h-full min-w-0 items-center gap-1 pt-(--titlebar-skew) pl-5 text-sm" data-slot="settings-title" />
         {settingsOpen ? null : <TabStrip />}
         {space && !settingsOpen ? (
           <div className="flex h-full shrink-0 items-center pt-(--titlebar-skew)">

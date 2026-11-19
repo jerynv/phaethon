@@ -23,8 +23,8 @@ import type { Channel } from "../rpc/channel.ts";
  * can't install an Electron build: they need one manual install of 0.2.
  */
 
-/** Wait after launch before the quiet check, so it never competes with startup. */
-export const LAUNCH_DELAY_MS = 20_000;
+/** Wait after launch before the quiet check: past startup, soon enough that the update dialog greets the person. */
+export const LAUNCH_DELAY_MS = 8_000;
 /** Release notes longer than this are cut (they are shown, never run). */
 export const NOTES_MAX_CHARS = 20_000;
 /** The pause between "installed" and the restart, so it can be said first. */

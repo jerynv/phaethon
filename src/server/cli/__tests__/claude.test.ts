@@ -24,6 +24,8 @@ beforeAll(() => {
   // A parent Claude Code session's variables must never reach the child.
   process.env.CLAUDECODE = "1";
   process.env.CLAUDE_CODE_ENTRYPOINT = "cli";
+  // The test runs inside whatever shell started it; one that points Claude Code at its own config (an agent session) mustn't count as the person's.
+  delete process.env.CLAUDE_CONFIG_DIR;
 });
 
 describe("Claude Code arguments", () => {

@@ -6,7 +6,7 @@ import path from "node:path";
 import type { AgentEvent, ToolCategory, ToolStatus } from "../../shared/agent.ts";
 import { homeDir } from "../env.ts";
 import { isWithin, writeFileAtomic } from "../core/fsx.ts";
-import type { Outcome } from "./cli.ts";
+import { isGeminiIneligible, type Outcome } from "./cli.ts";
 import { abortion, finishChild, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { JsonRpcPeer, RpcError } from "./jsonrpc.ts";
 import { sleep, stopGroup } from "./process.ts";
@@ -18,18 +18,22 @@ import { commandLabel, commandLine, place, shownPath, ToolEvents, type Granted }
  * GEMINI.md and settings, hooks included, can't be switched off otherwise).
  * Walled: a policy file denies every tool but reading, listing and
  * searching (passed as admin and user policy), plan approval mode, no
- * extensions, no MCP servers, the workspace trusted only for the run, and a
- * working folder with its own `.gemini` is refused. Permission requests are
- * answered by Phaethon: reads inside the folders it may see, nothing else.
+ * extensions, only Phaethon's turn MCP server when enabled (else none), the
+ * workspace trusted only for the run, and a working folder with its own
+ * `.gemini` is refused. Permission requests are answered by Phaethon: reads
+ * inside the folders it may see, nothing else.
  */
 
 export const ACP_PROTOCOL_VERSION = 1;
+export const ACP_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 const READ_ONLY_POLICY =
   '# Phaethon: Gemini CLI may only read and search the folders it is given.\n[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 900\n\n[[rule]]\ntoolName = ["read_file", "list_directory", "glob", "grep_search", "read_many_files"]\ndecision = "allow"\npriority = 950\n';
 const NO_TOOLS_POLICY = '# Phaethon: no tools.\n[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 999\n';
 /** An MCP allow-list naming no server, so none connect. */
 const NO_MCP = "phaethon-none";
+/** Phaethon's local per-turn HTTP MCP server name. */
+const PHAETHON_MCP = "phaethon";
 
 let tmpCounter = 0;
 
@@ -57,15 +61,17 @@ function includeDirs(dirs: string[]): string[] {
 }
 
 /** A walled ACP turn. */
-export function acpArgs(policy: string, dirs: string[], model: string | null): string[] {
-  const args = ["--acp", "--approval-mode", "plan", "--extensions", "none", "--allowed-mcp-server-names", NO_MCP, "--admin-policy", policy, "--policy", policy];
+export function acpArgs(policy: string, dirs: string[], model: string | null, allowPhaethonMcp = false): string[] {
+  const mcpName = allowPhaethonMcp ? PHAETHON_MCP : NO_MCP;
+  const args = ["--acp", "--approval-mode", "plan", "--extensions", "none", "--allowed-mcp-server-names", mcpName, "--admin-policy", policy, "--policy", policy];
   if (model) args.push("--model", model);
   return [...args, ...includeDirs(dirs)];
 }
 
-/** Full access: every tool without asking and the person's home in the workspace; still no extensions or MCP servers. */
-export function acpArgsFull(home: string | null, model: string | null): string[] {
-  const args = ["--acp", "--approval-mode", "yolo", "--extensions", "none", "--allowed-mcp-server-names", NO_MCP];
+/** Full access: every tool without asking and the person's home in the workspace; still no extensions or third-party MCP servers. */
+export function acpArgsFull(home: string | null, model: string | null, allowPhaethonMcp = false): string[] {
+  const mcpName = allowPhaethonMcp ? PHAETHON_MCP : NO_MCP;
+  const args = ["--acp", "--approval-mode", "yolo", "--extensions", "none", "--allowed-mcp-server-names", mcpName];
   if (model) args.push("--model", model);
   return [...args, ...includeDirs(home ? [home] : [])];
 }
@@ -87,14 +93,15 @@ export function hasOwnSettings(dir: string): boolean {
 
 export function invocation(ctx: DriveContext): Invocation {
   const env = { GEMINI_CLI_TRUST_WORKSPACE: "true" };
-  if (ctx.fullAccess) return { args: acpArgsFull(homeDir() || null, ctx.model), env };
+  const allowMcp = Boolean(ctx.mcp);
+  if (ctx.fullAccess) return { args: acpArgsFull(homeDir() || null, ctx.model, allowMcp), env };
   let policy: string;
   try {
     policy = policyFile(false);
   } catch (e) {
     throw new Error(`Phaethon couldn’t prepare Gemini CLI’s read-only rules: ${(e as Error).message}`);
   }
-  return { args: acpArgs(policy, ctx.dirs, ctx.model), env };
+  return { args: acpArgs(policy, ctx.dirs, ctx.model, allowMcp), env };
 }
 
 // ---- Permission policy (after T3's clientPolicy.ts) ----
@@ -247,13 +254,20 @@ export class GeminiUpdates {
 }
 
 function isAuthError(e: unknown): boolean {
-  return e instanceof RpcError && (e.code === -32000 || /auth/i.test(e.message));
+  if (!(e instanceof RpcError)) return false;
+  if (isGeminiIneligible(rpcText(e))) return false;
+  return e.code === -32000 || /auth/i.test(e.message);
 }
 
 function rpcText(e: unknown): string {
   if (!(e instanceof Error)) return String(e);
   const data = e instanceof RpcError && e.data !== undefined ? (typeof e.data === "string" ? e.data : JSON.stringify(e.data)) : "";
   return data && !e.message.includes(data) ? `${e.message}: ${data}` : e.message;
+}
+
+function handshakeTimeoutMs(): number {
+  const override = process.env.PHAETHON_TEST === "1" ? Number(process.env.PHAETHON_GEMINI_HANDSHAKE_TIMEOUT_MS) : NaN;
+  return Number.isFinite(override) && override > 0 ? override : ACP_HANDSHAKE_TIMEOUT_MS;
 }
 
 export const drive: Driver = async (gc, ctx, emit) => {
@@ -290,23 +304,51 @@ export const drive: Driver = async (gc, ctx, emit) => {
     return "stopped";
   };
   const ended = peer.ended.then(() => "ended" as const);
-  const step = async <T>(p: Promise<T>): Promise<T | "abort" | "ended"> => Promise.race([p, aborted, ended]);
+  const step = async <T>(p: Promise<T>): Promise<T | "abort" | "ended"> => {
+    p.catch(() => {});
+    return Promise.race([p, aborted, ended]);
+  };
+  const stepWithTimeout = async <T>(p: Promise<T>, ms: number): Promise<T | "abort" | "ended" | "timeout"> => {
+    p.catch(() => {});
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<"timeout">((r) => {
+      timer = setTimeout(() => r("timeout"), ms);
+    });
+    try {
+      return await Promise.race([p, aborted, ended, timeout]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+  const timedOut = async (): Promise<Outcome> => {
+    peer.close();
+    await stopGroup(gc, ctx.run);
+    return { kind: "failed", message: "Gemini CLI timed out while connecting to Google." };
+  };
   const incomplete = (): Outcome => ({ kind: "incomplete", message: "" });
+  const rpcFailure = (e: unknown): Outcome => {
+    const msg = rpcText(e);
+    if (isGeminiIneligible(msg)) return { kind: "failed", message: msg, ineligible: true };
+    return { kind: "failed", message: msg, notLoggedIn: isAuthError(e) };
+  };
+  const timeoutMs = handshakeTimeoutMs();
 
   try {
     let init: unknown;
     try {
-      init = await step(
+      init = await stepWithTimeout(
         peer.request("initialize", {
           protocolVersion: ACP_PROTOCOL_VERSION,
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
           clientInfo: { name: "phaethon", version: process.env.PHAETHON_VERSION ?? "0.3.0" },
         }),
+        timeoutMs,
       );
     } catch (e) {
-      return { kind: "failed", message: rpcText(e) };
+      return rpcFailure(e);
     }
     if (init === "abort") return await stop();
+    if (init === "timeout") return await timedOut();
     if (init === "ended") return incomplete();
     const canLoad = (init as { agentCapabilities?: { loadSession?: unknown } } | undefined)?.agentCapabilities?.loadSession === true;
     // Phaethon's tools over local MCP, when the agent takes an HTTP server.
@@ -317,22 +359,26 @@ export const drive: Driver = async (gc, ctx, emit) => {
       // An agent that can't load sessions can't resume this one: start afresh with the conversation as text.
       if (!canLoad) return { kind: "failed", message: "Error resuming session: this Gemini CLI can’t load earlier sessions.", stale: true };
       try {
-        const loaded = await step(peer.request("session/load", { sessionId: ctx.resume, cwd: ctx.workingDir, mcpServers }));
+        const loaded = await stepWithTimeout(peer.request("session/load", { sessionId: ctx.resume, cwd: ctx.workingDir, mcpServers }), timeoutMs);
         if (loaded === "abort") return await stop();
+        if (loaded === "timeout") return await timedOut();
         if (loaded === "ended") return incomplete();
       } catch (e) {
-        if (isAuthError(e)) return { kind: "failed", message: rpcText(e), notLoggedIn: true };
-        return { kind: "failed", message: `Error resuming session: ${rpcText(e)}`, stale: true };
+        const msg = rpcText(e);
+        if (isGeminiIneligible(msg)) return { kind: "failed", message: msg, ineligible: true };
+        if (isAuthError(e)) return { kind: "failed", message: msg, notLoggedIn: true };
+        return { kind: "failed", message: `Error resuming session: ${msg}`, stale: true };
       }
       sessionId = ctx.resume;
     } else {
       let created: unknown;
       try {
-        created = await step(peer.request("session/new", { cwd: ctx.workingDir, mcpServers }));
+        created = await stepWithTimeout(peer.request("session/new", { cwd: ctx.workingDir, mcpServers }), timeoutMs);
       } catch (e) {
-        return { kind: "failed", message: rpcText(e), notLoggedIn: isAuthError(e) };
+        return rpcFailure(e);
       }
       if (created === "abort") return await stop();
+      if (created === "timeout") return await timedOut();
       if (created === "ended") return incomplete();
       sessionId = String((created as { sessionId?: unknown } | undefined)?.sessionId ?? "") || null;
     }
@@ -343,7 +389,7 @@ export const drive: Driver = async (gc, ctx, emit) => {
     try {
       result = await step(prompting);
     } catch (e) {
-      return { kind: "failed", message: rpcText(e), notLoggedIn: isAuthError(e) };
+      return rpcFailure(e);
     }
     if (result === "abort" || signal.aborted) return await stop();
     if (result === "ended") return incomplete();

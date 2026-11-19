@@ -74,10 +74,14 @@ describe("model references and presets", () => {
     expect(keyProblem(openai, openai.base, "sk-ant-abcdefghijklmnop")).toBe(
       "That looks like a key for Anthropic, not OpenAI, so it wasn’t sent anywhere. Choose Anthropic as the provider, or paste a OpenAI key.",
     );
+    expect(keyProblem(openai, openai.base, "AIzaSyTestKey123456789")).toMatch(/key for Google Gemini/);
     expect(keyProblem(openai, openai.base, "short")).toMatch(/doesn’t look like a OpenAI API key/);
     const custom = preset("custom")!;
     expect(keyProblem(custom, "https://openrouter.ai/api/v1", "sk-or-abcdefghijkl")).toBeUndefined();
     expect(keyProblem(custom, "https://my.server/v1", "sk-or-abcdefghijkl")).toMatch(/key for OpenRouter/);
+    const google = preset("google")!;
+    expect(google).toMatchObject({ name: "Google Gemini", base: "https://generativelanguage.googleapis.com/v1beta/openai", keyPrefix: "AIza", checkPath: "/models" });
+    expect(parseRef("google:gemini-2.5-pro")).toMatchObject({ provider: { id: "google" }, model: "gemini-2.5-pro" });
   });
 
   it("binds a custom server's key to its origin and never sends it over plain http", () => {
@@ -99,12 +103,12 @@ describe("model references and presets", () => {
     expect(baseUrl(s, preset("openai")!)).toBe("https://api.openai.com/v1");
     expect(baseUrl(s, preset("ollama")!)).toBe("http://127.0.0.1:9999/v1");
     updateSettings({ providerUrls: {} });
-    expect(() => baseUrl(readSettings(), preset("custom")!)).toThrow("Add your server’s address in Settings › Providers first.");
+    expect(() => baseUrl(readSettings(), preset("custom")!)).toThrow("Add your server’s address in Settings › AI & Models first.");
   });
 
   it("picks the space's model, else the default, else asks for one", () => {
     updateSettings({ provider: "openai", providerModels: {} });
-    expect(() => modelForSpace(undefined)).toThrow("Choose which OpenAI model answers, in Settings › Providers.");
+    expect(() => modelForSpace(undefined)).toThrow("Choose which OpenAI model answers, in Settings › AI & Models.");
     updateSettings({ provider: null, model: null });
     expect(modelForSpace(undefined).model).toBe("claude-opus-5-5");
   });
@@ -113,6 +117,7 @@ describe("model references and presets", () => {
 describe("model sight", () => {
   it("guesses from names and learns from lists", () => {
     expect(modelSees("anthropic", "claude-opus-5-5")).toBe("yes");
+    expect(modelSees("google", "gemini-2.5-pro")).toBe("yes");
     expect(modelSees("openai", "gpt-3.5-turbo")).toBe("no");
     expect(modelSees("openai", "gpt-4o-mini")).toBe("yes");
     expect(modelSees("deepseek", "deepseek-chat")).toBe("no");
@@ -377,6 +382,55 @@ describe("OpenAI-compatible", () => {
     const dead = await deadUrl();
     const st = await status(preset("lmstudio")!, `${dead}/v1`, undefined);
     expect(st).toEqual({ running: false, models: [], message: `LM Studio isn’t running at ${dead}. Open it, then check again.` });
+  });
+
+  it("handles Google Gemini 400 invalid keys, array errors, and strips models/ prefix when listing", async () => {
+    const google = preset("google")!;
+    const srv = await fakeServer([
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify([{ error: { code: 400, status: "INVALID_ARGUMENT", message: "API key not valid. Please pass a valid API key.", details: [{ reason: "API_KEY_INVALID" }] } }]),
+      },
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ error: { status: "INVALID_ARGUMENT", message: "API key not valid." } }),
+      },
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: [
+            { id: "models/gemini-2.0-flash" },
+            { id: "models/gemini-2.5-pro" },
+            { id: "models/gemini-2.5-flash" },
+            { id: "models/text-embedding-004" },
+            { id: "models/imagen-3.0-generate-002" },
+            { id: "models/veo-2.0-generate-001" },
+            { id: "models/gemini-2.0-flash-live-001" },
+            { id: "models/gemini-2.5-flash-tts" },
+            { id: "models/aqa" },
+            { id: "models/learnlm-2.0-flash" },
+            { id: "models/bisheng-1" },
+          ],
+        }),
+      },
+    ]);
+    const key = "AIzaSyTestKey1234567890";
+    const check = await compatCheckKey(google, srv.url, key);
+    expect(check.problem).toBe("rejected");
+    const p = new OpenAiCompatible({ preset: google, base: srv.url, key, model: "gemini-2.5-pro" });
+    const err = await p.turn(req(), () => {}, signal()).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.kind).toBe("auth");
+    const models = await listModels(google, srv.url, key);
+    expect(models).toEqual([
+      { id: "gemini-2.5-flash", name: "gemini-2.5-flash", sees: "yes" },
+      { id: "gemini-2.5-pro", name: "gemini-2.5-pro", sees: "yes" },
+      { id: "gemini-2.0-flash", name: "gemini-2.0-flash", sees: "yes" },
+    ]);
+    await srv.close();
   });
 });
 

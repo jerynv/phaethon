@@ -38,7 +38,10 @@ describe("Gemini CLI arguments", () => {
     if (process.platform !== "win32") expect(fs.statSync(path.dirname(policy)).mode & 0o777).toBe(0o700);
     const args = acpArgs(policy, ["/v/work", "/v/a,b"], "flash");
     expect(args).toEqual(["--acp", "--approval-mode", "plan", "--extensions", "none", "--allowed-mcp-server-names", "phaethon-none", "--admin-policy", policy, "--policy", policy, "--model", "flash", "--include-directories", "/v/work"]);
+    expect(acpArgs(policy, [], null, true)).toContain("phaethon");
+    expect(acpArgs(policy, [], null, true)).not.toContain("phaethon-none");
     expect(acpArgsFull("/home/s", null)).toEqual(["--acp", "--approval-mode", "yolo", "--extensions", "none", "--allowed-mcp-server-names", "phaethon-none", "--include-directories", "/home/s"]);
+    expect(acpArgsFull("/home/s", null, true)).toContain("phaethon");
     expect(fs.readFileSync(policyFile(true), "utf8")).toBe('# Phaethon: no tools.\n[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 999\n');
   });
 
@@ -128,8 +131,10 @@ describe("Gemini CLI conversations", () => {
   });
 
   it("say a signed-out Gemini CLI isn't signed in, and explain an ineligible account", async () => {
+    // Live turn enables Phaethon's local MCP server name.
+    expect(log.flag(1, "--allowed-mcp-server-names")).toBe("phaethon");
     process.env.FAKE_LOGGED_IN = "0";
-    const signedOut = [{ code: "notLoggedIn", message: "Gemini CLI isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Coding agents, then send your message again." }];
+    const signedOut = [{ code: "notLoggedIn", message: "Gemini CLI isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › AI & Models, then send your message again." }];
     // Resuming (session/load) and starting afresh (session/new) both say so.
     expect(readCliSession(school, THREAD, "gemini")).not.toBeNull();
     expect(errors(await send(gemini("hello")))).toEqual(signedOut);
@@ -137,6 +142,25 @@ describe("Gemini CLI conversations", () => {
     expect(errors(await send(gemini("hello")))).toEqual(signedOut);
     delete process.env.FAKE_LOGGED_IN;
     expect(errors(await send(gemini("ineligible")))).toEqual([{ code: "cli", message: INELIGIBLE_MESSAGE }]);
+    // Real Gemini CLI 0.63.0 sends -32000 with the Antigravity migration message; never misclassify as notLoggedIn.
+    process.env.FAKE_GEMINI_ANTIGRAVITY = "1";
+    try {
+      expect(errors(await send(gemini("hello")))).toEqual([{ code: "cli", message: INELIGIBLE_MESSAGE }]);
+    } finally {
+      delete process.env.FAKE_GEMINI_ANTIGRAVITY;
+    }
+  });
+
+  it("time out cleanly when ACP handshake hangs and classify it as network", async () => {
+    process.env.FAKE_GEMINI_HANG = "initialize";
+    process.env.PHAETHON_GEMINI_HANDSHAKE_TIMEOUT_MS = "150";
+    try {
+      const events = await send(gemini("hello"));
+      expect(errors(events)).toEqual([{ code: "network", message: "Gemini CLI timed out while connecting to Google." }]);
+    } finally {
+      delete process.env.FAKE_GEMINI_HANG;
+      delete process.env.PHAETHON_GEMINI_HANDSHAKE_TIMEOUT_MS;
+    }
   });
 
   it("cancel the prompt on stop, keep the partial reply, and end the agent", async () => {

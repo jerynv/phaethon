@@ -114,8 +114,9 @@ function refusesImages(status: number, body: string): boolean {
   return [400, 404, 415, 422, 500].includes(status) && ["image", "vision", "multimodal", "multi-modal", "content must be a string", "expected a string"].some((w) => b.includes(w));
 }
 
-function detailOf(body: string): { detail: string; code?: string } {
-  const v = parseJson(body) as Record<string, any> | undefined;
+function detailOf(body: string): { detail: string; code?: string; status?: string; reasons: string[] } {
+  const parsed = parseJson(body);
+  const v = (Array.isArray(parsed) ? parsed[0] : parsed) as Record<string, any> | undefined;
   const e = v?.error;
   let detail = "";
   if (typeof e?.message === "string") detail = e.message;
@@ -124,15 +125,28 @@ function detailOf(body: string): { detail: string; code?: string } {
   else if (typeof v?.detail === "string") detail = v.detail;
   else detail = [...body].slice(0, 300).join("");
   const code = typeof e?.code === "string" || typeof e?.code === "number" ? String(e.code) : typeof e?.type === "string" ? e.type : undefined;
-  return { detail: detail.trim(), code };
+  const status = typeof e?.status === "string" ? e.status : undefined;
+  const reasons: string[] = [];
+  if (Array.isArray(e?.details)) {
+    for (const d of e.details) {
+      if (typeof d?.reason === "string") reasons.push(d.reason);
+    }
+  }
+  return { detail: detail.trim(), code, status, reasons };
+}
+
+function isInvalidKeyError(status: number, info: ReturnType<typeof detailOf>): boolean {
+  if (status !== 400) return false;
+  return info.reasons.includes("API_KEY_INVALID") || info.status === "API_KEY_INVALID" || /api key not valid|api_key_invalid/i.test(info.detail);
 }
 
 export function httpError(p: Preset, model: string, hasKey: boolean, status: number, body: string, retryAfter?: number): ProviderError {
-  const { detail, code } = detailOf(body);
+  const info = detailOf(body);
+  const { detail, code } = info;
   const w = who(p);
   if (status === 402 || code === "insufficient_quota") return new ProviderError("billing", `Your ${p.name} account is out of credit or has a billing problem. Add credit with ${p.name}, then try again.`);
-  if (status === 401 && !hasKey) return new ProviderError("auth", `${w} asked for an API key. Add one in Settings › Providers.`);
-  if (status === 401) return new ProviderError("auth", `${w} didn’t accept your API key. Check it in Settings.`);
+  if (status === 401 && !hasKey) return new ProviderError("auth", `${w} asked for an API key. Add one in Settings › AI & Models.`);
+  if (status === 401 || isInvalidKeyError(status, info)) return new ProviderError("auth", `${w} didn’t accept your API key. Check it in Settings.`);
   if (status === 403) return new ProviderError("auth", `${w} refused this request. ${detail}`.trim());
   if (status === 404) {
     const hint = p.id === "ollama" ? ` To download it, run ollama pull ${model} in a terminal.` : " Choose another in Settings, or check its name.";
@@ -398,10 +412,11 @@ export async function checkKey(p: Preset, base: string, rawKey: string): Promise
   }
   const text = await bodyText(res);
   if (res.ok) return { ok: true, message: "This key works." };
-  if (res.status === 402 || detailOf(text).code === "insufficient_quota") {
+  const info = detailOf(text);
+  if (res.status === 402 || info.code === "insufficient_quota") {
     return { ok: false, problem: "billing", message: `Your ${p.name} account is out of credit or has a billing problem. Add credit with ${p.name}, then try again.` };
   }
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401 || res.status === 403 || isInvalidKeyError(res.status, info)) {
     return { ok: false, problem: "rejected", message: `${who(p)} didn’t accept this key. It may have been deleted, or part of it is missing. Copy it again and paste it here.` };
   }
   if (res.status === 429) return { ok: true, message: "This key works." };
@@ -409,6 +424,18 @@ export async function checkKey(p: Preset, base: string, rawKey: string): Promise
 }
 
 const OPENAI_SKIP = ["embedding", "tts", "whisper", "dall-e", "moderation", "davinci", "babbage", "transcribe", "realtime", "audio", "image", "search", "sora", "computer-use"];
+const GOOGLE_SKIP = ["embedding", "imagen", "veo", "aqa", "tts", "live", "learnlm", "bisheng"];
+
+function googleModelOrder(a: ModelInfo, b: ModelInfo): number {
+  const rank = (id: string) => {
+    const m = /^gemini-(\d+(?:\.\d+)?)/.exec(id.toLowerCase());
+    return m ? Number(m[1]) : -1;
+  };
+  const ra = rank(a.id);
+  const rb = rank(b.id);
+  if (ra !== rb) return rb - ra;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 
 export async function listModels(p: Preset, base: string, key: string | undefined): Promise<ModelInfo[]> {
   const local = isLocal(p, base);
@@ -419,7 +446,7 @@ export async function listModels(p: Preset, base: string, key: string | undefine
     throw new Error(local ? `${who(p)} isn’t running at ${shown(base)}. Open it, then check again.` : `Phaethon couldn’t reach ${whoMid(p)} at ${shown(base)}. Check the address and your internet connection.`);
   }
   const text = await bodyText(res);
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401 || res.status === 403 || isInvalidKeyError(res.status, detailOf(text))) {
     throw new Error(key ? `${who(p)} didn’t accept your API key, so its models can’t be listed. Check the key above.` : `${who(p)} asked for an API key before it lists its models.`);
   }
   const v = res.ok ? parseJson(text) : undefined;
@@ -427,16 +454,21 @@ export async function listModels(p: Preset, base: string, key: string | undefine
   if (!Array.isArray(list)) throw new Error(`Phaethon couldn’t get the list of models from ${whoMid(p)} just now. You can still type a model’s name.`);
   let out: ModelInfo[] = [];
   for (const e of list) {
-    const id = (e as { id?: unknown })?.id;
-    if (typeof id !== "string" || !isValidCompatModel(id)) continue;
+    const rawId = (e as { id?: unknown })?.id;
+    if (typeof rawId !== "string") continue;
+    const id = p.id === "google" ? rawId.replace(/^models\//, "") : rawId;
+    if (!isValidCompatModel(id)) continue;
     if (p.id === "openai" && OPENAI_SKIP.some((s) => id.toLowerCase().includes(s))) continue;
+    if (p.id === "google" && GOOGLE_SKIP.some((s) => id.toLowerCase().includes(s))) continue;
     const n = (e as { name?: unknown; display_name?: unknown }).name ?? (e as { display_name?: unknown }).display_name;
-    const name = typeof n === "string" && n.trim() ? [...n.trim()].slice(0, 100).join("") : id;
-    const s = fromMetadata(e);
+    const rawName = typeof n === "string" && n.trim() ? [...n.trim()].slice(0, 100).join("") : id;
+    const name = p.id === "google" ? rawName.replace(/^models\//, "") : rawName;
+    const s = fromMetadata(e) ?? (p.id === "google" && id.toLowerCase().startsWith("gemini-") ? "yes" : undefined);
     out.push(s ? { id, name, sees: s } : { id, name });
     if (out.length >= 5000) break;
   }
   if (p.id === "openai") out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (p.id === "google") out.sort(googleModelOrder);
   if (p.id === "ollama") out = await ollamaSight(base, out);
   remember(p.id, base, out);
   return out;

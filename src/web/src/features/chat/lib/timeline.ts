@@ -78,9 +78,11 @@ export function fromUi(saved: UiMessage[]): Message[] {
         attachments: m.attachments.map((a) => ({ name: a.name, path: a.path, mediaType: a.mediaType })),
       };
     }
+    const handoffs = m.records.filter((r) => r.kind === "handoff");
     const tools = m.records.filter((r) => r.kind === "tool");
-    const others = m.records.filter((r) => r.kind !== "tool");
+    const others = m.records.filter((r) => r.kind !== "tool" && r.kind !== "handoff");
     const parts: Part[] = [
+      ...handoffs.map((record): Part => ({ type: "record", record })),
       ...tools.map((record): Part => ({ type: "record", record })),
       ...(m.text ? [{ type: "text", text: m.text } as Part] : []),
       ...others.map((record): Part => ({ type: "record", record })),
@@ -116,6 +118,12 @@ function putRecord(parts: Part[], record: UiRecord): Part[] {
     if (at >= 0) return parts.map((p, i) => (i === at ? { type: "record", record } : p));
   }
   if (record.kind === "stopped" && parts.some((p) => p.type === "record" && p.record.kind === "stopped")) return parts;
+  if (
+    record.kind === "handoff" &&
+    parts.some((p) => p.type === "record" && p.record.kind === "handoff" && p.record.from === record.from && p.record.to === record.to && p.record.reason === record.reason)
+  ) {
+    return parts;
+  }
   return [...parts, { type: "record", record }];
 }
 
@@ -186,6 +194,8 @@ export function applyEvent(m: AssistantMessage, e: AgentEvent, now: number = Dat
       };
     case "cancelled":
       return { ...m, parts: settleTools(m.parts, "cancelled"), status: "stopped", toolStatus: undefined, approval: undefined, access: undefined };
+    case "modelSwitch":
+      return m;
     case "end":
       return {
         ...m,
@@ -357,6 +367,8 @@ export function recordText(r: UiRecord, spaceName: (id: string) => string = (id)
       return r.intent === "send" ? "An email is ready to send" : "An email draft is ready";
     case "schedule":
       return `Suggested schedule: ${r.title}, ${r.when}`;
+    case "handoff":
+      return r.reason ? `Switched to ${r.to} automatically: ${r.from} ${r.reason}` : `Switched from ${r.from} to ${r.to} automatically`;
   }
 }
 

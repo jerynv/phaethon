@@ -13,7 +13,8 @@ import { mergeRefresh } from "./sidebar/paging";
  */
 
 export type View = "chat" | "files" | "study" | "grades" | "plan" | "courses";
-export type SettingsSection = "general" | "notifications" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
+export type SettingsSection = "general" | "notifications" | "models" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
+export type SettingsTarget = { brand?: string; mode?: "subscription" | "api" };
 
 /**
  * What an open tab shows. Several can be open at once, like a browser's; the
@@ -76,6 +77,7 @@ type Nav = {
   /** The floating sidebar is out (compact windows only). Choosing a page, a conversation or Settings puts it away. */
   peek: boolean;
   settings: SettingsSection | null;
+  settingsTarget: SettingsTarget | null;
   paletteOpen: boolean;
   /** What the palette starts with when it opens (the sidebar's search hands its text over). */
   paletteQuery: string;
@@ -137,7 +139,8 @@ type Nav = {
   toggleSidebar(): void;
   setCompact(compact: boolean): void;
   setPeek(peek: boolean): void;
-  openSettings(section?: SettingsSection): void;
+  openSettings(section?: SettingsSection, target?: SettingsTarget): void;
+  clearSettingsTarget(): void;
   closeSettings(): void;
   setPalette(open: boolean, query?: string): void;
   /** Opens a file in the viewer: in its tab when it is open already, else in a new tab after the one on show. */
@@ -215,7 +218,7 @@ export const useNav = create<Nav>((set, get) => {
       const undecided = tab.kind === "chat" && tab.thread === DRAFT && !get().threads[tab.space]?.data;
       if (tab.kind === "chat" && get().open[tab.space] !== tab.thread && !undecided) setOpen(tab.space, tab.thread);
       const prev = get().activeSpace;
-      set({ activeSpace: tab.space, view: tab.kind === "chat" ? "chat" : tab.view, settings: null });
+      set({ activeSpace: tab.space, view: tab.kind === "chat" ? "chat" : tab.view, settings: null, settingsTarget: null });
       if (prev !== tab.space) {
         writeJson(LAST_SPACE, tab.space);
         void api.touchSpace(tab.space).catch(() => {});
@@ -262,6 +265,7 @@ export const useNav = create<Nav>((set, get) => {
     compact: false,
     peek: false,
     settings: null,
+    settingsTarget: null,
     paletteOpen: false,
     paletteQuery: "",
     files: [],
@@ -607,11 +611,16 @@ export const useNav = create<Nav>((set, get) => {
       if (peek !== get().peek) set({ peek });
     },
 
-    openSettings(section = "general") {
-      set({ settings: section, paletteOpen: false, peek: false });
+    openSettings(section = "general", target) {
+      const normalized: SettingsSection = section === "providers" || section === "agents" ? "models" : section;
+      const settingsTarget = target ?? (section === "agents" ? { mode: "subscription" } : null);
+      set({ settings: normalized, settingsTarget, paletteOpen: false, peek: false });
+    },
+    clearSettingsTarget() {
+      if (get().settingsTarget !== null) set({ settingsTarget: null });
     },
     closeSettings() {
-      if (get().settings !== null) set({ settings: null });
+      if (get().settings !== null || get().settingsTarget !== null) set({ settings: null, settingsTarget: null });
     },
     setPalette(open, query = "") {
       set({ paletteOpen: open, paletteQuery: open ? query : "", ...(open ? { peek: false } : {}) });

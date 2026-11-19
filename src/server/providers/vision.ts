@@ -30,6 +30,7 @@ export function modelSees(provider: string, model: string): Sees {
   if (openai && (bare === "o1" || bare.startsWith("o1-2") || bare === "o3" || bare.startsWith("o3-2") || bare.startsWith("o3-pro"))) return "yes";
   if (openai && bare.startsWith("gpt-4")) return "no";
   if (provider === "anthropic" && bare.startsWith("claude-")) return "yes";
+  if (provider === "google" && bare.startsWith("gemini-")) return "yes";
   return "unknown";
 }
 

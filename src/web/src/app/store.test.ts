@@ -80,6 +80,28 @@ describe("closing tabs", () => {
     expect(nav().tabs.some((t) => t.kind === "view" && t.view === "files")).toBe(true);
   });
 
+  it("openSettings normalizes providers and agents to models and tracks settingsTarget", () => {
+    nav().openSettings("providers");
+    expect(nav().settings).toBe("models");
+    expect(nav().settingsTarget).toBeNull();
+
+    nav().openSettings("agents");
+    expect(nav().settings).toBe("models");
+    expect(nav().settingsTarget).toEqual({ mode: "subscription" });
+
+    nav().openSettings("models", { brand: "claude", mode: "api" });
+    expect(nav().settings).toBe("models");
+    expect(nav().settingsTarget).toEqual({ brand: "claude", mode: "api" });
+
+    nav().clearSettingsTarget();
+    expect(nav().settingsTarget).toBeNull();
+
+    nav().openSettings("models", { brand: "openai", mode: "subscription" });
+    nav().closeSettings();
+    expect(nav().settings).toBeNull();
+    expect(nav().settingsTarget).toBeNull();
+  });
+
   it("a lone new chat can't be closed: closing it is a no-op that records nothing", () => {
     void nav().newChat(SPACE);
     expect(canCloseTab(nav().tabs, draftId)).toBe(false);

@@ -26,10 +26,10 @@ export function cliOfBackend(backend: unknown): CliId | null {
   }
 }
 
-export const MISSING_CLI_MESSAGE = "Claude Code was not found. Install it, then connect it in Settings › Coding agents.";
-export const CODEX_MISSING_MESSAGE = "Codex was not found. Install Codex, then sign in to it in Settings › Coding agents.";
-export const GEMINI_MISSING_MESSAGE = "Gemini CLI was not found. Install Gemini CLI, then sign in to it in Settings › Coding agents.";
-export const NOT_LOGGED_IN_MESSAGE = "Claude Code isn’t signed in. Sign in to this connection in Settings › Coding agents, then retry.";
+export const MISSING_CLI_MESSAGE = "Claude Code was not found. Install it, then connect it in Settings › AI & Models.";
+export const CODEX_MISSING_MESSAGE = "Codex was not found. Install Codex, then sign in to it in Settings › AI & Models.";
+export const GEMINI_MISSING_MESSAGE = "Gemini CLI was not found. Install Gemini CLI, then sign in to it in Settings › AI & Models.";
+export const NOT_LOGGED_IN_MESSAGE = "Claude Code isn’t signed in. Sign in to this connection in Settings › AI & Models, then retry.";
 export const OWN_SETTINGS_MESSAGE =
   "This space has its own Gemini CLI settings folder (.gemini), which could let Gemini CLI change files or reach beyond the space. Move or delete that folder to use Gemini CLI here, or choose another assistant in Settings.";
 export const INELIGIBLE_MESSAGE =
@@ -132,9 +132,9 @@ export function loginCommand(cli: CliId, configDir: string | null): string {
 export function notLoggedInMessage(cli: CliId, configDir: string | null): string {
   if (cli === "claude" && configDir === null) return NOT_LOGGED_IN_MESSAGE;
   if (CLI[cli].ownHome) {
-    return `${cliName(cli)} isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › Coding agents, then send your message again.`;
+    return `${cliName(cli)} isn’t signed in for this Phaethon folder yet. Sign in to it in Settings › AI & Models, then send your message again.`;
   }
-  return `${cliName(cli)} isn’t signed in. Sign in to this connection in Settings › Coding agents, then retry.`;
+  return `${cliName(cli)} isn’t signed in. Sign in to this connection in Settings › AI & Models, then retry.`;
 }
 
 /** Exactly 36 chars, `-` at 8, 13, 18 and 23, ASCII hex elsewhere (not RFC-validated; UUIDv7 passes). */
@@ -176,10 +176,15 @@ export function lastLine(s: string): string {
   return "";
 }
 
+/** Whether Gemini CLI rejected this account/client tier (e.g. free plan migration to Antigravity). */
+export function isGeminiIneligible(s: string): boolean {
+  return /IneligibleTierError|no longer supported for Gemini Code Assist|antigravity\.google|not eligible/i.test(s);
+}
+
 /** How one run of a CLI ended, as its output said. */
 export type Outcome =
   | { kind: "success"; sessionId: string | null }
-  /** `stale`: the session to resume is gone; `notLoggedIn`: the protocol said so directly. */
-  | { kind: "failed"; message: string; stale?: boolean; notLoggedIn?: boolean }
+  /** `stale`: the session to resume is gone; `notLoggedIn`: the protocol said so directly; `ineligible`: account/client tier refused. */
+  | { kind: "failed"; message: string; stale?: boolean; notLoggedIn?: boolean; ineligible?: boolean }
   /** Output ended without a result. */
   | { kind: "incomplete"; message: string };

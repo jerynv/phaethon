@@ -312,12 +312,28 @@ export async function codexLoggedIn(bin: string, dir: string | null): Promise<bo
   return parseCodexLogin(out.stdout + out.stderr);
 }
 
-/** Public account status only (`claude auth status --json`); no credential files or tokens are read. */
+/** Presence check only — never reads any OAuth credential or token file contents. */
+export function geminiLoggedIn(dir: string | null, builtIn: boolean): boolean {
+  if (dir && (fs.existsSync(path.join(dir, ".gemini", "oauth_creds.json")) || fs.existsSync(path.join(dir, ".gemini", "google_accounts.json")))) {
+    return true;
+  }
+  if (builtIn && Boolean(process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim())) {
+    return true;
+  }
+  return false;
+}
+
+/** Public account status only (`claude auth status --json`, `codex login status`, or presence-only check for Gemini); no credential files or tokens are read. */
 export async function account(cli: CliId, dir: string | null): Promise<{ loggedIn: boolean | null; email: string | null; plan: string | null }> {
   const none = { loggedIn: null, email: null, plan: null };
   const bin = binary(cli, dir);
   if (!bin) return none;
   if (cli === "codex") return { ...none, loggedIn: await codexLoggedIn(bin, dir) };
+  if (cli === "gemini") {
+    const inst = launch(dir);
+    const builtIn = !(inst && inst.cli === "gemini" && inst.id !== "gemini");
+    return { ...none, loggedIn: geminiLoggedIn(dir, builtIn) };
+  }
   if (cli !== "claude") return none;
   const out = await collect(cliCommand(cli, bin, os.tmpdir(), dir), ["auth", "status", "--json"], 8000);
   if (!out || out.timedOut) return none;

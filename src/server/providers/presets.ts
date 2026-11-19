@@ -36,6 +36,7 @@ const p = (id: string, name: string, base: string, key: KeyNeed, local: boolean,
 export const PRESETS: Preset[] = [
   p("anthropic", "Anthropic", "https://api.anthropic.com", "required", false, false, "https://console.anthropic.com/settings/keys", "sk-ant-", "/v1/models?limit=1"),
   p("openai", "OpenAI", "https://api.openai.com/v1", "required", false, false, "https://platform.openai.com/api-keys", "", "/models"),
+  p("google", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "required", false, false, "https://aistudio.google.com/apikey", "AIza", "/models"),
   p("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "required", false, false, "https://openrouter.ai/settings/keys", "sk-or-", "/key"),
   p("groq", "Groq", "https://api.groq.com/openai/v1", "required", false, false, "https://console.groq.com/keys", "gsk_", "/models"),
   p("together", "Together AI", "https://api.together.xyz/v1", "required", false, false, "https://api.together.ai/settings/api-keys", "", "/models"),
@@ -121,7 +122,7 @@ export function modelForSpace(space: string | undefined, settings: VaultSettings
     }
   }
   const ref = defaultRef(settings);
-  if (!ref) throw new Refusal(`Choose which ${chosen(settings).name} model answers, in Settings › Providers.`);
+  if (!ref) throw new Refusal(`Choose which ${chosen(settings).name} model answers, in Settings › AI & Models.`);
   return ref;
 }
 
@@ -183,10 +184,10 @@ export function baseUrl(settings: VaultSettings, pre: Preset): string {
     try {
       return checkBase(saved);
     } catch {
-      throw new Refusal(`The address saved for ${pre.name} isn’t one Phaethon can use. Fix it in Settings › Providers.`);
+      throw new Refusal(`The address saved for ${pre.name} isn’t one Phaethon can use. Fix it in Settings › AI & Models.`);
     }
   }
-  if (pre.id === "custom") throw new Refusal("Add your server’s address in Settings › Providers first.");
+  if (pre.id === "custom") throw new Refusal("Add your server’s address in Settings › AI & Models first.");
   return pre.base;
 }
 
@@ -224,10 +225,10 @@ export function unbindCustomKey(saved: string, base: string): string {
     v = undefined;
   }
   if (!v || typeof v.origin !== "string" || typeof v.key !== "string") {
-    throw new Refusal("The key saved for your own server can’t be read. Save it again in Settings › Providers.");
+    throw new Refusal("The key saved for your own server can’t be read. Save it again in Settings › AI & Models.");
   }
   if (v.origin !== origin(base)) {
-    throw new Refusal(`The key for your own server was saved for ${v.origin}, and the address is now ${origin(base) ?? base}. Save the key again for the new address in Settings › Providers.`);
+    throw new Refusal(`The key for your own server was saved for ${v.origin}, and the address is now ${origin(base) ?? base}. Save the key again for the new address in Settings › AI & Models.`);
   }
   return v.key;
 }

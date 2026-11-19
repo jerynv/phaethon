@@ -1,13 +1,14 @@
 import type { AccessAnswer, AgentEvent } from "../../shared/agent.ts";
 import { requireHome, selected } from "../cli/instances.ts";
+import { clearSession } from "../cli/session.ts";
+import { runCliTurnBody } from "../cli/turn.ts";
 import { Channel, CollectingChannel } from "../rpc/channel.ts";
 import { commands, messageOf, Refusal, type CallContext } from "../rpc/registry.ts";
 import { answer as deliver } from "../core/pending.ts";
 import { BUSY, cancel, claim, release, turnKey, type Run } from "../core/runs.ts";
-import { isValidThreadId, load, openQuestionCall, type Block } from "../core/thread.ts";
+import { isValidThreadId, load, openQuestionCall, recordBlock, save, type Block, type Message, type Record_ } from "../core/thread.ts";
 import { spaceDir } from "../core/vault.ts";
 import { saveUploads, type Upload } from "../attachments/attachments.ts";
-import { runCliTurn } from "../cli/turn.ts";
 import { isFullAccess } from "../fullaccess/fullaccess.ts";
 import { cliDirs } from "../grants/grants.ts";
 import { setWritesAllowed, type WriteScope } from "../grants/writes.ts";
@@ -17,8 +18,10 @@ import { workingDirFor } from "../workspace/workspace.ts";
 import { forSpace, providerFor } from "../providers/build.ts";
 import { keptAttachments as keptFrom, threadSummaryIn, toUi } from "../threads/store.ts";
 import { notifyLater } from "../background/background.ts";
-import { parseRef } from "../providers/presets.ts";
+import { modelForSpace, parseRef, savedRef } from "../providers/presets.ts";
+import { readSettings } from "../settings/settings.ts";
 import { effectivePick, parsePick, savePick, type ModelPick } from "../threads/pick.ts";
+import { friendlyModelLabel, isFallbackEligible, readyFallbackCandidates, sameModelPick, shortFailureReason } from "./fallback.ts";
 import { cleanAnswer, healedCall } from "./lesson.ts";
 import { runOwnTurn, type TurnMode } from "./loop.ts";
 
@@ -35,6 +38,19 @@ export const BUSY_TURN = "This conversation is still answering the previous mess
 const NO_THREAD = "That isn’t a conversation Phaethon knows. Start a new chat and send again.";
 const CLI_CONTINUE = "Continuing a stopped reply works only with Phaethon’s own agent.";
 const CLI_ANSWER = "Answering a question works only with Phaethon’s own agent.";
+
+const MAX_FALLBACK_ATTEMPTS = 3;
+const OUTPUT_KINDS = new Set<AgentEvent["kind"]>([
+  "text",
+  "toolStart",
+  "record",
+  "thinking",
+  "progress",
+  "approval",
+  "accessRequest",
+  "check",
+  "explainBack",
+]);
 
 type SendArgs = {
   space: string;
@@ -96,7 +112,7 @@ function stopWith(signal: AbortSignal | undefined, run: Run): () => void {
 
 export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<void> {
   const events = args.onEvent ?? new CollectingChannel<AgentEvent>();
-  const end = () => events.send({ kind: "end", sessionId: null });
+  const end = (sessionId: string | null = null) => events.send({ kind: "end", sessionId });
   const { space, thread } = args;
   let dir: string;
   try {
@@ -131,17 +147,6 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     events.send({ kind: "error", code: "cli", message: CLI_CONTINUE });
     return end();
   }
-  // A coding agent answers with the account chosen for it; a connection without its folder can't start.
-  const cli = pick.backend === "phaethon" ? null : CLIS[pick.backend];
-  let configDir: string | null = null;
-  if (cli) {
-    try {
-      configDir = requireHome(selected(cli));
-    } catch (e) {
-      events.send({ kind: "error", code: "cli", message: messageOf(e) });
-      return end();
-    }
-  }
   const run = claim(turnKey(space, thread));
   if (!run) {
     events.send({ kind: "error", code: "busy", message: BUSY_TURN });
@@ -171,33 +176,228 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     }
     if (replaceFrom !== undefined && args.keepAttachments?.length) attachments = [...keptAttachments(space, thread, replaceFrom, args.keepAttachments), ...attachments];
   }
-  try {
+
+  const autoFallback = readSettings().autoFallback !== false && continueFrom === undefined;
+  let snapshot: Message[] | null = null;
+  if (autoFallback) {
+    try {
+      snapshot = structuredClone(load(space, thread));
+    } catch {
+      snapshot = null;
+    }
+  }
+  const restoreSnapshot = () => {
+    if (!snapshot) return;
+    try {
+      const now = load(space, thread);
+      if (JSON.stringify(now) !== JSON.stringify(snapshot)) save(space, thread, snapshot);
+    } catch {
+      // best effort
+    }
+  };
+
+  const resolvePickForExclude = (p: ModelPick): ModelPick => {
+    if (p.backend !== "phaethon" || p.model) return p;
+    try {
+      return { ...p, model: savedRef(modelForSpace(space)) };
+    } catch {
+      return p;
+    }
+  };
+
+  const runAttempt = async (attemptPick: ModelPick, attemptEvents: Channel<AgentEvent>, isFallbackAttempt: boolean): Promise<string | null> => {
+    const cli = attemptPick.backend === "phaethon" ? null : CLIS[attemptPick.backend];
     if (!cli) {
       const mode: TurnMode = continueFrom !== undefined ? { kind: "continue", from: continueFrom } : { kind: "prompt", prompt: String(args.prompt ?? ""), attachments, replaceFrom };
-      await ownTurn(space, thread, events, mode, run, pick);
+      await ownTurn(space, thread, attemptEvents, mode, run, attemptPick);
+      return null;
+    }
+    let configDir: string | null = null;
+    try {
+      configDir = requireHome(selected(cli));
+    } catch (e) {
+      attemptEvents.send({ kind: "error", code: "cli", message: messageOf(e) });
+      return null;
+    }
+    // When falling back onto a different CLI backend, clear any stale session so the CLI gets the portable transcript handoff.
+    if (isFallbackAttempt && attemptPick.backend !== pick.backend) {
+      try {
+        clearSession(dir, thread);
+      } catch {
+        // best effort
+      }
+    }
+    return await runCliTurnBody(
+      {
+        cli,
+        space,
+        thread,
+        spaceDir: dir,
+        workingDir: workingDirFor(space),
+        prompt: String(args.prompt ?? ""),
+        attachments,
+        replaceFrom,
+        configDir,
+        addDirs: [...cliDirs(space), ...fullyVisibleCourseDirs(space)],
+        model: attemptPick.model,
+        reasoning: attemptPick.effort,
+        fullAccess: isFullAccess(space),
+      },
+      attemptEvents,
+      run,
+    );
+  };
+
+  let endSessionId: string | null = null;
+  try {
+    if (!autoFallback) {
+      const directChannel = new Channel<AgentEvent>(events.id, (msg) => {
+        if (msg.kind === "end") return !events.closed;
+        events.send(msg);
+        return !events.closed;
+      });
+      endSessionId = await runAttempt(pick, directChannel, false);
     } else {
-      const model = pick.model;
-      const reasoning = pick.effort;
-      // runCliTurn sends its own single `end`.
-      return await runCliTurn(
-        {
-          cli,
-          space,
-          thread,
-          spaceDir: dir,
-          workingDir: workingDirFor(space),
-          prompt: String(args.prompt ?? ""),
-          attachments,
-          replaceFrom,
-          configDir,
-          addDirs: [...cliDirs(space), ...fullyVisibleCourseDirs(space)],
-          model,
-          reasoning,
-          fullAccess: isFullAccess(space),
-        },
-        events,
-        run,
-      );
+      const resolvedInitial = resolvePickForExclude(pick);
+      const initialLabel = friendlyModelLabel(resolvedInitial);
+      const initialFrom = { backend: pick.backend, model: resolvedInitial.model };
+      const tried: ModelPick[] = [resolvedInitial];
+      let candidates: ModelPick[] | null = null;
+      let currentPick = pick;
+      let firstError: Extract<AgentEvent, { kind: "error" }> | null = null;
+
+      for (let attempt = 0; attempt < MAX_FALLBACK_ATTEMPTS; attempt++) {
+        let hasOutput = false;
+        const bufferedErrors: Extract<AgentEvent, { kind: "error" }>[] = [];
+        let emittedHandoff: Extract<Record_, { kind: "handoff" }> | null = null;
+        let pendingSwitch: (() => void) | null =
+          attempt > 0 && firstError
+            ? () => {
+                const toLabel = friendlyModelLabel(currentPick);
+                const reason = shortFailureReason(firstError!.code, firstError!.message);
+                const handoff: Extract<Record_, { kind: "handoff" }> = { kind: "handoff", from: initialLabel, to: toLabel, reason };
+                emittedHandoff = handoff;
+                try {
+                  savePick(space, thread, currentPick);
+                } catch {
+                  // best effort
+                }
+                events.send({
+                  kind: "modelSwitch",
+                  from: initialFrom,
+                  to: currentPick,
+                  fromLabel: initialLabel,
+                  toLabel,
+                  reason,
+                });
+                events.send({
+                  kind: "record",
+                  record: handoff,
+                });
+              }
+            : null;
+
+        const flushSwitch = () => {
+          if (!pendingSwitch) return;
+          const fn = pendingSwitch;
+          pendingSwitch = null;
+          fn();
+        };
+
+        const attemptChannel = new Channel<AgentEvent>(events.id, (msg) => {
+          if (msg.kind === "end") return !events.closed;
+          if (msg.kind === "error") {
+            if (hasOutput || run.abort.signal.aborted) {
+              if (hasOutput) flushSwitch();
+              events.send(msg);
+            } else {
+              bufferedErrors.push(msg);
+            }
+            return !events.closed;
+          }
+          if (OUTPUT_KINDS.has(msg.kind)) {
+            flushSwitch();
+            hasOutput = true;
+            for (const err of bufferedErrors.splice(0)) events.send(err);
+            events.send(msg);
+            return !events.closed;
+          }
+          if (msg.kind === "tool" && attempt > 0) {
+            flushSwitch();
+          }
+          events.send(msg);
+          return !events.closed;
+        });
+
+        let sessionId: string | null = null;
+        try {
+          sessionId = await runAttempt(currentPick, attemptChannel, attempt > 0);
+        } catch (e) {
+          const errEvent: Extract<AgentEvent, { kind: "error" }> = { kind: "error", code: "provider", message: messageOf(e) };
+          if (hasOutput || run.abort.signal.aborted) {
+            if (hasOutput) flushSwitch();
+            events.send(errEvent);
+          } else {
+            bufferedErrors.push(errEvent);
+          }
+        }
+
+        if (hasOutput || run.abort.signal.aborted || bufferedErrors.length === 0) {
+          if (hasOutput || (!run.abort.signal.aborted && bufferedErrors.length === 0)) flushSwitch();
+          for (const err of bufferedErrors) events.send(err);
+          if (emittedHandoff) {
+            try {
+              const msgs = load(space, thread);
+              let userIdx = -1;
+              for (let i = msgs.length - 1; i >= 0; i--) {
+                const m = msgs[i]!;
+                if (m.role === "user" && !m.content.some((b) => b?.type === "tool_result")) {
+                  userIdx = i;
+                  break;
+                }
+              }
+              const target = msgs.slice(userIdx + 1).find((m) => m.role === "assistant");
+              if (target) {
+                target.content.unshift(recordBlock(emittedHandoff));
+                save(space, thread, msgs);
+              }
+            } catch {
+              // best effort
+            }
+          }
+          endSessionId = sessionId;
+          break;
+        }
+
+        const err = bufferedErrors[0]!;
+        if (!firstError) firstError = err;
+
+        if (attempt === 0 && !isFallbackEligible(err.code, err.message)) {
+          for (const e of bufferedErrors) events.send(e);
+          break;
+        }
+
+        if (attempt + 1 < MAX_FALLBACK_ATTEMPTS) {
+          if (candidates === null) {
+            candidates = await readyFallbackCandidates(resolvedInitial);
+          }
+          const next = candidates.find((c) => !tried.some((t) => sameModelPick(t, c)));
+          if (next) {
+            restoreSnapshot();
+            tried.push(next);
+            currentPick = next;
+            continue;
+          }
+        }
+
+        if (attempt > 0) {
+          restoreSnapshot();
+          events.send(firstError);
+        } else {
+          for (const e of bufferedErrors) events.send(e);
+        }
+        break;
+      }
     }
   } catch (e) {
     events.send({ kind: "error", code: "provider", message: messageOf(e) });
@@ -211,7 +411,7 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     }
     if (!run.abort.signal.aborted) replyDone(space, thread);
   }
-  end();
+  end(endSessionId);
 }
 
 type AnswerArgs = { space: string; thread: string; id: string; answer: unknown; onEvent?: Channel<AgentEvent> };

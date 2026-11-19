@@ -129,16 +129,24 @@ const settings = {
   version: "0.2.0",
 };
 
+const MOCK_RELEASE = {
+  version: "0.3.2",
+  date: "2026-11-19",
+  notes:
+    "Download the installer for your operating system from the assets below. Phaethon 0.2 and later can also update from inside the app.\n\n- One page for every AI service. Settings › AI & Models lists Claude, ChatGPT, Gemini and every other service at once, each with a clear Set up button.\n- An update screen. When a new version is out, Phaethon says so with what changed, and installs it in one click.\n- Automatic fallback. If a model can’t be reached, your chat carries on with another model you’ve set up.\n- **macOS:** `Phaethon-0.3.2-mac-arm64.dmg` (Apple Silicon)",
+};
+
 let update: {
   currentVersion: string;
   source: string | null;
   canInstall: boolean;
   status: Record<string, unknown>;
 } = {
-  currentVersion: "0.2.0",
-  source: "https://github.com/jerynv/phaethon/releases",
-  canInstall: true,
-  status: { state: "idle" },
+  currentVersion: "0.3.1",
+  source: "jerynv/phaethon",
+  canInstall: hash.get("dev") !== "1",
+  // `#mock&update=available`: the quiet check after launch has found a release.
+  status: hash.get("update") === "available" ? { state: "available", ...MOCK_RELEASE } : { state: "idle" },
 };
 
 function space(id: string): Space {
@@ -344,7 +352,7 @@ export default {
   update_check: async (_args: unknown, ctx: MockContext) => {
     update = { ...update, status: { state: "checking" } };
     await ctx.sleep(900);
-    update = { ...update, status: { state: "available", version: "0.2.1", notes: "Faster course import and a clearer study plan.", date: "2026-11-08" } };
+    update = { ...update, status: { state: "available", ...MOCK_RELEASE } };
     return update;
   },
   update_install: async (args: { onEvent: unknown }, ctx: MockContext) => {

@@ -243,6 +243,32 @@ function StreamingText({ text, space, messageKey }: { text: string; space: strin
   return <Markdown text={shown} space={space} streaming messageKey={messageKey} />;
 }
 
+/** Calm inline notice when Phaethon seamlessly switched to another connected model. */
+function HandoffLine({ from, to, reason }: { from: string; to: string; reason: string }) {
+  const detail = reason
+    ? from && !reason.toLowerCase().startsWith(from.toLowerCase())
+      ? `${from} ${reason}`
+      : reason
+    : from
+      ? `from ${from}`
+      : "";
+  const full = detail ? `Switched to ${to} automatically · ${detail}` : `Switched to ${to} automatically`;
+  return (
+    <div className="my-1.5 flex items-center" data-slot="handoff">
+      <span
+        title={full}
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/60 bg-well/70 px-2.5 py-1 text-muted-foreground text-xs"
+      >
+        <Icon icon={icons.sync} className="size-3.5 shrink-0 text-subtle-foreground" />
+        <span className="min-w-0 truncate">
+          Switched to <span className="font-medium text-foreground/85">{to}</span> automatically
+          {detail ? <span className="text-subtle-foreground"> · {detail}</span> : null}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 /** Memoized: while a reply streams, the replies above it don't render again. */
 export const AssistantMessage = memo(function AssistantMessage({
   m,
@@ -332,6 +358,9 @@ export const AssistantMessage = memo(function AssistantMessage({
                   </p>
                 );
               case "record":
+                if (s.record.kind === "handoff") {
+                  return <HandoffLine key={s.key} from={s.record.from} to={s.record.to} reason={s.record.reason} />;
+                }
                 return <RecordLine key={s.key} record={s.record} spaceName={spaceName} space={space} />;
             }
           })}
@@ -354,7 +383,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             message={m.error.message}
             actions={
               err.action && err.action.kind !== "retry"
-                ? [{ label: err.action.label, onClick: () => openSettings(err.action!.kind === "agents" ? "agents" : "providers"), primary: true }]
+                ? [{ label: err.action.label, onClick: () => openSettings("models", err.action!.kind === "agents" ? { mode: "subscription" } : undefined), primary: true }]
                 : []
             }
             onRetry={err.action?.kind === "retry" && last && !running ? onRetry : undefined}

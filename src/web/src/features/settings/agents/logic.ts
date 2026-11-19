@@ -1,4 +1,4 @@
-/** Pure helpers for Settings › Coding agents (unit-tested in logic.test.ts). */
+/** Pure helpers for Settings › AI & Models (unit-tested in logic.test.ts). */
 import type { InstanceView } from "./api";
 
 /** The instance a CLI uses: the selected one, else its built-in. */

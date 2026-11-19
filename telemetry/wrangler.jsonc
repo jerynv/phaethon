@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "phaethon-telemetry",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": { "directory": "console/dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
+  "d1_databases": [{ "binding": "DB", "database_name": "phaethon-telemetry", "database_id": "REPLACE_WITH_ACTUAL_D1_DATABASE_ID", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "RAW", "bucket_name": "REPLACE_WITH_PRIVATE_R2_BUCKET_NAME" }],
+  "vars": { "CONSOLE_ORIGIN": "https://REPLACE_WITH_CONSOLE_HOST", "SESSION_TTL_SECONDS": "28800", "CONTENT_RETENTION_DAYS": "90", "METADATA_RETENTION_DAYS": "365" },
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "limits": { "cpu_ms": 30000 },
+  "observability": { "enabled": false }
+}

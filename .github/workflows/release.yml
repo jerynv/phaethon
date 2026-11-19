@@ -4,11 +4,15 @@
 # the update everyone gets: electron-updater reads the latest published release
 # of jerynv/phaethon, never a draft or a prerelease.
 #
-# Optional macOS signing and notarization (repository secrets, as before):
-# APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_ID,
-# APPLE_PASSWORD (an app-specific password) and APPLE_TEAM_ID. Without a
-# certificate the macOS build is signed ad hoc: Gatekeeper warns on first open,
-# and macOS can't install updates in place (people download the new version).
+# macOS signing and notarization (repository secrets):
+# APPLE_CERTIFICATE (base64 .p12 of the team's Developer ID Application
+# certificate and its key) and APPLE_CERTIFICATE_PASSWORD sign the app.
+# Notarization uses an App Store Connect API key: APPLE_API_KEY (the .p8's
+# text), APPLE_API_KEY_ID and APPLE_API_ISSUER; or, as before, APPLE_ID,
+# APPLE_PASSWORD (an app-specific password) and APPLE_TEAM_ID. Signed and
+# notarized, the app opens from a download with no Gatekeeper prompt and
+# updates in place. Without a certificate the macOS build is signed ad hoc:
+# Gatekeeper warns on first open, and macOS can't install updates in place.
 # Ad hoc signing is required, not optional: flipping the fuses rewrites Electron
 # Framework, and Apple Silicon kills a binary whose code no longer matches its
 # signature. Ad hoc builds turn hardened runtime off, because its library
@@ -105,12 +109,16 @@ jobs:
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_ACCOUNT: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           put() {
-            local delimiter="EOF_$(uuidgen)"
+            local delimiter
+            delimiter="EOF_$(uuidgen)"
             printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
           }
           if [[ -z "$CERTIFICATE" ]]; then
@@ -121,7 +129,15 @@ jobs:
           fi
           put CSC_LINK "$CERTIFICATE"
           [[ -n "$CERTIFICATE_PASSWORD" ]] && put CSC_KEY_PASSWORD "$CERTIFICATE_PASSWORD"
-          if [[ -n "$APPLE_ACCOUNT" && -n "$APPLE_APP_PASSWORD" && -n "$TEAM_ID" ]]; then
+          if [[ -n "$API_KEY" && -n "$API_KEY_ID" && -n "$API_ISSUER" ]]; then
+            # notarytool reads the key from a file, outside the checkout.
+            key="$RUNNER_TEMP/AuthKey_$API_KEY_ID.p8"
+            printf '%s\n' "$API_KEY" > "$key"
+            chmod 600 "$key"
+            put APPLE_API_KEY "$key"
+            put APPLE_API_KEY_ID "$API_KEY_ID"
+            put APPLE_API_ISSUER "$API_ISSUER"
+          elif [[ -n "$APPLE_ACCOUNT" && -n "$APPLE_APP_PASSWORD" && -n "$TEAM_ID" ]]; then
             put APPLE_ID "$APPLE_ACCOUNT"
             put APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_PASSWORD"
             put APPLE_TEAM_ID "$TEAM_ID"

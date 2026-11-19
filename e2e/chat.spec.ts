@@ -106,12 +106,16 @@ Long: $\mathrm{${"averyveryverylongword".repeat(8)}}$ done.`;
   await composer(page).fill("show me some math");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Couldn’t draw this formula").or(page.locator(".markdown > .katex-error"))).toBeVisible();
-  const m = await page.evaluate(() => {
-    const md = document.querySelector('[data-role="assistant"] .markdown') as HTMLElement;
-    const scroller = md.closest("[data-slot=chat-scroll]") as HTMLElement;
-    const displays = [...md.querySelectorAll<HTMLElement>(".katex-display")].map((d) => d.scrollWidth - d.clientWidth);
-    return { message: md.scrollWidth - md.clientWidth, timeline: scroller.scrollWidth - scroller.clientWidth, displays, wide: md.querySelectorAll(".katex-wide").length };
-  });
-  // The fitting display (with equation numbers) is not a scroller; the long inline formula scrolls on its own.
-  expect(m).toEqual({ message: 0, timeline: 0, displays: [0], wide: 1 });
+  // The wide-math check measures again once KaTeX's fonts and the layout settle, which a slow runner reaches after the error shows.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const md = document.querySelector('[data-role="assistant"] .markdown') as HTMLElement;
+        const scroller = md.closest("[data-slot=chat-scroll]") as HTMLElement;
+        const displays = [...md.querySelectorAll<HTMLElement>(".katex-display")].map((d) => d.scrollWidth - d.clientWidth);
+        return { message: md.scrollWidth - md.clientWidth, timeline: scroller.scrollWidth - scroller.clientWidth, displays, wide: md.querySelectorAll(".katex-wide").length };
+      }),
+    )
+    // The fitting display (with equation numbers) is not a scroller; the long inline formula scrolls on its own.
+    .toEqual({ message: 0, timeline: 0, displays: [0], wide: 1 });
 });

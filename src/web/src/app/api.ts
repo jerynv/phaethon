@@ -86,12 +86,27 @@ export type InstallEvent =
   | { kind: "installing" }
   | { kind: "restarting" };
 
+export type TelemetryChoices = { usage: boolean; diagnostics: boolean; reports: boolean; traces: boolean };
+export type TelemetrySettings = TelemetryChoices & { configured: boolean; collectorConfigured: boolean };
+
+function usageAction<T>(promise: Promise<T>, action: "space_created" | "search_used"): Promise<T> {
+  return promise.then((result) => {
+    void invoke("telemetry_usage", { event: "action_completed", data: { action } }).catch(() => {});
+    return result;
+  });
+}
+
 export const api = {
+  telemetry: () => invoke<TelemetrySettings>("telemetry_get"),
+  saveTelemetry: (choices: TelemetryChoices) => invoke<TelemetrySettings>("telemetry_set", { choices }),
+  telemetryUsage: (event: "view_opened" | "action_completed", data: { view?: "chat" | "files" | "study" | "grades" | "plan" | "courses" | "settings"; action?: "file_opened" | "study_started" }) => invoke<boolean>("telemetry_usage", { event, data }),
+  previewTelemetryReport: (text: string) => invoke<string>("telemetry_report_preview", { text }),
+  sendTelemetryReport: (text: string) => invoke<null>("telemetry_report_send", { text }),
   coreInfo: () => invoke<CoreInfo>("core_info"),
   settings: () => invoke<SettingsView>("settings_get"),
   spaces: () => invoke<SpaceView[]>("spaces_list"),
   createSpace: (a: { name: string; description?: string | null; hue?: number | null; educationEnabled?: boolean | null }) =>
-    invoke<SpaceView>("space_create", a),
+    usageAction(invoke<SpaceView>("space_create", a), "space_created"),
   updateSpace: (a: { id: string; name?: string; description?: string; hue?: number; educationEnabled?: boolean }) =>
     invoke<SpaceView>("space_update", a),
   touchSpace: (id: string) => invoke<void>("space_touch", { id }),
@@ -111,7 +126,7 @@ export const api = {
   /** Lets Phaethon write without asking in one conversation (`thread`) or the whole space, or takes that back. */
   setWritePermission: (a: { space: string; thread?: string; scope: "conversation" | "space"; allow: boolean }) => invoke<WritePermissions>("write_permission_set", a),
   search: (space: string, query: string, allSpaces: boolean) =>
-    invoke<SearchResults>("conversations_search", { space, query, allSpaces }),
+    usageAction(invoke<SearchResults>("conversations_search", { space, query, allSpaces }), "search_used"),
   updateState: () => invoke<UpdateView>("update_state"),
   updateCheck: () => invoke<UpdateView>("update_check"),
 };

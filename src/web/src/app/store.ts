@@ -13,7 +13,7 @@ import { mergeRefresh } from "./sidebar/paging";
  */
 
 export type View = "chat" | "files" | "study" | "grades" | "plan" | "courses";
-export type SettingsSection = "general" | "notifications" | "models" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
+export type SettingsSection = "privacy" | "general" | "notifications" | "models" | "providers" | "agents" | "spaces" | "courses" | "memory" | "people" | "mail" | "automations" | "appearance" | "about";
 export type SettingsTarget = { brand?: string; mode?: "subscription" | "api" };
 
 /**

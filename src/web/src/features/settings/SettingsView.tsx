@@ -10,6 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { RowHighlightGroup } from "@/components/ui/row-highlight";
 import { cn } from "@/lib/utils";
+import { PrivacySection } from "@/features/telemetry/Privacy";
 import { AboutSection } from "./AboutSection";
 import { cliStatuses } from "./agents/api";
 import { AppearanceSection } from "./AppearanceSection";
@@ -46,6 +47,7 @@ export const SECTIONS: { id: SettingsSection; label: string; icon: IconData; gro
   { id: "people", label: "People", icon: icons.people, group: "You" },
   { id: "mail", label: "Mail & connectors", icon: icons.mail, group: "You" },
   { id: "automations", label: "Automations", icon: icons.automation, group: "You" },
+  { id: "privacy", label: "Privacy", icon: icons.locked, group: "Phaethon" },
   { id: "about", label: "About", icon: icons.info, group: "Phaethon" },
 ];
 
@@ -203,6 +205,8 @@ function SectionBar({ section, onReset }: { section: SettingsSection; onReset: (
 
 function Body({ section }: { section: SettingsSection }) {
   switch (section) {
+    case "privacy":
+      return <PrivacySection />;
     case "general":
       return <GeneralSection />;
     case "models":

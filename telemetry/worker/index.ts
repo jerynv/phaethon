@@ -4,7 +4,7 @@ import {
   type TelemetryCategory, type TelemetryEnvelope,
 } from "../../src/shared/telemetry.ts";
 import type { Env } from "./bindings.ts";
-import { DUMMY_PASSWORD_HASH, makeReceipt, randomToken, sha256, verifyEnvelope, verifyPassword, verifyReceipt, type ArchiveReceipt } from "./crypto.ts";
+import { DUMMY_PASSWORD_HASH, hashPassword, makeReceipt, randomToken, sha256, verifyEnvelope, verifyPassword, verifyReceipt, type ArchiveReceipt } from "./crypto.ts";
 
 const COOKIE = "__Host-phaethon_session";
 const DAY = 86_400_000;
@@ -15,7 +15,8 @@ interface EventRow {
   app_version: string; platform: string; outcome: string | null; expires_at: number;
   archive_key: string; envelope_hash: string; receipt_json: string; pending_json: string | null; archived: number;
 }
-interface StaffSession { email: string; token_hash: string }
+type StaffRole = "owner" | "viewer";
+interface StaffSession { id: string; email: string; role: StaffRole; token_hash: string }
 class HttpError extends Error { constructor(readonly status: number) { super(); } }
 function json(value: unknown, status = 200, headers?: HeadersInit): Response { return Response.json(value, { status, headers }); }
 function boundedSetting(value: string | undefined, fallback: number, min: number, max: number): number {
@@ -79,7 +80,7 @@ async function authenticate(request: Request, env: Env): Promise<StaffSession> {
   const token = request.headers.get("Cookie")?.split(";").map(part => part.trim()).find(part => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new HttpError(401);
   const tokenHash = await sha256(token);
-  const row = await env.DB.prepare(`SELECT staff.email, sessions.token_hash FROM sessions JOIN staff ON staff.id=sessions.staff_id
+  const row = await env.DB.prepare(`SELECT staff.id,staff.email,staff.role,sessions.token_hash FROM sessions JOIN staff ON staff.id=sessions.staff_id
     WHERE sessions.token_hash=? AND sessions.expires_at>? AND staff.disabled=0 AND sessions.auth_version=staff.auth_version`).bind(tokenHash, Date.now()).first<StaffSession>();
   if (!row) throw new HttpError(401);
   return row;
@@ -97,8 +98,8 @@ async function login(request: Request, env: Env): Promise<Response> {
     || typeof p.password !== "string" || p.email.length > 254 || p.password.length > 256) throw new HttpError(401);
   const identity = p.email.trim().toLowerCase();
   await counter(env, "login:account", identity, 10, 15 * 60_000);
-  const staff = await env.DB.prepare("SELECT id,email,password_hash,disabled,auth_version FROM staff WHERE email=? OR username=? LIMIT 1")
-    .bind(identity, identity).first<{ id: string; email: string; password_hash: string; disabled: number; auth_version: string }>();
+  const staff = await env.DB.prepare("SELECT id,email,role,password_hash,disabled,auth_version FROM staff WHERE email=? OR username=? LIMIT 1")
+    .bind(identity, identity).first<{ id: string; email: string; role: StaffRole; password_hash: string; disabled: number; auth_version: string }>();
   const valid = await verifyPassword(p.password, staff?.password_hash ?? DUMMY_PASSWORD_HASH);
   if (!staff || !valid || staff.disabled) throw new HttpError(401);
   const token = randomToken();
@@ -109,7 +110,104 @@ async function login(request: Request, env: Env): Promise<Response> {
     env.DB.prepare("DELETE FROM sessions WHERE token_hash=? OR expires_at<=?").bind(oldToken ? await sha256(oldToken) : "", Date.now()),
     env.DB.prepare("INSERT INTO sessions(token_hash,staff_id,auth_version,expires_at) VALUES (?,?,?,?)").bind(await sha256(token), staff.id, staff.auth_version, Date.now() + ttl * 1000),
   ]);
-  return json({ email: staff.email }, 200, { "Set-Cookie": cookie(token, ttl) });
+  return json({ email: staff.email, role: staff.role }, 200, { "Set-Cookie": cookie(token, ttl) });
+}
+
+function staffFields(value: unknown, creating: boolean): { email: string; username: string; role: StaffRole; disabled: number; password?: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError(400);
+  const p = value as Record<string, unknown>;
+  const keys = creating ? ["email", "username", "role", "password"] : ["email", "username", "role", "disabled", "password"];
+  if (Object.keys(p).some(key => !keys.includes(key)) || typeof p.email !== "string" || typeof p.username !== "string") throw new HttpError(400);
+  const email = p.email.trim().toLowerCase();
+  const username = p.username.trim().toLowerCase();
+  if (email.length > 254 || !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)
+    || !/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username) || (p.role !== "owner" && p.role !== "viewer")
+    || (!creating && typeof p.disabled !== "boolean")
+    || (creating && p.password === undefined)
+    || (p.password !== undefined && (typeof p.password !== "string" || p.password.length < 14 || p.password.length > 256))) throw new HttpError(400);
+  return { email, username, role: p.role, disabled: creating ? 0 : p.disabled ? 1 : 0, password: p.password as string | undefined };
+}
+
+// Recheck the actor inside each write: permission may change while password
+// hashing is queued. The session/version join makes revocation immediate.
+const OWNER_WRITE = `EXISTS (SELECT 1 FROM staff actor JOIN sessions auth ON auth.staff_id=actor.id
+  WHERE actor.id=? AND actor.role='owner' AND actor.disabled=0 AND auth.token_hash=?
+  AND auth.auth_version=actor.auth_version AND auth.expires_at>?)`;
+async function staffRoute(request: Request, env: Env, actor: StaffSession): Promise<Response> {
+  if (actor.role !== "owner") throw new HttpError(403);
+  const url = new URL(request.url);
+  if (request.method === "GET" && url.pathname === "/api/staff") {
+    const rows = await env.DB.prepare("SELECT id,email,username,role,disabled FROM staff ORDER BY email").all<{ id: string; email: string; username: string; role: StaffRole; disabled: number }>();
+    return json({ items: rows.results.map(row => ({ ...row, disabled: row.disabled === 1 })) });
+  }
+  if (request.method === "GET" && url.pathname === "/api/staff/audit") {
+    const rows = await env.DB.prepare(`SELECT a.id,actor.email AS actorEmail,target.email AS targetEmail,a.action,a.created_at AS createdAt
+      FROM staff_audit a JOIN staff actor ON actor.id=a.actor_id JOIN staff target ON target.id=a.target_id
+      ORDER BY a.created_at DESC,a.id DESC LIMIT 100`).all();
+    return json({ items: rows.results });
+  }
+  const match = /^\/api\/staff\/([0-9a-z-]+)(\/revoke)?$/.exec(url.pathname);
+  const creating = url.pathname === "/api/staff" && request.method === "POST";
+  const updating = !!match && !match[2] && request.method === "PATCH";
+  const revoking = !!match?.[2] && request.method === "POST";
+  if (!creating && !updating && !revoking) throw new HttpError(405);
+  sameOrigin(request, env);
+  await counter(env, "staff:actor", actor.id, 30, 15 * 60_000);
+  const body = await readJSON(request, 8192);
+  const id = creating ? crypto.randomUUID() : match![1];
+  const version = crypto.randomUUID();
+  const auditId = crypto.randomUUID();
+  let mutation: ReturnType<Env["DB"]["prepare"]>;
+  let action: "created" | "updated" | "sessions_revoked";
+  if (revoking) {
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length) throw new HttpError(400);
+    mutation = env.DB.prepare(`UPDATE staff SET auth_version=? WHERE id=? AND ${OWNER_WRITE}`)
+      .bind(version, id, actor.id, actor.token_hash, Date.now());
+    action = "sessions_revoked";
+  } else {
+    let p: ReturnType<typeof staffFields>;
+    try { p = staffFields(body, creating); }
+    catch (error) {
+      if (error instanceof HttpError && error.status === 400) return json({ error: "Check the account fields. Passwords must contain 14–256 characters." }, 400);
+      throw error;
+    }
+    const hash = p.password === undefined ? null : await hashPassword(p.password);
+    if (creating) {
+      mutation = env.DB.prepare(`INSERT INTO staff(id,email,username,role,password_hash,auth_version,disabled)
+        SELECT ?,?,?,?,?,?,0 WHERE ${OWNER_WRITE}`)
+        .bind(id, p.email, p.username, p.role, hash, version, actor.id, actor.token_hash, Date.now());
+      action = "created";
+    } else {
+      // This single statement serializes the last-owner check with the update.
+      // Concurrent demotions/disables can never remove the final active owner.
+      mutation = env.DB.prepare(`UPDATE staff SET email=?,username=?,role=?,disabled=?,password_hash=COALESCE(?,password_hash),auth_version=?
+        WHERE id=? AND ${OWNER_WRITE} AND (role<>'owner' OR disabled=1 OR (?='owner' AND ?=0)
+          OR EXISTS (SELECT 1 FROM staff other WHERE other.role='owner' AND other.disabled=0 AND other.id<>?))`)
+        .bind(p.email, p.username, p.role, p.disabled, hash, version, id, actor.id, actor.token_hash, Date.now(), p.role, p.disabled, id);
+      action = "updated";
+    }
+  }
+  let results: unknown[];
+  try {
+    results = await env.DB.batch([
+      mutation,
+      env.DB.prepare(`INSERT INTO staff_audit(id,actor_id,target_id,action,created_at)
+        SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM staff WHERE id=? AND auth_version=?)`)
+        .bind(auditId, actor.id, id, action, new Date().toISOString(), id, version),
+    ]);
+  } catch (error) {
+    if (error instanceof Error && /UNIQUE constraint failed/i.test(error.message)) return json({ error: "That email or username is already in use." }, 409);
+    throw error;
+  }
+  const changed = (results[0] as { meta?: { changes?: number } } | undefined)?.meta?.changes;
+  if (!changed) {
+    const current = await authenticate(request, env);
+    if (current.role !== "owner") throw new HttpError(403);
+    const target = await env.DB.prepare("SELECT id FROM staff WHERE id=?").bind(id).first();
+    if (!target) throw new HttpError(404);
+    return json({ error: "Keep at least one active super admin." }, 409);
+  }
+  return json({ ok: true }, creating ? 201 : 200);
 }
 function canonicalEnvelope(e: TelemetryEnvelope): string {
   return JSON.stringify({ v: e.v, id: e.id, sentAt: e.sentAt, publicKey: e.publicKey, payload: e.payload, signature: e.signature });
@@ -290,7 +388,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/api/ingest" && request.method === "POST") return ingest(request, env);
   if (url.pathname === "/api/login" && request.method === "POST") return login(request, env);
   const session = await authenticate(request, env);
-  if (url.pathname === "/api/session" && request.method === "GET") return json({ email: session.email });
+  if (url.pathname === "/api/session" && request.method === "GET") return json({ email: session.email, role: session.role });
+  if (url.pathname === "/api/staff" || url.pathname.startsWith("/api/staff/")) return staffRoute(request, env, session);
   if (url.pathname === "/api/logout" && request.method === "POST") {
     sameOrigin(request, env);
     await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?").bind(session.token_hash).run();

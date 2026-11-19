@@ -18,6 +18,8 @@ afterEach(() => { for (const db of open.splice(0)) db.close(); });
 class LocalDB implements Database {
   readonly sql = new DatabaseSync(":memory:");
   failFinalize = false;
+  failStaffAudit = false;
+  beforeBatch?: () => void;
   private queue: Promise<unknown> = Promise.resolve();
   constructor() { this.sql.exec(readFileSync(new URL("../migrations/0001_telemetry.sql", import.meta.url), "utf8")); open.push(this.sql); }
   prepare(sql: string): Statement {
@@ -29,6 +31,7 @@ class LocalDB implements Database {
       async all<T>() { return { results: db.sql.prepare(sql).all(...values as never[]) as T[] }; },
       async run() {
         if (db.failFinalize && sql.startsWith("UPDATE events SET archived")) throw new Error("Injected D1 finalization failure");
+        if (db.failStaffAudit && sql.startsWith("INSERT INTO staff_audit")) throw new Error("Injected staff audit failure");
         const result = db.sql.prepare(sql).run(...values as never[]);
         return { meta: { changes: Number(result.changes) } };
       },
@@ -36,6 +39,7 @@ class LocalDB implements Database {
   }
   async batch(statements: Statement[]): Promise<unknown[]> {
     const run = this.queue.then(async () => {
+      const before = this.beforeBatch; this.beforeBatch = undefined; before?.();
       this.sql.exec("BEGIN");
       try {
         const results = [];
@@ -292,13 +296,13 @@ test("provisioned email and username logins have generic failures and protected 
   const unknown = await h.post("/api/login", { email: "unknown@example.test", password: "incorrect" });
   assert.equal(wrong.status, 401); assert.equal(unknown.status, 401); assert.deepEqual(await wrong.json(), await unknown.json());
   const response = await h.post("/api/login", { email: "STAFF", password });
-  assert.equal(response.status, 200); assert.deepEqual(await response.json(), { email: "staff@example.test" });
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), { email: "staff@example.test", role: "viewer" });
   const setCookie = response.headers.get("Set-Cookie")!;
   for (const value of ["__Host-", "HttpOnly", "Secure", "SameSite=Strict", "Path=/", "Max-Age=28800"]) assert(setCookie.includes(value));
   assert(!setCookie.includes("Domain="));
   const Cookie = setCookie.split(";")[0]; const token = Cookie.split("=")[1];
   assert.match(token, /^[A-Za-z0-9_-]{43}$/); assert(!JSON.stringify(h.DB.sql.prepare("SELECT * FROM sessions").all()).includes(token));
-  assert.deepEqual(await (await h.call("/api/session", { headers: { Cookie } })).json(), { email: "staff@example.test" });
+  assert.deepEqual(await (await h.call("/api/session", { headers: { Cookie } })).json(), { email: "staff@example.test", role: "viewer" });
   h.DB.sql.prepare("UPDATE sessions SET expires_at=?").run(Date.now() - 1);
   assert.equal((await h.call("/api/session", { headers: { Cookie } })).status, 401);
 });
@@ -326,6 +330,119 @@ test("cross-origin, null-origin, missing-origin and cross-site login/logout are 
   assert.equal((await h.call("/api/login", { method: "POST", body: "{}", headers: { "Content-Type": "application/json" } })).status, 403);
   assert.equal((await h.call("/api/logout", { method: "POST", headers: { Cookie } })).status, 403);
   assert.equal((await h.call("/api/session", { headers: { Cookie } })).status, 200);
+});
+
+type Harness = ReturnType<typeof harness>;
+async function owner(h: Harness): Promise<string> {
+  h.DB.sql.prepare("UPDATE staff SET role='owner' WHERE id='staff'").run();
+  return h.login();
+}
+async function accountLogin(h: Harness, email: string, secret = password): Promise<string> {
+  const response = await h.post("/api/login", { email, password: secret });
+  assert.equal(response.status, 200);
+  return response.headers.get("Set-Cookie")!.split(";")[0];
+}
+function patchStaff(h: Harness, id: string, body: unknown, Cookie: string, extra: Record<string, string> = {}): Promise<Response> {
+  return h.call(`/api/staff/${id}`, { method: "PATCH", body: JSON.stringify(body), headers: { "Content-Type": "application/json", Origin: ORIGIN, Cookie, ...extra } });
+}
+
+test("viewers cannot list staff, read audit records, create, update, or revoke accounts", async () => {
+  const h = harness(); const Cookie = await h.login();
+  for (const path of ["/api/staff", "/api/staff/audit"]) assert.equal((await h.call(path, { headers: { Cookie } })).status, 403);
+  assert.equal((await h.post("/api/staff", { email: "new@example.test", username: "new", role: "owner", password }, { Cookie })).status, 403);
+  assert.equal((await patchStaff(h, "staff", { email: "staff@example.test", username: "staff", role: "owner", disabled: false }, Cookie)).status, 403);
+  assert.equal((await h.post("/api/staff/staff/revoke", {}, { Cookie })).status, 403);
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff_audit").get()!.count, 0);
+  assert.equal(h.DB.sql.prepare("SELECT role FROM staff").get()!.role, "viewer");
+});
+
+test("owners manage accounts, credentials, roles, enabled access, revocation, and credential-free audit records", async () => {
+  const h = harness(); const Cookie = await owner(h);
+  assert.deepEqual(await (await h.call("/api/session", { headers: { Cookie } })).json(), { email: "staff@example.test", role: "owner" });
+  assert.equal((await h.post("/api/staff", { email: "new@example.test", username: "new-staff", role: "viewer", password }, { Cookie })).status, 201);
+  const list = await (await h.call("/api/staff", { headers: { Cookie } })).json() as { items: Array<{ id: string; email: string; username: string; role: string; disabled: boolean }> };
+  const created = list.items.find(row => row.email === "new@example.test")!;
+  assert.equal(created.role, "viewer"); assert.equal(created.disabled, false);
+  assert.deepEqual(Object.keys(created).sort(), ["disabled", "email", "id", "role", "username"]);
+  const oldSession = await accountLogin(h, created.email);
+  const nextPassword = `${crypto.randomUUID()}-replacement`;
+  const changes = { email: "changed@example.test", username: "changed-staff", role: "owner", disabled: false };
+  assert.equal((await patchStaff(h, created.id, { ...changes, password: nextPassword }, Cookie)).status, 200);
+  assert.equal((await h.call("/api/session", { headers: { Cookie: oldSession } })).status, 401);
+  assert.equal((await h.post("/api/login", { email: changes.email, password })).status, 401);
+  const newSession = await accountLogin(h, changes.email, nextPassword);
+  assert.equal((await patchStaff(h, created.id, { ...changes, disabled: true }, Cookie)).status, 200);
+  assert.equal((await h.call("/api/session", { headers: { Cookie: newSession } })).status, 401);
+  assert.equal((await h.post("/api/login", { email: changes.email, password: nextPassword })).status, 401);
+  assert.equal((await patchStaff(h, created.id, changes, Cookie)).status, 200);
+  const active = await accountLogin(h, changes.username, nextPassword);
+  assert.equal((await h.post(`/api/staff/${created.id}/revoke`, {}, { Cookie })).status, 200);
+  assert.equal((await h.call("/api/session", { headers: { Cookie: active } })).status, 401);
+  const audit = await (await h.call("/api/staff/audit", { headers: { Cookie } })).json() as { items: Array<{ action: string; actorEmail: string; targetEmail: string; createdAt: string }> };
+  assert.equal(audit.items.length, 5);
+  assert.deepEqual(new Set(audit.items.map(item => item.action)), new Set(["created", "updated", "sessions_revoked"]));
+  assert(audit.items.every(item => item.actorEmail === "staff@example.test" && item.targetEmail === changes.email && Number.isFinite(Date.parse(item.createdAt))));
+  assert(!JSON.stringify(audit).includes("scrypt")); assert(!JSON.stringify(audit).includes(nextPassword));
+  const stored = h.DB.sql.prepare("SELECT password_hash FROM staff WHERE id=?").get(created.id)!;
+  assert.notEqual(stored.password_hash, nextPassword); assert.match(String(stored.password_hash), /^scrypt\$/);
+});
+
+test("staff writes reject cross-origin requests, invalid fields, duplicates, and removing the last owner", async () => {
+  const h = harness(); const Cookie = await owner(h);
+  const self = { email: "staff@example.test", username: "staff", role: "owner", disabled: false };
+  for (const body of [{ ...self, role: "viewer" }, { ...self, disabled: true }]) {
+    const result = await patchStaff(h, "staff", body, Cookie);
+    assert.equal(result.status, 409); assert.match((await result.json() as { error: string }).error, /active super admin/);
+  }
+  for (const Origin of ["https://evil.example", "null"]) {
+    assert.equal((await h.post("/api/staff", { email: "new@example.test", username: "new", role: "viewer", password }, { Cookie, Origin })).status, 403);
+    assert.equal((await patchStaff(h, "staff", self, Cookie, { Origin })).status, 403);
+    assert.equal((await h.post("/api/staff/staff/revoke", {}, { Cookie, Origin })).status, 403);
+  }
+  assert.equal((await h.post("/api/staff", { email: "new@example.test", username: "new", role: "owner", password: "weak" }, { Cookie })).status, 400);
+  assert.equal((await h.post("/api/staff", { email: "staff@example.test", username: "new", role: "viewer", password }, { Cookie })).status, 409);
+  assert.equal((await h.post("/api/staff", { email: "new@example.test", username: "staff", role: "viewer", password }, { Cookie })).status, 409);
+  assert.equal((await patchStaff(h, "missing", self, Cookie)).status, 404);
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff_audit").get()!.count, 0);
+  assert.equal((await h.call("/api/session", { headers: { Cookie } })).status, 200);
+});
+
+test("concurrent owner demotions and disables preserve one enabled owner atomically", async () => {
+  for (const disabling of [false, true]) {
+    const h = harness(); const first = await owner(h);
+    h.DB.sql.prepare("INSERT INTO staff(id,email,username,role,password_hash,auth_version) VALUES (?,?,?,?,?,?)")
+      .run("second", "second@example.test", "second", "owner", passwordHash, "second-version");
+    const second = await accountLogin(h, "second");
+    const role = disabling ? "owner" : "viewer";
+    const results = await Promise.all([
+      patchStaff(h, "staff", { email: "staff@example.test", username: "staff", role, disabled: disabling }, first),
+      patchStaff(h, "second", { email: "second@example.test", username: "second", role, disabled: disabling }, second),
+    ]);
+    assert.deepEqual(results.map(response => response.status).sort(), [200, 409]);
+    assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff WHERE role='owner' AND disabled=0").get()!.count, 1);
+    assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff_audit").get()!.count, 1);
+  }
+});
+
+test("staff mutation authorization is rechecked inside the write after credentials have been prepared", async () => {
+  for (const revoke of ["version", "role", "disabled"]) {
+    const h = harness(); const Cookie = await owner(h);
+    h.DB.beforeBatch = () => {
+      h.DB.sql.prepare(revoke === "version" ? "UPDATE staff SET auth_version='revoked'" : revoke === "role" ? "UPDATE staff SET role='viewer'" : "UPDATE staff SET disabled=1").run();
+    };
+    const response = await h.post("/api/staff", { email: "new@example.test", username: "new-staff", role: "owner", password }, { Cookie });
+    assert.equal(response.status, revoke === "role" ? 403 : 401);
+    assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff").get()!.count, 1);
+    assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff_audit").get()!.count, 0);
+  }
+});
+
+test("staff mutations and audit records commit or roll back together", async () => {
+  const h = harness(); const Cookie = await owner(h);
+  h.DB.failStaffAudit = true;
+  assert.equal((await h.post("/api/staff", { email: "new@example.test", username: "new-staff", role: "viewer", password }, { Cookie })).status, 503);
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff").get()!.count, 1);
+  assert.equal(h.DB.sql.prepare("SELECT COUNT(*) AS count FROM staff_audit").get()!.count, 0);
 });
 
 test("login and public ingestion are rate limited with short-lived digests only", async () => {

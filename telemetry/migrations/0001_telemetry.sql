@@ -6,8 +6,17 @@ CREATE TABLE staff (
   username TEXT NOT NULL COLLATE NOCASE UNIQUE,
   password_hash TEXT NOT NULL,
   auth_version TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('owner', 'viewer')),
   disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1))
 );
+CREATE TABLE staff_audit (
+  id TEXT PRIMARY KEY,
+  actor_id TEXT NOT NULL REFERENCES staff(id),
+  target_id TEXT NOT NULL REFERENCES staff(id),
+  action TEXT NOT NULL CHECK (action IN ('created', 'updated', 'sessions_revoked')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX staff_audit_created ON staff_audit(created_at DESC, id DESC);
 CREATE TABLE sessions (
   token_hash TEXT PRIMARY KEY,
   staff_id TEXT NOT NULL REFERENCES staff(id) ON DELETE CASCADE,

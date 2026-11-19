@@ -54,7 +54,7 @@ export async function readPassword(): Promise<string> {
 function quote(value: string): string { return `'${value.replace(/'/g, "''")}'`; }
 export async function staffCLI(args: string[]): Promise<void> {
   const action = args.shift();
-  if (!["provision", "revoke", "disable"].includes(action ?? "")) throw new Error("Use provision|revoke|disable --email EMAIL [--username NAME] [--remote]");
+  if (!["provision", "revoke", "disable"].includes(action ?? "")) throw new Error("Use provision|revoke|disable --email EMAIL [--username NAME] [--role owner|viewer] [--remote]");
   const options = new Map<string, string>();
   let remote = false;
   let local = false;
@@ -62,12 +62,15 @@ export async function staffCLI(args: string[]): Promise<void> {
     const flag = args.shift();
     if (flag === "--remote") { remote = true; continue; }
     if (flag === "--local") { local = true; continue; }
-    if (flag !== "--email" && flag !== "--username" && flag !== "--config" && flag !== "--persist-to") throw new Error("Unknown flag; passwords are accepted only via stdin/prompt");
+    if (flag !== "--email" && flag !== "--username" && flag !== "--role" && flag !== "--config" && flag !== "--persist-to") throw new Error("Unknown flag; passwords are accepted only via stdin/prompt");
     const value = args.shift();
     if (!value || value.startsWith("--") || options.has(flag)) throw new Error("Missing/duplicate option");
     options.set(flag, flag === "--email" || flag === "--username" ? value.toLowerCase() : value);
   }
   if (remote && (local || options.has("--persist-to"))) throw new Error("Remote and local options cannot be combined");
+  const role = options.get("--role") ?? "viewer";
+  if (role !== "owner" && role !== "viewer") throw new Error("Role must be owner or viewer");
+  if (action !== "provision" && options.has("--role")) throw new Error("Role applies only to provision");
   const email = options.get("--email") ?? "";
   if (email.length > 254 || !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)) throw new Error("A valid email is required");
   const version = crypto.randomUUID();
@@ -77,8 +80,8 @@ export async function staffCLI(args: string[]): Promise<void> {
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) throw new Error("A 3–64 character username is required (letters, numbers, dots, underscores, hyphens)");
     const hash = await hashPassword(await readPassword());
     // auth_version revokes existing sessions atomically with password replacement.
-    sql = `INSERT INTO staff(id,email,username,password_hash,auth_version) VALUES (${quote(crypto.randomUUID())},${quote(email)},${quote(username)},${quote(hash)},${quote(version)})
-      ON CONFLICT(email) DO UPDATE SET username=excluded.username,password_hash=excluded.password_hash,auth_version=excluded.auth_version,disabled=0;`;
+    sql = `INSERT INTO staff(id,email,username,password_hash,auth_version,role) VALUES (${quote(crypto.randomUUID())},${quote(email)},${quote(username)},${quote(hash)},${quote(version)},${quote(role)})
+      ON CONFLICT(email) DO UPDATE SET username=excluded.username,password_hash=excluded.password_hash,auth_version=excluded.auth_version,role=${options.has("--role") ? "excluded.role" : "staff.role"},disabled=0;`;
   } else {
     sql = `UPDATE staff SET auth_version=${quote(version)}${action === "disable" ? ",disabled=1" : ""} WHERE email=${quote(email)};`;
   }

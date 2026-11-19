@@ -21,7 +21,7 @@ test("staff signs in, examines a trace, filters events, exports, and signs out",
     if (url.pathname === "/api/overview") return json({ totals: { usage: 120, diagnostics: 40, reports: 2, traces: 6 }, days: [{ day: "2026-11-17", count: 42 }, { day: "2026-11-18", count: 73 }, { day: "2026-11-19", count: 53 }], events: [{ event: "app_opened", count: 120 }, { event: "turn_completed", count: 40 }], outcomes: [{ outcome: "completed", count: 38 }, { outcome: "failed", count: 2 }] });
     if (url.pathname === "/api/events") return json({ items: !url.searchParams.get("category") || url.searchParams.get("category") === "traces" ? [item] : [], nextCursor: null });
     if (url.pathname.startsWith("/api/events/")) return json({ envelope: { id: item.id }, payload: { category: "traces", event: "chat_trace", data: { backend: "phaethon", messages: [{ role: "user", text: "Help me plan a study session. Contact [email]." }, { role: "assistant", text: "Start with a short review, then practice." }] } }, receivedAt: item.receivedAt, verification: "self-signed" });
-    if (url.pathname === "/api/export") return route.fulfill({ contentType: "application/x-ndjson", body: JSON.stringify(item) + "\n" });
+    if (url.pathname === "/api/export") return route.fulfill({ contentType: "application/x-ndjson", headers: url.searchParams.has("before") ? {} : { "X-Next-Cursor": "page-two" }, body: JSON.stringify(item) + "\n" });
     return json({}, 404);
   });
   await page.goto("/");
@@ -49,6 +49,7 @@ test("staff signs in, examines a trace, filters events, exports, and signs out",
   await page.getByRole("button", { name: "Export NDJSON" }).click();
   expect((await download).suggestedFilename()).toBe("phaethon-telemetry-traces-30d.ndjson");
   expect(seen).toContain("/api/export?days=30&category=traces");
+  expect(seen).toContain("/api/export?days=30&category=traces&before=page-two");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ colorScheme: "dark" });
   await page.screenshot({ path: testInfo.outputPath("mobile-dark.png"), fullPage: true });
@@ -65,4 +66,52 @@ test("an expired session clears the authenticated explorer", async ({ page }) =>
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Event explorer" })).toHaveCount(0);
+});
+
+test("changing category cancels stale pagination and signing out cancels an export", async ({ page }) => {
+  const usage = { id: "one", category: "usage", event: "app_opened", receivedAt: "2026-11-19T12:00:00.000Z", appVersion: "0.3.1", platform: "darwin" };
+  const trace = { ...usage, id: "two", category: "traces", event: "chat_trace" };
+  let releasePage!: () => void;
+  const pageGate = new Promise<void>((resolve) => { releasePage = resolve; });
+  let releaseExport!: () => void;
+  const exportGate = new Promise<void>((resolve) => { releaseExport = resolve; });
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/session") return route.fulfill({ json: { email: "tester@example.test" } });
+    if (url.pathname === "/api/logout") return route.fulfill({ status: 204 });
+    if (url.pathname === "/api/overview") return route.fulfill({ json: { totals: { usage: 1, traces: 1 }, days: [], events: [], outcomes: [] } });
+    if (url.pathname === "/api/export") {
+      await exportGate;
+      return route.fulfill({ contentType: "application/x-ndjson", body: JSON.stringify(trace) }).catch(() => {});
+    }
+    if (url.pathname === "/api/events") {
+      if (url.searchParams.has("before")) {
+        await pageGate;
+        return route.fulfill({ json: { items: [trace], nextCursor: null } }).catch(() => {});
+      }
+      return route.fulfill({ json: { items: [usage], nextCursor: url.searchParams.get("category") ? null : "old-page" } });
+    }
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();
+  const paginating = page.waitForRequest((r) => r.url().includes("before=old-page"));
+  await page.getByRole("button", { name: "Load more" }).click();
+  await paginating;
+  await page.getByRole("button", { name: /^Usage 1$/ }).click();
+  await expect(page.getByLabel("Event category", { exact: true })).toHaveValue("usage");
+  releasePage();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: "App opened", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Chat trace", exact: true })).toHaveCount(0);
+  const exporting = page.waitForRequest((r) => r.url().includes("/api/export"));
+  await page.getByRole("button", { name: "Export NDJSON" }).click();
+  await exporting;
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+  releaseExport();
+  await page.waitForLoadState("networkidle");
+  expect(downloads).toBe(0);
 });

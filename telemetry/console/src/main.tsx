@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState, type FormEvent } from "react";
+import { StrictMode, useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,40 +93,67 @@ function Dashboard({ email, onSignOut }: { email: string; onSignOut: () => void 
   const [refresh, setRefresh] = useState(0);
   const [more, setMore] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const queryGeneration = useRef(0);
+  const pageRequest = useRef<AbortController | null>(null);
+  const exportRequest = useRef<AbortController | null>(null);
   const params = new URLSearchParams({ days: String(days), ...(category ? { category } : {}) });
 
   useEffect(() => {
     const controller = new AbortController();
-    setBusy(true); setError(""); setSelected(null); setEvents(null); setOverview(null);
+    queryGeneration.current++;
+    setBusy(true); setMore(false); setError(""); setSelected(null); setEvents(null); setOverview(null);
     Promise.all([request<Overview>(`/overview?days=${days}`, { signal: controller.signal }), request<EventPage>(`/events?${new URLSearchParams({ days: String(days), ...(category ? { category } : {}) })}`, { signal: controller.signal })])
-      .then(([overview, events]) => { setOverview(overview); setEvents(events); })
+      .then(([overview, events]) => { if (!controller.signal.aborted) { setOverview(overview); setEvents(events); } })
       .catch((e) => { if (!controller.signal.aborted) { if (e instanceof SessionExpired) onSignOut(); else setError(message(e)); } })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
-    return () => controller.abort();
+    return () => { controller.abort(); pageRequest.current?.abort(); };
   }, [days, category, refresh, onSignOut]);
+
+  useEffect(() => () => exportRequest.current?.abort(), []);
 
   const loadMore = async () => {
     if (!events?.nextCursor) return;
+    const generation = queryGeneration.current;
+    const controller = new AbortController();
+    pageRequest.current = controller;
     setMore(true); setError("");
     try {
-      const next = await request<EventPage>(`/events?${params}&before=${encodeURIComponent(events.nextCursor)}`);
-      setEvents((old) => ({ items: [...(old?.items ?? []), ...next.items], nextCursor: next.nextCursor }));
-    } catch (e) { if (e instanceof SessionExpired) onSignOut(); else setError(message(e)); }
-    finally { setMore(false); }
+      const next = await request<EventPage>(`/events?${params}&before=${encodeURIComponent(events.nextCursor)}`, { signal: controller.signal });
+      if (!controller.signal.aborted && generation === queryGeneration.current) setEvents((old) => ({ items: [...(old?.items ?? []), ...next.items], nextCursor: next.nextCursor }));
+    } catch (e) { if (!controller.signal.aborted) { if (e instanceof SessionExpired) onSignOut(); else setError(message(e)); } }
+    finally { if (generation === queryGeneration.current) setMore(false); }
   };
   const exportData = async () => {
+    const controller = new AbortController();
+    exportRequest.current = controller;
     setExporting(true); setError("");
     try {
-      const response = await fetch(`/api/export?${params}`, { credentials: "same-origin", cache: "no-store" });
-      if (response.status === 401) return onSignOut();
-      if (!response.ok) throw new Error("Couldn’t export events. Try again.");
-      const url = URL.createObjectURL(await response.blob());
+      const chunks: Blob[] = [];
+      let cursor = "";
+      let bytes = 0;
+      const visited = new Set<string>();
+      do {
+        if (visited.has(cursor)) throw new Error("Couldn’t complete the export. Try again.");
+        visited.add(cursor);
+        const response = await fetch(`/api/export?${params}${cursor ? `&before=${encodeURIComponent(cursor)}` : ""}`, { credentials: "same-origin", cache: "no-store", signal: controller.signal });
+        if (response.status === 401) return onSignOut();
+        if (!response.ok) throw new Error("Couldn’t export events. Try again.");
+        const chunk = await response.blob();
+        bytes += chunk.size;
+        if (bytes > 50 * 1024 * 1024) throw new Error("This export exceeds 50 MB. Choose a shorter period or one category.");
+        chunks.push(chunk);
+        cursor = response.headers.get("X-Next-Cursor") ?? "";
+      } while (cursor && !controller.signal.aborted);
+      if (controller.signal.aborted) return;
+      const url = URL.createObjectURL(new Blob(chunks, { type: "application/x-ndjson" }));
       const link = document.createElement("a"); link.href = url; link.download = `phaethon-telemetry-${category || "all"}-${days}d.ndjson`; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) { setError(message(e)); }
-    finally { setExporting(false); }
+    } catch (e) { if (!controller.signal.aborted) setError(message(e)); }
+    finally { setExporting(false); exportRequest.current = null; }
   };
   const signOut = async () => {
+    exportRequest.current?.abort();
+    pageRequest.current?.abort();
     setSigningOut(true); setError("");
     try { await request("/logout", { method: "POST", body: "{}" }); onSignOut(); }
     catch (e) { if (e instanceof SessionExpired) onSignOut(); else setError(message(e)); }

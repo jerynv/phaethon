@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [{ name: "text", transform: (code: string, id: string) => (/\.(md|sty)$/.test(id) ? { code: `export default ${JSON.stringify(code)};`, map: null } : undefined) }],
   resolve: { alias: { "#shared": path.resolve(import.meta.dirname, "src/shared"), "@": path.resolve(import.meta.dirname, "src/web/src") } },
   test: {
-    include: ["src/server/**/*.test.ts", "src/shared/**/*.test.ts", "src/web/src/**/*.test.ts", "tests/**/*.test.ts"],
+    include: ["src/server/**/*.test.ts", "src/shared/**/*.test.ts", "src/web/src/**/*.test.ts", "tests/**/*.test.ts", "telemetry/**/*.test.ts"],
     environment: "node",
     env: { PHAETHON_TEST: "1" },
     testTimeout: 20000,

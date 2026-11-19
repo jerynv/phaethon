@@ -41,6 +41,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm telemetry:build
 
       # End-to-end: the built UI against the real core with a scripted model.
       - name: Browser for the UI tests
@@ -49,6 +50,7 @@ jobs:
         if: runner.os == 'Linux'
       - run: pnpm exec playwright test
         if: runner.os != 'Linux'
+      - run: pnpm telemetry:test:ui
       - uses: actions/upload-artifact@v5
         if: failure()
         with:

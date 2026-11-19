@@ -4,6 +4,9 @@ import { generateKeyPair, randomUUID, sign } from "node:crypto";
 import { appDataDir } from "../env.ts";
 import { redactText } from "./redact.ts";
 
+/** Injected by the release build only after the owner configures a collector. */
+declare const __PHAETHON_TELEMETRY_ENDPOINT__: string;
+
 export const CATEGORIES = ["usage", "diagnostics", "reports", "traces"] as const;
 export type Category = (typeof CATEGORIES)[number];
 export type Choices = Record<Category, boolean>;
@@ -72,7 +75,8 @@ export async function signedEnvelope(payload: Payload): Promise<Envelope> {
 /** No default collector. HTTP is available only for explicitly enabled loopback tests. */
 export function collectorEndpoint(): string | null {
   try {
-    const url = new URL(process.env.PHAETHON_TELEMETRY_ENDPOINT ?? "");
+    const built = typeof __PHAETHON_TELEMETRY_ENDPOINT__ === "undefined" ? "" : __PHAETHON_TELEMETRY_ENDPOINT__;
+    const url = new URL(process.env.PHAETHON_TELEMETRY_ENDPOINT ?? built);
     if (url.username || url.password || url.hash || url.search) return null;
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
     if (process.env.PHAETHON_TELEMETRY_ALLOW_LOCAL === "1" && local && ["http:", "https:"].includes(url.protocol)) return url.href;

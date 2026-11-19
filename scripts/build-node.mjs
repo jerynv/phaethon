@@ -7,6 +7,13 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const watch = process.argv.includes("--watch");
+// The release builder may embed the chosen public collector address. Normal
+// builds have none; installed desktop apps need no per-user environment setup.
+const telemetryEndpoint = process.env.PHAETHON_TELEMETRY_BUILD_ENDPOINT ?? "";
+if (telemetryEndpoint) {
+  const url = new URL(telemetryEndpoint);
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error("The built-in telemetry collector must be an HTTPS address without credentials, query, or fragment.");
+}
 const common = {
   absWorkingDir: root,
   bundle: true,
@@ -15,6 +22,7 @@ const common = {
   sourcemap: true,
   packages: "external",
   alias: { "#shared": path.join(root, "src/shared") },
+  define: { __PHAETHON_TELEMETRY_ENDPOINT__: JSON.stringify(telemetryEndpoint) },
   // Prompt fragments (src/server/agent/prompts/*.md) and the LaTeX house style
   // (src/server/latex/phaethon.sty) are bundled as text.
   loader: { ".md": "text", ".sty": "text" },

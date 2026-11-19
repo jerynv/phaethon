@@ -40,7 +40,7 @@ test("saved choices govern signed new-turn traces, reports, and independent opt-
   await expect(page.getByRole("heading", { name: "Your privacy choices", exact: true })).toBeVisible();
   for (const label of ["Anonymous usage", "Diagnostics", "Testing reports", "Chat traces"]) await expect(page.getByRole("switch", { name: label, exact: true })).toBeChecked();
   expect(received.events).toHaveLength(0);
-  await page.screenshot({ path: testInfo.outputPath("consent.png"), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("consent.png"), fullPage: true, animations: "disabled" });
   await page.getByRole("button", { name: "Save privacy choices" }).click();
   await expect(page.getByRole("textbox", { name: "Message" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Help me study. Email tester@example.test and use /Users/tester/private/course.txt.");
@@ -60,7 +60,8 @@ test("saved choices govern signed new-turn traces, reports, and independent opt-
   await expect.poll(() => received.events.filter((e) => e.category === "reports").length).toBe(1);
   await page.getByRole("switch", { name: "Chat traces", exact: true }).uncheck();
   await expect(page.getByRole("switch", { name: "Chat traces", exact: true })).toBeEnabled();
-  await page.screenshot({ path: testInfo.outputPath("privacy.png"), fullPage: true });
+  await expect(page.getByRole("switch", { name: "Chat traces", exact: true })).not.toBeChecked();
+  await page.screenshot({ path: testInfo.outputPath("privacy.png"), fullPage: true, animations: "disabled" });
   await page.keyboard.press("Escape");
   await page.getByRole("textbox", { name: "Message" }).fill("This turn must have diagnostics without a trace.");
   await page.keyboard.press("Enter");
@@ -83,6 +84,12 @@ test("saved choices govern signed new-turn traces, reports, and independent opt-
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   expect(received.events).toHaveLength(count);
   expect(received.failures).toEqual([]);
+  await openSettings(page, "Privacy");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await expect(page.getByRole("switch", { name: "Anonymous usage", exact: true })).not.toBeChecked();
+  await page.getByRole("switch", { name: "Chat traces", exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("privacy-mobile-dark.png"), fullPage: true, animations: "disabled" });
 });
 
 test("declining every category at the initial gate persists across reload", async ({ page }) => {

@@ -68,3 +68,12 @@ bounded separately from anonymous measurements.
 Deployment and staff provisioning require the owner's target Cloudflare account,
 hostname and authorized staff email addresses. No production resource is created
 by building or running the tests.
+
+Once the collector is deployed, build desktop releases with
+`PHAETHON_TELEMETRY_BUILD_ENDPOINT=https://<console-host>/api/ingest pnpm build`.
+The public HTTPS address is embedded in the core, so people launching the
+installed application normally need no environment setup. An explicit
+`PHAETHON_TELEMETRY_ENDPOINT` overrides it at runtime; an empty override disables
+the endpoint. Source/dev/test runs stay offline unless a loopback collector is
+explicitly enabled with `PHAETHON_TELEMETRY_ALLOW_LOCAL=1` for a local exercise.
+Neither option bypasses saved per-category choices.

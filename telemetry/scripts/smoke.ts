@@ -96,7 +96,7 @@ try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
     const consolePage = await context.newPage();
     await consolePage.goto(origin);
-    await consolePage.getByLabel("Email", { exact: true }).fill("local@example.test");
+    await consolePage.getByLabel("Email or username", { exact: true }).fill("local@example.test");
     await consolePage.getByLabel("Password", { exact: true }).fill(password);
     await consolePage.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(consolePage.getByRole("heading", { name: "Telemetry", exact: true })).toBeVisible();
@@ -143,7 +143,7 @@ try {
     const viewerContext = await browser.newContext();
     const viewerPage = await viewerContext.newPage();
     await viewerPage.goto(origin);
-    await viewerPage.getByLabel("Email", { exact: true }).fill("viewer@example.test");
+    await viewerPage.getByLabel("Email or username", { exact: true }).fill("viewer");
     await viewerPage.getByLabel("Password", { exact: true }).fill(viewerPassword);
     await viewerPage.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(viewerPage.getByRole("heading", { name: "Telemetry", exact: true })).toBeVisible();

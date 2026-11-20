@@ -26,7 +26,7 @@ function SignIn({ onSignIn }: { onSignIn: (session: Session) => void }) {
     try {
       const result = await request<Session>("/login", { method: "POST", body: JSON.stringify({ email, password }) });
       setPassword(""); onSignIn(result);
-    } catch (e) { setError(e instanceof SessionExpired ? "Email or password wasn’t recognized." : message(e)); }
+    } catch (e) { setError(e instanceof SessionExpired ? "Those sign-in details weren’t recognized." : message(e)); }
     finally { setBusy(false); }
   };
   return <main className="flex min-h-svh flex-col">
@@ -34,8 +34,8 @@ function SignIn({ onSignIn }: { onSignIn: (session: Session) => void }) {
     <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-5 py-12">
       <div><h1 className="text-2xl font-medium tracking-tight">Sign in</h1><p className="mt-2 text-sm text-muted-foreground">Use your team account to open telemetry.</p></div>
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} autoFocus /></div>
-        <div className="flex flex-col gap-2"><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" required maxLength={1024} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+        <div className="flex flex-col gap-2"><Label htmlFor="email">Email or username</Label><Input id="email" autoComplete="username" required maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} autoFocus /></div>
+        <div className="flex flex-col gap-2"><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" required maxLength={256} value={password} onChange={(e) => setPassword(e.target.value)} /></div>
         {error ? <p role="alert" className="text-sm text-destructive-foreground">{error}</p> : null}
         <Button type="submit" pending={busy} className="mt-1 w-full">Sign in</Button>
       </form>

@@ -27,10 +27,10 @@ test("staff signs in, examines a trace, filters events, exports, and signs out",
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("sign-in.png") });
-  await page.getByLabel("Email", { exact: true }).fill("tester@example.test");
+  await page.getByLabel("Email or username", { exact: true }).fill("tester@example.test");
   await page.getByLabel("Password", { exact: true }).fill("wrong-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("wasn’t recognized");
+  await expect(page.getByRole("alert")).toContainText("weren’t recognized");
   expect(loginFailed).toBe(true);
   await page.getByLabel("Password", { exact: true }).fill("test-session-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();

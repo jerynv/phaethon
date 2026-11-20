@@ -45,4 +45,27 @@ describe("real release notes in the update dialog", () => {
     ]);
     expect(text).not.toMatch(/\.dmg|\.exe|AppImage|xattr|Open Anyway|SmartScreen|New in 0\.3\.0|can’t update itself|can't update itself/);
   });
+
+  it("0.3.2: GitHub breaks the line after each <li>, and every item is still a bullet with its lead", () => {
+    const html = fixture("release-0.3.2.html");
+    const expected = [
+      "The Mac app is signed and notarized by Apple.",
+      "Every AI service on one page.",
+      "Automatic fallback.",
+      "An update window.",
+      "Coding agents start more reliably.",
+      "School is ready for study tools.",
+      "Formulas like $17 + 23 = 40$ render as math, and the plan's date picker moves with the arrow keys across months.",
+    ];
+    // Through this core, and through a core that still leaves the dash on its own line (0.3.2's).
+    const leaving = (h: string) => cleanNotes(notesText(h.replace(/<li>\s*/g, "<li>\n"))!.replace(/^- (?=\S)/gm, "-\n"));
+    for (const notes of [cleanNotes(notesText(html)), leaving(html)]) {
+      const blocks = parseNotes(notes);
+      expect(blocks).toHaveLength(1);
+      const list = blocks[0]!;
+      if (list.kind !== "list") throw new Error("not a list");
+      expect(list.items.map((i) => i.lead ?? i.text)).toEqual(expected);
+      expect(JSON.stringify(blocks)).not.toMatch(/"- |assets below|can’t update itself|can't update itself/);
+    }
+  });
 });

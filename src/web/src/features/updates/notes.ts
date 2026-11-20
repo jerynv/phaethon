@@ -53,7 +53,9 @@ export function parseNotes(notes: string | null | undefined): NoteBlock[] {
     if (text && !HEADING.test(text) && !WEB_ONLY.some((r) => r.test(text))) blocks.push({ kind: "text", text });
     para = [];
   };
-  for (const line of notes.replace(/\r\n?/g, "\n").split("\n")) {
+  // A dash alone on its line (a list item whose text GitHub put on the next line) joins that next line.
+  const text = notes.replace(/\r\n?/g, "\n").replace(/^([ \t]*[-*•])[ \t]*\n[ \t]*(?=\S)/gm, "$1 ");
+  for (const line of text.split("\n")) {
     const t = line.trim();
     const bullet = /^[-*•]\s+(.*)$/.exec(t);
     if (!t) {

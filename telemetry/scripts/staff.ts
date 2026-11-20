@@ -97,16 +97,25 @@ export async function staffCLI(args: string[]): Promise<void> {
   const state = options.get("--persist-to") ?? path.join(path.dirname(config), ".wrangler/state");
   try {
     await writeFile(file, sql, { mode: 0o600 });
-    let output = "";
-    const exitCode = await new Promise<number | null>((resolve, reject) => {
-      const child = spawn(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["dlx", "wrangler@4.165.0", "d1", "execute", "DB", "--config", config, remote ? "--remote" : "--local", ...(!remote ? ["--persist-to", path.resolve(state)] : []), "--file", file, "--json"],
-        { cwd: directory, stdio: ["ignore", "pipe", "inherit"] });
-      child.stdout.on("data", chunk => { output += String(chunk); });
-      child.once("error", reject);
-      child.once("close", resolve);
-    });
-    if (exitCode !== 0) throw new Error("Staff update failed");
-    const result = JSON.parse(output) as Array<{ results?: Array<{ id?: unknown }> }>;
+    const execute = async (query: string[]): Promise<string> => {
+      let output = "";
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        const child = spawn(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["dlx", "wrangler@4.165.0", "d1", "execute", "DB", "--config", config, remote ? "--remote" : "--local", ...(!remote ? ["--persist-to", path.resolve(state)] : []), ...query, "--json"],
+          { cwd: directory, stdio: ["ignore", "pipe", "pipe"] });
+        child.stdout.on("data", chunk => { output += String(chunk); });
+        // Database diagnostics can include query text; never forward credentials.
+        child.stderr.resume();
+        child.once("error", reject);
+        child.once("close", resolve);
+      });
+      if (exitCode !== 0) throw new Error("Staff database operation failed");
+      return output;
+    };
+    await execute(["--file", file]);
+    // Remote --file uses D1's import API and returns an import summary, not
+    // RETURNING rows. Confirm the fresh version with a read-only query instead.
+    // Only a random version goes in argv; hashes stay in the private SQL file.
+    const result = JSON.parse(await execute(["--command", `SELECT id FROM staff WHERE auth_version=${quote(version)};`])) as Array<{ results?: Array<{ id?: unknown }> }>;
     if (!Array.isArray(result) || result.length !== 1 || result[0]?.results?.length !== 1 || typeof result[0].results[0]?.id !== "string") {
       throw new Error("Staff update rejected. Account must exist and at least one active super admin must remain.");
     }

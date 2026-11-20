@@ -102,9 +102,9 @@ export async function staffCLI(args: string[]): Promise<void> {
       const exitCode = await new Promise<number | null>((resolve, reject) => {
         const child = spawn(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["dlx", "wrangler@4.165.0", "d1", "execute", "DB", "--config", config, remote ? "--remote" : "--local", ...(!remote ? ["--persist-to", path.resolve(state)] : []), ...query, "--json"],
           { cwd: directory, stdio: ["ignore", "pipe", "pipe"] });
-        child.stdout.on("data", chunk => { output += String(chunk); });
+        child.stdout!.on("data", chunk => { output += String(chunk); });
         // Database diagnostics can include query text; never forward credentials.
-        child.stderr.resume();
+        child.stderr!.resume();
         child.once("error", reject);
         child.once("close", resolve);
       });

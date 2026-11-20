@@ -1,118 +1,81 @@
-# Telemetry implementation
+# Telemetry
 
-Phaethon has separate sharing controls in the desktop app and a private staff
-console backed by Cloudflare Workers, D1, and R2. The collector and console are
-deployed at `https://telemetry.phaethon.app`.
+Phaethon can send its developers four kinds of data. Each is a separate switch,
+and the team reads what arrives in a private console at
+<https://telemetry.phaethon.app>. How the collector and console are run is in
+[telemetry/README.md](../telemetry/README.md).
 
-## Collection and access guarantees
+## What people choose
 
-Verification covers these behaviors:
+| Switch | What it sends |
+| --- | --- |
+| Anonymous usage | App opens, views opened, and counts of actions (chat sent, space created, file opened, search, study session). |
+| Diagnostics | For each reply attempt: which assistant, how long, how many tool steps, and whether it completed, failed or was cancelled. |
+| Testing reports | Text the person writes, reviews after redaction, and sends from Settings → Privacy. |
+| Chat traces | The new prompt and the streamed reply of each completed turn. Never tool calls, reasoning, system prompts, files or earlier messages. |
 
-1. No collection before preferences are saved. Every category can be disabled
-   independently, including anonymous usage. Revocation discards queued events.
-2. Usage has only allow-listed coarse events and no account or persistent device
-   identifier. Text reports and new-turn chat traces have separate controls and
-   local best-effort redaction. Content is never described as fully anonymous.
-3. The collector verifies signatures, rejects malformed/tampered/stale data, and
-   handles retries idempotently. Its public ingestion endpoint grants no read
-   access. Accepted events have a durable private backup for later analysis.
-4. Provisioned staff can sign in, view counts and trends, inspect event details,
-   filter and paginate, export records, and revoke their session by signing out.
-   Unauthenticated and expired sessions cannot read records.
-   Super admins can manage staff accounts, roles, credentials, and sessions;
-   viewers cannot access those APIs. Concurrent changes preserve an active super
-   admin, and an access audit keeps the identities recorded at the time of change.
-5. Client and collector interoperate in a local end-to-end exercise. Relevant
-   unit, type, build, browser, and rendered-state checks pass after integration.
+- Onboarding shows all four switched on. Nothing is sent until the person saves
+  their choices, and each switch can be turned off then or later in
+  Settings → Privacy. Installs that finished onboarding before telemetry existed
+  get the same screen once, before the app opens.
+- Turning a switch off drops that category's queued events and cancels its
+  upload in flight. A trace needs the switch on from the start of the turn to its
+  end.
+- Choices live in `<app data>/telemetry-consent.json`: outside the vault, never
+  synced. Missing or malformed means no choice yet, so nothing is sent.
+- The app works the same with everything off.
 
-## Console interface
+## What makes it anonymous, and what doesn't
 
-The console uses the app's React and shadcn/Base UI components, including
-portalled selects, buttons, switches, and skeletons. Overview and Events have
-separate sidebar destinations; staff administration and browser preferences
-live under Settings. Mobile navigation floats over the page, and staff and
-event lists use cards at narrow widths. Sign-in uses the marketing page's
-shader and the existing wordmark, with no navigation bar.
+- No account, installation or device identifier is sent or stored. The console
+  counts events, not people.
+- Usage and diagnostics carry only values from fixed lists (see
+  `src/shared/telemetry.ts`); both the app and the collector reject anything else.
+- Reports and traces are free text. The app redacts email addresses, common API
+  keys and tokens, private keys, URLs and home-folder paths before signing
+  (`src/server/telemetry/redact.ts`), but names and other details in prose can
+  remain. The Privacy screen says so.
 
-Staff and event queries stay in memory for the authenticated session. Returning
-to Staff shows cached rows while separate staff and audit requests revalidate.
-Writes update rows only after server confirmation, and a failed refresh after
-account creation offers a read retry without repeating the creation. Sign-out,
-session expiry, and forbidden staff reads discard the cache. Private records
-are never stored in browser storage. The browser stores only appearance and
-sidebar width preferences.
+## Signing
 
-Browser coverage includes delayed initial reads, cached navigation, pending
-submissions, rejected owner changes, permission loss, sign-out failures, custom
-dropdowns, selected themes that differ from the OS, and mobile layout changes.
+Each event is sent as an envelope signed with an Ed25519 key made for that
+envelope alone and then discarded:
 
-## Data choices
+```text
+{ v: 1, id, sentAt, publicKey, payload, signature }
+signature = Ed25519(publicKey, "phaethon.telemetry.v1\n" + id + "\n" + sentAt + "\n" + payload)
+```
 
-Four controls start checked during onboarding, but nothing is collected until
-the person saves their choices. Existing installations must also review them.
-Anonymous usage is a separate control and can be turned off. Telemetry must not
-be necessary for the application to work.
+A valid signature shows the payload wasn't altered after it was signed. It
+doesn't show which app sent it: anyone can sign an envelope, and a per-install
+key would be a persistent identifier. When the collector stores an event it also
+signs a receipt with its own secret key, so a stored record can't be edited
+later without detection.
 
-Usage measures event counts, not unique people, because envelopes contain no
-stable identity. Diagnostics exclude raw errors, prompts, paths, provider URLs,
-and custom model names. The `turn_completed` diagnostic describes a backend
-attempt; automatic fallback can create several attempts for one chat send.
-The console labels these as attempt outcomes. Reports are submitted explicitly. Traces contain only
-newly shared user/assistant turn text, excluding tools and system prompts.
-Redaction removes common identifiers and credentials but cannot remove all
-personal information from arbitrary prose.
+## Sending
 
-Every envelope uses a fresh Ed25519 key. A verified signature demonstrates
-payload integrity, not installation authenticity or the truth of the event.
-The console must not label self-signed data as attested. Long-term backups allow
-new analyses without adding persistent account tracking. Content retention is
-bounded separately from anonymous measurements.
+Events wait in a memory queue (at most 64 events / 512 KiB) and are sent one at a
+time. A network error, 429 or 5xx is retried twice, after 1 s and 5 s, with the
+same envelope so the collector can recognise a repeat. Nothing is kept across a
+restart.
 
-## References
+Only installed release builds have a collector. The release workflow builds with
+`PHAETHON_TELEMETRY_BUILD_ENDPOINT=https://telemetry.phaethon.app/api/ingest`;
+dev, test and CI builds have none. `PHAETHON_TELEMETRY_ENDPOINT` overrides the
+address at runtime (empty disables it), and a dev run can send to a loopback
+collector with `PHAETHON_TELEMETRY_ALLOW_LOCAL=1`.
 
-- [PostHog collection controls](https://posthog.com/docs/privacy/data-collection):
-  distinct controls for collection, identifiers, masking, and opt-out.
-- [Langfuse masking](https://langfuse.com/docs/observability/features/masking):
-  remove sensitive text before export, and distinguish app masking from
-  filtering after data has left the device.
-- [Cloudflare Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/):
-  standards-based Ed25519 verification in Workers.
-- [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)
-  and [R2 lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/):
-  indexed analysis alongside independent raw storage and retention.
+## Code
 
-## Deployment and verification
+| Path | |
+| --- | --- |
+| `src/shared/telemetry.ts` | Wire format and validation, shared by app and collector. |
+| `src/server/telemetry/` | Consent, queue and signing (`client.ts`), chat-turn recording (`turn.ts`), redaction, IPC commands. |
+| `src/web/src/features/telemetry/Privacy.tsx` | Onboarding step, first-choice gate, Settings → Privacy, report form. |
+| `telemetry/` | The Cloudflare Worker collector, D1 schema, staff console, and operator scripts. |
 
-The live resources are recorded in `telemetry/wrangler.jsonc`. Staff accounts and
-credentials are provisioned separately. Building or running tests creates no
-production resources; the full pipeline test uses disposable local infrastructure.
-
-Build desktop releases with
-`PHAETHON_TELEMETRY_BUILD_ENDPOINT=https://<console-host>/api/ingest pnpm build`.
-The public HTTPS address is embedded in the core, so people launching the
-installed application normally need no environment setup. An explicit
-`PHAETHON_TELEMETRY_ENDPOINT` overrides it at runtime; an empty override disables
-the endpoint. Source/dev/test runs stay offline unless a loopback collector is
-explicitly enabled with `PHAETHON_TELEMETRY_ALLOW_LOCAL=1` for a local exercise.
-Neither option bypasses saved per-category choices.
-The release workflow supplies the chosen public collector URL when it builds
-installers; ordinary CI and development builds do not.
-
-The chosen initial console origin is `https://telemetry.phaethon.app`. Super-admin
-access is provisioned separately from source configuration. Staff accounts can be
-managed from the console; changing the hostname is a Cloudflare route and origin
-configuration change, followed by rebuilding releases with the new collector URL.
-
-Local joined verification is `pnpm telemetry:test:pipeline`: it builds the app
-and console, creates disposable local D1/R2 state, provisions a temporary super
-admin through secure stdin, and runs the real app and browser against workerd.
-It exercises consent, signing, redaction, independent opt-out, trace inspection,
-staff creation, viewer access, session revocation, the last-super-admin guard,
-and logout. Credentials and temporary state are removed on success; screenshots
-are kept in the evidence directory printed by the script.
-
-The prerequisite changes in PRs #17, #18, and #19 were merged before final
-integration, through main commit `2aa7d57`. Local checks include the application
-unit and browser suites, console browser tests, backend tests on Node 22 and 24,
-and the real workerd pipeline. Production verification exercised super-admin
-login, staff access, secure cookies, logout, and remote CLI confirmation.
+Tests: `src/server/telemetry/*.test.ts` (unit and an end-to-end flow through real
+turns), `e2e/telemetry.spec.ts` (the app against a local collector),
+`telemetry/worker/backend.test.ts`, `telemetry/console/tests/`, and
+`pnpm telemetry:test:pipeline` (the built app, the real Worker in workerd, and
+the console in a browser).

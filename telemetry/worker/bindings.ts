@@ -10,7 +10,11 @@ export interface Database {
   batch(statements: Statement[]): Promise<unknown[]>;
 }
 export interface Bucket {
-  put(key: string, value: string, options?: { onlyIf?: Headers; httpMetadata?: { contentType: string } }): Promise<unknown | null>;
+  put(
+    key: string,
+    value: string,
+    options?: { onlyIf?: Headers; httpMetadata?: { contentType: string } },
+  ): Promise<unknown | null>;
   get(key: string): Promise<{ text(): Promise<string> } | null>;
   delete(key: string): Promise<void>;
   list(options: { prefix: string; limit: number }): Promise<{ objects: Array<{ key: string }> }>;

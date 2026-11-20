@@ -12,6 +12,7 @@ import * as scope from "./scope.ts";
 import { sightForSpace } from "./sight.ts";
 import * as sources from "./sources.ts";
 import * as store from "./store.ts";
+import { telemetry } from "../telemetry/client.ts";
 import type { Answer, ExamScope, Finished, ScopeMap, Stated, StudyEvent } from "./types.ts";
 import { progress } from "./types.ts";
 import { visibleFor } from "./visible.ts";
@@ -181,7 +182,9 @@ commands({
 
   study_session: ({ space, paths, limit }: { space: string; paths?: string[] | null; limit?: number | null }) => {
     const dir = spaceDir(space);
-    return store.session(dir, paths == null ? null : strings(paths, "paths", "study_session"), limit ?? store.SESSION_DEFAULT, Date.now());
+    const cards = store.session(dir, paths == null ? null : strings(paths, "paths", "study_session"), limit ?? store.SESSION_DEFAULT, Date.now());
+    if (cards.length) telemetry.capture("usage", "action_completed", { action: "study_started" });
+    return cards;
   },
 
   study_rate: ({ space, deck, card, confidence }: { space: string; deck: string; card: string; confidence: unknown }) => {

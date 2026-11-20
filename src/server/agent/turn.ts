@@ -25,7 +25,7 @@ import { friendlyModelLabel, isFallbackEligible, readyFallbackCandidates, sameMo
 import { cleanAnswer, healedCall } from "./lesson.ts";
 import { runOwnTurn, type TurnMode } from "./loop.ts";
 import { telemetry } from "../telemetry/client.ts";
-import { recordTurn, turnConsent } from "../telemetry/turn.ts";
+import { recordTurn } from "../telemetry/turn.ts";
 
 /**
  * The agent commands. Every one names its conversation (`thread`), and a
@@ -154,7 +154,8 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     events.send({ kind: "error", code: "busy", message: BUSY_TURN });
     return end();
   }
-  const consent = turnConsent();
+  // Traces need consent from the start of the turn, before any fallback attempt.
+  const traceGrant = telemetry.grant("traces");
   // Saved only once the conversation is ours, so a send refused as busy can't change a running conversation's model.
   if (chosen) {
     try {
@@ -253,16 +254,22 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
   };
 
   const runAttempt = async (attemptPick: ModelPick, attemptEvents: Channel<AgentEvent>, isFallbackAttempt: boolean): Promise<string | null> => {
-    const capture = recordTurn(attemptPick.backend, continueFrom === undefined ? String(args.prompt ?? "") : null, consent);
+    const prompt = continueFrom === undefined ? String(args.prompt ?? "") : null;
+    const recorder = recordTurn(attemptPick.backend, prompt, traceGrant);
     const channel = new Channel<AgentEvent>(attemptEvents.id, (msg) => {
-      capture.event(msg);
+      recorder.event(msg);
       attemptEvents.send(msg);
       return !attemptEvents.closed;
     });
     let threw = false;
-    try { return await executeAttempt(attemptPick, channel, isFallbackAttempt); }
-    catch (error) { threw = true; throw error; }
-    finally { capture.finish(run.abort.signal.aborted, threw); }
+    try {
+      return await executeAttempt(attemptPick, channel, isFallbackAttempt);
+    } catch (error) {
+      threw = true;
+      throw error;
+    } finally {
+      recorder.finish(run.abort.signal.aborted, threw);
+    }
   };
 
   let endSessionId: string | null = null;

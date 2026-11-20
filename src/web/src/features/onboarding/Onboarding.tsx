@@ -24,7 +24,7 @@ import { type Backend, checkApiKey, getSettings, type ProviderId, type ProviderI
 import { canSaveUnchecked, checkAndSave, isSaved, type KeyOutcome, outcomeText } from "@/features/settings/providers/logic";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
-import { OnboardingConsent } from "@/features/telemetry/Privacy";
+import { OnboardingPrivacy } from "@/features/telemetry/Privacy";
 import { StepPreview } from "./Preview";
 
 /**
@@ -113,13 +113,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 {step === 0 ? <Welcome onNext={() => patch({ step: 1 })} /> : null}
                 {step === 1 ? <Answers draft={draft} patch={patch} onBack={() => patch({ step: 0 })} onNext={() => patch({ step: 2 })} /> : null}
                 {step === 2 ? <FirstSpace draft={draft} patch={patch} onBack={() => patch({ step: 1 })} onDone={(spaces) => patch({ step: 3, spaces })} /> : null}
-                {step === 3 ? (
-                  <section>
-                    <Title sub="Choose what to share with Phaethon’s developers. Change each choice later in Settings → Privacy.">Your privacy choices</Title>
-                    <OnboardingConsent onSaved={() => patch({ step: 4 })} />
-                    <Footer onBack={() => patch({ step: 2 })}><span /></Footer>
-                  </section>
-                ) : null}
+                {step === 3 ? <Privacy onBack={() => patch({ step: 2 })} onNext={() => patch({ step: 4 })} /> : null}
                 {step === 4 ? <AllSet draft={draft} onBack={() => patch({ step: 3 })} onDone={finish} /> : null}
               </motion.div>
             </AnimatePresence>
@@ -640,6 +634,26 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
 // ---- Done ----
 
 /** "You're all set" (c06d): what was set up, with blue tick discs, then into the app. */
+function Privacy({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  return (
+    <section>
+      <Title sub="Choose what to share with Phaethon’s developers. You can change each choice later in Settings → Privacy.">
+        Your privacy choices
+      </Title>
+      <OnboardingPrivacy
+        onSaved={onNext}
+        actions={(busy) => (
+          <Footer onBack={onBack}>
+            <Button type="submit" pending={busy} disabled={busy}>
+              Continue
+            </Button>
+          </Footer>
+        )}
+      />
+    </section>
+  );
+}
+
 function AllSet({ draft, onBack, onDone }: { draft: Draft; onBack: () => void; onDone: () => void }) {
   const openSettings = () => {
     onDone();

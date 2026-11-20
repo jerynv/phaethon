@@ -1,34 +1,49 @@
 import { commands, Refusal } from "../rpc/registry.ts";
 import { onStart, onStop } from "../lifecycle.ts";
+import { MAX_REPORT_CHARS } from "../../shared/telemetry.ts";
 import { collectorEndpoint, telemetry } from "./client.ts";
 import { redactText } from "./redact.ts";
 
 let opened = false;
+/** Once per launch, as soon as usage is allowed (at startup, or when first saved). */
 function appOpened() {
-  if (!opened && telemetry.capture("usage", "app_opened", {})) opened = true;
+  if (!opened) opened = telemetry.capture("usage", "app_opened", {});
 }
-function view() { return { ...telemetry.consent(), collectorConfigured: collectorEndpoint() !== null }; }
+
+function view() {
+  return { ...telemetry.consent(), collectorConfigured: collectorEndpoint() !== null };
+}
+
+function reportText(text: unknown): string {
+  if (typeof text !== "string" || !text.trim() || text.length > MAX_REPORT_CHARS) {
+    throw new Refusal("Write a report of up to 4,000 characters.");
+  }
+  return text;
+}
 
 commands({
   telemetry_get: () => view(),
   telemetry_set: ({ choices }: { choices: unknown }) => {
-    try { telemetry.save(choices); } catch (error) { throw new Refusal((error as Error).message); }
+    try {
+      telemetry.save(choices);
+    } catch (error) {
+      throw new Refusal((error as Error).message);
+    }
     appOpened();
     return view();
   },
-  telemetry_usage: ({ event, data }: { event: unknown; data: unknown }) => {
-    return typeof event === "string" && telemetry.capture("usage", event, data);
-  },
-  telemetry_report_preview: ({ text }: { text: unknown }) => {
-    if (typeof text !== "string" || text.length > 4000) throw new Refusal("Reports can contain up to 4,000 characters.");
-    return redactText(text, 4000);
-  },
+  /** Views and file opens, which only the window sees. */
+  telemetry_usage: ({ event, data }: { event: unknown; data: unknown }) =>
+    typeof event === "string" && telemetry.capture("usage", event, data),
+  /** The report as it would be sent, so the person can check what redaction missed. */
+  telemetry_report_preview: ({ text }: { text: unknown }) => redactText(reportText(text), MAX_REPORT_CHARS),
   telemetry_report_send: ({ text }: { text: unknown }) => {
-    if (typeof text !== "string" || !text.trim() || text.length > 4000) throw new Refusal("Write a report of up to 4,000 characters.");
-    if (!telemetry.capture("reports", "testing_report", { text })) throw new Refusal("The report couldn’t be queued. Check that testing reports are enabled and a collector is configured.");
+    if (!telemetry.capture("reports", "testing_report", { text: reportText(text) })) {
+      throw new Refusal("The report couldn’t be sent. Turn on testing reports in Privacy settings first.");
+    }
     return null;
   },
 });
 
-onStart("telemetry consent", appOpened);
-onStop("stop telemetry", () => telemetry.close());
+onStart("telemetry", appOpened);
+onStop("telemetry", () => telemetry.close());

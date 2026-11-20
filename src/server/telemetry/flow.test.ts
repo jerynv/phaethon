@@ -10,11 +10,12 @@ import { load, save } from "../core/thread.ts";
 import { updateSettings } from "../settings/settings.ts";
 import { resetFake } from "../providers/fake.ts";
 import { fakeBin, setup } from "../cli/__tests__/helpers.ts";
-import { telemetry, type Envelope, type Payload } from "./client.ts";
+import { telemetrySignatureMessage, type TelemetryEnvelope, type TelemetryPayload } from "../../shared/telemetry.ts";
+import { telemetry } from "./client.ts";
 import "../commands.ts";
 
 const env = tempHome("phaethon-telemetry-flow-");
-const received: Payload[] = [];
+const received: TelemetryPayload[] = [];
 let collector: http.Server;
 const choices = { usage: true, diagnostics: true, reports: true, traces: true };
 
@@ -24,9 +25,9 @@ beforeAll(async () => {
     let body = "";
     request.on("data", (chunk) => { body += chunk; });
     request.on("end", () => {
-      const envelope = JSON.parse(body) as Envelope;
+      const envelope = JSON.parse(body) as TelemetryEnvelope;
       const publicKey = createPublicKey({ key: Buffer.from(envelope.publicKey, "base64"), type: "spki", format: "der" });
-      const valid = verify(null, Buffer.from(`phaethon.telemetry.v1\n${envelope.id}\n${envelope.sentAt}\n${envelope.payload}`), publicKey, Buffer.from(envelope.signature, "base64"));
+      const valid = verify(null, Buffer.from(telemetrySignatureMessage(envelope)), publicKey, Buffer.from(envelope.signature, "base64"));
       if (!valid) { response.writeHead(400).end(); return; }
       received.push(JSON.parse(envelope.payload));
       response.writeHead(204).end();
@@ -88,7 +89,7 @@ it("exercises saved choices, report preview and send, and actual built-in and co
   expect(JSON.stringify(traces)).not.toContain("jane@example.com");
   const count = received.length;
   await call("telemetry_set", { choices: { usage: false, diagnostics: false, reports: false, traces: false } });
-  await expect(call("telemetry_report_send", { text: "disabled" })).rejects.toThrow("couldn’t be queued");
+  await expect(call("telemetry_report_send", { text: "disabled" })).rejects.toThrow("couldn’t be sent");
   expect(await call("telemetry_usage", { event: "view_opened", data: { view: "settings" } })).toBe(false);
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(received).toHaveLength(count);

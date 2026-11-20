@@ -23,8 +23,22 @@ export type Core = {
 
 const root = path.resolve(import.meta.dirname, "..");
 
-export async function startCore(options: { script?: object; setup?: (home: string) => void; env?: Record<string, string> } = {}): Promise<Core> {
+export async function startCore(
+  options: {
+    script?: object;
+    setup?: (home: string) => void;
+    env?: Record<string, string>;
+    /** "declined" (the default) saves every privacy choice as off; "unset" leaves the first choice to the test. */
+    consent?: "declined" | "unset";
+  } = {},
+): Promise<Core> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-e2e-"));
+  if (options.consent !== "unset") {
+    // Written before the core starts, which reads the choices once.
+    fs.mkdirSync(path.join(home, "appdata"), { recursive: true });
+    const declined = { v: 1, configured: true, usage: false, diagnostics: false, reports: false, traces: false };
+    fs.writeFileSync(path.join(home, "appdata", "telemetry-consent.json"), JSON.stringify(declined));
+  }
   let scriptFile: string | undefined;
   if (options.script) {
     scriptFile = path.join(home, "fake-script.json");
@@ -68,13 +82,6 @@ export async function startCore(options: { script?: object; setup?: (home: strin
     home,
     url,
     async open(page, opts = {}) {
-      // Ordinary shell tests explicitly decline telemetry. Privacy tests exercise
-      // the real first-choice gate instead; no runtime bypass exists in the app.
-      const consentFile = path.join(home, "appdata", "telemetry-consent.json");
-      if (!opts.onboarding && !opts.privacy && !fs.existsSync(consentFile)) {
-        fs.mkdirSync(path.dirname(consentFile), { recursive: true });
-        fs.writeFileSync(consentFile, JSON.stringify({ v: 1, configured: true, usage: false, diagnostics: false, reports: false, traces: false }));
-      }
       if (!opts.onboarding) await page.addInitScript(() => localStorage.setItem("phaethon.onboarded", "1"));
       // Windows CI can exhaust socket buffers before navigation or while loading scripts.
       // Retry that boot once; application timeouts and a second failure still fail the test.

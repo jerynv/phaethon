@@ -35,7 +35,7 @@ async function capture() {
 
 test("saved choices govern signed new-turn traces, reports, and independent opt-outs", async ({ page }, testInfo) => {
   const received = await capture();
-  core = await startCore({ script: { claude: true, steps: [{ text: "A safe reply." }] }, env: received.env });
+  core = await startCore({ script: { claude: true, steps: [{ text: "A safe reply." }] }, env: received.env, consent: "unset" });
   await core.open(page, { privacy: true });
   await expect(page.getByRole("heading", { name: "Your privacy choices", exact: true })).toBeVisible();
   for (const label of ["Anonymous usage", "Diagnostics", "Testing reports", "Chat traces"]) await expect(page.getByRole("switch", { name: label, exact: true })).toBeChecked();
@@ -94,7 +94,7 @@ test("saved choices govern signed new-turn traces, reports, and independent opt-
 
 test("declining every category at the initial gate persists across reload", async ({ page }) => {
   const received = await capture();
-  core = await startCore({ env: received.env });
+  core = await startCore({ env: received.env, consent: "unset" });
   await core.open(page, { privacy: true });
   for (const label of ["Anonymous usage", "Diagnostics", "Testing reports", "Chat traces"]) await page.getByRole("switch", { name: label, exact: true }).uncheck();
   await page.getByRole("button", { name: "Save privacy choices" }).click();

@@ -26,11 +26,7 @@ export const studyDeck = (space: string, path: string) => invoke<DeckView>("stud
 export const studyDeckSave = (space: string, path: string | null, title: string, cards: CardInput[]) =>
   invoke<string>("study_deck_save", { space, path, title, cards });
 /** Cards to show: due first, then new. `paths` null = every deck; chosen decks also offer cards due later. */
-export const studySession = async (space: string, paths: string[] | null, limit = 40) => {
-  const cards = await invoke<SessionCard[]>("study_session", { space, paths, limit });
-  if (cards.length) void invoke("telemetry_usage", { event: "action_completed", data: { action: "study_started" } }).catch(() => {});
-  return cards;
-};
+export const studySession = (space: string, paths: string[] | null, limit = 40) => invoke<SessionCard[]>("study_session", { space, paths, limit });
 export const studyRate = (space: string, deck: string, card: string, confidence: Confidence) =>
   invoke<{ due: number; again: boolean }>("study_rate", { space, deck, card, confidence });
 export const studyQuiz = (space: string, path: string) => invoke<Quiz>("study_quiz", { space, path });

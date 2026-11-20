@@ -30,7 +30,7 @@ Design details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/TYPESCRIP
 
 Installers for macOS (Apple silicon and Intel `.dmg`), Windows (`-setup.exe`) and Linux (`.AppImage`, `.deb`) are on the [latest release](https://github.com/jerynv/phaethon/releases/latest). Once installed, Phaethon checks for updates itself (Settings › About). Versions before 0.2 were built with Tauri and can't update themselves to this one: install it once by hand.
 
-The macOS build isn't notarized yet, so the first open is blocked: open it once, then choose **Open Anyway** in System Settings › Privacy & Security.
+From 0.3.2 the macOS app is signed with a Developer ID and notarized by Apple, so it opens like any other downloaded app: macOS asks once whether to open it, and you choose **Open**. (0.3.1 and earlier weren't notarized: open them once, then choose **Open Anyway** in System Settings › Privacy & Security.)
 
 ## Running it
 

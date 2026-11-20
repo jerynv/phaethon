@@ -76,9 +76,30 @@ export async function startCore(options: { script?: object; setup?: (home: strin
         fs.writeFileSync(consentFile, JSON.stringify({ v: 1, configured: true, usage: false, diagnostics: false, reports: false, traces: false }));
       }
       if (!opts.onboarding) await page.addInitScript(() => localStorage.setItem("phaethon.onboarded", "1"));
-      await page.goto(`${url}#token=${ready.token}`);
-      if (opts.onboarding || opts.privacy) await page.getByRole("heading", { level: 1 }).first().waitFor();
-      else await page.getByRole("navigation").first().waitFor();
+      // A Windows runner can run out of socket buffers (net::ERR_NO_BUFFER_SPACE) while the page loads its
+      // scripts; the app then never starts ("Failed to fetch dynamically imported module"). That's the runner,
+      // not Phaethon, so the page loads once more. An app that really fails to start fails the second time too.
+      const shell = () => (opts.onboarding || opts.privacy ? page.getByRole("heading", { level: 1 }).first() : page.getByRole("navigation").first());
+      let onError: (e: Error) => void = () => {};
+      const bootFailed = new Promise<"failed">((resolve) => {
+        onError = (e) => {
+          if (/Failed to fetch dynamically imported module|Importing a module script failed/.test(e.message)) resolve("failed");
+        };
+      });
+      page.on("pageerror", onError);
+      try {
+        await page.goto(`${url}#token=${ready.token}`);
+        const shown = shell().waitFor().then(() => "shown" as const);
+        // Settled either way, so the loser of the race never surfaces as an unhandled rejection.
+        shown.catch(() => {});
+        const first = await Promise.race([shown, bootFailed]);
+        if (first === "failed") {
+          await page.reload();
+          await shell().waitFor();
+        }
+      } finally {
+        page.off("pageerror", onError);
+      }
     },
     requests() {
       if (!scriptFile || !fs.existsSync(`${scriptFile}.requests.jsonl`)) return [];

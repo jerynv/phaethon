@@ -154,13 +154,24 @@ function readingPlace(page: Page) {
   }, BOX);
 }
 
+/**
+ * Where turn `text` sits, as the next painted frame shows it. Older turns mount in a React commit, and the
+ * timeline puts the view back from its ResizeObserver, in the rendering step before that frame is painted;
+ * a read between the two (a slow runner leaves room for one) sees a layout no one ever sees. An observer
+ * made after the timeline's runs after it in that same step, before the paint.
+ */
 function placeOf(page: Page, text: string) {
   return page.evaluate(
-    ({ sel, text }) => {
-      const box = document.querySelector<HTMLElement>(sel)!;
-      const t = [...box.querySelectorAll<HTMLElement>("[data-turn]")].find((el) => el.textContent!.trim().startsWith(text))!;
-      return Math.round(t.getBoundingClientRect().top - box.getBoundingClientRect().top);
-    },
+    ({ sel, text }) =>
+      new Promise<number>((resolve) => {
+        const box = document.querySelector<HTMLElement>(sel)!;
+        const ro = new ResizeObserver(() => {
+          ro.disconnect();
+          const t = [...box.querySelectorAll<HTMLElement>("[data-turn]")].find((el) => el.textContent!.trim().startsWith(text))!;
+          resolve(Math.round(t.getBoundingClientRect().top - box.getBoundingClientRect().top));
+        });
+        ro.observe(box);
+      }),
     { sel: BOX, text },
   );
 }

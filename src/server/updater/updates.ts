@@ -77,7 +77,8 @@ export function notesText(notes: string | null | undefined): string | null {
   if (notes == null) return null;
   const text = notes
     .replace(/<\s*br\s*\/?>/gi, "\n")
-    .replace(/<\s*li[^>]*>/gi, "- ")
+    // GitHub may break the line after <li> when an item starts with <strong>: the dash stays with its text.
+    .replace(/<\s*li[^>]*>\s*/gi, "- ")
     .replace(/<\/\s*(p|div|li|h[1-6]|ul|ol|pre|blockquote)\s*>/gi, "\n")
     .replace(/<[^>]*>/g, "")
     .replace(/&lt;/g, "<")

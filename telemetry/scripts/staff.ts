@@ -80,10 +80,16 @@ export async function staffCLI(args: string[]): Promise<void> {
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) throw new Error("A 3–64 character username is required (letters, numbers, dots, underscores, hyphens)");
     const hash = await hashPassword(await readPassword());
     // auth_version revokes existing sessions atomically with password replacement.
+    // Keep the owner check inside the write, including conflict updates.
     sql = `INSERT INTO staff(id,email,username,password_hash,auth_version,role) VALUES (${quote(crypto.randomUUID())},${quote(email)},${quote(username)},${quote(hash)},${quote(version)},${quote(role)})
-      ON CONFLICT(email) DO UPDATE SET username=excluded.username,password_hash=excluded.password_hash,auth_version=excluded.auth_version,role=${options.has("--role") ? "excluded.role" : "staff.role"},disabled=0;`;
+      ON CONFLICT(email) DO UPDATE SET username=excluded.username,password_hash=excluded.password_hash,auth_version=excluded.auth_version,role=${options.has("--role") ? "excluded.role" : "staff.role"},disabled=0
+      WHERE staff.role<>'owner' OR staff.disabled=1 OR ${options.has("--role") ? "excluded.role" : "staff.role"}='owner'
+        OR EXISTS (SELECT 1 FROM staff other WHERE other.role='owner' AND other.disabled=0 AND other.id<>staff.id)
+      RETURNING id;`;
   } else {
-    sql = `UPDATE staff SET auth_version=${quote(version)}${action === "disable" ? ",disabled=1" : ""} WHERE email=${quote(email)};`;
+    sql = `UPDATE staff SET auth_version=${quote(version)}${action === "disable" ? ",disabled=1" : ""} WHERE email=${quote(email)}
+      ${action === "disable" ? "AND (role<>'owner' OR disabled=1 OR EXISTS (SELECT 1 FROM staff other WHERE other.role='owner' AND other.disabled=0 AND other.id<>staff.id))" : ""}
+      RETURNING id;`;
   }
   const directory = await mkdtemp(path.join(tmpdir(), "phaethon-staff-"));
   const file = path.join(directory, "staff.sql");
@@ -91,13 +97,19 @@ export async function staffCLI(args: string[]): Promise<void> {
   const state = options.get("--persist-to") ?? path.join(path.dirname(config), ".wrangler/state");
   try {
     await writeFile(file, sql, { mode: 0o600 });
+    let output = "";
     const exitCode = await new Promise<number | null>((resolve, reject) => {
-      const child = spawn(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["dlx", "wrangler@4.165.0", "d1", "execute", "DB", "--config", config, remote ? "--remote" : "--local", ...(!remote ? ["--persist-to", path.resolve(state)] : []), "--file", file],
-        { cwd: directory, stdio: ["ignore", "inherit", "inherit"] });
+      const child = spawn(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["dlx", "wrangler@4.165.0", "d1", "execute", "DB", "--config", config, remote ? "--remote" : "--local", ...(!remote ? ["--persist-to", path.resolve(state)] : []), "--file", file, "--json"],
+        { cwd: directory, stdio: ["ignore", "pipe", "inherit"] });
+      child.stdout.on("data", chunk => { output += String(chunk); });
       child.once("error", reject);
-      child.once("exit", resolve);
+      child.once("close", resolve);
     });
     if (exitCode !== 0) throw new Error("Staff update failed");
+    const result = JSON.parse(output) as Array<{ results?: Array<{ id?: unknown }> }>;
+    if (!Array.isArray(result) || result.length !== 1 || result[0]?.results?.length !== 1 || typeof result[0].results[0]?.id !== "string") {
+      throw new Error("Staff update rejected. Account must exist and at least one active super admin must remain.");
+    }
     process.stdout.write(`Staff ${action} complete (${remote ? "remote" : "local"}).\n`);
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

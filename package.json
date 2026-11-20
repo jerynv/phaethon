@@ -33,7 +33,9 @@
     "site:deploy": "pnpm site:build && pnpm dlx wrangler@4 deploy --config site/wrangler.jsonc",
     "telemetry:dev": "vite --config telemetry/vite.config.ts",
     "telemetry:build": "vite build --config telemetry/vite.config.ts",
-    "telemetry:test:ui": "playwright test --config telemetry/console/playwright.config.ts"
+    "telemetry:test:ui": "playwright test --config telemetry/console/playwright.config.ts",
+    "telemetry:smoke": "tsx telemetry/scripts/smoke.ts",
+    "telemetry:test:pipeline": "pnpm build && pnpm telemetry:build && tsx telemetry/scripts/smoke.ts --console"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

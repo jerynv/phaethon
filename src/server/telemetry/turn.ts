@@ -28,7 +28,7 @@ export function recordTurn(backend: Backend, prompt: string | null, consent: Ret
       if (finished) return;
       finished = true;
       const outcome = aborted || cancelled ? "cancelled" : failed || threw ? "failed" : "completed";
-      client.capture("diagnostics", "turn_completed", { backend, outcome, durationMs: Math.min(86_400_000, Math.max(0, Math.round(performance.now() - started))), steps: Math.min(steps, 1_000_000) }, consent.diagnostics);
+      client.capture("diagnostics", "turn_completed", { backend, outcome, durationMs: Math.min(86_400_000, Math.max(0, Math.round(performance.now() - started))), steps: Math.min(steps, 10_000) }, consent.diagnostics);
       if (outcome === "completed" && prompt !== null && text.trim() && client.valid("traces", consent.traces)) {
         client.capture("traces", "chat_trace", { backend, messages: [{ role: "user", text: user }, { role: "assistant", text: redactText(text) }] }, consent.traces);
       }

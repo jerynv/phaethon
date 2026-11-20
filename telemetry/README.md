@@ -1,6 +1,9 @@
 # Phaethon telemetry backend
 
-Implementation checkout: `/Users/jeryn/.t3/worktrees/phaethon/t3-6d2a3dad-321adeac0128fa8a`, branch `cloudflare-telemetry-backend` (initially prepared as `t3/6d2a3dad`), initial base `8414f9697cee1dfc4735ea418f3a8544908bb215`. This implementation stays isolated. Final integration waits for PR #17 to merge. The parent owns console files and another worker owns the app client; this backend does not implement collection or preferences.
+The app, private staff console, and Cloudflare collector are implemented together.
+The initial hostname is `telemetry.phaethon.app`. Onboarding and Privacy settings
+control collection. See [the implementation overview](../docs/TELEMETRY.md) for
+the app's data boundaries and release configuration.
 
 The TypeScript Worker uses D1 for indexed metadata, staff credentials, opaque sessions, replay reservations, and a temporary durable archive outbox. R2 holds private raw JSON envelopes and server receipts. There are no additional runtime packages: validation is plain TypeScript, and cryptography uses maintained Web Crypto and `node:crypto` implementations. The assets binding serves the parent's `telemetry/console/dist` for non-API paths. Every API response disables caching; missing or invalid staff sessions always receive `401`, including when an ingestion bearer credential is presented. Public ingestion has no administrative capability.
 
@@ -15,7 +18,7 @@ pnpm dlx wrangler@4.165.0 d1 migrations apply DB --local \
   --config /tmp/phaethon-telemetry-local/wrangler.json \
   --persist-to /tmp/phaethon-telemetry-local/state
 pnpm exec tsx telemetry/scripts/staff.ts provision \
-  --email staff@example.test --username staff \
+  --email staff@example.test --username staff --role owner \
   --config /tmp/phaethon-telemetry-local/wrangler.json \
   --persist-to /tmp/phaethon-telemetry-local/state
 pnpm dlx wrangler@4.165.0 dev \
@@ -30,6 +33,19 @@ The local origin defaults to `http://localhost:8787`. Cookies always carry `Secu
 `--test-scheduled` exposes Wrangler's local `/__scheduled` test hook; it is not an application route or deployed maintenance API.
 
 ## Staff access and operations
+
+After the first super admin signs in, the **Staff** page manages accounts without
+CLI access: add an account, change its email or username, choose **Super admin**
+or **Viewer**, reset its password, disable/re-enable sign-in, or sign out all of
+its sessions. Super admins are stored as role `owner`; viewers can read telemetry
+but every staff-management endpoint rejects them. Account changes revoke the
+affected account's sessions. A conditional database write prevents disabling or
+demoting the last active super admin, including concurrent changes. Recent
+changes are recorded in a transactional access audit without credentials.
+
+The CLI's `--role owner` bootstraps the first super admin. New accounts default
+to `viewer`; omitting the role when reprovisioning preserves an existing role.
+There is no public bootstrap endpoint or email-based automatic elevation.
 
 Staff can sign in with their provisioned email or username; the JSON field is named `email` in either case. Password hashes are salted scrypt with `N=32768`, `r=8`, `p=3`, 32-byte output, a 16-byte random salt, and 48 MiB maximum allocation. This is an [OWASP scrypt configuration](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html); [Workers supports `node:crypto` scrypt](https://developers.cloudflare.com/workers/runtime-apis/nodejs/crypto/). A bounded isolate-local queue permits only one memory-hard password derivation at a time. Unknown accounts perform equivalent dummy password work and receive the same failure as wrong passwords or disabled accounts. Login is limited globally to 120 attempts per 15 minutes, per IP to 20, and per submitted email/username to 10. A saturated derivation queue returns generic `503` rather than exceeding the isolate's memory budget.
 
@@ -73,7 +89,7 @@ Payloads strictly allow only `category,event,appVersion,platform,data`, with unk
 
 `appVersion` is 1–64 letters/digits/dots/plus/underscore/hyphen characters, beginning with a letter/digit. `platform` is darwin/win32/linux/other. Raw errors and custom model names are rejected. Payload JSON has a 192 KiB byte cap and the whole request a 256 KiB byte cap, enforced incrementally even without Content-Length. JSON must be valid UTF-8 with an application/json content type. Combined escaped message content must fit these byte caps even when each individual string meets its character bound.
 
-**Reports and traces can contain personal content.** The client applies local best-effort redaction before signing, but this does not make them fully anonymous, and server-side schema validation cannot reliably detect sensitive prose. Each category must be enabled before the app collects anything for it. Preferences are saved separately by the app and never sent in envelopes. These client responsibilities belong to the parallel client implementation.
+**Reports and traces can contain personal content.** The client applies local best-effort redaction before signing, but this does not make them fully anonymous, and server-side schema validation cannot reliably detect sensitive prose. Each category must be enabled before the app collects anything for it. Preferences are saved separately by the app and never sent in envelopes.
 
 ## API responses
 
@@ -82,9 +98,14 @@ Every staff endpoint requires the session cookie. Unauthorized calls return `401
 | Endpoint | Response |
 | --- | --- |
 | `POST /api/ingest` | Fresh valid envelope: `201 {id,receipt}` after R2 confirmation; already archived identical retry: `200` with the same receipt. Failed archive writes return 503 and preserve the outbox. Conflicting content for an existing UUID returns 409; an expired event's surviving tombstone returns 410. |
-| `POST /api/login` | `{email,password}`; success `{email:string}` and session cookie |
-| `GET /api/session` | `{email:string}` |
+| `POST /api/login` | `{email,password}`; success `{email:string,role:'owner'\|'viewer'}` and session cookie |
+| `GET /api/session` | `{email:string,role:'owner'\|'viewer'}` |
 | `POST /api/logout` | `{ok:true}` and expired cookie |
+| `GET /api/staff` | Super admin only; `{items:[{id,email,username,role,disabled}]}` without hashes or session data |
+| `POST /api/staff` | Super admin only, same origin; `{email,username,role,password}` creates an account |
+| `PATCH /api/staff/:id` | Super admin only, same origin; `{email,username,role,disabled,password?}` changes access and revokes existing sessions |
+| `POST /api/staff/:id/revoke` | Super admin only, same origin; signs out every session for the account |
+| `GET /api/staff/audit` | Super admin only; recent `{items:[{id,actorEmail,targetEmail,action,createdAt}]}` |
 | `GET /api/overview?days=7\|30\|90` | `{totals:{usage,diagnostics,reports,traces},days:[{day:'YYYY-MM-DD',count}],events:[{event,count}],outcomes:[{outcome,count}]}`; absent categories have zero totals; day rows contain days with retained events and outcome rows contain diagnostics only |
 | `GET /api/events?days=7&category=usage&before=...` | `{items:[{id,category,event,receivedAt,sentAt,appVersion,platform}],nextCursor:string\|null}` |
 | `GET /api/events/:id` | `{envelope,payload,receivedAt,verification:'self-signed'}` with parsed payload; header `X-Archive-Receipt` contains base64url JSON receipt |
@@ -131,6 +152,7 @@ pnpm exec tsc -p telemetry/tsconfig.json
 pnpm dlx node@22 node_modules/vitest/vitest.mjs run --config telemetry/worker/vitest.config.ts
 pnpm dlx node@24 node_modules/vitest/vitest.mjs run --config telemetry/worker/vitest.config.ts
 pnpm exec tsx telemetry/scripts/smoke.ts
+pnpm telemetry:test:pipeline
 ```
 
 The backend tests use Vitest registration so the parent's `telemetry/**/*.test.ts` inclusion also runs them through normal `pnpm test`. SQLite executes the actual migration, constraints, indexes, transactions, and queries. Tests cover valid/invalid/tampered signatures, strict schemas and byte limits, freshness, concurrent duplicates/conflicts, R2 failure and retry, D1 finalization failure, archive/receipt corruption, retention/tombstones/orphans, generic login failures, username/email login, unauthorized endpoints, session expiry/rotation/revocation, cross-origin mutations, digest rate limiting, raw detail, filtered stable pagination, and multi-page NDJSON export. The standalone smoke script additionally boots real Wrangler/workerd, migrates local D1, provisions through secure stdin, exercises scrypt/Ed25519/R2 with concurrent requests, revokes through the CLI, invokes cron, and serves local assets without external credentials. It owns and terminates its process group and removes its temporary state on success; failed runs retain a private temp directory with local logs.

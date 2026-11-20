@@ -11,3 +11,5 @@ test-results/
 playwright-report/
 ui-shots/
 site/snapshot.json
+telemetry/.wrangler/
+**/.dev.vars*

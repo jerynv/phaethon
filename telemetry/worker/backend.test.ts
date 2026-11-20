@@ -381,7 +381,12 @@ test("owners manage accounts, credentials, roles, enabled access, revocation, an
   const audit = await (await h.call("/api/staff/audit", { headers: { Cookie } })).json() as { items: Array<{ action: string; actorEmail: string; targetEmail: string; createdAt: string }> };
   assert.equal(audit.items.length, 5);
   assert.deepEqual(new Set(audit.items.map(item => item.action)), new Set(["created", "updated", "sessions_revoked"]));
-  assert(audit.items.every(item => item.actorEmail === "staff@example.test" && item.targetEmail === changes.email && Number.isFinite(Date.parse(item.createdAt))));
+  assert(audit.items.every(item => item.actorEmail === "staff@example.test" && item.targetEmail === (item.action === "created" ? created.email : changes.email) && Number.isFinite(Date.parse(item.createdAt))));
+  assert.equal((await patchStaff(h, "staff", { email: "renamed-owner@example.test", username: "staff", role: "owner", disabled: false }, Cookie)).status, 200);
+  const renamedSession = await accountLogin(h, "renamed-owner@example.test");
+  const history = await (await h.call("/api/staff/audit", { headers: { Cookie: renamedSession } })).json() as typeof audit;
+  assert.equal(history.items.find(item => item.action === "created")?.actorEmail, "staff@example.test");
+  assert.equal(history.items.find(item => item.action === "created")?.targetEmail, "new@example.test");
   assert(!JSON.stringify(audit).includes("scrypt")); assert(!JSON.stringify(audit).includes(nextPassword));
   const stored = h.DB.sql.prepare("SELECT password_hash FROM staff WHERE id=?").get(created.id)!;
   assert.notEqual(stored.password_hash, nextPassword); assert.match(String(stored.password_hash), /^scrypt\$/);
@@ -547,6 +552,7 @@ test("expired outbox content is erased during an R2 outage while the replay tomb
 test("non-API routes use ASSETS and APIs never fall back to console HTML", async () => {
   const h = harness(); h.env.ASSETS = { fetch: async () => new Response("console") };
   assert.equal(await (await h.call("/events/route")).text(), "console");
+  assert.match((await h.call("/")).headers.get("Content-Security-Policy")!, /script-src 'self'/);
   assert.equal((await h.call("/api/unknown")).status, 401);
 });
 

@@ -13,6 +13,8 @@ CREATE TABLE staff_audit (
   id TEXT PRIMARY KEY,
   actor_id TEXT NOT NULL REFERENCES staff(id),
   target_id TEXT NOT NULL REFERENCES staff(id),
+  actor_email TEXT NOT NULL,
+  target_email TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('created', 'updated', 'sessions_revoked')),
   created_at TEXT NOT NULL
 );

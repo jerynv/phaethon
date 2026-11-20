@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CATEGORIES, LABELS, SessionExpired, eventName, request, type Category, type Detail, type EventPage, type EventSummary, type Overview } from "./api";
+import { CATEGORIES, LABELS, SessionExpired, eventName, request, type Category, type Detail, type EventPage, type EventSummary, type Overview, type Session } from "./api";
+import { Staff } from "./Staff";
 import "./style.css";
 
 const format = new Intl.NumberFormat();
@@ -14,7 +15,7 @@ function Wordmark() {
   return <span className="flex items-center gap-2.5 font-medium"><span aria-hidden="true" className="flex size-7 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">P</span>Phaethon<span className="font-normal text-muted-foreground">/ Telemetry</span></span>;
 }
 
-function SignIn({ onSignIn }: { onSignIn: (email: string) => void }) {
+function SignIn({ onSignIn }: { onSignIn: (session: Session) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,8 +23,8 @@ function SignIn({ onSignIn }: { onSignIn: (email: string) => void }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setError("");
     try {
-      const result = await request<{ email: string }>("/login", { method: "POST", body: JSON.stringify({ email, password }) });
-      setPassword(""); onSignIn(result.email);
+      const result = await request<Session>("/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      setPassword(""); onSignIn(result);
     } catch (e) { setError(e instanceof SessionExpired ? "Email or password wasn’t recognized." : message(e)); }
     finally { setBusy(false); }
   };
@@ -80,7 +81,8 @@ function EventDetail({ item, onClose, onExpired }: { item: EventSummary; onClose
   </section>;
 }
 
-function Dashboard({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+  const [staffOpen, setStaffOpen] = useState(false);
   const [days, setDays] = useState(7);
   const [category, setCategory] = useState<Category | "">("");
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -161,8 +163,8 @@ function Dashboard({ email, onSignOut }: { email: string; onSignOut: () => void 
   };
   const visible = events?.items.filter((e) => `${e.event} ${e.platform} ${e.appVersion}`.toLowerCase().includes(search.toLowerCase())) ?? [];
   return <div className="min-h-svh">
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3 sm:px-8"><Wordmark /><div className="flex min-w-0 items-center gap-3"><span className="max-w-48 truncate text-xs text-muted-foreground">{email}</span><Button size="sm" variant="ghost" pending={signingOut} onClick={() => void signOut()}>Sign out</Button></div></header>
-    <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3 sm:px-8"><Wordmark /><div className="flex min-w-0 flex-wrap items-center gap-2">{session.role === "owner" ? <nav aria-label="Telemetry"><Button size="sm" variant="ghost" aria-pressed={!staffOpen} onClick={() => setStaffOpen(false)}>Insights</Button><Button size="sm" variant="ghost" aria-pressed={staffOpen} onClick={() => { exportRequest.current?.abort(); setStaffOpen(true); }}>Staff</Button></nav> : null}<span className="max-w-48 truncate text-xs text-muted-foreground">{session.email}</span><Button size="sm" variant="ghost" pending={signingOut} onClick={() => void signOut()}>Sign out</Button></div></header>
+    {staffOpen && session.role === "owner" ? <Staff onExpired={onSignOut} /> : <main className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
       <div className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-2xl font-medium tracking-tight">Telemetry</h1><p className="mt-1 text-sm text-muted-foreground">Usage, reliability, and feedback from shared events.</p></div><div className="flex items-center gap-2"><label className="sr-only" htmlFor="period">Time period</label><select id="period" value={days} onChange={(e) => setDays(Number(e.target.value))} className="h-8 rounded-control border bg-card px-2 text-sm">{[7,30,90].map((n) => <option key={n} value={n}>Last {n} days</option>)}</select><Button size="sm" variant="outline" disabled={busy} onClick={() => setRefresh((n) => n + 1)}>Refresh</Button></div></div>
       {error ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-destructive/30 p-3 text-sm text-destructive-foreground">{error}<Button size="sm" variant="outline" onClick={() => setRefresh((n) => n + 1)}>Retry</Button></div> : null}
       {busy ? <p role="status" className="text-sm text-muted-foreground">Loading telemetry…</p> : null}
@@ -177,24 +179,24 @@ function Dashboard({ email, onSignOut }: { email: string; onSignOut: () => void 
         {events?.nextCursor ? <div className="mt-3 flex justify-center"><Button size="sm" variant="outline" pending={more} onClick={() => void loadMore()}>Load more</Button></div> : null}
       </section>
       {selected ? <EventDetail key={selected.id} item={selected} onClose={() => setSelected(null)} onExpired={onSignOut} /> : null}
-    </main>
+    </main>}
   </div>;
 }
 
 function App() {
-  const [session, setSession] = useState<string | null | undefined>(undefined);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     setError("");
-    request<{ email: string }>("/session", { signal: controller.signal }).then((s) => setSession(s.email)).catch((e) => { if (!controller.signal.aborted) { if (e instanceof SessionExpired) setSession(null); else setError(message(e)); } });
+    request<Session>("/session", { signal: controller.signal }).then(setSession).catch((e) => { if (!controller.signal.aborted) { if (e instanceof SessionExpired) setSession(null); else setError(message(e)); } });
     return () => controller.abort();
   }, [retry]);
   // Stable callbacks keep authenticated requests from re-running when their parent renders.
   const [signOut] = useState(() => () => setSession(null));
   if (session === undefined) return <main className="mx-auto flex max-w-sm flex-col gap-3 px-5 py-16">{error ? <><p role="alert" className="text-sm">{error}</p><Button variant="outline" onClick={() => setRetry((n) => n + 1)}>Retry</Button></> : <p role="status" className="text-sm text-muted-foreground">Opening telemetry…</p>}</main>;
-  return session ? <Dashboard email={session} onSignOut={signOut} /> : <SignIn onSignIn={setSession} />;
+  return session ? <Dashboard session={session} onSignOut={signOut} /> : <SignIn onSignIn={setSession} />;
 }
 
 const media = window.matchMedia("(prefers-color-scheme: dark)");

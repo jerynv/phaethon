@@ -3,6 +3,7 @@ import path from "node:path";
 import { generateKeyPair, randomUUID, sign } from "node:crypto";
 import { appDataDir } from "../env.ts";
 import { redactText } from "./redact.ts";
+import { MAX_TELEMETRY_PAYLOAD_BYTES, parseTelemetryPayload } from "../../shared/telemetry.ts";
 
 /** Injected by the release build only after the owner configures a collector. */
 declare const __PHAETHON_TELEMETRY_ENDPOINT__: string;
@@ -37,13 +38,13 @@ export function cleanData(category: Category, event: string, value: unknown): ob
     if (!["app_opened", "view_opened", "action_completed"].includes(event) || !exact(value, ["view", "action", "count"])) return null;
     if (value.view !== undefined && !enumOf(value.view, VIEWS)) return null;
     if (value.action !== undefined && !enumOf(value.action, ACTIONS)) return null;
-    if (value.count !== undefined && !integer(value.count, 1_000_000)) return null;
+    if (value.count !== undefined && !integer(value.count, 10_000)) return null;
     if (event === "view_opened" && value.view === undefined || event === "action_completed" && value.action === undefined) return null;
     return { ...(value.view === undefined ? {} : { view: value.view }), ...(value.action === undefined ? {} : { action: value.action }), ...(value.count === undefined ? {} : { count: value.count }) };
   }
   if (category === "diagnostics") {
-    if (event !== "turn_completed" || !exact(value, ["backend", "outcome", "durationMs", "steps"]) || !enumOf(value.backend, BACKENDS) || !enumOf(value.outcome, ["completed", "failed", "cancelled"]) || !integer(value.durationMs, 86_400_000) || value.steps !== undefined && !integer(value.steps, 1_000_000)) return null;
-    return { backend: value.backend, outcome: value.outcome, durationMs: value.durationMs, ...(value.steps === undefined ? {} : { steps: value.steps }) };
+    if (event !== "turn_completed" || !exact(value, ["backend", "outcome", "durationMs", "steps"]) || !enumOf(value.backend, BACKENDS) || !enumOf(value.outcome, ["completed", "failed", "cancelled"]) || !integer(value.durationMs, 86_400_000) || value.steps !== undefined && !integer(value.steps, 10_000)) return null;
+    return { backend: value.backend, outcome: value.outcome, durationMs: value.durationMs, steps: value.steps ?? 0 };
   }
   if (category === "reports") {
     if (event !== "testing_report" || !exact(value, ["text"]) || typeof value.text !== "string" || !value.text.trim() || value.text.length > 4000) return null;
@@ -164,7 +165,11 @@ export class TelemetryClient {
     const appVersion = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version) && version.length <= 64 ? version : "0.0.0-dev";
     const platform = ["darwin", "win32", "linux"].includes(process.platform) ? process.platform as Payload["platform"] : "other";
     const payload: Payload = { category, event, appVersion, platform, data: clean };
+    // Use the collector's schema at the boundary as well, so changes to either
+    // side cannot silently produce uploads that ingestion will discard.
+    try { parseTelemetryPayload(payload); } catch { return false; }
     const bytes = Buffer.byteLength(JSON.stringify(payload));
+    if (bytes > MAX_TELEMETRY_PAYLOAD_BYTES) return false;
     // Memory only: maximum 64 items / 512 KiB of serialized payload, including the active item.
     // Retained envelope strings add a second bounded copy plus signature overhead. No restart backlog.
     const pending = this.active && !this.queue.includes(this.active.item) ? [...this.queue, this.active.item] : this.queue;

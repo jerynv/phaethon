@@ -141,9 +141,8 @@ async function staffRoute(request: Request, env: Env, actor: StaffSession): Prom
     return json({ items: rows.results.map(row => ({ ...row, disabled: row.disabled === 1 })) });
   }
   if (request.method === "GET" && url.pathname === "/api/staff/audit") {
-    const rows = await env.DB.prepare(`SELECT a.id,actor.email AS actorEmail,target.email AS targetEmail,a.action,a.created_at AS createdAt
-      FROM staff_audit a JOIN staff actor ON actor.id=a.actor_id JOIN staff target ON target.id=a.target_id
-      ORDER BY a.created_at DESC,a.id DESC LIMIT 100`).all();
+    const rows = await env.DB.prepare(`SELECT id,actor_email AS actorEmail,target_email AS targetEmail,action,created_at AS createdAt
+      FROM staff_audit ORDER BY created_at DESC,id DESC LIMIT 100`).all();
     return json({ items: rows.results });
   }
   const match = /^\/api\/staff\/([0-9a-z-]+)(\/revoke)?$/.exec(url.pathname);
@@ -191,9 +190,9 @@ async function staffRoute(request: Request, env: Env, actor: StaffSession): Prom
   try {
     results = await env.DB.batch([
       mutation,
-      env.DB.prepare(`INSERT INTO staff_audit(id,actor_id,target_id,action,created_at)
-        SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM staff WHERE id=? AND auth_version=?)`)
-        .bind(auditId, actor.id, id, action, new Date().toISOString(), id, version),
+      env.DB.prepare(`INSERT INTO staff_audit(id,actor_id,target_id,actor_email,target_email,action,created_at)
+        SELECT ?,?,id,?,email,?,? FROM staff WHERE id=? AND auth_version=?`)
+        .bind(auditId, actor.id, actor.email, action, new Date().toISOString(), id, version),
     ]);
   } catch (error) {
     if (error instanceof Error && /UNIQUE constraint failed/i.test(error.message)) return json({ error: "That email or username is already in use." }, 409);
@@ -421,6 +420,7 @@ export default {
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Referrer-Policy", "no-referrer");
     headers.set("X-Frame-Options", "DENY");
+    headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     if (new URL(request.url).protocol === "https:") headers.set("Strict-Transport-Security", "max-age=31536000");
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },

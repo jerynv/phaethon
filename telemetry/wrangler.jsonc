@@ -7,9 +7,10 @@
   "workers_dev": false,
   "preview_urls": false,
   "assets": { "directory": "console/dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
-  "d1_databases": [{ "binding": "DB", "database_name": "phaethon-telemetry", "database_id": "REPLACE_WITH_ACTUAL_D1_DATABASE_ID", "migrations_dir": "migrations" }],
-  "r2_buckets": [{ "binding": "RAW", "bucket_name": "REPLACE_WITH_PRIVATE_R2_BUCKET_NAME" }],
-  "vars": { "CONSOLE_ORIGIN": "https://REPLACE_WITH_CONSOLE_HOST", "SESSION_TTL_SECONDS": "28800", "CONTENT_RETENTION_DAYS": "90", "METADATA_RETENTION_DAYS": "365" },
+  "d1_databases": [{ "binding": "DB", "database_name": "phaethon-telemetry", "database_id": "c3a94b71-1cff-44fe-93ad-031fcf1b660a", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "RAW", "bucket_name": "phaethon-telemetry-raw" }],
+  "vars": { "CONSOLE_ORIGIN": "https://telemetry.phaethon.app", "SESSION_TTL_SECONDS": "28800", "CONTENT_RETENTION_DAYS": "90", "METADATA_RETENTION_DAYS": "365" },
+  "routes": [{ "pattern": "telemetry.phaethon.app", "custom_domain": true }],
   "triggers": { "crons": ["*/10 * * * *"] },
   "limits": { "cpu_ms": 30000 },
   "observability": { "enabled": false }

@@ -27,6 +27,9 @@ Complete when:
 4. Provisioned staff can sign in, view counts and trends, inspect event details,
    filter and paginate, export records, and revoke their session by signing out.
    Unauthenticated and expired sessions cannot read records.
+   Super admins can manage staff accounts, roles, credentials, and sessions;
+   viewers cannot access those APIs. Concurrent changes preserve an active super
+   admin, and an access audit keeps the identities recorded at the time of change.
 5. Client and collector interoperate in a local end-to-end exercise. Relevant
    unit, type, build, browser, and rendered-state checks pass after integration.
 
@@ -77,3 +80,18 @@ installed application normally need no environment setup. An explicit
 the endpoint. Source/dev/test runs stay offline unless a loopback collector is
 explicitly enabled with `PHAETHON_TELEMETRY_ALLOW_LOCAL=1` for a local exercise.
 Neither option bypasses saved per-category choices.
+The release workflow supplies the chosen public collector URL when it builds
+installers; ordinary CI and development builds do not.
+
+The chosen initial console origin is `https://telemetry.phaethon.app`. Super-admin
+access is provisioned separately from source configuration. Staff accounts can be
+managed from the console; changing the hostname is a Cloudflare route and origin
+configuration change, followed by rebuilding releases with the new collector URL.
+
+Local joined verification is `pnpm telemetry:test:pipeline`: it builds the app
+and console, creates disposable local D1/R2 state, provisions a temporary super
+admin through secure stdin, and runs the real app and browser against workerd.
+It exercises consent, signing, redaction, independent opt-out, trace inspection,
+staff creation, viewer access, session revocation, the last-super-admin guard,
+and logout. Credentials and temporary state are removed on success; screenshots
+are kept in the evidence directory printed by the script.

@@ -35,6 +35,7 @@ test("staff signs in, examines a trace, filters events, exports, and signs out",
   await page.getByLabel("Password", { exact: true }).fill("test-session-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Telemetry", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Staff", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Chat trace", exact: true }).click();
   await expect(page.getByRole("region", { name: "Event detail" })).toContainText("Contact [email]");
   await page.getByText("Raw record", { exact: true }).click();
@@ -59,6 +60,57 @@ test("staff signs in, examines a trace, filters events, exports, and signs out",
   await expect(page.getByRole("region", { name: "Event detail" })).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
+test("super admin manages accounts and reviews access changes", async ({ page }, testInfo) => {
+  const members = [{ id: "owner", email: "owner@example.test", username: "owner", role: "owner", disabled: false }];
+  const audit: { id: string; actorEmail: string; targetEmail: string; action: string; createdAt: string }[] = [];
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    if (url.pathname === "/api/session") return route.fulfill({ json: { email: "owner@example.test", role: "owner" } });
+    if (url.pathname === "/api/overview") return route.fulfill({ json: { totals: {}, days: [], events: [], outcomes: [] } });
+    if (url.pathname === "/api/events") return route.fulfill({ json: { items: [], nextCursor: null } });
+    if (url.pathname === "/api/staff/audit") return route.fulfill({ json: { items: audit } });
+    if (url.pathname === "/api/staff" && method === "GET") return route.fulfill({ json: { items: members } });
+    if (url.pathname === "/api/staff" && method === "POST") {
+      const { password, ...member } = route.request().postDataJSON();
+      expect(password.length).toBeGreaterThanOrEqual(14);
+      members.push({ ...member, id: "viewer", disabled: false });
+      audit.unshift({ id: "create", actorEmail: "owner@example.test", targetEmail: member.email, action: "created", createdAt: "2026-11-19T12:00:00.000Z" });
+      return route.fulfill({ status: 201, json: { ok: true } });
+    }
+    if (url.pathname === "/api/staff/owner" && method === "PATCH") return route.fulfill({ status: 409, json: { error: "Keep at least one active super admin." } });
+    if (url.pathname === "/api/staff/viewer" && method === "PATCH") {
+      Object.assign(members[1], route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ status: 404 });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Staff", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Staff access", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add account", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Account editor" });
+  await editor.getByLabel("Email", { exact: true }).fill("viewer@example.test");
+  await editor.getByLabel("Username", { exact: true }).fill("viewer");
+  await editor.getByLabel("Password", { exact: true }).fill("local-test-password");
+  await editor.getByRole("button", { name: "Save account" }).click();
+  await expect(page.getByRole("button", { name: "Manage viewer@example.test" })).toBeVisible();
+  await expect(page.getByText("owner@example.test · created · viewer@example.test")).toBeVisible();
+  await page.getByRole("button", { name: "Manage viewer@example.test" }).click();
+  await editor.getByRole("switch", { name: "Allow sign-in" }).uncheck();
+  await editor.getByRole("button", { name: "Save account" }).click();
+  await expect(page.getByRole("row").filter({ hasText: "viewer@example.test" })).toContainText("Disabled");
+  await page.getByRole("button", { name: "Manage owner@example.test" }).click();
+  await editor.getByLabel("Role", { exact: true }).selectOption("viewer");
+  await editor.getByRole("button", { name: "Save account" }).click();
+  await expect(page.getByRole("alert")).toContainText("Keep at least one active super admin");
+  await page.screenshot({ path: testInfo.outputPath("staff-access.png"), fullPage: true, animations: "disabled" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.screenshot({ path: testInfo.outputPath("staff-mobile-dark.png"), fullPage: true, animations: "disabled" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("an expired session clears the authenticated explorer", async ({ page }) => {

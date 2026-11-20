@@ -24,6 +24,7 @@ import { type Backend, checkApiKey, getSettings, type ProviderId, type ProviderI
 import { canSaveUnchecked, checkAndSave, isSaved, type KeyOutcome, outcomeText } from "@/features/settings/providers/logic";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
+import { OnboardingPrivacy } from "@/features/telemetry/Privacy";
 import { StepPreview } from "./Preview";
 
 /**
@@ -42,7 +43,7 @@ export type Draft = {
 };
 const DRAFT = "phaethon.onboarding";
 const START: Draft = { step: 0, method: null, provider: "anthropic", name: "", edu: true, answer: null, spaces: [] };
-const LAST = 3;
+const LAST = 4;
 
 function readDraft(): Draft {
   try {
@@ -54,7 +55,7 @@ function readDraft(): Draft {
 }
 
 /** Each step's art (docs/UI-REBUILD.md › Art: onboarding cycles sky → dawn → meadow). */
-const PALETTES: ArtPalette[] = ["sky", "dawn", "meadow", "sky"];
+const PALETTES: ArtPalette[] = ["sky", "dawn", "meadow", "dawn", "sky"];
 
 /** First run: what Phaethon is, how it answers, and a first space. */
 export function Onboarding({ onDone }: { onDone: () => void }) {
@@ -112,7 +113,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 {step === 0 ? <Welcome onNext={() => patch({ step: 1 })} /> : null}
                 {step === 1 ? <Answers draft={draft} patch={patch} onBack={() => patch({ step: 0 })} onNext={() => patch({ step: 2 })} /> : null}
                 {step === 2 ? <FirstSpace draft={draft} patch={patch} onBack={() => patch({ step: 1 })} onDone={(spaces) => patch({ step: 3, spaces })} /> : null}
-                {step === 3 ? <AllSet draft={draft} onBack={() => patch({ step: 2 })} onDone={finish} /> : null}
+                {step === 3 ? <Privacy onBack={() => patch({ step: 2 })} onNext={() => patch({ step: 4 })} /> : null}
+                {step === 4 ? <AllSet draft={draft} onBack={() => patch({ step: 3 })} onDone={finish} /> : null}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -632,6 +634,26 @@ function FirstSpace({ draft, patch, onBack, onDone }: { draft: Draft; patch: (p:
 // ---- Done ----
 
 /** "You're all set" (c06d): what was set up, with blue tick discs, then into the app. */
+function Privacy({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  return (
+    <section>
+      <Title sub="Choose what to share with Phaethon’s developers. You can change each choice later in Settings → Privacy.">
+        Your privacy choices
+      </Title>
+      <OnboardingPrivacy
+        onSaved={onNext}
+        actions={(busy) => (
+          <Footer onBack={onBack}>
+            <Button type="submit" pending={busy} disabled={busy}>
+              Continue
+            </Button>
+          </Footer>
+        )}
+      />
+    </section>
+  );
+}
+
 function AllSet({ draft, onBack, onDone }: { draft: Draft; onBack: () => void; onDone: () => void }) {
   const openSettings = () => {
     onDone();

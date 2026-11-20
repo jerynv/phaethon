@@ -146,6 +146,8 @@ jobs:
           fi
 
       - run: pnpm build
+        env:
+          PHAETHON_TELEMETRY_BUILD_ENDPOINT: https://telemetry.phaethon.app/api/ingest
 
       - name: Package and upload to the draft
         env:

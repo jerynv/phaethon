@@ -1,6 +1,7 @@
 import { commands, messageOf, Refusal } from "../rpc/registry.ts";
 import { spaceDir } from "../core/vault.ts";
 import { listSpaces } from "../spaces/meta.ts";
+import { telemetry } from "../telemetry/client.ts";
 import { search } from "./search.ts";
 
 commands({
@@ -16,6 +17,7 @@ commands({
         }
       }
     } else scope = [[space, spaceDir(space)]];
+    telemetry.capture("usage", "action_completed", { action: "search_used" });
     try {
       return search(scope, String(query ?? ""));
     } catch (e) {

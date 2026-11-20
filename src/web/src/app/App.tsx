@@ -9,6 +9,7 @@ import { useNav } from "./store";
 import { useApplyTheme, useTheme } from "./theme";
 import { Onboarding } from "@/features/onboarding/Onboarding";
 import { UpdateDialogs } from "@/features/updates/UpdateDialogs";
+import { TelemetryGate } from "@/features/telemetry/Privacy";
 
 const ONBOARDED = "phaethon.onboarded";
 
@@ -49,10 +50,10 @@ export function App() {
               }}
             />
           ) : (
-            <>
+            <TelemetryGate>
               <Shell />
               <UpdateDialogs />
-            </>
+            </TelemetryGate>
           )}
         </ToastProvider>
       </TooltipProvider>

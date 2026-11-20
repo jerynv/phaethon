@@ -8,6 +8,10 @@ import { _electron as electron, expect, test } from "@playwright/test";
 test("the desktop window becomes visible and connects to its core", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-desktop-e2e-"));
   const root = path.resolve(import.meta.dirname, "..");
+  // Embedded Node hosts may set this for their own subprocesses. The app
+  // launches here must run Electron's desktop runtime on both starts.
+  const electronEnv = { ...process.env };
+  delete electronEnv.ELECTRON_RUN_AS_NODE;
   // Match Playwright's sandbox setting on both launches; Xvfb also needs software rendering.
   const args = [...(process.platform === "linux" ? ["--no-sandbox", "--disable-gpu"] : []), root, `--user-data-dir=${path.join(home, "profile")}`];
   let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
@@ -15,7 +19,7 @@ test("the desktop window becomes visible and connects to its core", async () => 
     app = await electron.launch({
       args,
       env: {
-        ...process.env,
+        ...electronEnv,
         PHAETHON_HOME: home,
         PHAETHON_APP_DATA: path.join(home, "appdata"),
         PHAETHON_TEST: "1",
@@ -50,7 +54,7 @@ test("the desktop window becomes visible and connects to its core", async () => 
     // Playwright's ChildProcess may be a cmd.exe wrapper on Windows.
     const executable = await app.evaluate(() => process.execPath);
     const second = spawn(executable, args, {
-      env: { ...process.env, PHAETHON_HOME: home, PHAETHON_APP_DATA: path.join(home, "appdata"), PHAETHON_TEST: "1", PHAETHON_KEYRING: "memory" },
+      env: { ...electronEnv, PHAETHON_HOME: home, PHAETHON_APP_DATA: path.join(home, "appdata"), PHAETHON_TEST: "1", PHAETHON_KEYRING: "memory" },
       stdio: ["ignore", "ignore", "pipe"], windowsHide: true, timeout: 10_000,
     });
     let secondStderr = "";

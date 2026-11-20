@@ -8,6 +8,7 @@ import "./system/commands.ts";
 import "./latex/commands.ts";
 import "./voice/commands.ts";
 import "./diagnostics/commands.ts";
+import "./telemetry/commands.ts";
 import "./updater/commands.ts";
 import "./study/commands.ts";
 import "./agent/commands.ts";

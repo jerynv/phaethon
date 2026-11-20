@@ -24,6 +24,8 @@ import { effectivePick, parsePick, savePick, type ModelPick } from "../threads/p
 import { friendlyModelLabel, isFallbackEligible, readyFallbackCandidates, sameModelPick, shortFailureReason } from "./fallback.ts";
 import { cleanAnswer, healedCall } from "./lesson.ts";
 import { runOwnTurn, type TurnMode } from "./loop.ts";
+import { telemetry } from "../telemetry/client.ts";
+import { recordTurn } from "../telemetry/turn.ts";
 
 /**
  * The agent commands. Every one names its conversation (`thread`), and a
@@ -152,6 +154,8 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     events.send({ kind: "error", code: "busy", message: BUSY_TURN });
     return end();
   }
+  // Traces need consent from the start of the turn, before any fallback attempt.
+  const traceGrant = telemetry.grant("traces");
   // Saved only once the conversation is ours, so a send refused as busy can't change a running conversation's model.
   if (chosen) {
     try {
@@ -177,6 +181,7 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     if (replaceFrom !== undefined && args.keepAttachments?.length) attachments = [...keptAttachments(space, thread, replaceFrom, args.keepAttachments), ...attachments];
   }
 
+  telemetry.capture("usage", "action_completed", { action: "chat_sent" });
   const autoFallback = readSettings().autoFallback !== false && continueFrom === undefined;
   let snapshot: Message[] | null = null;
   if (autoFallback) {
@@ -205,7 +210,7 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
     }
   };
 
-  const runAttempt = async (attemptPick: ModelPick, attemptEvents: Channel<AgentEvent>, isFallbackAttempt: boolean): Promise<string | null> => {
+  const executeAttempt = async (attemptPick: ModelPick, attemptEvents: Channel<AgentEvent>, isFallbackAttempt: boolean): Promise<string | null> => {
     const cli = attemptPick.backend === "phaethon" ? null : CLIS[attemptPick.backend];
     if (!cli) {
       const mode: TurnMode = continueFrom !== undefined ? { kind: "continue", from: continueFrom } : { kind: "prompt", prompt: String(args.prompt ?? ""), attachments, replaceFrom };
@@ -246,6 +251,25 @@ export async function agentSend(args: SendArgs, signal?: AbortSignal): Promise<v
       attemptEvents,
       run,
     );
+  };
+
+  const runAttempt = async (attemptPick: ModelPick, attemptEvents: Channel<AgentEvent>, isFallbackAttempt: boolean): Promise<string | null> => {
+    const prompt = continueFrom === undefined ? String(args.prompt ?? "") : null;
+    const recorder = recordTurn(attemptPick.backend, prompt, traceGrant);
+    const channel = new Channel<AgentEvent>(attemptEvents.id, (msg) => {
+      recorder.event(msg);
+      attemptEvents.send(msg);
+      return !attemptEvents.closed;
+    });
+    let threw = false;
+    try {
+      return await executeAttempt(attemptPick, channel, isFallbackAttempt);
+    } catch (error) {
+      threw = true;
+      throw error;
+    } finally {
+      recorder.finish(run.abort.signal.aborted, threw);
+    }
   };
 
   let endSessionId: string | null = null;

@@ -1,3 +1,4 @@
+import type { TelemetryChoices, TelemetryView } from "#shared/telemetry.ts";
 import { invoke } from "@/lib/core";
 
 /** Wire types and calls the shell uses (old Tauri command names and shapes). */
@@ -86,7 +87,16 @@ export type InstallEvent =
   | { kind: "installing" }
   | { kind: "restarting" };
 
+export type TelemetrySettings = TelemetryChoices & { configured: boolean; collectorConfigured: boolean };
+
 export const api = {
+  telemetry: () => invoke<TelemetrySettings>("telemetry_get"),
+  saveTelemetry: (choices: TelemetryChoices) => invoke<TelemetrySettings>("telemetry_set", { choices }),
+  /** Views and file opens; the core counts every other action itself. */
+  telemetryUsage: (event: "view_opened" | "action_completed", data: { view?: TelemetryView; action?: "file_opened" }) =>
+    invoke<boolean>("telemetry_usage", { event, data }),
+  previewTelemetryReport: (text: string) => invoke<string>("telemetry_report_preview", { text }),
+  sendTelemetryReport: (text: string) => invoke<null>("telemetry_report_send", { text }),
   coreInfo: () => invoke<CoreInfo>("core_info"),
   settings: () => invoke<SettingsView>("settings_get"),
   spaces: () => invoke<SpaceView[]>("spaces_list"),

@@ -21,7 +21,7 @@
     "build": "pnpm build:web && pnpm build:node",
     "build:web": "vite build",
     "build:node": "node scripts/build-node.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p site/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p site/tsconfig.json && tsc -p telemetry/tsconfig.json && tsc -p telemetry/tsconfig.console.json",
     "test": "vitest run",
     "test:ui": "pnpm build && playwright test",
     "core": "node dist/server/main.mjs",
@@ -30,7 +30,13 @@
     "site:dev": "vite --config site/vite.config.ts",
     "site:build": "vite build --config site/vite.config.ts",
     "site:shots": "playwright test --config site/scripts/shots.config.ts",
-    "site:deploy": "pnpm site:build && pnpm dlx wrangler@4 deploy --config site/wrangler.jsonc"
+    "site:deploy": "pnpm site:build && pnpm dlx wrangler@4 deploy --config site/wrangler.jsonc",
+    "telemetry:dev": "vite --config telemetry/vite.config.ts",
+    "telemetry:build": "vite build --config telemetry/vite.config.ts",
+    "telemetry:deploy": "pnpm telemetry:build && pnpm dlx wrangler@4.165.0 deploy --config telemetry/wrangler.jsonc --strict",
+    "telemetry:test:ui": "playwright test --config telemetry/console/playwright.config.ts",
+    "telemetry:smoke": "tsx telemetry/scripts/smoke.ts",
+    "telemetry:test:pipeline": "pnpm build && pnpm telemetry:build && tsx telemetry/scripts/smoke.ts --console"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

@@ -60,7 +60,7 @@ test("search finds a conversation in any space", async ({ page }) => {
 });
 
 test("first run walks through to the app, keeping the vault's spaces", async ({ page }) => {
-  core = await startCore();
+  core = await startCore({ consent: "unset" });
   await core.open(page, { onboarding: true });
   await expect(page.getByRole("heading", { level: 1, name: "Welcome to Phaethon" })).toBeVisible();
   await page.getByRole("button", { name: "Get started" }).click();
@@ -68,6 +68,9 @@ test("first run walks through to the app, keeping the vault's spaces", async ({ 
   await page.getByRole("button", { name: "Skip for now" }).click();
   // A fresh vault already has School and Work, so the last step offers them.
   await expect(page.getByRole("heading", { level: 1, name: "Your spaces" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Your privacy choices" })).toBeVisible();
+  for (const choice of ["Anonymous usage", "Diagnostics", "Testing reports", "Chat traces"]) await page.getByRole("switch", { name: choice, exact: true }).uncheck();
   await page.getByRole("button", { name: "Continue" }).click();
   // The finish step sums up what was set up, then Explore opens the app.
   await expect(page.getByRole("heading", { level: 1, name: "You’re all set" })).toBeVisible();

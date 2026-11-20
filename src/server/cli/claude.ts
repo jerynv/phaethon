@@ -1,6 +1,9 @@
 // Message normalization ideas adapted from T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3 Tools Inc. See THIRD_PARTY_NOTICES.md.
 import type { AgentEvent } from "../../shared/agent.ts";
 import type { Outcome } from "./cli.ts";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { abortion, type DriveContext, type Driver, type Invocation } from "./drive.ts";
 import { readLines, sleep, stopGroup } from "./process.ts";
 import { categoryOf, commandLabel, commandLine, place, ToolEvents, type Granted } from "./tools.ts";
@@ -76,9 +79,20 @@ export function invocation(ctx: DriveContext): Invocation {
   let args = ctx.fullAccess ? cliArgsFull(ctx.resume) : cliArgs(ctx.resume, ctx.dirs);
   if (ctx.mcp) args = withPhaethonTools(args, ctx.mcp.configFile);
   if (ctx.model) args.push("--model", ctx.model);
-  args.push("--append-system-prompt", ctx.mode);
   if (ctx.reasoning) args.push("--effort", ctx.reasoning);
-  return { args, input: ctx.prompt, ...(ctx.mcp ? { env: ISOLATION_ENV } : {}) };
+  // Course context can exceed Windows' command-line limit (and POSIX argument
+  // limits). Claude's file option keeps the full system prompt off argv on every OS.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "phaethon-claude-"));
+  const promptFile = path.join(dir, "system-prompt.txt");
+  const cleanup = () => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  try {
+    fs.writeFileSync(promptFile, ctx.mode, { encoding: "utf8", mode: 0o600 });
+    args.push("--append-system-prompt-file", promptFile);
+    return { args, input: ctx.prompt, cleanup, ...(ctx.mcp ? { env: ISOLATION_ENV } : {}) };
+  } catch (e) {
+    cleanup();
+    throw e;
+  }
 }
 
 function toolLabel(block: Record<string, unknown>, base: string, granted: Granted): string {

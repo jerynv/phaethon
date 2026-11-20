@@ -37,7 +37,7 @@ describe("a bound project folder", () => {
       let said: string;
       if (cli === "claude") {
         expect(log.flag(n, "--add-dir")).toBe(school);
-        said = log.text(`stdin-${n}`) + log.flag(n, "--append-system-prompt");
+        said = log.text(`stdin-${n}`) + log.text(`system-${n}`);
       } else if (cli === "codex") {
         expect(args.find((a) => a.startsWith("permissions.phaethon.filesystem="))).toContain(`${JSON.stringify(project)}="read",${JSON.stringify(school)}="read"`);
         const rpc = log.rpc(n);
@@ -61,7 +61,7 @@ describe("a bound project folder", () => {
     await send(request("claude", "school", "Go", { workingDir: project, fullAccess: true }));
     expect(log.env(n).cwd).toBe(project);
     expect(log.args(n)).toContain("--dangerously-skip-permissions");
-    expect(log.flag(n, "--append-system-prompt")!.startsWith("# Full access\n\n")).toBe(true);
+    expect(log.text(`system-${n}`).startsWith("# Full access\n\n")).toBe(true);
   });
 
   it("is refused before launch when it moved or was replaced by a link", async () => {

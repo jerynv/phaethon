@@ -65,6 +65,8 @@ if (args[0] === "auth") {
   const n = Number(fs.existsSync(path.join(dir, "count")) ? fs.readFileSync(path.join(dir, "count"), "utf8") : 0) + 1;
   fs.writeFileSync(path.join(dir, "count"), String(n));
   fs.writeFileSync(path.join(dir, `args-${n}.json`), JSON.stringify(args));
+  const promptFileAt = args.indexOf("--append-system-prompt-file");
+  if (promptFileAt >= 0) fs.writeFileSync(path.join(dir, `system-${n}`), fs.readFileSync(args[promptFileAt + 1], "utf8"));
   const env = {};
   for (const k of ["CLAUDE_CONFIG_DIR", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "ANTHROPIC_API_KEY", "PATH"]) env[k] = process.env[k] ?? null;
   env.cwd = process.cwd();

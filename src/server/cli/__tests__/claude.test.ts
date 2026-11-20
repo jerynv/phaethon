@@ -141,8 +141,8 @@ describe("Claude Code conversations", () => {
       ["assistant", "Reply 1."],
     ]);
     // The study block is always appended to Claude Code's own system prompt, once.
-    expect(log.args(1).filter((a) => a === "--append-system-prompt")).toHaveLength(1);
-    expect(log.flag(1, "--append-system-prompt")).toMatch(/^# Getting it right[\s\S]*# Explaining something[\s\S]*# A quiz or flashcards from the chat/);
+    expect(log.args(1).filter((a) => a === "--append-system-prompt-file")).toHaveLength(1);
+    expect(log.text("system-1")).toMatch(/^# Getting it right[\s\S]*# Explaining something[\s\S]*# A quiz or flashcards from the chat/);
   });
 
   it("names attachments on stdin and passes a valid model, never a flag-like one", async () => {

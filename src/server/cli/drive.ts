@@ -36,7 +36,13 @@ export type DriveContext = {
 };
 
 /** How a CLI is launched for one turn. Throwing an Error gives a `cli` error and nothing is sent. */
-export type Invocation = { args: string[]; input?: string; env?: Record<string, string> };
+export type Invocation = {
+  args: string[];
+  input?: string;
+  env?: Record<string, string>;
+  /** Removes private invocation files after the child ends, including failed starts and cancellation. */
+  cleanup?: () => void;
+};
 
 /** Drives a started CLI to the end of its turn; "stopped" once the run was cancelled and the group is gone. */
 export type Driver = (gc: GroupChild, ctx: DriveContext, emit: (e: AgentEvent) => void) => Promise<"stopped" | Outcome>;

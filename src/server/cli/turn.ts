@@ -311,13 +311,14 @@ async function drive(
       const breaking = wallBreakingArg(cli, cmd.args);
       if (breaking !== null) throw new Error(wallBreakingMessage(cli, breaking));
     }
-    inv = BACKENDS[cli].invocation(ctx);
     workingDirectory(req);
+    inv = BACKENDS[cli].invocation(ctx);
   } catch (e) {
     emit(error("cli", (e as Error).message));
     return { kind: "notStarted" };
   }
 
+  try {
   let gc: GroupChild;
   try {
     // A binary that isn't there (or isn't executable) is reported before the group shell starts.
@@ -392,4 +393,11 @@ async function drive(
     emit(error(classifyCliError(detail, stderr), detail));
   }
   return { kind: "failed" };
+  } finally {
+    try {
+      inv.cleanup?.();
+    } catch (e) {
+      coreLog.warn("CLI temporary files couldn't be removed", { error: String(e) });
+    }
+  }
 }

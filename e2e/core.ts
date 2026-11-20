@@ -76,29 +76,30 @@ export async function startCore(options: { script?: object; setup?: (home: strin
         fs.writeFileSync(consentFile, JSON.stringify({ v: 1, configured: true, usage: false, diagnostics: false, reports: false, traces: false }));
       }
       if (!opts.onboarding) await page.addInitScript(() => localStorage.setItem("phaethon.onboarded", "1"));
-      // A Windows runner can run out of socket buffers (net::ERR_NO_BUFFER_SPACE) while the page loads its
-      // scripts; the app then never starts ("Failed to fetch dynamically imported module"). That's the runner,
-      // not Phaethon, so the page loads once more. An app that really fails to start fails the second time too.
+      // Windows CI can exhaust socket buffers before navigation or while loading scripts.
+      // Retry that boot once; application timeouts and a second failure still fail the test.
       const shell = () => (opts.onboarding || opts.privacy ? page.getByRole("heading", { level: 1 }).first() : page.getByRole("navigation").first());
-      let onError: (e: Error) => void = () => {};
-      const bootFailed = new Promise<"failed">((resolve) => {
-        onError = (e) => {
-          if (/Failed to fetch dynamically imported module|Importing a module script failed/.test(e.message)) resolve("failed");
-        };
-      });
-      page.on("pageerror", onError);
-      try {
-        await page.goto(`${url}#token=${ready.token}`);
-        const shown = shell().waitFor().then(() => "shown" as const);
-        // Settled either way, so the loser of the race never surfaces as an unhandled rejection.
-        shown.catch(() => {});
-        const first = await Promise.race([shown, bootFailed]);
-        if (first === "failed") {
-          await page.reload();
-          await shell().waitFor();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let onError: (e: Error) => void = () => {};
+        const bootFailed = new Promise<"failed">((resolve) => {
+          onError = (e) => {
+            if (/Failed to fetch dynamically imported module|Importing a module script failed/.test(e.message)) resolve("failed");
+          };
+        });
+        page.on("pageerror", onError);
+        try {
+          await page.goto(`${url}#token=${ready.token}`);
+          const shown = shell().waitFor().then(() => "shown" as const);
+          // The losing wait may reject after the next navigation; always consume it.
+          shown.catch(() => {});
+          const first = await Promise.race([shown, bootFailed]);
+          if (first === "shown") return;
+          if (attempt === 1) throw new Error("The app’s scripts failed to load after retrying.");
+        } catch (error) {
+          if (attempt === 1 || !(error instanceof Error) || !error.message.includes("net::ERR_NO_BUFFER_SPACE")) throw error;
+        } finally {
+          page.off("pageerror", onError);
         }
-      } finally {
-        page.off("pageerror", onError);
       }
     },
     requests() {

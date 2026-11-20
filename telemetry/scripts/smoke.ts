@@ -156,7 +156,8 @@ try {
     await expect(viewerPage.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
     await consolePage.screenshot({ path: path.join(evidence, "real-staff-access.png"), fullPage: true, animations: "disabled" });
     await consolePage.getByRole("button", { name: "Manage local@example.test" }).click();
-    await editor.getByLabel("Role", { exact: true }).selectOption("viewer");
+    await editor.getByRole("combobox", { name: "Role", exact: true }).click();
+    await consolePage.getByRole("option", { name: "Viewer", exact: true }).click();
     const rejected = consolePage.waitForResponse((r) => r.request().method() === "PATCH" && r.url().includes("/api/staff/"));
     await editor.getByRole("button", { name: "Save account" }).click();
     assert.equal((await rejected).status(), 409);

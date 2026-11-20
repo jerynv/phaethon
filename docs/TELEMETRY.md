@@ -25,6 +25,27 @@ Verification covers these behaviors:
 5. Client and collector interoperate in a local end-to-end exercise. Relevant
    unit, type, build, browser, and rendered-state checks pass after integration.
 
+## Console interface
+
+The console uses the app's React and shadcn/Base UI components, including
+portalled selects, buttons, switches, and skeletons. Overview and Events have
+separate sidebar destinations; staff administration and browser preferences
+live under Settings. Mobile navigation floats over the page, and staff and
+event lists use cards at narrow widths. Sign-in uses the marketing page's
+shader and the existing wordmark, with no navigation bar.
+
+Staff and event queries stay in memory for the authenticated session. Returning
+to Staff shows cached rows while separate staff and audit requests revalidate.
+Writes update rows only after server confirmation, and a failed refresh after
+account creation offers a read retry without repeating the creation. Sign-out,
+session expiry, and forbidden staff reads discard the cache. Private records
+are never stored in browser storage. The browser stores only appearance and
+sidebar width preferences.
+
+Browser coverage includes delayed initial reads, cached navigation, pending
+submissions, rejected owner changes, permission loss, sign-out failures, custom
+dropdowns, selected themes that differ from the OS, and mobile layout changes.
+
 ## Data choices
 
 Four controls start checked during onboarding, but nothing is collected until

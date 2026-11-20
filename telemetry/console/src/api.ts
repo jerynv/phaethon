@@ -21,13 +21,15 @@ export type Detail = {
 };
 
 export class SessionExpired extends Error {}
+export class AccessDenied extends Error {}
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, { ...options, credentials: "same-origin", cache: "no-store", headers: { "Content-Type": "application/json", ...options.headers } });
   if (response.status === 401) throw new SessionExpired("Sign in to continue.");
   if (!response.ok) {
     const detail = [400, 403, 409].includes(response.status) ? await response.json().catch(() => null) as { error?: unknown } | null : null;
-    throw new Error(typeof detail?.error === "string" && detail.error.length <= 200 ? detail.error : response.status === 429 ? "Too many attempts. Try again shortly." : "Couldn’t complete the request. Try again.");
+    const ErrorType = response.status === 403 ? AccessDenied : Error;
+    throw new ErrorType(typeof detail?.error === "string" && detail.error.length <= 200 ? detail.error : response.status === 429 ? "Too many attempts. Try again shortly." : "Couldn’t complete the request. Try again.");
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

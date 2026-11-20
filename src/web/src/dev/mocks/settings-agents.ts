@@ -17,7 +17,7 @@ import shell from "./shell";
 import { MORE_SPACES } from "./edu";
 
 type Args = Record<string, unknown>;
-type ProviderId = "anthropic" | "openai" | "google" | "openrouter" | "groq" | "together" | "mistral" | "deepseek" | "xai" | "ollama" | "lmstudio" | "custom";
+type ProviderId = "anthropic" | "openai" | "google" | "openrouter" | "groq" | "together" | "mistral" | "deepseek" | "xai" | "reallms" | "ollama" | "lmstudio" | "custom";
 
 const scenario = new URLSearchParams(location.hash.slice(1)).get("scenario") ?? "configured";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -32,6 +32,7 @@ const PRESETS: { id: ProviderId; name: string; base: string; key: "required" | "
   { id: "mistral", name: "Mistral", base: "https://api.mistral.ai/v1", key: "required", local: false, editableBase: false, keysUrl: "https://console.mistral.ai/api-keys", keyPrefix: "" },
   { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1", key: "required", local: false, editableBase: false, keysUrl: "https://platform.deepseek.com/api_keys", keyPrefix: "" },
   { id: "xai", name: "xAI", base: "https://api.x.ai/v1", key: "required", local: false, editableBase: false, keysUrl: "https://console.x.ai", keyPrefix: "xai-" },
+  { id: "reallms", name: "IU REALLMS", base: "https://reallms.rescloud.iu.edu/api/v1", key: "required", local: false, editableBase: false, keysUrl: "https://reallms.rescloud.iu.edu", keyPrefix: "" },
   { id: "ollama", name: "Ollama", base: "http://127.0.0.1:11434/v1", key: "none", local: true, editableBase: true, keysUrl: "", keyPrefix: "" },
   { id: "lmstudio", name: "LM Studio", base: "http://127.0.0.1:1234/v1", key: "none", local: true, editableBase: true, keysUrl: "", keyPrefix: "" },
   { id: "custom", name: "Your own server", base: "", key: "optional", local: false, editableBase: true, keysUrl: "", keyPrefix: "" },
@@ -151,7 +152,9 @@ function view(id: ProviderId) {
   const baseUrl = p.editableBase ? (s.url ?? p.base) : p.base;
   const model = id === "anthropic" ? (settings.anthropicModel ?? "claude-opus-5-5") : s.model;
   const ready = !!baseUrl && (p.key !== "required" || s.hasKey);
-  return { id, name: p.name, key: p.key, local: p.local, editableBase: p.editableBase, hasKey: p.local ? false : s.hasKey, baseUrl, defaultBaseUrl: p.base, model, keysUrl: p.keysUrl, keyPrefix: p.keyPrefix, ready };
+  // A REALLMS key is a 7-day sign-in token: the core reads its expiry from the token.
+  const keyExpiresAt = id === "reallms" && s.hasKey ? Date.now() + 6 * 86_400_000 + 3_600_000 : null;
+  return { id, name: p.name, key: p.key, local: p.local, editableBase: p.editableBase, hasKey: p.local ? false : s.hasKey, baseUrl, defaultBaseUrl: p.base, model, keysUrl: p.keysUrl, keyPrefix: p.keyPrefix, keyExpiresAt, ready };
 }
 
 function settingsView() {

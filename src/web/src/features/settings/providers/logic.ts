@@ -14,6 +14,7 @@ export const PROVIDER_IDS: readonly ProviderId[] = [
   "mistral",
   "deepseek",
   "xai",
+  "reallms",
   "ollama",
   "lmstudio",
   "custom",
@@ -122,11 +123,24 @@ export function addedProviders(settings: Settings): ProviderInfo[] {
 
 /** What a provider still needs before it can answer, or null when it's ready. */
 export type Need = { field: "key" | "url" | "model"; text: string } | null;
-export function providerNeed(p: ProviderInfo, settings: Pick<Settings, "model">): Need {
+export function providerNeed(p: ProviderInfo, settings: Pick<Settings, "model">, now = Date.now()): Need {
   if (p.editableBase && !p.baseUrl) return { field: "url", text: "Add the server’s address." };
   if (p.key === "required" && !p.hasKey) return { field: "key", text: `Add your ${p.name} API key.` };
+  if (p.hasKey && p.keyExpiresAt != null && p.keyExpiresAt <= now) return { field: "key", text: `Your ${p.name} key has expired. Paste a new one.` };
   if (!providerModel(p, settings)) return { field: "model", text: "Choose a model." };
   return null;
+}
+
+/** How a saved key that expires (a sign-in token) reads beside it; null for keys that don't expire. */
+export function keyExpiry(expiresAt: number | null | undefined, now = Date.now()): { tone: "ready" | "warning" | "error"; text: string } | null {
+  if (expiresAt == null) return null;
+  const ms = expiresAt - now;
+  if (ms <= 0) return { tone: "error", text: "Expired" };
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return { tone: "warning", text: "Expires within the hour" };
+  if (hours < 24) return { tone: "warning", text: `Expires in ${hours} hour${hours === 1 ? "" : "s"}` };
+  const days = Math.floor(hours / 24);
+  return { tone: "ready", text: `Expires in ${days} day${days === 1 ? "" : "s"}` };
 }
 
 /** The result of Check and save. */

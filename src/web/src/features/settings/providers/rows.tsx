@@ -20,7 +20,7 @@ import {
   setProviderUrl,
 } from "./api";
 import { ModelChooser } from "./ModelChooser";
-import { canSaveUnchecked, checkAndSave, type KeyOutcome, outcomeText, providerModel, providerNeed } from "./logic";
+import { canSaveUnchecked, checkAndSave, type KeyOutcome, keyExpiry, outcomeText, providerModel, providerNeed } from "./logic";
 
 /**
  * The rows a key-based service opens to in Settings › AI & Models
@@ -40,6 +40,14 @@ const host = (url: string) => {
   }
 };
 
+/** For services whose "key" is a sign-in token: where it comes from, and the link's words. */
+const TOKEN_KEYS: Record<string, { link: string; hint: string }> = {
+  reallms: {
+    link: "Sign in at",
+    hint: "After you sign in, open your browser’s developer tools and copy the token from Application › Local Storage. It starts with eyJ and lasts 7 days, then you paste a new one here.",
+  },
+};
+
 export function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus?: boolean; onChanged: () => Promise<void> }) {
   const [replacing, setReplacing] = useState(false);
   const [value, setValue] = useState("");
@@ -48,6 +56,8 @@ export function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus
   const [confirm, setConfirm] = useState(false);
   const editing = !p.hasKey || replacing;
   const id = `key-${p.id}`;
+  const token = TOKEN_KEYS[p.id];
+  const expiry = keyExpiry(p.keyExpiresAt);
 
   const submit = async (skipCheck = false) => {
     setBusy(skipCheck ? "save" : "check");
@@ -84,10 +94,19 @@ export function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus
         description={
           <span className="flex items-center gap-2">
             <span aria-hidden className="tracking-tight">••••••••</span>
-            <Status tone="ready">Saved</Status>
+            {expiry?.tone === "error" ? null : <Status tone="ready">Saved</Status>}
+            {expiry ? <Status tone={expiry.tone}>{expiry.text}</Status> : null}
           </span>
         }
-        below={outcome?.kind === "no-credit" ? <p className="text-warning-foreground text-xs">{outcomeText(outcome, p)}</p> : undefined}
+        below={
+          outcome?.kind === "no-credit" ? (
+            <p className="text-warning-foreground text-xs">{outcomeText(outcome, p)}</p>
+          ) : expiry && expiry.tone !== "ready" ? (
+            <p className="text-muted-foreground text-xs">
+              {expiry.tone === "error" ? `${p.name} stops answering until you replace the key.` : "Replace it soon to keep chats answering."}
+            </p>
+          ) : undefined
+        }
       >
         <Button size="xs" variant="ghost" onClick={() => setReplacing(true)}>
           Replace
@@ -110,7 +129,7 @@ export function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus
       aside={
         p.keysUrl ? (
           <a href={p.keysUrl} target="_blank" rel="noreferrer noopener" className="text-primary text-xs hover:underline">
-            Get a key at {host(p.keysUrl)}
+            {token?.link ?? "Get a key at"} {host(p.keysUrl)}
           </a>
         ) : p.key === "optional" ? (
           <span className="text-subtle-foreground text-xs">Only if your server asks for one</span>
@@ -157,6 +176,7 @@ export function KeyRow({ p, autoFocus, onChanged }: { p: ProviderInfo; autoFocus
           Check and save
         </Button>
       </form>
+      {token ? <p className="text-muted-foreground text-xs">{token.hint}</p> : null}
       {busy === "check" ? (
         <p role="status" className="text-muted-foreground text-xs">
           Asking {p.name} whether the key works…

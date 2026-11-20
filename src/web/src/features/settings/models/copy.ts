@@ -36,6 +36,7 @@ export const MODELS_COPY = {
     mistral: "Mistral’s AI models",
     deepseek: "DeepSeek’s AI models",
     xai: "Grok AI models",
+    reallms: "Indiana University’s models, with your IU sign-in",
     ollama: "Free models on this computer",
     lmstudio: "Free models on this computer",
     custom: "Any OpenAI-compatible server address",

@@ -13,7 +13,7 @@ export function seedLife(home: string): string {
   const base = { keywords: [], people: [], created: now - D, updated: now - D };
   const items = [
     { ...base, id: "m_1", kind: "event", text: "Team meeting with Dana about the Q4 roadmap", space: "work", scope: "space", when: sat.getTime(), status: "active", origin: "agent", keywords: ["meeting", "roadmap"], people: ["dana-reyes"] },
-    { ...base, id: "m_2", kind: "event", text: "C241 Test 1", space: "school", scope: "space", when: now - 20 * H, status: "active", origin: "agent", keywords: ["test", "c241"] },
+    { ...base, id: "m_2", kind: "event", text: "CS101 Test 1", space: "school", scope: "space", when: now - 20 * H, status: "active", origin: "agent", keywords: ["test", "cs101"] },
     { ...base, id: "m_3", kind: "state", text: "Food poisoning, told my bosses I can’t come in", space: "work", scope: "vault", until: now + 40 * H, status: "active", origin: "agent", keywords: ["sick"] },
     { ...base, id: "m_4", kind: "task", text: "Send Dana the revised slides", space: "work", scope: "space", when: now + 3 * D, status: "active", origin: "user", people: ["dana-reyes"] },
     { ...base, id: "m_5", kind: "note", text: "Prefers written check-ins over calls; feels micromanaged on deadlines", space: "work", scope: "space", status: "active", origin: "review" },
@@ -34,21 +34,21 @@ export function seedLife(home: string): string {
       { at: now - 2 * H, channel: "chat", summary: "Asked an agent to draft the status update", ref: { space: "work", thread: "t_status" } },
     ],
   });
-  person({ id: "sam-lee", name: "Sam Lee", relation: "Classmate", org: "IU", emails: ["samlee@iu.edu"], spaces: ["*"], source: "mail", interactions: [{ at: now - 4 * D, channel: "email", direction: "in", summary: "C241 study group Thursday?" }] });
+  person({ id: "sam-lee", name: "Sam Lee", relation: "Classmate", org: "State U", emails: ["samlee@example.edu"], spaces: ["*"], source: "mail", interactions: [{ at: now - 4 * D, channel: "email", direction: "in", summary: "CS101 study group Thursday?" }] });
   person({ id: "priya-natarajan", name: "Priya Natarajan", relation: "Sister", spaces: ["personal"], source: "agent" });
   const mailFile = path.join(home, "fake-mail.json");
   fs.writeFileSync(mailFile, JSON.stringify({
     accounts: [
-      { id: "school", name: "IU", emails: ["jvicari@iu.edu"], fullName: "Jeryn V", type: "exchange" },
-      { id: "gmail", name: "Gmail", emails: ["jeryn@gmail.com"], fullName: "Jeryn V", type: "gmail" },
-      { id: "icloud", name: "iCloud", emails: ["jeryn@icloud.com", "jeryn@me.com"], fullName: "Jeryn V", type: "icloud" },
+      { id: "school", name: "State U", emails: ["student@example.edu"], fullName: "Alex Morgan", type: "exchange" },
+      { id: "gmail", name: "Gmail", emails: ["jeryn@gmail.com"], fullName: "Alex Morgan", type: "gmail" },
+      { id: "icloud", name: "iCloud", emails: ["jeryn@icloud.com", "jeryn@me.com"], fullName: "Alex Morgan", type: "icloud" },
     ],
     messages: [],
   }));
   fs.writeFileSync(path.join(st, "mail.json"), JSON.stringify({
     connectors: { fake: true },
     known: [
-      { key: "fake:school", app: "fake", name: "IU", emails: ["jvicari@iu.edu"], provider: "school", enabled: true },
+      { key: "fake:school", app: "fake", name: "State U", emails: ["student@example.edu"], provider: "school", enabled: true },
       { key: "fake:gmail", app: "fake", name: "Gmail", emails: ["jeryn@gmail.com"], provider: "gmail", enabled: true },
       { key: "fake:icloud", app: "fake", name: "iCloud", emails: ["jeryn@icloud.com", "jeryn@me.com"], provider: "icloud", enabled: true },
     ],

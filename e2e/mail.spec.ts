@@ -23,8 +23,8 @@ function setupMail(home: string): string {
   fs.writeFileSync(
     file,
     JSON.stringify({
-      accounts: [{ id: "school", name: "IU", emails: ["me@iu.edu"], fullName: "Jeryn V", type: "exchange" }],
-      messages: [{ account: "school", mailbox: "INBOX", id: 1, from: "Dana Reyes <dana@iu.edu>", to: ["me@iu.edu"], subject: "Vacation approved", date: "2026-10-01T15:00:00Z", body: "Enjoy." }],
+      accounts: [{ id: "school", name: "State U", emails: ["me@example.edu"], fullName: "Alex Morgan", type: "exchange" }],
+      messages: [{ account: "school", mailbox: "INBOX", id: 1, from: "Dana Reyes <dana@example.edu>", to: ["me@example.edu"], subject: "Vacation approved", date: "2026-10-01T15:00:00Z", body: "Enjoy." }],
     }),
   );
   fs.mkdirSync(path.join(vault, ".phaethon"), { recursive: true });
@@ -32,7 +32,7 @@ function setupMail(home: string): string {
     path.join(vault, ".phaethon", "mail.json"),
     JSON.stringify({
       connectors: { fake: true },
-      known: [{ key: "fake:school", app: "fake", name: "IU", emails: ["me@iu.edu"], fullName: "Jeryn V", provider: "school", enabled: true }],
+      known: [{ key: "fake:school", app: "fake", name: "State U", emails: ["me@example.edu"], fullName: "Alex Morgan", provider: "school", enabled: true }],
       access: { "fake:school": ["school"] },
       allowSend: true,
       sendDelaySeconds: 60,
@@ -41,7 +41,7 @@ function setupMail(home: string): string {
   fs.mkdirSync(path.join(vault, "memory", "people"), { recursive: true });
   fs.writeFileSync(
     path.join(vault, "memory", "people", "dana-reyes.json"),
-    JSON.stringify({ id: "dana-reyes", name: "Dana Reyes", aliases: [], relation: "manager", emails: ["dana@iu.edu"], phones: [], links: [], spaces: ["*"], notes: [], interactions: [], created: 1, updated: 1, source: "user" }),
+    JSON.stringify({ id: "dana-reyes", name: "Dana Reyes", aliases: [], relation: "manager", emails: ["dana@example.edu"], phones: [], links: [], spaces: ["*"], notes: [], interactions: [], created: 1, updated: 1, source: "user" }),
   );
   return file;
 }
@@ -58,7 +58,7 @@ test("an email the agent was asked to send counts down; Stop, Edit and Send work
     script: {
       claude: true,
       steps: [
-        { tools: [{ name: "draft_email", id: "d1", input: { to: ["dana@iu.edu"], subject: "Out sick today", body: "Hi Dana,\n\nI'm out sick today and will catch up tomorrow.\n\nJeryn", intent: "send" } }] },
+        { tools: [{ name: "draft_email", id: "d1", input: { to: ["dana@example.edu"], subject: "Out sick today", body: "Hi Dana,\n\nI'm out sick today and will catch up tomorrow.\n\nJeryn", intent: "send" } }] },
         { text: "It's on its way to Dana unless you stop it." },
       ],
     },
@@ -70,7 +70,7 @@ test("an email the agent was asked to send counts down; Stop, Edit and Send work
   const card = page.locator('[data-slot="mail-draft"]');
   await expect(card).toBeVisible();
   await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/Sending in 0:5\d|Sending in 1:00/);
-  await expect(card.getByText("me@iu.edu")).toBeVisible();
+  await expect(card.getByText("me@example.edu")).toBeVisible();
   await expect(card.getByText("Dana Reyes")).toBeVisible();
   await expect(card.getByText("Out sick today", { exact: true })).toBeVisible();
   await expect(page.getByText("It's on its way to Dana unless you stop it.")).toBeVisible();
@@ -92,7 +92,7 @@ test("an email the agent was asked to send counts down; Stop, Edit and Send work
   await expect(card.locator('[data-slot="draft-status"]')).toHaveText(/^Sent/, { timeout: 15_000 });
   const sent = sentLines(mailFile);
   expect(sent).toHaveLength(1);
-  expect(sent[0]).toMatchObject({ to: ["dana@iu.edu"], subject: "Out sick today (back tomorrow)", sender: "Jeryn V <me@iu.edu>" });
+  expect(sent[0]).toMatchObject({ to: ["dana@example.edu"], subject: "Out sick today (back tomorrow)", sender: "Alex Morgan <me@example.edu>" });
   const dana = JSON.parse(fs.readFileSync(path.join(core.home, "Phaethon/default/memory/people/dana-reyes.json"), "utf8"));
   expect(dana.interactions.at(-1)).toMatchObject({ channel: "email", direction: "out", summary: "Sent “Out sick today (back tomorrow)”" });
 });
@@ -113,7 +113,7 @@ test("a draft never sends by itself; the agent's memory shows under the reply wi
         {
           tools: [
             { name: "remember", id: "r1", input: { kind: "event", text: "Meeting with Dana", when: sat.toISOString(), people: ["Dana Reyes"] } },
-            { name: "draft_email", id: "d2", input: { to: ["dana@iu.edu"], subject: "Saturday", body: "Hi Dana,\n\nSee you Saturday at 6.\n\nJeryn", intent: "draft" } },
+            { name: "draft_email", id: "d2", input: { to: ["dana@example.edu"], subject: "Saturday", body: "Hi Dana,\n\nSee you Saturday at 6.\n\nJeryn", intent: "draft" } },
           ],
         },
         { text: "Noted, and here's a draft." },
@@ -160,17 +160,17 @@ test("an email written as a block (any backend) becomes the card; a name without
   await expect(card.getByText("School")).toBeVisible();
   await expect(card.getByText("Ebony Woodward")).toBeVisible();
   await expect(card.getByText("add their address")).toBeVisible();
-  await card.getByRole("textbox", { name: "Add a recipient" }).fill("ebony@iu.edu");
+  await card.getByRole("textbox", { name: "Add a recipient" }).fill("ebony@example.edu");
   await page.keyboard.press("Enter");
-  await expect(card.getByText("ebony@iu.edu")).toBeVisible();
+  await expect(card.getByText("ebony@example.edu")).toBeVisible();
   await expect(card.getByText("add their address")).toBeHidden();
   // Reloading shows the same draft, not a second one.
   await page.reload();
-  await expect(page.locator('[data-slot="mail-draft"]').getByText("ebony@iu.edu")).toBeVisible();
+  await expect(page.locator('[data-slot="mail-draft"]').getByText("ebony@example.edu")).toBeVisible();
   expect(fs.readdirSync(path.join(core.home, "Phaethon/default/spaces/school/.phaethon/outbox"))).toHaveLength(1);
   await page.locator('[data-slot="mail-draft"]').getByRole("button", { name: /^Send to/ }).click();
   await expect(page.locator('[data-slot="draft-status"]')).toHaveText(/Sent/, { timeout: 15_000 });
-  expect(sentLines(mailFile)[0]).toMatchObject({ to: ["dana@iu.edu", "ebony@iu.edu"], subject: "My addresses" });
+  expect(sentLines(mailFile)[0]).toMatchObject({ to: ["dana@example.edu", "ebony@example.edu"], subject: "My addresses" });
 });
 
 test("without a mail account the email still shows, with Set up mail and Copy", async ({ page }) => {
@@ -190,7 +190,7 @@ test("the countdown's digits are monospaced, so the line never shifts as they ti
   core = await startCore({
     setup: (home) => void setupMail(home),
     env: { PHAETHON_FAKE_MAIL: "__HOME__/fake-mail.json" },
-    script: { claude: true, steps: [{ tools: [{ name: "draft_email", id: "d9", input: { to: ["dana@iu.edu"], subject: "Out", body: "Out today.", intent: "send" } }] }, { text: "On its way unless you stop it." }] },
+    script: { claude: true, steps: [{ tools: [{ name: "draft_email", id: "d9", input: { to: ["dana@example.edu"], subject: "Out", body: "Out today.", intent: "send" } }] }, { text: "On its way unless you stop it." }] },
   });
   await core.open(page);
   await composer(page).fill("tell Dana I'm out");
@@ -224,7 +224,7 @@ test("an email can carry files from the space: each opens in the viewer before i
     script: {
       claude: true,
       steps: [
-        { tools: [{ name: "draft_email", id: "d1", input: { to: ["dana@iu.edu"], subject: "My essay notes", body: "Hi Dana,\n\nNotes attached.\n\nJeryn", attachments: ["files/essay-notes.md", "files/draft-old.txt"], intent: "draft" } }] },
+        { tools: [{ name: "draft_email", id: "d1", input: { to: ["dana@example.edu"], subject: "My essay notes", body: "Hi Dana,\n\nNotes attached.\n\nJeryn", attachments: ["files/essay-notes.md", "files/draft-old.txt"], intent: "draft" } }] },
         { text: "It's ready for you to send." },
       ],
     },

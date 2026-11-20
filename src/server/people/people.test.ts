@@ -22,10 +22,10 @@ afterAll(() => {
 describe("people", () => {
   it("my boss finds the manager, only in their spaces", () => {
     newPerson({ name: "Dana Reyes", relation: "manager", org: "Corp", emails: ["Dana@Corp.com"] }, "work", "user");
-    newPerson({ name: "Prof. Lee", relation: "professor", aliases: ["C241 prof"] }, "school", "user");
+    newPerson({ name: "Prof. Lee", relation: "professor", aliases: ["CS101 prof"] }, "school", "user");
     expect(findPeople("work", "my boss").map((p) => p.id)).toEqual(["dana-reyes"]);
     expect(findPeople("school", "my boss")).toEqual([]);
-    expect(findPeople("school", "c241 prof").map((p) => p.id)).toEqual(["prof-lee"]);
+    expect(findPeople("school", "cs101 prof").map((p) => p.id)).toEqual(["prof-lee"]);
     expect(findPeople("work", "dana@corp.com").map((p) => p.id)).toEqual(["dana-reyes"]);
     expect(findByEmail("DANA@corp.com")?.id).toBe("dana-reyes");
   });

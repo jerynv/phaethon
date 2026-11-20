@@ -22,7 +22,7 @@ beforeAll(() => {
     s.connectors = { fake: true };
     s.known = [
       { key: "fake:work", app: "fake", name: "Work", emails: ["me@corp.com"], fullName: "Me", provider: "exchange", enabled: true },
-      { key: "fake:school", app: "fake", name: "School", emails: ["me@iu.edu"], provider: "school", enabled: true },
+      { key: "fake:school", app: "fake", name: "School", emails: ["me@example.edu"], provider: "school", enabled: true },
     ];
     s.access = { "fake:work": ["work"], "fake:school": ["school"] };
     s.sendDelaySeconds = 60;
@@ -44,7 +44,7 @@ const fields = { to: ["dana@corp.com"], subject: "Hi", body: "Hello" };
 describe("walls", () => {
   it("a space sees only its own accounts", () => {
     expect(resolveAccount("work", undefined).key).toBe("fake:work");
-    expect(() => resolveAccount("work", "me@iu.edu")).toThrow(/isn’t one of this space’s mail accounts/);
+    expect(() => resolveAccount("work", "me@example.edu")).toThrow(/isn’t one of this space’s mail accounts/);
     expect(() => resolveAccount("life", undefined)).toThrow(/No mail account is set up for this space/);
   });
 });
@@ -144,8 +144,8 @@ describe("types", () => {
   it("guesses the provider mark", () => {
     expect(guessProvider("iCloud", ["x@icloud.com"])).toBe("icloud");
     expect(guessProvider("imap", ["dev@gmail.com"], "Google")).toBe("gmail");
-    expect(guessProvider("unknown", ["me@iu.edu"], "Exchange")).toBe("exchange");
-    expect(guessProvider("imap", ["me@iu.edu"], "IU")).toBe("school");
+    expect(guessProvider("unknown", ["me@example.edu"], "Exchange")).toBe("exchange");
+    expect(guessProvider("imap", ["me@example.edu"], "State U")).toBe("school");
     expect(guessProvider("unknown", ["me@corp.com"], "Exchange")).toBe("exchange");
   });
 });

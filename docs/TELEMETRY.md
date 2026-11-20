@@ -1,20 +1,12 @@
 # Telemetry implementation
 
-## Acceptance and ownership
+Phaethon has separate sharing controls in the desktop app and a private staff
+console backed by Cloudflare Workers, D1, and R2. The collector and console are
+deployed at `https://telemetry.phaethon.app`.
 
-The prerequisite is the completed model/settings thread and its changes merged to
-GitHub main. PR #17 merged as `807d2e0`; the thread also opened #18 for signing.
-Final integration must include that thread's finished work. The shared checkout
-is owned by that thread. Telemetry integration is isolated at
-`/Users/jeryn/Documents/GitHub/phaethon-telemetry`, branch `feat/telemetry`.
+## Collection and access guarantees
 
-- Client worker: prepared T3 worktree `telemetry-consent-client`; owns client,
-  consent/onboarding, Privacy settings, and app instrumentation.
-- Backend worker: prepared T3 worktree `cloudflare-telemetry-backend`; owns Worker,
-  migrations, staff provisioning, storage, shared event schema, security tests.
-- Parent: console, packaging, integration, end-to-end and visual verification.
-
-Complete when:
+Verification covers these behaviors:
 
 1. No collection before preferences are saved. Every category can be disabled
    independently, including anonymous usage. Revocation discards queued events.
@@ -68,11 +60,13 @@ bounded separately from anonymous measurements.
   and [R2 lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/):
   indexed analysis alongside independent raw storage and retention.
 
-Deployment and staff provisioning require the owner's target Cloudflare account,
-hostname and authorized staff email addresses. No production resource is created
-by building or running the tests.
+## Deployment and verification
 
-Once the collector is deployed, build desktop releases with
+The live resources are recorded in `telemetry/wrangler.jsonc`. Staff accounts and
+credentials are provisioned separately. Building or running tests creates no
+production resources; the full pipeline test uses disposable local infrastructure.
+
+Build desktop releases with
 `PHAETHON_TELEMETRY_BUILD_ENDPOINT=https://<console-host>/api/ingest pnpm build`.
 The public HTTPS address is embedded in the core, so people launching the
 installed application normally need no environment setup. An explicit
@@ -95,3 +89,9 @@ It exercises consent, signing, redaction, independent opt-out, trace inspection,
 staff creation, viewer access, session revocation, the last-super-admin guard,
 and logout. Credentials and temporary state are removed on success; screenshots
 are kept in the evidence directory printed by the script.
+
+The prerequisite changes in PRs #17, #18, and #19 were merged before final
+integration, through main commit `2aa7d57`. Local checks include the application
+unit and browser suites, console browser tests, backend tests on Node 22 and 24,
+and the real workerd pipeline. Production verification exercised super-admin
+login, staff access, secure cookies, logout, and remote CLI confirmation.

@@ -33,6 +33,7 @@
     "site:deploy": "pnpm site:build && pnpm dlx wrangler@4 deploy --config site/wrangler.jsonc",
     "telemetry:dev": "vite --config telemetry/vite.config.ts",
     "telemetry:build": "vite build --config telemetry/vite.config.ts",
+    "telemetry:deploy": "pnpm telemetry:build && pnpm dlx wrangler@4.165.0 deploy --config telemetry/wrangler.jsonc --strict",
     "telemetry:test:ui": "playwright test --config telemetry/console/playwright.config.ts",
     "telemetry:smoke": "tsx telemetry/scripts/smoke.ts",
     "telemetry:test:pipeline": "pnpm build && pnpm telemetry:build && tsx telemetry/scripts/smoke.ts --console"

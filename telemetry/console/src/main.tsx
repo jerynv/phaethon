@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BrandWordmark } from "@/components/brand-mark";
 import { CATEGORIES, LABELS, SessionExpired, eventName, request, type Category, type Detail, type EventPage, type EventSummary, type Overview, type Session } from "./api";
 import { Staff } from "./Staff";
 import "./style.css";
@@ -12,7 +13,7 @@ const date = (s: string) => new Date(s).toLocaleString(undefined, { dateStyle: "
 const message = (e: unknown) => e instanceof Error ? e.message : "Couldn’t load telemetry. Try again.";
 
 function Wordmark() {
-  return <span className="flex items-center gap-2.5 font-medium"><span aria-hidden="true" className="flex size-7 items-center justify-center rounded-lg bg-primary text-sm text-primary-foreground">P</span>Phaethon<span className="font-normal text-muted-foreground">/ Telemetry</span></span>;
+  return <span className="flex items-center gap-2.5"><BrandWordmark markClassName="relative top-px" /><span className="text-muted-foreground">/ Telemetry</span></span>;
 }
 
 function SignIn({ onSignIn }: { onSignIn: (session: Session) => void }) {

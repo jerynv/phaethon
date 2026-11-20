@@ -62,7 +62,7 @@ pnpm exec tsx telemetry/scripts/staff.ts disable --email staff@example.test \
   --persist-to /tmp/phaethon-telemetry-local/state
 ```
 
-The CLI defaults to `--local`. Remote writes require the explicit `--remote` flag, reject simultaneous local flags/state, and require the operator's Cloudflare authorization. The password never enters Wrangler argv: the CLI hashes it first, writes only the hash and account metadata to a temporary mode-0600 SQL file in a private directory, executes that file, and removes it. It prints no secrets. Production provisioning, migrations, deployment, and resource creation have not been performed by this implementation task.
+The CLI defaults to `--local`. Remote writes require the explicit `--remote` flag, reject simultaneous local flags/state, and require the operator's Cloudflare authorization. The password never enters Wrangler argv: the CLI hashes it first, writes only the hash and account metadata to a temporary mode-0600 SQL file in a private directory, executes that file, and removes it. It prints no secrets. A separate read confirms the fresh account version because remote D1 imports return progress and summary metadata rather than SQL result rows. Both API and CLI writes preserve an active super admin.
 
 For an authorized remote staff update after replacing the actual configuration values, use `pnpm exec tsx telemetry/scripts/staff.ts provision --email <real-email> --username <real-username> --remote`; the same hidden prompt/secure stdin applies. `revoke` and `disable` also require `--remote` to affect the remote database. Without an explicit local `--persist-to`, provisioning uses `.wrangler/state` next to the selected config.
 
@@ -133,7 +133,16 @@ Defaults retain reports/traces for **90 days** and usage/diagnostics for **365 d
 
 Read paths hide expired records immediately. The ten-minute cron tries R2 deletion for up to 100 expired rows, deletes up to 20000 expired D1 event/outbox rows even during R2 outages, retries up to 50 pending archives, and removes expired sessions, rate counters, and unused tombstones. R2 keys are `events/content/<expiry-ms>/<uuid>.json` or `events/metrics/<expiry-ms>/<uuid>.json`; sorted-expiry sweeps delete up to 100 oldest expired objects per prefix, including objects orphaned by interrupted writes. Backlogs and service outages can delay physical removal; read-time expiry still applies. Monitor cron health, storage growth, and D1 capacity. There are no immutable bucket locks: deletions must stay possible.
 
-Before any authorized deployment, replace the D1 ID, private R2 bucket name, console origin, and domain routing placeholders in `wrangler.jsonc`. Keep R2 `r2.dev` and public custom-domain access disabled and do not give console users direct bucket credentials. Build `telemetry/console/dist`, apply migrations to the chosen actual D1 database, install the receipt key as a Worker secret, then provision real staff using the CLI's explicit remote flag. The configured CPU budget and memory-hard login plus export/cron subrequests require a suitable **Workers Paid** deployment; do not weaken hashing to fit the Free plan's CPU allowance. See [Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
+`wrangler.jsonc` identifies the deployed `phaethon-telemetry` database, private `phaethon-telemetry-raw` bucket, console origin, and domain route. R2 `r2.dev` access is disabled and no public bucket domain is attached. Staff receive console access rather than bucket credentials. `pnpm telemetry:deploy` builds and updates the Worker while retaining its installed secrets. For a different environment, configure its actual resources, apply migrations, install its own receipt key through secure input, and provision its first super admin explicitly. The configured CPU budget and memory-hard login plus export/cron subrequests require a suitable **Workers Paid** deployment; do not weaken hashing to fit the Free plan's CPU allowance. See [Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
+
+The production receipt key is installed as a Worker secret and backed up in the
+operator's system keychain under service `app.phaethon.telemetry`, account
+`archive-receipt-v1`. It is separate from staff passwords and app-vault secrets.
+Use secure stdin or a private temporary secrets file when restoring it; never
+put its value in source, logs, or command arguments. A newly uploaded Worker can
+briefly return 10007 from its metadata lookup before propagation completes; if
+the version upload succeeded, verify that version and finish its routes with
+`wrangler triggers deploy --config telemetry/wrangler.jsonc`.
 
 Configure these matching [R2 lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/) as a second deletion mechanism when provisioning is explicitly authorized:
 
@@ -142,7 +151,7 @@ Configure these matching [R2 lifecycle rules](https://developers.cloudflare.com/
 | `events/content/` | 90 days (match `CONTENT_RETENTION_DAYS`) |
 | `events/metrics/` | 365 days (match `METADATA_RETENTION_DAYS`) |
 
-R2 lifecycle runs asynchronously and usually removes expired objects within 24 hours. Delayed outbox upload starts its R2 age later than server acceptance; the expiry encoded in its object key and cron handle that difference. D1's provider-managed [Time Travel](https://developers.cloudflare.com/d1/platform/limits/) retains deleted database history for the plan's recovery window (currently 30 days Paid / 7 days Free), including temporary outbox records. Account backups and downloaded exports need their own finite retention and access policy; deleting the online record does not remove a previously downloaded export. Lifecycle rules, production resources, secrets, and deployment are intentionally not provisioned by these files.
+R2 lifecycle runs asynchronously and usually removes expired objects within 24 hours. Delayed outbox upload starts its R2 age later than server acceptance; the expiry encoded in its object key and cron handle that difference. D1's provider-managed [Time Travel](https://developers.cloudflare.com/d1/platform/limits/) retains deleted database history for the plan's recovery window (currently 30 days Paid / 7 days Free), including temporary outbox records. Account backups and downloaded exports need their own finite retention and access policy; deleting the online record does not remove a previously downloaded export. The production lifecycle rules match the table above.
 
 ## Verification
 
@@ -157,4 +166,8 @@ pnpm telemetry:test:pipeline
 
 The backend tests use Vitest registration so the parent's `telemetry/**/*.test.ts` inclusion also runs them through normal `pnpm test`. SQLite executes the actual migration, constraints, indexes, transactions, and queries. Tests cover valid/invalid/tampered signatures, strict schemas and byte limits, freshness, concurrent duplicates/conflicts, R2 failure and retry, D1 finalization failure, archive/receipt corruption, retention/tombstones/orphans, generic login failures, username/email login, unauthorized endpoints, session expiry/rotation/revocation, cross-origin mutations, digest rate limiting, raw detail, filtered stable pagination, and multi-page NDJSON export. The standalone smoke script additionally boots real Wrangler/workerd, migrates local D1, provisions through secure stdin, exercises scrypt/Ed25519/R2 with concurrent requests, revokes through the CLI, invokes cron, and serves local assets without external credentials. It owns and terminates its process group and removes its temporary state on success; failed runs retain a private temp directory with local logs.
 
-Verified on 2026-11-19: all 23 backend tests passed on Node 22.23.5 and Node 24.22.3; backend `tsc`, repository `pnpm typecheck`, and the final real-workerd smoke script passed. Node 22 emits its expected experimental SQLite warning. This evidence covers local runtime behavior; no production resources or staff accounts were created.
+Verified on 2026-11-19: all 29 backend tests passed on Node 22 and Node 24;
+CLI regression tests, repository typecheck, and the real workerd/browser pipeline
+passed. The production super-admin account was provisioned through secure input;
+browser login, staff access, cookie protections, logout, and remote CLI checks
+passed. Credentials are not tracked in this repository.

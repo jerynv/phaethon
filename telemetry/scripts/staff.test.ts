@@ -4,7 +4,7 @@ import type { ChildProcess } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
 
 const spawn = vi.hoisted(() => vi.fn());
-vi.mock("node:child_process", () => ({ spawn }));
+vi.mock("cross-spawn", () => ({ default: spawn }));
 import { staffCLI } from "./staff.ts";
 
 afterEach(() => spawn.mockReset());

@@ -20,6 +20,7 @@ export type ProviderId =
   | "mistral"
   | "deepseek"
   | "xai"
+  | "reallms"
   | "ollama"
   | "lmstudio"
   | "custom";
@@ -37,6 +38,8 @@ export type ProviderInfo = {
   model: string | null;
   keysUrl: string;
   keyPrefix: string;
+  /** When a saved sign-in token stops working (ms since the epoch); null or absent for keys that don't expire. */
+  keyExpiresAt?: number | null;
   ready: boolean;
 };
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProviderInfo, Settings } from "./api";
-import { addedProviders, canSaveUnchecked, checkAndSave, isAdded, isValidModelFor, matchModels, modelLabel, outcomeText, PROVIDER_IDS, providerNeed, readableModel, splitRef, toRef } from "./logic";
+import { addedProviders, canSaveUnchecked, checkAndSave, isAdded, isValidModelFor, keyExpiry, matchModels, modelLabel, outcomeText, PROVIDER_IDS, providerNeed, readableModel, splitRef, toRef } from "./logic";
 
 const base: ProviderInfo = {
   id: "openai",
@@ -140,5 +140,28 @@ describe("model search", () => {
     expect(matchModels(models, "gemini pro").map((m) => m.id)).toEqual(["google/gemini-3.1-pro"]);
     expect(matchModels(models, "  ").length).toBe(2);
     expect(matchModels(models, "GPT").length).toBe(1);
+  });
+});
+
+describe("keys that expire (sign-in tokens)", () => {
+  const now = Date.UTC(2026, 10, 19, 12);
+  const h = 3_600_000;
+  it("reads days, then hours, then expired", () => {
+    expect(keyExpiry(null, now)).toBeNull();
+    expect(keyExpiry(undefined, now)).toBeNull();
+    expect(keyExpiry(now + 6 * 24 * h + h, now)).toEqual({ tone: "ready", text: "Expires in 6 days" });
+    expect(keyExpiry(now + 25 * h, now)).toEqual({ tone: "ready", text: "Expires in 1 day" });
+    expect(keyExpiry(now + 23 * h + 59 * 60_000, now)).toEqual({ tone: "warning", text: "Expires in 23 hours" });
+    expect(keyExpiry(now + h, now)).toEqual({ tone: "warning", text: "Expires in 1 hour" });
+    expect(keyExpiry(now + 60_000, now)).toEqual({ tone: "warning", text: "Expires within the hour" });
+    expect(keyExpiry(now, now)).toEqual({ tone: "error", text: "Expired" });
+  });
+  it("an expired saved key needs replacing; a live one doesn't", () => {
+    const s = { model: "claude-opus-5-5" };
+    const reallms = p({ id: "reallms", name: "IU REALLMS", hasKey: true, model: "gemma-4-31B-it" });
+    expect(providerNeed({ ...reallms, keyExpiresAt: now - 1 }, s, now)).toEqual({ field: "key", text: "Your IU REALLMS key has expired. Paste a new one." });
+    expect(providerNeed({ ...reallms, keyExpiresAt: now + h }, s, now)).toBeNull();
+    expect(providerNeed(reallms, s, now)).toBeNull();
+    expect(PROVIDER_IDS).toContain("reallms");
   });
 });

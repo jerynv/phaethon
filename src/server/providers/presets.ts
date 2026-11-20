@@ -43,6 +43,8 @@ export const PRESETS: Preset[] = [
   p("mistral", "Mistral", "https://api.mistral.ai/v1", "required", false, false, "https://console.mistral.ai/api-keys", "", "/models"),
   p("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "required", false, false, "https://platform.deepseek.com/api_keys", "", "/models"),
   p("xai", "xAI", "https://api.x.ai/v1", "required", false, false, "https://console.x.ai", "xai-", "/models"),
+  // Indiana University's REALLMS (Open WebUI). The key is the 7-day sign-in token, checked at /auths/ (it answers 401 to a bad one).
+  p("reallms", "IU REALLMS", "https://reallms.rescloud.iu.edu/api/v1", "required", false, false, "https://reallms.rescloud.iu.edu", "", "/auths/"),
   p("ollama", "Ollama", "http://127.0.0.1:11434/v1", "none", true, true, "", "", "/models"),
   p("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", "none", true, true, "", "", "/models"),
   p("custom", "Your own server", "", "optional", false, true, "", "", "/models"),
@@ -178,6 +180,10 @@ export function anthropicBase(): string {
 /** Where requests for `pre` go. Settings can only move presets whose address is editable. */
 export function baseUrl(settings: VaultSettings, pre: Preset): string {
   if (pre.id === "anthropic") return anthropicBase();
+  if (pre.id === "reallms") {
+    const test = process.env.PHAETHON_REALLMS_BASE_URL;
+    if (test && process.env.PHAETHON_TEST === "1") return test.replace(/\/+$/, "");
+  }
   if (!pre.editableBase) return pre.base;
   const saved = stringMap(settings.providerUrls)[pre.id]?.trim();
   if (saved) {
@@ -194,10 +200,35 @@ export function baseUrl(settings: VaultSettings, pre: Preset): string {
 // ---------------------------------------------------------------------------
 // Keys
 
+/** The longest key Phaethon accepts (the keychain's limit too); sign-in tokens used as keys can pass 400 characters. */
+export const KEY_MAX = 512;
+
+const JWT = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+/** When a sign-in token (JWT) used as a key stops working, in ms since the epoch; undefined for other keys. */
+export function jwtExpiry(token: string): number | undefined {
+  const t = token.trim();
+  if (!JWT.test(t)) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(t.split(".")[1], "base64url").toString("utf8")) as { exp?: unknown };
+    return typeof claims?.exp === "number" && Number.isFinite(claims.exp) ? claims.exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export const REALLMS_EXPIRED = "Your REALLMS token has expired (they last 7 days). Sign in again at reallms.rescloud.iu.edu and paste the new token in Settings › AI & Models.";
+
 /** Checked before a key is saved or sent; undefined when it's fine. */
-export function keyProblem(pre: Preset, base: string, key: string): string | undefined {
+export function keyProblem(pre: Preset, base: string, key: string, now = Date.now()): string | undefined {
   const k = key.trim();
-  if (k.length < 8 || k.length > 400 || !/^[\x21-\x7e]+$/.test(k)) {
+  if (pre.id === "reallms") {
+    if (!JWT.test(k) || k.length > KEY_MAX) return "That doesn’t look like a REALLMS token. Copy the whole token again; it starts with eyJ and is one line with no spaces.";
+    const exp = jwtExpiry(k);
+    if (exp !== undefined && exp <= now) return REALLMS_EXPIRED;
+    return undefined;
+  }
+  if (k.length < 8 || k.length > KEY_MAX || !/^[\x21-\x7e]+$/.test(k)) {
     return `That doesn’t look like a ${pre.name} API key. Copy the whole key again; it’s one line with no spaces.`;
   }
   const owner = PRESETS.find((o) => o.keyPrefix && k.startsWith(o.keyPrefix));

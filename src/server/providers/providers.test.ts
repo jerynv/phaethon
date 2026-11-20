@@ -12,12 +12,14 @@ import {
   bindCustomKey,
   checkBase,
   isLoopback,
+  jwtExpiry,
   keyFor,
   keyProblem,
   modelForSpace,
   origin,
   parseRef,
   preset,
+  REALLMS_EXPIRED,
   savedRef,
   unbindCustomKey,
 } from "./presets.ts";
@@ -28,6 +30,19 @@ import { sseEvents } from "./http.ts";
 import { call } from "../../../tests/harness.ts";
 import "./commands.ts";
 import { appFiles } from "../core/vault.ts";
+import { providerSettingsView } from "./build.ts";
+
+/** A sign-in token shaped like REALLMS's (HS256 JWT), `length` characters long, expiring at `exp` (seconds). */
+function jwt(exp: number, length = 429): string {
+  const head = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+  const sig = "s".repeat(43);
+  const body = (pad: string) => Buffer.from(JSON.stringify({ id: pad, exp })).toString("base64url");
+  let pad = "";
+  while (`${head}.${body(pad)}.${sig}`.length < length) pad += "x";
+  const t = `${head}.${body(pad)}.${sig}`;
+  return t.length === length ? t : t.slice(0, head.length + 1) + body(pad).slice(0, length - head.length - sig.length - 2) + "." + sig;
+}
+const inDays = (d: number) => Math.floor(Date.now() / 1000) + d * 86_400;
 
 const env = tempHome();
 afterAll(() => env.cleanup());
@@ -82,6 +97,32 @@ describe("model references and presets", () => {
     const google = preset("google")!;
     expect(google).toMatchObject({ name: "Google Gemini", base: "https://generativelanguage.googleapis.com/v1beta/openai", keyPrefix: "AIza", checkPath: "/models" });
     expect(parseRef("google:gemini-2.5-pro")).toMatchObject({ provider: { id: "google" }, model: "gemini-2.5-pro" });
+  });
+
+  it("takes sign-in tokens up to 512 characters, and REALLMS only as a live token", () => {
+    const token = jwt(inDays(5));
+    expect(token).toHaveLength(429);
+    expect(jwtExpiry(token)).toBe(inDays(5) * 1000);
+    expect(jwtExpiry("sk-not-a-token")).toBeUndefined();
+    expect(jwtExpiry("eyJx.eyJ!.sig")).toBeUndefined();
+    const custom = preset("custom")!;
+    expect(keyProblem(custom, "https://reallms.rescloud.iu.edu/api/v1", token)).toBeUndefined();
+    expect(keyProblem(custom, "https://my.server/v1", "k".repeat(512))).toBeUndefined();
+    expect(keyProblem(custom, "https://my.server/v1", "k".repeat(513))).toMatch(/doesn’t look like a Your own server API key/);
+    expect(keyProblem(custom, "https://my.server/v1", jwt(inDays(5), 600))).toMatch(/doesn’t look like/);
+    const reallms = preset("reallms")!;
+    expect(reallms).toMatchObject({ name: "IU REALLMS", base: "https://reallms.rescloud.iu.edu/api/v1", key: "required", editableBase: false, keyPrefix: "", checkPath: "/auths/" });
+    expect(keyProblem(reallms, reallms.base, token)).toBeUndefined();
+    expect(keyProblem(reallms, reallms.base, ` ${token} `)).toBeUndefined();
+    expect(keyProblem(reallms, reallms.base, "sk-1234567890abcdef")).toMatch(/doesn’t look like a REALLMS token/);
+    expect(keyProblem(reallms, reallms.base, token.replace(".", ". "))).toMatch(/doesn’t look like a REALLMS token/);
+    expect(keyProblem(reallms, reallms.base, jwt(inDays(-1)))).toBe(REALLMS_EXPIRED);
+    // No other provider claims a token, and REALLMS's address can't be moved by settings.
+    expect(keyProblem(preset("openai")!, preset("openai")!.base, token)).toBeUndefined();
+    updateSettings({ providerUrls: { reallms: "https://evil.example/v1" } });
+    expect(baseUrl(readSettings(), reallms)).toBe("https://reallms.rescloud.iu.edu/api/v1");
+    updateSettings({ providerUrls: {} });
+    expect(parseRef("reallms:gemma-4-31B-it")).toMatchObject({ provider: { id: "reallms" }, model: "gemma-4-31B-it" });
   });
 
   it("binds a custom server's key to its origin and never sends it over plain http", () => {
@@ -434,6 +475,68 @@ describe("OpenAI-compatible", () => {
   });
 });
 
+describe("IU REALLMS", () => {
+  const reallms = preset("reallms")!;
+  const token = jwt(inDays(6));
+
+  it("checks the token at /auths/, since its model list doesn't prove a key", async () => {
+    const srv = await fakeServer([
+      { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "u", token }) },
+      { status: 401, headers: { "content-type": "application/json" }, body: JSON.stringify({ detail: "Your session has expired or the token is invalid. Please sign in again." }) },
+    ]);
+    expect(await compatCheckKey(reallms, srv.url, token)).toEqual({ ok: true, message: "This key works." });
+    expect(srv.seen[0]).toMatchObject({ method: "GET", url: "/auths/" });
+    expect(srv.seen[0].headers.authorization).toBe(`Bearer ${token}`);
+    const bad = await compatCheckKey(reallms, srv.url, token);
+    expect(bad).toMatchObject({ ok: false, problem: "rejected" });
+    expect(bad.message).toMatch(/REALLMS didn’t accept this token. It may have expired \(they last 7 days\)/);
+    expect(srv.seen).toHaveLength(2);
+    // A malformed or expired token is refused before anything is sent.
+    expect((await compatCheckKey(reallms, srv.url, "not-a-token-at-all")).problem).toBe("format");
+    expect(await compatCheckKey(reallms, srv.url, jwt(inDays(-1)))).toEqual({ ok: false, problem: "format", message: REALLMS_EXPIRED });
+    expect(srv.seen).toHaveLength(2);
+    await srv.close();
+  });
+
+  it("streams a reply, says an expired token expired, and lists its models leniently", async () => {
+    const srv = await fakeServer([
+      // vLLM behind Open WebUI: a reasoning-only chunk with null content, then the text, a usage chunk, and [DONE].
+      {
+        chunks: [
+          { choices: [{ index: 0, delta: { role: "assistant", content: null, reasoning_content: "thinking" } }] },
+          { choices: [{ index: 0, delta: { content: "OK" }, finish_reason: "stop" }] },
+          { choices: [], usage: { prompt_tokens: 3, completion_tokens: 1 } },
+        ]
+          .map((v) => `data: ${JSON.stringify(v)}\n\n`)
+          .concat("data: [DONE]\n\n"),
+      },
+      { status: 401, headers: { "content-type": "application/json" }, body: JSON.stringify({ detail: "Your session has expired or the token is invalid. Please sign in again." }) },
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: [
+            { id: "gemma-4-31B-it", name: "Gemma4 31B IT", object: "model", info: { meta: {} }, openai: {}, urlIdx: 0, actions: [], filters: [], tags: [], access_grants: [] },
+            { id: "qwen3.8-27b", name: "Qwen3.8 27b", provider: "openai" },
+          ],
+        }),
+      },
+    ]);
+    const c = collect();
+    const p = new OpenAiCompatible({ preset: reallms, base: srv.url, key: token, model: "gemma-4-31B-it" });
+    const turn = await p.turn(req(), c.on, signal());
+    expect(c.text()).toBe("OK");
+    expect(turn.stopReason).toBe("end_turn");
+    expect(srv.seen[0].url).toBe("/chat/completions");
+    const err = await p.turn(req(), () => {}, signal()).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err).toMatchObject({ kind: "auth", message: REALLMS_EXPIRED });
+    const models = await listModels(reallms, srv.url, token);
+    expect(models.map((m) => [m.id, m.name])).toEqual([["gemma-4-31B-it", "Gemma4 31B IT"], ["qwen3.8-27b", "Qwen3.8 27b"]]);
+    await srv.close();
+  });
+});
+
 describe("commands", () => {
   it("saves keys only to the keychain, bound and validated", async () => {
     await expect(call("api_key_set", { provider: "ollama", key: "x" })).rejects.toThrow("That provider doesn’t take a key.");
@@ -448,6 +551,25 @@ describe("commands", () => {
     expect(keychainGet(providerAccount("anthropic"))).toBeNull();
     const settingsFile = fs.readFileSync(path.join(env.home, "Phaethon/default/.phaethon/settings.json"), "utf8");
     expect(settingsFile).not.toContain("k-12345678");
+  });
+
+  it("saves a REALLMS token and shows when it expires, never the token", async () => {
+    const token = jwt(inDays(6));
+    await expect(call("api_key_set", { provider: "reallms", key: jwt(inDays(-1)) })).rejects.toThrow("has expired");
+    expect(keychainGet(providerAccount("reallms"))).toBeNull();
+    await call("api_key_set", { provider: "reallms", key: token });
+    expect(keychainGet(providerAccount("reallms"))).toBe(token);
+    await call("settings_set_provider_url", { provider: "custom", url: "https://reallms.rescloud.iu.edu/api/v1" });
+    await call("api_key_set", { provider: "custom", key: jwt(inDays(2)) });
+    const view = providerSettingsView();
+    const of = (id: string) => view.providers.find((p) => p.id === id)!;
+    expect(of("reallms")).toMatchObject({ hasKey: true, ready: true, keysUrl: "https://reallms.rescloud.iu.edu", keyExpiresAt: inDays(6) * 1000 });
+    expect(of("custom").keyExpiresAt).toBe(inDays(2) * 1000);
+    expect(of("openai").keyExpiresAt).toBeNull();
+    expect(JSON.stringify(view)).not.toContain(token.split(".")[1]);
+    await call("api_key_clear", { provider: "reallms" });
+    await call("api_key_clear", { provider: "custom" });
+    updateSettings({ providerUrls: {} });
   });
 
   it("validates settings writes", async () => {

@@ -4,7 +4,7 @@ import { effectivePick } from "../threads/pick.ts";
 import { Anthropic } from "./anthropic.ts";
 import { FakeProvider, fakeScriptPath } from "./fake.ts";
 import { OpenAiCompatible } from "./openai.ts";
-import { baseUrl, chosen, chosenModel, keyFor, keyedIds, modelForSpace, parseRef, PRESETS, type ModelRef, type Preset } from "./presets.ts";
+import { baseUrl, chosen, chosenModel, jwtExpiry, keyFor, keyedIds, modelForSpace, parseRef, PRESETS, type ModelRef, type Preset } from "./presets.ts";
 import type { Provider, Sees } from "./types.ts";
 import { sees as modelSight } from "./vision.ts";
 
@@ -93,15 +93,30 @@ export type ProviderView = {
   model: string | null;
   keysUrl: string;
   keyPrefix: string;
+  /** When the saved key stops working (ms since the epoch), for keys that are sign-in tokens; else null. */
+  keyExpiresAt: number | null;
   ready: boolean;
 };
 
-function hasKey(id: string): boolean {
+/** Whether `id` has a saved key and, for a sign-in token, when it expires. One keychain read; the key itself stays here. */
+function savedKey(id: string): { has: boolean; expiresAt: number | null } {
+  let saved: string | null;
   try {
-    return readKey(id) !== null;
+    saved = readKey(id);
   } catch {
-    return false;
+    return { has: false, expiresAt: null };
   }
+  if (saved === null) return { has: false, expiresAt: null };
+  let key = saved;
+  if (id === "custom") {
+    try {
+      const k = (JSON.parse(saved) as { key?: unknown }).key;
+      key = typeof k === "string" ? k : "";
+    } catch {
+      key = "";
+    }
+  }
+  return { has: true, expiresAt: jwtExpiry(key) ?? null };
 }
 
 /**
@@ -120,7 +135,8 @@ export function providerSettingsView(settings: VaultSettings = readSettings()) {
     } catch {
       baseOk = false;
     }
-    const k = p.local || !keyed.has(p.id) ? false : hasKey(p.id);
+    const saved = p.local || !keyed.has(p.id) ? { has: false, expiresAt: null } : savedKey(p.id);
+    const k = saved.has;
     const model = p.id === "anthropic" ? chosenModel(settings, p) ?? null : stringMap(settings.providerModels)[p.id]?.trim() || null;
     return {
       id: p.id,
@@ -134,6 +150,7 @@ export function providerSettingsView(settings: VaultSettings = readSettings()) {
       model,
       keysUrl: p.keysUrl,
       keyPrefix: p.keyPrefix,
+      keyExpiresAt: saved.expiresAt,
       ready: baseOk && (p.key !== "required" || k || (fake && p.id === current.id)),
     };
   });

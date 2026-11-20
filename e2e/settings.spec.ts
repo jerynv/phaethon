@@ -72,3 +72,52 @@ test("AI & Models lists every service without a menu, and a row opens in place t
   await expect(groq).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByPlaceholder(/gsk_|Paste your key/)).toBeVisible();
 });
+
+test("IU REALLMS takes a sign-in token, shows when it expires, and lists its models", async ({ page }) => {
+  // A stand-in for reallms.rescloud.iu.edu/api/v1: /auths/ answers 200 only to the right token.
+  const http = await import("node:http");
+  const b64 = (v: object) => Buffer.from(JSON.stringify(v)).toString("base64url");
+  const token = (days: number) => `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${b64({ id: "x".repeat(260), exp: Math.floor(Date.now() / 1000) + days * 86_400 + 3600 })}.${"s".repeat(43)}`;
+  const good = token(3);
+  expect(good.length).toBeGreaterThan(400);
+  const server = http.createServer((req, res) => {
+    const ok = req.headers.authorization === `Bearer ${good}`;
+    res.setHeader("content-type", "application/json");
+    if (!ok) return res.writeHead(401).end(JSON.stringify({ detail: "Your session has expired or the token is invalid. Please sign in again." }));
+    if (req.url === "/api/v1/auths/") return res.end(JSON.stringify({ id: "u", token: good }));
+    if (req.url === "/api/v1/models") return res.end(JSON.stringify({ data: [{ id: "gemma-4-31B-it", name: "Gemma4 31B IT", info: {}, tags: [] }, { id: "glm-5.3-flash", name: "GLM 5.3 Flash" }] }));
+    res.writeHead(404).end("{}");
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const port = (server.address() as { port: number }).port;
+  try {
+    core = await startCore({ env: { PHAETHON_REALLMS_BASE_URL: `http://127.0.0.1:${port}/api/v1` } });
+    await core.open(page);
+    await openSettings(page);
+    await page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: /^AI & Models/ }).click();
+    const row = page.getByTestId("models-cloud").getByRole("button", { name: /^IU REALLMS/ });
+    await expect(row).toContainText("IU sign-in");
+    await row.click();
+    await expect(page.getByRole("link", { name: "Sign in at reallms.rescloud.iu.edu" })).toHaveAttribute("href", "https://reallms.rescloud.iu.edu");
+    await expect(page.getByText(/copy the token from Application › Local Storage/)).toBeVisible();
+    const key = page.getByPlaceholder("Paste your key");
+    // An expired token is refused before anything is sent.
+    await key.fill(token(-2));
+    await page.getByRole("button", { name: "Check and save" }).click();
+    await expect(page.getByText(/Your REALLMS token has expired \(they last 7 days\)/)).toBeVisible();
+    // A live token that the server rejects.
+    await key.fill(token(5));
+    await page.getByRole("button", { name: "Check and save" }).click();
+    await expect(page.getByText(/REALLMS didn’t accept this token/)).toBeVisible();
+    // The real one: saved, with its expiry beside it, and the model list opens.
+    await key.fill(good);
+    await page.getByRole("button", { name: "Check and save" }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    await expect(page.getByText("Expires in 3 days")).toBeVisible();
+    await page.getByRole("button", { name: "Choose a model", exact: true }).click();
+    await expect(page.getByRole("listbox", { name: "IU REALLMS models" }).getByRole("option", { name: /Gemma4 31B IT/ })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("reallms.png") });
+  } finally {
+    server.close();
+  }
+});

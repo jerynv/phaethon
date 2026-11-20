@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { Block } from "../core/thread.ts";
 import { backoffMs, bodyText, isConnectError, isRedirect, parseJson, rateLimitSuffix, request, retryAfterSecs, RETRIES, shouldRetry, sleep, sseEvents, StreamDropped, StreamIdle, TimeoutError } from "./http.ts";
-import { isLoopback, isValidCompatModel, keyProblem, origin, type Preset } from "./presets.ts";
+import { isLoopback, isValidCompatModel, keyProblem, origin, REALLMS_EXPIRED, type Preset } from "./presets.ts";
 import { ProviderError, type Delta, type Effort, type ModelRequest, type ModelTurn, type Provider, type Sees, type WireMessage } from "./types.ts";
 import { fromMetadata, remember, sees } from "./vision.ts";
 import type { KeyCheck, ModelInfo } from "./anthropic.ts";
@@ -146,6 +146,7 @@ export function httpError(p: Preset, model: string, hasKey: boolean, status: num
   const w = who(p);
   if (status === 402 || code === "insufficient_quota") return new ProviderError("billing", `Your ${p.name} account is out of credit or has a billing problem. Add credit with ${p.name}, then try again.`);
   if (status === 401 && !hasKey) return new ProviderError("auth", `${w} asked for an API key. Add one in Settings › AI & Models.`);
+  if (status === 401 && p.id === "reallms") return new ProviderError("auth", REALLMS_EXPIRED);
   if (status === 401 || isInvalidKeyError(status, info)) return new ProviderError("auth", `${w} didn’t accept your API key. Check it in Settings.`);
   if (status === 403) return new ProviderError("auth", `${w} refused this request. ${detail}`.trim());
   if (status === 404) {
@@ -416,6 +417,9 @@ export async function checkKey(p: Preset, base: string, rawKey: string): Promise
   if (res.status === 402 || info.code === "insufficient_quota") {
     return { ok: false, problem: "billing", message: `Your ${p.name} account is out of credit or has a billing problem. Add credit with ${p.name}, then try again.` };
   }
+  if (res.status === 401 && p.id === "reallms") {
+    return { ok: false, problem: "rejected", message: "REALLMS didn’t accept this token. It may have expired (they last 7 days) or be missing a part. Sign in again at reallms.rescloud.iu.edu and copy the whole token." };
+  }
   if (res.status === 401 || res.status === 403 || isInvalidKeyError(res.status, info)) {
     return { ok: false, problem: "rejected", message: `${who(p)} didn’t accept this key. It may have been deleted, or part of it is missing. Copy it again and paste it here.` };
   }
@@ -447,6 +451,7 @@ export async function listModels(p: Preset, base: string, key: string | undefine
   }
   const text = await bodyText(res);
   if (res.status === 401 || res.status === 403 || isInvalidKeyError(res.status, detailOf(text))) {
+    if (key && p.id === "reallms") throw new Error(REALLMS_EXPIRED);
     throw new Error(key ? `${who(p)} didn’t accept your API key, so its models can’t be listed. Check the key above.` : `${who(p)} asked for an API key before it lists its models.`);
   }
   const v = res.ok ? parseJson(text) : undefined;

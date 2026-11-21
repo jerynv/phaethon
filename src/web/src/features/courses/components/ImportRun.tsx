@@ -7,7 +7,7 @@ import { Truncate } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { type CourseRun, endText, type Run, SIGNED_OUT_DURING_IMPORT, stepText } from "../lib/import-run";
+import { type CourseRun, endText, type Run, stepText } from "../lib/import-run";
 import { plural } from "../lib/sites";
 import { useCourses } from "../store";
 
@@ -21,28 +21,42 @@ function fraction(c: CourseRun): number {
   return base + span * at;
 }
 
-/** The running (or just finished) import: a 2 px bar on top, one row per course. */
+export function CourseProgress({ run, className, decorative = false }: { run: Run; className?: string; decorative?: boolean }) {
+  const running = run.status === "running";
+  const overall = run.courses.reduce((n, c) => n + fraction(c), 0) / Math.max(run.courses.length, 1);
+  return (
+    <span
+      className={cn("block h-0.5 bg-muted", className)}
+      aria-hidden={decorative || undefined}
+      role={running && !decorative ? "progressbar" : undefined}
+      aria-label={running && !decorative ? (run.update ? "Course update progress" : "Course import progress") : undefined}
+      aria-valuenow={running && !decorative ? Math.floor(overall * 100) : undefined}
+    >
+      <span
+        className={cn("block h-full transition-[width] duration-300 ease-out", run.status === "failed" ? "bg-error" : run.status === "running" ? "bg-primary" : "bg-success")}
+        style={{ width: `${(running ? overall : 1) * 100}%` }}
+      />
+    </span>
+  );
+}
+
+/** The running (or just finished) import or update: one row per course. */
 export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () => void }) {
   const cancel = useCourses((s) => s.cancelImport);
   const dismiss = useCourses((s) => s.dismissRun);
   const running = run.status === "running";
   const finished = run.courses.filter((c) => c.result || c.failed).length;
-  const overall = run.courses.reduce((n, c) => n + fraction(c), 0) / Math.max(run.courses.length, 1);
-
+  const verb = run.update ? "Updating" : "Importing";
+  const progressTitle = run.school ? `${verb} from ${run.school}` : `${verb} courses…`;
   return (
     <div className="relative overflow-hidden rounded-card border bg-card" data-testid="import-run">
-      <div className="absolute inset-x-0 top-0 h-0.5 bg-muted">
-        <div
-          className={cn("h-full transition-[width] duration-300 ease-out", run.status === "failed" ? "bg-error" : run.status === "running" ? "bg-primary" : "bg-success")}
-          style={{ width: `${(running ? overall : 1) * 100}%` }}
-        />
-      </div>
+      <CourseProgress run={run} className="absolute inset-x-0 top-0" />
       <div className="flex h-12 items-center gap-2 px-5 pt-0.5">
         <div className="min-w-0 flex-1 text-sm">
           {running ? (
-            <Truncate className="font-medium">{run.cancelling ? "Stopping the import…" : `Importing from ${run.school}`}</Truncate>
+            <Truncate className="font-medium">{run.cancelling ? `Stopping the ${run.update ? "update" : "import"}…` : progressTitle}</Truncate>
           ) : (
-            <Truncate className="font-medium">{run.status === "failed" && run.error === SIGNED_OUT_DURING_IMPORT ? "Signed out partway through" : endText(run)}</Truncate>
+            <Truncate className="font-medium">{run.signInConnection && !run.update ? "Signed out partway through" : endText(run)}</Truncate>
           )}
         </div>
         {running ? (
@@ -61,19 +75,19 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
           </Button>
         )}
       </div>
-      {run.cancelError ? <p className="px-5 pb-2 text-destructive-foreground text-xs">Couldn’t stop the import: {run.cancelError}</p> : null}
+      {run.cancelError ? <p className="px-5 pb-2 text-destructive-foreground text-xs">Couldn’t stop the {run.update ? "update" : "import"}: {run.cancelError}</p> : null}
       {run.status === "failed" && run.error ? (
         <div className="px-4 pb-4">
-          {run.error === SIGNED_OUT_DURING_IMPORT ? (
+          {run.signInConnection ? (
             <SurfaceError tone="warning" title="Sign in again to finish" actions={[{ label: "Sign in again", primary: true, onClick: onSignInAgain }]} />
           ) : (
-            <SurfaceError title="The import stopped" message={run.error} />
+            <SurfaceError title={run.update ? "Some courses couldn’t be updated" : "The import stopped"} message={run.error} />
           )}
         </div>
       ) : null}
       <ul className="border-t py-1.5">
         {run.courses.map((c) => (
-          <CourseRow key={c.id} c={c} />
+          <CourseRow key={c.id} c={c} update={run.update} />
         ))}
       </ul>
       {run.notes?.length ? (
@@ -89,7 +103,7 @@ export function ImportRun({ run, onSignInAgain }: { run: Run; onSignInAgain: () 
   );
 }
 
-function CourseRow({ c }: { c: CourseRun }) {
+function CourseRow({ c, update }: { c: CourseRun; update?: boolean }) {
   const [open, setOpen] = useState(false);
   const active = !c.result && !c.failed && !!c.step;
   const counts = c.result ? [plural(c.result.files, "file"), c.result.readings ? plural(c.result.readings, "reading") : null, c.result.links ? plural(c.result.links, "link") : null].filter(Boolean).join(" · ") : null;
@@ -124,7 +138,7 @@ function CourseRow({ c }: { c: CourseRun }) {
           {counts}
           {c.result?.skipped.length ? (
             <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="text-warning-foreground underline-offset-2 hover:underline">
-              · {plural(c.result.skipped.length, "item")} not imported
+              · {plural(c.result.skipped.length, "item")} {update ? "skipped" : "not imported"}
             </button>
           ) : null}
         </span>

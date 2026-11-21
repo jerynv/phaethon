@@ -465,6 +465,8 @@ export type CourseInfo = {
   code?: string;
   term?: string;
   folder: string;
+  updated?: number;
+  partial?: true;
   material?: Summary;
 };
 
@@ -483,6 +485,8 @@ export function allCourses(): CourseInfo[] {
       const info: CourseInfo = { key: courseKey(conn.id, cid), connection: conn.id, courseId: cid, name: c.name, folder: `${COURSES_DIR}/${c.folder}` };
       if (c.code !== undefined) info.code = c.code;
       if (c.term !== undefined) info.term = c.term;
+      if (c.lastSync !== undefined) info.updated = c.lastSync;
+      if (c.partial) info.partial = true;
       if (c.material) info.material = summarise(c.material, () => true);
       out.push(info);
     }

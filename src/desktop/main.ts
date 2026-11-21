@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
 import { createTray } from "./tray.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
+import { loadSignInPage } from "./sign-in-load.ts";
 import { updateCheck, updateDownload, updateInstall } from "./updater.ts";
 import { keepWindowState, loadWindowState } from "./window-state.ts";
 
@@ -299,6 +300,9 @@ async function handle(op: HostOp): Promise<unknown> {
       lockPermissions(window.webContents.session, NO_PERMISSIONS);
       const id = window.id;
       signInWindows.set(id, window);
+      const contents = window.webContents;
+      let hasLoadedPage = false;
+      const failed = (code: string) => core?.emit({ kind: "windowLoadFailed", window: id, code });
       // Web pages and the in-page documents SSO frames are built from; never files, app links or the app.
       const signInAllowed = (url: string) => {
         try {
@@ -307,26 +311,35 @@ async function handle(op: HostOp): Promise<unknown> {
           return false;
         }
       };
-      window.webContents.setWindowOpenHandler(({ url }) => {
+      contents.setWindowOpenHandler(({ url }) => {
         // Sign-in pages sometimes open their identity provider in a popup; keep it in the same window.
-        if (/^https?:/i.test(url)) void window.loadURL(url);
+        if (/^https?:/i.test(url)) void window.loadURL(url).catch(() => {});
         return { action: "deny" };
       });
-      window.webContents.on("will-navigate", (event, url) => {
-        if (!signInAllowed(url)) event.preventDefault();
+      contents.on("will-navigate", (event) => {
+        if (!signInAllowed(event.url)) event.preventDefault();
       });
-      window.webContents.on("will-redirect", (event, url) => {
-        if (!signInAllowed(url)) event.preventDefault();
+      contents.on("will-redirect", (event) => {
+        if (!signInAllowed(event.url)) event.preventDefault();
       });
-      window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+      contents.on("will-attach-webview", (event) => event.preventDefault());
       const navigated = (url: string) => core?.emit({ kind: "windowNavigated", window: id, url });
-      window.webContents.on("did-navigate", (_e, url) => navigated(url));
-      window.webContents.on("did-navigate-in-page", (_e, url) => navigated(url));
+      contents.on("did-navigate", (_e, url, status) => {
+        if (status > 0) hasLoadedPage = true;
+        navigated(url);
+      });
+      contents.on("did-navigate-in-page", (_e, url) => navigated(url));
+      contents.on("did-fail-load", (_event, _code, description, _url, isMainFrame) => {
+        // After the first page, never repeat a sign-in form submission or a Duo step.
+        if (hasLoadedPage && isMainFrame && description !== "ERR_ABORTED") failed(description);
+      });
       window.on("closed", () => {
         signInWindows.delete(id);
         core?.emit({ kind: "windowClosed", window: id });
       });
-      void window.loadURL(op.url);
+      void loadSignInPage(contents, op.url, () => hasLoadedPage).then((error) => {
+        if (error !== null) failed(error);
+      });
       return id;
     }
     case "windowCookies": {

@@ -1,9 +1,8 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { AgentEvent } from "../../shared/agent.ts";
 import { writeFileAtomic } from "../core/fsx.ts";
 import { claim, release, turnKey } from "../core/runs.ts";
-import { spaceDir } from "../core/vault.ts";
+import { isTrashedSpace, spaceDir } from "../core/vault.ts";
 import { CollectingChannel } from "../rpc/channel.ts";
 import { messageOf, Refusal } from "../rpc/registry.ts";
 import { forSpace } from "../providers/build.ts";
@@ -325,13 +324,18 @@ export const DIGEST: JobDef = {
     for (const space of digestSettings().spaces) {
       let dir: string;
       try {
-        dir = spaceDir(space);
+        spaceDir(space);
       } catch {
         continue;
       }
       const text = await digestFor(space, now);
+      try {
+        // The space may have been moved to the trash while mail was loading.
+        dir = spaceDir(space);
+      } catch {
+        continue;
+      }
       const file = path.join(dir, "digests", name);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
       writeFileAtomic(file, text);
       done.push(space);
     }
@@ -376,7 +380,7 @@ export async function runSchedule(s: Schedule, signal?: AbortSignal): Promise<{ 
 
 export function scheduleJobs(): JobDef[] {
   return readSchedules()
-    .filter((s) => s.enabled)
+    .filter((s) => s.enabled && !isTrashedSpace(s.space))
     .map((s) => ({
       id: `schedule:${s.id}`,
       title: s.title,

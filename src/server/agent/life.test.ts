@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentEvent } from "../../shared/agent.ts";
 import { call, channel, tempHome } from "../../../tests/harness.ts";
 import { ensureVault, spaceDir } from "../core/vault.ts";
@@ -48,6 +48,7 @@ beforeEach(() => {
   save("work", T, []);
 });
 afterEach(async () => {
+  vi.useRealTimers();
   for (const s of servers) await s.close();
   servers = [];
 });
@@ -83,6 +84,9 @@ function nextSaturday6(): { iso: string; ms: number } {
 
 describe("memory through the agent loop", () => {
   it("remembers an event, keeps it out of small talk, brings it back for Saturday, closes it on the outcome, still recalls it", async () => {
+    // Start midweek so "Saturday" and the fixture always refer to the same day.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 18, 12));
     writeItems([]);
     const sat = nextSaturday6();
     const srv = await anthropic([

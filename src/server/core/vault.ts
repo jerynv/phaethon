@@ -35,6 +35,16 @@ export function spacesRoot(): string {
   return path.join(vaultRoot(), "spaces");
 }
 
+export function spaceTrashRoot(): string {
+  return path.join(spacesRoot(), ".trash");
+}
+
+/** A trashed space keeps its ID reserved so a new space can't inherit its permissions. */
+export function isTrashedSpace(id: string): boolean {
+  return isValidSpaceId(id) && lstatOrNull(spaceTrashRoot())?.isDirectory() === true
+    && lstatOrNull(path.join(spaceTrashRoot(), id)) !== null;
+}
+
 export function isValidSpaceId(id: unknown): id is string {
   return typeof id === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(id) && byteLength(id) <= 64;
 }
@@ -74,7 +84,9 @@ export function ensureVault(): void {
   const root = vaultRoot();
   fs.mkdirSync(path.join(root, "memory"), { recursive: true });
   fs.mkdirSync(path.join(root, "skills"), { recursive: true });
-  for (const space of DEFAULT_SPACES) fs.mkdirSync(path.join(root, "spaces", space), { recursive: true });
+  for (const space of DEFAULT_SPACES) {
+    if (!isTrashedSpace(space)) fs.mkdirSync(path.join(root, "spaces", space), { recursive: true });
+  }
 }
 
 /** App-data files (Tauri's folder for this app, kept so existing files are found). */

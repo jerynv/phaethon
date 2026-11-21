@@ -474,6 +474,27 @@ function ExportGroup({ space }: { space: SpaceView }) {
 
 function SpaceDetail({ space, spaces, onBack }: { space: SpaceView; spaces: SpaceView[]; onBack: () => void }) {
   useCrumb({ label: space.name, onBack });
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const remove = async () => {
+    setDeleting(true);
+    try {
+      await useNav.getState().deleteSpace(space.id);
+      onBack();
+      toast.show({
+        type: "success",
+        title: `Deleted ${space.name}`,
+        description: "Its folder is in the space trash.",
+        action: {
+          label: "Show folder",
+          onClick: () => void api.revealDeletedSpace(space.id).catch((e) => toast.error("Couldn’t show the folder", cleanMessage(e))),
+        },
+      });
+    } catch (e) {
+      toast.error("Couldn’t delete the space", cleanMessage(e));
+      setDeleting(false);
+    }
+  };
   return (
     <>
       <button
@@ -489,6 +510,23 @@ function SpaceDetail({ space, spaces, onBack }: { space: SpaceView; spaces: Spac
       <GrantsGroup space={space} spaces={spaces} />
       <WritesGroup space={space} />
       <ExportGroup space={space} />
+      <SettingsGroup>
+        <Row label="Delete space" description={spaces.length <= 1 ? "Keep at least one space." : "Move this space and its contents to the space trash."}>
+          <Button size="xs" variant="ghost-destructive" disabled={spaces.length <= 1} pending={deleting} onClick={() => setConfirmDelete(true)}>
+            Delete…
+          </Button>
+        </Row>
+      </SettingsGroup>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${space.name}?`}
+        confirm="Delete"
+        destructive
+        onConfirm={() => void remove()}
+      >
+        <p>This moves the space’s files and conversations to the space trash. Shared course imports and folders linked as working folders stay in place.</p>
+      </ConfirmDialog>
     </>
   );
 }

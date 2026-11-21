@@ -124,6 +124,10 @@ export async function signIn(site: Site, title: string, partition: string): Prom
         const e = pending.shift()!;
         if (e.kind === "windowClosed" && e.window === windowId) closed = true;
         else if (e.kind === "quitting") closed = true;
+        else if (e.kind === "windowLoadFailed" && e.window === windowId) {
+          log.debug("[lms-login] page load failed", { code: e.code });
+          throw new Refusal("The course sign-in page couldn’t load. Try signing in again.");
+        }
         else if (e.kind === "windowNavigated" && e.window === windowId) {
           at = e.url;
           tick = true;

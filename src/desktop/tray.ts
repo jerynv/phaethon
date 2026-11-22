@@ -1,4 +1,5 @@
 import { Menu, nativeImage, Tray, type MenuItemConstructorOptions } from "electron";
+import { IDENTITY } from "../shared/channel.ts";
 import type { AppTarget, TrayAction, TrayState } from "../shared/host.ts";
 import { TRAY_ICON_1X, TRAY_ICON_2X } from "./tray-icon.ts";
 
@@ -36,7 +37,7 @@ function untilTomorrow(now = new Date()): number {
 }
 
 export function menuTemplate(state: TrayState, h: TrayHandlers, now = Date.now()): MenuItemConstructorOptions[] {
-  const items: MenuItemConstructorOptions[] = [{ label: "Open Phaethon", click: () => h.open() }, { type: "separator" }];
+  const items: MenuItemConstructorOptions[] = [{ label: `Open ${IDENTITY.productName}`, click: () => h.open() }, { type: "separator" }];
   if (state.running) items.push({ label: state.running === 1 ? "Writing a reply…" : `Writing ${state.running} replies…`, enabled: false });
   for (const s of state.sending) {
     items.push({ label: `Sending “${s.subject || "(no subject)"}” to ${s.to} ${when(s.sendAt, now)}`, enabled: false });
@@ -65,7 +66,7 @@ export function menuTemplate(state: TrayState, h: TrayHandlers, now = Date.now()
     items.push({ type: "separator" });
   }
   items.push({ label: "Settings…", click: () => h.open({ kind: "settings", section: "notifications" }) });
-  items.push({ label: "Quit Phaethon", accelerator: "CommandOrControl+Q", click: () => h.quit() });
+  items.push({ label: `Quit ${IDENTITY.productName}`, accelerator: "CommandOrControl+Q", click: () => h.quit() });
   return items;
 }
 
@@ -75,7 +76,7 @@ export function createTray(h: TrayHandlers): { update: (state: TrayState) => voi
   icon.addRepresentation({ scaleFactor: 2, dataURL: TRAY_ICON_2X });
   icon.setTemplateImage(true);
   const tray = new Tray(icon);
-  tray.setToolTip("Phaethon");
+  tray.setToolTip(IDENTITY.productName);
   let state: TrayState = { keepRunning: true, openAtLogin: false, running: 0, sending: [], automations: { on: 0 }, recent: [], unseen: 0 };
   const rebuild = () => {
     const menu = Menu.buildFromTemplate(menuTemplate(state, h));
@@ -84,7 +85,7 @@ export function createTray(h: TrayHandlers): { update: (state: TrayState) => voi
     tray.setContextMenu(menu);
     if (process.platform === "darwin") tray.setTitle(state.unseen ? String(state.unseen) : "", { fontType: "monospacedDigit" });
     const busy = state.running ? "writing a reply" : state.sending.length ? "sending mail" : "";
-    tray.setToolTip(busy ? `Phaethon · ${busy}` : "Phaethon");
+    tray.setToolTip(busy ? `${IDENTITY.productName} · ${busy}` : IDENTITY.productName);
   };
   rebuild();
   return {

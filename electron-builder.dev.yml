@@ -1,0 +1,13 @@
+# A dev build for this machine (`pnpm dist:dev`): Phaethon Dev, which installs
+# beside the release and shares nothing with it (src/shared/channel.ts). It has
+# no publish settings, so no app-update.yml and no in-app updates.
+extends: electron-builder.yml
+appId: io.github.jerynv.phaethon.dev
+productName: Phaethon Dev
+extraMetadata:
+  productName: Phaethon Dev
+directories:
+  output: release-dev
+linux:
+  executableName: phaethon-dev
+publish: null

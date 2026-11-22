@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { CHANNEL } from "#shared/channel.ts";
 import { appDataDir } from "../env.ts";
 import { redactText } from "./redact.ts";
 import {
@@ -65,6 +66,7 @@ export function signedEnvelope(payload: TelemetryPayload): TelemetryEnvelope {
  * PHAETHON_TELEMETRY_ALLOW_LOCAL=1.
  */
 export function collectorEndpoint(): string | null {
+  if (CHANNEL === "dev") return null;
   const built = typeof __PHAETHON_TELEMETRY_ENDPOINT__ === "undefined" ? "" : __PHAETHON_TELEMETRY_ENDPOINT__;
   let url: URL;
   try {

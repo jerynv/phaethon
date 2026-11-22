@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { CHANNEL, IDENTITY } from "../shared/channel.ts";
 import type { AppNotification, AppTarget, HostOp, TrayState } from "../shared/host.ts";
 import { createTray } from "./tray.ts";
 import { startCore, type CoreProcess } from "./core-process.ts";
@@ -32,6 +33,13 @@ if (process.platform === "darwin") app.commandLine.appendSwitch("use-mock-keycha
 // Ganesh, still GPU rasterization, antialiases them analytically (100+ levels, as text is).
 // Measured by screenshotting the real window over CDP with and without the switch.
 app.commandLine.appendSwitch("disable-features", "SkiaGraphite");
+
+// A dev build installs beside the release: its own name, so its own userData (browser profile,
+// window state) and single-instance lock. electron-builder.dev.yml names the packaged app the same.
+if (CHANNEL === "dev") {
+  app.setName(IDENTITY.productName);
+  app.setPath("userData", path.join(app.getPath("appData"), IDENTITY.productName));
+}
 
 // Headless capture (scripts/capture.mjs) renders offscreen, skips the single-instance lock and uses
 // a throwaway browser profile, so a capture never reads or leaves state in the app's real one.
@@ -168,6 +176,15 @@ function textContextMenu(window: BrowserWindow): void {
   });
 }
 
+/**
+ * electron-updater replaces the app only when its installer left app-update.yml
+ * in the resources. A dev build has none, and neither has a release packaged
+ * with `electron-builder --dir`: offering those an update only failed at install.
+ */
+function canSelfUpdate(): boolean {
+  return app.isPackaged && CHANNEL === "release" && fs.existsSync(path.join(process.resourcesPath, "app-update.yml"));
+}
+
 function createMainWindow(): BrowserWindow {
   const min = { width: 380, height: 480 };
   const saved = captureTo ? null : loadWindowState(min);
@@ -177,7 +194,7 @@ function createMainWindow(): BrowserWindow {
     ...saved?.bounds,
     minWidth: min.width,
     minHeight: min.height,
-    title: "Phaethon",
+    title: IDENTITY.productName,
     // Hidden until the first paint, then shown by ready-to-show. Don't set
     // paintWhenInitiallyHidden: false; Electron never fires ready-to-show then,
     // and the window stays hidden for good.
@@ -463,7 +480,7 @@ app.whenReady().then(async () => {
   core = await startCore({
     entry: path.join(distDir, "server", "main.mjs"),
     appVersion: app.getVersion(),
-    env: { PHAETHON_PACKAGED: app.isPackaged ? "1" : "" },
+    env: { PHAETHON_PACKAGED: app.isPackaged ? "1" : "", PHAETHON_SELF_UPDATE: canSelfUpdate() ? "1" : "0" },
     handle,
     onExit: (code) => {
       if (!quitting) {

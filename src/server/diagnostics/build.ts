@@ -6,3 +6,13 @@
 export function isDevBuild(): boolean {
   return process.env.PHAETHON_PACKAGED !== "1";
 }
+
+/**
+ * Whether this app can install an update over itself: a packaged release whose
+ * installer left electron-updater its app-update.yml. The shell sets
+ * PHAETHON_SELF_UPDATE=0 for a dev build and for a release packaged on someone's
+ * own machine without an updatable target (`electron-builder --dir`).
+ */
+export function canSelfUpdate(): boolean {
+  return !isDevBuild() && process.env.PHAETHON_SELF_UPDATE !== "0";
+}

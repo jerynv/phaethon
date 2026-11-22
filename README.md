@@ -42,8 +42,11 @@ pnpm dev            # desktop app with hot reload
 pnpm test           # core and UI unit tests (no network, no real keychain)
 pnpm test:ui        # build, then end-to-end UI tests against the real core with a scripted model
 pnpm dist           # installer for this machine (release/)
+pnpm dist:dev       # Phaethon Dev for this machine (release-dev/); --install puts it in /Applications on macOS
 node scripts/capture.mjs shot.png   # screenshot of the real app, headless
 ```
+
+Phaethon Dev runs beside the released app and shares nothing with it: it has its own vault (`~/Phaethon Dev`), app data, keychain entries and settings. It never updates itself and has no telemetry collector. Rebuild it to update it. `pnpm dev` and `pnpm dist` use the release's data.
 
 `node scripts/eval/reasoning.mjs <promptA.txt> <promptB.txt>` grades how two system prompts explain things, blind, through your own Claude Code login (a few short calls; never run in CI).
 

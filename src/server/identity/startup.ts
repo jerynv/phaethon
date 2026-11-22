@@ -1,5 +1,6 @@
 import { onStart } from "../lifecycle.ts";
 import { ensureVault } from "../core/vault.ts";
+import { isDevChannel } from "../env.ts";
 import { migrateApp, migrateLegacyRoot } from "./identity.ts";
 
 /**
@@ -8,6 +9,9 @@ import { migrateApp, migrateLegacyRoot } from "./identity.ts";
  * made. Later modules' startup tasks (LMS migration, CLI import) read the vault,
  * so this file is imported first.
  */
-onStart("app identifier migration", () => migrateApp());
-onStart("~/Steward migration", () => migrateLegacyRoot());
+// The old names belong to the release; a dev build starts fresh beside it.
+if (!isDevChannel()) {
+  onStart("app identifier migration", () => migrateApp());
+  onStart("~/Steward migration", () => migrateLegacyRoot());
+}
 onStart("vault skeleton", () => ensureVault());

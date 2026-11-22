@@ -1,5 +1,5 @@
 import { UPDATE_FEED, type UpdateCheckResult, type UpdateDownloadResult, type UpdateError, type UpdateFound } from "#shared/host.ts";
-import { isDevBuild } from "../diagnostics/build.ts";
+import { canSelfUpdate } from "../diagnostics/build.ts";
 import { host } from "../host.ts";
 import type { Channel } from "../rpc/channel.ts";
 
@@ -17,7 +17,9 @@ import type { Channel } from "../rpc/channel.ts";
  *   code-signing publisher when the app is signed, and macOS's updater only
  *   accepts a build signed like the running app.
  * - No downgrades and no prereleases; one check or install at a time; a
- *   development build checks but never installs over itself.
+ *   copy that can't replace itself (a development build, a dev-channel build,
+ *   or one packaged without the updater's app-update.yml) checks but never
+ *   installs.
  *
  * Phaethon 0.1.x (Tauri) installs read `latest.json` with a minisign key and
  * can't install an Electron build: they need one manual install of 0.2.
@@ -45,6 +47,8 @@ export type Status =
 export type UpdateView = { currentVersion: string; source: string | null; canInstall: boolean; status: Status };
 
 export type InstallEvent = { kind: "downloading"; received: number; total: number | null } | { kind: "installing" } | { kind: "restarting" };
+
+export const CANT_SELF_UPDATE = "This copy of Phaethon wasn’t installed from a release, so it doesn’t install updates over itself.";
 
 export const NO_DESKTOP = "Updates come with the Phaethon desktop app.";
 
@@ -176,7 +180,7 @@ function current(): Status {
 export function view(): UpdateView {
   const s = setup();
   const st = !s.ready ? { state: "notSetUp" as const, reason: s.reason } : current();
-  return { currentVersion: process.env.PHAETHON_VERSION ?? "0.0.0-dev", source: s.ready ? s.source : null, canInstall: !isDevBuild(), status: st };
+  return { currentVersion: process.env.PHAETHON_VERSION ?? "0.0.0-dev", source: s.ready ? s.source : null, canInstall: canSelfUpdate(), status: st };
 }
 
 /** Ask the feed once. A failure is kept as an error status, in words. */
@@ -207,7 +211,7 @@ export async function runCheck(during: "check" | "launch"): Promise<void> {
 
 /** Download the update the last check found, verify it, install it and restart. */
 export async function install(onEvent: Channel<InstallEvent>): Promise<void> {
-  if (isDevBuild()) throw new Error("This is a development build of Phaethon, so it doesn’t install updates over itself.");
+  if (!canSelfUpdate()) throw new Error(CANT_SELF_UPDATE);
   if (busy) throw new Error("Phaethon is already checking for or installing an update.");
   if (!found || !host().available) throw new Error("There’s no update to install. Check for updates first.");
   busy = true;

@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { CHANNEL, IDENTITY } from "#shared/channel.ts";
 
 /**
  * Where things live on this machine. Every path the core uses starts here, so
@@ -10,7 +11,10 @@ import path from "node:path";
  * - PHAETHON_APP_DATA: stands in for the app data folder.
  */
 
-export const APP_IDENTIFIER = "io.github.jerynv.phaethon";
+/** `io.github.jerynv.phaethon`, or its `.dev` sibling in a dev build. */
+export const APP_IDENTIFIER = IDENTITY.appIdentifier;
+/** A dev build keeps its own state and never adopts the release's old folders or keychain entries. */
+export const isDevChannel = () => CHANNEL === "dev";
 /** The identifier before the rename; its folders are moved over once. */
 export const OLD_APP_IDENTIFIER = "dev.phaethon.app";
 

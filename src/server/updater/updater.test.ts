@@ -7,6 +7,7 @@ import { setHost, type Host } from "../host.ts";
 import {
   NO_DESKTOP,
   NO_RELEASE_WORDS,
+  CANT_SELF_UPDATE,
   NO_TARGET_WORDS,
   NETWORK_WORDS,
   NOTES_MAX_CHARS,
@@ -45,6 +46,7 @@ const noHost: Host = { available: false, call: () => Promise.reject(new Error("n
 beforeEach(() => {
   process.env.PHAETHON_VERSION = "0.2.0";
   delete process.env.PHAETHON_PACKAGED;
+  delete process.env.PHAETHON_SELF_UPDATE;
   resetForTest({ pause: async () => {} });
 });
 afterEach(() => setHost(noHost));
@@ -144,7 +146,19 @@ describe("commands", () => {
   it("a development build checks but never installs", async () => {
     setHost(new FakeHost(() => ({ kind: "available", update: { version: "0.3.0", notes: null, date: null } })));
     await call("update_check");
-    await expect(call("update_install", { onEvent: channel() })).rejects.toThrow("This is a development build of Phaethon, so it doesn’t install updates over itself.");
+    await expect(call("update_install", { onEvent: channel() })).rejects.toThrow(CANT_SELF_UPDATE);
+    expect((await call<{ canInstall: boolean }>("update_state")).canInstall).toBe(false);
+  });
+
+  it("a packaged copy the shell says can't replace itself (a dev build, or no app-update.yml) checks but never installs", async () => {
+    process.env.PHAETHON_PACKAGED = "1";
+    process.env.PHAETHON_SELF_UPDATE = "0";
+    const fake = new FakeHost(() => ({ kind: "available", update: { version: "0.3.0", notes: null, date: null } }));
+    setHost(fake);
+    await call("update_check");
+    expect((await call<{ canInstall: boolean }>("update_state")).canInstall).toBe(false);
+    await expect(call("update_install", { onEvent: channel() })).rejects.toThrow(CANT_SELF_UPDATE);
+    expect(fake.ops.map((o) => o.op)).toEqual(["updateCheck"]);
   });
 
   it("installs only an update a check found, streaming progress, then quits into it", async () => {

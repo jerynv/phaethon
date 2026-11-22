@@ -27,6 +27,7 @@
     "core": "node dist/server/main.mjs",
     "desktop": "electron .",
     "dist": "pnpm build && electron-builder --publish never",
+    "dist:dev": "node scripts/dist-dev.mjs",
     "site:dev": "vite --config site/vite.config.ts",
     "site:build": "vite build --config site/vite.config.ts",
     "site:shots": "playwright test --config site/scripts/shots.config.ts",

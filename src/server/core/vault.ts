@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { IDENTITY } from "#shared/channel.ts";
 import { appDataDir, homeDir } from "../env.ts";
 import { Refusal } from "../rpc/registry.ts";
 import { byteLength, lstatOrNull, realpath } from "./fsx.ts";
 
 /**
- * The vault: one person's folder, `~/Phaethon/default`. Only one vault is used
+ * The vault: one person's folder, `~/Phaethon/default` (`~/Phaethon Dev/default` in a dev build). Only one vault is used
  * today. Space ids from the renderer become folders only through `spaceDir`.
  */
 
@@ -13,7 +14,7 @@ export const DEFAULT_VAULT = "default";
 export const DEFAULT_SPACES = ["school", "work"] as const;
 
 export function phaethonRoot(): string {
-  return path.join(homeDir(), "Phaethon");
+  return path.join(homeDir(), IDENTITY.vaultFolder);
 }
 
 /** `<home>/Phaethon/default`, the plain join (not canonicalized), as the Rust core used. */

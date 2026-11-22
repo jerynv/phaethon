@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { IDENTITY } from "#shared/channel.ts";
+import { isDevChannel } from "../env.ts";
 import { Refusal } from "../rpc/registry.ts";
 import { byteLength } from "./fsx.ts";
 import { vaultName } from "./vault.ts";
@@ -15,7 +17,8 @@ import { ChunkedSecretStore, type SecretStore } from "./chunked-secrets.ts";
  * On macOS entries go through `/usr/bin/security` instead (see SecurityToolStore).
  */
 
-export const SERVICE = "phaethon";
+/** `phaethon`, or `phaethon-dev` in a dev build, so the two never share a saved key. */
+export const SERVICE = IDENTITY.keychainService;
 const LEGACY_SERVICE = "steward";
 
 export type Store = SecretStore;
@@ -159,7 +162,7 @@ export function resetMemoryKeychain(): void {
 export function keychainGet(account: string): string | null {
   try {
     const value = backend().get(SERVICE, account);
-    if (value !== null) return value;
+    if (value !== null || isDevChannel()) return value;
     const legacy = backend().get(LEGACY_SERVICE, account);
     if (legacy === null) return null;
     backend().set(SERVICE, account, legacy);

@@ -14,6 +14,10 @@ if (telemetryEndpoint) {
   const url = new URL(telemetryEndpoint);
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error("The built-in telemetry collector must be an HTTPS address without credentials, query, or fragment.");
 }
+// A dev build (`pnpm dist:dev`) installs beside the release; see src/shared/channel.ts.
+const channel = process.env.PHAETHON_CHANNEL ?? "release";
+if (channel !== "release" && channel !== "dev") throw new Error(`PHAETHON_CHANNEL must be release or dev, not ${channel}.`);
+if (channel === "dev" && telemetryEndpoint) throw new Error("A dev build never has a telemetry collector.");
 const common = {
   absWorkingDir: root,
   bundle: true,
@@ -22,7 +26,7 @@ const common = {
   sourcemap: true,
   packages: "external",
   alias: { "#shared": path.join(root, "src/shared") },
-  define: { __PHAETHON_TELEMETRY_ENDPOINT__: JSON.stringify(telemetryEndpoint) },
+  define: { __PHAETHON_TELEMETRY_ENDPOINT__: JSON.stringify(telemetryEndpoint), __PHAETHON_CHANNEL__: JSON.stringify(channel) },
   // Prompt fragments (src/server/agent/prompts/*.md) and the LaTeX house style
   // (src/server/latex/phaethon.sty) are bundled as text.
   loader: { ".md": "text", ".sty": "text" },

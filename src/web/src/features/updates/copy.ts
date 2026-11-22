@@ -20,8 +20,8 @@ export const UPDATE_COPY = {
     installing: "Installing…",
     later: "Later",
     skip: "Skip this version",
-    /** A development build can’t install over itself. */
-    devBuild: "Development builds can’t update automatically. Download the new version from the releases page.",
+    /** A copy that didn't come from a release (a development or dev build) can't install over itself. */
+    devBuild: "This copy wasn’t installed from a release, so it can’t update itself. Download the new version from the releases page.",
     openReleases: "Open releases page",
     progress: {
       downloading: "Downloading…",

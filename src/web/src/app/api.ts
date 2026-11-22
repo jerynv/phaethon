@@ -104,6 +104,8 @@ export const api = {
     invoke<SpaceView>("space_create", a),
   updateSpace: (a: { id: string; name?: string; description?: string; hue?: number; educationEnabled?: boolean }) =>
     invoke<SpaceView>("space_update", a),
+  deleteSpace: (id: string) => invoke<void>("space_delete", { id }),
+  revealDeletedSpace: (id: string) => invoke<void>("space_reveal_deleted", { id }),
   touchSpace: (id: string) => invoke<void>("space_touch", { id }),
   showSpace: (id: string) => invoke<void>("space_show", { id }),
   addToSpace: (id: string, folder: boolean) => invoke<{ paths: string[]; files: number; skipped: number } | null>("space_add", { id, folder }),

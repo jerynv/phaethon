@@ -51,8 +51,11 @@ export function CourseDetail({
   onImport,
   onSignIn,
   onDisconnect,
+  onUpdate,
+  updating,
+  onDelete,
   busy,
-}: { space: string; course: CourseInfo; pane: boolean; onPane: () => void; connection: LmsConnection | null; run: ReactNode } & SiteActions) {
+}: { space: string; course: CourseInfo; pane: boolean; onPane: () => void; connection: LmsConnection | null; run: ReactNode; onUpdate?: () => void; updating: boolean; onDelete: () => void } & SiteActions) {
   const parts = useCourses((s) => partsOf(s.access.data, space, course.key));
   const [content, setContent] = useState<CourseContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +78,7 @@ export function CourseDetail({
       live = false;
       clearTimeout(t);
     };
-  }, [space, course.key, partsKey, tick]);
+  }, [space, course.key, course.updated, partsKey, tick]);
 
   const state = { content: parts.length ? content : null, error, retry: () => setTick((n) => n + 1), hidden: parts.length === 0, onSettings: () => setSettings(true) };
 
@@ -100,11 +103,17 @@ export function CourseDetail({
             {course.name}
           </Truncate>
         </nav>
+        {onUpdate ? (
+          <Button size="sm" variant="outline" disabled={busy} onClick={onUpdate} title="Update all imported courses">
+            {updating ? <Spinner size="sm" /> : <Icon icon={icons.reload} />}
+            <span className="@max-md/crumb:sr-only">{updating ? "Updating…" : "Update courses"}</span>
+          </Button>
+        ) : null}
         {connection ? (
           connection.signedIn ? (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => onImport(connection)}>
-              {busy ? <Spinner size="sm" /> : <Icon icon={icons.download} />}
-              {busy ? "Importing…" : "Import"}
+              <Icon icon={icons.download} />
+              Import
             </Button>
           ) : (
             <Button size="sm" onClick={() => onSignIn(connection)}>
@@ -135,6 +144,11 @@ export function CourseDetail({
                 </MenuItem>
               </>
             ) : null}
+            <MenuSeparator />
+            <MenuItem variant="destructive" disabled={busy} onClick={onDelete}>
+              <Icon icon={icons.delete} />
+              Delete course…
+            </MenuItem>
           </MenuPopup>
         </Menu>
       </div>

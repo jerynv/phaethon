@@ -117,12 +117,26 @@ export function listFolder(spaceRoot: string, rel: string, o: ListOptions): Fold
 
 export type WalkOptions = { query?: string; showHidden: boolean; limit: number; excluded: string[] };
 
+async function visibleNamesAsync(dir: string, showHidden: boolean, atRoot: boolean): Promise<fs.Dirent[]> {
+  return (await fs.promises.readdir(dir, { withFileTypes: true })).filter(
+    (d) => (d.isFile() || d.isDirectory()) && !(atRoot && isState(d.name)) && (showHidden || !d.name.startsWith(".")),
+  );
+}
+
+async function countInAsync(dir: string, showHidden: boolean): Promise<number> {
+  try {
+    return (await visibleNamesAsync(dir, showHidden, false)).length;
+  } catch {
+    return 0;
+  }
+}
+
 /**
- * A bounded walk of the whole space (at most 50,000 entries, 16 deep, 2 s):
+ * A bounded async walk of the whole space (at most 50,000 entries, 16 deep, 2 s):
  * with `query`, files and folders whose name contains it (any case), sorted
  * by name; without, the most recently changed files, newest first.
  */
-export function walkSpace(spaceRoot: string, o: WalkOptions): Found {
+export async function walkSpace(spaceRoot: string, o: WalkOptions): Promise<Found> {
   const root = folderIn(spaceRoot, "").real;
   const q = o.query?.trim().toLowerCase();
   const limit = Math.min(1000, Math.max(1, o.limit));
@@ -139,7 +153,7 @@ export function walkSpace(spaceRoot: string, o: WalkOptions): Found {
     const { abs, rel, depth } = stack.pop()!;
     let names: fs.Dirent[];
     try {
-      names = visibleNames(abs, o.showHidden, rel === "");
+      names = await visibleNamesAsync(abs, o.showHidden, rel === "");
     } catch {
       continue;
     }
@@ -153,7 +167,12 @@ export function walkSpace(spaceRoot: string, o: WalkOptions): Found {
       const dir = d.isDirectory();
       if (dir && depth < WALK_DEPTH) stack.push({ abs: childAbs, rel: childRel, depth: depth + 1 });
       if (q ? !d.name.toLowerCase().includes(q) : dir) continue;
-      const st = lstatOrNull(childAbs);
+      let st: fs.Stats | null;
+      try {
+        st = await fs.promises.lstat(childAbs);
+      } catch {
+        st = null;
+      }
       if (!st || st.isSymbolicLink()) continue;
       const e: FileEntry = { name: d.name, path: childRel, dir, size: dir ? 0 : st.size, modified: st.mtimeMs };
       if (o.excluded.length && excludedByName(o.excluded, childRel.split("/"))) e.excluded = true;
@@ -172,6 +191,12 @@ export function walkSpace(spaceRoot: string, o: WalkOptions): Found {
     out.length = limit;
     if (q) truncated = true;
   }
-  if (q) for (const e of out) if (e.dir) e.count = countIn(path.join(root, ...e.path.split("/")), o.showHidden);
+  if (q) {
+    await Promise.all(
+      out.map(async (e) => {
+        if (e.dir) e.count = await countInAsync(path.join(root, ...e.path.split("/")), o.showHidden);
+      }),
+    );
+  }
   return { entries: out, truncated };
 }

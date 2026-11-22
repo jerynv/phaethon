@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { allowLoopbackForTests, Session } from "../session.ts";
 import { assertReadOnlyWithSession, html, json, redirect, serve, status, type FakeSite, type Reply, type Route } from "../testing/fake-site.ts";
 import { GRADES_HIDDEN, LmsError, Site, summaryIsEmpty, type Cookie } from "../types.ts";
@@ -80,7 +80,8 @@ describe("canvas courses and content", () => {
       };
       return r;
     });
-    const list = await canvas.courses(session(f.base));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-15T12:00:00Z"));
+    const list = await canvas.courses(session(f.base)).finally(() => clock.mockRestore());
     expect(list.map((c) => [c.id, c.name, c.code ?? null, c.term ?? null, c.current])).toEqual([
       ["1001", "Data Structures", "C343", "Fall 2026", true],
       ["1002", "Calculus II", "MATH201", "Fall 2026", true],

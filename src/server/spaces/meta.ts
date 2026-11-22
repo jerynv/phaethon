@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Refusal, messageOf } from "../rpc/registry.ts";
 import { isNotFound, lstatOrNull, prettyJson } from "../core/fsx.ts";
-import { isValidSpaceId, spaceDir, spacesRoot } from "../core/vault.ts";
+import { isTrashedSpace, isValidSpaceId, spaceDir, spacesRoot } from "../core/vault.ts";
 import { visibleCourses } from "../lms/access.ts";
 
 /**
@@ -452,6 +452,7 @@ export function createSpace(name: string, description?: string | null, hue?: num
   let id: string | undefined;
   for (let i = 1; i <= 999; i++) {
     const candidate = i === 1 ? base : `${base}-${i}`;
+    if (isTrashedSpace(candidate)) continue;
     try {
       // Not recursive: anything already there (a folder, a file, a link) counts as taken.
       fs.mkdirSync(path.join(root, candidate));

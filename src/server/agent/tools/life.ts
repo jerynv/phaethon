@@ -386,7 +386,7 @@ function updateMemory(ctx: LifeCtx, i: Record<string, unknown>): LifeResult {
   };
 }
 
-function recall(ctx: LifeCtx, i: Record<string, unknown>): LifeResult {
+async function recall(ctx: LifeCtx, i: Record<string, unknown>): Promise<LifeResult> {
   const query = line(i.query, "query", 200);
   const now = ctx.now ?? Date.now();
   const out: string[] = [];
@@ -431,7 +431,7 @@ function recall(ctx: LifeCtx, i: Record<string, unknown>): LifeResult {
   for (const w of words.length ? words : [query]) {
     let res;
     try {
-      res = search([[ctx.space, spaceDir(ctx.space)]], w);
+      res = await search([[ctx.space, spaceDir(ctx.space)]], w);
     } catch {
       continue;
     }

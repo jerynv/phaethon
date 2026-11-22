@@ -83,6 +83,51 @@ function useAppEvents() {
   }, []);
 }
 
+const FOCUSABLE = 'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+function isVisible(el: HTMLElement | null): el is HTMLElement {
+  return !!el && !el.closest("[data-inactive]") && el.checkVisibility({ visibilityProperty: true });
+}
+
+/** Moves focus between sidebar, active page, message box, and file viewer (F6 / Shift+F6). */
+function cycleLandmark(direction: 1 | -1): void {
+  const sidebar = document.querySelector<HTMLElement>('nav[aria-label="Spaces and conversations"]');
+  const page = document.querySelector<HTMLElement>("main [data-page]:not([data-inactive])");
+  const composer = page?.querySelector<HTMLElement>('textarea[aria-label="Message"]') ?? null;
+  const viewer = document.querySelector<HTMLElement>('[data-slot="app-body"] > aside');
+
+  const targets: { container: HTMLElement; focus: () => void }[] = [];
+  if (isVisible(sidebar)) {
+    const first = [...sidebar.querySelectorAll<HTMLElement>(FOCUSABLE)].find(isVisible);
+    if (first) targets.push({ container: sidebar, focus: () => first.focus() });
+  }
+  if (isVisible(page)) {
+    const first = [...page.querySelectorAll<HTMLElement>(FOCUSABLE)].find((el) => el !== composer && isVisible(el));
+    if (first) targets.push({ container: page, focus: () => first.focus() });
+  }
+  if (isVisible(composer)) {
+    targets.push({ container: composer, focus: () => composer.focus() });
+  }
+  if (isVisible(viewer)) {
+    const first = [...viewer.querySelectorAll<HTMLElement>(FOCUSABLE)].find(isVisible);
+    if (first) targets.push({ container: viewer, focus: () => first.focus() });
+  }
+  if (!targets.length) return;
+  const active = document.activeElement as HTMLElement | null;
+  // Check more specific containers (composer inside page) first.
+  let at = -1;
+  if (active) {
+    for (let i = targets.length - 1; i >= 0; i--) {
+      if (targets[i]!.container === active || targets[i]!.container.contains(active)) {
+        at = i;
+        break;
+      }
+    }
+  }
+  const next = at === -1 ? (direction > 0 ? 0 : targets.length - 1) : (at + direction + targets.length) % targets.length;
+  targets[next]!.focus();
+}
+
 /** App-wide keys (app/shortcuts.ts). */
 function useShortcuts() {
   useEscLeavesSettings();
@@ -129,6 +174,7 @@ function useShortcuts() {
           nav.cycleTab(m.direction);
           break;
         case "landmark":
+          cycleLandmark(m.direction);
           break;
       }
     };

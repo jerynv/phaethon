@@ -222,7 +222,7 @@ function findFiles(space: string, visible: Visible, inputs: string[], focus: str
   }
   const found: Found[] = [];
   const inCourse = (seen: Seen, dir: string, start: string) => {
-    for (const [sub, f] of visible.walk(seen, dir, start, Infinity)) {
+    for (const [sub, f] of visible.walk(seen, dir, start, 10_000)) {
       const label = courseLabel(seen, sub, f);
       if (isText(f) && !isIndex(label)) found.push({ weight: weight(label, false, focus), label, real: f, course: { seen, sub } });
     }
@@ -567,7 +567,7 @@ export function courseFiles(visible: Visible, seen: Seen): CourseFile[] {
   const dir = visible.dirOf(seen);
   if (!dir) return [];
   const out: CourseFile[] = [];
-  for (const [sub, real] of visible.walk(seen, dir, dir, Infinity)) {
+  for (const [sub, real] of visible.walk(seen, dir, dir, 10_000)) {
     const label = courseLabel(seen, sub, real);
     if (!isText(real) || isIndex(label)) continue;
     let meta: fs.Stats;

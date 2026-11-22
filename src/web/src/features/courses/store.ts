@@ -10,7 +10,9 @@ import { toast } from "@/components/toast";
 import * as api from "./api";
 import { applyImportEvent, finishRun, newRun, type Run } from "./lib/import-run";
 import { connectionName } from "./lib/sites";
-import type { CourseAccessView, CoursePart, LmsConnection, LmsCourse, SpaceSummary } from "./lib/types";
+import type { CourseAccessView, CourseInfo, CoursePart, LmsConnection, LmsCourse, SpaceSummary } from "./lib/types";
+
+type ImportSite = { connection: LmsConnection; courses: Pick<LmsCourse, "id" | "name">[] };
 
 type Load<T> = { data?: T; error?: string; loading: boolean };
 
@@ -24,12 +26,63 @@ type Courses = {
   loadAccess(): Promise<void>;
   setParts(space: string, course: string, parts: CoursePart[]): Promise<void>;
   startImport(connection: LmsConnection, courses: Pick<LmsCourse, "id" | "name">[], spaces: string[], space: string): void;
+  startUpdate(space: string, courses: CourseInfo[]): void;
   cancelImport(): Promise<void>;
   dismissRun(): void;
   disconnect(id: string): Promise<void>;
 };
 
 let runKey = 0;
+
+/** The core imports one site at a time. Keep one run and progress bar across all sites. */
+async function importSites(sites: ImportSite[], run: Run, get: () => Courses, set: (s: Partial<Courses>) => void) {
+  let offset = 0;
+  let notes: string[] = [];
+  let error: string | undefined;
+  let signInConnection: string | undefined;
+  const mine = () => {
+    const current = get().run;
+    return current && current.key === run.key ? current : null;
+  };
+  for (const { connection, courses } of sites) {
+    let site: Run = { ...newRun(run.key, run.space, run.spaces, connection.id, connectionName(connection), courses), update: run.update };
+    const publish = () => {
+      const current = mine();
+      if (!current) return;
+      const rows = current.courses.slice();
+      rows.splice(offset, courses.length, ...site.courses.map((c) => ({ ...c, id: run.update ? `${connection.id}/${c.id}` : c.id })));
+      set({ run: { ...current, connection: connection.id, courses: rows, notes: [...notes, ...(site.notes ?? [])] } });
+    };
+    publish();
+    const end = await api.lmsImport(
+      connection.id,
+      courses.map((c) => c.id),
+      run.spaces,
+      (event) => {
+        site = applyImportEvent(site, event).run;
+        publish();
+      },
+      run.update,
+    );
+    if (end.kind === "rejected") site = finishRun(site, "failed", cleanMessage(end.error));
+    if (end.kind === "timedOut") site = finishRun(site, "failed", "The course site didn’t finish responding.");
+    publish();
+    offset += courses.length;
+    const current = mine();
+    if (!current) return;
+    notes = current.notes ?? [];
+    error ??= site.error;
+    signInConnection ??= site.signInConnection;
+    if (site.status === "cancelled" || current.cancelling) {
+      set({ run: finishRun(current, "cancelled", undefined, "Stopped") });
+      return;
+    }
+  }
+  const current = mine();
+  if (!current) return;
+  const incomplete = run.update && current.courses.some((c) => !c.result);
+  set({ run: finishRun({ ...current, signInConnection }, error || incomplete ? "failed" : "done", error) });
+}
 
 export const useCourses = create<Courses>((set, get) => ({
   connections: { loading: true },
@@ -77,24 +130,29 @@ export const useCourses = create<Courses>((set, get) => ({
   startImport(connection, courses, spaces, space) {
     if (get().run?.status === "running") return;
     const key = ++runKey;
-    set({ run: newRun(key, space, spaces, connection.id, connectionName(connection), courses) });
-    const mine = () => get().run?.key === key;
-    void api
-      .lmsImport(connection.id, courses.map((c) => c.id), spaces, (e) => {
-        const r = get().run;
-        if (!r || r.key !== key) return;
-        set({ run: applyImportEvent(r, e).run });
-      })
-      .then((end) => {
-        const r = get().run;
-        if (!r || !mine()) return;
-        if (end.kind === "rejected") set({ run: finishRun(r, "failed", cleanMessage(end.error)) });
-        else if (end.kind === "timedOut") set({ run: finishRun(r, "done") });
-      })
-      .finally(() => {
-        void get().loadConnections();
-        void get().loadAccess();
-      });
+    const run = newRun(key, space, spaces, connection.id, connectionName(connection), courses);
+    set({ run });
+    void importSites([{ connection, courses }], run, get, set).finally(get().load);
+  },
+
+  startUpdate(space, courses) {
+    if (get().run?.status === "running") return;
+    const targets = new Map<string, ImportSite>();
+    const connections = new Map(get().connections.data?.map((c) => [c.id, c]));
+    for (const c of courses) {
+      const connection = connections.get(c.connection);
+      if (!connection) continue;
+      const site = targets.get(connection.id) ?? { connection, courses: [] };
+      site.courses.push({ id: c.courseId, name: c.name });
+      targets.set(connection.id, site);
+    }
+    const sites = [...targets.values()];
+    if (!sites.length) return;
+    const rows = sites.flatMap(({ connection, courses }) => courses.map((c) => ({ id: `${connection.id}/${c.id}`, name: c.name })));
+    const school = sites.length === 1 ? connectionName(sites[0].connection) : "";
+    const run = { ...newRun(++runKey, space, [], sites[0].connection.id, school, rows), update: true };
+    set({ run });
+    void importSites(sites, run, get, set).finally(get().load);
   },
 
   async cancelImport() {

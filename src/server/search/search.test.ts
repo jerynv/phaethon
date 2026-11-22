@@ -64,7 +64,7 @@ describe("conversation search", () => {
     await saveArchived(school, chat([["When is the midterm?", "The Midterm is on Thursday."]]));
     await saveArchived(school, chat([["Plan my week", "Nothing about exams here."]]));
     saveIn(school, String(nextId++), chat([["Remind me about the midterm", "Okay."]]));
-    const r = search([["school", school]], "MIDTERM");
+    const r = await search([["school", school]], "MIDTERM");
     expect(r.truncated).toBe(false);
     expect(r.conversations.length).toBe(2);
     const c = r.conversations[0]!;
@@ -79,17 +79,17 @@ describe("conversation search", () => {
       [1, "assistant"],
     ]);
     expect(old.updated).toBeLessThanOrEqual(c.updated);
-    expect(search([["school", school]], "nowhere to be found").conversations).toEqual([]);
-    expect(search([["school", school]], "  ").conversations).toEqual([]);
+    expect((await search([["school", school]], "nowhere to be found")).conversations).toEqual([]);
+    expect((await search([["school", school]], "  ")).conversations).toEqual([]);
   });
 
-  it("searches only the spaces given", () => {
+  it("searches only the spaces given", async () => {
     const school = temp();
     const work = temp();
     saveIn(school, String(nextId++), chat([["budget for books", "ok"]]));
     saveIn(work, String(nextId++), chat([["quarterly budget", "ok"]]));
-    expect(search([["school", school]], "budget").conversations.map((c) => c.space)).toEqual(["school"]);
-    const both = search(
+    expect((await search([["school", school]], "budget")).conversations.map((c) => c.space)).toEqual(["school"]);
+    const both = await search(
       [
         ["school", school],
         ["work", work],
@@ -99,26 +99,26 @@ describe("conversation search", () => {
     expect(both.conversations.map((c) => c.space).sort()).toEqual(["school", "work"]);
   });
 
-  it("caps snippets and conversations and skips unreadable files", () => {
+  it("caps snippets and conversations and skips unreadable files", async () => {
     const dir = temp();
     saveIn(dir, String(nextId++), chat(Array.from({ length: 5 }, () => ["cap cap", "cap"] as [string, string])));
-    const r = search([["s", dir]], "cap");
+    const r = await search([["s", dir]], "cap");
     expect(r.conversations[0]!.matches).toBe(15);
     expect(r.conversations[0]!.snippets.length).toBe(MAX_SNIPPETS);
     const only = fs.readdirSync(path.join(dir, ".phaethon/threads")).find((f) => f.endsWith(".json"))!;
     fs.writeFileSync(path.join(dir, ".phaethon/threads", only), "{ half");
-    expect(search([["s", dir]], "cap").conversations).toEqual([]);
+    expect((await search([["s", dir]], "cap")).conversations).toEqual([]);
     const archive = path.join(dir, ".phaethon/threads");
     fs.mkdirSync(archive, { recursive: true });
     const body = JSON.stringify(chat([["cap", "x"]]));
     for (let i = 0; i < MAX_CONVERSATIONS + 5; i++) fs.writeFileSync(path.join(archive, `${1_700_000_000_000 + i}.json`), body);
-    const capped = search([["s", dir]], "cap");
+    const capped = await search([["s", dir]], "cap");
     expect(capped.truncated).toBe(true);
     expect(capped.conversations.length).toBe(MAX_CONVERSATIONS);
     expect(capped.conversations.every((c, i, all) => i === 0 || all[i - 1]!.updated >= c.updated)).toBe(true);
   });
 
-  it("searches only the text the conversation shows", () => {
+  it("searches only the text the conversation shows", async () => {
     const dir = temp();
     saveIn(dir, String(nextId++), [
       userMessage("what's in notes?"),
@@ -132,8 +132,8 @@ describe("conversation search", () => {
       { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "secretword in a file" }] },
       { role: "assistant", content: [{ type: "text", text: "Nothing much." }] },
     ]);
-    expect(search([["s", dir]], "secretword").conversations).toEqual([]);
-    expect(search([["s", dir]], "nothing much").conversations.length).toBe(1);
+    expect((await search([["s", dir]], "secretword")).conversations).toEqual([]);
+    expect((await search([["s", dir]], "nothing much")).conversations.length).toBe(1);
   });
 
   it("conversations_search covers one space or every space", async () => {

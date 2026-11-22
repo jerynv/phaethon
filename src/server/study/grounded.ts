@@ -728,7 +728,9 @@ export async function make(space: string, visible: Visible, inputs: readonly str
       );
       for (let k = 0; k < extra; k++) need[byWeight[k % byWeight.length]!]![1]++;
     }
-    for (const batch of writingBatches(need)) {
+    const batches = writingBatches(need);
+    for (let bi = 0; bi < batches.length; bi++) {
+      const batch = batches[bi]!;
       emit(progress("making", round, ROUNDS));
       const keptTexts = [...kept.map((c) => itemText(c.item)), ...existing];
       const user = writeRequest(s, want, mat, batch, keptTexts, dropped, ask.context, ask.extra, notation) + material.picturesNote(writingPictures);
@@ -743,7 +745,7 @@ export async function make(space: string, visible: Visible, inputs: readonly str
       }
       const v = extractJson(reply);
       if (v === undefined) {
-        if (round + 1 === ROUNDS && !kept.length) throw "The model’s answer had nothing usable in it, so nothing was saved. Try again.";
+        if (round + 1 === ROUNDS && bi + 1 === batches.length && !kept.length) throw "The model’s answer had nothing usable in it, so nothing was saved. Try again.";
         continue;
       }
       title ??= titleOf(v);

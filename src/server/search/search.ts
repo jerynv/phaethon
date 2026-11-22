@@ -167,11 +167,14 @@ function searchMessages(msgs: UiMessage[], needle: string[]): { matches: number;
   return matches ? { matches, snippets } : null;
 }
 
-/** Searches the conversations of each `(space id, folder)`. */
-export function search(spaces: [string, string][], query: string): Results {
+const yieldLoop = () => new Promise<void>((r) => setImmediate(r));
+
+/** Searches the conversations of each `(space id, folder)`, yielding periodically so large vaults never stall the event loop. */
+export async function search(spaces: [string, string][], query: string): Promise<Results> {
   const needle = foldQuery(query);
   const found: Conversation[] = [];
   if (!needle.length) return { conversations: found, truncated: false };
+  let scanned = 0;
   for (const [space, dir] of spaces) {
     let list;
     try {
@@ -188,6 +191,7 @@ export function search(spaces: [string, string][], query: string): Results {
       }
       const hit = searchMessages(toUi(msgs), needle);
       if (hit) found.push({ space, threadId: t.id, title: t.title, updated: t.updated, ...hit });
+      if (++scanned % 16 === 0) await yieldLoop();
     }
   }
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

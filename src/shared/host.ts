@@ -118,6 +118,7 @@ export type HostCookie = { name: string; value: string; domain: string; path: st
 
 export type HostEventBody =
   | { kind: "windowNavigated"; window: number; url: string }
+  | { kind: "windowLoadFailed"; window: number; code: string }
   | { kind: "windowClosed"; window: number }
   | { kind: "quitting" }
   /** Download progress of `updateDownload`, in bytes (`total` when the server said). */

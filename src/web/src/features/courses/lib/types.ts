@@ -48,6 +48,8 @@ export type CourseInfo = {
   term?: string;
   /** As spaces see it: "courses/Calculus II". */
   folder: string;
+  updated?: number;
+  partial?: boolean;
   material?: MaterialSummary;
 };
 

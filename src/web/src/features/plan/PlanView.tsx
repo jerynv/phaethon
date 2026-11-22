@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
@@ -631,36 +632,16 @@ function AgendaRow({ entry: e, done, color, minutes, onToggle, space }: { entry:
 
 // ---- The exam panel ----
 
-/** Adding or editing an exam, in a panel over the right of the page (7274's side panel). */
+/** Adding or editing an exam, in a modal dialog with proper focus trapping and backdrop dismiss. */
 function ExamPanel({ draft, courses, onClose, onSave, onDelete }: { draft: Draft | null; courses: CourseRef[]; onClose: () => void; onSave: (e: PlanExam) => Promise<void>; onDelete: (id: string) => void }) {
-  const reduce = useReducedMotion();
-  useEffect(() => {
-    if (!draft) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector('[data-slot="popover-popup"], [data-slot="select-popup"], [data-slot="menu-popup"]')) return;
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [draft, onClose]);
   return (
-    <AnimatePresence>
-      {draft ? (
-        <motion.aside
-          key={draft.id || "new"}
-          role="dialog"
-          aria-label={draft.id ? "Edit exam" : "Add exam"}
-          initial={reduce ? { opacity: 0 } : { opacity: 0, x: 16 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={reduce ? { opacity: 0 } : { opacity: 0, x: 16 }}
-          transition={{ type: "spring", stiffness: 480, damping: 40 }}
-          className="absolute inset-y-3 right-3 z-(--z-sheet) flex w-80 flex-col rounded-panel border bg-popover shadow-popup"
-        >
-          <ExamForm draft={draft} courses={courses} onCancel={onClose} onSave={onSave} onDelete={draft.id ? () => onDelete(draft.id) : undefined} />
-        </motion.aside>
-      ) : null}
-    </AnimatePresence>
+    <Dialog open={!!draft} onOpenChange={(o) => !o && onClose()}>
+      <DialogPopup className="max-w-sm rounded-panel">
+        {draft ? (
+          <ExamForm key={draft.id || "new"} draft={draft} courses={courses} onCancel={onClose} onSave={onSave} onDelete={draft.id ? () => onDelete(draft.id) : undefined} />
+        ) : null}
+      </DialogPopup>
+    </Dialog>
   );
 }
 
@@ -669,7 +650,6 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ title?: string; date?: string; save?: string }>({});
   const first = useRef<HTMLInputElement>(null);
-  // Focus without scrolling the page under the panel.
   useEffect(() => first.current?.focus({ preventScroll: true }), []);
   const submit = async () => {
     const errs = { title: d.title.trim() ? undefined : "Name the exam.", date: /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? undefined : "Pick a date." };
@@ -686,19 +666,16 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
   };
   return (
     <form
-      className="flex min-h-0 flex-1 flex-col"
+      className="contents"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <div className="flex items-center gap-3 border-b px-5 pt-5 pb-4">
-        <h2 className="min-w-0 flex-1 type-title">{draft.id ? "Edit exam" : "Add exam"}</h2>
-        <Button size="icon-xs" variant="ghost-muted" aria-label="Close" onClick={onCancel}>
-          <Icon icon={icons.close} />
-        </Button>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-5">
+      <DialogHeader>
+        <DialogTitle>{draft.id ? "Edit exam" : "Add exam"}</DialogTitle>
+      </DialogHeader>
+      <DialogPanel>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="exam-title">Name</Label>
           <Input id="exam-title" ref={first} placeholder="Midterm 2" value={d.title} aria-invalid={error.title ? true : undefined} onChange={(e) => setD({ ...d, title: e.target.value })} />
@@ -726,21 +703,21 @@ function ExamForm({ draft, courses, onSave, onCancel, onDelete }: { draft: Draft
           </Select>
         </div>
         <FieldError>{error.save}</FieldError>
-      </div>
-      <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
+      </DialogPanel>
+      <DialogFooter>
         {draft.id && onDelete ? (
-          <Button size="sm" variant="ghost-destructive" className="mr-auto" disabled={busy} onClick={onDelete}>
+          <Button type="button" size="sm" variant="ghost-destructive" className="sm:mr-auto" disabled={busy} onClick={onDelete}>
             <Icon icon={icons.delete} />
             Delete exam
           </Button>
         ) : null}
-        <Button size="sm" variant="outline" onClick={onCancel}>
+        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
         <Button size="sm" type="submit" pending={busy}>
           {draft.id ? "Save" : "Add exam"}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }

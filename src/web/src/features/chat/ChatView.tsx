@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { SkeletonTurns } from "@/components/skeletons";
 import { toast } from "@/components/toast";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { useChatCourseUpdate } from "@/features/courses/components/ChatCourseUpdate";
 import { useDelayed } from "@/hooks/use-delayed";
 import { errorText } from "@/lib/core";
 import { cn } from "@/lib/utils";
@@ -72,13 +73,13 @@ function HeaderActions({ space, thread }: { space: SpaceView; thread: string }) 
 }
 
 export function ChatView({ space }: { space: SpaceView }) {
+  const canvas = useChatCourseUpdate(space);
   const thread = useOpenThread(space.id);
   const key = chatKey(space.id, thread);
   const chat = useConv(space.id, thread);
   const load = useChats((s) => s.load);
   const edit = useChats((s) => s.edits[key] ?? null);
   const setEdit = (e: EditTarget | null) => useChats.getState().setEdit(space.id, thread, e);
-  const listedTitle = useNav((s) => (thread === DRAFT ? undefined : s.threads[space.id]?.data?.find((t) => t.id === thread)?.title));
   const spaces = useNav((s) => s.spaces.data) ?? NO_SPACES;
   const loadCatalog = useCatalog((s) => s.load);
   const openSettings = useNav((s) => s.openSettings);
@@ -130,9 +131,6 @@ export function ChatView({ space }: { space: SpaceView }) {
   const showSkeleton = useDelayed(chat.status === "loading" && chat.messages.length === 0);
   const spaceName = useCallback((id: string) => spaces.find((s) => s.id === id)?.name ?? id, [spaces]);
   const lastUserIndex = [...chat.messages].reverse().find((m) => m.role === "user")?.index;
-  // A conversation never shows "New chat" while it loads: its listed title, else its first message.
-  const firstUser = chat.messages.find((m) => m.role === "user");
-  const title = thread === DRAFT ? "New chat" : (listedTitle ?? (firstUser?.role === "user" ? firstUser.text.split(/\s+/).join(" ").slice(0, 60) : undefined) ?? "Conversation");
 
   // The composer is keyed by its conversation, except when a new chat has just been sent and taken its id:
   // it is the same composer, so focus stays in it for the next message.
@@ -171,8 +169,9 @@ export function ChatView({ space }: { space: SpaceView }) {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <Header title={title} actions={<HeaderActions space={space} thread={thread} />} />
+    <div className="@container/chat relative flex min-h-0 flex-1 flex-col">
+      <Header actions={<HeaderActions space={space} thread={thread} />} />
+      {canvas?.panel}
       {/* One composer per conversation, keyed by it, so each keeps its own draft, files and edit. */}
       {failed ? (
         <div className="mx-auto w-full max-w-(--chat-max-width) flex-1 px-4 pt-8">
@@ -247,7 +246,7 @@ export function ChatView({ space }: { space: SpaceView }) {
         </AnimatePresence>
         {/* Above the limit card, whose bottom edge tucks under the composer (ref fd96). */}
         <div className="relative z-10">
-          <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} />
+          <Composer key={composer.current.key} draftKey={key} space={space} edit={edit} onEditDone={() => setEdit(null)} hero={empty} dataControls={canvas?.control} />
         </div>
       </div>
       {empty ? <Welcome space={space} draftKey={key} /> : null}

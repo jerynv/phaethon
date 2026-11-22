@@ -30,6 +30,8 @@ export type Run = {
   spaces: string[];
   connection: string;
   school: string;
+  update?: boolean;
+  signInConnection?: string;
   courses: CourseRun[];
   status: RunStatus;
   cancelling?: boolean;
@@ -40,6 +42,7 @@ export type Run = {
 
 export const SIGNED_OUT_DURING_IMPORT =
   "You were signed out of your course site partway through. Sign in again, then import again: what’s already here stays, and only what changed is downloaded.";
+const SIGNED_OUT_DURING_UPDATE = "You were signed out of your course site. Sign in again, then update your courses.";
 
 export function newRun(key: number, space: string, spaces: string[], connection: string, school: string, courses: Pick<LmsCourse, "id" | "name">[]): Run {
   return { key, space, spaces, connection, school, status: "running", courses: courses.map((c) => ({ id: c.id, name: c.name, done: 0, total: 0 })) };
@@ -58,7 +61,7 @@ export function finishRun(r: Run, status: Exclude<RunStatus, "running">, error?:
     status,
     error,
     cancelling: false,
-    courses: r.courses.map((c) => (c.result || c.failed ? c : { ...c, step: undefined, failed: courseWhy ?? error ?? "It wasn’t imported." })),
+    courses: r.courses.map((c) => (c.result || c.failed ? c : { ...c, step: undefined, failed: courseWhy ?? error ?? (r.update ? "It wasn’t updated." : "It wasn’t imported.") })),
   };
 }
 
@@ -80,7 +83,7 @@ export function applyImportEvent(r: Run, e: LmsImportEvent): { run: Run; course?
       return { run, course: run.courses.find((x) => x.id === e.course) };
     }
     case "error": {
-      if (isSignedOut(e.message)) return { run: finishRun(r, "failed", SIGNED_OUT_DURING_IMPORT, "You were signed out before this one.") };
+      if (isSignedOut(e.message)) return { run: finishRun({ ...r, signInConnection: r.connection }, "failed", r.update ? SIGNED_OUT_DURING_UPDATE : SIGNED_OUT_DURING_IMPORT, "You were signed out before this one.") };
       const at = working(r);
       if (!at) return { run: { ...r, notes: [...(r.notes ?? []), e.message] } };
       const rest = e.message.startsWith(`${at.name}: `) ? e.message.slice(at.name.length + 2) : e.message;
@@ -99,6 +102,11 @@ export function applyImportEvent(r: Run, e: LmsImportEvent): { run: Run; course?
 export function endText(r: Run): string {
   const saved = r.courses.filter((c) => c.result).length;
   const n = r.courses.length;
+  if (r.update) {
+    if (r.status === "cancelled") return "Update stopped";
+    if (saved === n) return `${n} ${n === 1 ? "course" : "courses"} updated`;
+    return `${saved} of ${n} courses updated`;
+  }
   if (r.status === "cancelled") return `Import stopped · ${saved} ${saved === 1 ? "course" : "courses"} saved.`;
   if (r.status === "failed" && saved === 0) return `The import stopped. ${r.error ?? ""}`.trim();
   if (saved === n) return `${n} ${n === 1 ? "course" : "courses"} imported.`;

@@ -20,8 +20,8 @@ import { useCourses } from "../store";
 
 /**
  * Choose courses to import from one site, and which spaces see the new ones.
- * The current term's courses start selected (imported ones too, so an import
- * refreshes them); older terms are folded behind one line.
+ * New courses likely to be current start selected. Other courses are folded
+ * behind one line and can still be selected.
  */
 export function ImportDialog({
   connection,
@@ -51,12 +51,13 @@ export function ImportDialog({
     let live = true;
     setCourses(null);
     setError(null);
+    setOlder(false);
     setSpaces(new Set([space]));
     lmsCourses(connection.id).then(
       (list) => {
         if (!live) return;
         setCourses(list);
-        setPicked(new Set(list.filter((c) => c.current || c.imported).map((c) => c.id)));
+        setPicked(new Set(list.filter((c) => c.current && !c.imported).map((c) => c.id)));
       },
       (e) => live && setError(cleanMessage(e)),
     );
@@ -116,13 +117,13 @@ export function ImportDialog({
           ) : (
             groups.map(([label, list], gi) => {
               const all = list.every((c) => picked.has(c.id));
-              const isCurrent = (l: string) => l.startsWith("Current") || groups.length === 1;
+              const isCurrent = (l: string) => l.startsWith("Current") || !groups.some(([g]) => g.startsWith("Current"));
               if (!isCurrent(label) && !older) {
                 const olderCount = groups.filter(([l]) => !isCurrent(l)).reduce((n, [, l]) => n + l.length, 0);
                 return groups.findIndex(([l]) => !isCurrent(l)) === gi ? (
                   <button key="older" type="button" onClick={() => setOlder(true)} className="flex h-8 items-center gap-2 px-1 text-muted-foreground text-sm hover:text-foreground">
                     <Icon icon={icons.chevronRight} className="size-3.5" />
-                    Show {olderCount} older {olderCount === 1 ? "course" : "courses"}
+                    Show {olderCount} other {olderCount === 1 ? "course" : "courses"}
                   </button>
                 ) : null;
               }
@@ -140,7 +141,7 @@ export function ImportDialog({
                         <Checkbox checked={picked.has(c.id)} onCheckedChange={(v) => toggle(c.id, !!v)} />
                         <Truncate className="min-w-0 flex-1">{c.name}</Truncate>
                         {c.code ? <span className="max-w-32 shrink-0 truncate text-muted-foreground text-xs">{c.code}</span> : null}
-                        {c.imported ? (
+                        {c.imported || c.partial ? (
                           <Badge variant={c.partial ? "warning" : "secondary"} size="sm" className="shrink-0">
                             {c.partial ? "Partly imported" : "Imported"}
                           </Badge>

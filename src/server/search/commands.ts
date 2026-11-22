@@ -5,7 +5,7 @@ import { telemetry } from "../telemetry/client.ts";
 import { search } from "./search.ts";
 
 commands({
-  conversations_search: ({ space, query, allSpaces }: { space: string; query: string; allSpaces?: boolean }) => {
+  conversations_search: async ({ space, query, allSpaces }: { space: string; query: string; allSpaces?: boolean }) => {
     let scope: [string, string][];
     if (allSpaces) {
       scope = [];
@@ -19,7 +19,7 @@ commands({
     } else scope = [[space, spaceDir(space)]];
     telemetry.capture("usage", "action_completed", { action: "search_used" });
     try {
-      return search(scope, String(query ?? ""));
+      return await search(scope, String(query ?? ""));
     } catch (e) {
       throw new Refusal(`The search stopped unexpectedly: ${messageOf(e)}`);
     }

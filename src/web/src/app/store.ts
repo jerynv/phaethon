@@ -108,6 +108,7 @@ type Nav = {
   cycleTab(dir: 1 | -1): void;
 
   loadSpaces(): Promise<void>;
+  deleteSpace(id: string): Promise<void>;
   selectSpace(id: string, view?: View): void;
   setView(view: View): void;
   /** The selected view's tab was clicked again. */
@@ -212,13 +213,13 @@ export const useNav = create<Nav>((set, get) => {
 
   const saveTabs = () => writeJson(TABS, { tabs: get().tabs, active: get().activeTab });
   /** The derived fields follow the active tab. */
-  const apply = (tab: Tab) => {
+  const apply = (tab: Tab, keepSettings = false) => {
     {
       // A new-chat tab opened before the space's list arrived doesn't choose for the space: the list's newest conversation does (loadThreads).
       const undecided = tab.kind === "chat" && tab.thread === DRAFT && !get().threads[tab.space]?.data;
       if (tab.kind === "chat" && get().open[tab.space] !== tab.thread && !undecided) setOpen(tab.space, tab.thread);
       const prev = get().activeSpace;
-      set({ activeSpace: tab.space, view: tab.kind === "chat" ? "chat" : tab.view, settings: null, settingsTarget: null });
+      set({ activeSpace: tab.space, view: tab.kind === "chat" ? "chat" : tab.view, ...(keepSettings ? {} : { settings: null, settingsTarget: null }) });
       if (prev !== tab.space) {
         writeJson(LAST_SPACE, tab.space);
         void api.touchSpace(tab.space).catch(() => {});
@@ -227,11 +228,11 @@ export const useNav = create<Nav>((set, get) => {
     }
   };
   /** Replaces the tabs and makes `id` the active one. */
-  const commit = (tabs: OpenTab[], id: string) => {
+  const commit = (tabs: OpenTab[], id: string, keepSettings = false) => {
     const space = get().activeSpace;
     set({ tabs, activeTab: id });
     const tab = tabs.find((t) => t.id === id);
-    if (tab) apply(tab);
+    if (tab) apply(tab, keepSettings);
     settle(space);
     saveTabs();
   };
@@ -396,6 +397,39 @@ export const useNav = create<Nav>((set, get) => {
       } catch (e) {
         set({ spaces: { loading: false, error: errorText(e) } });
       }
+    },
+
+    async deleteSpace(id) {
+      await api.deleteSpace(id);
+      const current = get();
+      const spaces = (current.spaces.data ?? []).filter((space) => space.id !== id);
+      const tabs = current.tabs.filter((tab) => tab.space !== id);
+      const files = current.files.filter((file) => file.space !== id);
+      generation[id] = (generation[id] ?? 0) + 1;
+      const { [id]: _t, ...threads } = current.threads;
+      const { [id]: _o, ...open } = current.open;
+      set({
+        spaces: { data: spaces, loading: false },
+        threads,
+        open,
+        tabs,
+        closedTabs: current.closedTabs.filter((tab) => tab.space !== id),
+        files,
+        viewer: current.viewer?.space === id ? null : current.viewer,
+      });
+      if (current.activeSpace === id || !tabs.some((tab) => tab.id === current.activeTab)) {
+        const next = tabs[0];
+        const fallback = spaces[0];
+        if (next) commit(tabs, next.id, true);
+        else if (fallback) {
+          const tab = chatTab(fallback.id);
+          commit([{ ...tab, id: tabId(tab), kept: false }], tabId(tab), true);
+        } else {
+          set({ activeTab: null, activeSpace: null, view: "chat" });
+          await get().loadSpaces();
+        }
+      }
+      saveTabs();
     },
 
     selectSpace(id, view) {

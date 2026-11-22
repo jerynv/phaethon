@@ -1,9 +1,11 @@
 import fs from "node:fs";
+import path from "node:path";
+import { deleteItem } from "../files/manage.ts";
 import { keychainDelete, keychainGet, keychainSet, lmsVaultAccount } from "../core/secrets.ts";
 import { spaceDir, vaultRoot } from "../core/vault.ts";
 import { Refusal } from "../rpc/registry.ts";
 import type { Channel } from "../rpc/channel.ts";
-import { allowAll, can, courseKey, visible, type Visible } from "./access.ts";
+import { allowAll, can, courseKey, forget, visible, type Visible } from "./access.ts";
 import { account, accountFingerprint, content as readContent, courses as readCourses, grades as readGrades } from "./adapters/index.ts";
 import { sha256Hex } from "./hash.ts";
 import { request } from "./http.ts";
@@ -14,6 +16,7 @@ import { Session } from "./session.ts";
 import {
   COURSES_DIR,
   courseDir,
+  folders,
   getConn,
   load,
   loadAccounts,
@@ -22,6 +25,7 @@ import {
   putGrades,
   save,
   saveAccounts,
+  saveGrades,
   update,
   type Accounts,
   type Conn,
@@ -305,7 +309,7 @@ function raceAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 /** Import the chosen courses. Results come as events; always ends with exactly one `done`. */
-export async function importCourses(id: string, courseIds: string[], spaces: string[], emit: (e: ImportEvent) => void): Promise<void> {
+export async function importCourses(id: string, courseIds: string[], spaces: string[], emit: (e: ImportEvent) => void, refresh = false): Promise<void> {
   try {
     for (const s of spaces) {
       try {
@@ -321,7 +325,7 @@ export async function importCourses(id: string, courseIds: string[], spaces: str
     running.set(id, abort);
     try {
       const s = session(id).withSignal(abort.signal);
-      await importWith(id, s, courseIds, spaces, abort.signal, emit);
+      await importWith(id, s, courseIds, refresh ? [] : spaces, abort.signal, emit, refresh);
     } finally {
       importing.delete(root);
       if (running.get(id) === abort) running.delete(id);
@@ -343,18 +347,28 @@ function gradeRec(connection: string, courseId: string, course: string, folder: 
   return { connection, courseId, course, folder: `${COURSES_DIR}/${folder}`, updated: nowMs(), ...grades };
 }
 
-async function importWith(id: string, s: Session, courseIds: string[], spaces: string[], signal: AbortSignal, emit: (e: ImportEvent) => void): Promise<void> {
+async function importWith(id: string, s: Session, courseIds: string[], spaces: string[], signal: AbortSignal, emit: (e: ImportEvent) => void, refresh: boolean): Promise<void> {
   const root = vaultRoot();
   const wanted = new Set(courseIds);
   let list;
   try {
-    list = await raceAbort(readCourses(s), signal);
+    if (refresh) {
+      // An imported course can disappear from the enrollment list while its
+      // content is still accessible. Refresh only IDs already in the vault.
+      const saved = getConn(load(root), id)?.courses ?? {};
+      list = [...wanted].filter((cid) => Object.hasOwn(saved, cid)).map((cid) => {
+        const { name, code, term } = saved[cid];
+        return { id: cid, name, code, term, current: false };
+      });
+    } else {
+      list = await raceAbort(readCourses(s), signal);
+    }
   } catch (e) {
     if (isCancelled(e) || signal.aborted) throw new Error(CANCELLED);
     throw new Error(ended(id, lmsError(e)));
   }
   const chosen = list.filter((c) => wanted.has(c.id));
-  if (chosen.length < wanted.size) emit({ type: "error", message: "Some of the chosen courses aren’t on the course site any more." });
+  if (chosen.length < wanted.size) emit({ type: "error", message: refresh ? "Some of the chosen courses are no longer imported." : "Some of the chosen courses aren’t on the course site any more." });
   let coursesRoot: string;
   try {
     coursesRoot = dirIn(realRoot(root), COURSES_DIR);
@@ -488,6 +502,8 @@ export async function refreshGradesWith(s: Session, id: string, allowed: (cid: s
       emit({ type: "error", message: `${cs.name}: ${msg(e)}` });
       continue;
     }
+    const course = getConn(load(root), id)?.courses[cid];
+    if (!course || course.lastSync !== cs.lastSync || course.folder !== cs.folder) continue;
     const dir = courseDir(root, cs.folder);
     if (dir) {
       try {
@@ -499,6 +515,41 @@ export async function refreshGradesWith(s: Session, id: string, allowed: (cid: s
     const rec = gradeRec(id, cid, cs.name, cs.folder, g);
     putGrades(root, rec);
     emit({ type: "course", course: cid, grades: rec });
+  }
+}
+
+/** Remove an imported course from the vault and from every space that sees it. */
+export async function deleteCourse(connection: string, courseId: string): Promise<void> {
+  const root = vaultRoot();
+  if (importing.has(root)) throw new Refusal("Wait for the course import or update to finish.");
+  importing.add(root);
+  try {
+    const store = load(root);
+    const conn = getConn(store, connection);
+    if (!conn || !Object.hasOwn(conn.courses, courseId)) return;
+    const { folder } = conn.courses[courseId]!;
+    const key = courseKey(connection, courseId);
+    const dir = courseDir(root, folder);
+    // A migrated vault can have two records for one folder. Keep files still
+    // used by the other course. Missing folders can still be removed from the list.
+    if (dir && folders(store).filter((f) => f.toLowerCase() === folder.toLowerCase()).length === 1) {
+      await deleteItem(root, path.relative(root, dir));
+    }
+    const book = loadGrades(root);
+    if (Object.hasOwn(book.courses, key)) {
+      delete book.courses[key];
+      saveGrades(root, book);
+    }
+    forget([key]);
+    update(root, (s) => {
+      const current = getConn(s, connection);
+      if (!current) return;
+      delete current.courses[courseId];
+      const times = Object.values(current.courses).flatMap((c) => c.lastSync === undefined ? [] : [c.lastSync]);
+      current.lastSync = times.length ? Math.max(...times) : undefined;
+    });
+  } finally {
+    importing.delete(root);
   }
 }
 

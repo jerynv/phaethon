@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SpaceView } from "@/app/api";
 import { useViewActive } from "@/app/Header";
 import { useNav, useOpenThread } from "@/app/store";
@@ -134,7 +134,7 @@ function PendingChip({ p, onRemove }: { p: Pending; onRemove: () => void }) {
   );
 }
 
-export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = false }: { space: SpaceView; draftKey?: string; edit: EditTarget | null; onEditDone: () => void; hero?: boolean }) {
+export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = false, dataControls }: { space: SpaceView; draftKey?: string; edit: EditTarget | null; onEditDone: () => void; hero?: boolean; dataControls?: ReactNode }) {
   const chat = useSpaceChat(space.id);
   const chats = useChats.getState;
   const status = useCoreStatus();
@@ -444,6 +444,7 @@ export function Composer({ space, draftKey = space.id, edit, onEditDone, hero = 
           <input ref={picker} type="file" multiple hidden onChange={(e) => (add([...(e.target.files ?? [])]), (e.target.value = ""))} />
           {space.educationEnabled ? <TutorPicker mode={tutor.mode} setMode={(m) => tutor.setMode(m)} disabled={busy} /> : null}
           <div className="ml-auto flex min-w-0 items-center gap-1">
+            {dataControls}
             {pick ? (
               <>
                 <ModelPicker pick={pick} onPick={setPick} disabled={busy} />

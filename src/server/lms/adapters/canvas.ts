@@ -153,15 +153,54 @@ function courseFrom(v: unknown, concluded: boolean, now: number): Course | null 
   const term = field(v, "term");
   const termRaw = asString(field(term, "name"));
   const termT = termRaw !== undefined ? rustTrim(termRaw) : undefined;
-  const termName = termT && termT !== "Default Term" ? termT : null;
+  const termName = termT && !/^default term$/i.test(termT) ? termT : null;
   // The course's own dates win only when it's set to override the term's.
   const dates = field(v, "restrict_enrollments_to_course_dates") === true ? v : term;
-  const end = unixOf(asString(field(dates, "end_at")));
-  const start = unixOf(asString(field(dates, "start_at")));
+  const end = unixOf(asString(field(dates, "end_at")) ?? asString(field(v, "end_at")));
+  const start = unixOf(asString(field(dates, "start_at")) ?? asString(field(v, "start_at")));
   const ended = end !== null && end < now;
   const notStarted = start !== null && start > now;
-  const current = !concluded && asString(field(v, "workflow_state")) !== "completed" && !ended && !notStarted;
-  return { id, name, code, term: termName, current };
+  const guessed = [termName, code, name].map(academicTerm).find((t) => t !== undefined);
+  const today = new Date(now * 1000);
+  // Enrollment can stay active long after a class ends. A real date range
+  // takes precedence; otherwise use the US academic calendar as a picker hint.
+  const bounded = start !== null && end !== null && end - start <= 366 * 86400;
+  const localTerm = guessed ?? (start !== null ? termAt(new Date(start * 1000)) : undefined);
+  const current = !concluded && asString(field(v, "workflow_state")) !== "completed" && !ended && !notStarted && (bounded || (localTerm !== undefined && isCurrentTerm(localTerm, today)));
+  return { id, name, code, term: termName ?? guessed ?? null, current };
+}
+
+function termAt(date: Date): string {
+  const month = date.getMonth(); // January–May, June–July, August–December.
+  return `${month < 5 ? "Spring" : month < 7 ? "Summer" : "Fall"} ${date.getFullYear()}`;
+}
+
+function isCurrentTerm(term: string, today: Date): boolean {
+  if (term === termAt(today)) return true;
+  // Quarter-system Winter terms run Jan–Mar (and Winter intersession may start in Dec).
+  const month = today.getMonth();
+  return month < 3 && term === `Winter ${today.getFullYear()}`;
+}
+
+const SEASONS: Record<string, string> = {
+  fall: "Fall", autumn: "Fall", fa: "Fall", f: "Fall",
+  spring: "Spring", sp: "Spring", s: "Spring",
+  summer: "Summer", su: "Summer", sm: "Summer",
+  winter: "Winter", wi: "Winter", w: "Winter",
+};
+const SEASON = `(${Object.keys(SEASONS).join("|")})`;
+const SEASON_FIRST = new RegExp(`(?<![a-z0-9])${SEASON}[ ._'/-]*((?:20)?[0-9]{2})(?![a-z0-9])`, "i");
+const YEAR_FIRST = new RegExp(`(?<![a-z0-9])(20[0-9]{2})[ ._'/-]*${SEASON}(?![a-z0-9])`, "i");
+
+/** Read labels such as "Fall 2026", "2026 Autumn" or "MATH301-FA26". */
+function academicTerm(text: string | null): string | undefined {
+  if (!text) return;
+  const forward = SEASON_FIRST.exec(text);
+  const backward = forward ? null : YEAR_FIRST.exec(text);
+  const label = (forward?.[1] ?? backward?.[2])?.toLowerCase();
+  const number = forward?.[2] ?? backward?.[1];
+  if (!label || !number) return;
+  return `${SEASONS[label]} ${number.length === 2 ? `20${number}` : number}`;
 }
 
 type Item =

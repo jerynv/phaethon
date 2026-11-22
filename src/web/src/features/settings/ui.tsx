@@ -1,11 +1,8 @@
 import type * as React from "react";
-import { createContext, type DependencyList, type ReactNode, use, useEffect, useId, useState } from "react";
+import { createContext, type DependencyList, type ReactNode, use, useEffect, useId } from "react";
 import { useQuery, type QueryKey } from "@/lib/query";
 import { SkeletonCard } from "@/components/skeletons";
 import { SurfaceError, cleanMessage } from "@/components/errors";
-import { Icon } from "@/components/icon";
-import { icons } from "@/components/icons";
-import { toast } from "@/components/toast";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -17,7 +14,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useDelayed } from "@/hooks/use-delayed";
 import { cn } from "@/lib/utils";
 
@@ -232,38 +228,7 @@ export function Loader<T>({
   return null;
 }
 
-/** An icon button that copies text and confirms with a check. */
-export function CopyButton({ text, label = "Copy", className }: { text: string; label?: string; className?: string }) {
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    if (!done) return;
-    const t = setTimeout(() => setDone(false), 1500);
-    return () => clearTimeout(t);
-  }, [done]);
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost-muted"
-            aria-label={label}
-            className={className}
-            onClick={() =>
-              void navigator.clipboard.writeText(text).then(
-                () => setDone(true),
-                () => toast.error("Couldn’t copy", "Select the text and copy it instead."),
-              )
-            }
-          />
-        }
-      >
-        {done ? <Icon icon={icons.check} className="text-success" /> : <Icon icon={icons.copy} />}
-      </TooltipTrigger>
-      <TooltipPopup side="top">{done ? "Copied" : label}</TooltipPopup>
-    </Tooltip>
-  );
-}
+export { CopyButton } from "@/components/copy-button";
 
 /** A yes/no question before something that can't be undone or that opens things up. */
 export function ConfirmDialog({

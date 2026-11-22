@@ -215,6 +215,11 @@ describe("delivery", () => {
       expect(verify(null, Buffer.concat([bytes, Buffer.from("!")]), key, signature)).toBe(false);
       expect(JSON.parse(e.payload)).toMatchObject({ category: "usage", appVersion: "0.0.0-dev", data: { view: "chat" } });
     }
+    // The core sets the version after this module loaded (the shell's hello); events still carry it.
+    vi.stubEnv("PHAETHON_VERSION", "0.4.0");
+    capture(c, "usage");
+    await sent(3);
+    expect(JSON.parse(received[2]!.payload)).toMatchObject({ appVersion: "0.4.0" });
     const unicode = signedEnvelope({ category: "reports", event: "testing_report", appVersion: "1.0.0", platform: "other", data: { text: "日本語" } });
     expect(unicode.payload).toContain("日本語");
   });

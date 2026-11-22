@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { vaultRoot, vaultStateDir } from "../core/vault.ts";
 import { Refusal } from "../rpc/registry.ts";
-import { USER_AGENT } from "./http.ts";
+import { userAgent } from "./http.ts";
 import { getConn, load } from "./store.ts";
 
 /**
@@ -27,7 +27,7 @@ export type Fetch = (url: URL, init: RequestInit) => Promise<Response>;
 export async function fetchSiteIcon(origin: URL, fetchImpl: Fetch = (u, i) => fetch(u, i)): Promise<string | null> {
   for (const p of PATHS) {
     try {
-      const res = await fetchImpl(new URL(p, origin), { redirect: "follow", signal: AbortSignal.timeout(TIMEOUT_MS), headers: { "user-agent": USER_AGENT, accept: "image/*" } });
+      const res = await fetchImpl(new URL(p, origin), { redirect: "follow", signal: AbortSignal.timeout(TIMEOUT_MS), headers: { "user-agent": userAgent(), accept: "image/*" } });
       if (!res.ok) continue;
       const type = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
       if (!type.startsWith("image/")) continue;

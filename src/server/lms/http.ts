@@ -12,7 +12,8 @@ import { Cancelled } from "./types.ts";
  * to. Bodies are read only when asked, with a cap.
  */
 
-export const USER_AGENT = `Phaethon/${process.env.PHAETHON_VERSION ?? "0.3.0"}`;
+/** Read per request: the core learns the app's version from the shell's hello, after this module loads. */
+export const userAgent = (): string => `Phaethon/${process.env.PHAETHON_VERSION || "0.0.0-dev"}`;
 
 export type RequestOptions = {
   method?: "GET" | "POST";
@@ -120,7 +121,7 @@ export function request(url: URL, options: RequestOptions = {}): Promise<HttpRes
     let settled = false;
     let total: NodeJS.Timeout | undefined;
     let connect: NodeJS.Timeout | undefined;
-    const allHeaders: Record<string, string> = { "user-agent": USER_AGENT, "accept-encoding": "identity", ...headers };
+    const allHeaders: Record<string, string> = { "user-agent": userAgent(), "accept-encoding": "identity", ...headers };
     if (body !== undefined) allHeaders["content-length"] = String(Buffer.byteLength(body));
     const req = mod.request(url, { method, headers: allHeaders, agent: false, lookup });
     const cleanup = () => {

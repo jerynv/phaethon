@@ -29,10 +29,11 @@ export const OFF: TelemetryChoices = { usage: false, diagnostics: false, reports
 
 const MAX_QUEUED = 64;
 const MAX_QUEUED_BYTES = 512 * 1024;
-const VERSION = /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(process.env.PHAETHON_VERSION ?? "")
-  && process.env.PHAETHON_VERSION!.length <= 64
-  ? process.env.PHAETHON_VERSION!
-  : "0.0.0-dev";
+/** Read when each event is made: the core learns the app's version from the shell's hello, after this module loads. */
+function appVersion(): string {
+  const v = process.env.PHAETHON_VERSION ?? "";
+  return /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(v) && v.length <= 64 ? v : "0.0.0-dev";
+}
 const PLATFORM = ["darwin", "win32", "linux"].includes(process.platform)
   ? (process.platform as TelemetryPayload["platform"])
   : "other";
@@ -195,7 +196,7 @@ export class TelemetryClient {
     if (grant !== undefined && grant !== this.revocations[category]) return false;
     let payload: TelemetryPayload;
     try {
-      const candidate = { category, event, appVersion: VERSION, platform: PLATFORM, data: redactData(category, data) };
+      const candidate = { category, event, appVersion: appVersion(), platform: PLATFORM, data: redactData(category, data) };
       payload = parseTelemetryPayload(candidate);
     } catch {
       return false;

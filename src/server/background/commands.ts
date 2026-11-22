@@ -35,6 +35,8 @@ function spaceIds(): string[] {
   }
 }
 
+let trayWasActive = false;
+
 // What the menu bar shows: replies being written, sends counting down, automations.
 setTrayParts(() => {
   const sending = spaceIds().flatMap((space) => {
@@ -50,8 +52,10 @@ setTrayParts(() => {
   const automations = jobs.filter((j) => j.id.startsWith("schedule:") || (j.optional && j.enabled && j.ready.ok));
   const upcoming = automations.filter((j) => j.next !== null).sort((a, b) => a.next! - b.next!)[0];
   const running = jobs.find((j) => j.running);
+  const replies = runCount();
+  trayWasActive = replies > 0 || sending.length > 0 || Boolean(running);
   return {
-    running: runCount(),
+    running: replies,
     sending,
     automations: { on: automations.length, ...(upcoming ? { next: { title: upcoming.title, at: upcoming.next! } } : {}), ...(running ? { runningTitle: running.title } : {}) },
   };
@@ -91,7 +95,10 @@ export const REMINDERS: JobDef = {
   defaultOn: true,
   optional: true,
   model: false,
-  ready: () => (notifySettings().enabled && notifySettings().kinds.reminder && notifySettings().reminderMinutes > 0 ? { ok: true } : { ok: false, reason: "Reminders are off in Settings › Notifications." }),
+  ready: () => {
+    const s = notifySettings();
+    return s.enabled && s.kinds.reminder && s.reminderMinutes > 0 ? { ok: true } : { ok: false, reason: "Reminders are off in Settings › Notifications." };
+  },
   run: async () => {
     const n = await remindDue();
     return n ? `Reminded of ${n}.` : "Nothing coming up.";
@@ -136,16 +143,25 @@ onStart("background: menu bar and notifications", () => {
         } catch {
           // gone already
         }
-      } else if (a.kind === "pauseAutomations") setBackgroundSettings({ pausedUntil: Date.now() + a.minutes * 60_000 });
-      else if (a.kind === "resumeAutomations") setBackgroundSettings({ pausedUntil: null });
+      } else if (a.kind === "pauseAutomations") {
+        if (typeof a.minutes === "number" && Number.isFinite(a.minutes) && a.minutes > 0 && a.minutes <= 7 * 24 * 60) {
+          setBackgroundSettings({ pausedUntil: Date.now() + a.minutes * 60_000 });
+        }
+      } else if (a.kind === "resumeAutomations") setBackgroundSettings({ pausedUntil: null });
       else if (a.kind === "seen") markSeen();
       pushTray();
     }
   });
   onDraftChange(() => pushTray());
   pushTray();
-  // Times in the menu ("next in 2 h") and runs ending stay current.
-  tick = setInterval(pushTray, 10_000);
+  // Fast refresh while replies/sends/jobs are active; lightweight 60 s cadence while idle.
+  let idleTicks = 0;
+  tick = setInterval(() => {
+    if (runCount() > 0 || trayWasActive || ++idleTicks >= 6) {
+      idleTicks = 0;
+      pushTray();
+    }
+  }, 10_000);
   tick.unref?.();
 });
 

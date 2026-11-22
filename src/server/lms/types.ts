@@ -266,9 +266,10 @@ export const RUST_WS = "\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2
 const LEADING_WS = new RegExp(`^[${RUST_WS}]+`);
 const TRAILING_WS = new RegExp(`[${RUST_WS}]+$`);
 const WS_RUN = new RegExp(`[${RUST_WS}]+`);
+const SINGLE_WS = new RegExp(`^[${RUST_WS}]$`);
 
 export function isRustWhitespace(ch: string): boolean {
-  return new RegExp(`^[${RUST_WS}]$`).test(ch);
+  return SINGLE_WS.test(ch);
 }
 
 /** Rust `str::trim`. */

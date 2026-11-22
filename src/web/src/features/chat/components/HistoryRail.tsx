@@ -25,6 +25,12 @@ const HIT_MAX = 40;
 
 type Geometry = { inView: boolean[]; current: number | null; atEnd: boolean; gutter: number };
 
+function sameGeo(a: Geometry, b: Geometry): boolean {
+  if (a.current !== b.current || a.atEnd !== b.atEnd || a.gutter !== b.gutter || a.inView.length !== b.inView.length) return false;
+  for (let i = 0; i < a.inView.length; i++) if (a.inView[i] !== b.inView[i]) return false;
+  return true;
+}
+
 /** A custom property's length in px (`46rem`, `736px`); custom properties come back as written, unresolved. */
 function lengthPx(value: string): number {
   const n = Number.parseFloat(value);
@@ -85,15 +91,18 @@ export function HistoryRail({
       if (frame.current !== null) return;
       frame.current = requestAnimationFrame(() => {
         frame.current = null;
-        if (box.current) setGeo(measure(box.current, items));
+        if (!box.current) return;
+        const next = measure(box.current, items);
+        setGeo((prev) => (sameGeo(prev, next) ? prev : next));
       });
     };
     refresh();
     el.addEventListener("scroll", refresh, { passive: true });
     const ro = new ResizeObserver(refresh);
     ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
     const mo = new MutationObserver(refresh);
-    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    mo.observe(el, { childList: true, subtree: true });
     return () => {
       el.removeEventListener("scroll", refresh);
       ro.disconnect();

@@ -32,6 +32,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   const chat = useSpaceChat(space);
   const [plan, setPlan] = useState<StudyPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
   const [made, setMade] = useState<string | null>(null);
   const question = questionBefore(chat.messages.map((m) => ({ key: m.key, role: m.role, text: m.role === "user" ? m.text : undefined })), messageKey);
@@ -46,10 +47,18 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
   const replan = () => block && studyChatPlan(space, block, question).then(setPlan, () => {});
 
   useEffect(() => {
-    if (!block || asked.current === block) return;
-    asked.current = block;
-    studyChatPlan(space, block, question).then(setPlan, (e) => setPlanError(errorText(e)));
-  }, [block, space, question]);
+    const key = block ? `${block}\0${attempt}` : null;
+    if (!block || asked.current === key) return;
+    asked.current = key;
+    let live = true;
+    studyChatPlan(space, block, question).then(
+      (p) => live && setPlan(p),
+      (e) => live && setPlanError(errorText(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [block, space, question, attempt]);
 
   // When its run ends: the result opens from here, and the plan is asked for again so it remembers what was made.
   const ended = useRef<string | null>(null);
@@ -59,7 +68,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
     if (job.status === "done" && job.done?.path) setMade(job.done.path);
     if (job.status === "needsScope") setOpen(true);
     void replan();
-  });
+  }, [job, block, space, question]);
 
   const kind = read.state === "ok" ? read.kind : guessKind(code);
   const glyph = kind === "quiz" ? icons.quiz : icons.deck;
@@ -78,7 +87,7 @@ export function StudyBlock({ code, space, streaming, messageKey }: { code: strin
       </div>
     );
   }
-  if (planError || !plan) return <RowError className="my-2" message={planError ?? "No plan"} onRetry={() => ((asked.current = null), setPlanError(null))} />;
+  if (planError || !plan) return <RowError className="my-2" message={planError ?? "No plan"} onRetry={() => (setPlanError(null), setAttempt((n) => n + 1))} />;
 
   const path = made ?? plan.made;
   const openMade = (screen: StudyScreen) => {

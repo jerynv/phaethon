@@ -198,7 +198,10 @@ function FileTabs({ files, active }: { files: ViewerFile[]; active: ViewerFile }
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 show(f);
-              } else if (e.key === "Delete" || e.key === "Backspace") close(f);
+              } else if (e.key === "Delete" || e.key === "Backspace") {
+                e.preventDefault();
+                close(f);
+              }
             }}
             icon={<FileIcon kind={kindOfName(name)} name={name} />}
             label={<MiddleTruncate value={name} className="min-w-0 flex-1 [&>span]:whitespace-pre" />}

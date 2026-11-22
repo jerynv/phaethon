@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ART_PALETTES, ArtCanvas, ArtFrame, ArtTile, DotMatrix } from "@/components/art";
 import { BrandMark } from "@/components/brand-mark";
-import { Icon, IconProvider } from "@/components/icon";
+import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardMedia, CardTitle } from "@/components/ui/card";
@@ -334,15 +334,13 @@ function ArtRow() {
 
 export function Gallery() {
   return (
-    <IconProvider>
-      <div className="h-full overflow-auto bg-background">
-        <div className="relative flex flex-col gap-10 bg-background p-10">
-          <DotMatrix />
-          <Welcome />
-          <Panel />
-          <ArtRow />
-        </div>
+    <div className="h-full overflow-auto bg-background">
+      <div className="relative flex flex-col gap-10 bg-background p-10">
+        <DotMatrix />
+        <Welcome />
+        <Panel />
+        <ArtRow />
       </div>
-    </IconProvider>
+    </div>
   );
 }

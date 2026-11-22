@@ -232,7 +232,7 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [active, stage, current, job, answers, at, next, goTo, toggleFlag, setAnswer, setSureOf]);
 
 
   const total = shown.length;
@@ -251,7 +251,7 @@ export function QuizScreen({ space, path, onBack, open }: { space: SpaceView; pa
       />
       <div className="relative flex min-h-0 flex-1 flex-col">
         <Page narrow className="gap-8">
-          {quiz.error ? <SurfaceError title="Couldn’t open the quiz" message={cleanMessage(quiz.error)} onRetry={quiz.reload} /> : null}
+          {quiz.error ? <SurfaceError title="Couldn’t open the quiz" message={cleanMessage(quiz.error)} onRetry={quiz.reload} actions={[{ label: "Back to study", onClick: onBack }]} /> : null}
           {skeleton ? <QuizSkeleton /> : null}
           {q && stage !== "results" ? (
             <div className="flex flex-col gap-3">

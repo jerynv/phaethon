@@ -155,10 +155,16 @@ type JsWorker = { recognize(image: Buffer): Promise<{ data: { text: string } }>;
 let jsWorker: Promise<JsWorker> | undefined;
 
 async function recogniseJs(langPath: string, image: Buffer): Promise<string> {
-  jsWorker ??= (async () => {
-    const t = require("tesseract.js") as { createWorker(lang: string, oem: number, options: Record<string, unknown>): Promise<JsWorker> };
-    return t.createWorker("eng", 1, { langPath, cacheMethod: "none", gzip: true, logger: () => {}, errorHandler: () => {} });
-  })();
+  if (!jsWorker) {
+    const init = (async () => {
+      const t = require("tesseract.js") as { createWorker(lang: string, oem: number, options: Record<string, unknown>): Promise<JsWorker> };
+      return t.createWorker("eng", 1, { langPath, cacheMethod: "none", gzip: true, logger: () => {}, errorHandler: () => {} });
+    })();
+    jsWorker = init.catch((e) => {
+      if (jsWorker === init) jsWorker = undefined;
+      throw e;
+    });
+  }
   const w = await jsWorker;
   try {
     const r = await w.recognize(image);

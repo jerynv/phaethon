@@ -546,7 +546,11 @@ function ItemsGroups({ spaces, items }: { spaces: SpaceLite[]; items: Loaded<Mem
     }
   };
   const dismiss = async (item: MemoryItem) => {
-    await change(item, { status: "dismissed" }, "Couldn’t dismiss that").catch(() => {});
+    try {
+      await change(item, { status: "dismissed" }, "Couldn’t dismiss that");
+    } catch {
+      return;
+    }
     toast.show({
       type: "success",
       title: "Dismissed",
@@ -560,7 +564,11 @@ function ItemsGroups({ spaces, items }: { spaces: SpaceLite[]; items: Loaded<Mem
   };
   // A state (sick, travelling) just ends; there's nothing to ask about how it went.
   const end = async (item: MemoryItem) => {
-    await change(item, { status: "done" }, "Couldn’t end that").catch(() => {});
+    try {
+      await change(item, { status: "done" }, "Couldn’t end that");
+    } catch {
+      return;
+    }
     toast.show({
       type: "success",
       title: "Ended",

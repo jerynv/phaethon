@@ -485,8 +485,10 @@ function FilesPage({ space }: { space: SpaceView }) {
                   <MenuRadioGroup value={sort} onValueChange={(v) => setSortPick(v as FileSort)}>
                     {SORTS.map((s) => (
                       <MenuRadioItem key={s.value} value={s.value}>
-                        {s.label}
-                        {s.value === sort ? <Icon icon={icons.check} className="ml-auto size-4" /> : null}
+                        <span className="flex items-center gap-2">
+                          <span className="flex-1">{s.label}</span>
+                          {s.value === sort ? <Icon icon={icons.check} className="size-4 shrink-0" /> : null}
+                        </span>
                       </MenuRadioItem>
                     ))}
                   </MenuRadioGroup>

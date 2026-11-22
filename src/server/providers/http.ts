@@ -95,11 +95,13 @@ export class StreamIdle extends Error {}
  * line is yielded at the end. Throws `StreamIdle` after `idleMs` of silence
  * and `StreamDropped` when reading fails.
  */
+const UTF8_LOSSY = new TextDecoder("utf-8", { fatal: false });
+
 export async function* sseEvents(body: ReadableStream<Uint8Array>, signal: AbortSignal, idleMs = IDLE_TIMEOUT_MS): AsyncGenerator<string> {
   const reader = body.getReader();
   let buf = Buffer.alloc(0);
   const decode = (bytes: Buffer) => {
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    const text = UTF8_LOSSY.decode(bytes);
     return text
       .split(/\r?\n/)
       .filter((l) => l.startsWith("data:"))

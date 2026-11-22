@@ -1,6 +1,7 @@
-import { CopyIcon, ExternalLinkIcon, EyeIcon, FolderOpenIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNav } from "@/app/store";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
@@ -34,21 +35,21 @@ export function FileMenu({ space, path, children, extra }: { space: string; path
       <ContextMenuTrigger render={<span className="contents" />}>{children}</ContextMenuTrigger>
       <ContextMenuPopup>
         <ContextMenuItem onClick={() => openFile(space, path)}>
-          <EyeIcon />
+          <Icon icon={icons.view} />
           Open
         </ContextMenuItem>
         <ContextMenuItem onClick={() => native(false)}>
-          <ExternalLinkIcon />
+          <Icon icon={icons.external} />
           Open in default app
         </ContextMenuItem>
         <ContextMenuItem onClick={() => native(true)}>
-          <FolderOpenIcon />
+          <Icon icon={icons.folderOpen} />
           Show in folder
         </ContextMenuItem>
         <ContextMenuSeparator />
         {extra}
         <ContextMenuItem onClick={() => void copyText(path, "Path copied")}>
-          <CopyIcon />
+          <Icon icon={icons.copy} />
           Copy path
         </ContextMenuItem>
       </ContextMenuPopup>

@@ -108,13 +108,20 @@ function UpdateRow({ initial }: { initial: UpdateView }) {
   }
 
   if (s.state === "available") {
+    const releaseDate = s.date
+      ? (() => {
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.date);
+          const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(s.date);
+          return Number.isNaN(d.getTime()) ? s.date : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+        })()
+      : null;
     return (
       <div>
         <Row
           label={`Phaethon ${s.version} is available`}
           description={
             <div className="flex flex-col gap-1">
-              {s.date ? <span className="tabular-nums">Released {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span> : null}
+              {releaseDate ? <span className="tabular-nums">Released {releaseDate}</span> : null}
               {s.notes ? <ClampedText text={s.notes} className="text-foreground/80" /> : null}
             </div>
           }

@@ -45,7 +45,8 @@ export function CommandPalette() {
   const active = useNav((s) => s.activeSpace);
   const edu = spaces.find((s) => s.id === active)?.educationEnabled ?? false;
   const nav = useNav.getState;
-  const theme = useTheme();
+  const dark = useTheme((s) => s.dark);
+  const setTheme = useTheme((s) => s.set);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchConversation[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -88,38 +89,40 @@ export function CommandPalette() {
       { id: "settings", label: "Open settings", icon: <Icon icon={icons.settings} />, run: () => nav().openSettings() },
       {
         id: "theme",
-        label: document.documentElement.classList.contains("dark") ? "Switch to light theme" : "Switch to dark theme",
-        icon: <Icon icon={document.documentElement.classList.contains("dark") ? icons.light : icons.dark} />,
-        run: () => void theme.set(document.documentElement.classList.contains("dark") ? "light" : "dark").catch(() => {}),
+        label: dark ? "Switch to light theme" : "Switch to dark theme",
+        icon: <Icon icon={dark ? icons.light : icons.dark} />,
+        run: () => void setTheme(dark ? "light" : "dark").catch(() => {}),
       },
       { id: "space", label: "New space", icon: <Icon icon={icons.add} />, run: () => nav().openSettings("spaces") },
     ],
-    [active, nav, theme],
+    [active, nav, dark, setTheme],
   );
   const q = query.trim().toLowerCase();
-  const matchedActions = actions.filter((a) => !q || a.label.toLowerCase().includes(q));
-  const matchedSpaces = spaces.filter((s) => !q || s.name.toLowerCase().includes(q));
-  // A space with study tools can jump straight to a view.
-  const views: Item[] = edu
-    ? VIEWS.map((v, i) => ({ id: `view:${v.id}`, label: `Go to ${v.label}`, keys: viewKeys(i).keys, icon: <Icon icon={v.icon} />, run: () => nav().setView(v.id as View) })).filter((v) => !q || v.label.toLowerCase().includes(q))
-    : [];
-  const conversations: Item[] = (results ?? []).map((c) => ({
-    id: `${c.space}/${c.threadId}`,
-    label: c.title,
-    detail: `${spaceName(c.space)} · ${compactTime(c.updated)}`,
-    icon: <Icon icon={icons.chat} />,
-    snippet: c.snippets[0],
-    run: () => void nav().openThread(c.space, c.threadId).catch((e) => toast.error("Couldn’t open that conversation", errorText(e))),
-  }));
-
-  const groups: { label: string; items: Item[] }[] = [
-    ...(conversations.length ? [{ label: "Conversations", items: conversations }] : []),
-    ...(matchedSpaces.length
-      ? [{ label: "Spaces", items: matchedSpaces.map((s) => ({ id: `space:${s.id}`, label: s.name, detail: s.description, icon: <SpaceAvatar name={s.name} hue={s.hue} />, run: () => nav().selectSpace(s.id) })) }]
-      : []),
-    ...(views.length ? [{ label: "Views", items: views }] : []),
-    ...(matchedActions.length ? [{ label: "Actions", items: matchedActions }] : []),
-  ];
+  const groups: { label: string; items: Item[] }[] = useMemo(() => {
+    if (!open) return [];
+    const matchedActions = actions.filter((a) => !q || a.label.toLowerCase().includes(q));
+    const matchedSpaces = spaces.filter((s) => !q || s.name.toLowerCase().includes(q));
+    const availableViews = edu ? VIEWS : VIEWS.filter((v) => !v.edu);
+    const views: Item[] = availableViews
+      .map((v, i) => ({ id: `view:${v.id}`, label: `Go to ${v.label}`, keys: viewKeys(i).keys, icon: <Icon icon={v.icon} />, run: () => nav().setView(v.id as View) }))
+      .filter((v) => !q || v.label.toLowerCase().includes(q));
+    const conversations: Item[] = (results ?? []).map((c) => ({
+      id: `${c.space}/${c.threadId}`,
+      label: c.title,
+      detail: `${spaceName(c.space)} · ${compactTime(c.updated)}`,
+      icon: <Icon icon={icons.chat} />,
+      snippet: c.snippets[0],
+      run: () => void nav().openThread(c.space, c.threadId).catch((e) => toast.error("Couldn’t open that conversation", errorText(e))),
+    }));
+    return [
+      ...(conversations.length ? [{ label: "Conversations", items: conversations }] : []),
+      ...(matchedSpaces.length
+        ? [{ label: "Spaces", items: matchedSpaces.map((s) => ({ id: `space:${s.id}`, label: s.name, detail: s.description, icon: <SpaceAvatar name={s.name} hue={s.hue} />, run: () => nav().selectSpace(s.id) })) }]
+        : []),
+      ...(views.length ? [{ label: "Views", items: views }] : []),
+      ...(matchedActions.length ? [{ label: "Actions", items: matchedActions }] : []),
+    ];
+  }, [open, actions, q, spaces, edu, nav, results]);
 
   return (
     <CommandDialog open={open} onOpenChange={(o) => setOpen(o)}>

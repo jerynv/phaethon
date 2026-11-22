@@ -129,7 +129,7 @@ export function ReviewSession({ space, paths, title, onBack }: { space: SpaceVie
         }
       />
       <Page narrow className="gap-6">
-        {load.error ? <SurfaceError title="Couldn’t load the cards" message={cleanMessage(load.error)} onRetry={load.reload} /> : null}
+        {load.error ? <SurfaceError title="Couldn’t load the cards" message={cleanMessage(load.error)} onRetry={load.reload} actions={[{ label: "Back to study", onClick: onBack }]} /> : null}
         {skeleton ? <ReviewSkeleton /> : null}
         {queue && !queue.length ? (
           <EndCard title="You’re caught up" line="Nothing is due.">

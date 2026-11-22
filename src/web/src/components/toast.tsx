@@ -1,7 +1,8 @@
 import { Toast } from "@base-ui/react/toast";
-import { CircleAlertIcon, CircleCheckIcon, InfoIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
+import { Icon } from "@/components/icon";
+import { icons } from "@/components/icons";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -41,10 +42,10 @@ export const toast = {
 };
 
 const ICONS: Record<ToastType, ReactNode> = {
-  success: <CircleCheckIcon className="size-4 text-success" />,
-  error: <CircleAlertIcon className="size-4 text-error" />,
-  warning: <TriangleAlertIcon className="size-4 text-warning" />,
-  info: <InfoIcon className="size-4 text-muted-foreground" />,
+  success: <Icon icon={icons.done} className="size-4 text-success" />,
+  error: <Icon icon={icons.error} className="size-4 text-error" />,
+  warning: <Icon icon={icons.warning} className="size-4 text-warning" />,
+  info: <Icon icon={icons.info} className="size-4 text-muted-foreground" />,
   loading: <Spinner size="md" tone="muted" />,
 };
 
@@ -94,9 +95,9 @@ function Toasts() {
               </Toast.Content>
               <Toast.Close
                 aria-label="Dismiss"
-                className="absolute top-2 right-2 inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                className="absolute top-2 right-2 inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
               >
-                <XIcon className="size-3" />
+                <Icon icon={icons.close} className="size-3" />
               </Toast.Close>
               {timeout > 0 ? (
                 <span

@@ -351,36 +351,38 @@ export async function account(cli: CliId, dir: string | null): Promise<{ loggedI
 
 export async function views(): Promise<InstanceView[]> {
   const settings = readSettings();
-  const out: InstanceView[] = [];
-  for (const config of list()) {
-    if (!isCliId(config.cli)) continue;
-    const cli = config.cli;
-    const dir = home(config);
-    let homeOk = true;
-    try {
-      requireHome(config);
-    } catch {
-      homeOk = false;
-    }
-    // Only a CLI that's really there: probing a path with nothing at it can wait out every probe's timeout (Windows).
-    const found = homeOk ? binary(cli, dir) : null;
-    const installed = found !== null && isExecutable(found);
-    const acct = installed ? await account(cli, dir) : { loggedIn: null, email: null, plan: null };
-    const readOnly = isSystemId(config.id);
-    const system = readOnly || (cli === "claude" && config.id === cli && !settings.isolateClaudeConfig);
-    out.push({
-      config,
-      installed,
-      loggedIn: acct.loggedIn,
-      account: acct.email,
-      plan: acct.plan,
-      selected: selected(cli).id === config.id && cliOfBackend(settings.backend) === cli,
-      managedHome: dir !== null && !system,
-      source: system ? "system" : "managed",
-      readOnly,
-    });
-  }
-  return out;
+  const activeBackendCli = cliOfBackend(settings.backend);
+  const selectedIds = new Map(CLI_IDS.map((c) => [c, selected(c).id]));
+  const configs = list().filter((config): config is Instance & { cli: CliId } => isCliId(config.cli));
+  return Promise.all(
+    configs.map(async (config) => {
+      const cli = config.cli;
+      const dir = home(config);
+      let homeOk = true;
+      try {
+        requireHome(config);
+      } catch {
+        homeOk = false;
+      }
+      // Only a CLI that's really there: probing a path with nothing at it can wait out every probe's timeout (Windows).
+      const found = homeOk ? binary(cli, dir) : null;
+      const installed = found !== null && isExecutable(found);
+      const acct = installed ? await account(cli, dir) : { loggedIn: null, email: null, plan: null };
+      const readOnly = isSystemId(config.id);
+      const system = readOnly || (cli === "claude" && config.id === cli && !settings.isolateClaudeConfig);
+      return {
+        config,
+        installed,
+        loggedIn: acct.loggedIn,
+        account: acct.email,
+        plan: acct.plan,
+        selected: selectedIds.get(cli) === config.id && activeBackendCli === cli,
+        managedHome: dir !== null && !system,
+        source: system ? "system" : "managed",
+        readOnly,
+      };
+    }),
+  );
 }
 
 export async function signOut(cli: CliId, dir: string | null): Promise<void> {

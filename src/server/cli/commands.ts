@@ -34,16 +34,17 @@ export function statusOf(found: string | null): CliStatus {
 }
 
 export async function clisInfo(): Promise<CliInfo[]> {
-  const out: CliInfo[] = [];
-  for (const cli of CLI_IDS) {
-    const dir = instances.configDirFor(cli);
-    const found = instances.binary(cli, dir);
-    const bin = found && isExecutable(found) ? found : null;
-    let loggedIn: boolean | null = null;
-    if (bin && cli === "codex") loggedIn = await instances.codexLoggedIn(bin, dir);
-    else if (bin && (cli === "claude" || cli === "gemini")) loggedIn = (await instances.account(cli, dir)).loggedIn;
-    out.push({ id: cli, name: cliName(cli), installed: bin !== null, loggedIn, loginCommand: loginCommand(cli, dir), supported: true, ownHome: CLI[cli].ownHome });
-  }
+  const out = await Promise.all(
+    CLI_IDS.map(async (cli): Promise<CliInfo> => {
+      const dir = instances.configDirFor(cli);
+      const found = instances.binary(cli, dir);
+      const bin = found && isExecutable(found) ? found : null;
+      let loggedIn: boolean | null = null;
+      if (bin && cli === "codex") loggedIn = await instances.codexLoggedIn(bin, dir);
+      else if (bin && (cli === "claude" || cli === "gemini")) loggedIn = (await instances.account(cli, dir)).loggedIn;
+      return { id: cli, name: cliName(cli), installed: bin !== null, loggedIn, loginCommand: loginCommand(cli, dir), supported: true, ownHome: CLI[cli].ownHome };
+    }),
+  );
   const home = homeDir();
   const opencode = findOnPath("opencode", [...commonBinDirs(), ...(home ? [path.join(home, ".opencode", "bin")] : [])]);
   out.push({ id: "opencode", name: "OpenCode", installed: opencode !== null, loggedIn: null, loginCommand: "opencode auth login", supported: false, ownHome: false });

@@ -354,12 +354,15 @@ export function describeWrite(ctx: ToolCtx, p: string, contents: string): WriteP
     action = "replace";
     try {
       const fd = fs.openSync(real, "r");
-      const buf = Buffer.alloc(Math.min(st.size, PREVIEW_CAP + 1));
-      const n = fs.readSync(fd, buf, 0, buf.length, 0);
-      fs.closeSync(fd);
-      const c = cut(buf.subarray(0, n).toString("utf8"), PREVIEW_CAP);
-      before = c.text;
-      beforeCut = c.cut;
+      try {
+        const buf = Buffer.alloc(Math.min(st.size, PREVIEW_CAP + 1));
+        const n = fs.readSync(fd, buf, 0, buf.length, 0);
+        const c = cut(buf.subarray(0, n).toString("utf8"), PREVIEW_CAP);
+        before = c.text;
+        beforeCut = c.cut;
+      } finally {
+        fs.closeSync(fd);
+      }
     } catch {
       before = "";
     }

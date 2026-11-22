@@ -1,6 +1,5 @@
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { IconContext } from "@phosphor-icons/react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 // Default size (16 px) comes from index.css at zero specificity, so a parent's `[&_svg]:size-*` still applies.
 
@@ -41,12 +40,4 @@ export function Icon({ icon, label, className, ...props }: IconProps) {
       {...props}
     />
   );
-}
-
-/**
- * Phosphor still draws a few not-yet-migrated places; its Light weight is the
- * closest to Hugeicons' stroke. Remove once `rg phosphor-icons src/web` is empty.
- */
-export function IconProvider({ children }: { children: ReactNode }) {
-  return <IconContext.Provider value={{ weight: "light", size: "1em" }}>{children}</IconContext.Provider>;
 }

@@ -1,4 +1,4 @@
-import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
+import { createContext, memo, type ReactNode, useContext, useLayoutEffect, useMemo, useRef } from "react";
 import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -137,41 +137,47 @@ function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
   );
 }
 
-function makeComponents(ctx: Ctx): Components {
-  return {
-    pre: ({ children }) => <>{children}</>,
-    code: ({ className, children, node }) => {
-      const text = String(children ?? "").replace(/\n$/, "");
-      const lang = /language-([\w+-]+)/.exec(className ?? "")?.[1];
-      const block = node?.position && node.position.start.line !== node.position.end.line;
-      if (!lang && !block) {
-        if (looksLikeFilePath(text)) return <FileChip space={ctx.space} path={text.trim()} variant="inline" label={<code>{text.trim()}</code>} />;
-        return <code className="md-inline-code">{children}</code>;
-      }
-      if (lang === "mermaid") return <MermaidBlock code={text} streaming={ctx.streaming} />;
-      // ```tikz is what the system prompt asks figures to be written in (prompts/60-rich-output.md); a bare picture compiles as a figure.
-      if (lang === "latex" || lang === "tex" || lang === "tikz") return <LatexBlock source={text} space={ctx.space} streaming={ctx.streaming} />;
-      if (lang === STUDY_FENCE) return <StudyBlock code={text} space={ctx.space} streaming={ctx.streaming} messageKey={ctx.messageKey} />;
-      if (lang === ACTIONS_FENCE) return <ChatActions code={text} space={ctx.space} />;
-      if (lang === EMAIL_FENCE) return <EmailBlock code={text} space={ctx.space} streaming={ctx.streaming} />;
-      return <CodeBlock code={text} lang={lang} />;
-    },
-    a: ({ href, children }) => {
-      const cite = citationOf(href);
-      if (cite) return <CitationChip space={ctx.space} citation={cite} />;
-      const target = linkTarget(href);
-      if (target.kind === "file") return <FileChip space={ctx.space} path={target.path} variant="inline" label={children} />;
-      if (target.kind !== "external") return <span className="md-link">{children}</span>;
-      return <ExternalLink url={target.url}>{children}</ExternalLink>;
-    },
-    table: ({ children }) => (
-      <div className="md-table-wrap">
-        <table>{children}</table>
-      </div>
-    ),
-    img: ({ src, alt }) => (typeof src === "string" ? <img src={src} alt={alt ?? ""} className="max-h-96 rounded-lg border" loading="lazy" /> : null),
-  };
-}
+const MarkdownCtx = createContext<Ctx>({ space: "", streaming: false, messageKey: "" });
+const REMARK_PLUGINS: Parameters<typeof ReactMarkdown>[0]["remarkPlugins"] = [remarkGfm, [remarkMath, { singleDollarTextMath: true }]];
+const REHYPE_PLUGINS: Parameters<typeof ReactMarkdown>[0]["rehypePlugins"] = [[rehypeKatex, KATEX_OPTIONS]];
+
+const MdPre: Components["pre"] = ({ children }) => <>{children}</>;
+const MdCode: Components["code"] = ({ className, children, node }) => {
+  const ctx = useContext(MarkdownCtx);
+  const text = String(children ?? "").replace(/\n$/, "");
+  const lang = /language-([\w+-]+)/.exec(className ?? "")?.[1];
+  const block = node?.position && node.position.start.line !== node.position.end.line;
+  if (!lang && !block) {
+    if (looksLikeFilePath(text)) return <FileChip space={ctx.space} path={text.trim()} variant="inline" label={<code>{text.trim()}</code>} />;
+    return <code className="md-inline-code">{children}</code>;
+  }
+  if (lang === "mermaid") return <MermaidBlock code={text} streaming={ctx.streaming} />;
+  // ```tikz is what the system prompt asks figures to be written in (prompts/60-rich-output.md); a bare picture compiles as a figure.
+  if (lang === "latex" || lang === "tex" || lang === "tikz") return <LatexBlock source={text} space={ctx.space} streaming={ctx.streaming} />;
+  if (lang === STUDY_FENCE) return <StudyBlock code={text} space={ctx.space} streaming={ctx.streaming} messageKey={ctx.messageKey} />;
+  if (lang === ACTIONS_FENCE) return <ChatActions code={text} space={ctx.space} />;
+  if (lang === EMAIL_FENCE) return <EmailBlock code={text} space={ctx.space} streaming={ctx.streaming} />;
+  return <CodeBlock code={text} lang={lang} />;
+};
+const MdLink: Components["a"] = ({ href, children }) => {
+  const ctx = useContext(MarkdownCtx);
+  const cite = citationOf(href);
+  if (cite) return <CitationChip space={ctx.space} citation={cite} />;
+  const target = linkTarget(href);
+  if (target.kind === "file") return <FileChip space={ctx.space} path={target.path} variant="inline" label={children} />;
+  if (target.kind !== "external") return <span className="md-link">{children}</span>;
+  return <ExternalLink url={target.url}>{children}</ExternalLink>;
+};
+const MdTable: Components["table"] = ({ children }) => (
+  <div className="md-table-wrap">
+    <table>{children}</table>
+  </div>
+);
+const MdImg: Components["img"] = ({ src, alt }) => (typeof src === "string" ? <img src={src} alt={alt ?? ""} className="max-h-96 rounded-lg border" loading="lazy" /> : null);
+const MdInlineP: Components["p"] = ({ children }) => <span>{children}</span>;
+
+const MD_COMPONENTS: Components = { pre: MdPre, code: MdCode, a: MdLink, table: MdTable, img: MdImg };
+const MD_COMPONENTS_INLINE: Components = { ...MD_COMPONENTS, p: MdInlineP };
 
 export const Markdown = memo(function Markdown({
   text,
@@ -190,14 +196,15 @@ export const Markdown = memo(function Markdown({
   className?: string;
 }): ReactNode {
   const source = markCitations(prepareMath(streaming ? holdPartialCitation(text) : text, streaming));
-  const components = makeComponents({ space, streaming, messageKey });
-  if (inline) components.p = ({ children }) => <span>{children}</span>;
+  const ctx = useMemo(() => ({ space, streaming, messageKey }), [space, streaming, messageKey]);
   const ref = useWideMath(source);
   return (
-    <div ref={ref} className={cn("markdown", inline && "markdown-inline", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]} rehypePlugins={[[rehypeKatex, KATEX_OPTIONS]]} components={components}>
-        {source}
-      </ReactMarkdown>
-    </div>
+    <MarkdownCtx value={ctx}>
+      <div ref={ref} className={cn("markdown", inline && "markdown-inline", className)}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={inline ? MD_COMPONENTS_INLINE : MD_COMPONENTS}>
+          {source}
+        </ReactMarkdown>
+      </div>
+    </MarkdownCtx>
   );
 });

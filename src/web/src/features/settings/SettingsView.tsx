@@ -105,10 +105,9 @@ function MarkerView({ m }: { m: Marker | undefined }) {
   );
 }
 
-function Nav({ section, onReset }: { section: SettingsSection; onReset: () => void }) {
+function Nav({ section, markers, onReset }: { section: SettingsSection; markers: Partial<Record<SettingsSection, Marker>>; onReset: () => void }) {
   const close = useNav((s) => s.closeSettings);
   const open = useNav((s) => s.openSettings);
-  const markers = useMarkers(section);
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
   return (
     <nav aria-label="Settings" className="hidden w-52 shrink-0 flex-col overflow-y-auto border-r px-3 pt-(--pane-top) pb-3 @2xl/settings:flex @5xl/settings:w-64">
@@ -164,10 +163,9 @@ function Nav({ section, onReset }: { section: SettingsSection; onReset: () => vo
  * Settings too narrow for its nav column: Back, and the section on show as a
  * menu of every section, in the nav's groups, above the section.
  */
-function SectionBar({ section, onReset }: { section: SettingsSection; onReset: () => void }) {
+function SectionBar({ section, markers, onReset }: { section: SettingsSection; markers: Partial<Record<SettingsSection, Marker>>; onReset: () => void }) {
   const close = useNav((s) => s.closeSettings);
   const open = useNav((s) => s.openSettings);
-  const markers = useMarkers(section);
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
   const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   return (
@@ -251,6 +249,7 @@ export function SettingsView() {
   const [crumb, setCrumb] = useState<Crumb>(null);
   // Clicking the section you are in brings back its root view (a space's detail closes).
   const [reset, setReset] = useState(0);
+  const markers = useMarkers(section);
   const meta = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]!;
   const title = (
     <nav aria-label="Breadcrumb" className="flex min-w-0 items-center">
@@ -291,7 +290,7 @@ export function SettingsView() {
   return (
     <div className="@container/settings flex min-h-0 flex-1">
       <HeaderTitle>{title}</HeaderTitle>
-      <Nav section={section} onReset={() => setReset((n) => n + 1)} />
+      <Nav section={section} markers={markers} onReset={() => setReset((n) => n + 1)} />
       <div className="page-scroll relative min-h-0 flex-1">
         <motion.div
           key={`${section}-${reset}`}
@@ -300,7 +299,7 @@ export function SettingsView() {
           transition={{ duration: 0.18, ease: "easeOut" }}
           className="relative mx-auto flex w-full max-w-(--settings-max-width) flex-col gap-6 px-4 pt-3 pb-12 @2xl/settings:px-8 @2xl/settings:pt-8"
         >
-          <SectionBar section={section} onReset={() => setReset((n) => n + 1)} />
+          <SectionBar section={section} markers={markers} onReset={() => setReset((n) => n + 1)} />
           <CrumbContext value={setCrumb}>
             <Body section={section} />
           </CrumbContext>

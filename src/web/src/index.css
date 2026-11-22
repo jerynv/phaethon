@@ -671,11 +671,9 @@
     height: 1rem;
   }
   /* One stroke for every icon (components/icon.tsx); small glyphs a little heavier. */
-  svg.lucide,
   [data-slot="icon"] [stroke] {
     stroke-width: var(--icon-stroke);
   }
-  svg.lucide:is(.size-3, .size-2\.5, .size-3\.5),
   [data-slot="icon"]:is(.size-3, .size-2\.5, .size-3\.5) [stroke] {
     stroke-width: var(--icon-stroke-small);
   }

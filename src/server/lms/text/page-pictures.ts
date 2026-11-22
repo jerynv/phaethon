@@ -39,7 +39,11 @@ export async function pagePicturesHere(file: string, pages: number[]): Promise<P
       let typed = false;
       try {
         const page = await doc.getPage(p);
-        typed = letters(await pageText(page)) >= SPARSE;
+        try {
+          typed = letters(await pageText(page)) >= SPARSE;
+        } finally {
+          page.cleanup?.();
+        }
       } catch {
         typed = false;
       }

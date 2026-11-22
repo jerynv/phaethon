@@ -180,8 +180,19 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
   // The core owns the countdown; follow it, faster near the end.
   useEffect(() => {
     if (!live || !draftId) return;
-    const t = setInterval(() => getDraft(space, draftId).then(setD, () => {}), d?.status === "sending" || left < 1500 ? 400 : 1000);
-    return () => clearInterval(t);
+    let alive = true;
+    const t = setInterval(
+      () =>
+        getDraft(space, draftId).then(
+          (x) => alive && setD(x),
+          () => {},
+        ),
+      d?.status === "sending" || left < 1500 ? 400 : 1000,
+    );
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
   }, [live, draftId, space, d?.status, left < 1500]);
 
   useEffect(() => {
@@ -303,9 +314,12 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
         </div>
 
         <Line label="To" htmlFor={`to-${draftId}`}>
-          {d.to.map((a) => (
-            <Chip key={a} text={names.get(a) ?? a} sub={names.get(a) ? a : "not in People"} warn={!names.get(a)} onRemove={editable ? () => void save({ to: d.to.filter((x) => x !== a) }) : undefined} />
-          ))}
+          {d.to.map((a) => {
+            const name = names.get(a.toLowerCase());
+            return (
+              <Chip key={a} text={name ?? a} sub={name ? a : "not in People"} warn={!name} onRemove={editable ? () => void save({ to: d.to.filter((x) => x !== a) }) : undefined} />
+            );
+          })}
           {(d.missing ?? []).map((n) => (
             <Chip key={n} text={n} sub="add their address" warn />
           ))}
@@ -338,9 +352,12 @@ export function EmailCard({ space, initial, id, intent }: { space: string; initi
         </Line>
         {showCc ? (
           <Line label="Cc">
-            {d.cc.map((a) => (
-              <Chip key={a} text={names.get(a) ?? a} sub={names.get(a) ? a : undefined} onRemove={editable ? () => void save({ cc: d.cc.filter((x) => x !== a) }) : undefined} />
-            ))}
+            {d.cc.map((a) => {
+              const name = names.get(a.toLowerCase());
+              return (
+                <Chip key={a} text={name ?? a} sub={name ? a : undefined} onRemove={editable ? () => void save({ cc: d.cc.filter((x) => x !== a) }) : undefined} />
+              );
+            })}
             {editable ? (
               <Input
                 unstyled

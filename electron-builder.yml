@@ -11,17 +11,24 @@ directories:
   buildResources: build
 
 files:
-  - dist/**/*
+  - dist/web/**/*
+  - dist/server/**/*
+  - dist/desktop/**/*
   - "!dist/**/*.map"
   - package.json
   - LICENSE
   - THIRD_PARTY_NOTICES.md
-  # Renderer-only packages: Vite already bundled them into dist/web, so they
-  # don't ship again (a test fails if the core or the shell imports one).
-  - "!**/node_modules/{mermaid,@mermaid-js,cytoscape,cytoscape-fcose,cytoscape-cose-bilkent,elkjs}/**"
-  - "!**/node_modules/{react,react-dom,react-markdown,rehype-katex,remark-gfm,remark-math,katex}/**"
-  - "!**/node_modules/{lucide-react,@base-ui,shiki,@shikijs,class-variance-authority,tailwind-merge,docx-preview,zustand}/**"
-  - "!**/node_modules/{@fontsource,@fontsource-variable}/**"
+  # Renderer-only packages live in devDependencies so Vite bundles them into
+  # dist/web without shipping them (or their transitive trees) in app.asar.
+  # Strip source maps, type declarations, and unused runtime subtrees from the
+  # few Node runtime dependencies that stay in dependencies.
+  - "!**/node_modules/**/*.map"
+  - "!**/node_modules/**/*.d.{ts,mts,cts}"
+  - "!**/node_modules/pdfjs-dist/{build,web,types}/**"
+  - "!**/node_modules/@tesseract.js-data/eng/4.0.0/**"
+  - "!**/node_modules/tesseract.js-core/*.wasm.js"
+  - "!**/node_modules/tesseract.js-core/tesseract-core.{js,wasm}"
+  - "!**/node_modules/tesseract.js-core/tesseract-core-simd.{js,wasm}"
 
 asar: true
 # The native modules are prebuilt N-API binaries for each platform; nothing to compile.

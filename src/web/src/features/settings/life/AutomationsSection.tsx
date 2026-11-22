@@ -146,8 +146,7 @@ function DigestDetail({ spaces, onChanged }: { spaces: SpaceLite[]; onChanged: (
   );
 }
 
-function JobsGroup({ jobs, spaces }: { jobs: Loaded<JobView[]>; spaces: SpaceLite[] }) {
-  const { running, mark } = useRun(jobs);
+function JobsGroup({ jobs, spaces, running, mark }: { jobs: Loaded<JobView[]>; spaces: SpaceLite[]; running: Set<string>; mark: (id: string, on: boolean) => void }) {
   const [toggling, setToggling] = useState<string | null>(null);
   const run = async (j: JobView) => {
     mark(j.id, true);
@@ -264,6 +263,7 @@ function ScheduleDialog({ editing, spaces, onOpenChange, onSaved }: { editing: E
     if (!title.trim()) return setError("Give it a name.");
     if (!space) return setError("Choose a space.");
     if (!prompt.trim()) return setError("Say what to do.");
+    if (!when.trim()) return setError("Say when to run it.");
     if (hint && !hint.ok) return setError(hint.text);
     setBusy(true);
     setError(null);
@@ -346,13 +346,12 @@ function ScheduleDialog({ editing, spaces, onOpenChange, onSaved }: { editing: E
   );
 }
 
-function SchedulesGroup({ jobs, spaces }: { jobs: Loaded<JobView[]>; spaces: SpaceLite[] }) {
+function SchedulesGroup({ jobs, spaces, running, mark }: { jobs: Loaded<JobView[]>; spaces: SpaceLite[]; running: Set<string>; mark: (id: string, on: boolean) => void }) {
   const openThread = useNav((s) => s.openThread);
   const schedules = useLoad(listSchedules, [], "jobs:schedules");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleting, setDeleting] = useState<Schedule | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
-  const { running, mark } = useRun(jobs);
   const reloadAll = async () => {
     await Promise.all([schedules.reload(), jobs.reload()]);
   };
@@ -492,10 +491,11 @@ function SchedulesGroup({ jobs, spaces }: { jobs: Loaded<JobView[]>; spaces: Spa
 export function AutomationsSection() {
   const spaces = useSpaceList();
   const jobs = useLoad(listJobs, [], "jobs:list");
+  const { running, mark } = useRun(jobs);
   return (
     <>
-      <JobsGroup jobs={jobs} spaces={spaces} />
-      <SchedulesGroup jobs={jobs} spaces={spaces} />
+      <JobsGroup jobs={jobs} spaces={spaces} running={running} mark={mark} />
+      <SchedulesGroup jobs={jobs} spaces={spaces} running={running} mark={mark} />
     </>
   );
 }

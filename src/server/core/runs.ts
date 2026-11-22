@@ -23,7 +23,9 @@ export function turnKey(space: string, thread: string): string {
 /** The conversations of `space` replying right now. */
 /** How many replies are being written right now, in every space. */
 export function runCount(): number {
-  return runs.size;
+  let n = 0;
+  for (const key of runs.keys()) if (!key.startsWith("\0")) n++;
+  return n;
 }
 
 export function runningIn(space: string): string[] {

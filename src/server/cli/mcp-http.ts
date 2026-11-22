@@ -1,6 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { onStop } from "../lifecycle.ts";
 import { log } from "../log.ts";
 import { MCP_SERVER, type ToolHost } from "./phaethon-tools.ts";
 
@@ -69,12 +70,16 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method !== "POST") return reply(res, 405);
   const chunks: Buffer[] = [];
   let size = 0;
+  let tooBig = false;
   req.on("data", (c: Buffer) => {
     size += c.length;
-    if (size > MAX_BODY) req.destroy();
-    else chunks.push(c);
+    if (size > MAX_BODY) {
+      tooBig = true;
+      req.destroy();
+    } else chunks.push(c);
   });
   req.on("end", () => {
+    if (tooBig) return;
     let body: Rpc | Rpc[];
     try {
       body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -96,9 +101,13 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
 }
 
 function port(): Promise<number> {
-  listening ??= new Promise((resolve, reject) => {
+  listening ??= new Promise<number>((resolve, reject) => {
     server = http.createServer(handle);
-    server.once("error", reject);
+    server.once("error", (e) => {
+      server = undefined;
+      listening = undefined;
+      reject(e);
+    });
     server.listen(0, "127.0.0.1", () => resolve((server!.address() as AddressInfo).port));
     server.unref();
   });
@@ -120,3 +129,5 @@ export function closeMcp(): void {
   server = undefined;
   listening = undefined;
 }
+
+onStop("close mcp server", () => closeMcp());

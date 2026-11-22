@@ -22,7 +22,7 @@ function ToggleGroup({
 }: ToggleGroupPrimitive.Props & VariantProps<typeof toggleVariants>) {
   const size =
     sizeProp === undefined ? (variant === "segmented" ? "segmented" : "default") : sizeProp;
-  const value = { size, variant };
+  const value = React.useMemo(() => ({ size, variant }), [size, variant]);
   return (
     <ToggleGroupPrimitive
       className={cn(

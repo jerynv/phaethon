@@ -37,6 +37,11 @@ export function watchWindowsChild(pid: number): () => void {
 export function killWindowsChild(pid: number): boolean {
   const job = children.get(pid);
   if (!job) return false;
-  job.terminate();
+  children.delete(pid);
+  try {
+    job.terminate();
+  } finally {
+    job.close();
+  }
   return true;
 }

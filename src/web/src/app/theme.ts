@@ -19,17 +19,24 @@ function initial(): ThemeChoice {
   return "system";
 }
 
-type Theme = { choice: ThemeChoice; appearance: Record<string, unknown>; set(choice: ThemeChoice): Promise<void>; hydrate(appearance: unknown): void };
+export function resolveDark(choice: ThemeChoice): boolean {
+  return choice === "dark" || (choice === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+
+type Theme = { choice: ThemeChoice; dark: boolean; appearance: Record<string, unknown>; set(choice: ThemeChoice): Promise<void>; hydrate(appearance: unknown): void };
+
+const initialChoice = initial();
 
 export const useTheme = create<Theme>((set, get) => ({
-  choice: initial(),
+  choice: initialChoice,
+  dark: resolveDark(initialChoice),
   appearance: {},
   hydrate(appearance) {
     const a = appearance && typeof appearance === "object" ? (appearance as Record<string, unknown>) : {};
     const t = a.theme;
     // The vault's choice wins; with none saved there, the one remembered on this computer stays.
     const choice: ThemeChoice = t === "light" || t === "dark" || t === "system" ? t : get().choice;
-    set({ appearance: a, choice });
+    set({ appearance: a, choice, dark: resolveDark(choice) });
     try {
       localStorage.setItem(KEY, choice);
     } catch {
@@ -38,7 +45,7 @@ export const useTheme = create<Theme>((set, get) => ({
   },
   async set(choice) {
     const appearance = { ...get().appearance, theme: choice };
-    set({ choice, appearance });
+    set({ choice, dark: resolveDark(choice), appearance });
     try {
       localStorage.setItem(KEY, choice);
     } catch {
@@ -49,8 +56,9 @@ export const useTheme = create<Theme>((set, get) => ({
 }));
 
 export function applyTheme(choice: ThemeChoice) {
-  const dark = choice === "dark" || (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const dark = resolveDark(choice);
   document.documentElement.classList.toggle("dark", dark);
+  if (useTheme.getState().dark !== dark) useTheme.setState({ dark });
 }
 
 /** Keeps `<html class="dark">` in step with the choice and the system. */

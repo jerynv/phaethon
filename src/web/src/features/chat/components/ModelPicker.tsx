@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useViewActive } from "@/app/Header";
 import { type SettingsSection, type SettingsTarget, useNav } from "@/app/store";
@@ -6,7 +7,7 @@ import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { ProviderIcon } from "@/components/provider-icon";
 import { SkeletonRows } from "@/components/skeletons";
-import { Truncate } from "@/components/truncate";
+import { Truncate, TruncateTips } from "@/components/truncate";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -36,15 +37,31 @@ const sameModel = (a: ModelPick, b: Pick<CatalogModel, "backend" | "model">) => 
 /** Dispatched on window (the composer's `/model`) to open the picker. */
 export const OPEN_MODEL_PICKER = "phaethon:open-model-picker";
 
+type FlatItem =
+  | { kind: "header"; key: string; group: CatalogGroup }
+  | { kind: "loading"; key: string; group: CatalogGroup }
+  | { kind: "error"; key: string; group: CatalogGroup }
+  | { kind: "empty"; key: string; group: CatalogGroup }
+  | { kind: "model"; key: string; group: CatalogGroup; m: CatalogModel; rowIndex: number };
+
+const ITEM_HEIGHT: Record<FlatItem["kind"], number> = {
+  header: 28,
+  loading: 108,
+  error: 36,
+  empty: 28,
+  model: 36,
+};
+
 export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPick: (p: ModelPick) => void; disabled?: boolean }) {
-  const { groups, status, error, autoFallback, load, loadModels } = useCatalog();
+  const groups = useCatalog((s) => s.groups);
+  const status = useCatalog((s) => s.status);
+  const error = useCatalog((s) => s.error);
+  const autoFallback = useCatalog((s) => s.autoFallback);
+  const load = useCatalog((s) => s.load);
+  const loadModels = useCatalog((s) => s.loadModels);
   const openSettings = useNav((s) => s.openSettings);
   const [open, setOpen] = useState(false);
-  const [rail, setRail] = useState<string>("all");
-  const [query, setQuery] = useState("");
-  const [hi, setHi] = useState(0);
-  const [showUnready, setShowUnready] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => void load(), [load]);
   const visible = useViewActive();
@@ -54,31 +71,10 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
     window.addEventListener(OPEN_MODEL_PICKER, show);
     return () => window.removeEventListener(OPEN_MODEL_PICKER, show);
   }, [disabled, visible]);
-  useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setRail("all");
-    setShowUnready(false);
-    for (const g of useCatalog.getState().groups) if (g.ready) void loadModels(g.id);
-  }, [open, loadModels]);
 
   const readyGroups = useMemo(() => groups.filter((g) => g.ready), [groups]);
   const unreadyGroups = useMemo(() => groups.filter((g) => !g.ready), [groups]);
   const showRail = readyGroups.length >= 2;
-  const activeRail = rail === "all" || readyGroups.some((g) => g.id === rail) ? rail : "all";
-
-  const shownGroups = activeRail === "all" ? readyGroups : readyGroups.filter((g) => g.id === activeRail);
-  const q = query.trim().toLowerCase();
-  const rows = useMemo(
-    () =>
-      shownGroups.flatMap((g) =>
-        g.models
-          .filter((m) => !q || m.name.toLowerCase().includes(q) || (m.model ?? "").toLowerCase().includes(q) || g.name.toLowerCase().includes(q))
-          .map((m) => ({ g, m })),
-      ),
-    [shownGroups, q],
-  );
-  useEffect(() => setHi(0), [q, activeRail]);
 
   const goSettings = (section: SettingsSection = "models", target?: SettingsTarget) => {
     setOpen(false);
@@ -90,18 +86,6 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
     const effort = keep && m.efforts.includes(keep) ? keep : null;
     onPick({ backend: m.backend, model: m.model, effort });
     setOpen(false);
-  };
-
-  const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      const next = Math.max(0, Math.min(rows.length - 1, hi + (e.key === "ArrowDown" ? 1 : -1)));
-      setHi(next);
-      listRef.current?.querySelector(`[data-row="${next}"]`)?.scrollIntoView({ block: "nearest" });
-    } else if (e.key === "Enter" && rows[hi]) {
-      e.preventDefault();
-      choose(rows[hi].m);
-    }
   };
 
   const current = groups.find((g) => g.id === groupIdOf(pick));
@@ -126,7 +110,7 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
         align="end"
         padding="none"
         className={cn("max-w-(--viewport-max-width) overflow-hidden rounded-xl", showRail ? "w-116" : "w-88")}
-        initialFocus={() => (document.getElementById("model-search") as HTMLElement | null) ?? undefined}
+        initialFocus={() => searchRef.current ?? undefined}
       >
         {empty ? (
           <div className="flex flex-col items-center gap-3 px-6 py-7 text-center">
@@ -146,128 +130,291 @@ export function ModelPicker({ pick, onPick, disabled }: { pick: ModelPick; onPic
             </div>
           </div>
         ) : (
-          <div className="flex h-96 max-h-(--available-height) min-h-0">
-            {showRail ? (
-              <div className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r bg-well py-2" role="tablist" aria-label="Providers">
-                <RailButton active={activeRail === "all"} label="All connected models" onClick={() => setRail("all")}>
-                  <Icon icon={icons.apps} className="size-4 text-muted-foreground" />
-                </RailButton>
-                <div className="my-1 h-px w-6 bg-border" />
-                {readyGroups.map((g) => (
-                  <RailButton
-                    key={g.id}
-                    active={activeRail === g.id}
-                    label={g.name}
-                    onClick={() => {
-                      setRail(g.id);
-                      void loadModels(g.id);
-                    }}
-                  >
-                    <ProviderIcon id={g.id} />
-                  </RailButton>
-                ))}
-              </div>
-            ) : null}
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3.5">
-                <Icon icon={icons.search} className="size-3.5 shrink-0 text-subtle-foreground" />
-                <input
-                  id="model-search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={onKey}
-                  placeholder="Search models…"
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              {currentUnready ? (
-                <div className="flex items-start gap-2 border-b bg-warning/8 px-3.5 py-2 text-warning-foreground text-xs">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" />
-                  <p className="min-w-0 flex-1 leading-relaxed">
-                    Current model isn’t ready — choose a connected model below or{" "}
-                    <button
-                      type="button"
-                      onClick={() => goSettings("models", targetForGroup(current.id))}
-                      className="font-medium underline underline-offset-2 hover:opacity-80"
-                    >
-                      finish setup
-                    </button>
-                    .
-                  </p>
-                </div>
-              ) : null}
-              <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5" role="listbox" aria-label="Models">
-                {status === "loading" && readyGroups.length === 0 ? <SkeletonRows count={5} withIcon /> : null}
-                {status === "error" ? <RowError className="h-8 px-2" message={error ?? "Couldn’t load models"} onRetry={() => void load(true)} /> : null}
-                {shownGroups.map((g) => (
-                  <GroupRows
-                    key={g.id}
-                    group={g}
-                    pick={pick}
-                    rows={rows}
-                    hi={hi}
-                    setHi={setHi}
-                    choose={choose}
-                    showHeader={activeRail === "all"}
-                    query={q}
-                    onRetry={() => void loadModels(g.id)}
-                  />
-                ))}
-                {status === "ready" && rows.length === 0 && q ? (
-                  <p className="px-3 py-6 text-center text-muted-foreground text-xs">No model matches “{query.trim()}”.</p>
-                ) : null}
-              </div>
-              {unreadyGroups.length > 0 ? (
-                <div className="shrink-0 border-t">
-                  <button
-                    type="button"
-                    aria-expanded={showUnready}
-                    onClick={() => setShowUnready((v) => !v)}
-                    className="flex h-8 w-full items-center justify-between gap-2 px-3.5 text-muted-foreground text-xs transition-colors hover:bg-accent/50 hover:text-foreground"
-                  >
-                    <span>Set up another ({unreadyGroups.length})</span>
-                    <Icon icon={icons.chevronDown} className={cn("size-3.5 transition-transform duration-150", !showUnready && "-rotate-90")} />
-                  </button>
-                  {showUnready ? (
-                    <div className="max-h-32 overflow-y-auto border-t bg-well/40 p-1">
-                      {unreadyGroups.map((g) => (
-                        <button
-                          key={g.id}
-                          type="button"
-                          onClick={() => goSettings("models", targetForGroup(g.id))}
-                          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs transition-colors hover:bg-accent"
-                        >
-                          <ProviderIcon id={g.id} className="size-3.5 opacity-60" />
-                          <span className="min-w-0 flex-1 truncate text-foreground/85">{g.name}</span>
-                          <span className="shrink-0 text-subtle-foreground">{g.need}</span>
-                          <Icon icon={icons.chevronRight} className="size-3 shrink-0 text-muted-foreground" />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-t bg-well/30 px-3 text-muted-foreground text-xs">
-                <button
-                  type="button"
-                  onClick={() => goSettings("models")}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <span className={cn("size-1.5 rounded-full", autoFallback ? "bg-success" : "bg-subtle-foreground/50")} />
-                  {autoFallback ? "Auto-fallback on" : "Auto-fallback off"}
-                </button>
-                <button type="button" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => goSettings("models")}>
-                  <Icon icon={icons.settings} className="size-3.5" />
-                  Manage models
-                </button>
-              </div>
-            </div>
-          </div>
+          <ModelPickerPanel
+            pick={pick}
+            status={status}
+            error={error}
+            autoFallback={autoFallback}
+            readyGroups={readyGroups}
+            unreadyGroups={unreadyGroups}
+            current={current}
+            currentUnready={currentUnready}
+            showRail={showRail}
+            searchRef={searchRef}
+            load={load}
+            loadModels={loadModels}
+            onChoose={choose}
+            onGoSettings={goSettings}
+          />
         )}
       </PopoverPopup>
     </Popover>
+  );
+}
+
+function ModelPickerPanel({
+  pick,
+  status,
+  error,
+  autoFallback,
+  readyGroups,
+  unreadyGroups,
+  current,
+  currentUnready,
+  showRail,
+  searchRef,
+  load,
+  loadModels,
+  onChoose,
+  onGoSettings,
+}: {
+  pick: ModelPick;
+  status: "idle" | "loading" | "ready" | "error";
+  error: string | undefined;
+  autoFallback: boolean;
+  readyGroups: CatalogGroup[];
+  unreadyGroups: CatalogGroup[];
+  current: CatalogGroup | undefined;
+  currentUnready: boolean;
+  showRail: boolean;
+  searchRef: React.RefObject<HTMLInputElement | null>;
+  load: (force?: boolean) => Promise<void>;
+  loadModels: (id: string) => Promise<void>;
+  onChoose: (m: CatalogModel) => void;
+  onGoSettings: (section?: SettingsSection, target?: SettingsTarget) => void;
+}) {
+  const [rail, setRail] = useState<string>("all");
+  const [query, setQuery] = useState("");
+  const [hi, setHi] = useState(0);
+  const [showUnready, setShowUnready] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const hideTip = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    for (const g of useCatalog.getState().groups) if (g.ready) void loadModels(g.id);
+  }, [loadModels]);
+
+  const activeRail = rail === "all" || readyGroups.some((g) => g.id === rail) ? rail : "all";
+  const shownGroups = useMemo(
+    () => (activeRail === "all" ? readyGroups : readyGroups.filter((g) => g.id === activeRail)),
+    [activeRail, readyGroups],
+  );
+  const q = query.trim().toLowerCase();
+  const { rows, flat, rowToFlat } = useMemo(() => {
+    const rowList: { g: CatalogGroup; m: CatalogModel }[] = [];
+    const flatList: FlatItem[] = [];
+    const indexMap: number[] = [];
+    const showHeader = activeRail === "all";
+    for (const g of shownGroups) {
+      const matched = g.models.filter((m) => !q || m.name.toLowerCase().includes(q) || (m.model ?? "").toLowerCase().includes(q) || g.name.toLowerCase().includes(q));
+      if (q && matched.length === 0) continue;
+      if (showHeader) flatList.push({ kind: "header", key: `h:${g.id}`, group: g });
+      if (g.status === "loading" && matched.length === 0) flatList.push({ kind: "loading", key: `l:${g.id}`, group: g });
+      else if (g.status === "error" && matched.length === 0) flatList.push({ kind: "error", key: `e:${g.id}`, group: g });
+      else if (g.status === "ready" && g.models.length === 0) flatList.push({ kind: "empty", key: `n:${g.id}`, group: g });
+      for (const m of matched) {
+        const rowIndex = rowList.length;
+        rowList.push({ g, m });
+        indexMap.push(flatList.length);
+        flatList.push({ kind: "model", key: `${g.id}:${m.backend}:${m.model}`, group: g, m, rowIndex });
+      }
+    }
+    return { rows: rowList, flat: flatList, rowToFlat: indexMap };
+  }, [shownGroups, q, activeRail]);
+
+  useEffect(() => setHi(0), [q, activeRail]);
+
+  const virtualizer = useVirtualizer({
+    count: flat.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: (i) => ITEM_HEIGHT[flat[i]!.kind],
+    getItemKey: (i) => flat[i]!.key,
+    initialRect: { width: 352, height: 320 },
+    overscan: 8,
+  });
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!rows.length) return;
+      e.preventDefault();
+      const next = Math.max(0, Math.min(rows.length - 1, hi + (e.key === "ArrowDown" ? 1 : -1)));
+      setHi(next);
+      const flatIdx = rowToFlat[next];
+      if (flatIdx !== undefined) virtualizer.scrollToIndex(flatIdx, { align: "auto" });
+    } else if (e.key === "Enter" && rows[hi]) {
+      // Let rail buttons and footer buttons handle their own Enter presses.
+      if (e.target instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      onChoose(rows[hi].m);
+    }
+  };
+
+  return (
+    <div className="flex h-96 max-h-(--available-height) min-h-0" onKeyDown={onKey}>
+      {showRail ? (
+        <div className="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r bg-well py-2" role="tablist" aria-label="Providers">
+          <RailButton active={activeRail === "all"} label="All connected models" onClick={() => setRail("all")}>
+            <Icon icon={icons.apps} className="size-4 text-muted-foreground" />
+          </RailButton>
+          <div className="my-1 h-px w-6 bg-border" />
+          {readyGroups.map((g) => (
+            <RailButton
+              key={g.id}
+              active={activeRail === g.id}
+              label={g.name}
+              onClick={() => {
+                setRail(g.id);
+                void loadModels(g.id);
+              }}
+            >
+              <ProviderIcon id={g.id} />
+            </RailButton>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3.5">
+          <Icon icon={icons.search} className="size-3.5 shrink-0 text-subtle-foreground" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search models…"
+            className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        {currentUnready && current ? (
+          <div className="flex items-start gap-2 border-b bg-warning/8 px-3.5 py-2 text-warning-foreground text-xs">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" />
+            <p className="min-w-0 flex-1 leading-relaxed">
+              Current model isn’t ready — choose a connected model below or{" "}
+              <button
+                type="button"
+                onClick={() => onGoSettings("models", targetForGroup(current.id))}
+                className="font-medium underline underline-offset-2 hover:opacity-80"
+              >
+                finish setup
+              </button>
+              .
+            </p>
+          </div>
+        ) : null}
+        <TruncateTips hideRef={hideTip}>
+          <div
+            ref={listRef}
+            onScroll={() => hideTip.current?.()}
+            className="min-h-0 flex-1 overflow-y-auto p-1.5"
+            role="listbox"
+            aria-label="Models"
+          >
+            {status === "loading" && readyGroups.length === 0 ? <SkeletonRows count={5} withIcon /> : null}
+            {status === "error" ? <RowError className="h-8 px-2" message={error ?? "Couldn’t load models"} onRetry={() => void load(true)} /> : null}
+            {flat.length > 0 ? (
+              <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+                {virtualizer.getVirtualItems().map((v) => {
+                  const item = flat[v.index]!;
+                  return (
+                    <div
+                      key={item.key}
+                      className="absolute inset-x-0 top-0"
+                      style={{ transform: `translateY(${v.start}px)` }}
+                    >
+                      {item.kind === "header" ? (
+                        <div className="flex h-7 items-center px-2.5">
+                          <span className="type-label">{item.group.name}</span>
+                        </div>
+                      ) : item.kind === "loading" ? (
+                        <SkeletonRows count={3} withIcon />
+                      ) : item.kind === "error" ? (
+                        <RowError className="h-8 px-2" message={item.group.error ?? "Couldn’t load models"} onRetry={() => void loadModels(item.group.id)} />
+                      ) : item.kind === "empty" ? (
+                        <p className="px-2.5 py-1.5 text-muted-foreground text-xs">{item.group.note ?? "No models listed."}</p>
+                      ) : (
+                        (() => {
+                          const selected = sameModel(pick, item.m);
+                          const badge = modelBadge(item.m);
+                          return (
+                            <div
+                              role="option"
+                              aria-selected={selected}
+                              data-row={item.rowIndex}
+                              data-highlighted={item.rowIndex === hi || undefined}
+                              onMouseMove={() => hi !== item.rowIndex && setHi(item.rowIndex)}
+                              onClick={() => onChoose(item.m)}
+                              className="flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors data-highlighted:bg-accent"
+                            >
+                              <ProviderIcon id={item.group.id} />
+                              <Truncate lazy className={cn("flex-1", selected && "font-medium")}>
+                                {item.m.name}
+                              </Truncate>
+                              {badge ? (
+                                <span aria-hidden className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 font-medium text-2xs text-muted-foreground">
+                                  {badge}
+                                </span>
+                              ) : null}
+                              <Icon icon={icons.check} className={cn("size-4 shrink-0 text-primary", selected ? "opacity-100" : "opacity-0")} />
+                            </div>
+                          );
+                        })()
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {status === "ready" && rows.length === 0 && q ? (
+              <p className="px-3 py-6 text-center text-muted-foreground text-xs">No model matches “{query.trim()}”.</p>
+            ) : null}
+          </div>
+        </TruncateTips>
+        {unreadyGroups.length > 0 ? (
+          <div className="shrink-0 border-t">
+            <button
+              type="button"
+              aria-expanded={showUnready}
+              onClick={() => setShowUnready((v) => !v)}
+              className="flex h-8 w-full items-center justify-between gap-2 px-3.5 text-muted-foreground text-xs transition-colors hover:bg-accent/50 hover:text-foreground"
+            >
+              <span>Set up another ({unreadyGroups.length})</span>
+              <Icon icon={icons.chevronDown} className={cn("size-3.5 transition-transform duration-150", !showUnready && "-rotate-90")} />
+            </button>
+            {showUnready ? (
+              <div className="max-h-32 overflow-y-auto border-t bg-well/40 p-1">
+                {unreadyGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => onGoSettings("models", targetForGroup(g.id))}
+                    className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs transition-colors hover:bg-accent"
+                  >
+                    <ProviderIcon id={g.id} className="size-3.5 opacity-60" />
+                    <span className="min-w-0 flex-1 truncate text-foreground/85">{g.name}</span>
+                    <span className="shrink-0 text-subtle-foreground">{g.need}</span>
+                    <Icon icon={icons.chevronRight} className="size-3 shrink-0 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-t bg-well/30 px-3 text-muted-foreground text-xs">
+          <button
+            type="button"
+            onClick={() => onGoSettings("models")}
+            className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <span className={cn("size-1.5 rounded-full", autoFallback ? "bg-success" : "bg-subtle-foreground/50")} />
+            {autoFallback ? "Auto-fallback on" : "Auto-fallback off"}
+          </button>
+          <button type="button" className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => onGoSettings("models")}>
+            <Icon icon={icons.settings} className="size-3.5" />
+            Manage models
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -293,68 +440,6 @@ function RailButton({ active, label, onClick, children }: { active: boolean; lab
       </TooltipTrigger>
       <TooltipPopup side="left">{label}</TooltipPopup>
     </Tooltip>
-  );
-}
-
-function GroupRows({
-  group,
-  pick,
-  rows,
-  hi,
-  setHi,
-  choose,
-  showHeader,
-  query,
-  onRetry,
-}: {
-  group: CatalogGroup;
-  pick: ModelPick;
-  rows: { g: CatalogGroup; m: CatalogModel }[];
-  hi: number;
-  setHi: (n: number) => void;
-  choose: (m: CatalogModel) => void;
-  showHeader: boolean;
-  query: string;
-  onRetry: () => void;
-}) {
-  const mine = rows.map((r, i) => ({ ...r, i })).filter((r) => r.g.id === group.id);
-  if (query && mine.length === 0) return null;
-  return (
-    <div className="pb-1">
-      {showHeader ? (
-        <div className="flex h-7 items-center px-2.5">
-          <span className="type-label">{group.name}</span>
-        </div>
-      ) : null}
-      {group.status === "loading" && mine.length === 0 ? <SkeletonRows count={3} withIcon /> : null}
-      {group.status === "error" && mine.length === 0 ? <RowError className="h-8 px-2" message={group.error ?? "Couldn’t load models"} onRetry={onRetry} /> : null}
-      {group.status === "ready" && group.models.length === 0 ? <p className="px-2.5 py-1.5 text-muted-foreground text-xs">{group.note ?? "No models listed."}</p> : null}
-      {mine.map(({ m, i }) => {
-        const selected = sameModel(pick, m);
-        const badge = modelBadge(m);
-        return (
-          <div
-            key={`${m.backend}:${m.model}`}
-            role="option"
-            aria-selected={selected}
-            data-row={i}
-            data-highlighted={i === hi || undefined}
-            onMouseMove={() => setHi(i)}
-            onClick={() => choose(m)}
-            className="flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors data-highlighted:bg-accent"
-          >
-            <ProviderIcon id={group.id} />
-            <Truncate className={cn("flex-1", selected && "font-medium")}>{m.name}</Truncate>
-            {badge ? (
-              <span aria-hidden className="shrink-0 rounded-md bg-muted/80 px-1.5 py-0.5 font-medium text-2xs text-muted-foreground">
-                {badge}
-              </span>
-            ) : null}
-            <Icon icon={icons.check} className={cn("size-4 shrink-0 text-primary", selected ? "opacity-100" : "opacity-0")} />
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

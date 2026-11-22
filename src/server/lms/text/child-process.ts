@@ -92,7 +92,14 @@ function startWorker(script: string, argv: string[]): ChildLike {
       close(1);
     }
   });
-  worker.on("exit", (code) => close(code));
+  worker.on("exit", (code) => {
+    if (!online && !closed) {
+      closed = true;
+      events.emit("error", new Error(`worker exited with code ${code ?? -1}`));
+      return;
+    }
+    close(code);
+  });
   return {
     stdout: worker.stdout,
     stderr: worker.stderr,

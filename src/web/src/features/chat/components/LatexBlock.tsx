@@ -1,3 +1,4 @@
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useEffect, useRef, useState } from "react";
 import { ClampedText } from "@/components/errors";
 import { Icon } from "@/components/icon";
@@ -31,19 +32,24 @@ const remember = <V,>(map: Map<string, V>, key: string, value: V) => {
 function PdfPages({ id }: { id: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pages, setPages] = useState(0);
+  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
+  const pages = doc?.numPages ?? 0;
+
   useEffect(() => {
     let live = true;
+    let opened: PDFDocumentProxy | null = null;
+    setDoc(null);
+    setError(null);
     void (async () => {
       try {
         const bytes = await invoke<ArrayBuffer>("latex_pdf", { id });
-        const doc = await openPdf(bytes);
-        if (!live || !box.current) return;
-        setPages(doc.numPages);
-        const width = Math.min(box.current.clientWidth - 2, 720);
-        const canvases = [...box.current.querySelectorAll("canvas")];
-        for (let i = 0; i < Math.min(doc.numPages, canvases.length); i++) await renderPage(doc, i + 1, canvases[i]!, width);
-        if (live && box.current) remember(heights, id, box.current.offsetHeight);
+        const loaded = await openPdf(bytes);
+        if (!live) {
+          void loaded.loadingTask.destroy().catch(() => {});
+          return;
+        }
+        opened = loaded;
+        setDoc(loaded);
       } catch (e) {
         // Gone from the core's cache: compile it again next time instead of remembering this id.
         for (const [k, o] of outcomes) if (o.status === "ok" && o.id === id) outcomes.delete(k);
@@ -52,8 +58,33 @@ function PdfPages({ id }: { id: string }) {
     })();
     return () => {
       live = false;
+      void opened?.loadingTask.destroy().catch(() => {});
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!doc || !box.current) return;
+    let live = true;
+    void (async () => {
+      try {
+        if (!box.current) return;
+        const width = Math.min(box.current.clientWidth - 2, 720);
+        const canvases = [...box.current.querySelectorAll("canvas")];
+        const count = Math.min(doc.numPages, canvases.length);
+        for (let i = 0; i < count; i++) {
+          if (!live) return;
+          await renderPage(doc, i + 1, canvases[i]!, width);
+        }
+        if (live && box.current) remember(heights, id, box.current.offsetHeight);
+      } catch (e) {
+        if (live) setError(errorText(e));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [doc, id]);
+
   if (error) return <p className="p-3 text-muted-foreground text-xs">Couldn’t show the PDF: {error}</p>;
   return (
     <div ref={box} className="flex max-h-128 flex-col items-center gap-2 overflow-auto bg-muted/40 p-3" style={{ minHeight: heights.get(id) }}>

@@ -54,7 +54,7 @@ export function menuTemplate(state: TrayState, h: TrayHandlers, now = Date.now()
       label: "Pause automations",
       submenu: [
         { label: "For 1 hour", click: () => h.action({ kind: "pauseAutomations", minutes: 60 }) },
-        { label: "Until tomorrow morning", click: () => h.action({ kind: "pauseAutomations", minutes: untilTomorrow(new Date(now)) }) },
+        { label: "Until tomorrow morning", click: () => h.action({ kind: "pauseAutomations", minutes: untilTomorrow() }) },
         { label: "For a week", click: () => h.action({ kind: "pauseAutomations", minutes: 7 * 24 * 60 }) },
       ],
     });
@@ -78,6 +78,17 @@ export function createTray(h: TrayHandlers): { update: (state: TrayState) => voi
   const tray = new Tray(icon);
   tray.setToolTip(IDENTITY.productName);
   let state: TrayState = { keepRunning: true, openAtLogin: false, running: 0, sending: [], automations: { on: 0 }, recent: [], unseen: 0 };
+  let refreshTimer: NodeJS.Timeout | undefined;
+  const scheduleRefresh = () => {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = undefined;
+    }
+    const intervalMs = state.sending.length > 0 ? 10_000 : state.automations.next || state.automations.pausedUntil ? 60_000 : 0;
+    if (!intervalMs) return;
+    refreshTimer = setInterval(rebuild, intervalMs);
+    refreshTimer.unref?.();
+  };
   const rebuild = () => {
     const menu = Menu.buildFromTemplate(menuTemplate(state, h));
     // Opening the menu counts as seeing what's new.
@@ -92,7 +103,11 @@ export function createTray(h: TrayHandlers): { update: (state: TrayState) => voi
     update(next) {
       state = next;
       rebuild();
+      scheduleRefresh();
     },
-    destroy: () => tray.destroy(),
+    destroy: () => {
+      if (refreshTimer) clearInterval(refreshTimer);
+      tray.destroy();
+    },
   };
 }

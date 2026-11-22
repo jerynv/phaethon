@@ -3,7 +3,7 @@ import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
 import { toast } from "@/components/toast";
 import { errorText } from "@/lib/core";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Truncate } from "@/components/truncate";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +80,9 @@ export function HeaderTitle({ children }: { children: ReactNode }) {
 export function HeaderSlots({ children }: { children: (bind: { title: (el: HTMLElement | null) => void; actions: (el: HTMLElement | null) => void }) => ReactNode }) {
   const [title, setTitle] = useState<HTMLElement | null>(null);
   const [actions, setActions] = useState<HTMLElement | null>(null);
-  return <SlotContext value={{ title, actions }}>{children({ title: setTitle, actions: setActions })}</SlotContext>;
+  const slots = useMemo(() => ({ title, actions }), [title, actions]);
+  const bind = useMemo(() => ({ title: setTitle, actions: setActions }), []);
+  return <SlotContext value={slots}>{children(bind)}</SlotContext>;
 }
 
 export function HeaderIconButton({ label, keys, onClick, children }: { label: string; keys?: string[]; onClick: () => void; children: ReactNode }) {
@@ -180,7 +182,10 @@ function TabButton({ tab, active, last, only, closable }: { tab: OpenTab; active
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           activate(tab.id);
-        } else if (e.key === "Delete" || e.key === "Backspace") close(tab.id);
+        } else if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault();
+          close(tab.id);
+        }
       }}
       icon={<Icon icon={icon} />}
       label={

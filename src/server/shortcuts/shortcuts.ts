@@ -47,25 +47,39 @@ export function allowedShortcuts(space: string): string[] {
   return readShortcutsSettings().allowed[space] ?? [];
 }
 
-export type Runner = (args: string[], timeoutMs: number) => Promise<{ code: number; out: string; err: string }>;
+const MAX_STREAM = 1024 * 1024;
+export type Runner = (args: string[], timeoutMs: number, signal?: AbortSignal) => Promise<{ code: number; out: string; err: string }>;
 
-const run: Runner = (args, timeoutMs) =>
+const run: Runner = (args, timeoutMs, signal) =>
   new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("cancelled"));
     if (process.platform !== "darwin" || !fs.existsSync(SHORTCUTS_BIN)) return reject(new Refusal("Shortcuts is only on a Mac."));
     const child = spawn(SHORTCUTS_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
+    let settled = false;
+    const done = (f: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(t);
+      signal?.removeEventListener("abort", onAbort);
+      f();
+    };
+    const onAbort = () =>
+      done(() => {
+        child.kill("SIGKILL");
+        reject(new Error("cancelled"));
+      });
+    signal?.addEventListener("abort", onAbort, { once: true });
     const t = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
-    child.stdout.on("data", (d) => (out += String(d)));
-    child.stderr.on("data", (d) => (err += String(d)));
-    child.on("error", (e) => {
-      clearTimeout(t);
-      reject(e);
+    child.stdout.on("data", (d) => {
+      if (out.length < MAX_STREAM) out += String(d).slice(0, MAX_STREAM - out.length);
     });
-    child.on("close", (code) => {
-      clearTimeout(t);
-      resolve({ code: code ?? -1, out, err });
+    child.stderr.on("data", (d) => {
+      if (err.length < MAX_STREAM) err += String(d).slice(0, MAX_STREAM - err.length);
     });
+    child.on("error", (e) => done(() => reject(e)));
+    child.on("close", (code) => done(() => resolve({ code: code ?? -1, out, err })));
   });
 
 /**
@@ -100,7 +114,7 @@ export async function runShortcut(space: string, name: string, input: string, si
     const outFile = path.join(dir, "output.txt");
     fs.writeFileSync(inFile, input ?? "");
     if (signal?.aborted) throw new Error("cancelled");
-    const r = await current()(["run", name, "--input-path", inFile, "--output-path", outFile, "--output-type", "public.plain-text"], 120_000);
+    const r = await current()(["run", name, "--input-path", inFile, "--output-path", outFile, "--output-type", "public.plain-text"], 120_000, signal);
     if (r.code !== 0) throw new Refusal(`The shortcut “${name}” failed: ${r.err.trim().slice(0, 400) || `exit ${r.code}`}`);
     let out = "";
     try {

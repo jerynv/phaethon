@@ -311,7 +311,8 @@ export function geminiAliases(dir: string): CliModel[] {
     }
     let at = text.indexOf("var GEMINI_MODEL_ALIAS_");
     while (at >= 0) {
-      const line = text.slice(at).split(/\r?\n/, 1)[0];
+      const eol = text.indexOf("\n", at);
+      const line = eol < 0 ? text.slice(at) : text.slice(at, eol);
       const value = line.split('"')[1];
       if (value !== undefined && isValidCliModel(value) && !out.some((m) => m.id === value)) out.push({ id: value, name: capitalized(value) });
       at = text.indexOf("var GEMINI_MODEL_ALIAS_", at + 1);

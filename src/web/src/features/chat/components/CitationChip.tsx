@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNav } from "@/app/store";
 import { Icon } from "@/components/icon";
 import { icons } from "@/components/icons";
@@ -13,11 +13,26 @@ export function CitationChip({ space, citation }: { space: string; citation: Cit
   const openFile = useNav((s) => s.openFile);
   const [check, setCheck] = useState<CitationCheck | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const load = () => {
-    if (check || error) return;
+    if (check || error || inFlight.current) return;
+    inFlight.current = true;
     studyCitationsCheck(space, [citation]).then(
-      (r) => setCheck(r[0] ?? null),
-      (e) => setError(errorText(e)),
+      (r) => {
+        inFlight.current = false;
+        if (mounted.current) setCheck(r[0] ?? null);
+      },
+      (e) => {
+        inFlight.current = false;
+        if (mounted.current) setError(errorText(e));
+      },
     );
   };
   return (

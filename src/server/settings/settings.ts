@@ -75,12 +75,25 @@ function optString(value: unknown): string | null | undefined {
 
 const RAW_KEYS = ["agentInstances", "activeAgentInstances", "providerModels", "providerUrls", "appearance", "lastModel", "allowWrites", "memory", "digest", "notifications", "background"] as const;
 
+let settingsCache: { file: string; mtimeMs: number; size: number; value: VaultSettings } | undefined;
+
 /** Every setting, with defaults for missing or wrongly typed fields. Never throws. */
 export function readSettings(): VaultSettings {
   const out: VaultSettings = { ...DEFAULT_SETTINGS };
+  const file = settingsFile();
+  let st: fs.Stats;
+  try {
+    st = fs.statSync(file);
+  } catch {
+    if (settingsCache?.file === file) settingsCache = undefined;
+    return out;
+  }
+  if (settingsCache && settingsCache.file === file && settingsCache.mtimeMs === st.mtimeMs && settingsCache.size === st.size) {
+    return { ...settingsCache.value };
+  }
   let text: string;
   try {
-    text = fs.readFileSync(settingsFile(), "utf8");
+    text = fs.readFileSync(file, "utf8");
   } catch {
     return out;
   }
@@ -100,7 +113,8 @@ export function readSettings(): VaultSettings {
   for (const key of ["model", "effort", "provider"] as const) out[key] = optString(o[key]) ?? null;
   // serde's Option<Value> reads JSON null as absent.
   for (const key of RAW_KEYS) if (o[key] !== undefined && o[key] !== null) out[key] = o[key];
-  return out;
+  settingsCache = { file, mtimeMs: st.mtimeMs, size: st.size, value: out };
+  return { ...out };
 }
 
 /** The file as an object for a read-modify-write; refuses anything else so a hand-edited file is never clobbered. */
@@ -133,6 +147,7 @@ export function setSettings(entries: Record<string, unknown>): void {
     else doc[key] = value;
   }
   writeJsonAtomic(settingsFile(), doc);
+  settingsCache = undefined;
 }
 
 export function setSetting(key: string, value: unknown): void {

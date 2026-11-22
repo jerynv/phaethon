@@ -11,10 +11,16 @@ const waiting = new Map<string, Waiting>();
 const keyOf = (scope: string, id: string) => `${scope}\0${id}`;
 
 export function ask<T>(scope: string, id: string, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new Error("cancelled"));
   const key = keyOf(scope, id);
+  waiting.get(key)?.reject(new Error("superseded"));
   return new Promise<T>((resolve, reject) => {
-    const done = () => waiting.delete(key);
-    waiting.set(key, {
+    const onAbort = () => entry.reject(new Error("cancelled"));
+    const done = () => {
+      if (waiting.get(key) === entry) waiting.delete(key);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const entry: Waiting = {
       resolve: (a) => {
         done();
         resolve(a as T);
@@ -23,8 +29,9 @@ export function ask<T>(scope: string, id: string, signal?: AbortSignal): Promise
         done();
         reject(e);
       },
-    });
-    signal?.addEventListener("abort", () => waiting.get(key)?.reject(new Error("cancelled")), { once: true });
+    };
+    waiting.set(key, entry);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

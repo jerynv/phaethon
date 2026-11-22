@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { APP_IDENTIFIER, homeDir } from "../env.ts";
+import { onStop } from "../lifecycle.ts";
 import { killGroup } from "../core/runs.ts";
 import { resolveIn } from "../core/resolve.ts";
 import { runPlan, sandboxRefusal, type Probe, type TexHome } from "./sandbox.ts";
@@ -85,14 +86,22 @@ export function texDirs(): string[] {
   return dirs;
 }
 
+let enginesCache: { pathEnv: string; at: number; found: Engine[] } | undefined;
+const ENGINES_TTL_MS = 30_000;
+
 /** Every engine on this computer (looking in `more` folders last), in the order they are preferred. */
 export function engines(more: string[] = []): Engine[] {
+  const pathEnv = process.env.PATH ?? "";
+  if (more.length === 0 && enginesCache && enginesCache.pathEnv === pathEnv && Date.now() - enginesCache.at < ENGINES_TTL_MS) {
+    return enginesCache.found;
+  }
   const extra = [...texDirs(), ...more];
   const found: Engine[] = [];
   for (const kind of KINDS) {
     const p = findOnPath(kindBin(kind), extra);
     if (p) found.push({ kind, path: p });
   }
+  if (more.length === 0) enginesCache = { pathEnv, at: Date.now(), found };
   return found;
 }
 
@@ -183,6 +192,12 @@ function makeWorkDir(): string {
 
 type Ran = "ok" | "failed" | "timedOut";
 
+const activeLatexPids = new Set<number>();
+onStop("kill active latex compiles", () => {
+  for (const pid of activeLatexPids) killGroup(pid, "SIGKILL");
+  activeLatexPids.clear();
+});
+
 /** One run of `engine` on `doc.tex` in `work`, walled, until `deadline`. */
 async function runOnce(engine: Engine, work: string, deadline: number, bwrap: string | null): Promise<Ran> {
   const home = await texHome(engine);
@@ -194,9 +209,11 @@ async function runOnce(engine: Engine, work: string, deadline: number, bwrap: st
     const child = spawn(plan.file, plan.args, { cwd: work, env: plan.env, stdio: "ignore", detached: true });
     child.once("error", (e) => {
       clearTimeout(timer);
+      if (child.pid) activeLatexPids.delete(child.pid);
       reject(setup(`LaTeX couldn’t be started: ${e.message}`));
     });
     child.once("spawn", () => {
+      if (child.pid) activeLatexPids.add(child.pid);
       timer = setTimeout(
         () => {
           timedOut = true;
@@ -208,7 +225,10 @@ async function runOnce(engine: Engine, work: string, deadline: number, bwrap: st
     child.once("exit", (code) => {
       clearTimeout(timer);
       // Anything the run left behind in its group goes too.
-      if (child.pid) killGroup(child.pid, "SIGKILL");
+      if (child.pid) {
+        activeLatexPids.delete(child.pid);
+        killGroup(child.pid, "SIGKILL");
+      }
       resolve(timedOut ? "timedOut" : code === 0 ? "ok" : "failed");
     });
   });

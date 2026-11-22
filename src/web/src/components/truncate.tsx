@@ -3,8 +3,8 @@ import { observeResize } from "@/lib/observe-resize";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-/** True while the element's text is cut off. */
-function useIsCut<T extends HTMLElement>() {
+/** True while the element's text is cut off. Observes resize once and rechecks only when `dep` changes. */
+function useIsCut<T extends HTMLElement>(dep: unknown) {
   const ref = useRef<T>(null);
   const [cut, setCut] = useState(false);
   useLayoutEffect(() => {
@@ -13,7 +13,12 @@ function useIsCut<T extends HTMLElement>() {
     const check = () => setCut(el.scrollWidth > el.clientWidth + 1);
     check();
     return observeResize(el, check);
-  });
+  }, []);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setCut(el.scrollWidth > el.clientWidth + 1);
+  }, [dep]);
   return [ref, cut] as const;
 }
 
@@ -132,7 +137,7 @@ function LazyTruncate({ children, tooltip, className, side = "top", onPointerEnt
 }
 
 function EagerTruncate({ children, tooltip, className, side = "top", ...props }: TruncateProps) {
-  const [ref, cut] = useIsCut<HTMLSpanElement>();
+  const [ref, cut] = useIsCut<HTMLSpanElement>(children);
   const span = <span ref={ref} className={cn("block min-w-0 truncate", className)} {...props}>{children}</span>;
   if (!cut) return span;
   return (
@@ -149,7 +154,7 @@ function EagerTruncate({ children, tooltip, className, side = "top", ...props }:
  * browser places the ellipsis on the left without reordering the text.
  */
 export function StartTruncate({ value, className }: { value: string; className?: string }) {
-  const [ref, cut] = useIsCut<HTMLSpanElement>();
+  const [ref, cut] = useIsCut<HTMLSpanElement>(value);
   const span = (
     <span ref={ref} className={cn("block min-w-0 truncate text-left [direction:rtl]", className)}>
       <bdi className="[direction:ltr] [unicode-bidi:isolate]">{value}</bdi>

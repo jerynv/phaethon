@@ -6,18 +6,148 @@ import { icons } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuItem, ContextMenuPopup, ContextMenuTrigger } from "@/components/ui/context-menu";
 
-/** Shiki, loaded the first time a code block appears; dual themes switch with `.dark`. */
-let shiki: Promise<typeof import("shiki")> | null = null;
+/**
+ * Shiki, loaded lazily with the JS regex engine, only the two themes used here,
+ * and a curated set of common languages so Vite doesn't ship 200+ grammars and
+ * 60+ themes (which added ~9 MB to dist/web).
+ */
+type LangLoader = () => Promise<{ default: unknown }>;
+const LANG_LOADERS: Record<string, LangLoader> = {
+  javascript: () => import("shiki/dist/langs/javascript.mjs"),
+  typescript: () => import("shiki/dist/langs/typescript.mjs"),
+  jsx: () => import("shiki/dist/langs/jsx.mjs"),
+  tsx: () => import("shiki/dist/langs/tsx.mjs"),
+  python: () => import("shiki/dist/langs/python.mjs"),
+  java: () => import("shiki/dist/langs/java.mjs"),
+  c: () => import("shiki/dist/langs/c.mjs"),
+  cpp: () => import("shiki/dist/langs/cpp.mjs"),
+  csharp: () => import("shiki/dist/langs/csharp.mjs"),
+  go: () => import("shiki/dist/langs/go.mjs"),
+  rust: () => import("shiki/dist/langs/rust.mjs"),
+  ruby: () => import("shiki/dist/langs/ruby.mjs"),
+  php: () => import("shiki/dist/langs/php.mjs"),
+  swift: () => import("shiki/dist/langs/swift.mjs"),
+  kotlin: () => import("shiki/dist/langs/kotlin.mjs"),
+  html: () => import("shiki/dist/langs/html.mjs"),
+  css: () => import("shiki/dist/langs/css.mjs"),
+  scss: () => import("shiki/dist/langs/scss.mjs"),
+  json: () => import("shiki/dist/langs/json.mjs"),
+  jsonc: () => import("shiki/dist/langs/jsonc.mjs"),
+  yaml: () => import("shiki/dist/langs/yaml.mjs"),
+  toml: () => import("shiki/dist/langs/toml.mjs"),
+  xml: () => import("shiki/dist/langs/xml.mjs"),
+  sql: () => import("shiki/dist/langs/sql.mjs"),
+  shellscript: () => import("shiki/dist/langs/shellscript.mjs"),
+  powershell: () => import("shiki/dist/langs/powershell.mjs"),
+  markdown: () => import("shiki/dist/langs/markdown.mjs"),
+  latex: () => import("shiki/dist/langs/latex.mjs"),
+  tex: () => import("shiki/dist/langs/tex.mjs"),
+  r: () => import("shiki/dist/langs/r.mjs"),
+  julia: () => import("shiki/dist/langs/julia.mjs"),
+  matlab: () => import("shiki/dist/langs/matlab.mjs"),
+  haskell: () => import("shiki/dist/langs/haskell.mjs"),
+  ocaml: () => import("shiki/dist/langs/ocaml.mjs"),
+  scheme: () => import("shiki/dist/langs/scheme.mjs"),
+  prolog: () => import("shiki/dist/langs/prolog.mjs"),
+  scala: () => import("shiki/dist/langs/scala.mjs"),
+  lua: () => import("shiki/dist/langs/lua.mjs"),
+  dart: () => import("shiki/dist/langs/dart.mjs"),
+  zig: () => import("shiki/dist/langs/zig.mjs"),
+  docker: () => import("shiki/dist/langs/docker.mjs"),
+  diff: () => import("shiki/dist/langs/diff.mjs"),
+  graphql: () => import("shiki/dist/langs/graphql.mjs"),
+  http: () => import("shiki/dist/langs/http.mjs"),
+  csv: () => import("shiki/dist/langs/csv.mjs"),
+  ini: () => import("shiki/dist/langs/ini.mjs"),
+  make: () => import("shiki/dist/langs/make.mjs"),
+  mermaid: () => import("shiki/dist/langs/mermaid.mjs"),
+  regexp: () => import("shiki/dist/langs/regexp.mjs"),
+};
+const LANG_ALIASES: Record<string, string> = {
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  ts: "typescript",
+  mts: "typescript",
+  cts: "typescript",
+  py: "python",
+  "c++": "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  h: "c",
+  hpp: "cpp",
+  cs: "csharp",
+  "c#": "csharp",
+  rs: "rust",
+  rb: "ruby",
+  kt: "kotlin",
+  yml: "yaml",
+  sh: "shellscript",
+  bash: "shellscript",
+  zsh: "shellscript",
+  shell: "shellscript",
+  ps1: "powershell",
+  md: "markdown",
+  hs: "haskell",
+  ml: "ocaml",
+  scm: "scheme",
+  pl: "prolog",
+  dockerfile: "docker",
+  makefile: "make",
+  gql: "graphql",
+  regex: "regexp",
+};
+
+type Highlighter = Awaited<ReturnType<typeof import("shiki/core")["createHighlighterCore"]>>;
+let highlighterPromise: Promise<Highlighter> | null = null;
+const loadedLangs = new Set<string>();
+const loadingLangs = new Map<string, Promise<void>>();
 const cache = new Map<string, string>();
+
+function getHighlighter(): Promise<Highlighter> {
+  highlighterPromise ??= Promise.all([
+    import("shiki/core"),
+    import("shiki/engine/javascript"),
+    import("shiki/dist/themes/github-light.mjs"),
+    import("shiki/dist/themes/github-dark-default.mjs"),
+  ]).then(([core, engine, light, dark]) =>
+    core.createHighlighterCore({
+      themes: [light.default, dark.default],
+      langs: [],
+      engine: engine.createJavaScriptRegexEngine({ forgiving: true }),
+    }),
+  );
+  return highlighterPromise;
+}
+
+async function ensureLang(h: Highlighter, lang: string): Promise<string> {
+  const lower = lang.toLowerCase();
+  const canonical = LANG_ALIASES[lower] ?? lower;
+  const loader = LANG_LOADERS[canonical];
+  if (!loader) return "text";
+  if (!loadedLangs.has(canonical)) {
+    let p = loadingLangs.get(canonical);
+    if (!p) {
+      p = loader()
+        .then((mod) => h.loadLanguage(mod.default as never))
+        .then(() => {
+          loadedLangs.add(canonical);
+        })
+        .finally(() => loadingLangs.delete(canonical));
+      loadingLangs.set(canonical, p);
+    }
+    await p;
+  }
+  return canonical;
+}
 
 async function highlight(code: string, lang: string): Promise<string> {
   const key = `${lang}\u0000${code}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  shiki ??= import("shiki");
-  const { codeToHtml, bundledLanguages } = await shiki;
-  const known = lang in bundledLanguages ? lang : "text";
-  const html = await codeToHtml(code, { lang: known, themes: { light: "github-light", dark: "github-dark-default" }, defaultColor: false });
+  const h = await getHighlighter();
+  const known = await ensureLang(h, lang);
+  const html = h.codeToHtml(code, { lang: known, themes: { light: "github-light", dark: "github-dark-default" }, defaultColor: false });
   if (cache.size > 200) cache.clear();
   cache.set(key, html);
   return html;
@@ -30,11 +160,14 @@ export function useCopy(text: string) {
   return {
     copied,
     copy: () =>
-      void navigator.clipboard.writeText(text).then(() => {
-        setCopied(true);
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => setCopied(false), 1400);
-      }),
+      void navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopied(true);
+          clearTimeout(timer.current);
+          timer.current = setTimeout(() => setCopied(false), 1400);
+        })
+        .catch(() => {}),
   };
 }
 

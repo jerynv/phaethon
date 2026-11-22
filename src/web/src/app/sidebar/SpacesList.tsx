@@ -140,7 +140,13 @@ export function SpacesList({
   ref?: Ref<SpacesListHandle>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const threads = useNav((s) => s.threads);
+  const singleSpaceId = single && spaces.length === 1 ? spaces[0]!.id : null;
+  const singleThread = useNav((s) => (singleSpaceId ? s.threads[singleSpaceId] : undefined));
+  const allThreads = useNav((s) => (singleSpaceId ? undefined : s.threads));
+  const threads: Record<string, ThreadList> = useMemo(
+    () => (singleSpaceId ? (singleThread ? { [singleSpaceId]: singleThread } : {}) : (allThreads ?? {})),
+    [singleSpaceId, singleThread, allThreads],
+  );
   const collapsed = useNav((s) => s.collapsed);
   const activeSpace = useNav((s) => s.activeSpace);
   const view = useNav((s) => s.view);
@@ -258,6 +264,8 @@ export function SpacesList({
     rangeExtractor,
   });
   const rendered = virtualizer.getVirtualItems();
+  const renderedStart = rendered[0]?.index ?? -1;
+  const renderedEnd = rendered[rendered.length - 1]?.index ?? -1;
 
   // ---- Nothing slides or fades while the filter swaps the list, or when a page (or a reload) arrives.
   const [instant, setInstant] = useState(false);
@@ -305,7 +313,7 @@ export function SpacesList({
     return capped ? "more" : "loading";
   };
   const inFlight = useRef(new Set<string>());
-  const [, setSettled] = useState(0);
+  const [settled, setSettled] = useState(0);
   const canLoad = (space: string) => {
     if (filtering) {
       const f = filter.results[space];
@@ -341,7 +349,7 @@ export function SpacesList({
       // One above the view (pushed up while a row below it held still) waits until it is scrolled back to.
       if (it && it.start + it.size > top && it.start < reach && loaderMode(si) === "loading") requestMore(sec.space);
     });
-  });
+  }, [sections, layout, items, inputs, moreFailed, shares, threads, filtering, filter.results, settled, renderedStart, renderedEnd]);
   // A reload starts the space's pages over; a failed page gets another go.
   useEffect(() => {
     setMoreFailed((f) => (Object.keys(f).some((s) => threads[s]?.loading) ? Object.fromEntries(Object.entries(f).filter(([s]) => !threads[s]?.loading)) : f));
@@ -601,7 +609,7 @@ export function SpacesList({
   useLayoutEffect(() => {
     captureAnchor();
     fadeLabels();
-  });
+  }, [layout, sticky, renderedStart, renderedEnd, captureAnchor, fadeLabels]);
 
   // ---- Render: each space in view as a section (its sticky row, then its groups in view, each with a sticky label and its rows in view).
   // Sections and groups are placed with `top`, not a transform: a sticky row inside works from layout positions, and a transform would leave it behind.

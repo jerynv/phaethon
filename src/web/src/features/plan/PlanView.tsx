@@ -636,7 +636,11 @@ function ExamPanel({ draft, courses, onClose, onSave, onDelete }: { draft: Draft
   const reduce = useReducedMotion();
   useEffect(() => {
     if (!draft) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[data-slot="popover-popup"], [data-slot="select-popup"], [data-slot="menu-popup"]')) return;
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [draft, onClose]);

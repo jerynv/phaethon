@@ -554,17 +554,19 @@ describe("commands", () => {
   });
 
   it("saves a REALLMS token and shows when it expires, never the token", async () => {
-    const token = jwt(inDays(6));
+    const exp6 = inDays(6);
+    const exp2 = inDays(2);
+    const token = jwt(exp6);
     await expect(call("api_key_set", { provider: "reallms", key: jwt(inDays(-1)) })).rejects.toThrow("has expired");
     expect(keychainGet(providerAccount("reallms"))).toBeNull();
     await call("api_key_set", { provider: "reallms", key: token });
     expect(keychainGet(providerAccount("reallms"))).toBe(token);
     await call("settings_set_provider_url", { provider: "custom", url: "https://reallms.rescloud.iu.edu/api/v1" });
-    await call("api_key_set", { provider: "custom", key: jwt(inDays(2)) });
+    await call("api_key_set", { provider: "custom", key: jwt(exp2) });
     const view = providerSettingsView();
     const of = (id: string) => view.providers.find((p) => p.id === id)!;
-    expect(of("reallms")).toMatchObject({ hasKey: true, ready: true, keysUrl: "https://reallms.rescloud.iu.edu", keyExpiresAt: inDays(6) * 1000 });
-    expect(of("custom").keyExpiresAt).toBe(inDays(2) * 1000);
+    expect(of("reallms")).toMatchObject({ hasKey: true, ready: true, keysUrl: "https://reallms.rescloud.iu.edu", keyExpiresAt: exp6 * 1000 });
+    expect(of("custom").keyExpiresAt).toBe(exp2 * 1000);
     expect(of("openai").keyExpiresAt).toBeNull();
     expect(JSON.stringify(view)).not.toContain(token.split(".")[1]);
     await call("api_key_clear", { provider: "reallms" });

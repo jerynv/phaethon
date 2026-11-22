@@ -26,8 +26,10 @@ function Demo({ id }: { id: keyof typeof meta }) {
   return (
     <DemoFrame size={meta[id].size} label={meta[id].label}>
       {() => (
-        <Suspense fallback={<div aria-hidden className="ph-frame__ground" />}>
-          <Shown />
+        <Suspense fallback={<div aria-hidden data-loading="" className="ph-frame__ground" />}>
+          <div className="ph-frame__stage">
+            <Shown />
+          </div>
         </Suspense>
       )}
     </DemoFrame>

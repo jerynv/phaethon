@@ -1,0 +1,199 @@
+# Builds signed nightly preview installers from main for macOS (arm64 and x64),
+# Windows (x64) and Linux (AppImage and deb, x64) and uploads them to the
+# rolling `nightly` GitHub prerelease. Because it is marked as a prerelease,
+# electron-updater ignores it for stable installs so nightly stays opt-in.
+name: nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 06:00 UTC daily (01:00 EST / 02:00 EDT).
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether to publish nightly
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          short="$(git rev-parse --short=7 HEAD)"
+          current="$(git rev-parse HEAD)"
+          prev="$(git rev-parse --verify refs/tags/nightly 2>/dev/null || true)"
+          if [[ "${{ github.event_name }}" == "schedule" && -n "$prev" && "$prev" == "$current" ]]; then
+            echo "Nightly tag already points to $short; skipping scheduled rebuild."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base="$(node -p 'require("./package.json").version.replace(/-.*$/, "")')"
+          date="$(date -u +%Y%m%d)"
+          version="${base}-nightly.${date}"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$short" >> "$GITHUB_OUTPUT"
+
+          git tag -f nightly "$current"
+          git push -f origin refs/tags/nightly
+
+          notes="$(printf '%s\n\n%s\n%s\n%s\n' \
+            "Signed nightly preview built from \`main\` (\`${short}\`) on $(date -u +%Y-%m-%d)." \
+            "- macOS builds are signed with Developer ID and notarized by Apple." \
+            "- Nightly prereleases stay separate from stable in-app updates." \
+            "- Expect rough edges; for the stable build, use the latest full release.")"
+
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly \
+              --prerelease \
+              --draft=false \
+              --title "Phaethon Nightly ($version)" \
+              --target "$current" \
+              --notes "$notes"
+            # Remove installers from the previous nightly build so only this build's assets remain.
+            assets="$(gh release view nightly --json assets --jq '.assets[].name' || true)"
+            for name in $assets; do
+              gh release delete-asset nightly "$name" --yes || true
+            done
+          else
+            gh release create nightly \
+              --prerelease \
+              --title "Phaethon Nightly ($version)" \
+              --target "$current" \
+              --notes "$notes"
+          fi
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: --mac --arm64 --x64
+            install: pnpm install --frozen-lockfile --cpu=arm64 --cpu=x64
+          - os: windows-latest
+            target: --win --x64
+            install: pnpm install --frozen-lockfile
+          - os: ubuntu-latest
+            target: --linux --x64
+            install: pnpm install --frozen-lockfile
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: ${{ matrix.install }}
+
+      - name: Stamp nightly version
+        env:
+          NIGHTLY_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = process.env.NIGHTLY_VERSION;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+          '
+
+      # The app icon is an Icon Composer bundle, which only actool 26+ compiles.
+      - name: Xcode 26 or later
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$xcode"
+          xcrun actool --version | grep -A1 short-bundle-version
+
+      - name: Apple signing when available
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ACCOUNT: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          put() {
+            local delimiter
+            delimiter="EOF_$(uuidgen)"
+            printf '%s<<%s\n%s\n%s\n' "$1" "$delimiter" "$2" "$delimiter" >> "$GITHUB_ENV"
+          }
+          if [[ -z "$CERTIFICATE" ]]; then
+            echo "No Apple certificate: the build is signed ad hoc."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "MAC_SIGN_ARGS=-c.mac.identity=- -c.mac.hardenedRuntime=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          put CSC_LINK "$CERTIFICATE"
+          [[ -n "$CERTIFICATE_PASSWORD" ]] && put CSC_KEY_PASSWORD "$CERTIFICATE_PASSWORD"
+          if [[ -n "$API_KEY" && -n "$API_KEY_ID" && -n "$API_ISSUER" ]]; then
+            key="$RUNNER_TEMP/AuthKey_$API_KEY_ID.p8"
+            printf '%s\n' "$API_KEY" > "$key"
+            chmod 600 "$key"
+            put APPLE_API_KEY "$key"
+            put APPLE_API_KEY_ID "$API_KEY_ID"
+            put APPLE_API_ISSUER "$API_ISSUER"
+          elif [[ -n "$APPLE_ACCOUNT" && -n "$APPLE_APP_PASSWORD" && -n "$TEAM_ID" ]]; then
+            put APPLE_ID "$APPLE_ACCOUNT"
+            put APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_PASSWORD"
+            put APPLE_TEAM_ID "$TEAM_ID"
+          else
+            echo "No notarization credentials: the build is signed but not notarized."
+          fi
+
+      - run: pnpm build
+        env:
+          PHAETHON_TELEMETRY_BUILD_ENDPOINT: https://telemetry.phaethon.app/api/ingest
+
+      - name: Package nightly installers
+        run: pnpm exec electron-builder ${{ matrix.target }} ${{ env.MAC_SIGN_ARGS }} --publish never
+
+      - name: Upload nightly installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/*.blockmap
+          )
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No nightly installers found in release/." >&2
+            exit 1
+          fi
+          gh release upload nightly "${files[@]}" --clobber

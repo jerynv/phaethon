@@ -52,10 +52,41 @@
   border-radius: 16px;
 }
 .ph-frame__box {
+  position: relative;
   aspect-ratio: var(--w) / var(--h);
 }
 .ph-frame__ground {
   height: 100%;
+}
+.ph-frame__ground[data-loading] {
+  animation: ph-frame-pulse 1.6s ease-in-out infinite;
+}
+.ph-frame__stage {
+  height: 100%;
+  animation: ph-frame-in 0.3s ease-out both;
+}
+@keyframes ph-frame-pulse {
+  0%,
+  100% {
+    opacity: 0.92;
+  }
+  50% {
+    opacity: 0.68;
+  }
+}
+@keyframes ph-frame-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ph-frame__ground[data-loading],
+  .ph-frame__stage {
+    animation: none;
+  }
 }
 /* The stages' compact designs take over below 560 px (their compact.below). */
 @container (width < 560px) {

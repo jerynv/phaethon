@@ -9,9 +9,9 @@ import { detectPlatform, when } from "./format.ts";
 import { merge, REPO_URL, snapshot, type Platform, type Snapshot } from "./github.ts";
 
 export const PLATFORMS = ["mac", "windows", "linux"] as const;
-const CACHE = "phaethon.snapshot.2";
+const CACHE = "phaethon.snapshot.3";
 
-export type Live = { snap: Snapshot; platform: Platform; now?: number };
+export type Live = { snap: Snapshot; platform: Platform; now?: number; loading: boolean };
 
 /**
  * The project's state: what the build read from GitHub at first (so the server
@@ -22,6 +22,7 @@ export function useLive(built: Snapshot): Live {
   const [snap, setSnap] = useState(built);
   const [platform, setPlatform] = useState<Platform>("mac");
   const [now, setNow] = useState<number>();
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     setPlatform(detectPlatform());
     setNow(Date.now());
@@ -34,24 +35,33 @@ export function useLive(built: Snapshot): Live {
       // storage blocked: read GitHub instead
     }
     let stale = false;
-    if (cached) setSnap(merge(built, cached));
-    else
-      void snapshot().then((live) => {
-        if (stale) return;
-        const next = merge(built, live);
-        setSnap(next);
-        try {
-          if (live.release) sessionStorage.setItem(CACHE, JSON.stringify(next));
-        } catch {
-          // private mode: read it again next time
-        }
-      });
+    if (cached) {
+      setSnap(merge(built, cached));
+    } else {
+      setLoading(true);
+      void snapshot()
+        .then((live) => {
+          if (stale) return;
+          const next = merge(built, live);
+          setSnap(next);
+          try {
+            if (live.release || live.nightly || live.commits.length || live.runs.length) {
+              sessionStorage.setItem(CACHE, JSON.stringify(next));
+            }
+          } catch {
+            // private mode: read it again next time
+          }
+        })
+        .finally(() => {
+          if (!stale) setLoading(false);
+        });
+    }
     return () => {
       stale = true;
       clearInterval(tick);
     };
   }, [built]);
-  return { snap, platform, now };
+  return { snap, platform, now, loading };
 }
 
 export function Container({ className, children }: { className?: string; children: ReactNode }) {

@@ -4,6 +4,7 @@ import { Icon } from "@/components/icon";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { formatVersion } from "../format.ts";
 import { REPO_URL, type BuildState, type Run } from "../github.ts";
 import { Container, PageHead, SectionTitle, Time, type Live } from "../layout.tsx";
 
@@ -11,7 +12,7 @@ export const buildWord: Record<BuildState, string> = { passing: "Passing", faili
 export const buildDot: Record<BuildState, string> = { passing: "bg-success", failing: "bg-destructive", running: "bg-warning motion-safe:animate-pulse" };
 
 /** Where the project stands: the numbers, recent changes with their builds, releases, and what's next. */
-export function StatusPage({ snap, now }: Live) {
+export function StatusPage({ snap, now, loading }: Live) {
   const { release, build, commit, issues, runs, commits, releases } = snap;
   const ranFor = new Map<string, Run>();
   for (const r of runs) if (!ranFor.has(r.sha)) ranFor.set(r.sha, r);
@@ -26,9 +27,9 @@ export function StatusPage({ snap, now }: Live) {
             Early and changing fast. Fine to try, not yet for anything you can’t lose.
           </span>
         </PageHead>
-        <ul aria-label="At a glance" className="mt-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <ul aria-label="At a glance" aria-busy={loading} className="mt-10 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Tile label="Latest release" href={release?.url ?? `${REPO_URL}/releases`} hint={release ? <Time iso={release.published} now={now} /> : null}>
-            {release ? `v${release.version}` : "None yet"}
+            {release ? formatVersion(release.version) : loading ? "…" : "None yet"}
           </Tile>
           <Tile label="Latest checks" href={build?.url ?? `${REPO_URL}/actions`} hint={build ? <Time iso={build.at} now={now} /> : null}>
             {build ? (
@@ -36,15 +37,17 @@ export function StatusPage({ snap, now }: Live) {
                 <span aria-hidden className={cn("size-2 rounded-full", buildDot[build.state])} />
                 {buildWord[build.state]}
               </span>
+            ) : loading ? (
+              "…"
             ) : (
               "Unknown"
             )}
           </Tile>
           <Tile label="Last change" href={commit?.url ?? `${REPO_URL}/commits/main`} hint={commit ? <span className="type-live">{commit.sha.slice(0, 7)}</span> : null}>
-            {commit ? <Time iso={commit.at} now={now} /> : "Unknown"}
+            {commit ? <Time iso={commit.at} now={now} /> : loading ? "…" : "Unknown"}
           </Tile>
           <Tile label="Open issues" href={`${REPO_URL}/issues`} hint="Bugs and requests">
-            {issues ?? "Unknown"}
+            {issues ?? (loading ? "…" : "Unknown")}
           </Tile>
         </ul>
       </Container>
@@ -55,25 +58,29 @@ export function StatusPage({ snap, now }: Live) {
             <SectionTitle id="changes-title">Recent changes</SectionTitle>
             {runs.length ? <BuildStrip runs={runs} /> : null}
           </div>
-          <Card render={<ol />} className="mt-6 divide-y">
-            {commits.map((c) => {
-              const run = ranFor.get(c.sha);
-              return (
-                <li key={c.sha}>
-                  <a href={c.url} className="group flex items-center gap-3.5 px-5 py-3.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
-                    <span
-                      role="img"
-                      aria-label={run ? `Build ${buildWord[run.state].toLowerCase()}` : "No build"}
-                      className={cn("size-2 shrink-0 rounded-full", run ? buildDot[run.state] : "border border-border-strong")}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-foreground text-sm">{c.message}</span>
-                    <span className="shrink-0 text-muted-foreground text-xs tabular-nums max-sm:hidden">
-                      <span className="type-live">{c.sha.slice(0, 7)}</span> · <Time iso={c.at} now={now} />
-                    </span>
-                  </a>
-                </li>
-              );
-            })}
+          <Card render={<ol />} className="mt-6 divide-y" aria-busy={loading && !commits.length}>
+            {commits.length ? (
+              commits.map((c) => {
+                const run = ranFor.get(c.sha);
+                return (
+                  <li key={c.sha}>
+                    <a href={c.url} className="group flex items-center gap-3.5 px-5 py-3.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                      <span
+                        role="img"
+                        aria-label={run ? `Build ${buildWord[run.state].toLowerCase()}` : "No build"}
+                        className={cn("size-2 shrink-0 rounded-full", run ? buildDot[run.state] : "border border-border-strong")}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-foreground text-sm">{c.message}</span>
+                      <span className="shrink-0 text-muted-foreground text-xs tabular-nums max-sm:hidden">
+                        <span className="type-live">{c.sha.slice(0, 7)}</span> · <Time iso={c.at} now={now} />
+                      </span>
+                    </a>
+                  </li>
+                );
+              })
+            ) : (
+              <li className="px-5 py-4 text-muted-foreground text-sm">{loading ? "Loading recent changes…" : "Recent changes are unavailable right now."}</li>
+            )}
           </Card>
           <a href={`${REPO_URL}/commits/main`} className="mt-4 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground">
             Full history
@@ -84,22 +91,26 @@ export function StatusPage({ snap, now }: Live) {
         <div className="flex flex-col gap-16">
           <section aria-labelledby="releases-title">
             <SectionTitle id="releases-title">Releases</SectionTitle>
-            <ol className="mt-6 flex flex-col">
-              {releases.map((r) => (
-                <li key={r.version} className="border-b first:border-t">
-                  <a href={r.url} className="flex items-center gap-3 py-3 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-                    <span className="type-live text-foreground text-sm">v{r.version}</span>
-                    {r.prerelease ? (
-                      <Badge variant="outline" size="default">
-                        Preview
-                      </Badge>
-                    ) : null}
-                    <span className="ml-auto text-muted-foreground text-xs tabular-nums">
-                      <Time iso={r.published} now={now} />
-                    </span>
-                  </a>
-                </li>
-              ))}
+            <ol className="mt-6 flex flex-col" aria-busy={loading && !releases.length}>
+              {releases.length ? (
+                releases.map((r) => (
+                  <li key={r.tag ?? r.version} className="border-b first:border-t">
+                    <a href={r.url} className="flex items-center gap-3 py-3 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                      <span className="type-live text-foreground text-sm">{r.tag === "nightly" ? "Nightly" : formatVersion(r.version)}</span>
+                      {r.prerelease ? (
+                        <Badge variant="outline" size="default">
+                          {r.tag === "nightly" ? "Signed nightly" : "Preview"}
+                        </Badge>
+                      ) : null}
+                      <span className="ml-auto text-muted-foreground text-xs tabular-nums">
+                        <Time iso={r.published} now={now} />
+                      </span>
+                    </a>
+                  </li>
+                ))
+              ) : (
+                <li className="border-y py-3 text-muted-foreground text-sm">{loading ? "Loading releases…" : "Releases are unavailable right now."}</li>
+              )}
             </ol>
           </section>
           <section aria-labelledby="roadmap-title">
@@ -127,7 +138,7 @@ export function StatusPage({ snap, now }: Live) {
 }
 
 const roadmap = [
-  { lane: "Next", items: ["Installers Apple and Microsoft have verified, so no security warnings", "An early alpha, tested by disabled people from the start", "When two computers change the same file, both versions shown so you can choose"] },
+  { lane: "Next", items: ["A signed Windows installer, so Windows doesn’t warn on first open", "An early alpha, tested by disabled people from the start", "When two computers change the same file, both versions shown so you can choose"] },
   { lane: "Later", items: ["Phaethon on your phone, served privately by your own computer", "Optional sync through our servers, for people without iCloud or git", "AI credits from us, if you’d rather not set up your own key"] },
 ];
 

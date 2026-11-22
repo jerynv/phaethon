@@ -5,17 +5,17 @@ import { Icon } from "@/components/icon";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { platformName, size, when } from "../format.ts";
+import { formatVersion, platformName, size, when } from "../format.ts";
 import { REPO_URL, RELEASES_URL, type BuildState, type Platform, type Snapshot } from "../github.ts";
 import { Container, PLATFORMS, type Live } from "../layout.tsx";
 import { PlatformLogo } from "../logos.tsx";
 import { mountShader } from "../shader.ts";
 import { Chapters, WorksWith } from "./chapters.tsx";
 
-export function HomePage({ snap, platform, now }: Live) {
+export function HomePage({ snap, platform, now, loading }: Live) {
   return (
     <>
-      <Hero snap={snap} platform={platform} />
+      <Hero snap={snap} platform={platform} loading={loading} />
       <WorksWith />
       <Chapters />
       <Facts />
@@ -25,7 +25,7 @@ export function HomePage({ snap, platform, now }: Live) {
 }
 
 /** The headline and download over the shader, which fades into the page behind the app's window. */
-function Hero({ snap, platform }: { snap: Snapshot; platform: Platform }) {
+function Hero({ snap, platform, loading }: { snap: Snapshot; platform: Platform; loading: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [live, setLive] = useState(false);
@@ -52,11 +52,13 @@ function Hero({ snap, platform }: { snap: Snapshot; platform: Platform }) {
             View source
           </a>
         </div>
-        <p className="mt-4 h-4 text-foreground/80 text-xs tabular-nums">
+        <p className="mt-4 h-4 text-foreground/80 text-xs tabular-nums" aria-busy={loading && !first}>
           {first && snap.release ? (
             <>
-              v{snap.release.version} · {platform === "linux" ? first.kind : first.label} · {size(first.size)}
+              {formatVersion(snap.release.version)} · {platform === "linux" ? first.kind : first.label} · {size(first.size)}
             </>
+          ) : loading ? (
+            <span className="inline-block h-3 w-44 rounded-full bg-foreground/15 motion-safe:animate-pulse" aria-label="Loading latest release" />
           ) : null}
         </p>
       </Container>

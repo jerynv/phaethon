@@ -14,10 +14,10 @@ export function reveal(): () => void {
         io.unobserve(e.target);
       }
     },
-    { rootMargin: "0px 0px -8% 0px", threshold: 0.12 },
+    { rootMargin: "0px 0px -4% 0px", threshold: 0.01 },
   );
   for (const el of document.querySelectorAll<HTMLElement>("[data-reveal]")) {
-    if (el.getBoundingClientRect().top < window.innerHeight) continue;
+    if (el.getBoundingClientRect().top <= window.innerHeight) continue;
     el.dataset.reveal = "pending";
     io.observe(el);
   }

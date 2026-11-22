@@ -1,16 +1,17 @@
-import { ArrowUpRight01Icon, Copy01Icon, Download01Icon, SourceCodeIcon, Tick02Icon } from "@hugeicons/core-free-icons";
+import { ArrowUpRight01Icon, Copy01Icon, Download01Icon, SourceCodeIcon, SparklesIcon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/icon";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { platformName, size } from "../format.ts";
-import { REPO_URL, RELEASES_URL, type Installer, type Platform } from "../github.ts";
+import { formatVersion, platformName, size } from "../format.ts";
+import { NIGHTLY_URL, REPO_URL, RELEASES_URL, type Installer, type NightlyRelease, type Platform } from "../github.ts";
 import { Container, PageHead, PLATFORMS, textLink, Time, type Live } from "../layout.tsx";
 import { PlatformLogo } from "../logos.tsx";
 
-/** Every installer, by platform, then two ways to build it yourself. */
-export function DownloadPage({ snap, now }: Live) {
+/** Every installer, by platform, then the signed nightly channel and two ways to build it yourself. */
+export function DownloadPage({ snap, now, loading }: Live) {
   const release = snap.release;
   const all = release?.installers ?? [];
   return (
@@ -27,22 +28,33 @@ export function DownloadPage({ snap, now }: Live) {
             </>
           }
         >
-          {release ? (
-            <a href={release.url} className="inline-flex items-center gap-1 rounded-sm tabular-nums hover:text-foreground">
-              v{release.version}, <Time iso={release.published} now={now} />
-              <Icon icon={ArrowUpRight01Icon} className="size-3.5" />
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1">
+            {release ? (
+              <a href={release.url} className="inline-flex items-center gap-1 rounded-sm tabular-nums hover:text-foreground">
+                {formatVersion(release.version)}, <Time iso={release.published} now={now} />
+                <Icon icon={ArrowUpRight01Icon} className="size-3.5" />
+              </a>
+            ) : loading ? (
+              <span className="inline-block h-4 w-36 rounded-full bg-muted motion-safe:animate-pulse" aria-label="Loading latest release" />
+            ) : (
+              <a href={RELEASES_URL} className={textLink}>
+                Latest release on GitHub
+              </a>
+            )}
+            <span aria-hidden className="text-border-strong">
+              ·
+            </span>
+            <a href="#nightly" className={textLink}>
+              Signed nightly
             </a>
-          ) : (
-            <a href={RELEASES_URL} className={textLink}>
-              Latest release on GitHub
-            </a>
-          )}
+          </span>
         </PageHead>
       </Container>
-      <Container className="flex max-w-4xl flex-col gap-14 pb-20 sm:pb-24">
+      <Container className="flex max-w-4xl flex-col gap-14 pb-16 sm:pb-20">
         {PLATFORMS.map((p) => (
-          <PlatformSection key={p} platform={p} files={all.filter((i) => i.platform === p)} />
+          <PlatformSection key={p} platform={p} files={all.filter((i) => i.platform === p)} loading={loading && !release} />
         ))}
+        <NightlySection nightly={snap.nightly} now={now} loading={loading && !snap.nightly} />
       </Container>
       <FromSource />
     </>
@@ -51,7 +63,7 @@ export function DownloadPage({ snap, now }: Live) {
 
 const platformHeading = "flex items-center gap-2.5 border-b pb-3 font-medium text-foreground text-xl tracking-[-0.015em]";
 
-function PlatformSection({ platform, files }: { platform: Platform; files: Installer[] }) {
+function PlatformSection({ platform, files, loading }: { platform: Platform; files: Installer[]; loading: boolean }) {
   // A Mac's second build is for the few Intel Macs left, so it's a line under the card rather than a card of its own.
   const [cards, extra] = platform === "mac" ? [files.filter((f) => f.arch !== "x64"), files.find((f) => f.arch === "x64")] : [files, undefined];
   return (
@@ -60,9 +72,11 @@ function PlatformSection({ platform, files }: { platform: Platform; files: Insta
         <PlatformLogo platform={platform} className="size-5" />
         {platformName[platform]}
       </h2>
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2" aria-busy={loading}>
         {cards.length ? (
           cards.map((f) => <InstallerCard key={f.url} file={f} />)
+        ) : loading ? (
+          <InstallerSkeleton />
         ) : (
           <li>
             <a href={RELEASES_URL} className={cn(cardLink, "py-4")}>
@@ -90,6 +104,79 @@ function PlatformSection({ platform, files }: { platform: Platform; files: Insta
   );
 }
 
+function NightlySection({ nightly, now, loading }: { nightly: NightlyRelease | null; now?: number; loading: boolean }) {
+  const all = nightly?.installers ?? [];
+  const cards = all.filter((f) => !(f.platform === "mac" && f.arch === "x64"));
+  const intel = all.find((f) => f.platform === "mac" && f.arch === "x64");
+  return (
+    <section id="nightly" aria-labelledby="nightly-title" className="scroll-mt-20">
+      <h2 id="nightly-title" className={platformHeading}>
+        <Icon icon={SparklesIcon} className="size-5" />
+        Nightly
+        <Badge variant="outline" size="default" className="ml-1 font-normal">
+          Signed preview
+        </Badge>
+        {nightly ? (
+          <a href={nightly.url} className="ml-auto inline-flex items-center gap-1 font-normal text-muted-foreground text-xs tabular-nums hover:text-foreground">
+            {nightly.sha ? <span className="type-live">{nightly.sha}</span> : formatVersion(nightly.version)}
+            {nightly.published ? (
+              <>
+                {" · "}
+                <Time iso={nightly.published} now={now} />
+              </>
+            ) : null}
+            <Icon icon={ArrowUpRight01Icon} className="size-3.5" />
+          </a>
+        ) : null}
+      </h2>
+      <p className="mt-2.5 text-pretty text-muted-foreground text-sm">
+        Built automatically from <code className="rounded bg-well px-1 py-0.5 font-mono text-foreground text-xs">main</code> every night. macOS builds are signed and notarized by Apple; nightly stays separate from stable in-app updates.
+      </p>
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2" aria-busy={loading}>
+        {cards.length ? (
+          cards.map((f) => <InstallerCard key={f.url} file={f} showPlatform />)
+        ) : loading ? (
+          <>
+            <InstallerSkeleton />
+            <InstallerSkeleton />
+          </>
+        ) : (
+          <li className="sm:col-span-2">
+            <a href={NIGHTLY_URL} className={cn(cardLink, "py-4")}>
+              <span className="flex min-w-0 flex-col">
+                <span className="font-medium text-foreground text-sm">View nightly builds on GitHub</span>
+                <span className="text-muted-foreground text-xs">The latest signed nightly installers appear here as soon as the build finishes.</span>
+              </span>
+              <Icon icon={ArrowUpRight01Icon} className="ml-auto size-4 shrink-0 text-muted-foreground" />
+            </a>
+          </li>
+        )}
+      </ul>
+      {intel ? (
+        <p className="mt-3.5 text-pretty text-muted-foreground text-sm">
+          On an Intel Mac?{" "}
+          <a href={intel.url} download className={textLink}>
+            Download the Intel nightly build
+          </a>{" "}
+          <span className="tabular-nums">({size(intel.size)})</span>.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function InstallerSkeleton() {
+  return (
+    <li aria-hidden className="flex items-center gap-3.5 rounded-card border bg-card px-4 py-3.5">
+      <span className="size-9 shrink-0 rounded-lg bg-muted motion-safe:animate-pulse" />
+      <span className="flex min-w-0 flex-1 flex-col gap-2">
+        <span className="h-3.5 w-36 rounded-full bg-muted motion-safe:animate-pulse" />
+        <span className="h-3 w-24 rounded-full bg-muted/80 motion-safe:animate-pulse" />
+      </span>
+    </li>
+  );
+}
+
 const notes: Partial<Record<Platform, ReactNode>> = {
   mac: (
     <>
@@ -106,14 +193,20 @@ const notes: Partial<Record<Platform, ReactNode>> = {
 const cardLink =
   "group flex items-center gap-3.5 rounded-card border bg-card px-4 py-3.5 outline-none transition-colors duration-150 hover:border-border-strong hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring";
 
-function InstallerCard({ file }: { file: Installer }) {
+function InstallerCard({ file, showPlatform }: { file: Installer; showPlatform?: boolean }) {
   return (
     <li>
       <a href={file.url} download className={cardLink}>
-        <img src="/icon.png" width={256} height={256} alt="" className="size-9 shrink-0" />
+        {showPlatform ? (
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-well text-foreground">
+            <PlatformLogo platform={file.platform} className="size-5" />
+          </span>
+        ) : (
+          <img src="/icon.png" width={256} height={256} alt="" className="size-9 shrink-0" />
+        )}
         <span className="flex min-w-0 flex-col">
           <span className="font-medium text-foreground text-sm">
-            {file.label}
+            {showPlatform ? `${platformName[file.platform]} · ${file.label}` : file.label}
             {file.platform === "linux" ? null : <span className="text-muted-foreground"> ({file.arch})</span>}
           </span>
           <span className="text-muted-foreground text-xs tabular-nums">

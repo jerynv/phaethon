@@ -13,14 +13,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Two kinds of job run side by side: typecheck and unit tests, and the UI tests
+# split in two per OS. Node 22 (the oldest supported) and 24 both run the unit
+# tests on Linux; elsewhere, and for the UI tests, Node 24 does.
 jobs:
-  check:
-    # Playwright 1.60 has no browser build for ubuntu-latest (26.04) yet.
+  unit:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-latest]
-        node: [22, 24]
+        include:
+          - { os: ubuntu-24.04, node: 22 }
+          - { os: ubuntu-24.04, node: 24 }
+          - { os: windows-latest, node: 24 }
+          - { os: macos-latest, node: 24 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -40,20 +45,58 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  ui:
+    # Playwright 1.60 has no browser build for ubuntu-latest (26.04) yet.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+        shard: [1, 2]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm telemetry:build
+        if: matrix.shard == 1
 
       # End-to-end: the built UI against the real core with a scripted model.
+      # The browser download is cached per Playwright version; Linux still installs its system libraries.
+      - name: Playwright version
+        id: playwright
+        shell: bash
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Browser for the UI tests
-        run: pnpm exec playwright install --with-deps chromium-headless-shell
-      - run: xvfb-run --auto-servernum pnpm exec playwright test
+        run: pnpm exec playwright install chromium-headless-shell
+      - name: Browser libraries
         if: runner.os == 'Linux'
-      - run: pnpm exec playwright test
+        run: pnpm exec playwright install-deps chromium-headless-shell
+
+      - run: xvfb-run --auto-servernum pnpm exec playwright test --shard=${{ matrix.shard }}/2
+        if: runner.os == 'Linux'
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
         if: runner.os != 'Linux'
       - run: pnpm telemetry:test:ui
+        if: matrix.shard == 1
       - uses: actions/upload-artifact@v5
         if: failure()
         with:
-          name: playwright-results-${{ matrix.os }}-node${{ matrix.node }}
+          name: playwright-results-${{ matrix.os }}-shard${{ matrix.shard }}
           path: test-results/
           retention-days: 7

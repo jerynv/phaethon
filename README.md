@@ -42,7 +42,7 @@ pnpm dev            # desktop app with hot reload
 pnpm test           # core and UI unit tests (no network, no real keychain)
 pnpm test:ui        # build, then end-to-end UI tests against the real core with a scripted model
 pnpm dist           # installer for this machine (release/)
-pnpm dist:dev       # Phaethon Dev for this machine (release-dev/); --install puts it in /Applications on macOS
+pnpm dist:dev       # Phaethon Dev for this machine (release-dev/); on macOS --install puts it in /Applications, --sign uses your signing identity instead of ad hoc
 node scripts/capture.mjs shot.png   # screenshot of the real app, headless
 ```
 

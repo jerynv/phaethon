@@ -220,6 +220,8 @@ function createMainWindow(): BrowserWindow {
   hardenContents(window, origin);
   textContextMenu(window);
   if (!captureTo) keepWindowState(window);
+  // The page's <title> would replace the app's name, which is Phaethon Dev in a dev build.
+  window.on("page-title-updated", (event) => event.preventDefault());
   window.once("ready-to-show", () => {
     if (captureTo) return;
     if (saved?.maximized) window.maximize();

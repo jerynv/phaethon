@@ -11,6 +11,9 @@ export function platform(): "darwin" | "win32" | "linux" | "other" {
 
 export const isMac = (): boolean => platform() === "darwin";
 
+/** Phaethon Dev, the build that runs beside the release (src/shared/channel.ts). */
+export const isDevChannel = (): boolean => typeof window !== "undefined" && window.phaethonDesktop?.channel === "dev";
+
 /** The command key: ⌘ on a Mac, Ctrl elsewhere, as drawn and as aria-keyshortcuts names it. */
 export const modKey = (): { cap: string; aria: string } => (isMac() ? { cap: "⌘", aria: "Meta" } : { cap: "Ctrl", aria: "Control" });
 

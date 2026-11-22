@@ -6,6 +6,7 @@ import { cleanMessage, FieldError, SurfaceError } from "@/components/errors";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, Loader, SettingsGroup, SwitchRow, useLoad } from "@/features/settings/ui";
+import { isDevChannel } from "@/lib/platform";
 
 /**
  * What people share with Phaethon's developers (docs/TELEMETRY.md). A first
@@ -101,7 +102,8 @@ export function OnboardingPrivacy({ onSaved, actions }: { onSaved: () => void; a
 export function TelemetryGate({ children }: { children: ReactNode }) {
   const state = useLoad(api.telemetry);
   const [saved, setSaved] = useState(false);
-  if (saved || state.data?.configured) {
+  // Phaethon Dev has no collector: there's nothing to choose before it opens.
+  if (saved || state.data?.configured || isDevChannel()) {
     return (
       <>
         <UsageObserver />

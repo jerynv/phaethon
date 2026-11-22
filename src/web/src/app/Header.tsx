@@ -6,12 +6,13 @@ import { errorText } from "@/lib/core";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Truncate } from "@/components/truncate";
+import { Badge } from "@/components/ui/badge";
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { MenuShortcut } from "@/components/ui/menu";
 import { PageTab, PageTabList, PageTabNew, pageTabStripClassName } from "@/components/ui/page-tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { isMac } from "@/lib/platform";
+import { isDevChannel, isMac } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { chordText, keysFor } from "./shortcuts";
 import { canCloseTab, DRAFT, type OpenTab, useActiveSpace, useNav } from "./store";
@@ -260,6 +261,11 @@ export function AppHeader({ bind }: { bind: { title: (el: HTMLElement | null) =>
         )}
       >
         <BrandWordmark showName={sidebarOpen} nameClassName="hidden @titlebar-brand/lead:inline" markClassName="@titlebar-brand/lead:relative @titlebar-brand/lead:top-px" />
+        {sidebarOpen && isDevChannel() ? (
+          <Badge variant="warning" size="sm" className="ml-1.5 hidden @titlebar-brand/lead:inline-flex">
+            Dev
+          </Badge>
+        ) : null}
         {sidebarOpen ? <span className="flex-1" /> : null}
         <HeaderIconButton label={sidebarOpen || peek ? "Hide sidebar" : "Show sidebar"} keys={keysFor("sidebar").keys} onClick={toggle}>
           <Icon icon={icons.sidebar} />

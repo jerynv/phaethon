@@ -11,7 +11,7 @@ import { BYTES_KEY, CHANNEL_KEY, isBytesRef, type ClientFrame, type ServerFrame 
  * `#token=…` (optionally `&core=ws://host:port/ws`).
  */
 
-type DesktopBridge = { connect(): void; platform: string };
+type DesktopBridge = { connect(): void; platform: string; channel?: string };
 declare global {
   interface Window {
     phaethonDesktop?: DesktopBridge;

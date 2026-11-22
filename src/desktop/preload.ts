@@ -1,9 +1,11 @@
 /// <reference lib="dom" />
 import { contextBridge, ipcRenderer } from "electron";
+import { CHANNEL } from "../shared/channel.ts";
 
 /**
  * The renderer's whole view of the desktop shell: a way to get a MessagePort
- * to the core, and the platform name for title-bar layout. No Node, no
+ * to the core, the platform name for title-bar layout, and whether this is a
+ * dev build (the title bar says so). No Node, no
  * filesystem, no credentials.
  *
  * A MessagePort can't cross the context bridge, so it is handed to the page
@@ -16,4 +18,5 @@ ipcRenderer.on("phaethon:port", (event) => {
 contextBridge.exposeInMainWorld("phaethonDesktop", {
   connect: (): void => ipcRenderer.send("phaethon:connect"),
   platform: process.platform,
+  channel: CHANNEL,
 });
